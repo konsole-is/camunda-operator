@@ -5,4 +5,9 @@ resources:
 - core_v1_camundaclusterpreset.yaml
 - core_v1_elasticsearchcluster.yaml
 - core_v1_elasticsearchclusterpreset.yaml
+- core_v1_database.yaml
+- core_v1_databaseserverconfig.yaml
+- core_v1_databaseconfig.yaml
+- core_v1_secondarystorageconfig.yaml
+- core_v1_objectstorageconfig.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

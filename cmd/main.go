@@ -199,6 +199,41 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "ElasticsearchCluster")
 		os.Exit(1)
 	}
+	if err := (&controller.DatabaseReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "Database")
+		os.Exit(1)
+	}
+	if err := (&controller.DatabaseServerConfigReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseServerConfig")
+		os.Exit(1)
+	}
+	if err := (&controller.DatabaseConfigReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseConfig")
+		os.Exit(1)
+	}
+	if err := (&controller.SecondaryStorageConfigReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "SecondaryStorageConfig")
+		os.Exit(1)
+	}
+	if err := (&controller.ObjectStorageConfigReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "ObjectStorageConfig")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

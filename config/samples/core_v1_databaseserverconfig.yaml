@@ -1,0 +1,9 @@
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: databaseserverconfig-sample
+spec:
+  # TODO(user): Add fields here

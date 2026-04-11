@@ -49,4 +49,44 @@ resources:
   kind: ElasticsearchClusterPreset
   path: github.com/camunda/camunda-operator/api/v1
   version: v1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: Database
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: DatabaseServerConfig
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: DatabaseConfig
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: SecondaryStorageConfig
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: ObjectStorageConfig
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
 version: "3"

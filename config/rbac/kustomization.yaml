@@ -22,6 +22,21 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the camunda-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- objectstorageconfig_admin_role.yaml
+- objectstorageconfig_editor_role.yaml
+- objectstorageconfig_viewer_role.yaml
+- secondarystorageconfig_admin_role.yaml
+- secondarystorageconfig_editor_role.yaml
+- secondarystorageconfig_viewer_role.yaml
+- databaseconfig_admin_role.yaml
+- databaseconfig_editor_role.yaml
+- databaseconfig_viewer_role.yaml
+- databaseserverconfig_admin_role.yaml
+- databaseserverconfig_editor_role.yaml
+- databaseserverconfig_viewer_role.yaml
+- database_admin_role.yaml
+- database_editor_role.yaml
+- database_viewer_role.yaml
 - elasticsearchclusterpreset_admin_role.yaml
 - elasticsearchclusterpreset_editor_role.yaml
 - elasticsearchclusterpreset_viewer_role.yaml
