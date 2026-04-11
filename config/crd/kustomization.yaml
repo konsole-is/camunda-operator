@@ -12,6 +12,11 @@ resources:
 - bases/core.camunda.io_databaseconfigs.yaml
 - bases/core.camunda.io_secondarystorageconfigs.yaml
 - bases/core.camunda.io_objectstorageconfigs.yaml
+- bases/core.camunda.io_backups.yaml
+- bases/core.camunda.io_backupschedules.yaml
+- bases/core.camunda.io_backupretentions.yaml
+- bases/core.camunda.io_pointintimerestores.yaml
+- bases/core.camunda.io_logicalrestores.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

@@ -1,0 +1,9 @@
+apiVersion: core.camunda.io/v1
+kind: PointInTimeRestore
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: pointintimerestore-sample
+spec:
+  # TODO(user): Add fields here

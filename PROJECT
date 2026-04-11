@@ -89,4 +89,49 @@ resources:
   kind: ObjectStorageConfig
   path: github.com/camunda/camunda-operator/api/v1
   version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: Backup
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: BackupSchedule
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: BackupRetention
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: PointInTimeRestore
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: LogicalRestore
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
 version: "3"
