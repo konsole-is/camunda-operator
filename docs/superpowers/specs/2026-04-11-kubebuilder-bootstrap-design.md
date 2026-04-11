@@ -18,13 +18,13 @@ implementation without further scaffolding.
 ```
 kubebuilder init \
   --domain camunda.io \
-  --repo github.com/camunda/camunda-operator
+  --repo github.com/konsole-is/camunda-operator
 ```
 
 - **Domain:** `camunda.io`
 - **Group:** `core` → full API group `core.camunda.io`
 - **Version:** `v1`
-- **Module:** `github.com/camunda/camunda-operator`
+- **Module:** `github.com/konsole-is/camunda-operator`
 - **Toolchain:** kubebuilder v4.13.1, Go 1.26.1
 
 All CRDs use `apiVersion: core.camunda.io/v1`, which mirrors the convention used by
@@ -77,7 +77,7 @@ reconciliation loop.
 
 ```bash
 # Init
-kubebuilder init --domain camunda.io --repo github.com/camunda/camunda-operator
+kubebuilder init --domain camunda.io --repo github.com/konsole-is/camunda-operator
 
 # Active CRDs (type + controller)
 kubebuilder create api --group core --version v1 --kind CamundaPlatformConfig --namespaced=false --resource --controller

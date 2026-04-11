@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	corev1 "github.com/camunda/camunda-operator/api/v1"
+	corev1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 var _ = Describe("ElasticsearchCluster Controller", func() {

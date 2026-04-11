@@ -1,4 +1,4 @@
-module github.com/camunda/camunda-operator
+module github.com/konsole-is/camunda-operator
 
 go 1.25.3
 

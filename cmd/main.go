@@ -35,8 +35,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	corev1 "github.com/camunda/camunda-operator/api/v1"
-	"github.com/camunda/camunda-operator/internal/controller"
+	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 

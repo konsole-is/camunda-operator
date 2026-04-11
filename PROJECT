@@ -7,7 +7,7 @@ domain: camunda.io
 layout:
 - go.kubebuilder.io/v4
 projectName: camunda-operator
-repo: github.com/camunda/camunda-operator
+repo: github.com/konsole-is/camunda-operator
 resources:
 - api:
     crdVersion: v1
@@ -16,7 +16,7 @@ resources:
   domain: camunda.io
   group: core
   kind: CamundaCluster
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -24,14 +24,14 @@ resources:
   domain: camunda.io
   group: core
   kind: CamundaPlatformConfig
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
   domain: camunda.io
   group: core
   kind: CamundaClusterPreset
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -40,14 +40,14 @@ resources:
   domain: camunda.io
   group: core
   kind: ElasticsearchCluster
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
   domain: camunda.io
   group: core
   kind: ElasticsearchClusterPreset
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -55,7 +55,7 @@ resources:
   domain: camunda.io
   group: core
   kind: Database
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -63,7 +63,7 @@ resources:
   domain: camunda.io
   group: core
   kind: DatabaseServerConfig
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -71,7 +71,7 @@ resources:
   domain: camunda.io
   group: core
   kind: DatabaseConfig
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -79,7 +79,7 @@ resources:
   domain: camunda.io
   group: core
   kind: SecondaryStorageConfig
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -87,7 +87,7 @@ resources:
   domain: camunda.io
   group: core
   kind: ObjectStorageConfig
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -96,7 +96,7 @@ resources:
   domain: camunda.io
   group: core
   kind: Backup
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -105,7 +105,7 @@ resources:
   domain: camunda.io
   group: core
   kind: BackupSchedule
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -114,7 +114,7 @@ resources:
   domain: camunda.io
   group: core
   kind: BackupRetention
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -123,7 +123,7 @@ resources:
   domain: camunda.io
   group: core
   kind: PointInTimeRestore
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -132,7 +132,7 @@ resources:
   domain: camunda.io
   group: core
   kind: LogicalRestore
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -141,7 +141,7 @@ resources:
   domain: camunda.io
   group: core
   kind: CamundaOptimize
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -149,7 +149,7 @@ resources:
   domain: camunda.io
   group: core
   kind: CamundaManagementCluster
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -157,7 +157,7 @@ resources:
   domain: camunda.io
   group: core
   kind: ManagementAuthConfig
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -166,6 +166,6 @@ resources:
   domain: camunda.io
   group: core
   kind: PVCAutoResize
-  path: github.com/camunda/camunda-operator/api/v1
+  path: github.com/konsole-is/camunda-operator/api/v1
   version: v1
 version: "3"

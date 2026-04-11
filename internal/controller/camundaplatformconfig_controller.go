@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	corev1 "github.com/camunda/camunda-operator/api/v1"
+	corev1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // CamundaPlatformConfigReconciler reconciles a CamundaPlatformConfig object

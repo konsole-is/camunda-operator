@@ -3,7 +3,7 @@
 Core Kubernetes operator for the Camunda platform. Manages the orchestration cluster lifecycle,
 storage backends, backup/restore, Optimize, and the management plane.
 
-Module: `github.com/camunda/camunda-operator`
+Module: `github.com/konsole-is/camunda-operator`
 
 ---
 

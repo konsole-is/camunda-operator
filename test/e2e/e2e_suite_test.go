@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/camunda/camunda-operator/test/utils"
+	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
 var (

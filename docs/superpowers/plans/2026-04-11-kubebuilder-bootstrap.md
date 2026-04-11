@@ -101,7 +101,7 @@ camunda-operator/
 
 ```bash
 cd /home/aegir/Documents/personal/camunda-stack/camunda-operator
-kubebuilder init --domain camunda.io --repo github.com/camunda/camunda-operator
+kubebuilder init --domain camunda.io --repo github.com/konsole-is/camunda-operator
 ```
 
 Expected: kubebuilder prints "Writing scaffold for you to edit..." and creates the project
@@ -114,7 +114,7 @@ go build ./...
 ```
 
 Expected: exits 0, no output. If it fails, check that `go.mod` has
-`module github.com/camunda/camunda-operator` and `go 1.26`.
+`module github.com/konsole-is/camunda-operator` and `go 1.26`.
 
 - [ ] **Step 3: Initialize git and commit**
 
@@ -124,7 +124,7 @@ git add .
 git commit -m "chore: initialize kubebuilder project
 
 Domain: camunda.io
-Module: github.com/camunda/camunda-operator"
+Module: github.com/konsole-is/camunda-operator"
 ```
 
 ---
