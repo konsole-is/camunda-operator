@@ -1,0 +1,6 @@
+## Append samples of your project ##
+resources:
+- core_v1_camundacluster.yaml
+- core_v1_camundaplatformconfig.yaml
+- core_v1_camundaclusterpreset.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

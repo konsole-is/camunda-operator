@@ -18,3 +18,17 @@ resources:
 - metrics_auth_role.yaml
 - metrics_auth_role_binding.yaml
 - metrics_reader_role.yaml
+# For each CRD, "Admin", "Editor" and "Viewer" roles are scaffolded by
+# default, aiding admins in cluster management. Those roles are
+# not used by the camunda-operator itself. You can comment the following lines
+# if you do not want those helpers be installed with your Project.
+- camundaclusterpreset_admin_role.yaml
+- camundaclusterpreset_editor_role.yaml
+- camundaclusterpreset_viewer_role.yaml
+- camundaplatformconfig_admin_role.yaml
+- camundaplatformconfig_editor_role.yaml
+- camundaplatformconfig_viewer_role.yaml
+- camundacluster_admin_role.yaml
+- camundacluster_editor_role.yaml
+- camundacluster_viewer_role.yaml
+

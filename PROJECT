@@ -8,4 +8,29 @@ layout:
 - go.kubebuilder.io/v4
 projectName: camunda-operator
 repo: github.com/camunda/camunda-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: CamundaCluster
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: camunda.io
+  group: core
+  kind: CamundaPlatformConfig
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
+- api:
+    crdVersion: v1
+  domain: camunda.io
+  group: core
+  kind: CamundaClusterPreset
+  path: github.com/camunda/camunda-operator/api/v1
+  version: v1
 version: "3"
