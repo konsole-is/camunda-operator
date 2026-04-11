@@ -274,6 +274,10 @@ install-helm: ## Install the latest version of Helm.
 		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
 	}
 
+.PHONY: helm-generate
+helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify an image with IMG.
+	kubebuilder edit --plugins=helm/v2-alpha --force
+
 .PHONY: helm-deploy
 helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
