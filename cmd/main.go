@@ -269,6 +269,34 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestore")
 		os.Exit(1)
 	}
+	if err := (&controller.CamundaOptimizeReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
+		os.Exit(1)
+	}
+	if err := (&controller.CamundaManagementClusterReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "CamundaManagementCluster")
+		os.Exit(1)
+	}
+	if err := (&controller.ManagementAuthConfigReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "ManagementAuthConfig")
+		os.Exit(1)
+	}
+	if err := (&controller.PVCAutoResizeReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "PVCAutoResize")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

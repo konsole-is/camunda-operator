@@ -22,6 +22,18 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the camunda-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- pvcautoresize_admin_role.yaml
+- pvcautoresize_editor_role.yaml
+- pvcautoresize_viewer_role.yaml
+- managementauthconfig_admin_role.yaml
+- managementauthconfig_editor_role.yaml
+- managementauthconfig_viewer_role.yaml
+- camundamanagementcluster_admin_role.yaml
+- camundamanagementcluster_editor_role.yaml
+- camundamanagementcluster_viewer_role.yaml
+- camundaoptimize_admin_role.yaml
+- camundaoptimize_editor_role.yaml
+- camundaoptimize_viewer_role.yaml
 - logicalrestore_admin_role.yaml
 - logicalrestore_editor_role.yaml
 - logicalrestore_viewer_role.yaml
