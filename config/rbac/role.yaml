@@ -1,11 +1,80 @@
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    app.kubernetes.io/name: camunda-operator
-    app.kubernetes.io/managed-by: kustomize
   name: manager-role
 rules:
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - core.camunda.io
+  resources:
+  - backupretentions
+  - backups
+  - backupschedules
+  - camundaclusters
+  - camundamanagementclusters
+  - camundaoptimizes
+  - camundaplatformconfigs
+  - databaseconfigs
+  - databases
+  - databaseserverconfigs
+  - elasticsearchclusters
+  - logicalrestores
+  - managementauthconfigs
+  - objectstorageconfigs
+  - pointintimerestores
+  - pvcautoresizes
+  - secondarystorageconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - core.camunda.io
+  resources:
+  - backupretentions/finalizers
+  - backups/finalizers
+  - backupschedules/finalizers
+  - camundaclusters/finalizers
+  - camundamanagementclusters/finalizers
+  - camundaoptimizes/finalizers
+  - camundaplatformconfigs/finalizers
+  - databaseconfigs/finalizers
+  - databases/finalizers
+  - databaseserverconfigs/finalizers
+  - elasticsearchclusters/finalizers
+  - logicalrestores/finalizers
+  - managementauthconfigs/finalizers
+  - objectstorageconfigs/finalizers
+  - pointintimerestores/finalizers
+  - pvcautoresizes/finalizers
+  - secondarystorageconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - core.camunda.io
+  resources:
+  - backupretentions/status
+  - backups/status
+  - backupschedules/status
+  - camundaclusters/status
+  - camundamanagementclusters/status
+  - camundaoptimizes/status
+  - camundaplatformconfigs/status
+  - databaseconfigs/status
+  - databases/status
+  - databaseserverconfigs/status
+  - elasticsearchclusters/status
+  - logicalrestores/status
+  - managementauthconfigs/status
+  - objectstorageconfigs/status
+  - pointintimerestores/status
+  - pvcautoresizes/status
+  - secondarystorageconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
