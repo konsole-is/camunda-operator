@@ -5,6 +5,8 @@ resources:
 - bases/core.camunda.io_camundaclusters.yaml
 - bases/core.camunda.io_camundaplatformconfigs.yaml
 - bases/core.camunda.io_camundaclusterpresets.yaml
+- bases/core.camunda.io_elasticsearchclusters.yaml
+- bases/core.camunda.io_elasticsearchclusterpresets.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
