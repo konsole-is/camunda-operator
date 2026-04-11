@@ -7,18 +7,6 @@ Module: `github.com/konsole-is/camunda-operator`
 
 ---
 
-## Operator implementation guidelines
-
-- Use the operator component framework for resource and lifecycle management: https://github.com/sourcehawk/operator-component-framework
-- Use SSA exclusively unless explicitly otherwise required.
-- Write top level controller tests (reconciliation) using ginkgo and gomega, verifying high level concerns of operator logic
-- Write low level tests of features of a controller close to the method / file that implements it, covering all edge cases and expected outcomes, preferring
-  pure go unit tests using testify.
-- If the proposed architecture conflicts with our goals, challenge the idea with followup questions and explanations of why it does not fit.
-- The architecture is high level and not all details may have been covered. If you see missing or inaccurate definitions, either ask or implement if clearly obvious.
-- Use the `camunda-docs` mcp server rigorously to gather context on subjects required for implementation.
-- Follow kubernetes best practices and go conventions
-
 ## Before Making Changes
 
 **Read before writing.** Always gather context from the actual source code and documentation before
@@ -93,10 +81,3 @@ make all
 ```
 
 **Tests encode intent, not implementation.** Never modify a test purely to make it pass.
-
-### Hard boundaries — never cross these
-
-- This is a clean slate project. There is no migration, no legacy compatibility layer,
-  and no ZeebeCluster. Do not introduce any of these concepts.
-- Never create cloud infrastructure resources (IAM, KMS, buckets). That belongs in
-  `camunda-cloud-operator`.
