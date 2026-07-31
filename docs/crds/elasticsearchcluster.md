@@ -19,11 +19,12 @@ Camunda 8.9 also supports OpenSearch and RDBMS as secondary storage, but this CR
 1. The operator resolves `spec.presetRef` to an `ElasticsearchClusterPreset` if set, then applies any pointer fields set inline on the spec as overrides; a field set on this CR replaces the preset's value for that field wholesale, and `scheduling` in particular replaces the preset's scheduling block entirely rather than merging.
 2. It renders an ECK `Elasticsearch` CR (named after this CR) from the resolved configuration — version, node count, resources, storage — and applies it with Server-Side Apply (SSA) under the field manager `camunda-operator/elasticsearchcluster`.
 3. It labels the Elasticsearch pods and data PVCs with `camunda.io/cluster: <this CR's name>` and `camunda.io/component: elasticsearch` through the ECK pod and volume claim templates, so extensions such as `PVCAutoResize` can discover them.
-4. It provisions a dedicated Camunda user through ECK's file realm, generates credentials for it, and stores them in a Secret it owns.
-5. It creates and keeps current a cluster-scoped `SecondaryStorageConfig` named `spec.secondaryStorageConfig`, with `type: elasticsearch`, the in-cluster HTTPS endpoint of the ECK-managed service, and a reference to the generated credentials Secret.
-6. It watches the ECK CR's health and reflects it in this CR's conditions.
-7. When `spec.suspend: true`, it scales the ECK node set to zero and reports the `Suspended` condition; a composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
-8. On deletion, the ECK CR is garbage-collected through its owner reference, and a finalizer removes the `SecondaryStorageConfig` (which is cluster-scoped and therefore cannot be owned by this namespaced CR).
+4. It applies `spec.serviceAccount.annotations` to the Elasticsearch pods' service account through the ECK podTemplate, giving the nodes the workload identity (IRSA, GCP Workload Identity, ...) that grants access to the snapshot bucket used for backups. The snapshot repository itself is registered inside Elasticsearch by the `CamundaCluster` controller — via the Elasticsearch API, authenticated with the `SecondaryStorageConfig` credentials — while the bucket access for the Elasticsearch nodes flows from this workload identity.
+5. It provisions a dedicated Camunda user through ECK's file realm, generates credentials for it, and stores them in a Secret it owns.
+6. It creates and keeps current a cluster-scoped `SecondaryStorageConfig` named `spec.secondaryStorageConfig`, with `type: elasticsearch`, the in-cluster HTTPS endpoint of the ECK-managed service, and a reference to the generated credentials Secret.
+7. It watches the ECK CR's health and reflects it in this CR's conditions.
+8. When `spec.suspend: true`, it scales the ECK node set to zero and reports the `Suspended` condition; a composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
+9. On deletion, the ECK CR is garbage-collected through its owner reference, and a finalizer removes the `SecondaryStorageConfig` (which is cluster-scoped and therefore cannot be owned by this namespaced CR).
 
 ```mermaid
 graph LR
@@ -56,6 +57,11 @@ spec:
   storageSize: "64Gi"
   # string. Optional, default: the cluster's default StorageClass. StorageClass for the data volumes.
   storageClassName: "ssd"
+  # object. Optional. ServiceAccount settings for the Elasticsearch pods, applied through the ECK podTemplate.
+  serviceAccount:
+    # map[string]string. Optional. Annotations for workload identity (IRSA, GCP Workload Identity, ...); required for Elasticsearch to access the snapshot bucket for backups.
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-es-snapshot-role"
   # list (corev1.EnvVar). Optional. Extra environment variables for every Elasticsearch node.
   extraEnv: []
   # list (corev1.EnvFromSource). Optional. Extra environment sources (ConfigMaps, Secrets) for every node.
@@ -115,7 +121,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) — optional configuration baseline referenced via `presetRef`.
 - [Database](database.md) — the peer storage backend controller for RDBMS secondary storage; an orchestration cluster uses one or the other.
 - [SecondaryStorageConfig](secondarystorageconfig.md) — created and kept current by this controller under the name in `spec.secondaryStorageConfig`.
-- [CamundaCluster](camundacluster.md) — consumes the created [SecondaryStorageConfig](secondarystorageconfig.md) via its `storageRef`; it never references this CR directly.
+- [CamundaCluster](camundacluster.md) — consumes the created [SecondaryStorageConfig](secondarystorageconfig.md) via its `storageRef`; it never references this CR directly. Its controller registers the backup snapshot repository inside this Elasticsearch through the Elasticsearch API, while the nodes' access to the snapshot bucket flows from the workload identity configured via `spec.serviceAccount.annotations` here.
 - [PVCAutoResize](pvcautoresize.md) — never references this CR directly; the operator locates this ElasticsearchCluster as the producer of the consuming cluster's [SecondaryStorageConfig](secondarystorageconfig.md) (following the [CamundaCluster](camundacluster.md)'s `storageRef`) and patches the auto-resize annotations on the Elasticsearch data PVCs.
 
 The ECK operator is an external prerequisite that reconciles the `Elasticsearch` CR this controller creates.

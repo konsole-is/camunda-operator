@@ -22,6 +22,7 @@ The contract has a lightweight validation-only controller: it never provisions a
 
 Consumers read the contract by name and never care who produced it.
 Workloads authenticate to the bucket via the workload identity named in `accountId`; the consuming `CamundaCluster` exposes the matching identity through its `serviceAccount` annotations, so no bucket credentials ever pass through Kubernetes Secrets.
+`accountId` is informational for the composition layer and consumers — the binding always happens on the workload side, and for Elasticsearch snapshot access specifically the identity must be granted to the Elasticsearch pods via `serviceAccount.annotations` on the [ElasticsearchCluster](elasticsearchcluster.md).
 
 ```mermaid
 graph LR
