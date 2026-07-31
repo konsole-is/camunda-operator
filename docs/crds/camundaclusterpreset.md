@@ -49,12 +49,31 @@ spec:
   cluster:
     # string. Optional. Camunda version applied to clusters that do not set their own.
     version: "8.9.0"
+    # object. Optional. Per-cluster OIDC client-credential defaults for referencing clusters; same shape as the CamundaCluster auth block, sits between the platform config's defaults and a cluster's own auth override.
+    auth:
+      # string. Optional. Default OIDC client ID for referencing clusters.
+      clientId: "medium-clusters"
+      # string. Optional, default: the clientId. Audience validated in access tokens.
+      audience: "medium-clusters"
+      # object. Optional. Secret holding the default client secret; the namespace is required, because presets are cluster-scoped and have no namespace to default to.
+      clientSecretRef:
+        name: "medium-clusters-oidc-secret"
+        namespace: "camunda-system"
+        key: "client-secret"
+    # list. Optional. Env vars applied to ALL workloads of referencing clusters; merged by name, with cluster entries winning.
+    extraEnv:
+      - name: TZ
+        value: "UTC"
+    # list. Optional. Bulk env from ConfigMaps/Secrets applied to ALL workloads; preset entries first, then cluster entries.
+    extraEnvFrom: []
     # map[string]string. Optional. Labels merged into all workload pods of referencing clusters.
     podLabels:
       company.com/team: "automation-ops"
     # map[string]string. Optional. Annotations merged into all workload pods of referencing clusters.
     podAnnotations:
       company.com/cluster-preset: "medium"
+    # object. Optional. Scheduling baseline for all workloads; a cluster that sets its own scheduling replaces this entirely (no merge).
+    scheduling: {}
     # object. Optional. Zeebe baseline; zeebe is always a standalone StatefulSet.
     zeebe:
       # integer. Optional. Broker replica baseline.

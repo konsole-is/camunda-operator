@@ -38,7 +38,7 @@ This supports every deployment model from all-in-one (everything embedded in zee
 5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `camunda-operator/camundacluster`, leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
 6. The operator watches workload health into per-component conditions and the aggregate `Ready` condition.
 7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md) and contract CRDs, so changes to them roll out to the cluster without touching this CR.
-8. When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: the Elasticsearch snapshot repository for Elasticsearch-backed clusters, and the Zeebe primary-storage backup store in all cases. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
+8. When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: for Elasticsearch-backed clusters, the CamundaCluster controller itself registers the snapshot repository (derived from `backupStorageRef`) in the cluster's Elasticsearch via the Elasticsearch API and configures the same repository name on the Camunda components; in all cases it configures the Zeebe primary-storage backup store. The Elasticsearch nodes' access to the snapshot bucket comes from the [ElasticsearchCluster](elasticsearchcluster.md)'s own workload identity (`serviceAccount.annotations` on that CR), not from this cluster's. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
 9. For RDBMS-backed clusters (`storageRef` resolves to `type: rdbms`), the operator additionally auto-enables continuous and scheduled backup of zeebe's primary storage (`camunda.data.primary-storage.backup`: continuous operation, schedule, and checkpoint interval), so database and primary storage stay restorable to matching positions — required both for `PointInTimeRestore` and for restoring RDBMS `Backup`s.
 10. `suspend: true` scales all workloads to zero and sets the `Suspended` condition; `pause: true` halts reconciliation of this CR entirely, leaving workloads as they are.
 
@@ -235,6 +235,7 @@ Embedded applications do not get their own condition; they are covered by their 
 | `Ready` | `Progressing` | Workloads are still rolling toward the desired state. |
 | `Ready` | `InvalidReference` | A referenced CR (`platformConfigRef`, `presetRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`) does not exist. |
 | `Ready` | `MissingSecret` | A Secret referenced by the effective auth configuration is missing. |
+| `Ready` | `Suspended` | The cluster is suspended and intentionally not serving. |
 | `Suspended` | `Suspended` | `spec.suspend` is true and workloads are scaled to zero. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
@@ -245,6 +246,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - `spec.platformConfigRef` is required.
 - The effective version (inline or inherited from the preset) must be present and 8.9 or later.
 - `spec.zeebe.partitions` cannot be decreased after creation.
+- `spec.zeebe.storageClassName` is immutable after creation: StatefulSet PVC templates cannot change their storage class.
+- `spec.zeebe.storageSize` may only grow; updates that shrink it are rejected, like [ElasticsearchCluster](elasticsearchcluster.md)'s `storageSize`. On growth the operator expands the existing PVCs in place — the storage class must support volume expansion — and applies the new size for future replicas.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
 - `spec.connectors.replicas` and connectors sizing fields are only meaningful when `spec.connectors.enabled` is true.
 - Existence of referenced CRs and Secrets is checked at reconcile time and surfaced as `InvalidReference` / `MissingSecret` conditions, not at admission, because references may be created in any order.

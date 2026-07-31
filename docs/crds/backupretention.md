@@ -12,7 +12,7 @@ It pairs with a [BackupSchedule](backupschedule.md): the schedule produces backu
 
 1. The operator watches [Backup](backup.md) CRs and reconciles the BackupRetention whenever a Backup for the referenced cluster changes, using a field index on the Backups' `clusterRef`.
 2. It lists all Backups in the cluster's namespace whose `clusterRef` resolves to the referenced `CamundaCluster`.
-3. It filters the list to Backups with `status.phase: Completed` and sorts them by completion time.
+3. It filters the list to Backups with `status.phase: Completed` and sorts them by `status.completionTime`.
 4. If more than `spec.retainedCount` completed Backups exist, it deletes the oldest ones until exactly `retainedCount` remain. Deleting a Backup CR triggers the Backup finalizer, which removes the stored snapshots or dump.
 5. Backups in `Pending` or `Running` are never touched, and never counted against `retainedCount`.
 6. `Failed` Backups are also never deleted: they are kept for diagnosis and cleaned up manually. Only completed backups are subject to retention.

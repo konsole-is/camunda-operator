@@ -79,6 +79,7 @@ graph TD
     OPT -.->|managementAuthRef| MAC
     CMC -->|creates| MAC
     CMC -.->|"keycloakDbRef / identityDbRef / webModelerDbRef"| DBC
+    CMC -.->|platformConfigRef| PFC
 
     PAR -.->|clusterRef| CC
 ```

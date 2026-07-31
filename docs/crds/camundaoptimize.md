@@ -19,7 +19,7 @@ The operator reconciles a `CamundaOptimize` in the following steps:
 2. Resolve `managementAuthRef` to a `ManagementAuthConfig` and verify its `clientSecretRef` secret exists.
 3. SSA-patch `spec.zeebe.extraEnv` on the referenced `CamundaCluster` to enable the legacy Zeebe Elasticsearch exporter with the fixed index prefix `zeebe-record`, using the field manager `camunda-operator/camundaoptimize`; the patch owns only the exporter-related environment variables, and nothing else on the cluster — this controller never reconciles the cluster itself.
 4. Deploy the Optimize webapp Deployment and the Optimize importer Deployment into the CR's namespace, labeled with `camunda.io/cluster` (the referenced cluster's name) and `camunda.io/component` (`optimize-webapp` / `optimize-importer`).
-5. Configure the importer with Zeebe data import enabled (`CAMUNDA_OPTIMIZE_ZEEBE_ENABLED=true`) and the matching index prefix (`CAMUNDA_OPTIMIZE_ZEEBE_NAME=zeebe-record`); webapp replicas run with import disabled, because Optimize supports at most one active importer per instance.
+5. Configure the importer with Zeebe data import enabled (`CAMUNDA_OPTIMIZE_ZEEBE_ENABLED=true`), the matching index prefix (`CAMUNDA_OPTIMIZE_ZEEBE_NAME=zeebe-record`), and `CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT` set to the referenced cluster's `zeebe.partitions`, so the importer reads all partitions; webapp replicas run with import disabled, because Optimize supports at most one active importer per instance.
 6. Point both deployments at the Elasticsearch endpoint and credentials from the resolved `SecondaryStorageConfig`; Optimize reads the `zeebe-record` indices and writes its own analytics indices to the same Elasticsearch.
 7. When `monitoring.serviceMonitor.enabled` is set, create a ServiceMonitor per deployment.
 8. Update status conditions and `status.observedGeneration`.
@@ -144,6 +144,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - [ManagementAuthConfig](managementauthconfig.md) — referenced via `managementAuthRef`; provides the Management Identity OIDC configuration Optimize authenticates with.
 - [SecondaryStorageConfig](secondarystorageconfig.md) — resolved indirectly through the referenced cluster's `storageRef`; provides the Elasticsearch endpoint and credentials Optimize reads from and writes to.
 - [CamundaManagementCluster](camundamanagementcluster.md) — produces the [ManagementAuthConfig](managementauthconfig.md) this CR consumes in self-managed installations.
+- [Backup](backup.md) — while this CR is attached to a cluster, the cluster's Elasticsearch-path backups drive Optimize's backup actuator with the same backup ID, so Optimize's analytics data (`camunda_optimize_<backupId>_*` snapshots) is included in the backup set.
+- [LogicalRestore](logicalrestore.md) — restores the Optimize snapshots along with the rest of the set when the backup contains them.
 - Elasticsearch itself is an external system reached through the contract; the ECK-managed cluster behind it is documented on the [ElasticsearchCluster](elasticsearchcluster.md) page.
 
 ## Examples
