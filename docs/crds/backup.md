@@ -24,8 +24,11 @@ The operator reconciles a Backup as a one-shot, phase-driven operation:
 1. Soft-pause exporting: `POST /actuator/exporting/pause?soft=true`. Records keep exporting but log compaction stops, making this a hot backup.
 2. Back up the web-application indices: `POST /actuator/backupHistory` with the backup ID, then poll `GET /actuator/backupHistory/{backupId}` until every scheduled snapshot completes.
 3. Snapshot the exported Zeebe record indices (`camunda_zeebe_records_backup_<backupId>`) directly through the Elasticsearch snapshot API, authenticated with the credentials from the `SecondaryStorageConfig` — Camunda exposes no management endpoint for these indices.
-4. Back up the Zeebe partitions: `POST /actuator/backupRuntime` with the same backup ID, then poll `GET /actuator/backupRuntime/{backupId}` until the partition backup completes in the configured backup store. When the cluster has continuous or scheduled primary-storage backups enabled, Camunda rejects an explicit backup ID and generates one itself, so the operator omits the ID and records the generated one instead.
-5. Resume exporting: `POST /actuator/exporting/resume`. This step always runs, including after a failure in steps 2–4, because a cluster left soft-paused cannot compact its log and will eventually fill its disks.
+4. Back up the Zeebe partitions: `POST /actuator/backupRuntime` with the same backup ID, then poll `GET /actuator/backupRuntime/{backupId}` until the partition backup completes in the configured backup store.
+5. When a `CamundaOptimize` references the cluster (found via the field index on its `clusterRef`), drive Optimize's backup actuator with the same backup ID and poll it to completion, adding Optimize's analytics indices to the set; when no Optimize is attached, the optimize indices are not part of the set.
+6. Resume exporting: `POST /actuator/exporting/resume`. This step always runs, including after a failure in steps 2–5, because a cluster left soft-paused cannot compact its log and will eventually fill its disks.
+
+The Elasticsearch path always uses the single allocated backup ID across all parts — web-application indices, Zeebe record indices, Zeebe partitions, and Optimize when attached — so a backup is one coordinated set that [LogicalRestore](logicalrestore.md) locates by one identifier.
 
 The Elasticsearch path requires a snapshot repository registered in Elasticsearch and the same repository name configured on the Camunda components, plus a Zeebe backup store (S3, GCS, Azure, or filesystem); the `CamundaCluster` controller derives both from the cluster's `backupStorageRef`.
 
@@ -52,7 +55,7 @@ graph TD
 
 **What a backup contains.**
 
-- Elasticsearch: the web-application snapshots (`camunda_webapps_<backupId>_<version>_part_N_of_M`) and the Zeebe record snapshot (`camunda_zeebe_records_backup_<backupId>`) in the Elasticsearch snapshot repository, plus the Zeebe partition backup under the same backup ID in the backup store bucket.
+- Elasticsearch: the web-application snapshots (`camunda_webapps_<backupId>_<version>_part_N_of_M`) and the Zeebe record snapshot (`camunda_zeebe_records_backup_<backupId>`) in the Elasticsearch snapshot repository, plus the Zeebe partition backup under the same backup ID in the backup store bucket; when a `CamundaOptimize` is attached to the cluster, also the Optimize snapshots (`camunda_optimize_<backupId>_*`) under the same backup ID.
 - RDBMS: a `pg_dump` archive of the entire logical Camunda database in the backup bucket, restorable together with the cluster's continuous primary-storage backups.
 
 When a Backup CR is deleted, a finalizer removes the stored artifacts: the Elasticsearch snapshots and the Zeebe partition backup via their delete APIs on the Elasticsearch path, or the dump object on the RDBMS path. Cleanup is best-effort when the source cluster no longer exists.
@@ -109,6 +112,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - [BackupSchedule](backupschedule.md) — creates Backups on a cron schedule.
 - [BackupRetention](backupretention.md) — deletes the oldest completed Backups beyond a retained count.
 - [LogicalRestore](logicalrestore.md) — restores a completed Backup into a target cluster via `backupRef`.
+- [CamundaOptimize](camundaoptimize.md) — when one references the backed-up cluster, its analytics indices join the Elasticsearch-path backup set under the same backup ID.
 
 ## Examples
 
