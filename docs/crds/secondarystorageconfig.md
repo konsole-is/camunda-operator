@@ -1,0 +1,127 @@
+# SecondaryStorageConfig
+
+`SecondaryStorageConfig` is the contract CRD that tells an orchestration cluster where its secondary storage lives — an Elasticsearch cluster or a relational database — and how to authenticate against it.
+
+## Purpose
+
+Camunda stores queryable workflow, decision, and task data in secondary storage, and the orchestration cluster needs connection details and credentials for whichever backend you run.
+This cluster-scoped contract CRD carries exactly that data, decoupling the controller that provisions the backend from the controllers that consume it, as described in the [architecture](../architecture.md).
+
+| Role | Who |
+| --- | --- |
+| Producers | `ElasticsearchCluster` (always, via its `secondaryStorageConfig` output name), `Database` (optionally, as a `rdbms`-type contract), a composition layer above, or you, by hand |
+| Consumers | `CamundaCluster` (via `storageRef`), and the backup and restore controllers (`Backup`, `LogicalRestore`, `PointInTimeRestore`), which resolve it through the cluster's `storageRef` |
+
+!!! note "Scope note"
+    Camunda 8.9 itself also accepts `opensearch` and `none` as secondary-storage types; this contract models only the backends the operator integrates with (`elasticsearch` and `rdbms`).
+
+## How it works
+
+The contract has a lightweight validation-only controller: it never provisions anything, it only checks that the contract is usable and reports the result as conditions.
+
+1. The operator watches every `SecondaryStorageConfig` and the Secrets and CRs it references, and re-runs validation whenever any of them change.
+2. For `type: elasticsearch`, it checks that the Secret named by `credentialsSecretRef` exists and contains the configured `usernameKey` and `passwordKey`.
+3. For `type: rdbms`, it checks that the [DatabaseConfig](databaseconfig.md) named by `rdbms.databaseConfigRef` exists.
+4. It sets the `Ready` condition: `Healthy` when all checks pass, `MissingSecret` or `InvalidReference` otherwise.
+
+Consumers read the contract by name and never care who produced it: an `ElasticsearchCluster` refreshing generated credentials, a `Database` wiring up an RDBMS backend, and a manifest you applied by hand all look identical to a consuming controller.
+
+```mermaid
+graph LR
+    ESC[ElasticsearchCluster] -->|creates| SSC[SecondaryStorageConfig]
+    DB[Database] -->|"creates (optional)"| SSC
+    SSC -.->|databaseConfigRef| DBC[DatabaseConfig]
+    SSC -.->|credentialsSecretRef| SEC[Secret]
+    CC[CamundaCluster] -.->|storageRef| SSC
+    BK[Backup] -.->|resolves via storageRef| SSC
+```
+
+## API reference
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: SecondaryStorageConfig
+# Cluster-scoped: metadata has no namespace.
+metadata:
+  name: my-storage-config
+spec:
+  # string enum: elasticsearch | rdbms. Required. Which secondary storage backend this contract describes.
+  type: elasticsearch
+  # object. Required when type is elasticsearch, forbidden otherwise. Elasticsearch connection details.
+  elasticsearch:
+    # string. Required. HTTP(S) endpoint of the Elasticsearch cluster.
+    endpoint: "https://my-cluster-es:9200"
+    # object. Required. Basic-auth user with read/write access to the Camunda indices.
+    credentialsSecretRef:
+      # string. Required. Name of the Secret holding the credentials.
+      name: my-cluster-es-credentials
+      # string. Required. Namespace of the Secret (this CR is cluster-scoped, so there is no default).
+      namespace: my-cluster-ns
+      # string. Required. Key in the Secret holding the plaintext username.
+      usernameKey: username
+      # string. Required. Key in the Secret holding the plaintext password.
+      passwordKey: password
+  # object. Required when type is rdbms, forbidden otherwise. Relational database backend details.
+  rdbms:
+    # string. Required. Name of the DatabaseConfig describing the logical database to use.
+    databaseConfigRef: my-camunda-db
+```
+
+## Status
+
+| Type | Reason | Meaning |
+| --- | --- | --- |
+| `Ready` | `Healthy` | All referenced Secrets and CRs exist and have the required keys. |
+| `Ready` | `MissingSecret` | The Secret named by `credentialsSecretRef` is missing or lacks the configured keys. |
+| `Ready` | `InvalidReference` | The `DatabaseConfig` named by `rdbms.databaseConfigRef` does not exist. |
+
+The operator records the last reconciled generation in `status.observedGeneration`.
+
+## Validation
+
+- `spec.type` must be `elasticsearch` or `rdbms`.
+- Exactly the block matching `spec.type` must be set: `elasticsearch` requires `spec.elasticsearch` and forbids `spec.rdbms`, and vice versa.
+- `spec.elasticsearch.endpoint` must be a valid `http` or `https` URL.
+
+## Relationships
+
+- [DatabaseConfig](databaseconfig.md) — referenced via `spec.rdbms.databaseConfigRef` when `type` is `rdbms`.
+- `ElasticsearchCluster` — creates and refreshes this contract, named by its `secondaryStorageConfig` output field.
+- `Database` — optionally creates a `rdbms`-type contract wired to the `DatabaseConfig` it produces.
+- `CamundaCluster` — consumes this contract via `storageRef`.
+- `Backup`, `LogicalRestore`, `PointInTimeRestore` — resolve this contract through the target cluster's `storageRef`.
+
+See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
+
+## Examples
+
+A minimal manifest for an Elasticsearch backend:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: SecondaryStorageConfig
+metadata:
+  name: my-storage-config
+spec:
+  type: elasticsearch
+  elasticsearch:
+    endpoint: "https://my-cluster-es:9200"
+    credentialsSecretRef:
+      name: my-cluster-es-credentials
+      namespace: my-cluster-ns
+      usernameKey: username
+      passwordKey: password
+```
+
+A realistic manifest for an RDBMS backend, pointing at a [DatabaseConfig](databaseconfig.md) produced by a `Database`:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: SecondaryStorageConfig
+metadata:
+  name: my-storage-config
+spec:
+  type: rdbms
+  rdbms:
+    databaseConfigRef: my-camunda-db
+```
