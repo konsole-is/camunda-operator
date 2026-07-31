@@ -30,7 +30,7 @@ Optimize connects directly to Elasticsearch and never talks to the orchestration
 
 ```mermaid
 graph LR
-    MAC[ManagementAuthConfig] -.->|managementAuthRef| OPT[CamundaOptimize]
+    OPT[CamundaOptimize] -.->|managementAuthRef| MAC[ManagementAuthConfig]
     OPT -.->|clusterRef| CC[CamundaCluster]
     OPT -.->|"SSA-patch spec.zeebe.extraEnv<br/>(enable legacy exporter)"| CC
     CC -.->|storageRef| SSC[SecondaryStorageConfig]

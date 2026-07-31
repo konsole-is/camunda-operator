@@ -27,15 +27,15 @@ All workloads are labeled with `camunda.io/cluster` (this CR's name) and `camund
 
 ```mermaid
 graph TD
-    DCKC[DatabaseConfig keycloak-db] -.->|keycloakDbRef| MC[CamundaManagementCluster]
-    DCID[DatabaseConfig identity-db] -.->|identityDbRef| MC
-    DCWM[DatabaseConfig webmodeler-db] -.->|webModelerDbRef| MC
+    MC[CamundaManagementCluster] -.->|keycloakDbRef| DCKC[DatabaseConfig keycloak-db]
+    MC -.->|identityDbRef| DCID[DatabaseConfig identity-db]
+    MC -.->|webModelerDbRef| DCWM[DatabaseConfig webmodeler-db]
     MC -->|creates| KC["Keycloak CR (reconciled by Keycloak Operator, external)"]
     MC -->|creates| MI[Management Identity]
     MC -->|creates| CON[Console]
     MC -->|creates| WM[Web Modeler]
     MC -->|creates| MAC[ManagementAuthConfig]
-    MAC -.->|managementAuthRef| OPT[CamundaOptimize]
+    OPT[CamundaOptimize] -.->|managementAuthRef| MAC
     CC[CamundaCluster] -.->|self-registers with| CON
 ```
 
