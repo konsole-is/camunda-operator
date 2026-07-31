@@ -96,7 +96,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [CamundaCluster](camundacluster.md) — references this CR via `platformConfigRef` and re-renders workloads when it changes.
 - [CamundaClusterPreset](camundaclusterpreset.md) — a preset baseline may override the default OIDC client credentials for clusters using that preset.
-- `CamundaManagementCluster` — the management plane resolves its auth defaults from this CR and may override them in its own spec.
+- [CamundaManagementCluster](camundamanagementcluster.md) — the management plane resolves its auth defaults from this CR and may override them in its own spec.
 
 A composition layer above may create this CR instead of a human platform operator; consumers resolve it by name either way.
 

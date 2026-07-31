@@ -114,9 +114,9 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) — optional configuration baseline referenced via `presetRef`.
 - [Database](database.md) — the peer storage backend controller for RDBMS secondary storage; an orchestration cluster uses one or the other.
-- `SecondaryStorageConfig` — created and kept current by this controller under the name in `spec.secondaryStorageConfig`.
-- `CamundaCluster` — consumes the created `SecondaryStorageConfig` via its `storageRef`; it never references this CR directly.
-- `PVCAutoResize` — can manage auto-resize annotations on the Elasticsearch data PVCs, discovered via the `camunda.io/cluster` label.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — created and kept current by this controller under the name in `spec.secondaryStorageConfig`.
+- [CamundaCluster](camundacluster.md) — consumes the created [SecondaryStorageConfig](secondarystorageconfig.md) via its `storageRef`; it never references this CR directly.
+- [PVCAutoResize](pvcautoresize.md) — never references this CR directly; the operator locates this ElasticsearchCluster as the producer of the consuming cluster's [SecondaryStorageConfig](secondarystorageconfig.md) (following the [CamundaCluster](camundacluster.md)'s `storageRef`) and patches the auto-resize annotations on the Elasticsearch data PVCs.
 
 The ECK operator is an external prerequisite that reconciles the `Elasticsearch` CR this controller creates.
 

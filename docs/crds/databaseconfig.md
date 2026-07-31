@@ -9,8 +9,8 @@ This cluster-scoped contract CRD carries the logical database's coordinates and 
 
 | Role | Who |
 | --- | --- |
-| Producers | `Database` (as output of bootstrapping a logical database, named by its `databaseConfig` output field), or you, by hand, for databases created outside the operator |
-| Consumers | [SecondaryStorageConfig](secondarystorageconfig.md) (via `rdbms.databaseConfigRef`), `CamundaManagementCluster` (via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef`), and the backup and restore controllers, which resolve it through the consuming cluster's storage chain |
+| Producers | [Database](database.md) (as output of bootstrapping a logical database, named by its `databaseConfig` output field), or you, by hand, for databases created outside the operator |
+| Consumers | [SecondaryStorageConfig](secondarystorageconfig.md) (via `rdbms.databaseConfigRef`), [CamundaManagementCluster](camundamanagementcluster.md) (via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef`), and the backup and restore controllers, which resolve it through the consuming cluster's storage chain |
 
 ## How it works
 
@@ -86,9 +86,9 @@ There are no admission rules beyond schema validation; reference and Secret exis
 
 - [DatabaseServerConfig](databaseserverconfig.md) — referenced via `serverRef` for the server's engine, host, port, and admin credentials.
 - [SecondaryStorageConfig](secondarystorageconfig.md) — references this contract via `rdbms.databaseConfigRef` when the secondary storage type is `rdbms`.
-- `Database` — creates this contract as output of bootstrapping the logical database and its users.
-- `CamundaManagementCluster` — consumes this contract via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` for its component databases.
-- `Backup`, `LogicalRestore`, `PointInTimeRestore` — resolve this contract through the target cluster's storage chain and use `backupCredentialsSecretRef` for dump and restore operations.
+- [Database](database.md) — creates this contract as output of bootstrapping the logical database and its users.
+- [CamundaManagementCluster](camundamanagementcluster.md) — consumes this contract via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` for its component databases.
+- [Backup](backup.md), [LogicalRestore](logicalrestore.md), [PointInTimeRestore](pointintimerestore.md) — resolve this contract through the target cluster's storage chain and use `backupCredentialsSecretRef` for dump and restore operations.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
 

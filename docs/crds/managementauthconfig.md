@@ -9,8 +9,8 @@ This cluster-scoped contract CRD carries the OIDC endpoints and default machine-
 
 | Role | Who |
 | --- | --- |
-| Producers | `CamundaManagementCluster` (as output of reconciling the management plane), a composition layer above (for example a SaaS control plane shipping it directly per environment, without a management cluster), or you, by hand |
-| Consumers | `CamundaOptimize` (via `managementAuthRef`) |
+| Producers | [CamundaManagementCluster](camundamanagementcluster.md) (as output of reconciling the management plane, named by its `managementAuthConfig` output field, defaulting to the CR's name), a composition layer above (for example a SaaS control plane shipping it directly per environment, without a management cluster), or you, by hand |
+| Consumers | [CamundaOptimize](camundaoptimize.md) (via `managementAuthRef`) |
 
 !!! note "Deviation from the original proposal"
     `authUrl` was added: the Camunda 8.9 Management Identity OIDC surface includes the authorization endpoint, which consumers need for browser login redirects.
@@ -83,8 +83,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- `CamundaManagementCluster` — creates this contract as output of reconciling the management plane.
-- `CamundaOptimize` — consumes this contract via `managementAuthRef` to authenticate against Management Identity.
+- [CamundaManagementCluster](camundamanagementcluster.md) — creates this contract as output of reconciling the management plane, named by its `managementAuthConfig` output field (default: the CR's name).
+- [CamundaOptimize](camundaoptimize.md) — consumes this contract via `managementAuthRef` to authenticate against Management Identity.
 - A composition layer above may ship this CR directly per environment; external actors are not documented here.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.

@@ -10,7 +10,7 @@ This cluster-scoped contract CRD carries the server's connection details and an 
 | Role | Who |
 | --- | --- |
 | Producers | A composition layer above (for example a cloud operator that provisions a managed database server), or you, by hand, for self-managed servers |
-| Consumers | `Database` (via `serverRef`, to bootstrap logical databases and users), [DatabaseConfig](databaseconfig.md) (via `serverRef`, to anchor a logical database to its server), and `PointInTimeRestore` (validates the server's `pitr` capability) |
+| Consumers | [Database](database.md) (via `serverRef`, to bootstrap logical databases and users), [DatabaseConfig](databaseconfig.md) (via `serverRef`, to anchor a logical database to its server), and [PointInTimeRestore](pointintimerestore.md) (validates the server's `pitr` capability) |
 
 !!! note "Deviation from the original proposal"
     The proposal listed `engine: postgres | oracle | mariadb`; Camunda 8.9 supports PostgreSQL, Oracle, MariaDB, MySQL, and Microsoft SQL Server as production RDBMS secondary storage (H2 is development-only), but the `Database` controller's SQL bootstrap is postgres-scoped, so the enum is deliberately `postgres`-only for now and may widen as bootstrap support grows.
@@ -86,8 +86,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 ## Relationships
 
 - [DatabaseConfig](databaseconfig.md) — references this contract via `serverRef` to anchor a logical database to its server.
-- `Database` — references this contract via `serverRef` and uses the admin credentials to bootstrap logical databases and users.
-- `PointInTimeRestore` — validates its requested timestamp against this contract's `pitr` capability, resolved through the target cluster's storage chain.
+- [Database](database.md) — references this contract via `serverRef` and uses the admin credentials to bootstrap logical databases and users.
+- [PointInTimeRestore](pointintimerestore.md) — validates its requested timestamp against this contract's `pitr` capability, resolved through the target cluster's storage chain.
 - A composition layer above may create this CR alongside the server it provisions; external actors are not documented here.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.

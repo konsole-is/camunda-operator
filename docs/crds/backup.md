@@ -102,10 +102,10 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- `CamundaCluster` — referenced via `clusterRef`; the operator reads its version, topology, `storageRef`, and `backupStorageRef`.
-- `SecondaryStorageConfig` — resolved via the cluster's `storageRef` to determine the storage type and credentials.
-- `DatabaseConfig` — resolved on the RDBMS path for the logical database and backup credentials.
-- `ObjectStorageConfig` — resolved via the cluster's `backupStorageRef`; the bucket that receives dumps and partition backups.
+- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; the operator reads its version, topology, `storageRef`, and `backupStorageRef`.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — resolved via the cluster's `storageRef` to determine the storage type and credentials.
+- [DatabaseConfig](databaseconfig.md) — resolved on the RDBMS path for the logical database and backup credentials.
+- [ObjectStorageConfig](objectstorageconfig.md) — resolved via the cluster's `backupStorageRef`; the bucket that receives dumps and partition backups.
 - [BackupSchedule](backupschedule.md) — creates Backups on a cron schedule.
 - [BackupRetention](backupretention.md) — deletes the oldest completed Backups beyond a retained count.
 - [LogicalRestore](logicalrestore.md) — restores a completed Backup into a target cluster via `backupRef`.

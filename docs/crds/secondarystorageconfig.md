@@ -9,8 +9,8 @@ This cluster-scoped contract CRD carries exactly that data, decoupling the contr
 
 | Role | Who |
 | --- | --- |
-| Producers | `ElasticsearchCluster` (always, via its `secondaryStorageConfig` output name), `Database` (optionally, as a `rdbms`-type contract), a composition layer above, or you, by hand |
-| Consumers | `CamundaCluster` (via `storageRef`), and the backup and restore controllers (`Backup`, `LogicalRestore`, `PointInTimeRestore`), which resolve it through the cluster's `storageRef` |
+| Producers | [ElasticsearchCluster](elasticsearchcluster.md) (always, via its `secondaryStorageConfig` output name), [Database](database.md) (optionally, as a `rdbms`-type contract), a composition layer above, or you, by hand |
+| Consumers | [CamundaCluster](camundacluster.md) (via `storageRef`), and the backup and restore controllers ([Backup](backup.md), [LogicalRestore](logicalrestore.md), [PointInTimeRestore](pointintimerestore.md)), which resolve it through the cluster's `storageRef` |
 
 !!! note "Scope note"
     Camunda 8.9 itself also accepts `opensearch` and `none` as secondary-storage types; this contract models only the backends the operator integrates with (`elasticsearch` and `rdbms`).
@@ -86,10 +86,10 @@ The operator records the last reconciled generation in `status.observedGeneratio
 ## Relationships
 
 - [DatabaseConfig](databaseconfig.md) — referenced via `spec.rdbms.databaseConfigRef` when `type` is `rdbms`.
-- `ElasticsearchCluster` — creates and refreshes this contract, named by its `secondaryStorageConfig` output field.
-- `Database` — optionally creates a `rdbms`-type contract wired to the `DatabaseConfig` it produces.
-- `CamundaCluster` — consumes this contract via `storageRef`.
-- `Backup`, `LogicalRestore`, `PointInTimeRestore` — resolve this contract through the target cluster's `storageRef`.
+- [ElasticsearchCluster](elasticsearchcluster.md) — creates and refreshes this contract, named by its `secondaryStorageConfig` output field.
+- [Database](database.md) — optionally creates a `rdbms`-type contract wired to the [DatabaseConfig](databaseconfig.md) it produces.
+- [CamundaCluster](camundacluster.md) — consumes this contract via `storageRef`.
+- [Backup](backup.md), [LogicalRestore](logicalrestore.md), [PointInTimeRestore](pointintimerestore.md) — resolve this contract through the target cluster's `storageRef`.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
 

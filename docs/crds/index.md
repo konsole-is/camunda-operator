@@ -7,25 +7,25 @@ Each CRD has its own reference page following a common structure: purpose, contr
 
 | Kind | File | Scope | Controller | Purpose |
 | --- | --- | --- | --- | --- |
-| CamundaCluster | `camundacluster.md` | Namespaced | Active | Core orchestration cluster |
-| CamundaPlatformConfig | `camundaplatformconfig.md` | Cluster | Active | Shared OIDC, license, image registry |
-| CamundaClusterPreset | `camundaclusterpreset.md` | Cluster | Passive | Standardized cluster sizing |
-| ElasticsearchCluster | `elasticsearchcluster.md` | Namespaced | Active | Elasticsearch lifecycle via ECK |
-| ElasticsearchClusterPreset | `elasticsearchclusterpreset.md` | Cluster | Passive | Standardized ES sizing |
-| Database | `database.md` | Cluster | Active | Logical database and user bootstrapping |
-| DatabaseServerConfig | `databaseserverconfig.md` | Cluster | Active (validation) | Contract: database server connection |
-| DatabaseConfig | `databaseconfig.md` | Cluster | Active (validation) | Contract: logical database connection |
-| SecondaryStorageConfig | `secondarystorageconfig.md` | Cluster | Active (validation) | Contract: secondary storage backend |
-| ObjectStorageConfig | `objectstorageconfig.md` | Cluster | Active (validation) | Contract: bucket storage |
-| ManagementAuthConfig | `managementauthconfig.md` | Cluster | Active (validation) | Contract: Management Identity OIDC |
-| Backup | `backup.md` | Namespaced | Active | One backup operation |
-| BackupSchedule | `backupschedule.md` | Namespaced | Active | Cron-driven Backup creation |
-| BackupRetention | `backupretention.md` | Namespaced | Active | Old-backup deletion |
-| PointInTimeRestore | `pointintimerestore.md` | Namespaced | Active | RDBMS in-place PITR |
-| LogicalRestore | `logicalrestore.md` | Namespaced | Active | Cross-cluster restore from a Backup |
-| CamundaOptimize | `camundaoptimize.md` | Namespaced | Active | Optimize deployment per cluster |
-| CamundaManagementCluster | `camundamanagementcluster.md` | Cluster | Active | Management plane (Console, Web Modeler, Identity) |
-| PVCAutoResize | `pvcautoresize.md` | Namespaced | Active | topolvm auto-resize annotations |
+| CamundaCluster | [camundacluster.md](camundacluster.md) | Namespaced | Active | Core orchestration cluster |
+| CamundaPlatformConfig | [camundaplatformconfig.md](camundaplatformconfig.md) | Cluster | Active | Shared OIDC, license, image registry |
+| CamundaClusterPreset | [camundaclusterpreset.md](camundaclusterpreset.md) | Cluster | Passive | Standardized cluster sizing |
+| ElasticsearchCluster | [elasticsearchcluster.md](elasticsearchcluster.md) | Namespaced | Active | Elasticsearch lifecycle via ECK |
+| ElasticsearchClusterPreset | [elasticsearchclusterpreset.md](elasticsearchclusterpreset.md) | Cluster | Passive | Standardized ES sizing |
+| Database | [database.md](database.md) | Cluster | Active | Logical database and user bootstrapping |
+| DatabaseServerConfig | [databaseserverconfig.md](databaseserverconfig.md) | Cluster | Active (validation) | Contract: database server connection |
+| DatabaseConfig | [databaseconfig.md](databaseconfig.md) | Cluster | Active (validation) | Contract: logical database connection |
+| SecondaryStorageConfig | [secondarystorageconfig.md](secondarystorageconfig.md) | Cluster | Active (validation) | Contract: secondary storage backend |
+| ObjectStorageConfig | [objectstorageconfig.md](objectstorageconfig.md) | Cluster | Active (validation) | Contract: bucket storage |
+| ManagementAuthConfig | [managementauthconfig.md](managementauthconfig.md) | Cluster | Active (validation) | Contract: Management Identity OIDC |
+| Backup | [backup.md](backup.md) | Namespaced | Active | One backup operation |
+| BackupSchedule | [backupschedule.md](backupschedule.md) | Namespaced | Active | Cron-driven Backup creation |
+| BackupRetention | [backupretention.md](backupretention.md) | Namespaced | Active | Old-backup deletion |
+| PointInTimeRestore | [pointintimerestore.md](pointintimerestore.md) | Namespaced | Active | RDBMS in-place PITR |
+| LogicalRestore | [logicalrestore.md](logicalrestore.md) | Namespaced | Active | Cross-cluster restore from a Backup |
+| CamundaOptimize | [camundaoptimize.md](camundaoptimize.md) | Namespaced | Active | Optimize deployment per cluster |
+| CamundaManagementCluster | [camundamanagementcluster.md](camundamanagementcluster.md) | Cluster | Active | Management plane (Console, Web Modeler, Identity) |
+| PVCAutoResize | [pvcautoresize.md](pvcautoresize.md) | Namespaced | Active | topolvm auto-resize annotations |
 
 ## Reconciler dependency graph
 
