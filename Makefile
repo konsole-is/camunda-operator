@@ -304,3 +304,13 @@ helm-history: ## Show Helm release history.
 .PHONY: helm-rollback
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+##@ Documentation
+
+.PHONY: docs-serve
+docs-serve: ## Serve the documentation site locally with live reload.
+	mkdocs serve
+
+.PHONY: docs-build
+docs-build: ## Build the documentation site in strict mode.
+	mkdocs build --strict

@@ -1,0 +1,127 @@
+# ElasticsearchClusterPreset
+
+Cluster-scoped, passive baseline configuration for `ElasticsearchCluster` resources.
+
+## Purpose
+
+`ElasticsearchClusterPreset` captures a standardized Elasticsearch sizing — version, node count, resources, storage, scheduling — as reusable data, so that individual [ElasticsearchCluster](elasticsearchcluster.md) resources stay small and consistent.
+It is a passive data CRD: no controller reconciles it and it provisions nothing.
+You create presets directly, or a composition layer above may install a standard set of sizes (for example `small`, `standard`, `large`).
+
+## How it works
+
+`ElasticsearchClusterPreset` has no controller; consumers resolve and merge it instead.
+
+1. An `ElasticsearchCluster` names a preset through its `spec.presetRef` (a plain string, since presets are cluster-scoped).
+2. The `ElasticsearchCluster` controller reads `spec.cluster` from the preset as the full configuration baseline.
+3. Any field set inline on the `ElasticsearchCluster` overrides the preset's value for that field wholesale; fields left unset inherit from the preset.
+4. `scheduling` is the explicit exception spelled out for emphasis: an inline `scheduling` block replaces the preset's entire scheduling block, it is never merged field by field.
+5. Editing a preset flows to every `ElasticsearchCluster` that references it on their next reconciliation.
+
+```mermaid
+graph LR
+    ESC[ElasticsearchCluster] -.->|presetRef| ESCP[ElasticsearchClusterPreset]
+```
+
+!!! note "Deviation from the original proposal"
+    The proposal let presets carry an `autoResize` block from which the preset machinery would create `PVCAutoResize` resources.
+    Presets are passive data with no controller, so the `autoResize` field does not exist; create a `PVCAutoResize` explicitly when you need volume auto-resizing.
+
+## API reference
+
+`spec.cluster` reuses the `ElasticsearchCluster` spec type directly, so the two never drift apart.
+The instance-bound fields of that type — `presetRef`, `secondaryStorageConfig`, `suspend`, and `monitoring` — must be left unset inside a preset.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchClusterPreset
+metadata:
+  name: standard
+spec:
+  # object (ElasticsearchCluster spec type). Required. The full configuration baseline consumers inherit.
+  cluster:
+    # string. Optional. Elasticsearch version to deploy; Camunda 8.9 supports 8.19+ and 9.2+.
+    version: "9.2.4"
+    # integer. Optional. Number of Elasticsearch nodes.
+    replicas: 3
+    # object (corev1.ResourceRequirements). Optional. CPU and memory for each Elasticsearch node.
+    resources:
+      requests: { cpu: "1", memory: "2Gi" }
+      limits: { memory: "2Gi" }
+    # string (resource quantity). Optional. Size of each node's data volume.
+    storageSize: "64Gi"
+    # string. Optional, default: the cluster's default StorageClass. StorageClass for the data volumes.
+    storageClassName: "ssd"
+    # list (corev1.EnvVar). Optional. Extra environment variables for every Elasticsearch node.
+    extraEnv: []
+    # list (corev1.EnvFromSource). Optional. Extra environment sources (ConfigMaps, Secrets) for every node.
+    extraEnvFrom: []
+    # map[string]string. Optional. Extra labels applied to the Elasticsearch pods.
+    podLabels: {}
+    # map[string]string. Optional. Extra annotations applied to the Elasticsearch pods.
+    podAnnotations: {}
+    # object. Optional. Scheduling constraints; replaced entirely when the referencing ElasticsearchCluster sets its own scheduling block.
+    scheduling:
+      # object (corev1.NodeAffinity). Optional. Node affinity rules.
+      nodeAffinity: {}
+      # object (corev1.PodAffinity). Optional. Pod affinity rules.
+      podAffinity: {}
+      # list (corev1.Toleration). Optional. Tolerations for the pods.
+      tolerations: []
+```
+
+## Status
+
+`ElasticsearchClusterPreset` is passive data: no controller reconciles it, so it reports no conditions and no `status.observedGeneration`.
+Problems with a preset (a dangling `presetRef`, or a merge that still lacks required fields) surface on the referencing `ElasticsearchCluster`'s conditions.
+
+## Validation
+
+- `spec.cluster` must not set the instance-bound fields `presetRef` (presets cannot chain), `secondaryStorageConfig`, `suspend`, or `monitoring`.
+- No other rules beyond schema validation; completeness of the merged configuration is validated on the consuming `ElasticsearchCluster`.
+
+## Relationships
+
+- [ElasticsearchCluster](elasticsearchcluster.md) — references this preset via `presetRef` and uses `spec.cluster` as its configuration baseline.
+
+A composition layer above may install and maintain the standard preset catalog.
+
+## Examples
+
+A minimal manifest:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchClusterPreset
+metadata:
+  name: standard
+spec:
+  cluster:
+    version: "9.2.4"
+    replicas: 3
+    storageSize: "64Gi"
+```
+
+A realistic manifest:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchClusterPreset
+metadata:
+  name: large
+spec:
+  cluster:
+    version: "9.2.4"
+    replicas: 5
+    resources:
+      requests: { cpu: "4", memory: "8Gi" }
+      limits: { memory: "8Gi" }
+    storageSize: "256Gi"
+    storageClassName: "ssd"
+    scheduling:
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: elasticsearch
+          effect: NoSchedule
+```

@@ -1,0 +1,98 @@
+site_name: Camunda Operator
+site_description: Core Kubernetes operator for the Camunda platform
+repo_url: https://github.com/konsole-is/camunda-operator
+repo_name: konsole-is/camunda-operator
+edit_uri: edit/main/docs/
+
+# docs/superpowers/ is internal working material and never published.
+exclude_docs: |
+  superpowers/
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - CRDs:
+      - Overview: crds/index.md
+      - Cluster:
+          - CamundaCluster: crds/camundacluster.md
+          - CamundaPlatformConfig: crds/camundaplatformconfig.md
+          - CamundaClusterPreset: crds/camundaclusterpreset.md
+      - Storage:
+          - ElasticsearchCluster: crds/elasticsearchcluster.md
+          - ElasticsearchClusterPreset: crds/elasticsearchclusterpreset.md
+          - Database: crds/database.md
+      - Contracts:
+          - SecondaryStorageConfig: crds/secondarystorageconfig.md
+          - ObjectStorageConfig: crds/objectstorageconfig.md
+          - DatabaseServerConfig: crds/databaseserverconfig.md
+          - DatabaseConfig: crds/databaseconfig.md
+          - ManagementAuthConfig: crds/managementauthconfig.md
+      - Backup & Restore:
+          - Backup: crds/backup.md
+          - BackupSchedule: crds/backupschedule.md
+          - BackupRetention: crds/backupretention.md
+          - LogicalRestore: crds/logicalrestore.md
+          - PointInTimeRestore: crds/pointintimerestore.md
+      - Management & Extensions:
+          - CamundaOptimize: crds/camundaoptimize.md
+          - CamundaManagementCluster: crds/camundamanagementcluster.md
+          - PVCAutoResize: crds/pvcautoresize.md
