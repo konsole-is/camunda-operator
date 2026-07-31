@@ -42,7 +42,10 @@ status: foundational-wave
 
 ## Bubble-up log
 
-- _No concerns yet._
+- **2026-07-31 — cross-batch links break per-batch strict builds** (raised by #2's subagent). mkdocs strict fails on links to pages another unmerged batch owns. Resolution: batches write real links only to their own batch's pages plus `index.md`/`architecture.md`; other kinds are named in backticks; Phase 3 (plan Task 7) converts backticked names to links once all 19 pages exist. Propagation: goes into every Phase 2 dispatch prompt; plan Task 7 Step 1 covers the linkify pass.
+- **2026-07-31 — `site/` added to `.gitignore`** by #2 (mkdocs build output; not in plan's file list). Accepted; batches inherit it.
+- **2026-07-31 — protected-branch guard keys off parent checkout** — sub-worktree commits must use `git -C <worktree>` instead of `cd` + `git commit`. Propagation: goes into every Phase 2 dispatch prompt.
+- **2026-07-31 — empty nav groups pass strict** — mkdocs.yml ships all five CRD nav groups as empty lists; each batch replaces only its own group's `[]`. Propagation: Phase 2 dispatch prompts.
 
 ## Pending snapshot
 
