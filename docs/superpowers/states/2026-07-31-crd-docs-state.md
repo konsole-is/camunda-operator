@@ -6,8 +6,10 @@ tracking_issue: #1
 feature_branch: feature/crd-docs
 feature_worktree: .claude/worktrees/crd-docs
 sub_pr_approval: autonomous
+sub_pr_review_loop: off
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # CRD documentation foundation — orchestration state
