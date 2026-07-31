@@ -77,6 +77,11 @@ nav:
           - ElasticsearchCluster: crds/elasticsearchcluster.md
           - ElasticsearchClusterPreset: crds/elasticsearchclusterpreset.md
           - Database: crds/database.md
-      - Contracts: []
+      - Contracts:
+          - SecondaryStorageConfig: crds/secondarystorageconfig.md
+          - ObjectStorageConfig: crds/objectstorageconfig.md
+          - DatabaseServerConfig: crds/databaseserverconfig.md
+          - DatabaseConfig: crds/databaseconfig.md
+          - ManagementAuthConfig: crds/managementauthconfig.md
       - Backup & Restore: []
       - Management & Extensions: []
