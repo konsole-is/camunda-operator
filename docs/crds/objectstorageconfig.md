@@ -10,7 +10,7 @@ This cluster-scoped contract CRD carries the bucket's identity, location, and th
 | Role | Who |
 | --- | --- |
 | Producers | A composition layer above (for example a cloud operator that provisions the bucket), or you, by hand |
-| Consumers | `CamundaCluster` (via `backupStorageRef` and `documentStorageRef`), and the backup and restore controllers (`Backup`, `LogicalRestore`), which resolve the bucket through the cluster's `backupStorageRef` |
+| Consumers | [CamundaCluster](camundacluster.md) (via `backupStorageRef` and `documentStorageRef`), and the backup and restore controllers ([Backup](backup.md), [LogicalRestore](logicalrestore.md)), which resolve the bucket through the cluster's `backupStorageRef` |
 
 ## How it works
 
@@ -69,8 +69,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- `CamundaCluster` — consumes this contract via `backupStorageRef` (backup data) and `documentStorageRef` (document storage).
-- `Backup` and `LogicalRestore` — resolve the backup bucket through the target cluster's `backupStorageRef`.
+- [CamundaCluster](camundacluster.md) — consumes this contract via `backupStorageRef` (backup data) and `documentStorageRef` (document storage).
+- [Backup](backup.md) and [LogicalRestore](logicalrestore.md) — resolve the backup bucket through the target cluster's `backupStorageRef`.
 - A composition layer above may create this CR alongside the bucket it provisions; external actors are not documented here.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.

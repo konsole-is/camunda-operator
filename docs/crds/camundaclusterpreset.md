@@ -122,7 +122,7 @@ Reference errors surface on the consumer instead — a [CamundaCluster](camundac
 
 - [CamundaCluster](camundacluster.md) — references this CR via `presetRef` and inherits its baseline under the merge rules above.
 - [CamundaPlatformConfig](camundaplatformconfig.md) — a preset's `auth` baseline sits between the platform config's environment defaults and a cluster's own `auth` override.
-- `PVCAutoResize` — never created by presets; create it explicitly per cluster (deviation from the original proposal, which had preset-driven auto-resize).
+- [PVCAutoResize](pvcautoresize.md) — never created by presets; create it explicitly per cluster (deviation from the original proposal, which had preset-driven auto-resize).
 
 A composition layer above may ship a standard catalog of presets for its clusters to reference.
 

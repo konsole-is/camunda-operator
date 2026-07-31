@@ -19,7 +19,7 @@ It pairs with a [BackupSchedule](backupschedule.md): the schedule produces backu
 
 ```mermaid
 graph LR
-    BR[BackupRetention] -->|deletes oldest Completed| B[Backup]
+    BR[BackupRetention] -.->|deletes oldest Completed| B[Backup]
     BR -.->|clusterRef| CC[CamundaCluster]
     B -.->|clusterRef| CC
 ```
@@ -61,7 +61,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [Backup](backup.md) — the CRs this controller deletes once they exceed the retained count.
 - [BackupSchedule](backupschedule.md) — produces the recurring Backups this CR prunes.
-- `CamundaCluster` — referenced via `clusterRef`; scopes which Backups are considered.
+- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; scopes which Backups are considered.
 
 ## Examples
 

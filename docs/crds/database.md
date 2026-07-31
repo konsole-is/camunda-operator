@@ -92,13 +92,13 @@ The operator records the last reconciled generation in `status.observedGeneratio
 ## Relationships
 
 - [ElasticsearchCluster](elasticsearchcluster.md) — the peer storage backend controller for Elasticsearch secondary storage; an orchestration cluster uses one or the other.
-- `DatabaseServerConfig` — referenced via `serverRef` for connection details and admin credentials.
-- `DatabaseConfig` — created and kept current by this controller under the name in `spec.databaseConfig`.
-- `SecondaryStorageConfig` — optionally created with `type: rdbms` under the name in `spec.secondaryStorageConfig`; a `CamundaCluster` consumes it via its `storageRef`.
-- `CamundaManagementCluster` — its `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` consume `DatabaseConfig` CRs typically produced by `Database` resources.
-- `PointInTimeRestore` — its dedicated-server validation counts the `Database` CRs sharing a `serverRef`; point-in-time restore requires the server to host exactly one.
+- [DatabaseServerConfig](databaseserverconfig.md) — referenced via `serverRef` for connection details and admin credentials.
+- [DatabaseConfig](databaseconfig.md) — created and kept current by this controller under the name in `spec.databaseConfig`.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — optionally created with `type: rdbms` under the name in `spec.secondaryStorageConfig`; a [CamundaCluster](camundacluster.md) consumes it via its `storageRef`.
+- [CamundaManagementCluster](camundamanagementcluster.md) — its `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` consume [DatabaseConfig](databaseconfig.md) CRs typically produced by `Database` resources.
+- [PointInTimeRestore](pointintimerestore.md) — its dedicated-server validation counts the `Database` CRs sharing a `serverRef`; point-in-time restore requires the server to host exactly one.
 
-The PostgreSQL server itself is external: cloud-managed or self-hosted, it is provisioned outside this operator and described by the `DatabaseServerConfig`.
+The PostgreSQL server itself is external: cloud-managed or self-hosted, it is provisioned outside this operator and described by the [DatabaseServerConfig](databaseserverconfig.md).
 
 ## Examples
 

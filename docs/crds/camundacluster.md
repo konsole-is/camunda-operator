@@ -34,7 +34,7 @@ This supports every deployment model from all-in-one (everything embedded in zee
 1. The operator resolves `presetRef` (if set) and computes the effective spec under the merge rules documented in [CamundaClusterPreset](camundaclusterpreset.md).
 2. The operator resolves `platformConfigRef`, the required `storageRef`, and the optional `backupStorageRef` / `documentStorageRef`; a missing target sets `Ready` to `False` with reason `InvalidReference`.
 3. The operator renders the workloads for the effective topology: the zeebe StatefulSet, a Deployment per standalone component, Services, and the configuration wiring — all expressed as unified-configuration environment variables on the single Camunda image (Spring Boot relaxed binding, e.g. `CAMUNDA_MODE`, `CAMUNDA_WEBAPPS_ENABLED`, `CAMUNDA_SECURITY_AUTHENTICATION_*`) — with auth from the platform config, secondary storage from the resolved `SecondaryStorageConfig`, and `externalUrl` as the base URL for OIDC redirects and web application links. The operator creates no Ingress resources; you (or a composition layer above) route traffic to `externalUrl`.
-4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources.
+4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources. The operator uses the component values `zeebe`, `gateway`, `operate`, `tasklist`, `identity`, and `connectors`.
 5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `camunda-operator/camundacluster`, leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
 6. The operator watches workload health into per-component conditions and the aggregate `Ready` condition.
 7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md) and contract CRDs, so changes to them roll out to the cluster without touching this CR.
@@ -253,13 +253,13 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [CamundaPlatformConfig](camundaplatformconfig.md) — referenced via `platformConfigRef` for auth, license, and image registry defaults.
 - [CamundaClusterPreset](camundaclusterpreset.md) — referenced via `presetRef` for a standardized baseline spec.
-- `SecondaryStorageConfig` — referenced via `storageRef` (required); the contract CRD describing the secondary storage backend: Elasticsearch (8.19 or later for Camunda 8.9) or RDBMS (GA in Camunda 8.9).
-- `ObjectStorageConfig` — referenced via `backupStorageRef` and `documentStorageRef` for bucket storage; it carries no credentials, and bucket access flows from the workload identity configured via `spec.serviceAccount.annotations`.
-- `Backup`, `BackupSchedule`, `BackupRetention` — reference this CR via `clusterRef` to back it up.
-- `LogicalRestore` — references this CR via `targetClusterRef`; requires the cluster to be suspended.
-- `PointInTimeRestore` — references this CR via `clusterRef`; relies on the continuous primary-storage backup this controller enables for RDBMS-backed clusters.
-- `CamundaOptimize` — references this CR via `clusterRef` and patches `spec.zeebe.extraEnv` via SSA under its own field manager; only supported for clusters whose secondary storage is Elasticsearch or OpenSearch.
-- `PVCAutoResize` — references this CR via `clusterRef` and discovers its PVCs through the `camunda.io/cluster` label.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — referenced via `storageRef` (required); the contract CRD describing the secondary storage backend: Elasticsearch (8.19 or later for Camunda 8.9) or RDBMS (GA in Camunda 8.9).
+- [ObjectStorageConfig](objectstorageconfig.md) — referenced via `backupStorageRef` and `documentStorageRef` for bucket storage; it carries no credentials, and bucket access flows from the workload identity configured via `spec.serviceAccount.annotations`.
+- [Backup](backup.md), [BackupSchedule](backupschedule.md), [BackupRetention](backupretention.md) — reference this CR via `clusterRef` to back it up.
+- [LogicalRestore](logicalrestore.md) — references this CR via `targetClusterRef`; requires the cluster to be suspended.
+- [PointInTimeRestore](pointintimerestore.md) — references this CR via `clusterRef`; relies on the continuous primary-storage backup this controller enables for RDBMS-backed clusters.
+- [CamundaOptimize](camundaoptimize.md) — references this CR via `clusterRef` and patches `spec.zeebe.extraEnv` via SSA under its own field manager; only supported for clusters whose secondary storage is Elasticsearch or OpenSearch.
+- [PVCAutoResize](pvcautoresize.md) — references this CR via `clusterRef` and discovers its PVCs through the `camunda.io/cluster` label.
 
 A composition layer above may create this CR; external ingress management routes traffic to `externalUrl`.
 

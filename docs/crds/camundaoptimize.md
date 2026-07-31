@@ -140,11 +140,11 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- `CamundaCluster` — referenced via `clusterRef`; the operator SSA-patches `spec.zeebe.extraEnv` on it to enable the legacy Zeebe exporter, and never touches anything else on the cluster.
-- `ManagementAuthConfig` — referenced via `managementAuthRef`; provides the Management Identity OIDC configuration Optimize authenticates with.
-- `SecondaryStorageConfig` — resolved indirectly through the referenced cluster's `storageRef`; provides the Elasticsearch endpoint and credentials Optimize reads from and writes to.
-- [CamundaManagementCluster](camundamanagementcluster.md) — produces the `ManagementAuthConfig` this CR consumes in self-managed installations.
-- Elasticsearch itself is an external system reached through the contract; the ECK-managed cluster behind it is documented on the `ElasticsearchCluster` page.
+- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; the operator SSA-patches `spec.zeebe.extraEnv` on it to enable the legacy Zeebe exporter, and never touches anything else on the cluster.
+- [ManagementAuthConfig](managementauthconfig.md) — referenced via `managementAuthRef`; provides the Management Identity OIDC configuration Optimize authenticates with.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — resolved indirectly through the referenced cluster's `storageRef`; provides the Elasticsearch endpoint and credentials Optimize reads from and writes to.
+- [CamundaManagementCluster](camundamanagementcluster.md) — produces the [ManagementAuthConfig](managementauthconfig.md) this CR consumes in self-managed installations.
+- Elasticsearch itself is an external system reached through the contract; the ECK-managed cluster behind it is documented on the [ElasticsearchCluster](elasticsearchcluster.md) page.
 
 ## Examples
 

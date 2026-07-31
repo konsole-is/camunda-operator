@@ -27,7 +27,7 @@ graph TD
     CC -.->|storageRef| SSC[SecondaryStorageConfig]
     SSC -.->|databaseConfigRef| DBC[DatabaseConfig]
     DBC -.->|serverRef| DBS["DatabaseServerConfig (pitr.enabled)"]
-    PITR -->|"WAL replay to timestamp"| PG["PostgreSQL server (external)"]
+    PITR -.->|"WAL replay to timestamp"| PG["PostgreSQL server (external)"]
     PITR -->|per broker, --to timestamp| RJ[restore app Jobs]
 ```
 
@@ -81,11 +81,11 @@ The operator records the last reconciled generation in `status.observedGeneratio
 ## Relationships
 
 - [LogicalRestore](logicalrestore.md) — the backup-based alternative that works for both storage types and across clusters.
-- `CamundaCluster` — referenced via `clusterRef`; must be suspended by its owner for the duration of the restore, and its controller auto-enables continuous primary-storage backups when the storage chain is PITR-enabled.
-- `SecondaryStorageConfig` — resolved via the cluster's `storageRef`; must be `type: rdbms`.
-- `DatabaseConfig` — resolved for the logical database and its `serverRef`.
-- `DatabaseServerConfig` — declares `pitr.enabled` and the retention period; subject to the dedicated-server rule.
-- `ObjectStorageConfig` — resolved via the cluster's `backupStorageRef`; holds the continuous primary-storage backups.
+- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; must be suspended by its owner for the duration of the restore, and its controller auto-enables continuous primary-storage backups when the storage chain is PITR-enabled.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — resolved via the cluster's `storageRef`; must be `type: rdbms`.
+- [DatabaseConfig](databaseconfig.md) — resolved for the logical database and its `serverRef`.
+- [DatabaseServerConfig](databaseserverconfig.md) — declares `pitr.enabled` and the retention period; subject to the dedicated-server rule.
+- [ObjectStorageConfig](objectstorageconfig.md) — resolved via the cluster's `backupStorageRef`; holds the continuous primary-storage backups.
 
 ## Examples
 

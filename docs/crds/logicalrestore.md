@@ -85,10 +85,10 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [Backup](backup.md) — referenced via `backupRef`; provides the artifacts and the backup ID.
 - [PointInTimeRestore](pointintimerestore.md) — the in-place, timestamp-precise alternative for PITR-enabled RDBMS clusters.
-- `CamundaCluster` — referenced via `targetClusterRef`; must be suspended by its owner for the duration of the restore.
-- `SecondaryStorageConfig` — resolved via the target's `storageRef` for storage type and credentials.
-- `DatabaseConfig` — resolved on the RDBMS path for the target logical database and backup credentials.
-- `ObjectStorageConfig` — resolved via the target's `backupStorageRef`; must contain the backup's artifacts.
+- [CamundaCluster](camundacluster.md) — referenced via `targetClusterRef`; must be suspended by its owner for the duration of the restore.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — resolved via the target's `storageRef` for storage type and credentials.
+- [DatabaseConfig](databaseconfig.md) — resolved on the RDBMS path for the target logical database and backup credentials.
+- [ObjectStorageConfig](objectstorageconfig.md) — resolved via the target's `backupStorageRef`; must contain the backup's artifacts.
 
 ## Examples
 

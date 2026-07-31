@@ -98,9 +98,9 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- `CamundaCluster` — referenced via `clusterRef`; its Zeebe broker PVCs (labeled `camunda.io/cluster` and `camunda.io/component: zeebe`) are the primary patch targets, and its `storageRef` is the path to the Elasticsearch PVCs.
-- `ElasticsearchCluster` — not referenced directly; the operator locates it as the producer of the cluster's `SecondaryStorageConfig` and patches its data PVCs when the `elasticsearch` block is set.
-- `SecondaryStorageConfig` — resolved through the cluster's `storageRef` to link the orchestration cluster to the `ElasticsearchCluster` backing it.
+- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; its Zeebe broker PVCs (labeled `camunda.io/cluster` and `camunda.io/component: zeebe`) are the primary patch targets, and its `storageRef` is the path to the Elasticsearch PVCs.
+- [ElasticsearchCluster](elasticsearchcluster.md) — not referenced directly; the operator locates it as the producer of the cluster's [SecondaryStorageConfig](secondarystorageconfig.md) and patches its data PVCs when the `elasticsearch` block is set.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — resolved through the cluster's `storageRef` to link the orchestration cluster to the [ElasticsearchCluster](elasticsearchcluster.md) backing it.
 - The topolvm pvc-autoresizer is an external prerequisite that performs the actual volume expansion; a composition layer above may create this CR alongside the cluster it sizes.
 
 ## Examples

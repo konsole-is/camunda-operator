@@ -65,7 +65,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [Backup](backup.md) — created by this CR on each trigger.
 - [BackupRetention](backupretention.md) — complements this CR by deleting the oldest completed Backups.
-- `CamundaCluster` — referenced via `clusterRef`; its suspend state gates trigger execution.
+- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; its suspend state gates trigger execution.
 
 ## Examples
 

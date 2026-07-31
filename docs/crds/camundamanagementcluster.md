@@ -23,7 +23,8 @@ The operator reconciles a `CamundaManagementCluster` in the following steps:
 7. Create or refresh the cluster-scoped `ManagementAuthConfig` output CR for consumers such as [CamundaOptimize](camundaoptimize.md): the Management Identity `baseUrl`, the OIDC endpoints (`issuerUrl`, the optional `issuerBackendUrl` defaulting to `issuerUrl`, `authUrl`, `tokenUrl`, `jwksUrl`), and the default M2M client credentials (`clientId`, `audience`, and a `clientSecretRef` written with explicit `name`, `namespace`, and `key`, since the contract is cluster-scoped and has no namespace to default to).
 8. Update per-component conditions, the aggregate `Ready` condition, and `status.observedGeneration`.
 
-All workloads are labeled with `camunda.io/cluster` (this CR's name) and `camunda.io/component` (`keycloak`, `identity`, `console`, `web-modeler`).
+All workloads are labeled with `camunda.io/cluster` (this CR's name) and `camunda.io/component` (`keycloak`, `management-identity`, `console`, `web-modeler`).
+The Management Identity workloads use the component value `management-identity` rather than `identity`, because `identity` already names the orchestration cluster's embedded Identity application on [CamundaCluster](camundacluster.md) workloads.
 
 ```mermaid
 graph TD
@@ -127,12 +128,12 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- `DatabaseConfig` — referenced three times via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef`; each provides connection details and credentials for one logical PostgreSQL database.
-- `ManagementAuthConfig` — created by this controller as its output contract, named by `spec.managementAuthConfig`.
-- `CamundaPlatformConfig` — referenced via `platformConfigRef` for platform-wide auth and license defaults, overridable through `spec.auth`.
-- [CamundaOptimize](camundaoptimize.md) — consumes the `ManagementAuthConfig` this controller produces via its `managementAuthRef`.
-- `CamundaCluster` — never referenced here; clusters discover Console themselves through self-registration.
-- The Keycloak Operator is an external prerequisite that reconciles the `Keycloak` CR this controller creates; a composition layer above may create this CR together with `Database` CRs that bootstrap the three databases.
+- [DatabaseConfig](databaseconfig.md) — referenced three times via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef`; each provides connection details and credentials for one logical PostgreSQL database.
+- [ManagementAuthConfig](managementauthconfig.md) — created by this controller as its output contract, named by `spec.managementAuthConfig`.
+- [CamundaPlatformConfig](camundaplatformconfig.md) — referenced via `platformConfigRef` for platform-wide auth and license defaults, overridable through `spec.auth`.
+- [CamundaOptimize](camundaoptimize.md) — consumes the [ManagementAuthConfig](managementauthconfig.md) this controller produces via its `managementAuthRef`.
+- [CamundaCluster](camundacluster.md) — never referenced here; clusters discover Console themselves through self-registration.
+- The Keycloak Operator is an external prerequisite that reconciles the `Keycloak` CR this controller creates; a composition layer above may create this CR together with [Database](database.md) CRs that bootstrap the three databases.
 
 ## Examples
 
