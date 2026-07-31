@@ -29,12 +29,12 @@ Deleting a `Database` removes the `DatabaseConfig`, the optional `SecondaryStora
 
 ```mermaid
 graph TD
-    DBSC[DatabaseServerConfig] -.->|serverRef, admin credentials| DB[Database]
+    DB[Database] -.->|"serverRef (admin credentials)"| DBSC[DatabaseServerConfig]
     DB -->|creates| SEC["Credential Secrets"]
     DB -->|creates| DBC[DatabaseConfig]
     DB -->|"creates (optional)"| SSC["SecondaryStorageConfig (type rdbms)"]
     DB -->|SQL: CREATE DATABASE / CREATE USER| PG["PostgreSQL server (external)"]
-    SSC -.->|storageRef| CC[CamundaCluster]
+    CC[CamundaCluster] -.->|storageRef| SSC
 ```
 
 ## API reference

@@ -27,10 +27,10 @@ Camunda 8.9 also supports OpenSearch and RDBMS as secondary storage, but this CR
 
 ```mermaid
 graph LR
-    ESCP[ElasticsearchClusterPreset] -.->|presetRef| ESC[ElasticsearchCluster]
+    ESC[ElasticsearchCluster] -.->|presetRef| ESCP[ElasticsearchClusterPreset]
     ESC -->|creates| ECK["Elasticsearch CR / ECK operator (external)"]
     ESC -->|creates| SSC[SecondaryStorageConfig]
-    SSC -.->|storageRef| CC[CamundaCluster]
+    CC[CamundaCluster] -.->|storageRef| SSC
 ```
 
 ## API reference
