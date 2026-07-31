@@ -15,7 +15,7 @@ This page is one of the extension-pattern exemplars described in the [architectu
 
 The operator reconciles a `CamundaOptimize` in the following steps:
 
-1. Resolve `clusterRef` to the target `CamundaCluster` and read its `storageRef` to find the cluster's `SecondaryStorageConfig`; the referenced storage must be of type `elasticsearch`, because Optimize does not support RDBMS secondary storage.
+1. Resolve `clusterRef` to the target `CamundaCluster` and read its `storageRef` to find the cluster's `SecondaryStorageConfig`; the referenced storage must be of type `elasticsearch` — a cluster on RDBMS secondary storage is reported as `Ready=False` with reason `UnsupportedStorageType`, because Optimize does not support RDBMS backends.
 2. Resolve `managementAuthRef` to a `ManagementAuthConfig` and verify its `clientSecretRef` secret exists.
 3. SSA-patch `spec.zeebe.extraEnv` on the referenced `CamundaCluster` to enable the legacy Zeebe Elasticsearch exporter with the fixed index prefix `zeebe-record`, using the field manager `camunda-operator/camundaoptimize`; the patch owns only the exporter-related environment variables, and nothing else on the cluster — this controller never reconciles the cluster itself.
 4. Deploy the Optimize webapp Deployment and the Optimize importer Deployment into the CR's namespace, labeled with `camunda.io/cluster` (the referenced cluster's name) and `camunda.io/component` (`optimize-webapp` / `optimize-importer`).
@@ -124,7 +124,8 @@ spec:
 | --- | --- | --- |
 | `Ready` | `Healthy` | Both deployments are available and the exporter patch is applied. |
 | `Ready` | `Progressing` | Deployments are rolling out or the exporter patch is not yet applied. |
-| `Ready` | `InvalidReference` | The `clusterRef`, `managementAuthRef`, or the cluster's `storageRef` chain could not be resolved, or the resolved secondary storage is not of type `elasticsearch`. |
+| `Ready` | `InvalidReference` | The `clusterRef`, `managementAuthRef`, or the cluster's `storageRef` chain could not be resolved. |
+| `Ready` | `UnsupportedStorageType` | The cluster's `storageRef` resolves to a `SecondaryStorageConfig` of type `rdbms`; Optimize supports only Elasticsearch/OpenSearch secondary storage. |
 | `Ready` | `MissingSecret` | A referenced secret (Management Identity client secret or Elasticsearch credentials) does not exist or lacks the required key. |
 | `WebappReady` | `Healthy` / `Progressing` | State of the Optimize webapp Deployment. |
 | `ImporterReady` | `Healthy` / `Progressing` | State of the Optimize importer Deployment. |
@@ -135,7 +136,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - `spec.importer.replicas` must be `1`: Optimize supports at most one active importer per instance, and running more causes data inconsistencies.
 - `spec.managementAuthRef` and `spec.clusterRef.name` must be non-empty.
-- Cross-resource: the referenced cluster's `storageRef` must resolve to a `SecondaryStorageConfig` of type `elasticsearch`; a cluster on RDBMS secondary storage is rejected at reconcile time and surfaced as `Ready=False` with reason `InvalidReference`, because Optimize does not support RDBMS backends.
+- Cross-resource: the referenced cluster's `storageRef` must resolve to a `SecondaryStorageConfig` of type `elasticsearch`; a cluster on RDBMS secondary storage is rejected at reconcile time and surfaced as `Ready=False` with reason `UnsupportedStorageType`, because Optimize does not support RDBMS backends.
 
 ## Relationships
 

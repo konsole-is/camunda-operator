@@ -20,7 +20,7 @@ The operator reconciles a `CamundaManagementCluster` in the following steps:
 4. Deploy Management Identity into the target namespace, connected to Keycloak and the Identity database.
 5. Deploy Console when `console.enabled` is set; Console needs no cluster references — orchestration clusters self-register with Console via the cluster-side ping mechanism, so adding a cluster never requires touching this CR.
 6. Deploy Web Modeler when `webModeler.enabled` is set, connected to the Web Modeler database and the configured mail settings.
-7. Create or refresh the cluster-scoped `ManagementAuthConfig` output CR, publishing the Management Identity base URL, OIDC endpoints, and default M2M client credentials for consumers such as [CamundaOptimize](camundaoptimize.md).
+7. Create or refresh the cluster-scoped `ManagementAuthConfig` output CR for consumers such as [CamundaOptimize](camundaoptimize.md): the Management Identity `baseUrl`, the OIDC endpoints (`issuerUrl`, the optional `issuerBackendUrl` defaulting to `issuerUrl`, `authUrl`, `tokenUrl`, `jwksUrl`), and the default M2M client credentials (`clientId`, `audience`, and a `clientSecretRef` written with explicit `name`, `namespace`, and `key`, since the contract is cluster-scoped and has no namespace to default to).
 8. Update per-component conditions, the aggregate `Ready` condition, and `status.observedGeneration`.
 
 All workloads are labeled with `camunda.io/cluster` (this CR's name) and `camunda.io/component` (`keycloak`, `identity`, `console`, `web-modeler`).
@@ -100,7 +100,7 @@ spec:
       fromAddress: "noreply@example.com"
       # string. Required. SMTP host Web Modeler sends mail through.
       smtpHost: "smtp.example.com"
-  # object. Optional. Overrides the auth defaults inherited from the referenced CamundaPlatformConfig; same shape as its spec.auth.
+  # object. Optional. Overrides the auth defaults inherited from the referenced CamundaPlatformConfig; same shape as its spec.auth. Any secret reference inside must carry an explicit namespace, because this CR is cluster-scoped.
   auth: {}
 ```
 
