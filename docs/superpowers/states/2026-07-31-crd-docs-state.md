@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: off
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: review
 ---
 
 # CRD documentation foundation — orchestration state
@@ -26,7 +26,7 @@ status: foundational-wave
 | --- | --- | --- | --- | --- |
 | #2 | crd-docs/tooling | .claude/worktrees/crd-docs--tooling | #8 → feature/crd-docs | self-merged |
 | #3 | crd-docs/contracts | .claude/worktrees/crd-docs--contracts | #10 → feature/crd-docs | self-merged |
-| #4 | crd-docs/core | .claude/worktrees/crd-docs--core | #13 → feature/crd-docs | in-progress (fix-loop: diagram edges + rebase) |
+| #4 | crd-docs/core | .claude/worktrees/crd-docs--core | #13 → feature/crd-docs | self-merged |
 | #5 | crd-docs/storage | .claude/worktrees/crd-docs--storage | #9 → feature/crd-docs | self-merged |
 | #6 | crd-docs/backup-restore | .claude/worktrees/crd-docs--backup | #12 → feature/crd-docs | self-merged |
 | #7 | crd-docs/mgmt-extensions | .claude/worktrees/crd-docs--mgmt | #11 → feature/crd-docs | self-merged |
