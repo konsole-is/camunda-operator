@@ -25,11 +25,11 @@ status: foundational-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #2 | crd-docs/tooling | .claude/worktrees/crd-docs--tooling | #8 → feature/crd-docs | self-merged |
-| #3 | crd-docs/contracts | .claude/worktrees/crd-docs--contracts | → feature/crd-docs | in-progress |
+| #3 | crd-docs/contracts | .claude/worktrees/crd-docs--contracts | #10 → feature/crd-docs | ready (in review) |
 | #4 | crd-docs/core | .claude/worktrees/crd-docs--core | → feature/crd-docs | in-progress |
-| #5 | crd-docs/storage | .claude/worktrees/crd-docs--storage | → feature/crd-docs | in-progress |
+| #5 | crd-docs/storage | .claude/worktrees/crd-docs--storage | #9 → feature/crd-docs | in-progress (fix-loop: diagram edges) |
 | #6 | crd-docs/backup-restore | .claude/worktrees/crd-docs--backup | → feature/crd-docs | in-progress |
-| #7 | crd-docs/mgmt-extensions | .claude/worktrees/crd-docs--mgmt | → feature/crd-docs | in-progress |
+| #7 | crd-docs/mgmt-extensions | .claude/worktrees/crd-docs--mgmt | #11 → feature/crd-docs | ready (awaiting review) |
 
 ## Contracts
 
@@ -41,6 +41,12 @@ status: foundational-wave
 | `api-vocabulary` | data-only (plan Conventions section) | n/a | locked |
 
 ## Bubble-up log
+
+- **2026-07-31 — CamundaManagementCluster API additions** (raised by #7's subagent at PR #11): optional `platformConfigRef` (string) + output-name field `managementAuthConfig` (string, default: CR name), both per api-vocabulary conventions, filling proposal gaps. Coherence review must confirm camundaplatformconfig.md lists CamundaManagementCluster as a consumer and managementauthconfig.md's producer story matches. Also: management-plane component label values (`optimize-webapp`, `optimize-importer`, `keycloak`, `identity`, `console`, `web-modeler`) need Phase 3 vocabulary check against the core batch; singleton admission rule ("at most one CamundaManagementCluster per Kubernetes cluster") accepted as design decision. Console self-registration is experimental in 8.9 — recorded in page.
+- **2026-07-31 — elasticsearchcluster.md ↔ pvcautoresize.md bidirectionality** (raised by #7): PVCAutoResize discovers the ES cluster via storageRef → SecondaryStorageConfig → producing ElasticsearchCluster; elasticsearchcluster.md's PVCAutoResize bullet needs to match at Phase 3.
+
+- **2026-07-31 — cluster-scoped secret refs: namespace Required** (raised by #3's subagent at PR #10). Template's "defaults to referencing CR's namespace" only works for namespaced CRs. Resolution: convention added to plan; propagated to #4 (CamundaPlatformConfig) and #7 (CamundaManagementCluster) agents. Also propagated: ObjectStorageConfig workload-identity-only pairing with CamundaCluster serviceAccount.annotations (#4); ManagementAuthConfig gained authUrl per verified 8.9 Identity surface (#7); Optimize-on-rdbms must yield a defined failure condition (#7).
+- **2026-07-31 — recurring defect pattern: backwards dotted diagram edges** (PR #8 fix, PR #9 findings ×3). Proposal diagrams drew referenced → referencing; our convention is referencing-CR → referenced-CR. Resolution: fix-loops per PR; Phase 3 coherence review must audit every dotted edge across all 19 pages + architecture.md + index.md.
 
 - **2026-07-31 — storage batch conventions adopted feature-wide** (raised by #5's subagent at PR #9): field-manager scheme `camunda-operator/<kind lowercase>`; deviation admonition `!!! note "Deviation from the original proposal"`; preset pages reject instance-bound fields and report no status; verified 8.9 facts (ES 8.19+/9.2+ rec., RDBMS GA, Database bootstrap postgres-only, Optimize needs ES/OS). Resolution: added to plan Conventions. Propagation: SendMessage to #3/#4/#6/#7 agents.
 - **2026-07-31 — PVCAutoResize discovery-story wrinkle** (raised by #5): ES data PVCs carry the ElasticsearchCluster's name in `camunda.io/cluster`, but PVCAutoResize's `clusterRef` points at a CamundaCluster. Resolution: #7's agent instructed to make a concrete, implementable discovery choice and flag it; Phase 3 reconciles the bidirectional Relationships bullets.

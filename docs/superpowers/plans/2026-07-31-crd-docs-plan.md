@@ -64,6 +64,13 @@ Every docs task inherits these. They exist so five parallel authors produce one 
 - Workload labels are always written as `camunda.io/cluster` and `camunda.io/component` (the label domain is not the API group).
 - SSA is spelled "Server-Side Apply (SSA)" on first use per page; every SSA-patching controller names its field manager.
 
+**Conventions added during fan-out (wave 2, from the contracts batch; propagated):**
+
+- Cluster-scoped CRDs document secret-ref `namespace` as Required (the "defaults to the referencing CR's namespace" fallback exists only for namespaced CRs).
+- ObjectStorageConfig is workload-identity-only (no credential secret refs); the paired story is CamundaCluster's `serviceAccount.annotations`.
+- ManagementAuthConfig includes `authUrl`; `issuerBackendUrl` is Optional defaulting to `issuerUrl`.
+- SecondaryStorageConfig models `elasticsearch | rdbms` (Camunda's own enum also has opensearch/none — recorded as scope note).
+
 **Conventions added during fan-out (wave 2, from the storage batch; propagated to all batches):**
 
 - SSA field-manager naming scheme: `camunda-operator/<kind lowercase>` (e.g. `camunda-operator/pvcautoresize`).
