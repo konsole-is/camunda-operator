@@ -1,6 +1,6 @@
 # DatabaseServerConfig
 
-`DatabaseServerConfig` is the contract CRD that describes a database server — engine, endpoint, admin credentials, and point-in-time-recovery capability — for controllers that bootstrap or restore databases on it.
+`DatabaseServerConfig` is the contract CRD that describes a database server — engine, endpoint, admin credentials, and point-in-time-recovery capability — for controllers that bootstrap databases on it or validate its declared capabilities.
 
 ## Purpose
 
@@ -87,7 +87,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [DatabaseConfig](databaseconfig.md) — references this contract via `serverRef` to anchor a logical database to its server.
 - [Database](database.md) — references this contract via `serverRef` and uses the admin credentials to bootstrap logical databases and users.
-- [PointInTimeRestore](pointintimerestore.md) — validates its requested timestamp against this contract's `pitr` capability, resolved through the target cluster's storage chain.
+- [PointInTimeRestore](pointintimerestore.md) — validates its requested timestamp against this contract's `pitr` capability, resolved through the target cluster's storage chain; it never uses the admin credentials.
 - A composition layer above may create this CR alongside the server it provisions; external actors are not documented here.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
