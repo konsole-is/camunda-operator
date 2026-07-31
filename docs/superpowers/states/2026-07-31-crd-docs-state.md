@@ -24,7 +24,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #2 | | | → feature/crd-docs | not-started |
+| #2 | crd-docs/tooling | .claude/worktrees/crd-docs--tooling | → feature/crd-docs | in-progress |
 | #3 | | | → feature/crd-docs | not-started |
 | #4 | | | → feature/crd-docs | not-started |
 | #5 | | | → feature/crd-docs | not-started |
