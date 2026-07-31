@@ -72,7 +72,10 @@ nav:
   - Architecture: architecture.md
   - CRDs:
       - Overview: crds/index.md
-      - Cluster: []
+      - Cluster:
+          - CamundaCluster: crds/camundacluster.md
+          - CamundaPlatformConfig: crds/camundaplatformconfig.md
+          - CamundaClusterPreset: crds/camundaclusterpreset.md
       - Storage:
           - ElasticsearchCluster: crds/elasticsearchcluster.md
           - ElasticsearchClusterPreset: crds/elasticsearchclusterpreset.md
