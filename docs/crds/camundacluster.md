@@ -48,11 +48,11 @@ This supports every deployment model from all-in-one (everything embedded in zee
 
 ```mermaid
 graph LR
-    PFC[CamundaPlatformConfig] -.->|platformConfigRef| CC
-    CCP[CamundaClusterPreset] -.->|presetRef| CC
-    SSC["SecondaryStorageConfig"] -.->|storageRef| CC
-    OSC["ObjectStorageConfig"] -.->|backupStorageRef / documentStorageRef| CC
-    CC[CamundaCluster] -->|creates| WL["Workloads: Zeebe StatefulSet, Gateway Deployment, Services"]
+    CC[CamundaCluster] -.->|platformConfigRef| PFC[CamundaPlatformConfig]
+    CC -.->|presetRef| CCP[CamundaClusterPreset]
+    CC -.->|storageRef| SSC["SecondaryStorageConfig"]
+    CC -.->|backupStorageRef / documentStorageRef| OSC["ObjectStorageConfig"]
+    CC -->|creates| WL["Workloads: Zeebe StatefulSet, Gateway Deployment, Services"]
 ```
 
 ## API reference
