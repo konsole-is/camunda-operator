@@ -73,7 +73,10 @@ nav:
   - CRDs:
       - Overview: crds/index.md
       - Cluster: []
-      - Storage: []
+      - Storage:
+          - ElasticsearchCluster: crds/elasticsearchcluster.md
+          - ElasticsearchClusterPreset: crds/elasticsearchclusterpreset.md
+          - Database: crds/database.md
       - Contracts: []
       - Backup & Restore: []
       - Management & Extensions: []
