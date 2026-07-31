@@ -89,4 +89,7 @@ nav:
           - BackupRetention: crds/backupretention.md
           - LogicalRestore: crds/logicalrestore.md
           - PointInTimeRestore: crds/pointintimerestore.md
-      - Management & Extensions: []
+      - Management & Extensions:
+          - CamundaOptimize: crds/camundaoptimize.md
+          - CamundaManagementCluster: crds/camundamanagementcluster.md
+          - PVCAutoResize: crds/pvcautoresize.md
