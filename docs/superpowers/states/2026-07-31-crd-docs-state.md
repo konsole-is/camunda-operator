@@ -25,11 +25,11 @@ status: foundational-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #2 | crd-docs/tooling | .claude/worktrees/crd-docs--tooling | #8 → feature/crd-docs | self-merged |
-| #3 | | | → feature/crd-docs | not-started |
-| #4 | | | → feature/crd-docs | not-started |
-| #5 | | | → feature/crd-docs | not-started |
-| #6 | | | → feature/crd-docs | not-started |
-| #7 | | | → feature/crd-docs | not-started |
+| #3 | crd-docs/contracts | .claude/worktrees/crd-docs--contracts | → feature/crd-docs | in-progress |
+| #4 | crd-docs/core | .claude/worktrees/crd-docs--core | → feature/crd-docs | in-progress |
+| #5 | crd-docs/storage | .claude/worktrees/crd-docs--storage | → feature/crd-docs | in-progress |
+| #6 | crd-docs/backup-restore | .claude/worktrees/crd-docs--backup | → feature/crd-docs | in-progress |
+| #7 | crd-docs/mgmt-extensions | .claude/worktrees/crd-docs--mgmt | → feature/crd-docs | in-progress |
 
 ## Contracts
 
@@ -49,11 +49,9 @@ status: foundational-wave
 
 ## Pending snapshot
 
-1. Push `feature/crd-docs` to origin (done in planning if this line is followed by a pushed branch — verify with `git status -sb`).
-2. Invoke `feature-dev-workflow:developing-a-feature` from the integration worktree `.claude/worktrees/crd-docs`.
-3. Phase 1: dispatch issue #2 (plan Task 1) as the first sub-PR; it must self-merge into `feature/crd-docs` before Phase 2 starts.
-4. Phase 2: fan out issues #3–#7 (plan Tasks 2–6) in parallel worktrees per `feature-dev-workflow:fanning-out-with-worktrees`; each verifies Camunda 8.9 claims against the camunda-docs MCP and `~/Documents/camunda/camunda`.
-5. Phase 3: plan Task 7 — coherence review, deviation audit, integration PR `feature/crd-docs` → `main` with `Closes #1`.
+1. Phase 2 in flight: five subagents dispatched (issues #3–#7, plan Tasks 2–6) in the worktrees listed above. As each PR opens: orchestrator two-pass review (spec gate, then quality + conventions vs siblings), fix-loop via the author agent, squash-merge into `feature/crd-docs`, `gh issue close <n>`, update the row. mkdocs.yml nav-group lines are adjacent — later merges may conflict; on conflict have the author rebase onto latest `feature/crd-docs` and re-push.
+2. Wave checkpoint after all five self-merge (`feature-dev-workflow:reviewing-feature-progress`): cross-batch coherence sweep is the big one (five parallel authors), plus strict build on the integrated feature branch.
+3. Phase 3: plan Task 7 — coherence fixes, backtick-to-link conversion for cross-batch Relationships (see bubble-up log), deviation audit, integration PR `feature/crd-docs` → `main` with `Closes #1`. Merge to main is the user's.
 
 ## Resume checklist
 
