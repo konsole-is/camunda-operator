@@ -61,7 +61,7 @@ status: review
 
 ## Pending snapshot
 
-1. Integration PR #15 (`feature/crd-docs` → `main`, `Closes #1`) is open. CI (lint, test, test-chart, test-e2e) runs on pull_request — wait for green.
+1. Integration PR #15 (`feature/crd-docs` → `main`, `Closes #1`) is open. **BLOCKED: GitHub Actions billing on konsole-is** — every job fails at start with "recent account payments have failed or your spending limit needs to be increased" (verified via run annotations 2026-07-31; April runs on main were green, so the workflows themselves are fine — except Test Chart, which was already failing on main before this feature). User must fix billing, then re-run the PR's checks (`gh run rerun` or push a no-op).
 2. When CI is green: teardown commit on `feature/crd-docs` — delete the plan and this state file (spec stays: repo has no docs/adrs convention). The teardown is the last commit before the user merges.
 3. The merge of #15 to main is the USER's decision — never merge it autonomously. After merge: epic #1 auto-closes; remove sub-worktrees (`git worktree remove .claude/worktrees/crd-docs--*`).
 4. If CI comes back red: fix forward on `feature/crd-docs` (docs-only diff; likely suspects are lint on Makefile/gitignore or chart tests unrelated to docs), re-push, re-await green before teardown.
