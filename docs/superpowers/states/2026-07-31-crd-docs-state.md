@@ -24,7 +24,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #2 | crd-docs/tooling | .claude/worktrees/crd-docs--tooling | → feature/crd-docs | in-progress |
+| #2 | crd-docs/tooling | .claude/worktrees/crd-docs--tooling | #8 → feature/crd-docs | self-merged |
 | #3 | | | → feature/crd-docs | not-started |
 | #4 | | | → feature/crd-docs | not-started |
 | #5 | | | → feature/crd-docs | not-started |
@@ -35,9 +35,9 @@ status: foundational-wave
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| `crd-doc-template` | pre-merge PR (#2's PR) | | pending |
+| `crd-doc-template` | pre-merge PR | #8 | locked |
 | `crd-file-paths` | data-only (plan Task 1 inventory table) | n/a | locked |
-| `mkdocs-nav-groups` | pre-merge PR (#2's PR) | | pending |
+| `mkdocs-nav-groups` | pre-merge PR | #8 | locked |
 | `api-vocabulary` | data-only (plan Conventions section) | n/a | locked |
 
 ## Bubble-up log
