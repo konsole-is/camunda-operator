@@ -94,7 +94,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - At least one of `spec.zeebe` or `spec.elasticsearch` must be set.
 - `storageLimit` must be a valid Kubernetes quantity, and `threshold` and `increase` must be valid quantities or percentage strings, per the topolvm pvc-autoresizer annotation formats.
-- `storageLimit` must be greater than or equal to the corresponding component's configured storage size on the cluster; a limit below the current PVC size would make the annotations ineffective.
+- `storageLimit` must be greater than or equal to the corresponding component's configured storage size on the cluster; a limit below the current PVC size would make the annotations ineffective. This cross-resource check runs at reconcile time and is surfaced as a `Ready` condition, not enforced at admission, consistent with how references are checked across the doc set.
 
 ## Relationships
 

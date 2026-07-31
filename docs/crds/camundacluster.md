@@ -235,6 +235,7 @@ Embedded applications do not get their own condition; they are covered by their 
 | `Ready` | `Progressing` | Workloads are still rolling toward the desired state. |
 | `Ready` | `InvalidReference` | A referenced CR (`platformConfigRef`, `presetRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`) does not exist. |
 | `Ready` | `MissingSecret` | A Secret referenced by the effective auth configuration is missing. |
+| `Ready` | `Suspended` | The cluster is suspended and intentionally not serving. |
 | `Suspended` | `Suspended` | `spec.suspend` is true and workloads are scaled to zero. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
@@ -245,6 +246,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - `spec.platformConfigRef` is required.
 - The effective version (inline or inherited from the preset) must be present and 8.9 or later.
 - `spec.zeebe.partitions` cannot be decreased after creation.
+- `spec.zeebe.storageClassName` is immutable after creation: StatefulSet PVC templates cannot change their storage class.
+- `spec.zeebe.storageSize` may only grow; updates that shrink it are rejected, like [ElasticsearchCluster](elasticsearchcluster.md)'s `storageSize`. On growth the operator expands the existing PVCs in place — the storage class must support volume expansion — and applies the new size for future replicas.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
 - `spec.connectors.replicas` and connectors sizing fields are only meaningful when `spec.connectors.enabled` is true.
 - Existence of referenced CRs and Secrets is checked at reconcile time and surfaced as `InvalidReference` / `MissingSecret` conditions, not at admission, because references may be created in any order.

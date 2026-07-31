@@ -96,6 +96,8 @@ spec:
 
 `status.backupId` records the allocated backup ID; [LogicalRestore](logicalrestore.md) reads it to locate the artifacts.
 
+`status.completionTime` records when the backup finished, as an RFC 3339 timestamp set when `status.phase` reaches `Completed`; [BackupRetention](backupretention.md) sorts by it.
+
 The operator records the last reconciled generation in `status.observedGeneration`.
 
 ## Validation
