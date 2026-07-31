@@ -16,11 +16,11 @@ The operator reconciles a `CamundaManagementCluster` in the following steps:
 
 1. Resolve the three `DatabaseConfig` references (`keycloakDbRef`, `identityDbRef`, `webModelerDbRef`) and verify their credential secrets exist; each names one logical PostgreSQL database.
 2. Ensure the target namespace exists (default `<name>-camunda`).
-3. Create a `Keycloak` CR in the target namespace, wired to the Keycloak database; the external Keycloak Operator reconciles it — this operator never deploys Keycloak itself, mirroring how `ElasticsearchCluster` delegates to ECK.
-4. Deploy Management Identity into the target namespace, connected to Keycloak and the Identity database.
-5. Deploy Console when `console.enabled` is set; Console needs no cluster references — orchestration clusters self-register with Console via the cluster-side ping mechanism, so adding a cluster never requires touching this CR.
-6. Deploy Web Modeler when `webModeler.enabled` is set, connected to the Web Modeler database and the configured mail settings.
-7. Create or refresh the cluster-scoped `ManagementAuthConfig` output CR for consumers such as [CamundaOptimize](camundaoptimize.md): the Management Identity `baseUrl`, the OIDC endpoints (`issuerUrl`, the optional `issuerBackendUrl` defaulting to `issuerUrl`, `authUrl`, `tokenUrl`, `jwksUrl`), and the default M2M client credentials (`clientId`, `audience`, and a `clientSecretRef` written with explicit `name`, `namespace`, and `key`, since the contract is cluster-scoped and has no namespace to default to).
+3. When `keycloak.enabled` is `true` (the default), create a `Keycloak` CR in the target namespace, wired to the Keycloak database; the external Keycloak Operator reconciles it — this operator never deploys Keycloak itself, mirroring how `ElasticsearchCluster` delegates to ECK. When `keycloak.enabled` is `false`, no Keycloak is deployed and Management Identity federates against the external OIDC identity provider configured on the referenced [CamundaPlatformConfig](camundaplatformconfig.md) (or the `spec.auth` override).
+4. Deploy Management Identity into the target namespace, connected to Keycloak (or the external identity provider) and the Identity database, served publicly at `identity.externalUrl`; the operator creates no Ingress — you or the composition layer route traffic there.
+5. Deploy Console when `console.enabled` is set, served publicly at `console.externalUrl`; Console needs no cluster references — orchestration clusters self-register with Console via the cluster-side ping mechanism, so adding a cluster never requires touching this CR.
+6. Deploy Web Modeler when `webModeler.enabled` is set, served publicly at `webModeler.externalUrl` and connected to the Web Modeler database and the configured mail settings.
+7. Create or refresh the cluster-scoped `ManagementAuthConfig` output CR for consumers such as [CamundaOptimize](camundaoptimize.md): the Management Identity `baseUrl` (which is `identity.externalUrl`), the OIDC endpoints (`issuerUrl`, the optional `issuerBackendUrl` defaulting to `issuerUrl`, `authUrl`, `tokenUrl`, `jwksUrl`), and the default M2M client credentials (`clientId`, `audience`, and a `clientSecretRef` written with explicit `name`, `namespace`, and `key`, since the contract is cluster-scoped and has no namespace to default to). With a deployed Keycloak, the OIDC endpoints are the Keycloak realm URLs anchored under `identity.externalUrl`; with `keycloak.enabled: false`, they derive from the external OIDC issuer configured on the referenced platform config (or `spec.auth` override) instead. Deploy Keycloak when the platform should be self-contained and the operator owns the identity stack; disable it when your organization already runs a central OIDC provider (Entra ID, Okta, a shared Keycloak, ...) that Management Identity should use directly.
 8. Update per-component conditions, the aggregate `Ready` condition, and `status.observedGeneration`.
 
 All workloads are labeled with `camunda.io/cluster` (this CR's name) and `camunda.io/component` (`keycloak`, `management-identity`, `console`, `web-modeler`).
@@ -69,12 +69,16 @@ spec:
   managementAuthConfig: "management-auth"
   # object. Optional. The Keycloak instance, created as a Keycloak CR for the external Keycloak Operator.
   keycloak:
+    # boolean. Optional, default: true. Deploy Keycloak; set to false when Management Identity should use an external OIDC identity provider configured on the platform config (or spec.auth) instead.
+    enabled: true
     # integer. Optional, default: 1. Number of Keycloak replicas.
     replicas: 1
     # object. Optional. Kubernetes resource requests and limits for the Keycloak pods.
     resources: {}
-  # object. Optional. The Management Identity deployment.
+  # object. Required. The Management Identity deployment.
   identity:
+    # string. Required. Public base URL of Management Identity; anchors every OIDC endpoint written into the ManagementAuthConfig output. The operator creates no Ingress.
+    externalUrl: "https://identity.camunda.example.com"
     # integer. Optional, default: 1. Number of Management Identity replicas.
     replicas: 1
     # object. Optional. Kubernetes resource requests and limits for the Management Identity pods.
@@ -83,6 +87,8 @@ spec:
   console:
     # boolean. Optional, default: false. Deploy Console.
     enabled: true
+    # string. Required when enabled is true. Public base URL of Console.
+    externalUrl: "https://console.camunda.example.com"
     # integer. Optional, default: 1. Number of Console replicas.
     replicas: 1
     # object. Optional. Kubernetes resource requests and limits for the Console pods.
@@ -91,6 +97,8 @@ spec:
   webModeler:
     # boolean. Optional, default: false. Deploy Web Modeler.
     enabled: true
+    # string. Required when enabled is true. Public base URL of Web Modeler.
+    externalUrl: "https://modeler.camunda.example.com"
     # integer. Optional, default: 1. Number of Web Modeler replicas.
     replicas: 1
     # object. Optional. Kubernetes resource requests and limits for the Web Modeler pods.
@@ -125,6 +133,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - At most one `CamundaManagementCluster` may exist per Kubernetes cluster; creating a second is rejected, because the management plane is deployed once per platform.
 - `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` must be non-empty and name three distinct `DatabaseConfig` CRs — the components require separate logical databases.
 - `webModeler.mail.fromAddress` and `webModeler.mail.smtpHost` are required when `webModeler.enabled` is `true`.
+- `identity.externalUrl` is required; `console.externalUrl` is required when `console.enabled` is `true`, and `webModeler.externalUrl` is required when `webModeler.enabled` is `true`.
+- `keycloak.enabled: false` requires an external OIDC issuer to be configured — either on the referenced `CamundaPlatformConfig` or through `spec.auth`; without one, Management Identity would have no identity provider.
 
 ## Relationships
 
@@ -148,6 +158,8 @@ spec:
   keycloakDbRef: "keycloak-db"
   identityDbRef: "identity-db"
   webModelerDbRef: "webmodeler-db"
+  identity:
+    externalUrl: "https://identity.camunda.example.com"
 ```
 
 A realistic manifest:
@@ -165,12 +177,14 @@ spec:
   webModelerDbRef: "webmodeler-db"
   managementAuthConfig: "management-auth"
   keycloak:
+    enabled: true
     replicas: 2
     resources:
       requests:
         cpu: "500m"
         memory: 1Gi
   identity:
+    externalUrl: "https://identity.camunda.example.com"
     replicas: 2
     resources:
       requests:
@@ -178,9 +192,11 @@ spec:
         memory: 512Mi
   console:
     enabled: true
+    externalUrl: "https://console.camunda.example.com"
     replicas: 1
   webModeler:
     enabled: true
+    externalUrl: "https://modeler.camunda.example.com"
     replicas: 1
     mail:
       fromAddress: "noreply@example.com"
