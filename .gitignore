@@ -31,3 +31,5 @@ go.work
 
 # helm dist
 dist
+# mkdocs build output
+site/
