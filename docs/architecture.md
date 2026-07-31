@@ -112,7 +112,7 @@ graph TD
     CMC[CamundaManagementCluster]
     PAR[PVCAutoResize]
 
-    ESCP -.->|presetRef| ESC
+    ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
     DB -->|creates| DBC
     DB -->|"creates (optional)"| SSC
