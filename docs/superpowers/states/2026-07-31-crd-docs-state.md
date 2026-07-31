@@ -8,7 +8,7 @@ feature_worktree: .claude/worktrees/crd-docs
 sub_pr_approval: autonomous
 sub_pr_review_loop: off
 sub_pr_target: feature-branch
-integration_pr:
+integration_pr: #15
 status: review
 ---
 
@@ -61,9 +61,10 @@ status: review
 
 ## Pending snapshot
 
-1. Phase 2 in flight: five subagents dispatched (issues #3–#7, plan Tasks 2–6) in the worktrees listed above. As each PR opens: orchestrator two-pass review (spec gate, then quality + conventions vs siblings), fix-loop via the author agent, squash-merge into `feature/crd-docs`, `gh issue close <n>`, update the row. mkdocs.yml nav-group lines are adjacent — later merges may conflict; on conflict have the author rebase onto latest `feature/crd-docs` and re-push.
-2. Wave checkpoint after all five self-merge (`feature-dev-workflow:reviewing-feature-progress`): cross-batch coherence sweep is the big one (five parallel authors), plus strict build on the integrated feature branch.
-3. Phase 3: plan Task 7 — coherence fixes, backtick-to-link conversion for cross-batch Relationships (see bubble-up log), deviation audit, integration PR `feature/crd-docs` → `main` with `Closes #1`. Merge to main is the user's.
+1. Integration PR #15 (`feature/crd-docs` → `main`, `Closes #1`) is open. CI (lint, test, test-chart, test-e2e) runs on pull_request — wait for green.
+2. When CI is green: teardown commit on `feature/crd-docs` — delete the plan and this state file (spec stays: repo has no docs/adrs convention). The teardown is the last commit before the user merges.
+3. The merge of #15 to main is the USER's decision — never merge it autonomously. After merge: epic #1 auto-closes; remove sub-worktrees (`git worktree remove .claude/worktrees/crd-docs--*`).
+4. If CI comes back red: fix forward on `feature/crd-docs` (docs-only diff; likely suspects are lint on Makefile/gitignore or chart tests unrelated to docs), re-push, re-await green before teardown.
 
 ## Resume checklist
 
