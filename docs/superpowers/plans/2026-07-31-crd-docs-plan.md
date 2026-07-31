@@ -64,6 +64,13 @@ Every docs task inherits these. They exist so five parallel authors produce one 
 - Workload labels are always written as `camunda.io/cluster` and `camunda.io/component` (the label domain is not the API group).
 - SSA is spelled "Server-Side Apply (SSA)" on first use per page; every SSA-patching controller names its field manager.
 
+**Conventions added during fan-out (wave 2, from the storage batch; propagated to all batches):**
+
+- SSA field-manager naming scheme: `camunda-operator/<kind lowercase>` (e.g. `camunda-operator/pvcautoresize`).
+- Deviation notes use the mkdocs-material admonition `!!! note "Deviation from the original proposal"`.
+- Preset pages document which spec fields are preset-legal: `spec.cluster` rejects instance-bound fields (`presetRef` chaining, output-name fields, `suspend`, `monitoring`); passive kinds report no status.
+- Verified 8.9 facts every page may cite: Elasticsearch floor 8.19+ (9.2+ recommended); RDBMS secondary storage GA (postgresql/mysql/oracle/mariadb/mssql per support policy); the Database CRD bootstrap is deliberately postgres-only; Optimize requires ES/OS secondary storage.
+
 **Git/PR mechanics:**
 
 - Commits reference the sub-issue: `docs: add contract CRD pages (#3)`.

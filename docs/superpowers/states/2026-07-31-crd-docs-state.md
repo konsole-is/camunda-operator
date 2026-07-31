@@ -42,6 +42,10 @@ status: foundational-wave
 
 ## Bubble-up log
 
+- **2026-07-31 — storage batch conventions adopted feature-wide** (raised by #5's subagent at PR #9): field-manager scheme `camunda-operator/<kind lowercase>`; deviation admonition `!!! note "Deviation from the original proposal"`; preset pages reject instance-bound fields and report no status; verified 8.9 facts (ES 8.19+/9.2+ rec., RDBMS GA, Database bootstrap postgres-only, Optimize needs ES/OS). Resolution: added to plan Conventions. Propagation: SendMessage to #3/#4/#6/#7 agents.
+- **2026-07-31 — PVCAutoResize discovery-story wrinkle** (raised by #5): ES data PVCs carry the ElasticsearchCluster's name in `camunda.io/cluster`, but PVCAutoResize's `clusterRef` points at a CamundaCluster. Resolution: #7's agent instructed to make a concrete, implementable discovery choice and flag it; Phase 3 reconciles the bidirectional Relationships bullets.
+- **2026-07-31 — RDBMS continuous backup lead** (raised by #5): 8.9 docs mention continuous backup/restore for RDBMS, possibly conflicting with the proposal's pg_dump-Job framing. Resolution: #6's agent instructed to verify specifically and document reality.
+
 - **2026-07-31 — cross-batch links break per-batch strict builds** (raised by #2's subagent). mkdocs strict fails on links to pages another unmerged batch owns. Resolution: batches write real links only to their own batch's pages plus `index.md`/`architecture.md`; other kinds are named in backticks; Phase 3 (plan Task 7) converts backticked names to links once all 19 pages exist. Propagation: goes into every Phase 2 dispatch prompt; plan Task 7 Step 1 covers the linkify pass.
 - **2026-07-31 — `site/` added to `.gitignore`** by #2 (mkdocs build output; not in plan's file list). Accepted; batches inherit it.
 - **2026-07-31 — protected-branch guard keys off parent checkout** — sub-worktree commits must use `git -C <worktree>` instead of `cd` + `git commit`. Propagation: goes into every Phase 2 dispatch prompt.
