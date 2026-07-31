@@ -25,11 +25,11 @@ status: foundational-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #2 | crd-docs/tooling | .claude/worktrees/crd-docs--tooling | #8 → feature/crd-docs | self-merged |
-| #3 | crd-docs/contracts | .claude/worktrees/crd-docs--contracts | #10 → feature/crd-docs | ready (in review) |
-| #4 | crd-docs/core | .claude/worktrees/crd-docs--core | → feature/crd-docs | in-progress |
-| #5 | crd-docs/storage | .claude/worktrees/crd-docs--storage | #9 → feature/crd-docs | in-progress (fix-loop: diagram edges) |
-| #6 | crd-docs/backup-restore | .claude/worktrees/crd-docs--backup | → feature/crd-docs | in-progress |
-| #7 | crd-docs/mgmt-extensions | .claude/worktrees/crd-docs--mgmt | #11 → feature/crd-docs | ready (awaiting review) |
+| #3 | crd-docs/contracts | .claude/worktrees/crd-docs--contracts | #10 → feature/crd-docs | self-merged |
+| #4 | crd-docs/core | .claude/worktrees/crd-docs--core | #13 → feature/crd-docs | in-progress (fix-loop: diagram edges + rebase) |
+| #5 | crd-docs/storage | .claude/worktrees/crd-docs--storage | #9 → feature/crd-docs | self-merged |
+| #6 | crd-docs/backup-restore | .claude/worktrees/crd-docs--backup | #12 → feature/crd-docs | self-merged |
+| #7 | crd-docs/mgmt-extensions | .claude/worktrees/crd-docs--mgmt | #11 → feature/crd-docs | self-merged |
 
 ## Contracts
 
@@ -41,6 +41,8 @@ status: foundational-wave
 | `api-vocabulary` | data-only (plan Conventions section) | n/a | locked |
 
 ## Bubble-up log
+
+- **2026-07-31 — Phase 3 coherence checklist accumulated during ripening**: (a) audit every mermaid edge on all 19 pages + architecture.md + index.md — recurring backwards-dotted-edge defect found in PRs #8, #9, #11, #13; (b) settle "acts-on" edge style: BackupRetention deletes-edge drawn solid in backupretention.md but dotted in backup.md; PITR WAL-replay edge solid vs backup.md's dotted management-API edge; (c) linkify cross-batch backticked kind references (bidirectional Relationships) now that all pages exist, incl. elasticsearchcluster.md ↔ pvcautoresize.md discovery story and managementauthconfig.md naming the `managementAuthConfig` output field; (d) confirm component-label vocabulary across pages (`optimize-webapp`, `keycloak`, ... vs core page's component names); (e) linkify the File column of crds/index.md if wanted.
 
 - **2026-07-31 — CamundaManagementCluster API additions** (raised by #7's subagent at PR #11): optional `platformConfigRef` (string) + output-name field `managementAuthConfig` (string, default: CR name), both per api-vocabulary conventions, filling proposal gaps. Coherence review must confirm camundaplatformconfig.md lists CamundaManagementCluster as a consumer and managementauthconfig.md's producer story matches. Also: management-plane component label values (`optimize-webapp`, `optimize-importer`, `keycloak`, `identity`, `console`, `web-modeler`) need Phase 3 vocabulary check against the core batch; singleton admission rule ("at most one CamundaManagementCluster per Kubernetes cluster") accepted as design decision. Console self-registration is experimental in 8.9 — recorded in page.
 - **2026-07-31 — elasticsearchcluster.md ↔ pvcautoresize.md bidirectionality** (raised by #7): PVCAutoResize discovers the ES cluster via storageRef → SecondaryStorageConfig → producing ElasticsearchCluster; elasticsearchcluster.md's PVCAutoResize bullet needs to match at Phase 3.
