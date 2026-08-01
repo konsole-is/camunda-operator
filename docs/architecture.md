@@ -154,4 +154,3 @@ A cloud operator (managing cloud infrastructure such as buckets, database server
 
 - **Camunda 8.9+ only.** The operator targets the unified orchestration-cluster architecture introduced with Camunda 8.9. There is no version-conditional rendering and no support for earlier component topologies.
 - **Minor releases are the test matrix.** The operator is tested against Camunda minor releases; features that land in a patch release are treated as part of the next minor.
-- **Clean slate.** There is no migration or adoption path from earlier Camunda operators: no ZeebeCluster compatibility, no adoption of pre-existing StatefulSets or ECK resources.
