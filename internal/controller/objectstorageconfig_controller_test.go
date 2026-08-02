@@ -19,21 +19,60 @@ package controller
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 var _ = Describe("ObjectStorageConfig controller", func() {
-	It("reconciles a valid resource without error", func() {
-		resource := validObjectStorageConfig()
-		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, resource)).To(Succeed()) })
+	var storageConfig *v1.ObjectStorageConfig
 
-		reconciler := &ObjectStorageConfigReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+	// readyCondition fetches the CR, asserts status.observedGeneration has
+	// caught up to metadata.generation (failing g until the controller stamps
+	// status), and returns the Ready condition.
+	readyCondition := func(g Gomega) *metav1.Condition {
+		fetched := &v1.ObjectStorageConfig{}
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, fetched)).To(Succeed())
+		g.Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
+		return meta.FindStatusCondition(fetched.Status.Conditions, conditions.TypeReady)
+	}
 
-		_, err := reconciler.Reconcile(ctx, reconcile.Request{
-			NamespacedName: types.NamespacedName{Name: resource.Name},
-		})
-		Expect(err).NotTo(HaveOccurred())
+	BeforeEach(func() {
+		storageConfig = validObjectStorageConfig()
+		Expect(k8sClient.Create(ctx, storageConfig)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, storageConfig)).To(Succeed()) })
+	})
+
+	It("reports an admitted contract Ready and Healthy at its current generation", func() {
+		Eventually(func(g Gomega) {
+			cond := readyCondition(g)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
+			g.Expect(cond.Message).To(Equal("All checks passed"))
+			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("re-stamps observedGeneration after a spec update", func() {
+		Eventually(func(g Gomega) {
+			g.Expect(readyCondition(g)).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, storageConfig)).To(Succeed())
+		storageConfig.Spec.BasePath = "backups"
+		Expect(k8sClient.Update(ctx, storageConfig)).To(Succeed())
+		Expect(storageConfig.Generation).To(BeNumerically(">", 1))
+
+		Eventually(func(g Gomega) {
+			cond := readyCondition(g)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
+			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
+		}, timeout, interval).Should(Succeed())
 	})
 })
