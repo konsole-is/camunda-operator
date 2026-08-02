@@ -20,38 +20,49 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ManagementAuthConfigSpec defines the desired state of ManagementAuthConfig
+// ManagementAuthConfigSpec carries the Management Identity OIDC configuration:
+// endpoints, machine-to-machine client credentials, and audience.
 type ManagementAuthConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of ManagementAuthConfig. Edit managementauthconfig_types.go to remove/update
+	// BaseURL is the base URL of the Management Identity service.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="baseUrl must be a valid http or https URL"
+	BaseURL string `json:"baseUrl"`
+	// IssuerURL is the OIDC issuer URL used to validate tokens.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerUrl must be a valid http or https URL"
+	IssuerURL string `json:"issuerUrl"`
+	// IssuerBackendURL is the issuer URL for in-cluster container-to-container
+	// communication. Consumers default it to IssuerURL when empty.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerBackendUrl must be a valid http or https URL"
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	IssuerBackendURL string `json:"issuerBackendUrl,omitempty"`
+	// AuthURL is the OIDC authorization endpoint used for browser login
+	// redirects.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="authUrl must be a valid http or https URL"
+	AuthURL string `json:"authUrl"`
+	// TokenURL is the OIDC token endpoint used to acquire machine-to-machine
+	// tokens.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="tokenUrl must be a valid http or https URL"
+	TokenURL string `json:"tokenUrl"`
+	// JwksURL is the JWKS endpoint used to fetch token signing keys.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="jwksUrl must be a valid http or https URL"
+	JwksURL string `json:"jwksUrl"`
+	// ClientID is the default machine-to-machine client ID.
+	// +kubebuilder:validation:MinLength=1
+	ClientID string `json:"clientId"`
+	// Audience expected in access tokens issued for this client.
+	// +kubebuilder:validation:MinLength=1
+	Audience string `json:"audience"`
+	// ClientSecretRef names the Secret key holding the client secret for the
+	// machine-to-machine client.
+	ClientSecretRef SecretKeyRef `json:"clientSecretRef"`
 }
 
-// ManagementAuthConfigStatus defines the observed state of ManagementAuthConfig.
+// ManagementAuthConfigStatus is the observed validation state of the contract.
 type ManagementAuthConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the ManagementAuthConfig resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current validation state; the Ready condition
+	// carries reasons Healthy or MissingSecret.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -62,7 +73,9 @@ type ManagementAuthConfigStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// ManagementAuthConfig is the Schema for the managementauthconfigs API
+// ManagementAuthConfig is the contract CRD that carries the Management
+// Identity OIDC configuration — endpoints, client credentials, and audience —
+// for components that live outside the orchestration cluster.
 type ManagementAuthConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -78,6 +91,12 @@ type ManagementAuthConfig struct {
 	// +optional
 	Status ManagementAuthConfigStatus `json:"status,omitzero"`
 }
+
+// GetConditions returns the resource's status conditions.
+func (in *ManagementAuthConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+
+// GetObservedGeneration returns the last reconciled generation recorded in status.
+func (in *ManagementAuthConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
 
 // +kubebuilder:object:root=true
 

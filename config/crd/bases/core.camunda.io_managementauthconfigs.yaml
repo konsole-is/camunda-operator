@@ -17,8 +17,10 @@ spec:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: ManagementAuthConfig is the Schema for the managementauthconfigs
-          API
+        description: |-
+          ManagementAuthConfig is the contract CRD that carries the Management
+          Identity OIDC configuration — endpoints, client credentials, and audience —
+          for components that live outside the orchestration cluster.
         properties:
           apiVersion:
             description: |-
@@ -40,25 +42,102 @@ spec:
           spec:
             description: spec defines the desired state of ManagementAuthConfig
             properties:
-              foo:
-                description: foo is an example field of ManagementAuthConfig. Edit
-                  managementauthconfig_types.go to remove/update
+              audience:
+                description: Audience expected in access tokens issued for this client.
+                minLength: 1
                 type: string
+              authUrl:
+                description: |-
+                  AuthURL is the OIDC authorization endpoint used for browser login
+                  redirects.
+                type: string
+                x-kubernetes-validations:
+                - message: authUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https')
+              baseUrl:
+                description: BaseURL is the base URL of the Management Identity service.
+                type: string
+                x-kubernetes-validations:
+                - message: baseUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https')
+              clientId:
+                description: ClientID is the default machine-to-machine client ID.
+                minLength: 1
+                type: string
+              clientSecretRef:
+                description: |-
+                  ClientSecretRef names the Secret key holding the client secret for the
+                  machine-to-machine client.
+                properties:
+                  key:
+                    description: Key in the Secret holding the value.
+                    minLength: 1
+                    type: string
+                  name:
+                    description: Name of the Secret holding the value.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace of the Secret.
+                    minLength: 1
+                    type: string
+                required:
+                - key
+                - name
+                - namespace
+                type: object
+              issuerBackendUrl:
+                description: |-
+                  IssuerBackendURL is the issuer URL for in-cluster container-to-container
+                  communication. Consumers default it to IssuerURL when empty.
+                type: string
+                x-kubernetes-validations:
+                - message: issuerBackendUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https')
+              issuerUrl:
+                description: IssuerURL is the OIDC issuer URL used to validate tokens.
+                type: string
+                x-kubernetes-validations:
+                - message: issuerUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https')
+              jwksUrl:
+                description: JwksURL is the JWKS endpoint used to fetch token signing
+                  keys.
+                type: string
+                x-kubernetes-validations:
+                - message: jwksUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https')
+              tokenUrl:
+                description: |-
+                  TokenURL is the OIDC token endpoint used to acquire machine-to-machine
+                  tokens.
+                type: string
+                x-kubernetes-validations:
+                - message: tokenUrl must be a valid http or https URL
+                  rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                    == 'https')
+            required:
+            - audience
+            - authUrl
+            - baseUrl
+            - clientId
+            - clientSecretRef
+            - issuerUrl
+            - jwksUrl
+            - tokenUrl
             type: object
           status:
             description: status defines the observed state of ManagementAuthConfig
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the ManagementAuthConfig resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current validation state; the Ready condition
+                  carries reasons Healthy or MissingSecret.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -117,6 +196,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
             type: object
         required:
         - spec
