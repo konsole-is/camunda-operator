@@ -8,13 +8,6 @@ IMG ?= controller:latest
 # localhost:5000/img:tag correct, since ${IMG%:*} strips only the final colon.
 export IMG
 
-# Compute image repository and tag at Make time for helm-deploy. These use shell
-# parameter expansion to split only on the final colon, preserving registry ports.
-# The values are passed explicitly to the shell so they're available even when IMG
-# is not yet exported to the recipe environment.
-IMG_REPO := $(shell IMG='${IMG}' bash -c 'echo $${IMG%:*}')
-IMG_TAG := $(shell IMG='${IMG}' bash -c 'echo $${IMG##*:}')
-
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -298,8 +291,8 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
-		--set manager.image.repository=$(IMG_REPO) \
-		--set manager.image.tag=$(IMG_TAG) \
+		--set manager.image.repository=$${IMG%:*} \
+		--set manager.image.tag=$${IMG##*:} \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)
