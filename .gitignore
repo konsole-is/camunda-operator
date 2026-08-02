@@ -29,7 +29,11 @@ go.work
 # Kubeconfig might contain secrets
 *.kubeconfig
 
-# helm dist
-dist
+# helm dist — everything under dist/ is generated except the hand-maintained
+# chart metadata below. See docs/superpowers/specs/2026-08-01-helm-chart-distribution-design.md
+dist/**/*
+!dist/chart/
+!dist/chart/Chart.yaml
+!dist/chart/README.md
 # mkdocs build output
 site/
