@@ -6,8 +6,10 @@ tracking_issue: #17
 feature_branch: feature/batch-a-contract-controllers
 feature_worktree: .claude/worktrees/batch-a-contract-controllers
 sub_pr_approval: autonomous
+sub_pr_review_loop: on
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # Contract-CRD validation controllers — orchestration state
