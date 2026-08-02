@@ -1022,10 +1022,20 @@ helm uninstall camunda-operator --namespace camunda-operator-system
 
 Because of the `keep` policy, the CRDs and every custom resource stored in them
 survive an uninstall. To remove them — **this deletes every Camunda cluster the
-operator manages** — delete the CRDs explicitly:
+operator manages** — delete the CRDs explicitly. The CRD manifests carry no
+labels, so a label selector will not match them; delete by name instead.
+
+Using the release asset for the version you installed:
 
 ```bash
-kubectl delete crd -l app.kubernetes.io/name=camunda-operator
+kubectl delete -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/crds.yaml
+```
+
+Or, without the release file to hand, every custom resource definition this
+operator installs is in the `core.camunda.io` API group:
+
+```bash
+kubectl get crd -o name | grep '\.core\.camunda\.io$' | xargs -r kubectl delete
 ```
 
 ## Installing from source
@@ -1106,7 +1116,8 @@ verification, out-of-band CRD installation, and upgrades, see the
 
 ```bash
 make test           # run unit and envtest suites
-make all            # lint and format
+make lint           # run golangci-lint
+make all            # generate manifests/deepcopy, fmt, vet, and build the manager binary
 make helm-generate  # regenerate dist/chart/ from config/
 make helm-verify    # lint and render the chart, no cluster needed
 ```

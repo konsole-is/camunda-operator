@@ -33,7 +33,8 @@ verification, out-of-band CRD installation, and upgrades, see the
 
 ```bash
 make test           # run unit and envtest suites
-make all            # lint and format
+make lint           # run golangci-lint
+make all            # generate manifests/deepcopy, fmt, vet, and build the manager binary
 make helm-generate  # regenerate dist/chart/ from config/
 make helm-verify    # lint and render the chart, no cluster needed
 ```
