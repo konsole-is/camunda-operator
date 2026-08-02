@@ -37,3 +37,8 @@ dist/**/*
 !dist/chart/README.md
 # mkdocs build output
 site/
+
+# The kubebuilder helm/v2-alpha plugin regenerates this scaffold workflow on
+# every `make helm-generate`, silently reverting any edits. Our real chart CI
+# lives in .github/workflows/chart.yml, at a path the plugin does not own.
+.github/workflows/test-chart.yml

@@ -188,12 +188,18 @@ publishes under its prerelease SemVer tag.
   features enabled plus CRDs); the default render is ~120 KiB.
 - `helm-generate` keeps `--force`.
 
-### `.github/workflows/test-chart.yml` (fix)
+### `.github/workflows/chart.yml` (fix)
 
 This job cannot currently pass: it runs `helm lint ./dist/chart` and `make helm-deploy`, but nothing
 in the workflow generates the chart, and `dist` is gitignored, so `dist/chart` does not exist on a
 fresh checkout. Neither step declares `helm-generate` as a prerequisite.
 
+The kubebuilder `helm/v2-alpha` plugin regenerates `.github/workflows/test-chart.yml` from its own
+scaffold on every `make helm-generate`, silently reverting any edits. To avoid the collision, the
+workflow has been moved to `.github/workflows/chart.yml`, at a path the plugin does not own, and
+`.github/workflows/test-chart.yml` is gitignored.
+
+Changes to the moved workflow:
 - Insert `make helm-generate IMG=controller:latest` before any step that reads `dist/chart`.
 - Trigger becomes `push: branches: [main]` plus `pull_request`. The current bare `on: push`
   double-runs on every PR branch.

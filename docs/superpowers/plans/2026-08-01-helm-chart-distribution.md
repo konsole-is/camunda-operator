@@ -461,12 +461,14 @@ tripwire."
 
 ---
 
-### Task 4: Fix `test-chart.yml`
+### Task 4: Fix `chart.yml`
 
 This job cannot pass today. It runs `helm lint ./dist/chart` and `make helm-deploy`, but nothing generates the chart and `dist` is gitignored — so `dist/chart` does not exist on a fresh checkout.
 
+**Collision note:** kubebuilder's `helm/v2-alpha` plugin regenerates `.github/workflows/test-chart.yml` from its own scaffold on every `make helm-generate`, silently reverting any edits. The workflow has been moved to `.github/workflows/chart.yml`, at a path the plugin does not own, and `.github/workflows/test-chart.yml` is gitignored.
+
 **Files:**
-- Modify: `.github/workflows/test-chart.yml` (full rewrite)
+- Modify: `.github/workflows/chart.yml` (full rewrite)
 
 **Interfaces:**
 - Consumes: `make helm-verify` (Task 3), `make helm-generate`, `make helm-deploy` with the `IMG` export fix (Task 2).
@@ -479,7 +481,7 @@ Create `/tmp/workflow-check.sh` (scratch, not committed):
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-f=.github/workflows/test-chart.yml
+f=.github/workflows/chart.yml
 
 echo "--- chart is generated before anything reads it ---"
 gen_line="$(grep -n 'helm-generate' "$f" | head -1 | cut -d: -f1)"
@@ -510,10 +512,10 @@ Expected: FAIL at the first check — no `helm-generate` anywhere in the workflo
 
 - [ ] **Step 3: Rewrite the workflow**
 
-Replace the entire contents of `.github/workflows/test-chart.yml`:
+Replace the entire contents of `.github/workflows/chart.yml`:
 
 ```yaml
-name: Test Chart
+name: Chart
 
 on:
   push:
@@ -614,7 +616,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Validate the YAML parses**
 
-Run: `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/test-chart.yml')); print('valid YAML')"`
+Run: `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/chart.yml')); print('valid YAML')"`
 Expected: `valid YAML`
 
 - [ ] **Step 6: Dry-run the cluster-free portion locally**
@@ -625,15 +627,17 @@ Expected: lint passes, six permutations render, size reported under the limit. T
 - [ ] **Step 7: Commit**
 
 ```bash
-git add .github/workflows/test-chart.yml
-git commit -m "fix: make the chart workflow able to pass
+git add .github/workflows/chart.yml .gitignore
+git commit -m "fix: move chart workflow away from kubebuilder collision
 
-The job read dist/chart without ever generating it, and dist is
-gitignored — so it could not have succeeded on a fresh checkout.
-Generates the chart first, pins kubebuilder/helm/kind to .tool-versions
-instead of 'latest', scopes the push trigger to main so PR branches stop
-double-running, and extends kind coverage from install-only to
-install/upgrade/uninstall with a CRD-retention assertion."
+The helm/v2-alpha plugin regenerates .github/workflows/test-chart.yml from
+its scaffold on every 'make helm-generate', silently reverting any edits.
+Moved our workflow to .github/workflows/chart.yml at a path the plugin does
+not own, and gitignored the scaffold path.
+
+The chart workflow itself — lint, generate, verify, kind install/upgrade with
+CRD-retention assertion — is unchanged. Only the filename and the workflow
+name field (Test Chart → Chart) were updated."
 ```
 
 ---
