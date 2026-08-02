@@ -19,15 +19,17 @@ package controller
 import (
 	"context"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// ObjectStorageConfigReconciler reconciles a ObjectStorageConfig object
+// ObjectStorageConfigReconciler maintains the Ready condition of
+// ObjectStorageConfig contracts.
 type ObjectStorageConfigReconciler struct {
 	client.Client
 	// APIReader keeps the uniform reconciler shape shared by all five contract
@@ -42,24 +44,31 @@ type ObjectStorageConfigReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ObjectStorageConfig object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
+// Reconcile validates the contract's references and maintains its Ready
+// condition; it never creates or mutates other resources.
 func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	var cfg v1.ObjectStorageConfig
+	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	// TODO(user): your logic here
+	cond, err := r.validate(ctx, &cfg)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, conditions.PatchReady(ctx, r.Client, &cfg, cond)
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// validate always reports Healthy: every ObjectStorageConfig rule is enforced
+// by the CRD schema at admission, and the contract references no other
+// objects.
+func (r *ObjectStorageConfigReconciler) validate(_ context.Context, cfg *v1.ObjectStorageConfig) (metav1.Condition, error) {
+	return conditions.Ready(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed", cfg.Generation), nil
+}
+
+// SetupWithManager registers the controller. The contract references no other
+// objects, so no additional watches or indexes are needed.
 func (r *ObjectStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ObjectStorageConfig{}).
