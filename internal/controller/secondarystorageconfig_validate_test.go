@@ -129,12 +129,12 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.objects...).Build()
 			r := &SecondaryStorageConfigReconciler{Client: c, APIReader: c, Scheme: scheme}
-			cfg := &v1.SecondaryStorageConfig{
+			secondaryStorage := &v1.SecondaryStorageConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "storage", Generation: 3},
 				Spec:       tt.spec,
 			}
 
-			cond, err := r.validate(context.Background(), cfg)
+			cond, err := r.validate(context.Background(), secondaryStorage)
 			if tt.wantErr != "" {
 				require.EqualError(t, err, tt.wantErr)
 				return
@@ -145,7 +145,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, cond.Status)
 			assert.Equal(t, tt.wantReason, cond.Reason)
 			assert.Equal(t, tt.wantMessage, cond.Message)
-			assert.Equal(t, cfg.Generation, cond.ObservedGeneration)
+			assert.Equal(t, secondaryStorage.Generation, cond.ObservedGeneration)
 		})
 	}
 }

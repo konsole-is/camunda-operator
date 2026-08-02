@@ -34,6 +34,7 @@ import (
 // newSecondaryStorageNamespace creates a uniquely named Namespace for one spec
 // and registers its deletion.
 func newSecondaryStorageNamespace() string {
+	GinkgoHelper()
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "ssc-ns-" + utilrand.String(8)},
 	}
@@ -42,19 +43,21 @@ func newSecondaryStorageNamespace() string {
 	return ns.Name
 }
 
-// createSecondaryStorageConfig creates cfg and registers its deletion.
-func createSecondaryStorageConfig(cfg *v1.SecondaryStorageConfig) {
-	Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
-	DeferCleanup(func() { _ = k8sClient.Delete(ctx, cfg) })
+// createSecondaryStorageConfig creates secondaryStorage and registers its deletion.
+func createSecondaryStorageConfig(secondaryStorage *v1.SecondaryStorageConfig) {
+	GinkgoHelper()
+	Expect(k8sClient.Create(ctx, secondaryStorage)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, secondaryStorage) })
 }
 
-// expectSecondaryStorageReady polls until cfg's Ready condition matches the
-// given status, reason, and message.
+// expectSecondaryStorageReady polls until the named SecondaryStorageConfig's
+// Ready condition matches the given status, reason, and message.
 func expectSecondaryStorageReady(name string, status metav1.ConditionStatus, reason, message string) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		var cfg v1.SecondaryStorageConfig
-		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, &cfg)).To(Succeed())
-		ready := meta.FindStatusCondition(cfg.Status.Conditions, conditions.TypeReady)
+		var secondaryStorage v1.SecondaryStorageConfig
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, &secondaryStorage)).To(Succeed())
+		ready := meta.FindStatusCondition(secondaryStorage.Status.Conditions, conditions.TypeReady)
 		g.Expect(ready).NotTo(BeNil())
 		g.Expect(ready.Status).To(Equal(status))
 		g.Expect(ready.Reason).To(Equal(reason))
@@ -65,17 +68,17 @@ func expectSecondaryStorageReady(name string, status metav1.ConditionStatus, rea
 var _ = Describe("SecondaryStorageConfig controller", func() {
 	Context("with an elasticsearch contract", func() {
 		var (
-			cfg    *v1.SecondaryStorageConfig
-			secret *corev1.Secret
+			secondaryStorage *v1.SecondaryStorageConfig
+			secret           *corev1.Secret
 		)
 
 		BeforeEach(func() {
 			namespace := newSecondaryStorageNamespace()
-			cfg = validSecondaryStorageConfigES()
-			cfg.Spec.Elasticsearch.CredentialsSecretRef.Namespace = namespace
+			secondaryStorage = validSecondaryStorageConfigES()
+			secondaryStorage.Spec.Elasticsearch.CredentialsSecretRef.Namespace = namespace
 			secret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      cfg.Spec.Elasticsearch.CredentialsSecretRef.Name,
+					Name:      secondaryStorage.Spec.Elasticsearch.CredentialsSecretRef.Name,
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{"username": []byte("u"), "password": []byte("p")},
@@ -83,39 +86,39 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 		})
 
 		It("reports MissingSecret while the credentials Secret does not exist", func() {
-			createSecondaryStorageConfig(cfg)
+			createSecondaryStorageConfig(secondaryStorage)
 
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+				secondaryStorage.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
 				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
 			)
 		})
 
 		It("flips to Healthy when the credentials Secret is created", func() {
-			createSecondaryStorageConfig(cfg)
+			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+				secondaryStorage.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
 				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
 			)
 
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
 			)
 		})
 
 		It("flips back to MissingSecret when the credentials Secret is deleted", func() {
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
-			createSecondaryStorageConfig(cfg)
+			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
 			)
 
 			Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
 
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+				secondaryStorage.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
 				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
 			)
 		})
@@ -123,29 +126,29 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 
 	Context("with an rdbms contract", func() {
 		var (
-			cfg      *v1.SecondaryStorageConfig
-			database *v1.DatabaseConfig
+			secondaryStorage *v1.SecondaryStorageConfig
+			database         *v1.DatabaseConfig
 		)
 
 		BeforeEach(func() {
 			database = validDatabaseConfig()
-			cfg = validSecondaryStorageConfigRDBMS()
-			cfg.Spec.RDBMS.DatabaseConfigRef = database.Name
+			secondaryStorage = validSecondaryStorageConfigRDBMS()
+			secondaryStorage.Spec.RDBMS.DatabaseConfigRef = database.Name
 		})
 
 		It("reports InvalidReference while the DatabaseConfig does not exist", func() {
-			createSecondaryStorageConfig(cfg)
+			createSecondaryStorageConfig(secondaryStorage)
 
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+				secondaryStorage.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
 				fmt.Sprintf("DatabaseConfig %q not found", database.Name),
 			)
 		})
 
 		It("flips to Healthy when the DatabaseConfig is created", func() {
-			createSecondaryStorageConfig(cfg)
+			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+				secondaryStorage.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
 				fmt.Sprintf("DatabaseConfig %q not found", database.Name),
 			)
 
@@ -153,21 +156,21 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, database) })
 
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
 			)
 		})
 
 		It("flips back to InvalidReference when the DatabaseConfig is deleted", func() {
 			Expect(k8sClient.Create(ctx, database)).To(Succeed())
-			createSecondaryStorageConfig(cfg)
+			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
 			)
 
 			Expect(k8sClient.Delete(ctx, database)).To(Succeed())
 
 			expectSecondaryStorageReady(
-				cfg.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+				secondaryStorage.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
 				fmt.Sprintf("DatabaseConfig %q not found", database.Name),
 			)
 		})
@@ -178,23 +181,23 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 		Expect(k8sClient.Create(ctx, database)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, database) })
 
-		cfg := validSecondaryStorageConfigRDBMS()
-		cfg.Spec.RDBMS.DatabaseConfigRef = database.Name
-		createSecondaryStorageConfig(cfg)
+		secondaryStorage := validSecondaryStorageConfigRDBMS()
+		secondaryStorage.Spec.RDBMS.DatabaseConfigRef = database.Name
+		createSecondaryStorageConfig(secondaryStorage)
 		expectSecondaryStorageReady(
-			cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+			secondaryStorage.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
 		)
 
 		other := validDatabaseConfig()
 		Expect(k8sClient.Create(ctx, other)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, cfg)).To(Succeed())
-		cfg.Spec.RDBMS.DatabaseConfigRef = other.Name
-		Expect(k8sClient.Update(ctx, cfg)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: secondaryStorage.Name}, secondaryStorage)).To(Succeed())
+		secondaryStorage.Spec.RDBMS.DatabaseConfigRef = other.Name
+		Expect(k8sClient.Update(ctx, secondaryStorage)).To(Succeed())
 
 		Eventually(func(g Gomega) {
 			var updated v1.SecondaryStorageConfig
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, &updated)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: secondaryStorage.Name}, &updated)).To(Succeed())
 			g.Expect(updated.Status.ObservedGeneration).To(Equal(updated.Generation))
 			g.Expect(updated.Generation).To(BeNumerically(">", int64(1)))
 		}, timeout, interval).Should(Succeed())
