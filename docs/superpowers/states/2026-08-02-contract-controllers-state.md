@@ -28,7 +28,7 @@ status: consumer-wave
 | #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | → feature/batch-a-contract-controllers | in-progress |
 | #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | in-progress |
 | #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | in-progress |
-| #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | → feature/batch-a-contract-controllers | in-progress |
+| #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | #25 → feature/batch-a-contract-controllers | ready |
 | #23 | batch-a/managementauthconfig | .claude/worktrees/batch-a-contract-controllers--managementauthconfig | → feature/batch-a-contract-controllers | in-progress |
 
 ## Contracts
