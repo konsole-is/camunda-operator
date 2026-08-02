@@ -17,8 +17,10 @@ spec:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: SecondaryStorageConfig is the Schema for the secondarystorageconfigs
-          API
+        description: |-
+          SecondaryStorageConfig is the contract CRD that tells an orchestration
+          cluster where its secondary storage lives — an Elasticsearch cluster or a
+          relational database — and how to authenticate against it.
         properties:
           apiVersion:
             description: |-
@@ -40,25 +42,86 @@ spec:
           spec:
             description: spec defines the desired state of SecondaryStorageConfig
             properties:
-              foo:
-                description: foo is an example field of SecondaryStorageConfig. Edit
-                  secondarystorageconfig_types.go to remove/update
+              elasticsearch:
+                description: |-
+                  Elasticsearch connection details. Required when type is elasticsearch,
+                  forbidden otherwise.
+                properties:
+                  credentialsSecretRef:
+                    description: |-
+                      CredentialsSecretRef names a basic-auth user with read/write access to
+                      the Camunda indices.
+                    properties:
+                      name:
+                        description: Name of the Secret holding the credentials.
+                        minLength: 1
+                        type: string
+                      namespace:
+                        description: Namespace of the Secret.
+                        minLength: 1
+                        type: string
+                      passwordKey:
+                        description: PasswordKey is the key in the Secret holding
+                          the plaintext password.
+                        minLength: 1
+                        type: string
+                      usernameKey:
+                        description: UsernameKey is the key in the Secret holding
+                          the plaintext username.
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    - passwordKey
+                    - usernameKey
+                    type: object
+                  endpoint:
+                    description: Endpoint is the HTTP(S) endpoint of the Elasticsearch
+                      cluster.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: endpoint must be a valid http or https URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https')
+                required:
+                - credentialsSecretRef
+                - endpoint
+                type: object
+              rdbms:
+                description: RDBMS backend details. Required when type is rdbms, forbidden
+                  otherwise.
+                properties:
+                  databaseConfigRef:
+                    description: |-
+                      DatabaseConfigRef names the DatabaseConfig describing the logical
+                      database to use.
+                    minLength: 1
+                    type: string
+                required:
+                - databaseConfigRef
+                type: object
+              type:
+                description: Type selects which secondary storage backend this contract
+                  describes.
+                enum:
+                - elasticsearch
+                - rdbms
                 type: string
+            required:
+            - type
             type: object
+            x-kubernetes-validations:
+            - message: exactly the block matching spec.type must be set
+              rule: (self.type == 'elasticsearch') == has(self.elasticsearch) && (self.type
+                == 'rdbms') == has(self.rdbms)
           status:
             description: status defines the observed state of SecondaryStorageConfig
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the SecondaryStorageConfig resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current validation state; the Ready condition
+                  carries reasons Healthy, MissingSecret, or InvalidReference.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -117,6 +180,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

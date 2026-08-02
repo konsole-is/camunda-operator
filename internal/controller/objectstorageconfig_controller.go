@@ -24,13 +24,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // ObjectStorageConfigReconciler reconciles a ObjectStorageConfig object
 type ObjectStorageConfigReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	// APIReader keeps the uniform reconciler shape shared by all five contract
+	// validation controllers (constructed identically in cmd/main.go and
+	// suite_test.go); it is unused here because ObjectStorageConfig references
+	// no Secrets.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -57,7 +62,7 @@ func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 // SetupWithManager sets up the controller with the Manager.
 func (r *ObjectStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.ObjectStorageConfig{}).
+		For(&v1.ObjectStorageConfig{}).
 		Named("objectstorageconfig").
 		Complete(r)
 }

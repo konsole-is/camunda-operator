@@ -17,8 +17,10 @@ spec:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: ObjectStorageConfig is the Schema for the objectstorageconfigs
-          API
+        description: |-
+          ObjectStorageConfig is the contract CRD that describes a cloud bucket — for
+          backups or document storage — and the workload identity trusted to access
+          it.
         properties:
           apiVersion:
             description: |-
@@ -40,25 +42,66 @@ spec:
           spec:
             description: spec defines the desired state of ObjectStorageConfig
             properties:
-              foo:
-                description: foo is an example field of ObjectStorageConfig. Edit
-                  objectstorageconfig_types.go to remove/update
+              accountId:
+                description: |-
+                  AccountID is the workload identity the bucket trusts: an IAM role ARN
+                  (aws), a service account email (gcp), or a managed identity client ID
+                  (azure).
+                minLength: 1
                 type: string
+              basePath:
+                description: |-
+                  BasePath is the key prefix under which consumers write objects. Empty
+                  means the bucket root.
+                type: string
+              bucketId:
+                description: |-
+                  BucketID is the provider-specific unique identifier of the bucket, for
+                  example an ARN on AWS.
+                minLength: 1
+                type: string
+              bucketName:
+                description: BucketName is the bucket name as used by storage client
+                  SDKs.
+                minLength: 1
+                type: string
+              provider:
+                description: |-
+                  Provider is the cloud provider hosting the bucket; it determines the
+                  workload-identity mechanism.
+                enum:
+                - aws
+                - gcp
+                - azure
+                type: string
+              type:
+                description: Type is the storage API of the bucket; it must match
+                  the provider.
+                enum:
+                - S3
+                - GCS
+                - AzureBlob
+                type: string
+            required:
+            - accountId
+            - bucketId
+            - bucketName
+            - provider
+            - type
             type: object
+            x-kubernetes-validations:
+            - message: 'spec.type must match spec.provider: aws pairs with S3, gcp
+                with GCS, azure with AzureBlob'
+              rule: (self.provider == 'aws' && self.type == 'S3') || (self.provider
+                == 'gcp' && self.type == 'GCS') || (self.provider == 'azure' && self.type
+                == 'AzureBlob')
           status:
             description: status defines the observed state of ObjectStorageConfig
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the ObjectStorageConfig resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current validation state; the Ready condition
+                  carries the reason Healthy.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -117,6 +160,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

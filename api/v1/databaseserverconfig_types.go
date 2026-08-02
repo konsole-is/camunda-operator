@@ -20,38 +20,55 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// DatabaseEngine identifies the database engine of a server.
+// +kubebuilder:validation:Enum=postgres
+type DatabaseEngine string
 
-// DatabaseServerConfigSpec defines the desired state of DatabaseServerConfig
-type DatabaseServerConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+// DatabaseEnginePostgres is the PostgreSQL engine, currently the only engine
+// the Database controller can bootstrap against.
+const DatabaseEnginePostgres DatabaseEngine = "postgres"
 
-	// foo is an example field of DatabaseServerConfig. Edit databaseserverconfig_types.go to remove/update
+// PITRCapability declares a server's point-in-time-recovery capability: that it
+// performs continuous WAL archiving with the given retention.
+// +kubebuilder:validation:XValidation:rule="!self.enabled || (has(self.retentionPeriodDays) && self.retentionPeriodDays >= 1)",message="retentionPeriodDays of at least 1 is required when enabled is true"
+type PITRCapability struct {
+	// Enabled reports whether the server performs continuous WAL archiving.
+	// +kubebuilder:default=false
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
+	// RetentionPeriodDays is how many days into the past a point-in-time
+	// restore can target. Required when enabled is true.
+	// +optional
+	RetentionPeriodDays *int32 `json:"retentionPeriodDays,omitempty"`
 }
 
-// DatabaseServerConfigStatus defines the observed state of DatabaseServerConfig.
+// DatabaseServerConfigSpec describes a database server: engine, endpoint,
+// admin credentials, and point-in-time-recovery capability.
+type DatabaseServerConfigSpec struct {
+	// Engine is the database engine of the server.
+	Engine DatabaseEngine `json:"engine"`
+	// Host the server is reachable at.
+	// +kubebuilder:validation:MinLength=1
+	Host string `json:"host"`
+	// Port the server listens on.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
+	// AdminCredentialsSecretRef names an admin user with permission to create
+	// databases and roles; used by the Database controller to bootstrap.
+	AdminCredentialsSecretRef CredentialsSecretRef `json:"adminCredentialsSecretRef"`
+	// PITR declares the server's point-in-time-recovery capability.
+	// +optional
+	PITR *PITRCapability `json:"pitr,omitempty"`
+}
+
+// DatabaseServerConfigStatus is the observed validation state of the contract.
 type DatabaseServerConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the DatabaseServerConfig resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current validation state; the Ready condition
+	// carries reasons Healthy or MissingSecret.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -62,7 +79,10 @@ type DatabaseServerConfigStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// DatabaseServerConfig is the Schema for the databaseserverconfigs API
+// DatabaseServerConfig is the contract CRD that describes a database server —
+// engine, endpoint, admin credentials, and point-in-time-recovery capability —
+// for controllers that bootstrap databases on it or validate its declared
+// capabilities.
 type DatabaseServerConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -78,6 +98,12 @@ type DatabaseServerConfig struct {
 	// +optional
 	Status DatabaseServerConfigStatus `json:"status,omitzero"`
 }
+
+// GetConditions returns the resource's status conditions.
+func (in *DatabaseServerConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+
+// GetObservedGeneration returns the last reconciled generation recorded in status.
+func (in *DatabaseServerConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
 
 // +kubebuilder:object:root=true
 
