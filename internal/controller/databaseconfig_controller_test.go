@@ -17,23 +17,171 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
+// databaseConfigSecret builds a Secret at ref holding a placeholder value for
+// each key.
+func databaseConfigSecret(ref v1.CredentialsSecretRef, keys ...string) *corev1.Secret {
+	data := make(map[string][]byte, len(keys))
+	for _, key := range keys {
+		data[key] = []byte("value")
+	}
+
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ref.Name, Namespace: ref.Namespace},
+		Data:       data,
+	}
+}
+
+// expectDatabaseConfigReady polls the named DatabaseConfig until its Ready
+// condition matches status, reason, and message.
+func expectDatabaseConfigReady(name string, status metav1.ConditionStatus, reason, message string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var cfg v1.DatabaseConfig
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, &cfg)).To(Succeed())
+		cond := meta.FindStatusCondition(cfg.Status.Conditions, conditions.TypeReady)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Status).To(Equal(status))
+		g.Expect(cond.Reason).To(Equal(reason))
+		g.Expect(cond.Message).To(Equal(message))
+	}, timeout, interval).Should(Succeed())
+}
+
 var _ = Describe("DatabaseConfig controller", func() {
-	It("reconciles a valid resource without error", func() {
-		resource := validDatabaseConfig()
-		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, resource)).To(Succeed()) })
+	var (
+		ns     string
+		server *v1.DatabaseServerConfig
+		cfg    *v1.DatabaseConfig
+	)
 
-		reconciler := &DatabaseConfigReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+	create := func(obj client.Object) {
+		GinkgoHelper()
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+	}
 
-		_, err := reconciler.Reconcile(ctx, reconcile.Request{
-			NamespacedName: types.NamespacedName{Name: resource.Name},
-		})
-		Expect(err).NotTo(HaveOccurred())
+	BeforeEach(func() {
+		ns = "dbc-" + utilrand.String(8)
+		create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
+
+		server = validDatabaseServerConfig()
+		cfg = validDatabaseConfig()
+		cfg.Spec.ServerRef = server.Name
+		cfg.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
+			Name: "app-creds", Namespace: ns,
+			UsernameKey: "username", PasswordKey: "password",
+		}
+	})
+
+	It("reports InvalidReference for a dangling serverRef", func() {
+		create(cfg)
+
+		expectDatabaseConfigReady(
+			cfg.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			fmt.Sprintf("DatabaseServerConfig %q not found", cfg.Spec.ServerRef),
+		)
+	})
+
+	It("moves validation forward to the Secret checks when the server appears", func() {
+		create(cfg)
+		expectDatabaseConfigReady(
+			cfg.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			fmt.Sprintf("DatabaseServerConfig %q not found", cfg.Spec.ServerRef),
+		)
+
+		create(server)
+
+		expectDatabaseConfigReady(
+			cfg.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			fmt.Sprintf("Secret %q not found", ns+"/app-creds"),
+		)
+	})
+
+	It("reports Healthy when the server and all Secrets exist", func() {
+		cfg.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+			Name: "backup-creds", Namespace: ns,
+			UsernameKey: "username", PasswordKey: "password",
+		}
+		create(server)
+		create(databaseConfigSecret(cfg.Spec.CredentialsSecretRef, "username", "password"))
+		create(databaseConfigSecret(*cfg.Spec.BackupCredentialsSecretRef, "username", "password"))
+		create(cfg)
+
+		expectDatabaseConfigReady(cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+	})
+
+	It("flips a Healthy contract to InvalidReference when the server is deleted", func() {
+		create(server)
+		create(databaseConfigSecret(cfg.Spec.CredentialsSecretRef, "username", "password"))
+		create(cfg)
+		expectDatabaseConfigReady(cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+
+		Expect(k8sClient.Delete(ctx, server)).To(Succeed())
+
+		expectDatabaseConfigReady(
+			cfg.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			fmt.Sprintf("DatabaseServerConfig %q not found", cfg.Spec.ServerRef),
+		)
+	})
+
+	It("names the app Secret and key when a key is missing", func() {
+		create(server)
+		create(databaseConfigSecret(cfg.Spec.CredentialsSecretRef, "username"))
+		create(cfg)
+
+		expectDatabaseConfigReady(
+			cfg.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			fmt.Sprintf("Secret %q is missing key %q", ns+"/app-creds", "password"),
+		)
+	})
+
+	It("names the backup Secret when it is missing", func() {
+		cfg.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+			Name: "backup-creds", Namespace: ns,
+			UsernameKey: "username", PasswordKey: "password",
+		}
+		create(server)
+		create(databaseConfigSecret(cfg.Spec.CredentialsSecretRef, "username", "password"))
+		create(cfg)
+
+		expectDatabaseConfigReady(
+			cfg.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			fmt.Sprintf("Secret %q not found", ns+"/backup-creds"),
+		)
+	})
+
+	It("stamps observedGeneration after a spec update", func() {
+		create(server)
+		create(databaseConfigSecret(cfg.Spec.CredentialsSecretRef, "username", "password"))
+		create(cfg)
+		expectDatabaseConfigReady(cfg.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseConfig
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, &latest)).To(Succeed())
+			latest.Spec.DatabaseName = "camunda-updated"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseConfig
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, &latest)).To(Succeed())
+			g.Expect(latest.Generation).To(BeNumerically(">", int64(1)))
+			g.Expect(latest.Status.ObservedGeneration).To(Equal(latest.Generation))
+		}, timeout, interval).Should(Succeed())
 	})
 })
