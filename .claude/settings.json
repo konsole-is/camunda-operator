@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "operator-component-framework": {
+      "source": {
+        "source": "github",
+        "repo": "sourcehawk/operator-component-framework",
+        "ref": "v0.18.1"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "ocf@operator-component-framework": true
+  }
+}
