@@ -45,9 +45,8 @@ type ManagementAuthConfigReconciler struct {
 	Scheme    *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile validates the contract's references and maintains its Ready
