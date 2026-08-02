@@ -270,3 +270,41 @@ Chart correctness is not reachable from Go tests, so verification is layered:
 - **`kubeVersion: ">= 1.30.0-0"`** is a conservative judgment call, not a measured floor — nothing
   in the codebase pins a minimum Kubernetes version. Helm enforces it at install time, so setting
   it too high would lock out working clusters.
+
+## Follow-ups
+
+Reviewed, judged non-blocking, and deliberately left for a later change. Recorded here so they are
+not rediscovered from scratch.
+
+**Before the first public release:**
+
+- **No `LICENSE` file.** The chart and image publish without terms. This is the one item that
+  genuinely should be settled before anything is published publicly.
+- **ghcr package visibility.** Packages are private on first publish; the `charts/camunda-operator`
+  package must be set public by hand, once, or `helm install` fails for everyone despite a green
+  release run.
+- **Dry-run a prerelease** (e.g. `0.0.1-rc.1`) and verify the pull, the `cosign verify` from
+  `docs/installation.md`, and a clean kind install from the published reference.
+
+**Release workflow hardening:**
+
+- `sigstore/cosign-installer@v3` resolves cosign at `latest` — the one unpinned tool in a workflow
+  whose entire purpose is supply-chain provenance.
+- No `concurrency:` group, so two releases published in quick succession race on the same chart
+  repository.
+- `docker/setup-buildx-action@v3` is redundant: `make docker-buildx` creates, uses, and removes its
+  own builder. Harmless, but misleading to a reader.
+
+**CI:**
+
+- `kind create cluster` pins no Kubernetes version, while every other tool is pinned to
+  `.tool-versions`. The cluster version floats with the kind release.
+- The CRD count `19` is asserted in `.github/workflows/chart.yml` and stated in `README.md` and
+  `docs/installation.md`. Adding a CRD requires updating all three; only the workflow carries a
+  cross-reference comment.
+
+**Unrelated, found in passing:**
+
+- `CLAUDE.md` says "Lint and format with: `make all`". Verified wrong: `all: build`, which runs
+  `manifests generate fmt vet` and builds the binary, and never invokes `make lint`
+  (golangci-lint). Pre-existing; untouched by this branch because it is out of scope.
