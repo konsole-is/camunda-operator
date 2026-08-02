@@ -44,8 +44,10 @@ type ObjectStorageConfigReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs/finalizers,verbs=update
 
-// Reconcile validates the contract's references and maintains its Ready
-// condition; it never creates or mutates other resources.
+// Reconcile maintains the contract's Ready condition and
+// status.observedGeneration. Every ObjectStorageConfig rule is enforced by the
+// CRD schema at admission and the contract references no other objects, so it
+// never creates or mutates other resources.
 func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.ObjectStorageConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {

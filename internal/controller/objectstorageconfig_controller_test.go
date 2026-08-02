@@ -30,8 +30,9 @@ import (
 var _ = Describe("ObjectStorageConfig controller", func() {
 	var cfg *v1.ObjectStorageConfig
 
-	// readyCondition fetches the CR and returns its Ready condition, or nil
-	// while the controller has not reported one yet.
+	// readyCondition fetches the CR, asserts status.observedGeneration has
+	// caught up to metadata.generation (failing g until the controller stamps
+	// status), and returns the Ready condition.
 	readyCondition := func(g Gomega) *metav1.Condition {
 		fetched := &v1.ObjectStorageConfig{}
 		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, fetched)).To(Succeed())
