@@ -24,7 +24,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | → feature/batch-a-contract-controllers | not-started |
+| #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | → feature/batch-a-contract-controllers | in-progress |
 | #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | → feature/batch-a-contract-controllers | not-started |
 | #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | not-started |
 | #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | not-started |
