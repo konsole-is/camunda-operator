@@ -405,7 +405,8 @@ In `Makefile`, insert immediately after the `helm-generate` target:
 ## limit. This uncompressed proxy is deliberately conservative — gzip on CRD text
 ## buys several-fold headroom, so the wire trips well before an install would
 ## actually fail. It is an early warning to trigger the CRD-split conversation,
-## not a correctness check. See
+## not a correctness check. The tripwire measures the worst case across all
+## rendered permutations. See
 ## docs/superpowers/specs/2026-08-01-helm-chart-distribution-design.md
 HELM_MAX_RENDER_BYTES ?= 1048576
 
@@ -415,6 +416,7 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		echo "$(HELM_CHART_DIR) not found; run 'make helm-generate' first." >&2; exit 1; }
 	$(HELM) lint "$(HELM_CHART_DIR)"
 	@set -e; \
+	max=0; worst=""; \
 	for opts in \
 		"" \
 		"--set crd.enable=false" \
@@ -422,26 +424,28 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		"--set prometheus.enable=true" \
 		"--set certManager.enable=true" \
 		"--set crd.enable=false --set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
+		"--set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
 	; do \
-		echo "  helm template $${opts:-<defaults>}"; \
-		$(HELM) template verify "$(HELM_CHART_DIR)" $$opts >/dev/null; \
-	done
-	@bytes="$$( $(HELM) template verify "$(HELM_CHART_DIR)" | wc -c )"; \
-	echo "  rendered size: $$bytes bytes (limit $(HELM_MAX_RENDER_BYTES))"; \
-	if [ "$$bytes" -gt "$(HELM_MAX_RENDER_BYTES)" ]; then \
-		echo "ERROR: rendered chart exceeds $(HELM_MAX_RENDER_BYTES) bytes." >&2; \
+		label="$${opts:-<defaults>}"; \
+		bytes="$$( $(HELM) template verify "$(HELM_CHART_DIR)" $$opts | wc -c )"; \
+		printf '  %9s bytes  helm template %s\n' "$$bytes" "$$label"; \
+		if [ "$$bytes" -gt "$$max" ]; then max=$$bytes; worst="$$label"; fi; \
+	done; \
+	echo "  worst case: $$max bytes ($$worst), limit $(HELM_MAX_RENDER_BYTES)"; \
+	if [ "$$max" -gt "$(HELM_MAX_RENDER_BYTES)" ]; then \
+		echo "ERROR: rendered chart exceeds $(HELM_MAX_RENDER_BYTES) bytes in configuration: $$worst" >&2; \
 		echo "The CRD set has outgrown in-chart delivery. Consider splitting CRDs" >&2; \
 		echo "into a separate chart; see the design spec for the follow-up." >&2; \
 		exit 1; \
 	fi
 ```
 
-Note: `certManager.enable=true` renders zero objects today, because cert-manager is commented out in `config/default`. The permutation is kept as a standing guard for when it is enabled.
+Note: `certManager.enable=true` renders zero objects today, because cert-manager is commented out in `config/default`. The permutation is kept as a standing guard for when it is enabled. The seventh permutation (`crd.enable=false` is not used with the other features) tests the worst case: all optional features enabled with CRDs.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `/tmp/helm-verify-check.sh`
-Expected: PASS. The size report reads roughly `rendered size: 119859 bytes (limit 1048576)`.
+Expected: PASS. The size report shows all seven permutations rendered, with the worst case identified as `worst case: 155197 bytes (--set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true), limit 1048576`.
 
 - [ ] **Step 5: Commit**
 

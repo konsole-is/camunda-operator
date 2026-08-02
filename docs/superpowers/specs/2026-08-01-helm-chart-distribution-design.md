@@ -179,12 +179,13 @@ publishes under its prerelease SemVer tag.
   branch — `crd.enable=false`, `rbacHelpers.enable=true`, `prometheus.enable=true`,
   `certManager.enable=true` — plus a rendered-size tripwire. No cluster required.
 
-  The tripwire fails the target when the default `helm template` output exceeds **1 MiB
-  uncompressed**. The real bound is the gzipped release Secret against etcd's ~1MB object limit, so
-  1 MiB uncompressed is a deliberately conservative proxy: gzip on CRD text buys several-fold
-  headroom, meaning the tripwire fires well before an install would actually fail. That is the
-  intent — it is an early warning to trigger the CRD-split conversation, not a hard correctness
-  check. Today's default render is ~120 KiB.
+  The tripwire fails the target when the worst-case `helm template` output across all value
+  permutations exceeds **1 MiB uncompressed**. The real bound is the gzipped release Secret
+  against etcd's ~1MB object limit, so 1 MiB uncompressed is a deliberately conservative proxy:
+  gzip on CRD text buys several-fold headroom, meaning the tripwire fires well before an install
+  would actually fail. That is the intent — it is an early warning to trigger the CRD-split
+  conversation, not a hard correctness check. Today's worst case is ~155 KiB (with all optional
+  features enabled plus CRDs); the default render is ~120 KiB.
 - `helm-generate` keeps `--force`.
 
 ### `.github/workflows/test-chart.yml` (fix)
