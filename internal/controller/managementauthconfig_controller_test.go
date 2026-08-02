@@ -33,20 +33,20 @@ import (
 
 var _ = Describe("ManagementAuthConfig controller", func() {
 	var (
-		namespace string
-		cfg       *v1.ManagementAuthConfig
+		namespace  string
+		authConfig *v1.ManagementAuthConfig
 	)
 
 	BeforeEach(func() {
 		namespace = "mac-ns-" + utilrand.String(8)
-		Expect(k8sClient.Create(ctx, &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: namespace},
-		})).To(Succeed())
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
 
-		cfg = validManagementAuthConfig()
-		cfg.Spec.ClientSecretRef.Namespace = namespace
-		Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
-		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, cfg)).To(Succeed()) })
+		authConfig = validManagementAuthConfig()
+		authConfig.Spec.ClientSecretRef.Namespace = namespace
+		Expect(k8sClient.Create(ctx, authConfig)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, authConfig)).To(Succeed()) })
 	})
 
 	// expectReady polls until the Ready condition and status.observedGeneration
@@ -55,7 +55,7 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 		GinkgoHelper()
 		Eventually(func(g Gomega) {
 			var current v1.ManagementAuthConfig
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, &current)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: authConfig.Name}, &current)).To(Succeed())
 			cond := meta.FindStatusCondition(current.Status.Conditions, conditions.TypeReady)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(status))
@@ -71,29 +71,26 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 		GinkgoHelper()
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      cfg.Spec.ClientSecretRef.Name,
+				Name:      authConfig.Spec.ClientSecretRef.Name,
 				Namespace: namespace,
 			},
-			Data: map[string][]byte{cfg.Spec.ClientSecretRef.Key: []byte("s3cr3t")},
+			Data: map[string][]byte{authConfig.Spec.ClientSecretRef.Key: []byte("s3cr3t")},
 		}
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 		return secret
 	}
 
+	notFoundMessage := func() string {
+		return fmt.Sprintf("Secret %q not found", namespace+"/"+authConfig.Spec.ClientSecretRef.Name)
+	}
+
 	It("reports MissingSecret when the referenced Secret does not exist", func() {
-		expectReady(
-			metav1.ConditionFalse,
-			conditions.ReasonMissingSecret,
-			fmt.Sprintf("Secret \"%s/%s\" not found", namespace, cfg.Spec.ClientSecretRef.Name),
-		)
+		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
 	})
 
 	It("flips to Healthy when the Secret with the configured key appears, without touching the CR", func() {
-		expectReady(
-			metav1.ConditionFalse,
-			conditions.ReasonMissingSecret,
-			fmt.Sprintf("Secret \"%s/%s\" not found", namespace, cfg.Spec.ClientSecretRef.Name),
-		)
+		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
 
 		createClientSecret()
 
@@ -111,8 +108,8 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 			metav1.ConditionFalse,
 			conditions.ReasonMissingSecret,
 			fmt.Sprintf(
-				"Secret \"%s/%s\" is missing key %q",
-				namespace, cfg.Spec.ClientSecretRef.Name, cfg.Spec.ClientSecretRef.Key,
+				"Secret %q is missing key %q",
+				namespace+"/"+authConfig.Spec.ClientSecretRef.Name, authConfig.Spec.ClientSecretRef.Key,
 			),
 		)
 	})
@@ -123,11 +120,7 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 
 		Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
 
-		expectReady(
-			metav1.ConditionFalse,
-			conditions.ReasonMissingSecret,
-			fmt.Sprintf("Secret \"%s/%s\" not found", namespace, cfg.Spec.ClientSecretRef.Name),
-		)
+		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
 	})
 
 	It("keeps status.observedGeneration in step with spec updates", func() {
@@ -135,7 +128,7 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
 
 		var current v1.ManagementAuthConfig
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, &current)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: authConfig.Name}, &current)).To(Succeed())
 		current.Spec.Audience = "camunda-management-updated"
 		Expect(k8sClient.Update(ctx, &current)).To(Succeed())
 		Expect(current.Generation).To(BeNumerically(">", int64(1)))

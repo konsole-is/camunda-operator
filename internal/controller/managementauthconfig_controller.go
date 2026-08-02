@@ -78,6 +78,7 @@ func (r *ManagementAuthConfigReconciler) validate(ctx context.Context, cfg *v1.M
 	if msg != "" {
 		return conditions.Ready(metav1.ConditionFalse, conditions.ReasonMissingSecret, msg, cfg.Generation), nil
 	}
+
 	return conditions.Ready(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
@@ -91,6 +92,7 @@ func (r *ManagementAuthConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		}); err != nil {
 		return err
 	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ManagementAuthConfig{}).
 		Watches(&corev1.Secret{},
