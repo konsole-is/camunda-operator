@@ -24,7 +24,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | → feature/batch-a-contract-controllers | not-started |
+| #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | #24 → feature/batch-a-contract-controllers | ready |
 | #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | → feature/batch-a-contract-controllers | not-started |
 | #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | not-started |
 | #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | not-started |
@@ -46,7 +46,7 @@ All contracts are realized by the foundations PR (#18) merging into the feature 
 
 ## Bubble-up log
 
-- _No concerns yet._
+- **2026-08-02 — propagate to #19–#23 (from #18 implementer):** (1) the five `internal/controller/<kind>_controller_test.go` files already exist as minimal valid-fixture smoke tests — controller PRs replace their own file, never create blind; (2) the `valid<Kind>()` fixture helpers live in the sibling `<kind>_schema_test.go` files — reuse them in reconciliation specs; (3) `conditions.PatchReady` internally uses controller-runtime v0.24 `Status().Apply(...)` (the plan's `Status().Patch(..., client.Apply)` is deprecated and fails staticcheck) — exported signature unchanged; (4) testify is now a direct dependency; (5) `corev1` → `v1` import-alias rename is already done in the five controller files, `cmd/main.go`, and `suite_test.go`; (6) shell note: the permission guard misfires on `cd <worktree> && git ...` compound commands — use `git -C <worktree-path> ...`. Propagation path: baked into the Phase 2 dispatch prompts (no consumer agents running yet).
 
 ## Pending snapshot
 
