@@ -2,10 +2,11 @@ name: Test Chart
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
-  test-e2e:
+  test-chart:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
     steps:
@@ -17,54 +18,72 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install the latest version of kind
+      # Versions below are pinned to .tool-versions. Keep them in sync.
+      - name: Install kubebuilder
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          VERSION=4.13.1
+          OS=$(go env GOOS)
+          ARCH=$(go env GOARCH)
+          curl -fsSL -o kubebuilder \
+            "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${VERSION}/kubebuilder_${OS}_${ARCH}"
+          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          kubebuilder version
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4.3.1
+        with:
+          version: v4.1.4
+
+      - name: Generate the Helm chart
+        run: make helm-generate IMG=controller:latest
+
+      # Cluster-free gate first: fail fast on template breakage before paying
+      # for a kind cluster and an image build.
+      - name: Verify the Helm chart
+        run: make helm-verify
+
+      - name: Install kind
+        run: |
+          VERSION=0.31.0
+          curl -fsSLo ./kind \
+            "https://kind.sigs.k8s.io/dl/v${VERSION}/kind-linux-$(go env GOARCH)"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
-
-      - name: Verify kind installation
-        run: kind version
+          kind version
 
       - name: Create kind cluster
         run: kind create cluster
 
-      - name: Prepare camunda-operator
+      - name: Build and load the operator image
         run: |
-          go mod tidy
           make docker-build IMG=controller:latest
           kind load docker-image controller:latest
 
-      - name: Install Helm
-        run: make install-helm
+      - name: Install the chart
+        run: make helm-deploy IMG=controller:latest
 
-      - name: Lint Helm Chart
-        run: |
-          helm lint ./dist/chart
+      - name: Check release status
+        run: make helm-status
 
-# TODO: Uncomment if cert-manager is enabled
-#      - name: Install cert-manager via Helm (wait for readiness)
-#        run: |
-#          helm repo add jetstack https://charts.jetstack.io
-#          helm repo update
-#          helm install cert-manager jetstack/cert-manager \
-#            --namespace cert-manager \
-#            --create-namespace \
-#            --set crds.enabled=true \
-#            --wait \
-#            --timeout 300s
+      # CRD upgrades are the most likely breakage as the API grows. Exercise
+      # the upgrade path in CI rather than discovering it in a user's cluster.
+      - name: Upgrade the chart
+        run: helm upgrade camunda-operator ./dist/chart --namespace camunda-operator-system --set rbacHelpers.enable=true --wait
 
-# TODO: Uncomment if Prometheus is enabled
-#      - name: Install Prometheus Operator CRDs
-#        run: |
-#          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-#          helm repo update
-#          helm install prometheus-crds prometheus-community/prometheus-operator-crds
-
-      - name: Deploy manager via Helm
-        run: |
-          make helm-deploy IMG=camunda-operator:v0.1.0
-
-      - name: Check Helm release status
+      - name: Check upgrade revision
         run: |
           make helm-status
+          rev=$(helm get metadata camunda-operator \
+            --namespace camunda-operator-system -o json | jq -r '.version')
+          echo "release revision: $rev"
+          [ "$rev" -ge 2 ] || { echo "expected revision >= 2 after upgrade"; exit 1; }
+
+      - name: Uninstall the chart
+        run: make helm-uninstall
+
+      # crd.keep defaults to true, so CRDs must survive uninstall.
+      - name: Verify CRDs survived uninstall
+        run: |
+          count=$(kubectl get crd -o name | grep -c 'core\.camunda\.io' || true)
+          echo "CRDs remaining: $count"
+          [ "$count" -eq 19 ] || { echo "expected 19 CRDs to be kept, found $count"; exit 1; }
