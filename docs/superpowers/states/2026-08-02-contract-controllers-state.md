@@ -25,7 +25,7 @@ status: consumer-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | #24 → feature/batch-a-contract-controllers | self-merged |
-| #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | #26 → feature/batch-a-contract-controllers | ready |
+| #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | #26 → feature/batch-a-contract-controllers | self-merged |
 | #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | #29 → feature/batch-a-contract-controllers | self-merged |
 | #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | #28 → feature/batch-a-contract-controllers | self-merged |
 | #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | #25 → feature/batch-a-contract-controllers | self-merged |
