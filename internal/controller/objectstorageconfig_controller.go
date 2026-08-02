@@ -40,9 +40,8 @@ type ObjectStorageConfigReconciler struct {
 	Scheme    *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs/finalizers,verbs=update
 
 // Reconcile maintains the contract's Ready condition and
 // status.observedGeneration. Every ObjectStorageConfig rule is enforced by the

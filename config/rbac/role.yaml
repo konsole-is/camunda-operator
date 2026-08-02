@@ -22,16 +22,11 @@ rules:
   - camundamanagementclusters
   - camundaoptimizes
   - camundaplatformconfigs
-  - databaseconfigs
   - databases
-  - databaseserverconfigs
   - elasticsearchclusters
   - logicalrestores
-  - managementauthconfigs
-  - objectstorageconfigs
   - pointintimerestores
   - pvcautoresizes
-  - secondarystorageconfigs
   verbs:
   - create
   - delete
@@ -50,16 +45,11 @@ rules:
   - camundamanagementclusters/finalizers
   - camundaoptimizes/finalizers
   - camundaplatformconfigs/finalizers
-  - databaseconfigs/finalizers
   - databases/finalizers
-  - databaseserverconfigs/finalizers
   - elasticsearchclusters/finalizers
   - logicalrestores/finalizers
-  - managementauthconfigs/finalizers
-  - objectstorageconfigs/finalizers
   - pointintimerestores/finalizers
   - pvcautoresizes/finalizers
-  - secondarystorageconfigs/finalizers
   verbs:
   - update
 - apiGroups:
@@ -86,3 +76,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - core.camunda.io
+  resources:
+  - databaseconfigs
+  - databaseserverconfigs
+  - managementauthconfigs
+  - objectstorageconfigs
+  - secondarystorageconfigs
+  verbs:
+  - get
+  - list
+  - watch
