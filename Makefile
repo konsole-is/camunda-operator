@@ -286,6 +286,45 @@ install-helm: ## Install the latest version of Helm.
 helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify an image with IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
 
+## Maximum rendered chart size in bytes before helm-verify fails.
+## The real bound is the gzipped Helm release Secret against etcd's ~1MB object
+## limit. This uncompressed proxy is deliberately conservative — gzip on CRD text
+## buys several-fold headroom, so the wire trips well before an install would
+## actually fail. It is an early warning to trigger the CRD-split conversation,
+## not a correctness check. The tripwire measures the worst case across all
+## rendered permutations. See
+## docs/superpowers/specs/2026-08-01-helm-chart-distribution-design.md
+HELM_MAX_RENDER_BYTES ?= 1048576
+
+.PHONY: helm-verify
+helm-verify: install-helm ## Lint and render the Helm chart across value permutations. No cluster required.
+	@test -d "$(HELM_CHART_DIR)" || { \
+		echo "$(HELM_CHART_DIR) not found; run 'make helm-generate' first." >&2; exit 1; }
+	$(HELM) lint "$(HELM_CHART_DIR)"
+	@set -e; \
+	max=0; worst=""; \
+	for opts in \
+		"" \
+		"--set crd.enable=false" \
+		"--set rbacHelpers.enable=true" \
+		"--set prometheus.enable=true" \
+		"--set certManager.enable=true" \
+		"--set crd.enable=false --set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
+		"--set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
+	; do \
+		label="$${opts:-<defaults>}"; \
+		bytes="$$( $(HELM) template verify "$(HELM_CHART_DIR)" $$opts | wc -c )"; \
+		printf '  %9s bytes  helm template %s\n' "$$bytes" "$$label"; \
+		if [ "$$bytes" -gt "$$max" ]; then max=$$bytes; worst="$$label"; fi; \
+	done; \
+	echo "  worst case: $$max bytes ($$worst), limit $(HELM_MAX_RENDER_BYTES)"; \
+	if [ "$$max" -gt "$(HELM_MAX_RENDER_BYTES)" ]; then \
+		echo "ERROR: rendered chart exceeds $(HELM_MAX_RENDER_BYTES) bytes in configuration: $$worst" >&2; \
+		echo "The CRD set has outgrown in-chart delivery. Consider splitting CRDs" >&2; \
+		echo "into a separate chart; see the design spec for the follow-up." >&2; \
+		exit 1; \
+	fi
+
 .PHONY: helm-deploy
 helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
