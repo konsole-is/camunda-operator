@@ -85,6 +85,9 @@ jobs:
         run: make helm-uninstall
 
       # crd.keep defaults to true, so CRDs must survive uninstall.
+      # The expected count (19) is also stated in README.md and
+      # docs/installation.md — all three must move together when a CRD is
+      # added or removed.
       - name: Verify CRDs survived uninstall
         run: |
           count=$(kubectl get crd -o name | grep -c 'core\.camunda\.io' || true)

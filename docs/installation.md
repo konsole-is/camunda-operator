@@ -5,7 +5,8 @@ published with every release. Charts and images live in GitHub Container Registr
 and are signed with [cosign](https://docs.sigstore.dev/) keyless signatures.
 
 **Requirements:** Kubernetes 1.30 or later, and Helm 3.8+ for the OCI registry
-(the repository pins Helm 4.1.4).
+(CI pins Helm 4.1.4 for the chart and release workflows; installing Helm
+locally via `make install-helm` fetches whatever is currently latest).
 
 ## Install with Helm
 
@@ -56,8 +57,12 @@ Every release attaches a rendered manifest:
 kubectl apply -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/install.yaml
 ```
 
-This is the same content the chart renders at its defaults, with the namespace
-fixed to `camunda-operator-system`.
+This is **not** the same as the chart's defaults. `install.yaml` includes the
+admin/editor/viewer helper `ClusterRole`s for every custom resource — the same
+set the chart renders with `--set rbacHelpers.enable=true` (60 `ClusterRole`s
+total, versus 3 at the chart's defaults where `rbacHelpers.enable` is `false`).
+`install.yaml` also creates the `camunda-operator-system` `Namespace`, which the
+chart does not — Helm's `--create-namespace` handles that instead.
 
 ## Installing CRDs out of band
 
