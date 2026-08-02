@@ -27,7 +27,7 @@ status: consumer-wave
 | #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | #24 → feature/batch-a-contract-controllers | self-merged |
 | #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | #26 → feature/batch-a-contract-controllers | ready |
 | #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | in-progress |
-| #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | in-progress |
+| #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | #28 → feature/batch-a-contract-controllers | ready |
 | #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | #25 → feature/batch-a-contract-controllers | ready |
 | #23 | batch-a/managementauthconfig | .claude/worktrees/batch-a-contract-controllers--managementauthconfig | #27 → feature/batch-a-contract-controllers | ready |
 
