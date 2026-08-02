@@ -64,6 +64,15 @@ var _ = Describe("ManagementAuthConfig schema", func() {
 		Entry("rejects non-URL baseUrl", func(o *v1.ManagementAuthConfig) {
 			o.Spec.BaseURL = notAURL
 		}, "baseUrl"),
+		Entry("rejects non-URL issuerUrl", func(o *v1.ManagementAuthConfig) {
+			o.Spec.IssuerURL = notAURL
+		}, "issuerUrl"),
+		Entry("rejects non-URL issuerBackendUrl", func(o *v1.ManagementAuthConfig) {
+			o.Spec.IssuerBackendURL = notAURL
+		}, "issuerBackendUrl"),
+		Entry("rejects ftp authUrl", func(o *v1.ManagementAuthConfig) {
+			o.Spec.AuthURL = "ftp://identity.camunda.example.com/auth"
+		}, "authUrl"),
 		Entry("rejects ftp tokenUrl", func(o *v1.ManagementAuthConfig) {
 			o.Spec.TokenURL = "ftp://identity.camunda.example.com/token"
 		}, "tokenUrl"),
