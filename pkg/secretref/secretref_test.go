@@ -1,0 +1,101 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package secretref
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+func secret(namespace, name string, keys ...string) *corev1.Secret {
+	data := make(map[string][]byte, len(keys))
+	for _, key := range keys {
+		data[key] = []byte("value")
+	}
+
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       data,
+	}
+}
+
+func TestCheckKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		objects []*corev1.Secret
+		ref     types.NamespacedName
+		keys    []string
+		want    string
+	}{
+		{
+			name: "secret absent",
+			ref:  types.NamespacedName{Namespace: "ns", Name: "name"},
+			keys: []string{"username", "password"},
+			want: `Secret "ns/name" not found`,
+		},
+		{
+			name:    "secret present but key absent",
+			objects: []*corev1.Secret{secret("ns", "name", "username")},
+			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
+			keys:    []string{"username", "password"},
+			want:    `Secret "ns/name" is missing key "password"`,
+		},
+		{
+			name:    "all keys present",
+			objects: []*corev1.Secret{secret("ns", "name", "username", "password")},
+			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
+			keys:    []string{"username", "password"},
+			want:    "",
+		},
+		{
+			name:    "message names the first missing key",
+			objects: []*corev1.Secret{secret("ns", "name", "c")},
+			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
+			keys:    []string{"a", "b", "c"},
+			want:    `Secret "ns/name" is missing key "a"`,
+		},
+		{
+			name:    "no keys requested",
+			objects: []*corev1.Secret{secret("ns", "name")},
+			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
+			keys:    nil,
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := fake.NewClientBuilder()
+			for _, obj := range tt.objects {
+				builder = builder.WithObjects(obj)
+			}
+			reader := builder.Build()
+
+			msg, err := CheckKeys(context.Background(), reader, tt.ref, tt.keys...)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, msg)
+		})
+	}
+}
