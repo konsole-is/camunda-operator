@@ -28,22 +28,22 @@ import (
 )
 
 var _ = Describe("ObjectStorageConfig controller", func() {
-	var cfg *v1.ObjectStorageConfig
+	var storageConfig *v1.ObjectStorageConfig
 
 	// readyCondition fetches the CR, asserts status.observedGeneration has
 	// caught up to metadata.generation (failing g until the controller stamps
 	// status), and returns the Ready condition.
 	readyCondition := func(g Gomega) *metav1.Condition {
 		fetched := &v1.ObjectStorageConfig{}
-		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, fetched)).To(Succeed())
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, fetched)).To(Succeed())
 		g.Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
 		return meta.FindStatusCondition(fetched.Status.Conditions, conditions.TypeReady)
 	}
 
 	BeforeEach(func() {
-		cfg = validObjectStorageConfig()
-		Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
-		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, cfg)).To(Succeed()) })
+		storageConfig = validObjectStorageConfig()
+		Expect(k8sClient.Create(ctx, storageConfig)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, storageConfig)).To(Succeed()) })
 	})
 
 	It("reports an admitted contract Ready and Healthy at its current generation", func() {
@@ -53,7 +53,7 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
 			g.Expect(cond.Message).To(Equal("All checks passed"))
-			g.Expect(cond.ObservedGeneration).To(Equal(cfg.Generation))
+			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -62,15 +62,17 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 			g.Expect(readyCondition(g)).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cfg.Name}, cfg)).To(Succeed())
-		cfg.Spec.BasePath = "backups"
-		Expect(k8sClient.Update(ctx, cfg)).To(Succeed())
-		Expect(cfg.Generation).To(BeNumerically(">", 1))
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, storageConfig)).To(Succeed())
+		storageConfig.Spec.BasePath = "backups"
+		Expect(k8sClient.Update(ctx, storageConfig)).To(Succeed())
+		Expect(storageConfig.Generation).To(BeNumerically(">", 1))
 
 		Eventually(func(g Gomega) {
 			cond := readyCondition(g)
 			g.Expect(cond).NotTo(BeNil())
-			g.Expect(cond.ObservedGeneration).To(Equal(cfg.Generation))
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
+			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
 		}, timeout, interval).Should(Succeed())
 	})
 })
