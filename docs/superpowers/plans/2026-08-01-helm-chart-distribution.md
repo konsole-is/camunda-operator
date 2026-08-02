@@ -667,7 +667,11 @@ echo "--- both artifacts signed ---"
 [ "$(grep -c 'cosign sign' "$f")" -ge 2 ] || { echo "FAIL: expected chart and image to both be signed"; exit 1; }
 
 echo "--- signing by digest, never by mutable tag ---"
-grep -qE 'cosign sign .*\$\{\{? ?[A-Za-z_]*DIGEST' "$f" || { echo "FAIL: cosign must sign digests"; exit 1; }
+# Case-insensitive: GitHub Actions step outputs conventionally use lowercase
+# keys (steps.X.outputs.digest), so the check must not require a literal
+# uppercase DIGEST substring — an earlier version of this check did, and
+# failed against the workflow's own idiomatic output names.
+grep -qiE 'cosign sign .*\$\{\{? ?[A-Za-z_.]*digest' "$f" || { echo "FAIL: cosign must sign digests"; exit 1; }
 
 echo "--- version stamped into Chart.yaml ---"
 grep -q 'appVersion' "$f" || { echo "FAIL: appVersion never stamped"; exit 1; }
@@ -787,9 +791,20 @@ jobs:
       - name: Package and push the chart
         id: chart
         run: |
+          # The default `bash -e {0}` Actions shell does not imply pipefail:
+          # `helm push ... | tee` would otherwise swallow a failing push's
+          # exit code. Without this, a failed push could leave `digest`
+          # empty (caught below) or, worse, matching an unrelated sha256
+          # embedded in an error message (e.g. "digest mismatch: expected
+          # sha256:...").
+          set -o pipefail
           helm package dist/chart --destination dist
           helm push "dist/camunda-operator-${TAG}.tgz" "${CHART_REGISTRY}" 2>&1 | tee push.log
-          digest=$(grep -oE 'sha256:[0-9a-f]{64}' push.log | head -1)
+          # Anchored to the literal "Digest:" line helm emits on success, so
+          # a sha256 mentioned incidentally in an error message (digest
+          # mismatch, failed manifest push, etc.) can't be mistaken for the
+          # real one.
+          digest=$(sed -n 's/^Digest:[[:space:]]*\(sha256:[0-9a-f]\{64\}\).*/\1/p' push.log | head -1)
           if [ -z "$digest" ]; then
             echo "Could not parse the chart digest from helm push output." >&2
             exit 1
