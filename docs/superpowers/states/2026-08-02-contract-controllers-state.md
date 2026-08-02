@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: consumer-wave
 ---
 
 # Contract-CRD validation controllers — orchestration state
@@ -24,7 +24,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | #24 → feature/batch-a-contract-controllers | ready |
+| #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | #24 → feature/batch-a-contract-controllers | self-merged |
 | #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | → feature/batch-a-contract-controllers | not-started |
 | #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | not-started |
 | #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | not-started |
@@ -37,12 +37,12 @@ All contracts are realized by the foundations PR (#18) merging into the feature 
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| shared-ref-types | foundations PR | #18 PR | pending |
-| contract-specs | foundations PR | #18 PR | pending |
-| conditions-api | foundations PR | #18 PR | pending |
-| secretref-api | foundations PR | #18 PR | pending |
-| refindex-api | foundations PR | #18 PR | pending |
-| suite-manager | foundations PR | #18 PR | pending |
+| shared-ref-types | foundations PR | #24 (merged 0615da3) | locked |
+| contract-specs | foundations PR | #24 (merged 0615da3) | locked |
+| conditions-api | foundations PR | #24 (merged 0615da3) | locked |
+| secretref-api | foundations PR | #24 (merged 0615da3) | locked |
+| refindex-api | foundations PR | #24 (merged 0615da3) | locked |
+| suite-manager | foundations PR | #24 (merged 0615da3) | locked |
 
 ## Bubble-up log
 
