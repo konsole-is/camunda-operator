@@ -17,68 +17,23 @@ limitations under the License.
 package controller
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-var _ = Describe("SecondaryStorageConfig Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+var _ = Describe("SecondaryStorageConfig controller", func() {
+	It("reconciles a valid resource without error", func() {
+		resource := validSecondaryStorageConfigES()
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, resource)).To(Succeed()) })
 
-		ctx := context.Background()
+		reconciler := &SecondaryStorageConfigReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
-		}
-		secondarystorageconfig := &corev1.SecondaryStorageConfig{}
-
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind SecondaryStorageConfig")
-			err := k8sClient.Get(ctx, typeNamespacedName, secondarystorageconfig)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &corev1.SecondaryStorageConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: resource.Name},
 		})
-
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &corev1.SecondaryStorageConfig{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Cleanup the specific resource instance SecondaryStorageConfig")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &SecondaryStorageConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+		Expect(err).NotTo(HaveOccurred())
 	})
 })

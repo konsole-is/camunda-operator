@@ -1,0 +1,104 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+)
+
+// validSecondaryStorageConfigES returns the doc's minimal Elasticsearch
+// example with a unique name.
+func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
+	return &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type: v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{
+				Endpoint: "https://my-cluster-es:9200",
+				CredentialsSecretRef: v1.CredentialsSecretRef{
+					Name: "my-cluster-es-credentials", Namespace: "my-cluster-ns",
+					UsernameKey: "username", PasswordKey: "password",
+				},
+			},
+		},
+	}
+}
+
+// validSecondaryStorageConfigRDBMS returns the doc's RDBMS example with a
+// unique name.
+func validSecondaryStorageConfigRDBMS() *v1.SecondaryStorageConfig {
+	return &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type:  v1.SecondaryStorageTypeRDBMS,
+			RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: "my-camunda-db"},
+		},
+	}
+}
+
+var _ = Describe("SecondaryStorageConfig schema", func() {
+	DescribeTable("admission",
+		func(build func() *v1.SecondaryStorageConfig, mutate func(*v1.SecondaryStorageConfig), wantErr string) {
+			obj := build()
+			mutate(obj)
+			err := k8sClient.Create(ctx, obj)
+			if wantErr == "" {
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+			} else {
+				Expect(err).To(MatchError(ContainSubstring(wantErr)))
+			}
+		},
+		Entry("accepts the Elasticsearch doc example",
+			validSecondaryStorageConfigES, func(*v1.SecondaryStorageConfig) {}, ""),
+		Entry("accepts the RDBMS doc example",
+			validSecondaryStorageConfigRDBMS, func(*v1.SecondaryStorageConfig) {}, ""),
+		Entry("rejects type elasticsearch without elasticsearch block",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch = nil
+			}, "matching spec.type"),
+		Entry("rejects type rdbms with elasticsearch block set",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Type = v1.SecondaryStorageTypeRDBMS
+			}, "matching spec.type"),
+		Entry("rejects both blocks set",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.RDBMS = &v1.RDBMSStorage{DatabaseConfigRef: "my-camunda-db"}
+			}, "matching spec.type"),
+		Entry("rejects unknown type",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Type = "opensearch"
+			}, "spec.type"),
+		Entry("rejects non-URL endpoint",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch.Endpoint = "not a url"
+			}, "endpoint"),
+		Entry("rejects ftp endpoint",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch.Endpoint = "ftp://x:9200"
+			}, "endpoint"),
+		Entry("rejects empty databaseConfigRef",
+			validSecondaryStorageConfigRDBMS, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.RDBMS.DatabaseConfigRef = ""
+			}, "databaseConfigRef"),
+	)
+})
