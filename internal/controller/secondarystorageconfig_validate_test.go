@@ -69,6 +69,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 		wantStatus  metav1.ConditionStatus
 		wantReason  string
 		wantMessage string
+		wantErr     string
 	}{
 		{
 			name:        "elasticsearch with complete secret is healthy",
@@ -108,6 +109,21 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			wantReason:  conditions.ReasonInvalidReference,
 			wantMessage: `DatabaseConfig "camunda-db" not found`,
 		},
+		{
+			name:    "elasticsearch type without elasticsearch block errors",
+			spec:    v1.SecondaryStorageConfigSpec{Type: v1.SecondaryStorageTypeElasticsearch},
+			wantErr: `spec.type "elasticsearch" has no matching configuration block`,
+		},
+		{
+			name:    "rdbms type without rdbms block errors",
+			spec:    v1.SecondaryStorageConfigSpec{Type: v1.SecondaryStorageTypeRDBMS},
+			wantErr: `spec.type "rdbms" has no matching configuration block`,
+		},
+		{
+			name:    "unknown type errors",
+			spec:    v1.SecondaryStorageConfigSpec{Type: "opensearch"},
+			wantErr: `spec.type "opensearch" has no matching configuration block`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,6 +135,10 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			}
 
 			cond, err := r.validate(context.Background(), cfg)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
 			require.NoError(t, err)
 
 			assert.Equal(t, conditions.TypeReady, cond.Type)

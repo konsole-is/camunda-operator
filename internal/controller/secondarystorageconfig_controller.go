@@ -74,11 +74,12 @@ func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ct
 
 // validate branches on the contract's storage type: elasticsearch contracts
 // check their credentials Secret, rdbms contracts check the referenced
-// DatabaseConfig exists. The schema guarantees exactly the matching block is
-// set.
+// DatabaseConfig exists. The CRD schema enforces that exactly the matching
+// block is set; an object that slipped past admission with a missing block or
+// unknown type yields an error rather than a condition.
 func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1.SecondaryStorageConfig) (metav1.Condition, error) {
-	switch cfg.Spec.Type {
-	case v1.SecondaryStorageTypeElasticsearch:
+	switch {
+	case cfg.Spec.Type == v1.SecondaryStorageTypeElasticsearch && cfg.Spec.Elasticsearch != nil:
 		ref := cfg.Spec.Elasticsearch.CredentialsSecretRef
 		msg, err := secretref.CheckKeys(ctx, r.APIReader,
 			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
@@ -89,7 +90,7 @@ func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1
 		if msg != "" {
 			return conditions.Ready(metav1.ConditionFalse, conditions.ReasonMissingSecret, msg, cfg.Generation), nil
 		}
-	case v1.SecondaryStorageTypeRDBMS:
+	case cfg.Spec.Type == v1.SecondaryStorageTypeRDBMS && cfg.Spec.RDBMS != nil:
 		name := cfg.Spec.RDBMS.DatabaseConfigRef
 		var db v1.DatabaseConfig
 		if err := r.Get(ctx, types.NamespacedName{Name: name}, &db); err != nil {
@@ -99,6 +100,8 @@ func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1
 			}
 			return metav1.Condition{}, err
 		}
+	default:
+		return metav1.Condition{}, fmt.Errorf("spec.type %q has no matching configuration block", cfg.Spec.Type)
 	}
 	return conditions.Ready(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
