@@ -24,13 +24,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // DatabaseConfigReconciler reconciles a DatabaseConfig object
 type DatabaseConfigReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	// APIReader reads directly from the API server, bypassing the cache; used for
+	// Secret data because Secrets are watched metadata-only.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -57,7 +60,7 @@ func (r *DatabaseConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // SetupWithManager sets up the controller with the Manager.
 func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.DatabaseConfig{}).
+		For(&v1.DatabaseConfig{}).
 		Named("databaseconfig").
 		Complete(r)
 }
