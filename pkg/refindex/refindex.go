@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -44,8 +45,9 @@ func ObjectName(o client.Object) string { return o.GetName() }
 
 // Enqueue returns an event handler that enqueues a reconcile request for every
 // object in list whose index field matches the event object's key computed by
-// keyOf. List failures drop the event; the periodic informer resync recovers
-// missed transitions.
+// keyOf. List failures drop the event and are logged; the periodic informer
+// resync re-delivers missed transitions only on its own schedule (default
+// SyncPeriod is ~10 hours), so the log line is the operational signal.
 func Enqueue(
 	c client.Client,
 	list client.ObjectList,
@@ -53,13 +55,17 @@ func Enqueue(
 	keyOf func(client.Object) string,
 ) handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		key := keyOf(o)
+
 		l := list.DeepCopyObject().(client.ObjectList)
-		if err := c.List(ctx, l, client.MatchingFields{field: keyOf(o)}); err != nil {
+		if err := c.List(ctx, l, client.MatchingFields{field: key}); err != nil {
+			logf.FromContext(ctx).Error(err, "listing referrers for enqueue", "field", field, "key", key)
 			return nil
 		}
 
 		items, err := meta.ExtractList(l)
 		if err != nil {
+			logf.FromContext(ctx).Error(err, "extracting referrer list for enqueue", "field", field, "key", key)
 			return nil
 		}
 

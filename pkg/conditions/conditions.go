@@ -82,6 +82,9 @@ func needsPatch(obj Object, cond metav1.Condition) bool {
 // (cond.ObservedGeneration) to obj's status subresource under FieldOwner. It
 // preserves LastTransitionTime when the condition status is unchanged and
 // skips the API call entirely when the persisted status already matches.
+// obj must be the freshly fetched resource with its status unmodified: the
+// skip and preservation decisions compare against obj's in-memory status, so a
+// locally mutated status produces wrong skips or transition times.
 func PatchReady(ctx context.Context, c client.Client, obj Object, cond metav1.Condition) error {
 	if !needsPatch(obj, cond) {
 		return nil
@@ -108,6 +111,7 @@ func PatchReady(ctx context.Context, c client.Client, obj Object, cond metav1.Co
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(gvk)
 	u.SetName(obj.GetName())
+	u.SetNamespace(obj.GetNamespace())
 	if err := unstructured.SetNestedField(u.Object, map[string]any{
 		"observedGeneration": cond.ObservedGeneration,
 		"conditions":         []any{condMap},
