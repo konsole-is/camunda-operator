@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: consumer-wave
+status: review
 ---
 
 # Contract-CRD validation controllers — orchestration state
