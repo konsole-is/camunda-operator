@@ -226,10 +226,15 @@ make build-installer >/dev/null 2>&1
 count="$(grep -c '^kind: CustomResourceDefinition$' dist/crds.yaml)"
 [ "$count" -eq 19 ] || { echo "FAIL: expected 19 CRDs in crds.yaml, got $count"; exit 1; }
 
-echo "--- IMG expands in recipes without being passed on the command line ---"
-out="$(make -n helm-deploy 2>/dev/null | grep -o 'manager.image.repository=[^ ]*' | head -1)"
-[ "$out" = "manager.image.repository=controller" ] || {
-  echo "FAIL: expected repository=controller from the IMG default, got '$out'"; exit 1; }
+echo "--- IMG expands in the real recipe, including from the ?= default ---"
+out="$(make helm-deploy HELM=echo 2>/dev/null | tr -s ' ')"
+echo "$out" | grep -q -- '--set manager.image.repository=controller' || { echo "FAIL: default IMG did not expand"; exit 1; }
+echo "$out" | grep -q -- '--set manager.image.tag=latest' || { echo "FAIL: default tag did not expand"; exit 1; }
+
+echo "--- registry-with-port splits on the final colon ---"
+out="$(make helm-deploy HELM=echo IMG=localhost:5000/camunda-operator:0.1.0 2>/dev/null | tr -s ' ')"
+echo "$out" | grep -q -- '--set manager.image.repository=localhost:5000/camunda-operator' || { echo "FAIL: registry port was split incorrectly"; exit 1; }
+echo "$out" | grep -q -- '--set manager.image.tag=0.1.0' || { echo "FAIL: tag wrong for registry-with-port"; exit 1; }
 
 echo "--- buildx build failures are not suppressed ---"
 grep -qE '^\s+\$\(CONTAINER_TOOL\) buildx build --push' Makefile || {
