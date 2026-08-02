@@ -1,6 +1,20 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 
+# Recipes below expand IMG in the shell (e.g. $${IMG%:*}), which reads the
+# environment. Make exports command-line variables automatically but not this
+# default, so without the export `make helm-deploy` deploys an empty image
+# reference. Exporting also keeps registry-with-port values like
+# localhost:5000/img:tag correct, since ${IMG%:*} strips only the final colon.
+export IMG
+
+# Compute image repository and tag at Make time for helm-deploy. These use shell
+# parameter expansion to split only on the final colon, preserving registry ports.
+# The values are passed explicitly to the shell so they're available even when IMG
+# is not yet exported to the recipe environment.
+IMG_REPO := $(shell IMG='${IMG}' bash -c 'echo $${IMG%:*}')
+IMG_TAG := $(shell IMG='${IMG}' bash -c 'echo $${IMG##*:}')
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -129,14 +143,14 @@ docker-push: ## Push docker image with the manager.
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+PLATFORMS ?= linux/amd64,linux/arm64
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
 	$(CONTAINER_TOOL) buildx use camunda-operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cross
 
@@ -145,6 +159,7 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	mkdir -p dist
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
+	"$(KUSTOMIZE)" build config/crd > dist/crds.yaml
 
 ##@ Deployment
 
@@ -283,8 +298,8 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
-		--set manager.image.repository=$${IMG%:*} \
-		--set manager.image.tag=$${IMG##*:} \
+		--set manager.image.repository=$(IMG_REPO) \
+		--set manager.image.tag=$(IMG_TAG) \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)
