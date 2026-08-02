@@ -53,6 +53,7 @@ All contracts are realized by the foundations PR (#18) merging into the feature 
 - **Tests:** reconciliation specs `Describe("<Kind> controller", ...)` in `internal/controller/<kind>_controller_test.go`; schema specs `Describe("<Kind> schema", ...)` in `internal/controller/<kind>_schema_test.go` (foundations); pure logic gets testify table tests in `_test.go` files next to the code (`require`/`assert`, never `t.Fatal`). Envtest assertions poll with `Eventually(..., timeout, interval)`. Unique CR names via `"<prefix>-" + utilrand.String(8)` (`k8s.io/apimachinery/pkg/util/rand`) with `DeferCleanup` deletion.
 - **Naming firewall:** "Batch A" appears only in branch names, issue titles, and this plan — never in Go identifiers, file names, fixtures, or test names.
 - **Skills:** `how-we-write-go` before any Go; `verifying-camunda-app-config` is NOT needed this batch (no Camunda application config keys are produced).
+- **Deliberate (recorded at the wave checkpoint):** `IndexField` errors in `SetupWithManager` are returned unwrapped, uniformly across all five controllers — setup-time errors abort manager startup where the call site is unambiguous, so the wrapping that `how-we-write-go` prefers for runtime paths adds no information here.
 
 ---
 
