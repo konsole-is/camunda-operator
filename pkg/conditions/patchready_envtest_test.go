@@ -172,7 +172,9 @@ func TestPatchReadyPreservesLastTransitionTimeWhenStatusUnchanged(t *testing.T) 
 	// be indistinguishable from a re-stamp.
 	backdated := metav1.NewTime(time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC))
 	persisted := fetchDatabaseServerConfig(ctx, t, resource.Name)
-	meta.FindStatusCondition(persisted.Status.Conditions, TypeReady).LastTransitionTime = backdated
+	persistedReady := meta.FindStatusCondition(persisted.Status.Conditions, TypeReady)
+	require.NotNil(t, persistedReady)
+	persistedReady.LastTransitionTime = backdated
 	require.NoError(t, k8sClient.Status().Update(ctx, persisted))
 
 	fresh := fetchDatabaseServerConfig(ctx, t, resource.Name)

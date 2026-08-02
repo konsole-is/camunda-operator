@@ -29,6 +29,10 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, resource)).To(Succeed()) })
 
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resource.Name}, resource)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
 		reconciler := &ManagementAuthConfigReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{
