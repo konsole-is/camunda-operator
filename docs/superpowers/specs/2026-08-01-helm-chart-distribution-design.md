@@ -246,7 +246,7 @@ Chart correctness is not reachable from Go tests, so verification is layered:
 
 1. **`make helm-verify`** — `helm lint` plus `helm template` across branching value permutations,
    plus the render-size tripwire. Runs locally and as the first CI gate. No cluster.
-2. **`test-chart.yml`** — kind cluster, `helm install` then `helm upgrade`, release status assertion.
+2. **`chart.yml`** — kind cluster, `helm install` then `helm upgrade`, release status assertion.
 3. **Manual dry run** — one release against a scratch tag, verifying the ghcr push, the cosign
    signature, and a clean install from the published OCI reference, before the first real release.
 
