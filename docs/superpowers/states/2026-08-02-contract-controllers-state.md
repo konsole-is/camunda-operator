@@ -46,6 +46,7 @@ All contracts are realized by the foundations PR (#18) merging into the feature 
 
 ## Bubble-up log
 
+- **2026-08-03 — RBAC least-privilege (Copilot on PR #28, applies batch-wide):** scaffolded markers grant create;update;patch;delete + finalizers update on each contract CRD; validation controllers need only get;list;watch + status get;update;patch. Deferred to a single alignment commit/PR at the wave checkpoint (all five controllers + role.yaml regen) to avoid five concurrent role.yaml edits. Replied and resolved on #28.
 - **2026-08-03 — coherence note (from #20 implementer):** IndexField errors are returned unwrapped across controllers to match the plan's Task 11 template (how-we-write-go prefers %w wrapping). Consistent across all five PRs; assess at the wave checkpoint whether to align on wrapping in a follow-up or record as deliberate.
 - **2026-08-03 — role.yaml overlap (from #19 implementer):** config/rbac/role.yaml gains the core-group secrets rule; #20 and #23 regenerate the identical rule. Identical content merges cleanly; verify role.yaml sanity at the wave checkpoint. No agent action needed.
 - **2026-08-02 — Copilot pushback on PR #24 (review-loop, fan-out mode):** Copilot flagged `new(int32(N))` in the schema tests as invalid syntax; rejected — Go 1.26's generalized `new(expr)` is valid, branch compiles and CI Tests passed on that commit. Replied and resolved. Relevant to #19–#23: Copilot may repeat this on any PR using `new(expr)`; same pushback applies.
