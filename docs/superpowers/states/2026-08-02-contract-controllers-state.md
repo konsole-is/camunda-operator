@@ -8,7 +8,7 @@ feature_worktree: .claude/worktrees/batch-a-contract-controllers
 sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
-integration_pr:
+integration_pr: #32
 status: review
 ---
 
