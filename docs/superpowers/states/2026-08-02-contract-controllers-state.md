@@ -25,11 +25,11 @@ status: consumer-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | #24 → feature/batch-a-contract-controllers | self-merged |
-| #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | → feature/batch-a-contract-controllers | not-started |
-| #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | not-started |
-| #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | not-started |
-| #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | → feature/batch-a-contract-controllers | not-started |
-| #23 | batch-a/managementauthconfig | .claude/worktrees/batch-a-contract-controllers--managementauthconfig | → feature/batch-a-contract-controllers | not-started |
+| #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | → feature/batch-a-contract-controllers | in-progress |
+| #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | in-progress |
+| #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | in-progress |
+| #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | → feature/batch-a-contract-controllers | in-progress |
+| #23 | batch-a/managementauthconfig | .claude/worktrees/batch-a-contract-controllers--managementauthconfig | → feature/batch-a-contract-controllers | in-progress |
 
 ## Contracts
 
