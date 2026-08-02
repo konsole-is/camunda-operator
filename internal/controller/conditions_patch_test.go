@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -70,16 +72,26 @@ var _ = Describe("conditions.PatchReady", func() {
 		Expect(conditions.PatchReady(ctx, k8sClient, resource, conditions.Ready(
 			metav1.ConditionFalse, conditions.ReasonMissingSecret, `Secret "ns/s" not found`, resource.Generation,
 		))).To(Succeed())
-		transitioned := fetchReady(resource.Name).LastTransitionTime
 
+		// Backdate the persisted transition time: metav1.Time has second
+		// precision and both patches land within one second, so preservation
+		// would otherwise be indistinguishable from a re-stamp.
+		backdated := metav1.NewTime(time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC))
 		var persisted v1.DatabaseServerConfig
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resource.Name}, &persisted)).To(Succeed())
-		Expect(conditions.PatchReady(ctx, k8sClient, &persisted, conditions.Ready(
-			metav1.ConditionFalse, conditions.ReasonMissingSecret, `Secret "ns/s" is missing key "k"`, persisted.Generation,
+		meta.FindStatusCondition(persisted.Status.Conditions, conditions.TypeReady).LastTransitionTime = backdated
+		Expect(k8sClient.Status().Update(ctx, &persisted)).To(Succeed())
+
+		var fresh v1.DatabaseServerConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: resource.Name}, &fresh)).To(Succeed())
+		Expect(conditions.PatchReady(ctx, k8sClient, &fresh, conditions.Ready(
+			metav1.ConditionFalse, conditions.ReasonMissingSecret, `Secret "ns/s" is missing key "k"`, fresh.Generation,
 		))).To(Succeed())
 
 		ready := fetchReady(resource.Name)
 		Expect(ready.Message).To(Equal(`Secret "ns/s" is missing key "k"`))
-		Expect(ready.LastTransitionTime).To(Equal(transitioned))
+		// BeTemporally compares instants; Equal would fail on the time zone the
+		// client parsed the timestamp into.
+		Expect(ready.LastTransitionTime.Time).To(BeTemporally("==", backdated.Time))
 	})
 })
