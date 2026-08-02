@@ -30,8 +30,10 @@ import (
 // ObjectStorageConfigReconciler reconciles a ObjectStorageConfig object
 type ObjectStorageConfigReconciler struct {
 	client.Client
-	// APIReader reads directly from the API server, bypassing the cache; used for
-	// Secret data because Secrets are watched metadata-only.
+	// APIReader keeps the uniform reconciler shape shared by all five contract
+	// validation controllers (constructed identically in cmd/main.go and
+	// suite_test.go); it is unused here because ObjectStorageConfig references
+	// no Secrets.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 }
