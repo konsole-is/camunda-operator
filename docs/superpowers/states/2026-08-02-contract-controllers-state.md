@@ -25,11 +25,11 @@ status: consumer-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #18 | batch-a/foundations | .claude/worktrees/batch-a-contract-controllers--foundations | #24 → feature/batch-a-contract-controllers | self-merged |
-| #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | → feature/batch-a-contract-controllers | not-started |
-| #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | → feature/batch-a-contract-controllers | not-started |
-| #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | → feature/batch-a-contract-controllers | not-started |
-| #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | → feature/batch-a-contract-controllers | not-started |
-| #23 | batch-a/managementauthconfig | .claude/worktrees/batch-a-contract-controllers--managementauthconfig | → feature/batch-a-contract-controllers | not-started |
+| #19 | batch-a/databaseserverconfig | .claude/worktrees/batch-a-contract-controllers--databaseserverconfig | #26 → feature/batch-a-contract-controllers | ready |
+| #20 | batch-a/databaseconfig | .claude/worktrees/batch-a-contract-controllers--databaseconfig | #29 → feature/batch-a-contract-controllers | self-merged |
+| #21 | batch-a/secondarystorageconfig | .claude/worktrees/batch-a-contract-controllers--secondarystorageconfig | #28 → feature/batch-a-contract-controllers | ready |
+| #22 | batch-a/objectstorageconfig | .claude/worktrees/batch-a-contract-controllers--objectstorageconfig | #25 → feature/batch-a-contract-controllers | self-merged |
+| #23 | batch-a/managementauthconfig | .claude/worktrees/batch-a-contract-controllers--managementauthconfig | #27 → feature/batch-a-contract-controllers | self-merged |
 
 ## Contracts
 
@@ -46,6 +46,9 @@ All contracts are realized by the foundations PR (#18) merging into the feature 
 
 ## Bubble-up log
 
+- **2026-08-03 — RBAC least-privilege (Copilot on PR #28, applies batch-wide):** scaffolded markers grant create;update;patch;delete + finalizers update on each contract CRD; validation controllers need only get;list;watch + status get;update;patch. Deferred to a single alignment commit/PR at the wave checkpoint (all five controllers + role.yaml regen) to avoid five concurrent role.yaml edits. Replied and resolved on #28.
+- **2026-08-03 — coherence note (from #20 implementer):** IndexField errors are returned unwrapped across controllers to match the plan's Task 11 template (how-we-write-go prefers %w wrapping). Consistent across all five PRs; assess at the wave checkpoint whether to align on wrapping in a follow-up or record as deliberate.
+- **2026-08-03 — role.yaml overlap (from #19 implementer):** config/rbac/role.yaml gains the core-group secrets rule; #20 and #23 regenerate the identical rule. Identical content merges cleanly; verify role.yaml sanity at the wave checkpoint. No agent action needed.
 - **2026-08-02 — Copilot pushback on PR #24 (review-loop, fan-out mode):** Copilot flagged `new(int32(N))` in the schema tests as invalid syntax; rejected — Go 1.26's generalized `new(expr)` is valid, branch compiles and CI Tests passed on that commit. Replied and resolved. Relevant to #19–#23: Copilot may repeat this on any PR using `new(expr)`; same pushback applies.
 - **2026-08-02 — CI break on PR #24 (E2E):** Dockerfile builder image `golang:1.25` vs go.mod `go 1.26.0` (raised by the ocf setup commit) broke `make docker-build` in the e2e job. Fixed on the feature branch (`8cb89b2`), merged forward into batch-a/foundations. No consumer action needed — Phase 2 branches will include the fix.
 - **2026-08-02 — propagate to #19–#23 (from #18 implementer):** (1) the five `internal/controller/<kind>_controller_test.go` files already exist as minimal valid-fixture smoke tests — controller PRs replace their own file, never create blind; (2) the `valid<Kind>()` fixture helpers live in the sibling `<kind>_schema_test.go` files — reuse them in reconciliation specs; (3) `conditions.PatchReady` internally uses controller-runtime v0.24 `Status().Apply(...)` (the plan's `Status().Patch(..., client.Apply)` is deprecated and fails staticcheck) — exported signature unchanged; (4) testify is now a direct dependency; (5) `corev1` → `v1` import-alias rename is already done in the five controller files, `cmd/main.go`, and `suite_test.go`; (6) shell note: the permission guard misfires on `cd <worktree> && git ...` compound commands — use `git -C <worktree-path> ...`. Propagation path: baked into the Phase 2 dispatch prompts (no consumer agents running yet).
