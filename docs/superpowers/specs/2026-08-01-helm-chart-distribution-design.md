@@ -116,16 +116,19 @@ dist/**/*
 !dist/chart/
 !dist/chart/Chart.yaml
 !dist/chart/README.md
-!dist/chart_icon.png
 ```
 
-Tracked: `dist/chart/Chart.yaml`, `dist/chart/README.md`, `dist/chart_icon.png`. Everything else
-regenerates. No generated YAML appears in review diffs, and `helm-generate --force` stays safe to
-run at any time.
+Tracked: `dist/chart/Chart.yaml` and `dist/chart/README.md`. Everything else regenerates. No
+generated YAML appears in review diffs, and `helm-generate --force` stays safe to run at any time.
 
 `Chart.yaml` becomes hand-maintained — the generated fields plus `home`, `sources`, `icon`,
 `maintainers`, `kubeVersion`. `version` and `appVersion` stay at `0.0.1` as placeholders that the
 release workflow stamps.
+
+**Chart icon:** no image file is committed. `icon:` points at the konsole-is org avatar,
+`https://avatars.githubusercontent.com/u/200405113?v=4` — the org's own mark, which avoids both a
+tracked binary and any third-party trademark question. `fqdn-controller` commits a
+`dist/chart_icon.png`; this project deliberately does not.
 
 **Accepted constraint:** the shipped `values.yaml` defaults are not directly editable, because
 `--force` overwrites that file. Anything that must differ in the defaults has to originate in
@@ -158,6 +161,20 @@ publishes under its prerelease SemVer tag.
 
 - `build-installer` additionally emits `dist/crds.yaml` via `kustomize build config/crd`. Required
   for the `crd.enable=false` path and as a release asset.
+- `PLATFORMS` narrows from the scaffold default
+  `linux/arm64,linux/amd64,linux/s390x,linux/ppc64le` to `linux/amd64,linux/arm64`. The dropped
+  architectures cost cross-compile time on every release for platforms Camunda workloads do not run
+  on.
+- Two latent bugs found while planning, both of which the release path depends on:
+  - **`helm-deploy` deploys an empty image reference.** The recipe expands `$${IMG%:*}` in the
+    shell, which reads the environment. Make exports command-line variables automatically but not
+    the `IMG ?=` default, so `make helm-deploy` without `IMG=` sets
+    `manager.image.repository=""`. Fixed with `export IMG`, which also keeps registry-with-port
+    values correct (`${IMG%:*}` strips only the final colon) — unlike a make-level `$(subst)`,
+    which would split `localhost:5000/img:tag` at the wrong colon.
+  - **`docker-buildx` swallows build failures.** The `buildx build --push` line carries a leading
+    `-`, telling make to ignore a non-zero exit, so a failed release image build would report
+    success. The `-` on `buildx create`/`buildx rm` is intentional idempotency and stays.
 - New `helm-verify`: `helm lint`, plus `helm template` across the value permutations that actually
   branch — `crd.enable=false`, `rbacHelpers.enable=true`, `prometheus.enable=true`,
   `certManager.enable=true` — plus a rendered-size tripwire. No cluster required.
@@ -240,3 +257,9 @@ Chart correctness is not reachable from Go tests, so verification is layered:
   decorative.
 - **`--force` overwriting `values.yaml`** is invisible when it happens. The committed-surface rule
   is the guard; a reviewer seeing a `values.yaml` diff in a PR should treat it as a mistake.
+- **No `LICENSE` file exists** in this repository. Publishing a chart and image without one leaves
+  consumers without terms. Out of scope here, but it should be settled before the first public
+  release.
+- **`kubeVersion: ">= 1.30.0-0"`** is a conservative judgment call, not a measured floor — nothing
+  in the codebase pins a minimum Kubernetes version. Helm enforces it at install time, so setting
+  it too high would lock out working clusters.
