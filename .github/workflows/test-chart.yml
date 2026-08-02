@@ -68,14 +68,17 @@ jobs:
       # CRD upgrades are the most likely breakage as the API grows. Exercise
       # the upgrade path in CI rather than discovering it in a user's cluster.
       - name: Upgrade the chart
-        run: helm upgrade camunda-operator ./dist/chart --namespace camunda-operator-system --set rbacHelpers.enable=true --wait
+        run: make helm-deploy IMG=controller:latest HELM_EXTRA_ARGS="--set rbacHelpers.enable=true"
 
       - name: Check upgrade revision
         run: |
           make helm-status
           rev=$(helm get metadata camunda-operator \
-            --namespace camunda-operator-system -o json | jq -r '.version')
+            --namespace camunda-operator-system -o json | jq -r '.revision')
           echo "release revision: $rev"
+          case "$rev" in
+            ''|*[!0-9]*) echo "could not parse release revision: '$rev'"; exit 1 ;;
+          esac
           [ "$rev" -ge 2 ] || { echo "expected revision >= 2 after upgrade"; exit 1; }
 
       - name: Uninstall the chart
