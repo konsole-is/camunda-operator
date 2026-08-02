@@ -17,8 +17,11 @@ spec:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: DatabaseServerConfig is the Schema for the databaseserverconfigs
-          API
+        description: |-
+          DatabaseServerConfig is the contract CRD that describes a database server —
+          engine, endpoint, admin credentials, and point-in-time-recovery capability —
+          for controllers that bootstrap databases on it or validate its declared
+          capabilities.
         properties:
           apiVersion:
             description: |-
@@ -40,25 +43,83 @@ spec:
           spec:
             description: spec defines the desired state of DatabaseServerConfig
             properties:
-              foo:
-                description: foo is an example field of DatabaseServerConfig. Edit
-                  databaseserverconfig_types.go to remove/update
+              adminCredentialsSecretRef:
+                description: |-
+                  AdminCredentialsSecretRef names an admin user with permission to create
+                  databases and roles; used by the Database controller to bootstrap.
+                properties:
+                  name:
+                    description: Name of the Secret holding the credentials.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace of the Secret.
+                    minLength: 1
+                    type: string
+                  passwordKey:
+                    description: PasswordKey is the key in the Secret holding the
+                      plaintext password.
+                    minLength: 1
+                    type: string
+                  usernameKey:
+                    description: UsernameKey is the key in the Secret holding the
+                      plaintext username.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                - passwordKey
+                - usernameKey
+                type: object
+              engine:
+                description: Engine is the database engine of the server.
+                enum:
+                - postgres
                 type: string
+              host:
+                description: Host the server is reachable at.
+                minLength: 1
+                type: string
+              pitr:
+                description: PITR declares the server's point-in-time-recovery capability.
+                properties:
+                  enabled:
+                    default: false
+                    description: Enabled reports whether the server performs continuous
+                      WAL archiving.
+                    type: boolean
+                  retentionPeriodDays:
+                    description: |-
+                      RetentionPeriodDays is how many days into the past a point-in-time
+                      restore can target. Required when enabled is true.
+                    format: int32
+                    type: integer
+                type: object
+                x-kubernetes-validations:
+                - message: retentionPeriodDays of at least 1 is required when enabled
+                    is true
+                  rule: '!self.enabled || (has(self.retentionPeriodDays) && self.retentionPeriodDays
+                    >= 1)'
+              port:
+                description: Port the server listens on.
+                format: int32
+                maximum: 65535
+                minimum: 1
+                type: integer
+            required:
+            - adminCredentialsSecretRef
+            - engine
+            - host
+            - port
             type: object
           status:
             description: status defines the observed state of DatabaseServerConfig
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the DatabaseServerConfig resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current validation state; the Ready condition
+                  carries reasons Healthy or MissingSecret.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -117,6 +178,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
             type: object
         required:
         - spec
