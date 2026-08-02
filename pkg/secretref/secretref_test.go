@@ -28,14 +28,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func secret(namespace, name string, keys ...string) *corev1.Secret {
+// secret builds a Secret at "ns/name" holding the given keys.
+func secret(keys ...string) *corev1.Secret {
 	data := make(map[string][]byte, len(keys))
 	for _, key := range keys {
 		data[key] = []byte("value")
 	}
 
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "name", Namespace: "ns"},
 		Data:       data,
 	}
 }
@@ -56,28 +57,28 @@ func TestCheckKeys(t *testing.T) {
 		},
 		{
 			name:    "secret present but key absent",
-			objects: []*corev1.Secret{secret("ns", "name", "username")},
+			objects: []*corev1.Secret{secret("username")},
 			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
 			keys:    []string{"username", "password"},
 			want:    `Secret "ns/name" is missing key "password"`,
 		},
 		{
 			name:    "all keys present",
-			objects: []*corev1.Secret{secret("ns", "name", "username", "password")},
+			objects: []*corev1.Secret{secret("username", "password")},
 			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
 			keys:    []string{"username", "password"},
 			want:    "",
 		},
 		{
 			name:    "message names the first missing key",
-			objects: []*corev1.Secret{secret("ns", "name", "c")},
+			objects: []*corev1.Secret{secret("c")},
 			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
 			keys:    []string{"a", "b", "c"},
 			want:    `Secret "ns/name" is missing key "a"`,
 		},
 		{
 			name:    "no keys requested",
-			objects: []*corev1.Secret{secret("ns", "name")},
+			objects: []*corev1.Secret{secret()},
 			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
 			keys:    nil,
 			want:    "",

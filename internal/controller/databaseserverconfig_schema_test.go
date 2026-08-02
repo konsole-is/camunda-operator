@@ -21,7 +21,6 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -57,7 +56,7 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 		},
 		Entry("accepts the minimal doc example", func(*v1.DatabaseServerConfig) {}, ""),
 		Entry("accepts pitr with retention", func(o *v1.DatabaseServerConfig) {
-			o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: ptr.To(int32(7))}
+			o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(7))}
 		}, ""),
 		Entry("rejects unknown engine", func(o *v1.DatabaseServerConfig) { o.Spec.Engine = "mysql" }, "spec.engine"),
 		Entry("rejects port 0", func(o *v1.DatabaseServerConfig) { o.Spec.Port = 0 }, "spec.port"),
@@ -70,7 +69,7 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 			o.Spec.PITR = &v1.PITRCapability{Enabled: true}
 		}, "retentionPeriodDays"),
 		Entry("rejects pitr retention 0", func(o *v1.DatabaseServerConfig) {
-			o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: ptr.To(int32(0))}
+			o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(0))}
 		}, "retentionPeriodDays"),
 	)
 })

@@ -25,6 +25,9 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+// notAURL is a value the schema's URL validation rules must reject.
+const notAURL = "not a url"
+
 // validSecondaryStorageConfigES returns the doc's minimal Elasticsearch
 // example with a unique name.
 func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
@@ -90,7 +93,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 			}, "spec.type"),
 		Entry("rejects non-URL endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
-				o.Spec.Elasticsearch.Endpoint = "not a url"
+				o.Spec.Elasticsearch.Endpoint = notAURL
 			}, "endpoint"),
 		Entry("rejects ftp endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {

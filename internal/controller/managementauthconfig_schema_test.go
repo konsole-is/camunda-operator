@@ -62,13 +62,13 @@ var _ = Describe("ManagementAuthConfig schema", func() {
 			o.Spec.IssuerBackendURL = "http://identity.camunda-management.svc.cluster.local/auth/realms/camunda-platform"
 		}, ""),
 		Entry("rejects non-URL baseUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.BaseURL = "not a url"
+			o.Spec.BaseURL = notAURL
 		}, "baseUrl"),
 		Entry("rejects ftp tokenUrl", func(o *v1.ManagementAuthConfig) {
 			o.Spec.TokenURL = "ftp://identity.camunda.example.com/token"
 		}, "tokenUrl"),
 		Entry("rejects non-URL jwksUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.JwksURL = "not a url"
+			o.Spec.JwksURL = notAURL
 		}, "jwksUrl"),
 		Entry("rejects empty clientId", func(o *v1.ManagementAuthConfig) {
 			o.Spec.ClientID = ""

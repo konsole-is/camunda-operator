@@ -46,7 +46,12 @@ func ObjectName(o client.Object) string { return o.GetName() }
 // object in list whose index field matches the event object's key computed by
 // keyOf. List failures drop the event; the periodic informer resync recovers
 // missed transitions.
-func Enqueue(c client.Client, list client.ObjectList, field string, keyOf func(client.Object) string) handler.EventHandler {
+func Enqueue(
+	c client.Client,
+	list client.ObjectList,
+	field string,
+	keyOf func(client.Object) string,
+) handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		l := list.DeepCopyObject().(client.ObjectList)
 		if err := c.List(ctx, l, client.MatchingFields{field: keyOf(o)}); err != nil {

@@ -87,7 +87,8 @@ func PatchReady(ctx context.Context, c client.Client, obj Object, cond metav1.Co
 		return nil
 	}
 
-	if current := meta.FindStatusCondition(obj.GetConditions(), TypeReady); current != nil && current.Status == cond.Status {
+	current := meta.FindStatusCondition(obj.GetConditions(), TypeReady)
+	if current != nil && current.Status == cond.Status {
 		cond.LastTransitionTime = current.LastTransitionTime
 	}
 	if cond.LastTransitionTime.IsZero() {
@@ -114,5 +115,5 @@ func PatchReady(ctx context.Context, c client.Client, obj Object, cond metav1.Co
 		return fmt.Errorf("building status patch: %w", err)
 	}
 
-	return c.Status().Patch(ctx, u, client.Apply, FieldOwner, client.ForceOwnership)
+	return c.Status().Apply(ctx, client.ApplyConfigurationFromUnstructured(u), FieldOwner, client.ForceOwnership)
 }
