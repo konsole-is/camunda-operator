@@ -496,7 +496,9 @@ grep -q '4.1.4' "$f" || { echo "FAIL: helm version not pinned"; exit 1; }
 grep -q 'kind/dl/latest' "$f" && { echo "FAIL: kind still installed from 'latest'"; exit 1; }
 
 echo "--- upgrade path exercised, not just install ---"
-grep -q 'helm upgrade' "$f" || { echo "FAIL: no upgrade step; CRD upgrades are the likeliest breakage"; exit 1; }
+n="$(grep -c 'make helm-deploy' "$f")"
+[ "$n" -ge 2 ] || { echo "FAIL: helm-deploy invoked $n time(s); need install + upgrade"; exit 1; }
+grep -q "jq -r '.revision'" "$f" || { echo "FAIL: no release-revision assertion after upgrade"; exit 1; }
 
 echo "PASS"
 ```
@@ -587,8 +589,11 @@ jobs:
         run: |
           make helm-status
           rev=$(helm get metadata camunda-operator \
-            --namespace camunda-operator-system -o json | jq -r '.version')
+            --namespace camunda-operator-system -o json | jq -r '.revision')
           echo "release revision: $rev"
+          case "$rev" in
+            ''|*[!0-9]*) echo "could not parse release revision: '$rev'"; exit 1 ;;
+          esac
           [ "$rev" -ge 2 ] || { echo "expected revision >= 2 after upgrade"; exit 1; }
 
       - name: Uninstall the chart
