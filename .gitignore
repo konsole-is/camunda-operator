@@ -30,7 +30,8 @@ go.work
 *.kubeconfig
 
 # helm dist — everything under dist/ is generated except the hand-maintained
-# chart metadata below. See docs/superpowers/specs/2026-08-01-helm-chart-distribution-design.md
+# chart metadata below, which `make helm-generate` preserves rather than
+# overwrites. Keep this allowlist in step with the files that survive it.
 dist/**/*
 !dist/chart/
 !dist/chart/Chart.yaml

@@ -295,8 +295,8 @@ helm-generate: build-installer ## Regenerate the Helm chart from kustomize outpu
 ## buys several-fold headroom, so the wire trips well before an install would
 ## actually fail. It is an early warning to trigger the CRD-split conversation,
 ## not a correctness check. The tripwire measures the worst case across all
-## rendered permutations. See
-## docs/superpowers/specs/2026-08-01-helm-chart-distribution-design.md
+## rendered permutations. When it trips, the CRD set has outgrown in-chart
+## delivery and the CRDs should move to a chart of their own.
 HELM_MAX_RENDER_BYTES ?= 1048576
 
 .PHONY: helm-verify
@@ -324,7 +324,7 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	if [ "$$max" -gt "$(HELM_MAX_RENDER_BYTES)" ]; then \
 		echo "ERROR: rendered chart exceeds $(HELM_MAX_RENDER_BYTES) bytes in configuration: $$worst" >&2; \
 		echo "The CRD set has outgrown in-chart delivery. Consider splitting CRDs" >&2; \
-		echo "into a separate chart; see the design spec for the follow-up." >&2; \
+		echo "into a separate chart shipped alongside this one." >&2; \
 		exit 1; \
 	fi
 
