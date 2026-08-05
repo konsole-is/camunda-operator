@@ -274,12 +274,15 @@ HELM_RELEASE ?= camunda-operator
 HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
+## Helm version installed by install-helm. Pinned to .tool-versions.
+HELM_VERSION ?= v4.1.4
 
 .PHONY: install-helm
-install-helm: ## Install the latest version of Helm.
+install-helm: ## Install the pinned version of Helm if it is missing.
 	@command -v $(HELM) >/dev/null 2>&1 || { \
-		echo "Installing Helm..." && \
-		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
+		echo "Installing Helm $(HELM_VERSION)..." && \
+		curl -fsSL https://raw.githubusercontent.com/helm/helm/$(HELM_VERSION)/scripts/get-helm-4 \
+			| bash -s -- --version $(HELM_VERSION); \
 	}
 
 .PHONY: helm-generate
