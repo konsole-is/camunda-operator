@@ -53,8 +53,11 @@ jobs:
         with:
           version: v4.1.4
 
+      # cosign-installer v4 is the first major that can install cosign v3.
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v3.1.2
 
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v3
