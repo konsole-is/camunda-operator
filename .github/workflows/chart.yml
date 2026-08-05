@@ -51,8 +51,17 @@ jobs:
           sudo mv ./kind /usr/local/bin/kind
           kind version
 
+      # Pinned so the Kubernetes version CI exercises is visible here rather
+      # than implied by the kind release. Must be a node image published for
+      # the kind version above; bump both together.
+      #
+      # This is 1.35, matching kubectl in .tool-versions. Chart.yaml declares
+      # kubeVersion ">= 1.30.0-0", which CI does not exercise — kind 0.31.0
+      # publishes no 1.30 node image (its oldest is v1.31.14).
       - name: Create kind cluster
-        run: kind create cluster
+        run: |
+          kind create cluster --image \
+            kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
 
       - name: Build and load the operator image
         run: |
