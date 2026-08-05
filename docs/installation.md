@@ -5,8 +5,8 @@ published with every release. Charts and images live in GitHub Container Registr
 and are signed with [cosign](https://docs.sigstore.dev/) keyless signatures.
 
 **Requirements:** Kubernetes 1.30 or later, and Helm 3.8+ for the OCI registry
-(CI pins Helm 4.1.4 for the chart and release workflows; installing Helm
-locally via `make install-helm` fetches whatever is currently latest).
+(Helm 4.1.4 is pinned in `.tool-versions` and used by the chart and release
+workflows; `make install-helm` installs that same version when Helm is missing).
 
 ## Install with Helm
 
@@ -135,8 +135,13 @@ Or, without the release file to hand, every custom resource definition this
 operator installs is in the `core.camunda.io` API group:
 
 ```bash
-kubectl get crd -o name | grep '\.core\.camunda\.io$' | xargs -r kubectl delete
+crds=$(kubectl get crd -o name | grep '\.core\.camunda\.io$')
+if [ -n "$crds" ]; then kubectl delete $crds; fi
 ```
+
+The guard matters: with no matching CRDs left, `kubectl delete` with no arguments
+is an error. Piping to `xargs -r` would be the shorter form, but `-r` is a GNU
+extension that BSD and macOS `xargs` reject outright.
 
 ## Installing from source
 
