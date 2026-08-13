@@ -26,7 +26,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers--binding-scope | — | in-progress |
+| #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers/.claude/worktrees/storage-backend-controllers--binding-scope | #40 → feat/storage-backend-controllers | ready |
 | #36 | batch-b/foundations | .claude/worktrees/storage-backend-controllers--foundations | — | not-started |
 | #37 | batch-b/elasticsearchcluster | .claude/worktrees/storage-backend-controllers--elasticsearchcluster | — | not-started |
 | #38 | batch-b/database | .claude/worktrees/storage-backend-controllers--database | — | not-started |
@@ -46,7 +46,9 @@ status: foundational-wave
 
 ## Bubble-up log
 
-- _No concerns yet._
+- **2026-08-13 — worktree path drift (from #35 implementer):** sub-worktrees created with relative paths from the feature worktree nest under `.claude/worktrees/storage-backend-controllers/.claude/worktrees/…`. Row paths record reality; orchestrator creates future sub-worktrees from the main repo root with absolute paths (dispatch prompts must state the verified path from `git worktree list`).
+- **2026-08-13 — `CamundaManagementCluster` `*DbRef` anchor (from #35 implementer):** the namespaced-binding refs on that cluster-scoped CR are documented as resolving in its `spec.targetNamespace` (default `<name>-camunda`) — the only coherent anchor. Doc-only decision; no code exists for that controller until Batch D. Revisit there if a different anchor is wanted.
+- **2026-08-13 — propagate to #36–#38 (from #35 implementer):** (1) `refindex.SecretKey` renamed to `refindex.NamespacedKey` (keys non-Secret referents too); (2) `valid<Kind>()` fixtures now default `Namespace: "default"`, controller specs override with per-spec random namespaces, `expect*Ready` helpers take `types.NamespacedName`; (3) `elasticsearchcluster.md` doc claims #37 must honor: SSC + credentials Secret owner-ref GC'd (no finalizer), SSC `caSecretRef` → `<name>-es-http-certs-public`/`ca.crt`, file-realm user role `superuser`; (4) `database.md`: bindings land in `spec.targetNamespace` (#38). Propagation path: baked into Phase 2/3 dispatch prompts (no sibling agents running yet).
 
 ## Pending snapshot
 
