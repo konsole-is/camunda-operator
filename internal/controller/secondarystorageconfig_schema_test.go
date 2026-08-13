@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -29,10 +30,10 @@ import (
 const notAURL = "not a url"
 
 // validSecondaryStorageConfigES returns the doc's minimal Elasticsearch
-// example with a unique name.
+// example with a unique name in the default namespace.
 func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
 	return &v1.SecondaryStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8), Namespace: "default"},
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
@@ -47,10 +48,10 @@ func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
 }
 
 // validSecondaryStorageConfigRDBMS returns the doc's RDBMS example with a
-// unique name.
+// unique name in the default namespace.
 func validSecondaryStorageConfigRDBMS() *v1.SecondaryStorageConfig {
 	return &v1.SecondaryStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8), Namespace: "default"},
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type:  v1.SecondaryStorageTypeRDBMS,
 			RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: "my-camunda-db"},
@@ -103,5 +104,25 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 			validSecondaryStorageConfigRDBMS, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.RDBMS.DatabaseConfigRef = ""
 			}, "databaseConfigRef"),
+		Entry("rejects caSecretRef with empty key",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns",
+				}
+			}, "key"),
 	)
+
+	It("round-trips caSecretRef", func() {
+		obj := validSecondaryStorageConfigES()
+		obj.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
+		}
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		var fetched v1.SecondaryStorageConfig
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &fetched)).To(Succeed())
+		Expect(fetched.Spec.Elasticsearch.CASecretRef).To(Equal(obj.Spec.Elasticsearch.CASecretRef))
+	})
 })

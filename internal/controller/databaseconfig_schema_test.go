@@ -25,10 +25,11 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// validDatabaseConfig returns the doc's minimal example with a unique name.
+// validDatabaseConfig returns the doc's minimal example with a unique name in
+// the default namespace.
 func validDatabaseConfig() *v1.DatabaseConfig {
 	return &v1.DatabaseConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "dbc-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{Name: "dbc-" + utilrand.String(8), Namespace: "default"},
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:    "my-db-server",
 			DatabaseName: "camunda",

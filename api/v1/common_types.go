@@ -17,8 +17,8 @@ limitations under the License.
 package v1
 
 // CredentialsSecretRef references a username/password pair stored in a Secret.
-// Namespace is required: every referencing kind is cluster-scoped, so there is
-// no namespace to default to.
+// Namespace is required so that references stay uniform and explicit across
+// all contract kinds, cluster-scoped and namespaced alike.
 type CredentialsSecretRef struct {
 	// Name of the Secret holding the credentials.
 	// +kubebuilder:validation:MinLength=1
@@ -35,8 +35,8 @@ type CredentialsSecretRef struct {
 }
 
 // SecretKeyRef references a single value inside a Secret.
-// Namespace is required: every referencing kind is cluster-scoped, so there is
-// no namespace to default to.
+// Namespace is required so that references stay uniform and explicit across
+// all contract kinds, cluster-scoped and namespaced alike.
 type SecretKeyRef struct {
 	// Name of the Secret holding the value.
 	// +kubebuilder:validation:MinLength=1

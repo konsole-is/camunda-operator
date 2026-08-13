@@ -29,14 +29,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// SecretKey returns the index key under which a CR's Secret reference is
-// stored: "<namespace>/<name>".
-func SecretKey(namespace, name string) string { return namespace + "/" + name }
+// NamespacedKey returns the index key under which a CR's reference to a
+// namespaced object is stored: "<namespace>/<name>".
+func NamespacedKey(namespace, name string) string { return namespace + "/" + name }
 
 // ObjectNamespacedName keys an event object by "<namespace>/<name>". Use it as
 // keyOf for namespaced referents such as Secrets.
 func ObjectNamespacedName(o client.Object) string {
-	return o.GetNamespace() + "/" + o.GetName()
+	return NamespacedKey(o.GetNamespace(), o.GetName())
 }
 
 // ObjectName keys an event object by name. Use it as keyOf for cluster-scoped

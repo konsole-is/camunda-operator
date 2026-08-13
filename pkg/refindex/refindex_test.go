@@ -36,14 +36,14 @@ import (
 
 const testSecretRefsField = "databaseserverconfig.spec.secretRefs"
 
-func TestSecretKey(t *testing.T) {
-	assert.Equal(t, "ns/s", SecretKey("ns", "s"))
+func TestNamespacedKey(t *testing.T) {
+	assert.Equal(t, "ns/s", NamespacedKey("ns", "s"))
 }
 
 func TestObjectNamespacedName(t *testing.T) {
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "ns"}}
 
-	assert.Equal(t, SecretKey("ns", "s"), ObjectNamespacedName(secret))
+	assert.Equal(t, NamespacedKey("ns", "s"), ObjectNamespacedName(secret))
 }
 
 func TestObjectName(t *testing.T) {
@@ -82,7 +82,7 @@ func TestEnqueue(t *testing.T) {
 		WithScheme(scheme).
 		WithIndex(&v1.DatabaseServerConfig{}, testSecretRefsField, func(o client.Object) []string {
 			ref := o.(*v1.DatabaseServerConfig).Spec.AdminCredentialsSecretRef
-			return []string{SecretKey(ref.Namespace, ref.Name)}
+			return []string{NamespacedKey(ref.Namespace, ref.Name)}
 		}).
 		WithObjects(
 			databaseServerConfigReferencing("matching-a", "ns", "s"),

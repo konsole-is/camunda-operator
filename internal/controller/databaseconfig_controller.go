@@ -111,9 +111,9 @@ func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.DatabaseConfig{},
 		databaseConfigSecretRefsField, func(o client.Object) []string {
 			spec := o.(*v1.DatabaseConfig).Spec
-			keys := []string{refindex.SecretKey(spec.CredentialsSecretRef.Namespace, spec.CredentialsSecretRef.Name)}
+			keys := []string{refindex.NamespacedKey(spec.CredentialsSecretRef.Namespace, spec.CredentialsSecretRef.Name)}
 			if spec.BackupCredentialsSecretRef != nil {
-				keys = append(keys, refindex.SecretKey(spec.BackupCredentialsSecretRef.Namespace, spec.BackupCredentialsSecretRef.Name))
+				keys = append(keys, refindex.NamespacedKey(spec.BackupCredentialsSecretRef.Namespace, spec.BackupCredentialsSecretRef.Name))
 			}
 			return keys
 		}); err != nil {

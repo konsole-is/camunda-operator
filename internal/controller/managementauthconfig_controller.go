@@ -87,7 +87,7 @@ func (r *ManagementAuthConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.ManagementAuthConfig{},
 		managementAuthConfigSecretRefsField, func(o client.Object) []string {
 			ref := o.(*v1.ManagementAuthConfig).Spec.ClientSecretRef
-			return []string{refindex.SecretKey(ref.Namespace, ref.Name)}
+			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
 		}); err != nil {
 		return err
 	}

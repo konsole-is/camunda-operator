@@ -112,7 +112,7 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			r := &DatabaseConfigReconciler{Client: c, APIReader: c, Scheme: scheme}
 
 			cfg := &v1.DatabaseConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "db", Generation: 3},
+				ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns", Generation: 3},
 				Spec: v1.DatabaseConfigSpec{
 					ServerRef:    "server",
 					DatabaseName: "camunda",

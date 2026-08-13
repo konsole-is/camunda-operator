@@ -46,13 +46,13 @@ func databaseConfigSecret(ref v1.CredentialsSecretRef, keys ...string) *corev1.S
 	}
 }
 
-// expectDatabaseConfigReady polls the named DatabaseConfig until its Ready
+// expectDatabaseConfigReady polls the DatabaseConfig at key until its Ready
 // condition matches status, reason, and message.
-func expectDatabaseConfigReady(name string, status metav1.ConditionStatus, reason, message string) {
+func expectDatabaseConfigReady(key types.NamespacedName, status metav1.ConditionStatus, reason, message string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var dbConfig v1.DatabaseConfig
-		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, &dbConfig)).To(Succeed())
+		g.Expect(k8sClient.Get(ctx, key, &dbConfig)).To(Succeed())
 		cond := meta.FindStatusCondition(dbConfig.Status.Conditions, conditions.TypeReady)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(status))
@@ -80,6 +80,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 		server = validDatabaseServerConfig()
 		dbConfig = validDatabaseConfig()
+		dbConfig.Namespace = ns
 		dbConfig.Spec.ServerRef = server.Name
 		dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
 			Name: "app-creds", Namespace: ns,
@@ -91,7 +92,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
-			dbConfig.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			client.ObjectKeyFromObject(dbConfig), metav1.ConditionFalse, conditions.ReasonInvalidReference,
 			fmt.Sprintf("DatabaseServerConfig %q not found", dbConfig.Spec.ServerRef),
 		)
 	})
@@ -99,14 +100,14 @@ var _ = Describe("DatabaseConfig controller", func() {
 	It("moves validation forward to the Secret checks when the server appears", func() {
 		create(dbConfig)
 		expectDatabaseConfigReady(
-			dbConfig.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			client.ObjectKeyFromObject(dbConfig), metav1.ConditionFalse, conditions.ReasonInvalidReference,
 			fmt.Sprintf("DatabaseServerConfig %q not found", dbConfig.Spec.ServerRef),
 		)
 
 		create(server)
 
 		expectDatabaseConfigReady(
-			dbConfig.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			client.ObjectKeyFromObject(dbConfig), metav1.ConditionFalse, conditions.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q not found", ns+"/app-creds"),
 		)
 	})
@@ -115,13 +116,13 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(server)
 		create(dbConfig)
 		expectDatabaseConfigReady(
-			dbConfig.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			client.ObjectKeyFromObject(dbConfig), metav1.ConditionFalse, conditions.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q not found", ns+"/app-creds"),
 		)
 
 		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 
-		expectDatabaseConfigReady(dbConfig.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(client.ObjectKeyFromObject(dbConfig), metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
 	})
 
 	It("reports Healthy when the server and all Secrets exist", func() {
@@ -134,19 +135,19 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(databaseConfigSecret(*dbConfig.Spec.BackupCredentialsSecretRef, "username", "password"))
 		create(dbConfig)
 
-		expectDatabaseConfigReady(dbConfig.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(client.ObjectKeyFromObject(dbConfig), metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
 	})
 
 	It("flips a Healthy contract to InvalidReference when the server is deleted", func() {
 		create(server)
 		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 		create(dbConfig)
-		expectDatabaseConfigReady(dbConfig.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(client.ObjectKeyFromObject(dbConfig), metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
 
 		Expect(k8sClient.Delete(ctx, server)).To(Succeed())
 
 		expectDatabaseConfigReady(
-			dbConfig.Name, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			client.ObjectKeyFromObject(dbConfig), metav1.ConditionFalse, conditions.ReasonInvalidReference,
 			fmt.Sprintf("DatabaseServerConfig %q not found", dbConfig.Spec.ServerRef),
 		)
 	})
@@ -157,7 +158,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
-			dbConfig.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			client.ObjectKeyFromObject(dbConfig), metav1.ConditionFalse, conditions.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q is missing key %q", ns+"/app-creds", "password"),
 		)
 	})
@@ -172,7 +173,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
-			dbConfig.Name, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			client.ObjectKeyFromObject(dbConfig), metav1.ConditionFalse, conditions.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q not found", ns+"/backup-creds"),
 		)
 	})
@@ -181,18 +182,18 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(server)
 		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 		create(dbConfig)
-		expectDatabaseConfigReady(dbConfig.Name, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(client.ObjectKeyFromObject(dbConfig), metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
 
 		Eventually(func(g Gomega) {
 			var latest v1.DatabaseConfig
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: dbConfig.Name}, &latest)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(dbConfig), &latest)).To(Succeed())
 			latest.Spec.DatabaseName = "camunda-updated"
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
 			var latest v1.DatabaseConfig
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: dbConfig.Name}, &latest)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(dbConfig), &latest)).To(Succeed())
 			g.Expect(latest.Generation).To(BeNumerically(">", int64(1)))
 			g.Expect(latest.Status.ObservedGeneration).To(Equal(latest.Generation))
 		}, timeout, interval).Should(Succeed())
