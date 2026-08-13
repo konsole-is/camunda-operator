@@ -26,8 +26,8 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers/.claude/worktrees/storage-backend-controllers--binding-scope | #40 → feat/storage-backend-controllers | ready |
-| #36 | batch-b/foundations | .claude/worktrees/storage-backend-controllers--foundations | — | not-started |
+| #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers/.claude/worktrees/storage-backend-controllers--binding-scope | #40 → feat/storage-backend-controllers | self-merged |
+| #36 | batch-b/foundations | .claude/worktrees/storage-backend-controllers--foundations | — | in-progress |
 | #37 | batch-b/elasticsearchcluster | .claude/worktrees/storage-backend-controllers--elasticsearchcluster | — | not-started |
 | #38 | batch-b/database | .claude/worktrees/storage-backend-controllers--database | — | not-started |
 | #39 | batch-b/e2e | .claude/worktrees/storage-backend-controllers--e2e | — | not-started |
@@ -36,7 +36,7 @@ status: foundational-wave
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| `binding-scope` | pre-merge PR #35 | — | pending |
+| `binding-scope` | pre-merge PR #35 | #40 (merged c15b62a) | locked |
 | `eck-wrapper` | foundations PR (#36) | — | pending |
 | `binding-wrappers` | foundations PR (#36) | — | pending |
 | `credentials-api` | foundations PR (#36) | — | pending |
