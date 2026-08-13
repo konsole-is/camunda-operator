@@ -6,4 +6,10 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: databaseconfig-sample
 spec:
-  # TODO(user): Add fields here
+  serverRef: databaseserverconfig-sample
+  databaseName: camunda
+  credentialsSecretRef:
+    name: databaseconfig-sample-credentials
+    namespace: default
+    usernameKey: username
+    passwordKey: password

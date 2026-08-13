@@ -9,8 +9,12 @@ rules:
   resources:
   - secrets
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - core.camunda.io
@@ -22,11 +26,13 @@ rules:
   - camundamanagementclusters
   - camundaoptimizes
   - camundaplatformconfigs
+  - databaseconfigs
   - databases
   - elasticsearchclusters
   - logicalrestores
   - pointintimerestores
   - pvcautoresizes
+  - secondarystorageconfigs
   verbs:
   - create
   - delete
@@ -79,12 +85,35 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - databaseconfigs
   - databaseserverconfigs
+  - elasticsearchclusterpresets
   - managementauthconfigs
   - objectstorageconfigs
-  - secondarystorageconfigs
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - elasticsearch.k8s.elastic.co
+  resources:
+  - elasticsearches
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch

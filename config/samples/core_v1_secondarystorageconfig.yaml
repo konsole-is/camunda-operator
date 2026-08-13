@@ -6,4 +6,11 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: secondarystorageconfig-sample
 spec:
-  # TODO(user): Add fields here
+  type: elasticsearch
+  elasticsearch:
+    endpoint: "https://elasticsearchcluster-sample-es-http:9200"
+    credentialsSecretRef:
+      name: secondarystorageconfig-sample-credentials
+      namespace: default
+      usernameKey: username
+      passwordKey: password

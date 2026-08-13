@@ -6,4 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: objectstorageconfig-sample
 spec:
-  # TODO(user): Add fields here
+  provider: aws
+  type: S3
+  bucketId: "arn:aws:s3:::objectstorageconfig-sample-bucket"
+  bucketName: objectstorageconfig-sample-bucket
+  accountId: "arn:aws:iam::123456789012:role/objectstorageconfig-sample-role"

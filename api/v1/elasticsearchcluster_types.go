@@ -17,41 +17,147 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ElasticsearchClusterSpec defines the desired state of ElasticsearchCluster
-type ElasticsearchClusterSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of ElasticsearchCluster. Edit elasticsearchcluster_types.go to remove/update
+// ServiceAccountSpec configures the ServiceAccount of the pods a controller
+// manages.
+type ServiceAccountSpec struct {
+	// Annotations to set on the ServiceAccount, typically workload-identity
+	// annotations (IRSA, GCP Workload Identity, ...) granting the pods access
+	// to cloud resources such as the snapshot bucket used for backups.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-// ElasticsearchClusterStatus defines the observed state of ElasticsearchCluster.
+// SchedulingSpec groups the scheduling constraints applied to the pods a
+// controller manages. A consumer resolving a preset replaces the preset's
+// entire scheduling block when it sets its own; the blocks are never merged
+// field by field.
+type SchedulingSpec struct {
+	// NodeAffinity rules for the pods.
+	// +optional
+	NodeAffinity *corev1.NodeAffinity `json:"nodeAffinity,omitempty"`
+	// PodAffinity rules for the pods.
+	// +optional
+	PodAffinity *corev1.PodAffinity `json:"podAffinity,omitempty"`
+	// Tolerations for the pods.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+}
+
+// ServiceMonitorSpec configures the optional Prometheus ServiceMonitor for a
+// managed workload's service.
+type ServiceMonitorSpec struct {
+	// Enabled creates the ServiceMonitor when true. Defaults to false.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// Labels are extra labels applied to the ServiceMonitor.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+	// Annotations are extra annotations applied to the ServiceMonitor.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// MonitoringSpec groups the Prometheus scraping integration of a managed
+// workload.
+type MonitoringSpec struct {
+	// ServiceMonitor configures the Prometheus ServiceMonitor.
+	// +optional
+	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
+}
+
+// ElasticsearchClusterSpec defines the desired state of ElasticsearchCluster.
+//
+// The type doubles as the configuration baseline of an
+// ElasticsearchClusterPreset, so fields that are required on an
+// ElasticsearchCluster — secondaryStorageConfig — are optional at the schema
+// level here and enforced on the ElasticsearchCluster usage instead.
+type ElasticsearchClusterSpec struct {
+	// PresetRef names a cluster-scoped ElasticsearchClusterPreset used as the
+	// configuration baseline; fields set inline override the preset's value
+	// for that field wholesale.
+	// +optional
+	PresetRef string `json:"presetRef,omitempty"`
+	// Version is the Elasticsearch version to deploy, as a full semantic
+	// version. Camunda 8.9 supports Elasticsearch 8.19+ and 9.2+; the floor is
+	// enforced by the controller on the preset-merged result, the schema pins
+	// only the three-segment shape. Required unless the resolved preset
+	// provides it.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	// +optional
+	Version string `json:"version,omitempty"`
+	// Replicas is the number of Elasticsearch nodes. Required unless the
+	// resolved preset provides it.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
+	// Resources are the CPU and memory for each Elasticsearch node.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// StorageSize is the size of each node's data volume. It must never
+	// shrink: Elasticsearch data volumes cannot be reduced in place. The
+	// no-shrink rule binds the ElasticsearchCluster usage of this type only —
+	// it is a CEL transition rule on that CR's spec, not on this shared
+	// field, so a preset's baseline may be resized freely. Required unless
+	// the resolved preset provides it.
+	// +optional
+	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
+	// StorageClassName is the StorageClass for the data volumes. Defaults to
+	// the cluster's default StorageClass.
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+	// ServiceAccount configures the Elasticsearch pods' ServiceAccount,
+	// applied through the ECK podTemplate.
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
+	// ExtraEnv are extra environment variables for every Elasticsearch node.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) for
+	// every Elasticsearch node.
+	// +optional
+	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
+	// PodLabels are extra labels applied to the Elasticsearch pods.
+	// +optional
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	// PodAnnotations are extra annotations applied to the Elasticsearch pods.
+	// +optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+	// Scheduling constraints for the Elasticsearch pods; when set, it replaces
+	// the preset's scheduling block entirely (no merge).
+	// +optional
+	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
+	// SecondaryStorageConfig names the SecondaryStorageConfig the operator
+	// creates in this CR's own namespace with the connection details and
+	// generated credentials. Required on an ElasticsearchCluster, forbidden in
+	// a preset.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	SecondaryStorageConfig string `json:"secondaryStorageConfig,omitempty"`
+	// Monitoring configures the Prometheus scraping integration.
+	// +optional
+	Monitoring *MonitoringSpec `json:"monitoring,omitempty"`
+	// Suspend scales the Elasticsearch node set to zero while keeping all
+	// data volumes. Defaults to false.
+	// +optional
+	Suspend bool `json:"suspend,omitempty"`
+}
+
+// ElasticsearchClusterStatus is the observed state of an ElasticsearchCluster.
 type ElasticsearchClusterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the ElasticsearchCluster resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current state. The Ready condition carries
+	// reasons Healthy, Progressing, InvalidReference, or Suspended; the
+	// Suspended condition reports suspension, and the operator's per-component
+	// conditions (CredentialsReady, ElasticsearchReady, StorageContractReady)
+	// also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,7 +167,10 @@ type ElasticsearchClusterStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// ElasticsearchCluster is the Schema for the elasticsearchclusters API
+// ElasticsearchCluster provisions and operates an Elasticsearch cluster for
+// use as secondary storage, deployed through the external ECK operator, and
+// publishes the connection details as a SecondaryStorageConfig with generated
+// credentials.
 type ElasticsearchCluster struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -70,6 +179,8 @@ type ElasticsearchCluster struct {
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the desired state of ElasticsearchCluster
+	// +kubebuilder:validation:XValidation:rule="has(self.secondaryStorageConfig)",message="secondaryStorageConfig is required"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.storageSize) || !has(self.storageSize) || !quantity(string(self.storageSize)).isLessThan(quantity(string(oldSelf.storageSize)))",message="storageSize may not be shrunk"
 	// +required
 	Spec ElasticsearchClusterSpec `json:"spec"`
 
@@ -77,6 +188,12 @@ type ElasticsearchCluster struct {
 	// +optional
 	Status ElasticsearchClusterStatus `json:"status,omitzero"`
 }
+
+// GetConditions returns the resource's status conditions.
+func (in *ElasticsearchCluster) GetConditions() []metav1.Condition { return in.Status.Conditions }
+
+// GetObservedGeneration returns the last reconciled generation recorded in status.
+func (in *ElasticsearchCluster) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
 
 // +kubebuilder:object:root=true
 

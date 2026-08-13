@@ -14,8 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package conditions provides the Ready-condition vocabulary and SSA status
-// patching shared by the contract validation controllers.
+// Package conditions provides the Ready-condition vocabulary, SSA status
+// patching, and Ready derivation shared by the contract validation and
+// storage backend controllers.
 package conditions
 
 import (
@@ -33,14 +34,26 @@ import (
 const (
 	// TypeReady is the condition type every contract CRD reports.
 	TypeReady = "Ready"
+	// TypeSuspended is the condition type a suspendable CR reports while its
+	// workload is intentionally scaled to zero.
+	TypeSuspended = "Suspended"
 	// ReasonHealthy indicates all validation checks passed.
 	ReasonHealthy = "Healthy"
+	// ReasonProgressing indicates the managed resources have not yet reached
+	// their desired state.
+	ReasonProgressing = "Progressing"
 	// ReasonMissingSecret indicates a referenced Secret is missing or lacks a
 	// configured key.
 	ReasonMissingSecret = "MissingSecret"
 	// ReasonInvalidReference indicates a referenced custom resource does not
 	// exist.
 	ReasonInvalidReference = "InvalidReference"
+	// ReasonConnectionFailed indicates a backing server is unreachable or
+	// rejects the configured credentials.
+	ReasonConnectionFailed = "ConnectionFailed"
+	// ReasonSuspended indicates the resource is suspended and intentionally
+	// not serving.
+	ReasonSuspended = "Suspended"
 )
 
 // FieldOwner is the server-side-apply field manager for all camunda-operator
@@ -56,6 +69,45 @@ type Object interface {
 	// GetObservedGeneration returns the last reconciled generation recorded in
 	// status.
 	GetObservedGeneration() int64
+}
+
+// PreCheckFailure is a failed reconciliation pre-check — an unresolved
+// reference, a missing Secret, an unreachable server — mapped to its
+// documented Ready reason and a condition-ready message.
+type PreCheckFailure struct {
+	// Reason is the documented Ready condition reason for the failure.
+	Reason string
+	// Message is the condition-ready failure message.
+	Message string
+}
+
+// DeriveReady derives the CR-level Ready reason and message from the
+// controller's pre-check result, the ocf component conditions, and the
+// suspension flag. A pre-check failure wins outright; otherwise suspension
+// reports Suspended; otherwise the first component condition whose status is
+// not True reports Progressing with a message naming that component; with
+// every component True the result is Healthy.
+func DeriveReady(pre *PreCheckFailure, componentConds []metav1.Condition, suspended bool) (reason, message string) {
+	if pre != nil {
+		return pre.Reason, pre.Message
+	}
+
+	if suspended {
+		return ReasonSuspended, "Suspended by spec.suspend"
+	}
+
+	for _, cond := range componentConds {
+		if cond.Status == metav1.ConditionTrue {
+			continue
+		}
+		detail := cond.Message
+		if detail == "" {
+			detail = cond.Reason
+		}
+		return ReasonProgressing, fmt.Sprintf("Waiting for %s: %s", cond.Type, detail)
+	}
+
+	return ReasonHealthy, "All components ready"
 }
 
 // Ready builds a Ready condition observed at the given generation. The caller
@@ -85,6 +137,13 @@ func needsPatch(obj Object, cond metav1.Condition) bool {
 // obj must be the freshly fetched resource with its status unmodified: the
 // skip and preservation decisions compare against obj's in-memory status, so a
 // locally mutated status produces wrong skips or transition times.
+//
+// PatchReady is for the CR-level conditions only. The apply lists exactly one
+// condition under FieldOwner with ForceOwnership, so any other condition
+// previously applied under the same manager is removed by the merge.
+// Per-component conditions staged by ocf components must be persisted through
+// the component's FlushStatus (a Status().Update that merges by condition
+// type), never SSA-applied under FieldOwner.
 func PatchReady(ctx context.Context, c client.Client, obj Object, cond metav1.Condition) error {
 	if !needsPatch(obj, cond) {
 		return nil

@@ -109,7 +109,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline; with a preset, the merged result must contain them.
 - `spec.version` must be a version supported by Camunda 8.9: Elasticsearch 8.19+ or 9.2+.
-- `spec.storageSize` must not shrink: Elasticsearch data volumes cannot be reduced in place, so updates that lower it are rejected.
+- `spec.storageSize` must not shrink: Elasticsearch data volumes cannot be reduced in place. Lowering an inline `storageSize` relative to its previous inline value is rejected at admission; a shrink relative to a preset-provided baseline (for example, setting an inline value below the preset's after having relied on the preset) cannot be checked at admission and surfaces as `Ready: False` from the controller instead.
 - `spec.secondaryStorageConfig` must be a valid resource name.
 
 !!! note "Deviation from the original proposal"
