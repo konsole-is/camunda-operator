@@ -23,10 +23,12 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
+
+// versionBelowFloor is an Elasticsearch version below the Camunda 8.9 floor.
+const versionBelowFloor = "8.18.0"
 
 // fullPresetSpec returns a preset baseline with every inheritable field set,
 // so overlay tests can prove per-field inheritance and override.
@@ -34,15 +36,15 @@ func fullPresetSpec() *v1.ElasticsearchClusterPresetSpec {
 	return &v1.ElasticsearchClusterPresetSpec{
 		Cluster: v1.ElasticsearchClusterSpec{
 			Version:  "9.2.4",
-			Replicas: ptr.To(int32(3)),
+			Replicas: new(int32(3)),
 			Resources: &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
 					corev1.ResourceMemory: resource.MustParse("2Gi"),
 				},
 			},
-			StorageSize:      ptr.To(resource.MustParse("64Gi")),
-			StorageClassName: ptr.To("standard"),
+			StorageSize:      new(resource.MustParse("64Gi")),
+			StorageClassName: new("standard"),
 			ServiceAccount: &v1.ServiceAccountSpec{
 				Annotations: map[string]string{"preset/annotation": "a"},
 			},
@@ -108,12 +110,12 @@ func TestMergePresetOverridesInlineFieldsWholesale(t *testing.T) {
 	spec := v1.ElasticsearchClusterSpec{
 		PresetRef: "standard",
 		Version:   "9.2.5",
-		Replicas:  ptr.To(int32(5)),
+		Replicas:  new(int32(5)),
 		Resources: &corev1.ResourceRequirements{
 			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
 		},
-		StorageSize:      ptr.To(resource.MustParse("128Gi")),
-		StorageClassName: ptr.To("ssd"),
+		StorageSize:      new(resource.MustParse("128Gi")),
+		StorageClassName: new("ssd"),
 		ServiceAccount: &v1.ServiceAccountSpec{
 			Annotations: map[string]string{"inline/annotation": "b"},
 		},
@@ -207,8 +209,8 @@ func TestValidateMerged(t *testing.T) {
 	complete := func() v1.ElasticsearchClusterSpec {
 		return v1.ElasticsearchClusterSpec{
 			Version:                "9.2.4",
-			Replicas:               ptr.To(int32(3)),
-			StorageSize:            ptr.To(resource.MustParse("64Gi")),
+			Replicas:               new(int32(3)),
+			StorageSize:            new(resource.MustParse("64Gi")),
 			SecondaryStorageConfig: "my-storage-config",
 		}
 	}
@@ -250,8 +252,8 @@ func TestValidateMerged(t *testing.T) {
 		},
 		{
 			name:    "8.18.0 is below the 8.x floor",
-			mutate:  func(s *v1.ElasticsearchClusterSpec) { s.Version = "8.18.0" },
-			wantErr: []string{"8.18.0", "8.19+ or 9.2+"},
+			mutate:  func(s *v1.ElasticsearchClusterSpec) { s.Version = versionBelowFloor },
+			wantErr: []string{versionBelowFloor, "8.19+ or 9.2+"},
 		},
 		{
 			name:    "9.1.9 is below the 9.x floor",
@@ -271,10 +273,10 @@ func TestValidateMerged(t *testing.T) {
 		{
 			name: "a missing field and a below-floor version are both reported",
 			mutate: func(s *v1.ElasticsearchClusterSpec) {
-				s.Version = "8.18.0"
+				s.Version = versionBelowFloor
 				s.StorageSize = nil
 			},
-			wantErr: []string{"storageSize", "8.18.0"},
+			wantErr: []string{"storageSize", versionBelowFloor},
 		},
 	}
 	for _, tt := range tests {

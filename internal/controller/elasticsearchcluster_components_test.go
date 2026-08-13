@@ -30,7 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -69,8 +68,8 @@ func goldenMinimalElasticsearchCluster() (*v1.ElasticsearchCluster, *v1.Elastics
 	preset := &v1.ElasticsearchClusterPresetSpec{
 		Cluster: v1.ElasticsearchClusterSpec{
 			Version:     "9.2.4",
-			Replicas:    ptr.To(int32(3)),
-			StorageSize: ptr.To(resource.MustParse("64Gi")),
+			Replicas:    new(int32(3)),
+			StorageSize: new(resource.MustParse("64Gi")),
 		},
 	}
 
@@ -85,7 +84,7 @@ func goldenRealisticElasticsearchCluster() *v1.ElasticsearchCluster {
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-es", Namespace: "my-cluster-ns"},
 		Spec: v1.ElasticsearchClusterSpec{
 			Version:  "9.2.4",
-			Replicas: ptr.To(int32(3)),
+			Replicas: new(int32(3)),
 			Resources: &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("2"),
@@ -95,8 +94,8 @@ func goldenRealisticElasticsearchCluster() *v1.ElasticsearchCluster {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				},
 			},
-			StorageSize:      ptr.To(resource.MustParse("128Gi")),
-			StorageClassName: ptr.To("ssd"),
+			StorageSize:      new(resource.MustParse("128Gi")),
+			StorageClassName: new("ssd"),
 			ServiceAccount: &v1.ServiceAccountSpec{
 				Annotations: map[string]string{
 					"eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/my-es-snapshot-role",
