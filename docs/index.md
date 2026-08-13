@@ -7,8 +7,9 @@ It is the bottom layer of a three-operator stack. Cloud- and SaaS-level operator
 ## Where to go
 
 - [Architecture](architecture.md) — the extension model, how features connect to the core, and the support policy.
+- [Installation](installation.md) — installing the operator with Helm or plain manifests.
 - [CRD Overview](crds/index.md) — the full inventory of custom resource definitions, their dependency graph, and per-CRD reference documentation.
 
 ## Installation
 
-See the [README](https://github.com/konsole-is/camunda-operator#readme) for installation and quick-start instructions.
+See the [installation guide](installation.md) for Helm and manifest-based installation, signature verification, and upgrades.

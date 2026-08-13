@@ -1,0 +1,29 @@
+apiVersion: v2
+name: camunda-operator
+description: Core Kubernetes operator for the Camunda platform
+type: application
+
+# version and appVersion are placeholders. The release workflow
+# (.github/workflows/release.yml) rewrites both lines with the release tag.
+# Keep them anchored at the start of a line — the sed expressions depend on it.
+version: 0.0.1
+appVersion: "0.0.1"
+
+kubeVersion: ">= 1.30.0-0"
+
+keywords:
+  - kubernetes
+  - operator
+  - camunda
+
+home: https://github.com/konsole-is/camunda-operator
+sources:
+  - https://github.com/konsole-is/camunda-operator
+icon: https://avatars.githubusercontent.com/u/200405113?v=4
+
+maintainers:
+  - name: konsole-is
+    url: https://github.com/konsole-is
+
+annotations:
+  kubebuilder.io/generated-by: kubebuilder

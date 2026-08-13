@@ -1,6 +1,13 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 
+# Recipes below expand IMG in the shell (e.g. $${IMG%:*}), which reads the
+# environment. Make exports command-line variables automatically but not this
+# default, so without the export `make helm-deploy` deploys an empty image
+# reference. Exporting also keeps registry-with-port values like
+# localhost:5000/img:tag correct, since ${IMG%:*} strips only the final colon.
+export IMG
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -129,14 +136,14 @@ docker-push: ## Push docker image with the manager.
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+PLATFORMS ?= linux/amd64,linux/arm64
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
 	$(CONTAINER_TOOL) buildx use camunda-operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cross
 
@@ -145,6 +152,7 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	mkdir -p dist
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
+	"$(KUSTOMIZE)" build config/crd > dist/crds.yaml
 
 ##@ Deployment
 
@@ -266,17 +274,59 @@ HELM_RELEASE ?= camunda-operator
 HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
+## Helm version installed by install-helm. Pinned to .tool-versions.
+HELM_VERSION ?= v4.1.4
 
 .PHONY: install-helm
-install-helm: ## Install the latest version of Helm.
+install-helm: ## Install the pinned version of Helm if it is missing.
 	@command -v $(HELM) >/dev/null 2>&1 || { \
-		echo "Installing Helm..." && \
-		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
+		echo "Installing Helm $(HELM_VERSION)..." && \
+		curl -fsSL https://raw.githubusercontent.com/helm/helm/$(HELM_VERSION)/scripts/get-helm-4 \
+			| bash -s -- --version $(HELM_VERSION); \
 	}
 
 .PHONY: helm-generate
 helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify an image with IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
+
+## Maximum rendered chart size in bytes before helm-verify fails.
+## The real bound is the gzipped Helm release Secret against etcd's ~1MB object
+## limit. This uncompressed proxy is deliberately conservative — gzip on CRD text
+## buys several-fold headroom, so the wire trips well before an install would
+## actually fail. It is an early warning to trigger the CRD-split conversation,
+## not a correctness check. The tripwire measures the worst case across all
+## rendered permutations. When it trips, the CRD set has outgrown in-chart
+## delivery and the CRDs should move to a chart of their own.
+HELM_MAX_RENDER_BYTES ?= 1048576
+
+.PHONY: helm-verify
+helm-verify: install-helm ## Lint and render the Helm chart across value permutations. No cluster required.
+	@test -d "$(HELM_CHART_DIR)" || { \
+		echo "$(HELM_CHART_DIR) not found; run 'make helm-generate' first." >&2; exit 1; }
+	$(HELM) lint "$(HELM_CHART_DIR)"
+	@set -e; \
+	max=0; worst=""; \
+	for opts in \
+		"" \
+		"--set crd.enable=false" \
+		"--set rbacHelpers.enable=true" \
+		"--set prometheus.enable=true" \
+		"--set certManager.enable=true" \
+		"--set crd.enable=false --set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
+		"--set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
+	; do \
+		label="$${opts:-<defaults>}"; \
+		bytes="$$( $(HELM) template verify "$(HELM_CHART_DIR)" $$opts | wc -c )"; \
+		printf '  %9s bytes  helm template %s\n' "$$bytes" "$$label"; \
+		if [ "$$bytes" -gt "$$max" ]; then max=$$bytes; worst="$$label"; fi; \
+	done; \
+	echo "  worst case: $$max bytes ($$worst), limit $(HELM_MAX_RENDER_BYTES)"; \
+	if [ "$$max" -gt "$(HELM_MAX_RENDER_BYTES)" ]; then \
+		echo "ERROR: rendered chart exceeds $(HELM_MAX_RENDER_BYTES) bytes in configuration: $$worst" >&2; \
+		echo "The CRD set has outgrown in-chart delivery. Consider splitting CRDs" >&2; \
+		echo "into a separate chart shipped alongside this one." >&2; \
+		exit 1; \
+	fi
 
 .PHONY: helm-deploy
 helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.

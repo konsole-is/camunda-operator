@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Build and publish artifacts
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # upload release assets
+      packages: write   # push to ghcr
+      id-token: write   # keyless cosign signing via OIDC
+
+    env:
+      # Release tags are unprefixed SemVer (0.1.0), because Helm chart
+      # versions must be bare SemVer.
+      TAG: ${{ github.ref_name }}
+      IMG: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+      CHART_REGISTRY: oci://ghcr.io/konsole-is/charts
+      CHART_REPO: ghcr.io/konsole-is/charts/camunda-operator
+
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Reject a v-prefixed tag
+        run: |
+          if [[ "${TAG}" == v* ]]; then
+            echo "Tag '${TAG}' is v-prefixed. Helm chart versions must be bare SemVer." >&2
+            exit 1
+          fi
+
+      # Versions below are pinned to .tool-versions. Keep them in sync.
+      - name: Install kubebuilder
+        run: |
+          VERSION=4.13.1
+          OS=$(go env GOOS)
+          ARCH=$(go env GOARCH)
+          curl -fsSL -o kubebuilder \
+            "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${VERSION}/kubebuilder_${OS}_${ARCH}"
+          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4.3.1
+        with:
+          version: v4.1.4
+
+      # cosign-installer v4 is the first major that can install cosign v3.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v3.1.2
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate the chart and installer manifests
+        run: make helm-generate IMG=${IMG}
+
+      - name: Stamp the release version into Chart.yaml
+        run: |
+          sed -i -e "s/^version: .*/version: ${TAG}/" dist/chart/Chart.yaml
+          sed -i -e "s/^appVersion: .*/appVersion: \"${TAG}\"/" dist/chart/Chart.yaml
+          grep -E '^(version|appVersion):' dist/chart/Chart.yaml
+
+      - name: Verify the chart
+        run: make helm-verify
+
+      - name: Build and push the operator image
+        run: make docker-buildx IMG=${IMG}
+
+      - name: Resolve the image digest
+        id: image
+        run: |
+          digest=$(docker buildx imagetools inspect "${IMG}" \
+            --format '{{.Manifest.Digest}}')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "image digest: ${digest}"
+
+      - name: Package and push the chart
+        id: chart
+        run: |
+          # The default `bash -e {0}` Actions shell does not imply pipefail:
+          # `helm push ... | tee` would otherwise swallow a failing push's
+          # exit code. Without this, a failed push could leave `digest`
+          # empty (caught below) or, worse, matching an unrelated sha256
+          # embedded in an error message (e.g. "digest mismatch: expected
+          # sha256:...").
+          set -o pipefail
+          helm package dist/chart --destination dist
+          helm push "dist/camunda-operator-${TAG}.tgz" "${CHART_REGISTRY}" 2>&1 | tee push.log
+          # Anchored to the literal "Digest:" line helm emits on success, so
+          # a sha256 mentioned incidentally in an error message (digest
+          # mismatch, failed manifest push, etc.) can't be mistaken for the
+          # real one.
+          digest=$(sed -n 's/^Digest:[[:space:]]*\(sha256:[0-9a-f]\{64\}\).*/\1/p' push.log | head -1)
+          if [ -z "$digest" ]; then
+            echo "Could not parse the chart digest from helm push output." >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "chart digest: ${digest}"
+
+      # Sign by digest, never by tag — tags are mutable.
+      - name: Sign the image
+        run: cosign sign --yes "ghcr.io/${{ github.repository }}@${{ steps.image.outputs.digest }}"
+
+      - name: Sign the chart
+        run: cosign sign --yes "${CHART_REPO}@${{ steps.chart.outputs.digest }}"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/install.yaml
+            dist/crds.yaml
+            dist/camunda-operator-${{ github.ref_name }}.tgz

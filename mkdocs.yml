@@ -69,6 +69,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Installation: installation.md
   - Architecture: architecture.md
   - CRDs:
       - Overview: crds/index.md

@@ -29,7 +29,17 @@ go.work
 # Kubeconfig might contain secrets
 *.kubeconfig
 
-# helm dist
-dist
+# helm dist — everything under dist/ is generated except the hand-maintained
+# chart metadata below, which `make helm-generate` preserves rather than
+# overwrites. Keep this allowlist in step with the files that survive it.
+dist/**/*
+!dist/chart/
+!dist/chart/Chart.yaml
+!dist/chart/README.md
 # mkdocs build output
 site/
+
+# The kubebuilder helm/v2-alpha plugin regenerates this scaffold workflow on
+# every `make helm-generate`, silently reverting any edits. Our real chart CI
+# lives in .github/workflows/chart.yml, at a path the plugin does not own.
+.github/workflows/test-chart.yml
