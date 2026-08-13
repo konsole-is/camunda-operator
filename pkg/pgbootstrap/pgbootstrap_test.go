@@ -240,6 +240,57 @@ func TestBackupUserHoldsRestoreRights(t *testing.T) {
 	require.NoError(t, err, "restore needs write rights on restored tables")
 }
 
+// adminIsMemberOf reports whether the admin user holds a direct membership in
+// role on the shared server.
+func adminIsMemberOf(t *testing.T, role string) bool {
+	t.Helper()
+
+	conn := mustConnectAs(t, adminConn.AdminUser, adminConn.AdminPassword, "postgres")
+
+	var member bool
+	require.NoError(t, conn.QueryRow(t.Context(),
+		`SELECT EXISTS (
+			SELECT FROM pg_auth_members
+			WHERE roleid = to_regrole($1) AND member = to_regrole($2)
+		)`, role, adminConn.AdminUser,
+	).Scan(&member))
+
+	return member
+}
+
+func TestBootstrapLeavesNoAdminRoleMemberships(t *testing.T) {
+	b := connect(t)
+	ctx := t.Context()
+
+	require.NoError(t, b.EnsureDatabase(ctx, "resid_db"))
+	require.NoError(t, b.EnsureUser(ctx, "resid_app", "app-pw"))
+	require.NoError(t, b.GrantApplication(ctx, "resid_app", "resid_db"))
+	require.NoError(t, b.EnsureBackupUser(ctx, "resid_backup", "backup-pw", "resid_db"))
+
+	assert.False(t, adminIsMemberOf(t, "resid_app"),
+		"the membership granted for the ownership transfer and default privileges must be revoked")
+	assert.False(t, adminIsMemberOf(t, "resid_backup"),
+		"bootstrap must never leave the admin a member of the backup role")
+}
+
+func TestBootstrapPreservesPreexistingAdminMembership(t *testing.T) {
+	b := connect(t)
+	ctx := t.Context()
+
+	require.NoError(t, b.EnsureDatabase(ctx, "preex_db"))
+	require.NoError(t, b.EnsureUser(ctx, "preex_app", "app-pw"))
+
+	admin := mustConnectAs(t, adminConn.AdminUser, adminConn.AdminPassword, "postgres")
+	_, err := admin.Exec(ctx, `GRANT preex_app TO `+adminConn.AdminUser)
+	require.NoError(t, err)
+
+	require.NoError(t, b.GrantApplication(ctx, "preex_app", "preex_db"))
+	require.NoError(t, b.EnsureBackupUser(ctx, "preex_backup", "backup-pw", "preex_db"))
+
+	assert.True(t, adminIsMemberOf(t, "preex_app"),
+		"a membership the bootstrap did not grant must not be revoked")
+}
+
 func TestEnsureUserRotatesPassword(t *testing.T) {
 	b := connect(t)
 	ctx := t.Context()

@@ -22,6 +22,7 @@ package pgbootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -186,17 +187,26 @@ func (b *bootstrapper) GrantApplication(ctx context.Context, user, database stri
 		return err
 	}
 
-	statements := []string{
-		"GRANT ALL PRIVILEGES ON DATABASE " + quoteIdentifier(database) + " TO " + quoteIdentifier(user),
-		// ALTER DATABASE OWNER requires the admin to be a member of the new
-		// owning role; the admin created the role, so it may grant itself
-		// membership. The grant is an idempotent no-op when already held.
-		"GRANT " + quoteIdentifier(user) + " TO CURRENT_USER",
-		"ALTER DATABASE " + quoteIdentifier(database) + " OWNER TO " + quoteIdentifier(user),
+	if _, err := b.admin.Exec(ctx,
+		"GRANT ALL PRIVILEGES ON DATABASE "+quoteIdentifier(database)+" TO "+quoteIdentifier(user),
+	); err != nil {
+		return fmt.Errorf("granting application privileges on %q to %q: %w", database, user, err)
 	}
-	for _, stmt := range statements {
-		if _, err := b.admin.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("granting application privileges on %q to %q: %w", database, user, err)
+
+	owner, err := b.databaseOwner(ctx, b.admin, database)
+	if err != nil {
+		return err
+	}
+	if owner != user {
+		// ALTER DATABASE OWNER requires the admin to be a member of the new
+		// owning role; the membership is granted only for this statement.
+		err := b.withRoleMembership(ctx, b.admin, user, func() error {
+			_, err := b.admin.Exec(ctx,
+				"ALTER DATABASE "+quoteIdentifier(database)+" OWNER TO "+quoteIdentifier(user))
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("transferring ownership of %q to %q: %w", database, user, err)
 		}
 	}
 
@@ -259,32 +269,82 @@ func (b *bootstrapper) EnsureBackupUser(ctx context.Context, name, password, dat
 
 	// Tables created later belong to the database owner (the application
 	// role); altering that role's default privileges keeps them readable.
-	var owner string
-	if err := db.QueryRow(ctx,
-		"SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = $1", database,
-	).Scan(&owner); err != nil {
-		return fmt.Errorf("resolving owner of database %q: %w", database, err)
-	}
-	if err := validateIdentifier(owner); err != nil {
-		return fmt.Errorf("database %q has an unexpected owner: %w", database, err)
+	owner, err := b.databaseOwner(ctx, db, database)
+	if err != nil {
+		return err
 	}
 
-	defaults := []string{
-		// ALTER DEFAULT PRIVILEGES FOR ROLE requires membership of that
-		// role; the admin created it, so it may grant itself membership.
-		"GRANT " + quoteIdentifier(owner) + " TO CURRENT_USER",
-		"ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteIdentifier(owner) +
-			" IN SCHEMA public GRANT SELECT ON TABLES TO " + quoteIdentifier(name),
-		"ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteIdentifier(owner) +
-			" IN SCHEMA public GRANT SELECT ON SEQUENCES TO " + quoteIdentifier(name),
-	}
-	for _, stmt := range defaults {
-		if _, err := db.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("granting default read privileges on %q to %q: %w", database, name, err)
+	// ALTER DEFAULT PRIVILEGES FOR ROLE requires membership of that role;
+	// the membership is granted only around these statements.
+	err = b.withRoleMembership(ctx, db, owner, func() error {
+		defaults := []string{
+			"ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteIdentifier(owner) +
+				" IN SCHEMA public GRANT SELECT ON TABLES TO " + quoteIdentifier(name),
+			"ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteIdentifier(owner) +
+				" IN SCHEMA public GRANT SELECT ON SEQUENCES TO " + quoteIdentifier(name),
 		}
+		for _, stmt := range defaults {
+			if _, err := db.Exec(ctx, stmt); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("granting default read privileges on %q to %q: %w", database, name, err)
 	}
 
 	return nil
+}
+
+// databaseOwner resolves the owning role of database via conn and validates
+// it as a plain identifier so it can be interpolated into DDL.
+func (b *bootstrapper) databaseOwner(ctx context.Context, conn *pgx.Conn, database string) (string, error) {
+	var owner string
+	if err := conn.QueryRow(ctx,
+		"SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = $1", database,
+	).Scan(&owner); err != nil {
+		return "", fmt.Errorf("resolving owner of database %q: %w", database, err)
+	}
+
+	if err := validateIdentifier(owner); err != nil {
+		return "", fmt.Errorf("database %q has an unexpected owner: %w", database, err)
+	}
+
+	return owner, nil
+}
+
+// withRoleMembership runs fn with the connected admin holding membership in
+// role, then restores the previous state: the membership is granted only when
+// absent — the admin is not the role itself and holds no direct membership —
+// and revoked afterwards only when this call granted it, so a pre-existing
+// membership survives untouched.
+func (b *bootstrapper) withRoleMembership(ctx context.Context, conn *pgx.Conn, role string, fn func() error) error {
+	var member bool
+	if err := conn.QueryRow(ctx,
+		`SELECT to_regrole($1) = to_regrole(current_user::text) OR EXISTS (
+			SELECT FROM pg_auth_members
+			WHERE roleid = to_regrole($1) AND member = to_regrole(current_user::text)
+		)`, role,
+	).Scan(&member); err != nil {
+		return fmt.Errorf("checking membership in role %q: %w", role, err)
+	}
+
+	if !member {
+		if _, err := conn.Exec(ctx, "GRANT "+quoteIdentifier(role)+" TO CURRENT_USER"); err != nil {
+			return fmt.Errorf("granting temporary membership in role %q: %w", role, err)
+		}
+	}
+
+	fnErr := fn()
+
+	if !member {
+		if _, err := conn.Exec(ctx, "REVOKE "+quoteIdentifier(role)+" FROM CURRENT_USER"); err != nil {
+			return errors.Join(fnErr, fmt.Errorf("revoking temporary membership in role %q: %w", role, err))
+		}
+	}
+
+	return fnErr
 }
 
 func (b *bootstrapper) Ping(ctx context.Context) error {
