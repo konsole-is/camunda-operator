@@ -64,9 +64,12 @@ func (b *Builder) WithMutation(ms ...Mutation) *Builder {
 // WithCustomConvergeStatus overrides the default logic for determining whether the
 // Elasticsearch has reached its converged state.
 //
-// The default behavior uses DefaultConvergingStatusHandler, which reports Healthy
-// unconditionally. This handler is required by the generic layer, so it is registered
-// in NewBuilder and can only be replaced, never cleared.
+// The default behavior uses DefaultConvergingStatusHandler, which maps the ECK
+// CR's reported health: green is Healthy, yellow is still converging (Creating
+// on first apply, Updating otherwise), red is Failing, and a missing or
+// unknown health reports Creating. This handler is required by the generic
+// layer, so it is registered in NewBuilder and can only be replaced, never
+// cleared.
 func (b *Builder) WithCustomConvergeStatus(
 	handler func(concepts.ConvergingOperation, *elasticsearchv1.Elasticsearch) (concepts.AliveStatusWithReason, error),
 ) *Builder {
