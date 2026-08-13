@@ -20,38 +20,65 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// ObjectStorageProvider identifies the cloud provider hosting a bucket.
+// +kubebuilder:validation:Enum=aws;gcp;azure
+type ObjectStorageProvider string
 
-// ObjectStorageConfigSpec defines the desired state of ObjectStorageConfig
+// ObjectStorageProviderAWS, ObjectStorageProviderGCP, and
+// ObjectStorageProviderAzure are the supported bucket providers.
+const (
+	ObjectStorageProviderAWS   ObjectStorageProvider = "aws"
+	ObjectStorageProviderGCP   ObjectStorageProvider = "gcp"
+	ObjectStorageProviderAzure ObjectStorageProvider = "azure"
+)
+
+// ObjectStorageType identifies the storage API of a bucket.
+// +kubebuilder:validation:Enum=S3;GCS;AzureBlob
+type ObjectStorageType string
+
+// ObjectStorageTypeS3, ObjectStorageTypeGCS, and ObjectStorageTypeAzureBlob
+// are the supported storage APIs; each pairs with exactly one provider.
+const (
+	ObjectStorageTypeS3        ObjectStorageType = "S3"
+	ObjectStorageTypeGCS       ObjectStorageType = "GCS"
+	ObjectStorageTypeAzureBlob ObjectStorageType = "AzureBlob"
+)
+
+// ObjectStorageConfigSpec describes a cloud bucket and the workload identity
+// trusted to access it. Access is granted through workload identity, so the
+// contract references no Secrets.
+// +kubebuilder:validation:XValidation:rule="(self.provider == 'aws' && self.type == 'S3') || (self.provider == 'gcp' && self.type == 'GCS') || (self.provider == 'azure' && self.type == 'AzureBlob')",message="spec.type must match spec.provider: aws pairs with S3, gcp with GCS, azure with AzureBlob"
 type ObjectStorageConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of ObjectStorageConfig. Edit objectstorageconfig_types.go to remove/update
+	// Provider is the cloud provider hosting the bucket; it determines the
+	// workload-identity mechanism.
+	Provider ObjectStorageProvider `json:"provider"`
+	// Type is the storage API of the bucket; it must match the provider.
+	Type ObjectStorageType `json:"type"`
+	// BucketID is the provider-specific unique identifier of the bucket, for
+	// example an ARN on AWS.
+	// +kubebuilder:validation:MinLength=1
+	BucketID string `json:"bucketId"`
+	// BucketName is the bucket name as used by storage client SDKs.
+	// +kubebuilder:validation:MinLength=1
+	BucketName string `json:"bucketName"`
+	// BasePath is the key prefix under which consumers write objects. Empty
+	// means the bucket root.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	BasePath string `json:"basePath,omitempty"`
+	// AccountID is the workload identity the bucket trusts: an IAM role ARN
+	// (aws), a service account email (gcp), or a managed identity client ID
+	// (azure).
+	// +kubebuilder:validation:MinLength=1
+	AccountID string `json:"accountId"`
 }
 
-// ObjectStorageConfigStatus defines the observed state of ObjectStorageConfig.
+// ObjectStorageConfigStatus is the observed validation state of the contract.
 type ObjectStorageConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the ObjectStorageConfig resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current validation state; the Ready condition
+	// carries the reason Healthy.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -62,7 +89,9 @@ type ObjectStorageConfigStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// ObjectStorageConfig is the Schema for the objectstorageconfigs API
+// ObjectStorageConfig is the contract CRD that describes a cloud bucket — for
+// backups or document storage — and the workload identity trusted to access
+// it.
 type ObjectStorageConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -78,6 +107,12 @@ type ObjectStorageConfig struct {
 	// +optional
 	Status ObjectStorageConfigStatus `json:"status,omitzero"`
 }
+
+// GetConditions returns the resource's status conditions.
+func (in *ObjectStorageConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+
+// GetObservedGeneration returns the last reconciled generation recorded in status.
+func (in *ObjectStorageConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
 
 // +kubebuilder:object:root=true
 

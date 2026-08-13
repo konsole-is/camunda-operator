@@ -17,68 +17,122 @@ limitations under the License.
 package controller
 
 import (
-	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-var _ = Describe("ManagementAuthConfig Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+var _ = Describe("ManagementAuthConfig controller", func() {
+	var (
+		namespace  string
+		authConfig *v1.ManagementAuthConfig
+	)
 
-		ctx := context.Background()
+	BeforeEach(func() {
+		namespace = "mac-ns-" + utilrand.String(8)
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+		authConfig = validManagementAuthConfig()
+		authConfig.Spec.ClientSecretRef.Namespace = namespace
+		Expect(k8sClient.Create(ctx, authConfig)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, authConfig)).To(Succeed()) })
+	})
+
+	// expectReady polls until the Ready condition and status.observedGeneration
+	// match the expectation.
+	expectReady := func(status metav1.ConditionStatus, reason, message string) {
+		GinkgoHelper()
+		Eventually(func(g Gomega) {
+			var current v1.ManagementAuthConfig
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: authConfig.Name}, &current)).To(Succeed())
+			cond := meta.FindStatusCondition(current.Status.Conditions, conditions.TypeReady)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(status))
+			g.Expect(cond.Reason).To(Equal(reason))
+			g.Expect(cond.Message).To(Equal(message))
+			g.Expect(current.Status.ObservedGeneration).To(Equal(current.Generation))
+		}, timeout, interval).Should(Succeed())
+	}
+
+	// createClientSecret creates the Secret named by the CR's clientSecretRef
+	// with the configured key present.
+	createClientSecret := func() *corev1.Secret {
+		GinkgoHelper()
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      authConfig.Spec.ClientSecretRef.Name,
+				Namespace: namespace,
+			},
+			Data: map[string][]byte{authConfig.Spec.ClientSecretRef.Key: []byte("s3cr3t")},
 		}
-		managementauthconfig := &corev1.ManagementAuthConfig{}
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+		return secret
+	}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind ManagementAuthConfig")
-			err := k8sClient.Get(ctx, typeNamespacedName, managementauthconfig)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &corev1.ManagementAuthConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-		})
+	notFoundMessage := func() string {
+		return fmt.Sprintf("Secret %q not found", namespace+"/"+authConfig.Spec.ClientSecretRef.Name)
+	}
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &corev1.ManagementAuthConfig{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+	It("reports MissingSecret when the referenced Secret does not exist", func() {
+		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+	})
 
-			By("Cleanup the specific resource instance ManagementAuthConfig")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &ManagementAuthConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+	It("flips to Healthy when the Secret with the configured key appears, without touching the CR", func() {
+		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+		createClientSecret()
+
+		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+	})
+
+	It("flips back to MissingSecret naming the key when the key is removed from the Secret", func() {
+		secret := createClientSecret()
+		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+
+		secret.Data = map[string][]byte{"unrelated": []byte("x")}
+		Expect(k8sClient.Update(ctx, secret)).To(Succeed())
+
+		expectReady(
+			metav1.ConditionFalse,
+			conditions.ReasonMissingSecret,
+			fmt.Sprintf(
+				"Secret %q is missing key %q",
+				namespace+"/"+authConfig.Spec.ClientSecretRef.Name, authConfig.Spec.ClientSecretRef.Key,
+			),
+		)
+	})
+
+	It("flips back to MissingSecret when the Secret is deleted", func() {
+		secret := createClientSecret()
+		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+
+		Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
+
+		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+	})
+
+	It("keeps status.observedGeneration in step with spec updates", func() {
+		createClientSecret()
+		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+
+		var current v1.ManagementAuthConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: authConfig.Name}, &current)).To(Succeed())
+		current.Spec.Audience = "camunda-management-updated"
+		Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+		Expect(current.Generation).To(BeNumerically(">", int64(1)))
+
+		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
 	})
 })

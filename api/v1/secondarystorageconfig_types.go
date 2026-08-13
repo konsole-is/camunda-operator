@@ -20,38 +20,58 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// SecondaryStorageType identifies which secondary storage backend a contract
+// describes.
+// +kubebuilder:validation:Enum=elasticsearch;rdbms
+type SecondaryStorageType string
 
-// SecondaryStorageConfigSpec defines the desired state of SecondaryStorageConfig
-type SecondaryStorageConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+const (
+	// SecondaryStorageTypeElasticsearch selects an Elasticsearch backend.
+	SecondaryStorageTypeElasticsearch SecondaryStorageType = "elasticsearch"
+	// SecondaryStorageTypeRDBMS selects a relational database backend.
+	SecondaryStorageTypeRDBMS SecondaryStorageType = "rdbms"
+)
 
-	// foo is an example field of SecondaryStorageConfig. Edit secondarystorageconfig_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+// ElasticsearchStorage holds Elasticsearch connection details.
+type ElasticsearchStorage struct {
+	// Endpoint is the HTTP(S) endpoint of the Elasticsearch cluster.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="endpoint must be a valid http or https URL"
+	Endpoint string `json:"endpoint"`
+	// CredentialsSecretRef names a basic-auth user with read/write access to
+	// the Camunda indices.
+	CredentialsSecretRef CredentialsSecretRef `json:"credentialsSecretRef"`
 }
 
-// SecondaryStorageConfigStatus defines the observed state of SecondaryStorageConfig.
+// RDBMSStorage holds relational database backend details.
+type RDBMSStorage struct {
+	// DatabaseConfigRef names the DatabaseConfig describing the logical
+	// database to use.
+	// +kubebuilder:validation:MinLength=1
+	DatabaseConfigRef string `json:"databaseConfigRef"`
+}
+
+// SecondaryStorageConfigSpec tells an orchestration cluster where its
+// secondary storage lives and how to authenticate against it.
+// +kubebuilder:validation:XValidation:rule="(self.type == 'elasticsearch') == has(self.elasticsearch) && (self.type == 'rdbms') == has(self.rdbms)",message="exactly the block matching spec.type must be set"
+type SecondaryStorageConfigSpec struct {
+	// Type selects which secondary storage backend this contract describes.
+	Type SecondaryStorageType `json:"type"`
+	// Elasticsearch connection details. Required when type is elasticsearch,
+	// forbidden otherwise.
+	// +optional
+	Elasticsearch *ElasticsearchStorage `json:"elasticsearch,omitempty"`
+	// RDBMS backend details. Required when type is rdbms, forbidden otherwise.
+	// +optional
+	RDBMS *RDBMSStorage `json:"rdbms,omitempty"`
+}
+
+// SecondaryStorageConfigStatus is the observed validation state of the contract.
 type SecondaryStorageConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the SecondaryStorageConfig resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current validation state; the Ready condition
+	// carries reasons Healthy, MissingSecret, or InvalidReference.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -62,7 +82,9 @@ type SecondaryStorageConfigStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// SecondaryStorageConfig is the Schema for the secondarystorageconfigs API
+// SecondaryStorageConfig is the contract CRD that tells an orchestration
+// cluster where its secondary storage lives — an Elasticsearch cluster or a
+// relational database — and how to authenticate against it.
 type SecondaryStorageConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -78,6 +100,12 @@ type SecondaryStorageConfig struct {
 	// +optional
 	Status SecondaryStorageConfigStatus `json:"status,omitzero"`
 }
+
+// GetConditions returns the resource's status conditions.
+func (in *SecondaryStorageConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+
+// GetObservedGeneration returns the last reconciled generation recorded in status.
+func (in *SecondaryStorageConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
 
 // +kubebuilder:object:root=true
 

@@ -17,68 +17,62 @@ limitations under the License.
 package controller
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-var _ = Describe("ObjectStorageConfig Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+var _ = Describe("ObjectStorageConfig controller", func() {
+	var storageConfig *v1.ObjectStorageConfig
 
-		ctx := context.Background()
+	// readyCondition fetches the CR, asserts status.observedGeneration has
+	// caught up to metadata.generation (failing g until the controller stamps
+	// status), and returns the Ready condition.
+	readyCondition := func(g Gomega) *metav1.Condition {
+		fetched := &v1.ObjectStorageConfig{}
+		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, fetched)).To(Succeed())
+		g.Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
+		return meta.FindStatusCondition(fetched.Status.Conditions, conditions.TypeReady)
+	}
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
-		}
-		objectstorageconfig := &corev1.ObjectStorageConfig{}
+	BeforeEach(func() {
+		storageConfig = validObjectStorageConfig()
+		Expect(k8sClient.Create(ctx, storageConfig)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, storageConfig)).To(Succeed()) })
+	})
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind ObjectStorageConfig")
-			err := k8sClient.Get(ctx, typeNamespacedName, objectstorageconfig)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &corev1.ObjectStorageConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-		})
+	It("reports an admitted contract Ready and Healthy at its current generation", func() {
+		Eventually(func(g Gomega) {
+			cond := readyCondition(g)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
+			g.Expect(cond.Message).To(Equal("All checks passed"))
+			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
+		}, timeout, interval).Should(Succeed())
+	})
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &corev1.ObjectStorageConfig{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+	It("re-stamps observedGeneration after a spec update", func() {
+		Eventually(func(g Gomega) {
+			g.Expect(readyCondition(g)).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
 
-			By("Cleanup the specific resource instance ObjectStorageConfig")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &ObjectStorageConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, storageConfig)).To(Succeed())
+		storageConfig.Spec.BasePath = "backups"
+		Expect(k8sClient.Update(ctx, storageConfig)).To(Succeed())
+		Expect(storageConfig.Generation).To(BeNumerically(">", 1))
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+		Eventually(func(g Gomega) {
+			cond := readyCondition(g)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
+			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
+		}, timeout, interval).Should(Succeed())
 	})
 })

@@ -20,38 +20,32 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// DatabaseConfigSpec defines the desired state of DatabaseConfig
+// DatabaseConfigSpec describes one logical database: its server, name, and
+// application credentials.
 type DatabaseConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of DatabaseConfig. Edit databaseconfig_types.go to remove/update
+	// ServerRef names the DatabaseServerConfig describing the server hosting
+	// this database.
+	// +kubebuilder:validation:MinLength=1
+	ServerRef string `json:"serverRef"`
+	// DatabaseName is the name of the logical database on the server.
+	// +kubebuilder:validation:MinLength=1
+	DatabaseName string `json:"databaseName"`
+	// CredentialsSecretRef names an application user with read/write access to
+	// the database.
+	CredentialsSecretRef CredentialsSecretRef `json:"credentialsSecretRef"`
+	// BackupCredentialsSecretRef names a separate user with dump/restore
+	// privileges, used by the backup and restore controllers.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	BackupCredentialsSecretRef *CredentialsSecretRef `json:"backupCredentialsSecretRef,omitempty"`
 }
 
-// DatabaseConfigStatus defines the observed state of DatabaseConfig.
+// DatabaseConfigStatus is the observed validation state of the contract.
 type DatabaseConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the DatabaseConfig resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current validation state; the Ready condition
+	// carries reasons Healthy, InvalidReference, or MissingSecret.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -62,7 +56,9 @@ type DatabaseConfigStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// DatabaseConfig is the Schema for the databaseconfigs API
+// DatabaseConfig is the contract CRD that describes one logical database — its
+// server, name, and application credentials — for the controllers and
+// components that connect to it.
 type DatabaseConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -78,6 +74,12 @@ type DatabaseConfig struct {
 	// +optional
 	Status DatabaseConfigStatus `json:"status,omitzero"`
 }
+
+// GetConditions returns the resource's status conditions.
+func (in *DatabaseConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+
+// GetObservedGeneration returns the last reconciled generation recorded in status.
+func (in *DatabaseConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
 
 // +kubebuilder:object:root=true
 
