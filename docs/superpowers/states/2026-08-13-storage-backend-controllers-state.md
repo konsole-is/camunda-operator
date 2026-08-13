@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # Storage backend controllers (Batch B) — orchestration state
@@ -26,7 +26,7 @@ status: planning
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers--binding-scope | — | not-started |
+| #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers--binding-scope | — | in-progress |
 | #36 | batch-b/foundations | .claude/worktrees/storage-backend-controllers--foundations | — | not-started |
 | #37 | batch-b/elasticsearchcluster | .claude/worktrees/storage-backend-controllers--elasticsearchcluster | — | not-started |
 | #38 | batch-b/database | .claude/worktrees/storage-backend-controllers--database | — | not-started |
