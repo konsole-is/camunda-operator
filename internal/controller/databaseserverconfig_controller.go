@@ -90,7 +90,7 @@ func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.DatabaseServerConfig{},
 		databaseServerConfigSecretRefsField, func(o client.Object) []string {
 			ref := o.(*v1.DatabaseServerConfig).Spec.AdminCredentialsSecretRef
-			return []string{refindex.SecretKey(ref.Namespace, ref.Name)}
+			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
 		}); err != nil {
 		return err
 	}

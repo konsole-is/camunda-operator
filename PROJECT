@@ -71,6 +71,7 @@ resources:
   version: v1
 - api:
     crdVersion: v1
+    namespaced: true
   controller: true
   domain: camunda.io
   group: core
@@ -79,6 +80,7 @@ resources:
   version: v1
 - api:
     crdVersion: v1
+    namespaced: true
   controller: true
   domain: camunda.io
   group: core

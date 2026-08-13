@@ -45,7 +45,17 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "es-credentials", Namespace: "camunda"},
 		Data:       map[string][]byte{"username": []byte("u")},
 	}
-	database := &v1.DatabaseConfig{ObjectMeta: metav1.ObjectMeta{Name: "camunda-db"}}
+	database := &v1.DatabaseConfig{ObjectMeta: metav1.ObjectMeta{Name: "camunda-db", Namespace: "camunda"}}
+	databaseElsewhere := &v1.DatabaseConfig{ObjectMeta: metav1.ObjectMeta{Name: "camunda-db", Namespace: "other"}}
+
+	caSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "es-ca", Namespace: "camunda"},
+		Data:       map[string][]byte{"ca.crt": []byte("pem")},
+	}
+	caSecretNoKey := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "es-ca", Namespace: "camunda"},
+		Data:       map[string][]byte{"tls.crt": []byte("pem")},
+	}
 
 	elasticsearch := v1.SecondaryStorageConfigSpec{
 		Type: v1.SecondaryStorageTypeElasticsearch,
@@ -56,6 +66,10 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
+	}
+	elasticsearchWithCA := *elasticsearch.DeepCopy()
+	elasticsearchWithCA.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+		Name: "es-ca", Namespace: "camunda", Key: "ca.crt",
 	}
 	rdbms := v1.SecondaryStorageConfigSpec{
 		Type:  v1.SecondaryStorageTypeRDBMS,
@@ -95,7 +109,31 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			wantMessage: `Secret "camunda/es-credentials" is missing key "password"`,
 		},
 		{
-			name:        "rdbms with existing DatabaseConfig is healthy",
+			name:        "elasticsearch with credentials and CA secrets is healthy",
+			spec:        elasticsearchWithCA,
+			objects:     []client.Object{credentialsSecret, caSecret},
+			wantStatus:  metav1.ConditionTrue,
+			wantReason:  conditions.ReasonHealthy,
+			wantMessage: "All checks passed",
+		},
+		{
+			name:        "elasticsearch with missing CA secret reports MissingSecret",
+			spec:        elasticsearchWithCA,
+			objects:     []client.Object{credentialsSecret},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  conditions.ReasonMissingSecret,
+			wantMessage: `Secret "camunda/es-ca" not found`,
+		},
+		{
+			name:        "elasticsearch with CA secret lacking the key names the key",
+			spec:        elasticsearchWithCA,
+			objects:     []client.Object{credentialsSecret, caSecretNoKey},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  conditions.ReasonMissingSecret,
+			wantMessage: `Secret "camunda/es-ca" is missing key "ca.crt"`,
+		},
+		{
+			name:        "rdbms with a same-namespace DatabaseConfig is healthy",
 			spec:        rdbms,
 			objects:     []client.Object{database},
 			wantStatus:  metav1.ConditionTrue,
@@ -105,6 +143,14 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 		{
 			name:        "rdbms with dangling DatabaseConfig reports InvalidReference",
 			spec:        rdbms,
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  conditions.ReasonInvalidReference,
+			wantMessage: `DatabaseConfig "camunda-db" not found`,
+		},
+		{
+			name:        "rdbms ignores a same-named DatabaseConfig in another namespace",
+			spec:        rdbms,
+			objects:     []client.Object{databaseElsewhere},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  conditions.ReasonInvalidReference,
 			wantMessage: `DatabaseConfig "camunda-db" not found`,
@@ -130,7 +176,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.objects...).Build()
 			r := &SecondaryStorageConfigReconciler{Client: c, APIReader: c, Scheme: scheme}
 			secondaryStorage := &v1.SecondaryStorageConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "storage", Generation: 3},
+				ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "camunda", Generation: 3},
 				Spec:       tt.spec,
 			}
 

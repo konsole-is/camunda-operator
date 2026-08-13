@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -28,8 +29,11 @@ import (
 // notAURL is a value the schema's URL validation rules must reject.
 const notAURL = "not a url"
 
+// schemaTestNamespace hosts the throwaway objects the admission specs create.
+const schemaTestNamespace = "default"
+
 // validSecondaryStorageConfigES returns the doc's minimal Elasticsearch
-// example with a unique name.
+// example with a unique name; the caller chooses the namespace.
 func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
 	return &v1.SecondaryStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
@@ -47,7 +51,7 @@ func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
 }
 
 // validSecondaryStorageConfigRDBMS returns the doc's RDBMS example with a
-// unique name.
+// unique name; the caller chooses the namespace.
 func validSecondaryStorageConfigRDBMS() *v1.SecondaryStorageConfig {
 	return &v1.SecondaryStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
@@ -62,6 +66,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 	DescribeTable("admission",
 		func(build func() *v1.SecondaryStorageConfig, mutate func(*v1.SecondaryStorageConfig), wantErr string) {
 			obj := build()
+			obj.Namespace = schemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -103,5 +108,33 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 			validSecondaryStorageConfigRDBMS, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.RDBMS.DatabaseConfigRef = ""
 			}, "databaseConfigRef"),
+		Entry("rejects caSecretRef with an http endpoint",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch.Endpoint = "http://my-cluster-es:9200"
+				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
+				}
+			}, "caSecretRef requires an https endpoint"),
+		Entry("rejects caSecretRef with empty key",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "",
+				}
+			}, "key"),
 	)
+
+	It("round-trips caSecretRef", func() {
+		obj := validSecondaryStorageConfigES()
+		obj.Namespace = schemaTestNamespace
+		obj.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
+		}
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		var fetched v1.SecondaryStorageConfig
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &fetched)).To(Succeed())
+		Expect(fetched.Spec.Elasticsearch.CASecretRef).To(Equal(obj.Spec.Elasticsearch.CASecretRef))
+	})
 })

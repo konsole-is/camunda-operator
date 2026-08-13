@@ -54,11 +54,11 @@ type DatabaseConfigStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
 
-// DatabaseConfig is the contract CRD that describes one logical database — its
-// server, name, and application credentials — for the controllers and
-// components that connect to it.
+// DatabaseConfig is the namespaced contract CRD that describes one logical
+// database — its server, name, and application credentials — for the
+// controllers and components that connect to it. Consumers resolve references
+// to it by name in their own namespace.
 type DatabaseConfig struct {
 	metav1.TypeMeta `json:",inline"`
 

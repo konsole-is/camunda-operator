@@ -72,10 +72,11 @@ func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ct
 }
 
 // validate branches on the contract's storage type: elasticsearch contracts
-// check their credentials Secret, rdbms contracts check the referenced
-// DatabaseConfig exists. The CRD schema enforces that exactly the matching
-// block is set; an object that slipped past admission with a missing block or
-// unknown type yields an error rather than a condition.
+// check their credentials Secret and, when set, their CA Secret; rdbms
+// contracts check the referenced DatabaseConfig exists in the contract's own
+// namespace. The CRD schema enforces that exactly the matching block is set;
+// an object that slipped past admission with a missing block or unknown type
+// yields an error rather than a condition.
 func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1.SecondaryStorageConfig) (metav1.Condition, error) {
 	switch {
 	case cfg.Spec.Type == v1.SecondaryStorageTypeElasticsearch && cfg.Spec.Elasticsearch != nil:
@@ -89,10 +90,21 @@ func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1
 		if msg != "" {
 			return conditions.Ready(metav1.ConditionFalse, conditions.ReasonMissingSecret, msg, cfg.Generation), nil
 		}
+
+		if ca := cfg.Spec.Elasticsearch.CASecretRef; ca != nil {
+			msg, err := secretref.CheckKeys(ctx, r.APIReader,
+				types.NamespacedName{Namespace: ca.Namespace, Name: ca.Name}, ca.Key)
+			if err != nil {
+				return metav1.Condition{}, err
+			}
+			if msg != "" {
+				return conditions.Ready(metav1.ConditionFalse, conditions.ReasonMissingSecret, msg, cfg.Generation), nil
+			}
+		}
 	case cfg.Spec.Type == v1.SecondaryStorageTypeRDBMS && cfg.Spec.RDBMS != nil:
 		name := cfg.Spec.RDBMS.DatabaseConfigRef
 		var db v1.DatabaseConfig
-		if err := r.Get(ctx, types.NamespacedName{Name: name}, &db); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: name}, &db); err != nil {
 			if apierrors.IsNotFound(err) {
 				msg := fmt.Sprintf("DatabaseConfig %q not found", name)
 				return conditions.Ready(metav1.ConditionFalse, conditions.ReasonInvalidReference, msg, cfg.Generation), nil
@@ -106,8 +118,8 @@ func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1
 }
 
 // SetupWithManager registers the controller, indexes of contracts by
-// referenced Secret and DatabaseConfig, a metadata-only Secret watch, and a
-// typed DatabaseConfig watch.
+// referenced Secret and same-namespace DatabaseConfig, a metadata-only Secret
+// watch, and a typed DatabaseConfig watch.
 func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.SecondaryStorageConfig{},
 		secondaryStorageConfigSecretRefsField, func(o client.Object) []string {
@@ -115,8 +127,11 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 			if es == nil {
 				return nil
 			}
-			ref := es.CredentialsSecretRef
-			return []string{refindex.SecretKey(ref.Namespace, ref.Name)}
+			keys := []string{refindex.NamespacedKey(es.CredentialsSecretRef.Namespace, es.CredentialsSecretRef.Name)}
+			if es.CASecretRef != nil {
+				keys = append(keys, refindex.NamespacedKey(es.CASecretRef.Namespace, es.CASecretRef.Name))
+			}
+			return keys
 		}); err != nil {
 		return err
 	}
@@ -127,7 +142,7 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 			if rdbms == nil {
 				return nil
 			}
-			return []string{rdbms.DatabaseConfigRef}
+			return []string{refindex.NamespacedKey(o.GetNamespace(), rdbms.DatabaseConfigRef)}
 		}); err != nil {
 		return err
 	}
@@ -140,7 +155,7 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 			builder.OnlyMetadata).
 		Watches(&v1.DatabaseConfig{},
 			refindex.Enqueue(mgr.GetClient(), &v1.SecondaryStorageConfigList{},
-				secondaryStorageConfigDatabaseConfigRefField, refindex.ObjectName)).
+				secondaryStorageConfigDatabaseConfigRefField, refindex.ObjectNamespacedName)).
 		Named("secondarystorageconfig").
 		Complete(r)
 }

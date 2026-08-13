@@ -25,7 +25,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// validDatabaseConfig returns the doc's minimal example with a unique name.
+// validDatabaseConfig returns the doc's minimal example with a unique name;
+// the caller chooses the namespace.
 func validDatabaseConfig() *v1.DatabaseConfig {
 	return &v1.DatabaseConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbc-" + utilrand.String(8)},
@@ -44,6 +45,7 @@ var _ = Describe("DatabaseConfig schema", func() {
 	DescribeTable("admission",
 		func(mutate func(*v1.DatabaseConfig), wantErr string) {
 			obj := validDatabaseConfig()
+			obj.Namespace = schemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
