@@ -107,7 +107,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 		Entry("rejects caSecretRef with empty key",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
-					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns",
+					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "",
 				}
 			}, "key"),
 	)
