@@ -17,68 +17,44 @@ limitations under the License.
 package controller
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var _ = Describe("ElasticsearchCluster Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+// newElasticsearchClusterNamespace creates a uniquely named Namespace for one
+// spec and registers its deletion.
+func newElasticsearchClusterNamespace() string {
+	GinkgoHelper()
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "esc-ns-" + utilrand.String(8)},
+	}
+	Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+	return ns.Name
+}
 
-		ctx := context.Background()
+var _ = Describe("ElasticsearchCluster controller", func() {
+	// Scaffold smoke spec: the reconciler is registered but reconciles nothing
+	// yet; the real reconciliation specs land with the controller (#37).
+	It("reconciles a valid resource without error", func() {
+		cluster := validElasticsearchCluster()
+		cluster.Namespace = newElasticsearchClusterNamespace()
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+		reconciler := &ElasticsearchClusterReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
 		}
-		elasticsearchcluster := &corev1.ElasticsearchCluster{}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind ElasticsearchCluster")
-			err := k8sClient.Get(ctx, typeNamespacedName, elasticsearchcluster)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &corev1.ElasticsearchCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: client.ObjectKeyFromObject(cluster),
 		})
-
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &corev1.ElasticsearchCluster{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Cleanup the specific resource instance ElasticsearchCluster")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &ElasticsearchClusterReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+		Expect(err).NotTo(HaveOccurred())
 	})
 })
