@@ -184,10 +184,20 @@ Reconcile flow:
    `targetNamespace`. One component: none of these has useful readiness independent of the
    others.
 
-`Database` is cluster-scoped and its children are namespaced, so owner references cannot
-cross the scope boundary: the controller carries a finalizer and deletes the bindings and
-credential Secrets on CR deletion — never the logical database or SQL users. All applies are
-SSA under field manager `camunda-operator/database`.
+`spec.targetNamespace` is **required** (a recorded deviation from the original doc's
+"optional, defaults to the operator namespace"): consumers resolve bindings by name in their
+own namespace, so an operator-namespace default would place bindings where no consumer can
+ever find them.
+
+`Database` is cluster-scoped and its children are namespaced. Kubernetes owner references
+permit a namespaced dependent to name a cluster-scoped owner, so the bindings and credential
+Secrets carry a normal owner reference to the `Database` and are garbage-collected on CR
+deletion — no finalizer. The logical database and SQL users are never touched by deletion.
+All applies are SSA under field manager `camunda-operator/database`.
+
+(An earlier draft of this spec claimed the opposite — that owner references cannot cross this
+boundary — and prescribed a finalizer. That premise was wrong: only the reverse direction, a
+namespaced owner of a cluster-scoped dependent, is disallowed.)
 
 ### Generated credentials
 
@@ -205,7 +215,7 @@ The Batch A watch machinery (`pkg/refindex` field indexes, metadata-only Secret 
 targeted `APIReader` reads) extends to the new controllers: `ElasticsearchCluster` watches its
 owned resources (via ocf/owner refs), `ElasticsearchClusterPreset` (spec changes flow to
 referencing clusters), and the ECK CR's status; `Database` watches `DatabaseServerConfig`, the
-admin credentials Secret (metadata-only), and its owned-by-finalizer children. RBAC additions:
+admin credentials Secret (metadata-only), and its owner-referenced children. RBAC additions:
 full management of `elasticsearch.k8s.elastic.co/elasticsearches`, create/update on `secrets`
 (previously read-only), and the ServiceMonitor kind gated on its CRD being present.
 

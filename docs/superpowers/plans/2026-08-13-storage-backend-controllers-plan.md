@@ -124,7 +124,7 @@ Status types follow the Batch A pattern (`Conditions`, `ObservedGeneration`). Th
 type DatabaseSpec struct {
     ServerRef              string           `json:"serverRef"`     // MinLength=1
     DatabaseName           string           `json:"databaseName"`  // pattern ^[a-z_][a-z0-9_]{0,62}$
-    TargetNamespace        string           `json:"targetNamespace,omitempty"` // default: operator namespace at reconcile time
+    TargetNamespace        string           `json:"targetNamespace"` // required (recorded doc deviation): consumers resolve bindings in their own namespace, so no reachable default exists
     ApplicationCredentials *CredentialsSpec `json:"applicationCredentials,omitempty"` // SecretName, SecretNamespace
     BackupCredentials      *BackupCredentialsSpec `json:"backupCredentials,omitempty"` // + Disabled bool
     DatabaseConfig         string           `json:"databaseConfig,omitempty"`          // default: CR name
@@ -132,7 +132,7 @@ type DatabaseSpec struct {
 }
 ```
 
-`Database` stays cluster-scoped (`+kubebuilder:resource:scope=Cluster`). Defaults that need the CR name or operator namespace are resolved in the controller, not the schema; GoDoc states each default.
+`Database` stays cluster-scoped (`+kubebuilder:resource:scope=Cluster`). Defaults that need the CR name are resolved in the controller, not the schema; GoDoc states each default. `targetNamespace` has no default — it is required (schema `MinLength=1`), and `database.md` records the deviation.
 
 - [ ] **Step 1:** `database_schema_test.go` first: minimal + realistic accepted; bad `databaseName` (uppercase, leading digit, 64 chars) rejected; missing `serverRef` rejected.
 - [ ] **Step 2:** Implement, regenerate, suites green. Commit: `feat(api): Database types and schema validation (#36)`.
@@ -264,23 +264,23 @@ Field index on `Database` by `spec.serverRef + "/" + spec.databaseName`; collisi
 - [ ] **Step 1:** testify tables for the collision decision (single, two ordered by time, tie on time ordered by name).
 - [ ] **Step 2:** Wire pre-checks; commit: `feat(controller): Database pre-checks and collision rule (#38)`.
 
-### Task 14: bindings component, finalizer, reconciler
+### Task 14: bindings component and reconciler
 
 **Files:**
 - Create: `internal/controller/database_components.go` + `_components_test.go` (golden)
 - Modify: `internal/controller/database_controller.go`
 
-Flow after pre-checks: resolve defaults (`targetNamespace` → operator namespace via `POD_NAMESPACE` downward API, `databaseConfig` → CR name, Secret names per doc defaults) → passwords via `credentials.Lookup`-else-`NewPassword` → SQL bootstrap (`EnsureDatabase`, `EnsureUser`+`GrantApplication`, `EnsureBackupUser` unless disabled) — always before Secret writes → one `bindings` component: app Secret, backup Secret (`GatedBy` not-disabled), `DatabaseConfig` (serverRef, databaseName, both credential refs), `SecondaryStorageConfig` type `rdbms` (`GatedBy` field set; `databaseConfigRef` → the DatabaseConfig, same namespace). Finalizer `core.camunda.io/database`: on deletion delete the four objects, then remove finalizer; never touch SQL.
+Flow after pre-checks: resolve defaults (`databaseConfig` → CR name, Secret names per doc defaults; `targetNamespace` is required, no default) → passwords via `credentials.Lookup`-else-`NewPassword` → SQL bootstrap (`EnsureDatabase`, `EnsureUser`+`GrantApplication`, `EnsureBackupUser` unless disabled) — always before Secret writes → one `bindings` component: app Secret, backup Secret (`GatedBy` not-disabled), `DatabaseConfig` (serverRef, databaseName, both credential refs), `SecondaryStorageConfig` type `rdbms` (`GatedBy` field set; `databaseConfigRef` → the DatabaseConfig, same namespace). All four children carry an owner reference to the `Database` (a namespaced dependent may name a cluster-scoped owner — legal, GC-honored) and are garbage-collected on CR deletion; no finalizer. SQL objects are never touched by deletion. Verify with `go doc` that the ocf/controllerutil owner-ref path accepts the cluster-scoped owner; if ocf declines to set it, set the owner reference in the resource baseline.
 
 - [ ] **Step 1:** Golden tests for the rendered bindings (minimal + full fixtures).
-- [ ] **Step 2:** Implement components + finalizer + Ready derivation (same pattern as Task 10). Commit: `feat(controller): Database bindings component and finalizer (#38)`.
+- [ ] **Step 2:** Implement components + owner-referenced children + Ready derivation (same pattern as Task 10). Commit: `feat(controller): Database bindings component (#38)`.
 
 ### Task 15: envtest + testcontainers specs
 
 **Files:**
 - Modify: `internal/controller/database_controller_test.go` (replace smoke test)
 
-Specs run against envtest plus the shared testcontainers postgres (a `DatabaseServerConfig` fixture points at the container): happy path → SQL objects exist, Secrets/DatabaseConfig/SSC exist in `targetNamespace`, `Ready: Healthy`; each pre-check failure → documented reason (stop the container's listener for `ConnectionFailed` via wrong port fixture); collision → loser reports the winner; delete CR → bindings gone, database + users survive (verify over SQL); backup disabled → no backup Secret and DatabaseConfig omits the ref; deleted app Secret → new password works against the server.
+Specs run against envtest plus the shared testcontainers postgres (a `DatabaseServerConfig` fixture points at the container): happy path → SQL objects exist, Secrets/DatabaseConfig/SSC exist in `targetNamespace`, `Ready: Healthy`; each pre-check failure → documented reason (stop the container's listener for `ConnectionFailed` via wrong port fixture); collision → loser reports the winner; every binding and Secret carries the owner reference to the `Database` (envtest runs no garbage collector, so cascade deletion itself is proven in e2e — here assert the ownerReferences and that deletion leaves database + users intact over SQL); backup disabled → no backup Secret and DatabaseConfig omits the ref; deleted app Secret → new password works against the server.
 
 - [ ] **Step 1:** Write and pass. `make all` clean. Commit: `test(controller): Database reconciliation specs (#38)`.
 
@@ -293,7 +293,7 @@ Specs run against envtest plus the shared testcontainers postgres (a `DatabaseSe
 **Files:**
 - Modify: `test/e2e/e2e_test.go` (+ helpers in `test/utils/`), `.github/workflows/` e2e job, `Makefile` (`test-e2e` prerequisites)
 
-Setup installs ECK (pinned operator manifest version, documented in the Makefile variable) and a `postgres:17` Deployment+Service with a known admin Secret. Flow assertions per issue #39: `ElasticsearchCluster` (1 replica, small resources) reaches `Ready: Healthy`; SSC endpoint + generated credentials authenticate (curl from an in-cluster pod using the CA from `caSecretRef`); suspend → 0 ES pods → resume; `Database` reaches `Ready: Healthy`; both SQL users authenticate with documented privileges; CR deletion leaves the logical database intact.
+Setup installs ECK (pinned operator manifest version, documented in the Makefile variable) and a `postgres:17` Deployment+Service with a known admin Secret. Flow assertions per issue #39: `ElasticsearchCluster` (1 replica, small resources) reaches `Ready: Healthy`; SSC endpoint + generated credentials authenticate (curl from an in-cluster pod using the CA from `caSecretRef`); suspend → 0 ES pods → resume; `Database` reaches `Ready: Healthy`; both SQL users authenticate with documented privileges; CR deletion garbage-collects the bindings and Secrets (owner refs, real GC runs here) while the logical database survives.
 
 - [ ] **Step 1:** Implement helpers + flows; `make test-e2e` green on a fresh kind cluster locally.
 - [ ] **Step 2:** CI job updated (ECK install step, memory for one ES node). Commit: `test(e2e): storage backend flows against real ECK and PostgreSQL (#39)`.
