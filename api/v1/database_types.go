@@ -137,6 +137,14 @@ func (in *Database) GetConditions() []metav1.Condition { return in.Status.Condit
 // GetObservedGeneration returns the last reconciled generation recorded in status.
 func (in *Database) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
 
+// GetStatusConditions returns a pointer to the status conditions, letting the
+// component framework stage per-component conditions on the resource.
+func (in *Database) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
+
+// GetKind returns the CRD kind, from which the component framework derives
+// its per-component SSA field managers (Database/<component>).
+func (in *Database) GetKind() string { return "Database" }
+
 // +kubebuilder:object:root=true
 
 // DatabaseList contains a list of Database

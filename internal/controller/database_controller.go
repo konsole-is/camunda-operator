@@ -18,14 +18,17 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +38,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
@@ -60,6 +64,15 @@ type DatabaseReconciler struct {
 	// whose data must be read live.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Recorder publishes the component framework's resource events; it
+	// defaults to the manager's recorder in SetupWithManager.
+	Recorder record.EventRecorder
+
+	// componentClient is the uncached client the bindings component
+	// reconciles with; it keeps the published credential Secrets out of the
+	// informer cache, which watches Secrets metadata-only. Defaulted in
+	// SetupWithManager.
+	componentClient client.Client
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databases,verbs=get;list;watch;create;update;patch;delete
@@ -69,10 +82,14 @@ type DatabaseReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile converges a Database: pre-checks resolve the server, its admin
 // credentials, the collision rule, and connectivity; a failed pre-check
-// short-circuits into the documented Ready reason.
+// short-circuits into the documented Ready reason. The SQL bootstrap then
+// converges the logical database, roles, and grants — always before the
+// bindings component publishes the credential Secrets, so a published Secret
+// never names a password the server does not know.
 func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var database v1.Database
 	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
@@ -95,7 +112,125 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	defer bootstrapper.Close()
 
-	return ctrl.Result{}, nil
+	rb := resolveBindings(&database)
+	if err := r.resolvePasswords(ctx, &rb); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := bootstrapSQL(ctx, bootstrapper, &database, rb); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	comp, err := databaseBindingsComponent(&database, rb)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	rec := component.ReconcileContext{
+		Client:   r.componentClient,
+		Scheme:   r.Scheme,
+		Recorder: r.Recorder,
+		Owner:    &database,
+	}
+
+	// The component stages its condition on the in-memory owner; FlushStatus
+	// persists the staged conditions, and only then is the CR-level Ready
+	// derived and SSA-patched — the reverse order would let the flush's full
+	// status update clobber the freshly patched Ready.
+	reconcileErr := comp.Reconcile(ctx, rec)
+	flushErr := component.FlushStatus(ctx, rec)
+	patchErr := conditions.PatchReady(ctx, r.Client, &database, r.deriveReady(&database))
+
+	return ctrl.Result{}, errors.Join(reconcileErr, flushErr, patchErr)
+}
+
+// resolvePasswords fills rb's role passwords: an existing published Secret's
+// password is reused so credentials stay stable once created, and a missing
+// Secret or key yields a newly generated password — deleting a credential
+// Secret is the rotation mechanism.
+func (r *DatabaseReconciler) resolvePasswords(ctx context.Context, rb *resolvedBindings) error {
+	appPassword, found, err := credentials.Lookup(ctx, r.APIReader, rb.AppSecret, credentialPasswordKey)
+	if err != nil {
+		return err
+	}
+	if !found {
+		if appPassword, err = credentials.NewPassword(); err != nil {
+			return err
+		}
+	}
+	rb.AppPassword = appPassword
+
+	if !rb.BackupEnabled {
+		return nil
+	}
+
+	backupPassword, found, err := credentials.Lookup(ctx, r.APIReader, rb.BackupSecret, credentialPasswordKey)
+	if err != nil {
+		return err
+	}
+	if !found {
+		if backupPassword, err = credentials.NewPassword(); err != nil {
+			return err
+		}
+	}
+	rb.BackupPassword = backupPassword
+
+	return nil
+}
+
+// bootstrapSQL runs the idempotent bootstrap sequence for the logical
+// database, the application role, and — unless disabled — the backup role.
+func bootstrapSQL(
+	ctx context.Context, b pgbootstrap.Bootstrapper, database *v1.Database, rb resolvedBindings,
+) error {
+	name := database.Spec.DatabaseName
+
+	if err := b.EnsureDatabase(ctx, name); err != nil {
+		return fmt.Errorf("ensuring database %q: %w", name, err)
+	}
+
+	if err := b.EnsureUser(ctx, rb.AppUser, rb.AppPassword); err != nil {
+		return fmt.Errorf("ensuring application role %q: %w", rb.AppUser, err)
+	}
+	if err := b.GrantApplication(ctx, rb.AppUser, name); err != nil {
+		return fmt.Errorf("granting application role %q on %q: %w", rb.AppUser, name, err)
+	}
+
+	if !rb.BackupEnabled {
+		return nil
+	}
+
+	if err := b.EnsureBackupUser(ctx, rb.BackupUser, rb.BackupPassword, name); err != nil {
+		return fmt.Errorf("ensuring backup role %q on %q: %w", rb.BackupUser, name, err)
+	}
+
+	return nil
+}
+
+// deriveReady maps the staged component conditions to the CR-level Ready
+// condition at the current generation.
+func (r *DatabaseReconciler) deriveReady(database *v1.Database) metav1.Condition {
+	componentConds := make([]metav1.Condition, 0, len(database.Status.Conditions))
+	for _, cond := range database.Status.Conditions {
+		if cond.Type != conditions.TypeReady {
+			componentConds = append(componentConds, cond)
+		}
+	}
+	if len(componentConds) == 0 {
+		componentConds = []metav1.Condition{{
+			Type:    string(databaseBindingsConditionType),
+			Status:  metav1.ConditionUnknown,
+			Message: "not yet reported",
+		}}
+	}
+
+	reason, message := conditions.DeriveReady(nil, componentConds, false)
+	status := metav1.ConditionFalse
+	if reason == conditions.ReasonHealthy {
+		status = metav1.ConditionTrue
+	}
+
+	return conditions.Ready(status, reason, message, database.Generation)
 }
 
 // preCheck runs the documented pre-checks in order — server reference, admin
@@ -244,10 +379,27 @@ func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 }
 
 // SetupWithManager registers the controller, the serverRef and collision
-// field indexes, and the watches that re-trigger reconciliation: the
-// referenced DatabaseServerConfig, its admin credentials Secret
-// (metadata-only), and sibling Databases contesting the same claim.
+// field indexes, and the watches that re-trigger reconciliation: the owned
+// bindings, the referenced DatabaseServerConfig, its admin credentials Secret
+// (metadata-only), and sibling Databases contesting the same claim. It also
+// defaults Recorder to the manager's recorder and builds the uncached client
+// the bindings component reconciles with.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Recorder == nil {
+		r.Recorder = mgr.GetEventRecorderFor("database-controller")
+	}
+
+	if r.componentClient == nil {
+		componentClient, err := client.New(mgr.GetConfig(), client.Options{
+			Scheme: mgr.GetScheme(),
+			Mapper: mgr.GetRESTMapper(),
+		})
+		if err != nil {
+			return fmt.Errorf("building the component client: %w", err)
+		}
+		r.componentClient = componentClient
+	}
+
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.Database{},
 		databaseServerRefField, func(o client.Object) []string {
 			return []string{o.(*v1.Database).Spec.ServerRef}
@@ -264,6 +416,9 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Database{}).
+		Owns(&corev1.Secret{}, builder.OnlyMetadata).
+		Owns(&v1.DatabaseConfig{}).
+		Owns(&v1.SecondaryStorageConfig{}).
 		Watches(&v1.DatabaseServerConfig{},
 			refindex.Enqueue(mgr.GetClient(), &v1.DatabaseList{},
 				databaseServerRefField, refindex.ObjectName)).
