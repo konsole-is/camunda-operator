@@ -56,11 +56,10 @@ status: consumer-wave
 
 ## Pending snapshot
 
-1. Hand off to `feature-dev-workflow:developing-a-feature`: dispatch Phase 1 (#35, plan Tasks 1–2) on branch `batch-b/binding-scope` from the feature branch tip.
-2. After #35 self-merges, dispatch Phase 2 (#36, Tasks 3–7) on `batch-b/foundations` — it locks every API type, wrapper, and helper the consumer wave imports.
-3. After #36 self-merges, fan out Phase 3 in parallel: #37 (Tasks 8–11) and #38 (Tasks 12–15), each in its own worktree/branch per the PR table.
-4. Phase 4: #39 (Task 16) after both consumers self-merge.
-5. Phase 5: integration checkpoint (Task 17), integration PR to `main` (`Closes #34`) left ready for the user — never self-merged; after merge, delete the plan and this state file in the orchestrator's final commit.
+1. **Consumer wave in flight**: #37 (Tasks 8–11, worktree `--elasticsearchcluster`) and #38 (Tasks 12–15, worktree `--database`) dispatched in parallel off feature tip ca39cf7; orchestrator watch loop active (`feature-dev-workflow:fanning-out-with-worktrees` Steps 4–5). On each report-back: Copilot review-loop (fan-out mode), spec-compliance gate against the issue's Verification bullets, quality pass (`code-review <PR> medium`), route findings to the implementer, then merge bundle (merge → `gh issue close` → ff feature worktree → state row/contract updates).
+2. Wave checkpoint after both self-merge (`feature-dev-workflow:reviewing-feature-progress`): full suite on the feature branch, coherence sweep across the two controller PRs, **and surface the parked user decision** (secret-oracle posture: accept-and-document vs controller-enforced same-namespace refs — see bubble-up 2026-08-13).
+3. Phase 4: #39 (Task 16, e2e) on `batch-b/e2e` after the checkpoint — dispatch prompt must carry both implementers' e2e-relevant bubble-ups.
+4. Phase 5: integration checkpoint (Task 17), integration PR to `main` (`Closes #34`) left ready for the user — never self-merged; after merge, delete the plan and this state file in the orchestrator's final commit.
 
 Notes for resumers: user directives for this feature — proceed autonomously, review loop on for all sub-PRs, sub-PR self-merge autonomous, integration PR to main is user-merged. ocf skills (`ocf:building-components`, `ocf:custom-resource-wrappers`, `ocf:using-primitives`, `ocf:testing-operators`) and `how-we-write-go` are expected reading for implementers; `go doc` is ground truth over plan snippets. ECK CRDs for envtest come from the module cache, never vendored. The permission sandbox misfires on `cd <worktree> && git ...` compounds — use `git -C <path>`.
 
