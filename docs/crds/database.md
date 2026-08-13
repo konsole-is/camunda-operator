@@ -20,8 +20,8 @@ You create this CR directly, or a composition layer above may create it after pr
 2. It connects to the server and creates the logical database named `spec.databaseName` if it does not exist; all SQL is idempotent, so re-runs are safe.
 3. It creates the application user with a generated password, grants it full privileges on the logical database, and writes the credentials to the Secret named by `spec.applicationCredentials` (keys `username` and `password`).
 4. Unless `spec.backupCredentials.disabled` is `true`, it creates a separate backup user — granted read access on all tables in the database for dumps, plus the DDL and write rights restore needs: in effect a role like the application role plus SELECT on all tables — and writes its credentials to the Secret named by `spec.backupCredentials.secretName`.
-5. It creates and keeps current a cluster-scoped `DatabaseConfig` named `spec.databaseConfig`, wiring in the `serverRef`, the `databaseName`, the application credentials Secret, and the backup credentials Secret when one exists.
-6. If `spec.secondaryStorageConfig` is set, it creates a cluster-scoped `SecondaryStorageConfig` with `type: rdbms` referencing that `DatabaseConfig`, making the database consumable as an orchestration cluster's secondary storage; omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler).
+5. It creates and keeps current a `DatabaseConfig` named `spec.databaseConfig` in `spec.targetNamespace`, wiring in the `serverRef`, the `databaseName`, the application credentials Secret, and the backup credentials Secret when one exists.
+6. If `spec.secondaryStorageConfig` is set, it creates a `SecondaryStorageConfig` with `type: rdbms` in `spec.targetNamespace`, referencing that `DatabaseConfig`, making the database consumable as an orchestration cluster's secondary storage; omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler). The bindings land in `targetNamespace` because consumers resolve them by name in their own namespace — set it to the consuming cluster's namespace.
 7. It reports status conditions and `status.observedGeneration`.
 
 All created objects are applied with Server-Side Apply (SSA) under the field manager `camunda-operator/database`.
@@ -49,7 +49,7 @@ spec:
   serverRef: "my-db-server"
   # string. Required. Name of the logical database to create; must be unique per server (see Validation).
   databaseName: "camunda"
-  # string. Optional, default: the operator namespace. Namespace where created credential Secrets are placed unless overridden per Secret.
+  # string. Optional, default: the operator namespace. Namespace where the created DatabaseConfig, SecondaryStorageConfig, and credential Secrets are placed (each Secret's namespace can be overridden per Secret); set it to the consuming cluster's namespace, since consumers resolve the bindings by name in their own namespace.
   targetNamespace: "my-cluster-ns"
   # object. Optional. The application credentials Secret, always created (keys: username, password).
   applicationCredentials:
@@ -65,9 +65,9 @@ spec:
     secretName: "my-camunda-db-backup"
     # string. Optional, default: spec.targetNamespace. Namespace for the backup credentials Secret.
     secretNamespace: "my-cluster-ns"
-  # string. Optional, default: the CR name. Name of the cluster-scoped DatabaseConfig the operator creates.
+  # string. Optional, default: the CR name. Name of the DatabaseConfig the operator creates in spec.targetNamespace.
   databaseConfig: "my-camunda-db"
-  # string. Optional. If set, the operator also creates a SecondaryStorageConfig of type rdbms with this name, wired to the DatabaseConfig and backup credentials; omit for databases not used as Camunda secondary storage.
+  # string. Optional. If set, the operator also creates a SecondaryStorageConfig of type rdbms with this name in spec.targetNamespace, wired to the DatabaseConfig and backup credentials; omit for databases not used as Camunda secondary storage.
   secondaryStorageConfig: "my-storage-config"
 ```
 
@@ -87,14 +87,14 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - A `Database` is rejected when another `Database` referencing the same `serverRef` already uses the same `databaseName`; this prevents accidental collisions on shared servers.
 - `spec.databaseName` must be a valid PostgreSQL identifier.
-- `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid names for cluster-scoped resources.
+- `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
 
 ## Relationships
 
 - [ElasticsearchCluster](elasticsearchcluster.md) — the peer storage backend controller for Elasticsearch secondary storage; an orchestration cluster uses one or the other.
 - [DatabaseServerConfig](databaseserverconfig.md) — referenced via `serverRef` for connection details and admin credentials.
-- [DatabaseConfig](databaseconfig.md) — created and kept current by this controller under the name in `spec.databaseConfig`.
-- [SecondaryStorageConfig](secondarystorageconfig.md) — optionally created with `type: rdbms` under the name in `spec.secondaryStorageConfig`; a [CamundaCluster](camundacluster.md) consumes it via its `storageRef`.
+- [DatabaseConfig](databaseconfig.md) — created and kept current by this controller under the name in `spec.databaseConfig`, in `spec.targetNamespace`.
+- [SecondaryStorageConfig](secondarystorageconfig.md) — optionally created with `type: rdbms` under the name in `spec.secondaryStorageConfig`, in `spec.targetNamespace`; a [CamundaCluster](camundacluster.md) in that namespace consumes it via its `storageRef`.
 - [CamundaManagementCluster](camundamanagementcluster.md) — its `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` consume [DatabaseConfig](databaseconfig.md) CRs typically produced by `Database` resources.
 - [PointInTimeRestore](pointintimerestore.md) — its dedicated-server validation counts the `Database` CRs sharing a `serverRef`; point-in-time restore requires the server to host exactly one.
 

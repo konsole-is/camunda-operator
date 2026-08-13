@@ -20,11 +20,11 @@ Camunda 8.9 also supports OpenSearch and RDBMS as secondary storage, but this CR
 2. It renders an ECK `Elasticsearch` CR (named after this CR) from the resolved configuration — version, node count, resources, storage — and applies it with Server-Side Apply (SSA) under the field manager `camunda-operator/elasticsearchcluster`.
 3. It labels the Elasticsearch pods and data PVCs with `camunda.io/cluster: <this CR's name>` and `camunda.io/component: elasticsearch` through the ECK pod and volume claim templates, so extensions such as `PVCAutoResize` can discover them.
 4. It applies `spec.serviceAccount.annotations` to the Elasticsearch pods' service account through the ECK podTemplate, giving the nodes the workload identity (IRSA, GCP Workload Identity, ...) that grants access to the snapshot bucket used for backups. The snapshot repository itself is registered inside Elasticsearch by the `CamundaCluster` controller — via the Elasticsearch API, authenticated with the `SecondaryStorageConfig` credentials — while the bucket access for the Elasticsearch nodes flows from this workload identity.
-5. It provisions a dedicated Camunda user through ECK's file realm, generates credentials for it, and stores them in a Secret it owns.
-6. It creates and keeps current a cluster-scoped `SecondaryStorageConfig` named `spec.secondaryStorageConfig`, with `type: elasticsearch`, the in-cluster HTTPS endpoint of the ECK-managed service, and a reference to the generated credentials Secret.
+5. It provisions a dedicated Camunda user through ECK's file realm, generates credentials for it, and stores them in a Secret it owns. The user carries the `superuser` role for now: snapshot-repository registration (done by the `CamundaCluster` controller with these credentials) needs cluster-manage rights, and narrowing to a dedicated role is deliberately deferred until that flow lands.
+6. It creates and keeps current a `SecondaryStorageConfig` named `spec.secondaryStorageConfig` in this CR's own namespace, with `type: elasticsearch`, the in-cluster HTTPS endpoint of the ECK-managed service, a reference to the generated credentials Secret, and a `caSecretRef` pointing at the ECK-generated CA certificate Secret so consumers can verify the cluster's self-signed HTTPS endpoint.
 7. It watches the ECK CR's health and reflects it in this CR's conditions.
 8. When `spec.suspend: true`, it scales the ECK node set to zero and reports the `Suspended` condition; a composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
-9. On deletion, the ECK CR is garbage-collected through its owner reference, and a finalizer removes the `SecondaryStorageConfig` (which is cluster-scoped and therefore cannot be owned by this namespaced CR).
+9. On deletion, the ECK CR, the credentials Secret, and the `SecondaryStorageConfig` are all garbage-collected through their owner references; no finalizer is needed.
 
 ```mermaid
 graph LR
@@ -78,7 +78,7 @@ spec:
     podAffinity: {}
     # list (corev1.Toleration). Optional. Tolerations for the pods.
     tolerations: []
-  # string. Required. Name of the cluster-scoped SecondaryStorageConfig the operator creates with the connection details and generated credentials.
+  # string. Required. Name of the SecondaryStorageConfig the operator creates in this CR's own namespace with the connection details and generated credentials.
   secondaryStorageConfig: "my-storage-config"
   # object. Optional. Prometheus scraping integration.
   monitoring:
@@ -110,7 +110,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline; with a preset, the merged result must contain them.
 - `spec.version` must be a version supported by Camunda 8.9: Elasticsearch 8.19+ or 9.2+.
 - `spec.storageSize` must not shrink: Elasticsearch data volumes cannot be reduced in place, so updates that lower it are rejected.
-- `spec.secondaryStorageConfig` must be a valid name for a cluster-scoped resource.
+- `spec.secondaryStorageConfig` must be a valid resource name.
 
 !!! note "Deviation from the original proposal"
     The proposal's examples used Elasticsearch 8.16/8.17, which are below Camunda 8.9's minimum of 8.19.

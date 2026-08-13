@@ -14,7 +14,7 @@ The management plane follows the same infrastructure pattern as the orchestratio
 
 The operator reconciles a `CamundaManagementCluster` in the following steps:
 
-1. Resolve the three `DatabaseConfig` references (`keycloakDbRef`, `identityDbRef`, `webModelerDbRef`) and verify their credential secrets exist; each names one logical PostgreSQL database.
+1. Resolve the three `DatabaseConfig` references (`keycloakDbRef`, `identityDbRef`, `webModelerDbRef`) in the target namespace and verify their credential secrets exist; each names one logical PostgreSQL database.
 2. Ensure the target namespace exists (default `<name>-camunda`).
 3. When `keycloak.enabled` is `true` (the default), create a `Keycloak` CR in the target namespace, wired to the Keycloak database; the external Keycloak Operator reconciles it — this operator never deploys Keycloak itself, mirroring how `ElasticsearchCluster` delegates to ECK. When `keycloak.enabled` is `false`, no Keycloak is deployed and Management Identity federates against the external OIDC identity provider configured on the referenced [CamundaPlatformConfig](camundaplatformconfig.md) (or the `spec.auth` override).
 4. Deploy Management Identity into the target namespace, connected to Keycloak (or the external identity provider) and the Identity database, served publicly at `identity.externalUrl`; the operator creates no Ingress — you or the composition layer route traffic there.
@@ -59,11 +59,11 @@ spec:
   targetNamespace: "camunda-management"
   # string. Optional. Name of the cluster-scoped CamundaPlatformConfig providing auth and license defaults.
   platformConfigRef: "my-platform-config"
-  # string. Required. Name of the cluster-scoped DatabaseConfig for the Keycloak database.
+  # string. Required. Name of the DatabaseConfig, in the target namespace, for the Keycloak database.
   keycloakDbRef: "keycloak-db"
-  # string. Required. Name of the cluster-scoped DatabaseConfig for the Management Identity database.
+  # string. Required. Name of the DatabaseConfig, in the target namespace, for the Management Identity database.
   identityDbRef: "identity-db"
-  # string. Required. Name of the cluster-scoped DatabaseConfig for the Web Modeler database.
+  # string. Required. Name of the DatabaseConfig, in the target namespace, for the Web Modeler database.
   webModelerDbRef: "webmodeler-db"
   # string. Optional, default: this CR's name. Name of the cluster-scoped ManagementAuthConfig this controller creates.
   managementAuthConfig: "management-auth"
@@ -138,7 +138,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- [DatabaseConfig](databaseconfig.md) — referenced three times via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef`; each provides connection details and credentials for one logical PostgreSQL database.
+- [DatabaseConfig](databaseconfig.md) — referenced three times via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef`, each resolved in the target namespace; each provides connection details and credentials for one logical PostgreSQL database.
 - [ManagementAuthConfig](managementauthconfig.md) — created by this controller as its output contract, named by `spec.managementAuthConfig`.
 - [CamundaPlatformConfig](camundaplatformconfig.md) — referenced via `platformConfigRef` for platform-wide auth and license defaults, overridable through `spec.auth`.
 - [CamundaOptimize](camundaoptimize.md) — consumes the [ManagementAuthConfig](managementauthconfig.md) this controller produces via its `managementAuthRef`.
