@@ -22,34 +22,39 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// ElasticsearchClusterReconciler reconciles a ElasticsearchCluster object
+// ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
+// the external ECK operator: it renders an ECK Elasticsearch CR, generates
+// file-realm credentials, and publishes a SecondaryStorageConfig binding in
+// the CR's namespace.
 type ElasticsearchClusterReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	// APIReader reads uncached, for credential Secrets whose data must be
+	// read live.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusterpresets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=elasticsearch.k8s.elastic.co,resources=elasticsearches,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ElasticsearchCluster object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
+// Reconcile converges an ElasticsearchCluster. The scaffold reconciles
+// nothing yet; the preset merge, components, and status derivation land with
+// the controller implementation (#37).
 func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
-
-	// TODO(user): your logic here
+	var cluster v1.ElasticsearchCluster
+	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -57,7 +62,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 // SetupWithManager sets up the controller with the Manager.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.ElasticsearchCluster{}).
+		For(&v1.ElasticsearchCluster{}).
 		Named("elasticsearchcluster").
 		Complete(r)
 }

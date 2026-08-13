@@ -40,8 +40,11 @@ func TestDeriveReady(t *testing.T) {
 		wantMessage string
 	}{
 		{
-			name:        "pre-check failure wins over everything",
-			pre:         &PreCheckFailure{Reason: ReasonInvalidReference, Message: `ElasticsearchClusterPreset "standard" not found`},
+			name: "pre-check failure wins over everything",
+			pre: &PreCheckFailure{
+				Reason:  ReasonInvalidReference,
+				Message: `ElasticsearchClusterPreset "standard" not found`,
+			},
 			components:  []metav1.Condition{falseCond("ElasticsearchReady", "Creating", "still converging")},
 			suspended:   true,
 			wantReason:  ReasonInvalidReference,

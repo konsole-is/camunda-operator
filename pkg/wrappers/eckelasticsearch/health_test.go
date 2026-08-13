@@ -41,14 +41,46 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 		health esv1.ElasticsearchHealth
 		want   concepts.AliveConvergingStatus
 	}{
-		{"green is healthy", concepts.ConvergingOperationNone, esv1.ElasticsearchGreenHealth, concepts.AliveConvergingStatusHealthy},
-		{"green stays healthy while updating", concepts.ConvergingOperationUpdated, esv1.ElasticsearchGreenHealth, concepts.AliveConvergingStatusHealthy},
-		{"yellow on create is creating", concepts.ConvergingOperationCreated, esv1.ElasticsearchYellowHealth, concepts.AliveConvergingStatusCreating},
-		{"yellow on update is updating", concepts.ConvergingOperationUpdated, esv1.ElasticsearchYellowHealth, concepts.AliveConvergingStatusUpdating},
-		{"yellow with no change is updating", concepts.ConvergingOperationNone, esv1.ElasticsearchYellowHealth, concepts.AliveConvergingStatusUpdating},
-		{"red is failing", concepts.ConvergingOperationNone, esv1.ElasticsearchRedHealth, concepts.AliveConvergingStatusFailing},
-		{"unknown health is creating", concepts.ConvergingOperationNone, esv1.ElasticsearchUnknownHealth, concepts.AliveConvergingStatusCreating},
-		{"unreported health is creating", concepts.ConvergingOperationCreated, "", concepts.AliveConvergingStatusCreating},
+		{
+			"green is healthy",
+			concepts.ConvergingOperationNone, esv1.ElasticsearchGreenHealth,
+			concepts.AliveConvergingStatusHealthy,
+		},
+		{
+			"green stays healthy while updating",
+			concepts.ConvergingOperationUpdated, esv1.ElasticsearchGreenHealth,
+			concepts.AliveConvergingStatusHealthy,
+		},
+		{
+			"yellow on create is creating",
+			concepts.ConvergingOperationCreated, esv1.ElasticsearchYellowHealth,
+			concepts.AliveConvergingStatusCreating,
+		},
+		{
+			"yellow on update is updating",
+			concepts.ConvergingOperationUpdated, esv1.ElasticsearchYellowHealth,
+			concepts.AliveConvergingStatusUpdating,
+		},
+		{
+			"yellow with no change is updating",
+			concepts.ConvergingOperationNone, esv1.ElasticsearchYellowHealth,
+			concepts.AliveConvergingStatusUpdating,
+		},
+		{
+			"red is failing",
+			concepts.ConvergingOperationNone, esv1.ElasticsearchRedHealth,
+			concepts.AliveConvergingStatusFailing,
+		},
+		{
+			"unknown health is creating",
+			concepts.ConvergingOperationNone, esv1.ElasticsearchUnknownHealth,
+			concepts.AliveConvergingStatusCreating,
+		},
+		{
+			"unreported health is creating",
+			concepts.ConvergingOperationCreated, "",
+			concepts.AliveConvergingStatusCreating,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

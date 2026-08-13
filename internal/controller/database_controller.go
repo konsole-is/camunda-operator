@@ -22,34 +22,38 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	corev1 "github.com/konsole-is/camunda-operator/api/v1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// DatabaseReconciler reconciles a Database object
+// DatabaseReconciler bootstraps a logical database and its users on an
+// existing PostgreSQL server over plain SQL and publishes the credential
+// Secrets, DatabaseConfig, and optional SecondaryStorageConfig bindings in
+// the CR's target namespace.
 type DatabaseReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	// APIReader reads uncached, for admin and generated credential Secrets
+	// whose data must be read live.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databases/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Database object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
+// Reconcile converges a Database. The scaffold reconciles nothing yet; the
+// pre-checks, SQL bootstrap, and bindings component land with the controller
+// implementation (#38).
 func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
-
-	// TODO(user): your logic here
+	var database v1.Database
+	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -57,7 +61,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // SetupWithManager sets up the controller with the Manager.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Database{}).
+		For(&v1.Database{}).
 		Named("database").
 		Complete(r)
 }

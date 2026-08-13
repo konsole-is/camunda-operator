@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -56,5 +57,27 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			NamespacedName: client.ObjectKeyFromObject(cluster),
 		})
 		Expect(err).NotTo(HaveOccurred())
+	})
+
+	// The rendered ECK CR must actually apply against the API server in
+	// envtest, so the suite loads the ECK CRDs from the resolved module.
+	It("accepts an ECK Elasticsearch resource in the test environment", func() {
+		es := &esv1.Elasticsearch{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "eck-smoke-" + utilrand.String(8),
+				Namespace: newElasticsearchClusterNamespace(),
+			},
+			Spec: esv1.ElasticsearchSpec{
+				Version:  "9.2.4",
+				NodeSets: []esv1.NodeSet{{Name: "default", Count: 1}},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, es)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, es) })
+
+		var fetched esv1.Elasticsearch
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(es), &fetched)).To(Succeed())
+		Expect(fetched.Spec.Version).To(Equal("9.2.4"))
 	})
 })

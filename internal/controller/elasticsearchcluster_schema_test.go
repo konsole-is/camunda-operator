@@ -106,7 +106,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 			}, "secondaryStorageConfig"),
 		Entry("rejects a non-DNS-1123 secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
-				o.Spec.SecondaryStorageConfig = "Not_A_Name"
+				o.Spec.SecondaryStorageConfig = notAResourceName
 			}, "secondaryStorageConfig"),
 		Entry("rejects a two-segment version",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {

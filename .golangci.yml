@@ -45,6 +45,11 @@ linters:
           - dupl
           - lll
         path: internal/*
+      # The ocf-generated wrapper packages carry long doc-comment lines and no
+      # generated-code header; regenerating them must stay lint-clean.
+      - linters:
+          - lll
+        path: pkg/wrappers/*
     paths:
       - third_party$
       - builtin$

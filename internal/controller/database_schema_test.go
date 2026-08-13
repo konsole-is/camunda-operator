@@ -27,6 +27,9 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+// notAResourceName is a value the schema's resource-name rules must reject.
+const notAResourceName = "Not_A_Name"
+
 // validDatabase returns the doc's minimal example with a unique name.
 func validDatabase() *v1.Database {
 	return &v1.Database{
@@ -96,11 +99,11 @@ var _ = Describe("Database schema", func() {
 			}, "targetNamespace"),
 		Entry("rejects a non-DNS-1123 databaseConfig name",
 			validDatabase, func(o *v1.Database) {
-				o.Spec.DatabaseConfig = "Not_A_Name"
+				o.Spec.DatabaseConfig = notAResourceName
 			}, "databaseConfig"),
 		Entry("rejects a non-DNS-1123 secondaryStorageConfig name",
 			validDatabase, func(o *v1.Database) {
-				o.Spec.SecondaryStorageConfig = "Not_A_Name"
+				o.Spec.SecondaryStorageConfig = notAResourceName
 			}, "secondaryStorageConfig"),
 	)
 })

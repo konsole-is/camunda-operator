@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -36,6 +37,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/test/utils"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -71,11 +73,22 @@ var _ = BeforeSuite(func() {
 	err = v1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = esv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	// +kubebuilder:scaffold:scheme
+
+	// The ECK CRDs come from the resolved module so the rendered Elasticsearch
+	// CR applies against the API server; ECK itself does not run in envtest.
+	eckCRDPath, err := utils.ECKCRDPath()
+	Expect(err).NotTo(HaveOccurred())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "config", "crd", "bases"),
+			eckCRDPath,
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -93,7 +106,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	By("starting the manager with the contract validation controllers")
+	By("starting the manager with the contract validation and storage backend controllers")
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:  scheme.Scheme,
 		Metrics: metricsserver.Options{BindAddress: "0"},
@@ -106,6 +119,8 @@ var _ = BeforeSuite(func() {
 		"SecondaryStorageConfig": (&SecondaryStorageConfigReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Scheme: mgr.GetScheme()}).SetupWithManager,
 		"ObjectStorageConfig":    (&ObjectStorageConfigReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Scheme: mgr.GetScheme()}).SetupWithManager,
 		"ManagementAuthConfig":   (&ManagementAuthConfigReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Scheme: mgr.GetScheme()}).SetupWithManager,
+		"ElasticsearchCluster":   (&ElasticsearchClusterReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Scheme: mgr.GetScheme()}).SetupWithManager,
+		"Database":               (&DatabaseReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Scheme: mgr.GetScheme()}).SetupWithManager,
 	} {
 		Expect(setup(mgr)).To(Succeed(), "setting up %s controller", kind)
 	}
