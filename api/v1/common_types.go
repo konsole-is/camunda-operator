@@ -18,7 +18,9 @@ package v1
 
 // CredentialsSecretRef references a username/password pair stored in a Secret.
 // Namespace is required so that references stay uniform and explicit across
-// all contract kinds, cluster-scoped and namespaced alike.
+// all contract kinds, cluster-scoped and namespaced alike. The reference may
+// name a Secret in any namespace; RBAC on the kinds embedding it governs who
+// may create the referencing objects.
 type CredentialsSecretRef struct {
 	// Name of the Secret holding the credentials.
 	// +kubebuilder:validation:MinLength=1
@@ -36,7 +38,9 @@ type CredentialsSecretRef struct {
 
 // SecretKeyRef references a single value inside a Secret.
 // Namespace is required so that references stay uniform and explicit across
-// all contract kinds, cluster-scoped and namespaced alike.
+// all contract kinds, cluster-scoped and namespaced alike. The reference may
+// name a Secret in any namespace; RBAC on the kinds embedding it governs who
+// may create the referencing objects.
 type SecretKeyRef struct {
 	// Name of the Secret holding the value.
 	// +kubebuilder:validation:MinLength=1

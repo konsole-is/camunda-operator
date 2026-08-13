@@ -25,6 +25,11 @@ The contract has a lightweight validation-only controller: it never provisions a
 Consumers read the contract by name and never care who produced it.
 Connection endpoints are deliberately not duplicated here: consumers resolve `serverRef` to the [DatabaseServerConfig](databaseserverconfig.md) for the engine, host, and port, then combine them with this contract's `databaseName` and credentials.
 
+!!! note "Security posture: Secret references cross namespaces"
+    `credentialsSecretRef` and `backupCredentialsSecretRef` carry an explicit namespace and may name a Secret in any namespace, and the validation controller reports precise existence and missing-key messages in status.
+    Anyone permitted to create or update this kind can therefore learn whether an arbitrary Secret exists and which keys it lacks — an accepted existence oracle, unchanged from when the contract was cluster-scoped.
+    Now that the kind is namespaced, namespace-level editors (not only cluster operators) may hold that permission; RBAC on this kind is the mitigation, so grant write access to it deliberately.
+
 ```mermaid
 graph LR
     DB[Database] -->|creates| DBC[DatabaseConfig]

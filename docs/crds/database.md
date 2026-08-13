@@ -49,7 +49,7 @@ spec:
   serverRef: "my-db-server"
   # string. Required. Name of the logical database to create; must be unique per server (see Validation).
   databaseName: "camunda"
-  # string. Optional, default: the operator namespace. Namespace where the created DatabaseConfig, SecondaryStorageConfig, and credential Secrets are placed (each Secret's namespace can be overridden per Secret); set it to the consuming cluster's namespace, since consumers resolve the bindings by name in their own namespace.
+  # string. Required. Namespace where the created DatabaseConfig, SecondaryStorageConfig, and credential Secrets are placed (each Secret's namespace can be overridden per Secret); set it to the consuming cluster's namespace, since consumers resolve the bindings by name in their own namespace.
   targetNamespace: "my-cluster-ns"
   # object. Optional. The application credentials Secret, always created (keys: username, password).
   applicationCredentials:
@@ -70,6 +70,10 @@ spec:
   # string. Optional. If set, the operator also creates a SecondaryStorageConfig of type rdbms with this name in spec.targetNamespace, wired to the DatabaseConfig and backup credentials; omit for databases not used as Camunda secondary storage.
   secondaryStorageConfig: "my-storage-config"
 ```
+
+!!! note "Deviation from the original proposal"
+    The proposal made `targetNamespace` optional, defaulting to the operator namespace.
+    Since the binding contracts became namespaced, consumers resolve them by name in their own namespace, so an operator-namespace default would place the bindings where no consumer can ever find them; the field is therefore required with no default.
 
 ## Status
 
@@ -112,6 +116,7 @@ metadata:
 spec:
   serverRef: "my-db-server"
   databaseName: "camunda"
+  targetNamespace: "my-cluster-ns"
 ```
 
 A realistic manifest:

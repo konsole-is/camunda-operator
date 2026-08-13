@@ -21,11 +21,16 @@ It lives in the consuming cluster's namespace: consumers resolve it by name in t
 The contract has a lightweight validation-only controller: it never provisions anything, it only checks that the contract is usable and reports the result as conditions.
 
 1. The operator watches every `SecondaryStorageConfig` and the Secrets and CRs it references, and re-runs validation whenever any of them change.
-2. For `type: elasticsearch`, it checks that the Secret named by `credentialsSecretRef` exists and contains the configured `usernameKey` and `passwordKey`.
+2. For `type: elasticsearch`, it checks that the Secret named by `credentialsSecretRef` exists and contains the configured `usernameKey` and `passwordKey`, and — when `caSecretRef` is set — that its Secret exists and contains the configured `key`.
 3. For `type: rdbms`, it checks that the [DatabaseConfig](databaseconfig.md) named by `rdbms.databaseConfigRef` exists in this contract's own namespace.
 4. It sets the `Ready` condition: `Healthy` when all checks pass, `MissingSecret` or `InvalidReference` otherwise.
 
 Consumers read the contract by name and never care who produced it: an `ElasticsearchCluster` refreshing generated credentials, a `Database` wiring up an RDBMS backend, and a manifest you applied by hand all look identical to a consuming controller.
+
+!!! note "Security posture: Secret references cross namespaces"
+    `credentialsSecretRef` and `caSecretRef` carry an explicit namespace and may name a Secret in any namespace, and the validation controller reports precise existence and missing-key messages in status.
+    Anyone permitted to create or update this kind can therefore learn whether an arbitrary Secret exists and which keys it lacks — an accepted existence oracle, unchanged from when the contract was cluster-scoped.
+    Now that the kind is namespaced, namespace-level editors (not only cluster operators) may hold that permission; RBAC on this kind is the mitigation, so grant write access to it deliberately.
 
 ```mermaid
 graph LR
@@ -82,7 +87,7 @@ spec:
 | Type | Reason | Meaning |
 | --- | --- | --- |
 | `Ready` | `Healthy` | All referenced Secrets and CRs exist and have the required keys. |
-| `Ready` | `MissingSecret` | The Secret named by `credentialsSecretRef` is missing or lacks the configured keys. |
+| `Ready` | `MissingSecret` | A Secret named by `credentialsSecretRef` or `caSecretRef` is missing or lacks the configured keys. |
 | `Ready` | `InvalidReference` | The `DatabaseConfig` named by `rdbms.databaseConfigRef` does not exist in this contract's namespace. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
@@ -92,6 +97,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - `spec.type` must be `elasticsearch` or `rdbms`.
 - Exactly the block matching `spec.type` must be set: `elasticsearch` requires `spec.elasticsearch` and forbids `spec.rdbms`, and vice versa.
 - `spec.elasticsearch.endpoint` must be a valid `http` or `https` URL.
+- `spec.elasticsearch.caSecretRef` may only be set when the endpoint is `https` — a CA bundle is meaningless for a plaintext endpoint.
 
 ## Relationships
 
