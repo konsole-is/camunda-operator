@@ -61,6 +61,8 @@ type DatabaseSpec struct {
 	// consuming cluster's namespace, since consumers resolve the bindings by
 	// name in their own namespace; for that reason the field is required with
 	// no default.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:MinLength=1
 	TargetNamespace string `json:"targetNamespace"`
 	// ApplicationCredentials configures the application credentials Secret,

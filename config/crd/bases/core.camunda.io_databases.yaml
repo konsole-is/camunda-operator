@@ -120,7 +120,9 @@ spec:
                   consuming cluster's namespace, since consumers resolve the bindings by
                   name in their own namespace; for that reason the field is required with
                   no default.
+                maxLength: 63
                 minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
             required:
             - databaseName

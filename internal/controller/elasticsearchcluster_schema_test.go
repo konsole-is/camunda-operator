@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -122,6 +123,37 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 				o.Spec.Replicas = &zero
 			}, "replicas"),
 	)
+
+	// storageSize serializes as int-or-string, so the no-shrink rule must
+	// handle the integer form a raw manifest can submit.
+	It("accepts integer-form storageSize and still rejects shrink", func() {
+		obj := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "core.camunda.io/v1",
+			"kind":       "ElasticsearchCluster",
+			"metadata": map[string]any{
+				"name":      "esc-" + utilrand.String(8),
+				"namespace": schemaTestNamespace,
+			},
+			"spec": map[string]any{
+				"version":                "9.2.4",
+				"replicas":               int64(3),
+				"storageSize":            int64(1073741824),
+				"secondaryStorageConfig": "my-storage-config",
+			},
+		}}
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		Expect(unstructured.SetNestedField(obj.Object, int64(2147483648), "spec", "storageSize")).To(Succeed())
+		Expect(k8sClient.Update(ctx, obj)).To(Succeed(), "integer-form growth")
+
+		Expect(unstructured.SetNestedField(obj.Object, "3Gi", "spec", "storageSize")).To(Succeed())
+		Expect(k8sClient.Update(ctx, obj)).To(Succeed(), "integer-to-string growth")
+
+		Expect(unstructured.SetNestedField(obj.Object, int64(536870912), "spec", "storageSize")).To(Succeed())
+		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("storageSize")), "integer-form shrink")
+	})
 
 	It("rejects shrinking storageSize on update and accepts growth", func() {
 		obj := realisticElasticsearchCluster()

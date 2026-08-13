@@ -91,6 +91,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - A `Database` is rejected when another `Database` referencing the same `serverRef` already uses the same `databaseName`; this prevents accidental collisions on shared servers.
 - `spec.databaseName` must be a valid PostgreSQL identifier.
+- `spec.targetNamespace` must be a valid namespace name (an RFC 1123 label, at most 63 characters).
 - `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
 
 ## Relationships

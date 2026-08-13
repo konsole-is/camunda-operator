@@ -6,4 +6,14 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: managementauthconfig-sample
 spec:
-  # TODO(user): Add fields here
+  baseUrl: "https://identity.camunda.example.com"
+  issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
+  authUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
+  tokenUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
+  jwksUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
+  clientId: camunda-management
+  audience: camunda-management
+  clientSecretRef:
+    name: managementauthconfig-sample-secret
+    namespace: default
+    key: client-secret

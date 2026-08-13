@@ -26,8 +26,10 @@ type ElasticsearchClusterPresetSpec struct {
 	// Cluster is the full configuration baseline consumers inherit. It reuses
 	// the ElasticsearchCluster spec type so the two never drift apart; the
 	// instance-bound fields of that type — presetRef, secondaryStorageConfig,
-	// suspend, and monitoring — must be left unset inside a preset.
-	// +kubebuilder:validation:XValidation:rule="!has(self.presetRef) && !has(self.secondaryStorageConfig) && !has(self.suspend) && !has(self.monitoring)",message="instance-bound fields (presetRef, secondaryStorageConfig, suspend, monitoring) must not be set in a preset"
+	// suspend, and monitoring — must be left unset inside a preset. Explicit
+	// zero values (an empty presetRef, suspend: false, an empty monitoring
+	// object), as templated YAML renders unset fields, count as unset.
+	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.secondaryStorageConfig) || self.secondaryStorageConfig == '') && (!has(self.suspend) || !self.suspend) && (!has(self.monitoring) || !has(self.monitoring.serviceMonitor))",message="instance-bound fields (presetRef, secondaryStorageConfig, suspend, monitoring.serviceMonitor) must not be set in a preset"
 	// +required
 	Cluster ElasticsearchClusterSpec `json:"cluster"`
 }

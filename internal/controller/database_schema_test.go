@@ -97,6 +97,14 @@ var _ = Describe("Database schema", func() {
 			validDatabase, func(o *v1.Database) {
 				o.Spec.TargetNamespace = ""
 			}, "targetNamespace"),
+		Entry("rejects a non-DNS-1123 targetNamespace",
+			validDatabase, func(o *v1.Database) {
+				o.Spec.TargetNamespace = "My_Cluster_NS"
+			}, "targetNamespace"),
+		Entry("rejects a 64-character targetNamespace",
+			validDatabase, func(o *v1.Database) {
+				o.Spec.TargetNamespace = "n" + strings.Repeat("s", 63)
+			}, "targetNamespace"),
 		Entry("rejects a non-DNS-1123 databaseConfig name",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.DatabaseConfig = notAResourceName

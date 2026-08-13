@@ -99,10 +99,11 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// StorageSize is the size of each node's data volume. It must never
-	// shrink: Elasticsearch data volumes cannot be reduced in place, so
-	// updates that lower it are rejected. Required unless the resolved preset
-	// provides it.
-	// +kubebuilder:validation:XValidation:rule="!quantity(self).isLessThan(quantity(oldSelf))",message="storageSize may not be shrunk"
+	// shrink: Elasticsearch data volumes cannot be reduced in place. The
+	// no-shrink rule binds the ElasticsearchCluster usage of this type only —
+	// it is a CEL transition rule on that CR's spec, not on this shared
+	// field, so a preset's baseline may be resized freely. Required unless
+	// the resolved preset provides it.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass for the data volumes. Defaults to
@@ -179,6 +180,7 @@ type ElasticsearchCluster struct {
 
 	// spec defines the desired state of ElasticsearchCluster
 	// +kubebuilder:validation:XValidation:rule="has(self.secondaryStorageConfig)",message="secondaryStorageConfig is required"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.storageSize) || !has(self.storageSize) || !quantity(string(self.storageSize)).isLessThan(quantity(string(oldSelf.storageSize)))",message="storageSize may not be shrunk"
 	// +required
 	Spec ElasticsearchClusterSpec `json:"spec"`
 

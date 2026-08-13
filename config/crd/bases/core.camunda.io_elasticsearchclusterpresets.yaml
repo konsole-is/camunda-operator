@@ -48,7 +48,9 @@ spec:
                   Cluster is the full configuration baseline consumers inherit. It reuses
                   the ElasticsearchCluster spec type so the two never drift apart; the
                   instance-bound fields of that type — presetRef, secondaryStorageConfig,
-                  suspend, and monitoring — must be left unset inside a preset.
+                  suspend, and monitoring — must be left unset inside a preset. Explicit
+                  zero values (an empty presetRef, suspend: false, an empty monitoring
+                  object), as templated YAML renders unset fields, count as unset.
                 properties:
                   extraEnv:
                     description: ExtraEnv are extra environment variables for every
@@ -1000,14 +1002,13 @@ spec:
                     - type: string
                     description: |-
                       StorageSize is the size of each node's data volume. It must never
-                      shrink: Elasticsearch data volumes cannot be reduced in place, so
-                      updates that lower it are rejected. Required unless the resolved preset
-                      provides it.
+                      shrink: Elasticsearch data volumes cannot be reduced in place. The
+                      no-shrink rule binds the ElasticsearchCluster usage of this type only —
+                      it is a CEL transition rule on that CR's spec, not on this shared
+                      field, so a preset's baseline may be resized freely. Required unless
+                      the resolved preset provides it.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
-                    x-kubernetes-validations:
-                    - message: storageSize may not be shrunk
-                      rule: '!quantity(self).isLessThan(quantity(oldSelf))'
                   suspend:
                     description: |-
                       Suspend scales the Elasticsearch node set to zero while keeping all
@@ -1025,9 +1026,10 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: instance-bound fields (presetRef, secondaryStorageConfig,
-                    suspend, monitoring) must not be set in a preset
-                  rule: '!has(self.presetRef) && !has(self.secondaryStorageConfig)
-                    && !has(self.suspend) && !has(self.monitoring)'
+                    suspend, monitoring.serviceMonitor) must not be set in a preset
+                  rule: (!has(self.presetRef) || self.presetRef == '') && (!has(self.secondaryStorageConfig)
+                    || self.secondaryStorageConfig == '') && (!has(self.suspend) ||
+                    !self.suspend) && (!has(self.monitoring) || !has(self.monitoring.serviceMonitor))
             required:
             - cluster
             type: object

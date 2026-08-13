@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -112,5 +113,63 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 					ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true},
 				}
 			}, "instance-bound"),
+		Entry("accepts an empty monitoring object",
+			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
+				o.Spec.Cluster.Monitoring = &v1.MonitoringSpec{}
+			}, ""),
 	)
+
+	// The no-shrink ratchet binds ElasticsearchCluster only: a preset is
+	// passive data whose baseline may be resized freely.
+	It("allows lowering a preset's storageSize baseline", func() {
+		preset := realisticElasticsearchClusterPreset()
+
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+		smaller := resource.MustParse("64Gi")
+		preset.Spec.Cluster.StorageSize = &smaller
+		Expect(k8sClient.Update(ctx, preset)).To(Succeed())
+	})
+
+	// Templated YAML renders unset fields as explicit zero values; the
+	// instance-bound deny list must not trip on them.
+	It("tolerates explicit zero values for instance-bound fields", func() {
+		obj := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "core.camunda.io/v1",
+			"kind":       "ElasticsearchClusterPreset",
+			"metadata":   map[string]any{"name": "escp-" + utilrand.String(8)},
+			"spec": map[string]any{
+				"cluster": map[string]any{
+					"version":     "9.2.4",
+					"replicas":    int64(3),
+					"storageSize": "64Gi",
+					"presetRef":   "",
+					"suspend":     false,
+					"monitoring":  map[string]any{},
+				},
+			},
+		}}
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+	})
+
+	It("rejects an empty-string secondaryStorageConfig by the name pattern", func() {
+		obj := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "core.camunda.io/v1",
+			"kind":       "ElasticsearchClusterPreset",
+			"metadata":   map[string]any{"name": "escp-" + utilrand.String(8)},
+			"spec": map[string]any{
+				"cluster": map[string]any{
+					"version":                "9.2.4",
+					"replicas":               int64(3),
+					"storageSize":            "64Gi",
+					"secondaryStorageConfig": "",
+				},
+			},
+		}}
+
+		Expect(k8sClient.Create(ctx, obj)).To(MatchError(ContainSubstring("should match")))
+	})
 })
