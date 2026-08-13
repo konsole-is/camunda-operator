@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: consumer-wave
 ---
 
 # Storage backend controllers (Batch B) — orchestration state
@@ -27,9 +27,9 @@ status: foundational-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers/.claude/worktrees/storage-backend-controllers--binding-scope | #40 → feat/storage-backend-controllers | self-merged |
-| #36 | batch-b/foundations | .claude/worktrees/storage-backend-controllers--foundations | #41 → feat/storage-backend-controllers | ready |
-| #37 | batch-b/elasticsearchcluster | .claude/worktrees/storage-backend-controllers--elasticsearchcluster | — | not-started |
-| #38 | batch-b/database | .claude/worktrees/storage-backend-controllers--database | — | not-started |
+| #36 | batch-b/foundations | .claude/worktrees/storage-backend-controllers--foundations | #41 → feat/storage-backend-controllers | self-merged |
+| #37 | batch-b/elasticsearchcluster | .claude/worktrees/storage-backend-controllers--elasticsearchcluster | — | in-progress |
+| #38 | batch-b/database | .claude/worktrees/storage-backend-controllers--database | — | in-progress |
 | #39 | batch-b/e2e | .claude/worktrees/storage-backend-controllers--e2e | — | not-started |
 
 ## Contracts
@@ -37,11 +37,11 @@ status: foundational-wave
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
 | `binding-scope` | pre-merge PR #35 | #40 (merged c15b62a) | locked |
-| `eck-wrapper` | foundations PR (#36) | — | pending |
-| `binding-wrappers` | foundations PR (#36) | — | pending |
-| `credentials-api` | foundations PR (#36) | — | pending |
-| `ready-derivation` | foundations PR (#36) | — | pending |
-| `api-types` | foundations PR (#36) | — | pending |
+| `eck-wrapper` | foundations PR (#36) | #41 (merged c54bc94) | locked |
+| `binding-wrappers` | foundations PR (#36) | #41 (merged c54bc94) | locked |
+| `credentials-api` | foundations PR (#36) | #41 (merged c54bc94) | locked |
+| `ready-derivation` | foundations PR (#36) | #41 (merged c54bc94) | locked |
+| `api-types` | foundations PR (#36) | #41 (merged c54bc94) | locked |
 | `e2e-flows` | data-only (issue #37/#38 Verification bullets) | n/a | locked |
 
 ## Bubble-up log
