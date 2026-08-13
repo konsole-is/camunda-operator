@@ -161,6 +161,17 @@ func TestElasticsearchClusterGoldenMinimal(t *testing.T) {
 	assertElasticsearchClusterGoldens(t, "minimal", cluster, mergePreset(cluster.Spec, preset))
 }
 
+// The 8.19+ line is the other supported version family; its rendering is
+// pinned separately from the 9.2+ fixtures.
+func TestElasticsearchClusterGoldenMinimalES8(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	preset.Cluster.Version = "8.19.0"
+
+	assertElasticsearchClusterGoldens(t, "minimal-es8", cluster, mergePreset(cluster.Spec, preset))
+}
+
 func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
 	t.Parallel()
 
