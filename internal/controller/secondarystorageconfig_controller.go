@@ -72,11 +72,11 @@ func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ct
 }
 
 // validate branches on the contract's storage type: elasticsearch contracts
-// check their credentials Secret, rdbms contracts check the referenced
-// DatabaseConfig exists in the contract's own namespace. The CRD schema
-// enforces that exactly the matching block is set; an object that slipped past
-// admission with a missing block or unknown type yields an error rather than a
-// condition.
+// check their credentials Secret and, when set, their CA Secret; rdbms
+// contracts check the referenced DatabaseConfig exists in the contract's own
+// namespace. The CRD schema enforces that exactly the matching block is set;
+// an object that slipped past admission with a missing block or unknown type
+// yields an error rather than a condition.
 func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1.SecondaryStorageConfig) (metav1.Condition, error) {
 	switch {
 	case cfg.Spec.Type == v1.SecondaryStorageTypeElasticsearch && cfg.Spec.Elasticsearch != nil:
@@ -89,6 +89,17 @@ func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1
 		}
 		if msg != "" {
 			return conditions.Ready(metav1.ConditionFalse, conditions.ReasonMissingSecret, msg, cfg.Generation), nil
+		}
+
+		if ca := cfg.Spec.Elasticsearch.CASecretRef; ca != nil {
+			msg, err := secretref.CheckKeys(ctx, r.APIReader,
+				types.NamespacedName{Namespace: ca.Namespace, Name: ca.Name}, ca.Key)
+			if err != nil {
+				return metav1.Condition{}, err
+			}
+			if msg != "" {
+				return conditions.Ready(metav1.ConditionFalse, conditions.ReasonMissingSecret, msg, cfg.Generation), nil
+			}
 		}
 	case cfg.Spec.Type == v1.SecondaryStorageTypeRDBMS && cfg.Spec.RDBMS != nil:
 		name := cfg.Spec.RDBMS.DatabaseConfigRef
@@ -116,8 +127,11 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 			if es == nil {
 				return nil
 			}
-			ref := es.CredentialsSecretRef
-			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
+			keys := []string{refindex.NamespacedKey(es.CredentialsSecretRef.Namespace, es.CredentialsSecretRef.Name)}
+			if es.CASecretRef != nil {
+				keys = append(keys, refindex.NamespacedKey(es.CASecretRef.Namespace, es.CASecretRef.Name))
+			}
+			return keys
 		}); err != nil {
 		return err
 	}

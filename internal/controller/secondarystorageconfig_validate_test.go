@@ -48,6 +48,15 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 	database := &v1.DatabaseConfig{ObjectMeta: metav1.ObjectMeta{Name: "camunda-db", Namespace: "camunda"}}
 	databaseElsewhere := &v1.DatabaseConfig{ObjectMeta: metav1.ObjectMeta{Name: "camunda-db", Namespace: "other"}}
 
+	caSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "es-ca", Namespace: "camunda"},
+		Data:       map[string][]byte{"ca.crt": []byte("pem")},
+	}
+	caSecretNoKey := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "es-ca", Namespace: "camunda"},
+		Data:       map[string][]byte{"tls.crt": []byte("pem")},
+	}
+
 	elasticsearch := v1.SecondaryStorageConfigSpec{
 		Type: v1.SecondaryStorageTypeElasticsearch,
 		Elasticsearch: &v1.ElasticsearchStorage{
@@ -57,6 +66,10 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
+	}
+	elasticsearchWithCA := *elasticsearch.DeepCopy()
+	elasticsearchWithCA.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+		Name: "es-ca", Namespace: "camunda", Key: "ca.crt",
 	}
 	rdbms := v1.SecondaryStorageConfigSpec{
 		Type:  v1.SecondaryStorageTypeRDBMS,
@@ -94,6 +107,30 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  conditions.ReasonMissingSecret,
 			wantMessage: `Secret "camunda/es-credentials" is missing key "password"`,
+		},
+		{
+			name:        "elasticsearch with credentials and CA secrets is healthy",
+			spec:        elasticsearchWithCA,
+			objects:     []client.Object{credentialsSecret, caSecret},
+			wantStatus:  metav1.ConditionTrue,
+			wantReason:  conditions.ReasonHealthy,
+			wantMessage: "All checks passed",
+		},
+		{
+			name:        "elasticsearch with missing CA secret reports MissingSecret",
+			spec:        elasticsearchWithCA,
+			objects:     []client.Object{credentialsSecret},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  conditions.ReasonMissingSecret,
+			wantMessage: `Secret "camunda/es-ca" not found`,
+		},
+		{
+			name:        "elasticsearch with CA secret lacking the key names the key",
+			spec:        elasticsearchWithCA,
+			objects:     []client.Object{credentialsSecret, caSecretNoKey},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  conditions.ReasonMissingSecret,
+			wantMessage: `Secret "camunda/es-ca" is missing key "ca.crt"`,
 		},
 		{
 			name:        "rdbms with a same-namespace DatabaseConfig is healthy",

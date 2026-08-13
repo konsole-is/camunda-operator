@@ -53,8 +53,8 @@ spec:
                       CASecretRef names the CA bundle consumers use to verify the endpoint's
                       TLS certificate. Set it when the endpoint serves a certificate not
                       signed by a well-known CA, such as the self-signed certificate of an
-                      ECK-managed cluster. Omit it for plain-HTTP or publicly trusted
-                      endpoints.
+                      ECK-managed cluster. Omit it for publicly trusted endpoints; it is only
+                      valid with an https endpoint.
                     properties:
                       key:
                         description: Key in the Secret holding the value.
@@ -114,6 +114,10 @@ spec:
                 - credentialsSecretRef
                 - endpoint
                 type: object
+                x-kubernetes-validations:
+                - message: caSecretRef requires an https endpoint
+                  rule: '!has(self.caSecretRef) || url(self.endpoint).getScheme()
+                    == ''https'''
               rdbms:
                 description: RDBMS backend details. Required when type is rdbms, forbidden
                   otherwise.

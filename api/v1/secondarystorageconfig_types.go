@@ -33,6 +33,7 @@ const (
 )
 
 // ElasticsearchStorage holds Elasticsearch connection details.
+// +kubebuilder:validation:XValidation:rule="!has(self.caSecretRef) || url(self.endpoint).getScheme() == 'https'",message="caSecretRef requires an https endpoint"
 type ElasticsearchStorage struct {
 	// Endpoint is the HTTP(S) endpoint of the Elasticsearch cluster.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="endpoint must be a valid http or https URL"
@@ -43,8 +44,8 @@ type ElasticsearchStorage struct {
 	// CASecretRef names the CA bundle consumers use to verify the endpoint's
 	// TLS certificate. Set it when the endpoint serves a certificate not
 	// signed by a well-known CA, such as the self-signed certificate of an
-	// ECK-managed cluster. Omit it for plain-HTTP or publicly trusted
-	// endpoints.
+	// ECK-managed cluster. Omit it for publicly trusted endpoints; it is only
+	// valid with an https endpoint.
 	// +optional
 	CASecretRef *SecretKeyRef `json:"caSecretRef,omitempty"`
 }
