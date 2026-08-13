@@ -386,7 +386,9 @@ func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 // the bindings component reconciles with.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Recorder == nil {
-		r.Recorder = mgr.GetEventRecorderFor("database-controller")
+		// The component framework's ReconcileContext takes the legacy
+		// record.EventRecorder, so the deprecated accessor is required here.
+		r.Recorder = mgr.GetEventRecorderFor("database-controller") //nolint:staticcheck
 	}
 
 	if r.componentClient == nil {

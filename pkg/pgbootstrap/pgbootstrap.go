@@ -247,7 +247,8 @@ func (b *bootstrapper) EnsureBackupUser(ctx context.Context, name, password, dat
 	// on existing tables to refill them.
 	grants := []string{
 		"GRANT USAGE, CREATE ON SCHEMA public TO " + quoteIdentifier(name),
-		"GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO " + quoteIdentifier(name),
+		"GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO " +
+			quoteIdentifier(name),
 		"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO " + quoteIdentifier(name),
 	}
 	for _, stmt := range grants {

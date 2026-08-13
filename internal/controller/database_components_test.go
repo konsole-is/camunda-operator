@@ -33,6 +33,10 @@ import (
 
 var update = flag.Bool("update", false, "update golden files")
 
+// goldenStorageConfigName is the SecondaryStorageConfig name in the full
+// golden fixture.
+const goldenStorageConfigName = "my-storage-config"
+
 // goldenScheme registers exactly the kinds the bindings component renders.
 func goldenScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
@@ -68,7 +72,7 @@ func goldenFullDatabase() *v1.Database {
 		CredentialsSpec: v1.CredentialsSpec{SecretName: "my-camunda-db-backup"},
 	}
 	db.Spec.DatabaseConfig = "my-database-config"
-	db.Spec.SecondaryStorageConfig = "my-storage-config"
+	db.Spec.SecondaryStorageConfig = goldenStorageConfigName
 	return db
 }
 

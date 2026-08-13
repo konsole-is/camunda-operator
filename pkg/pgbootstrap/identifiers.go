@@ -50,8 +50,9 @@ func quoteIdentifier(name string) string {
 // quoteLiteral returns s as a PostgreSQL string literal safe to interpolate
 // into DDL statements that cannot take bind parameters, such as ALTER ROLE
 // ... PASSWORD. Single quotes are doubled; when s contains a backslash the
-// literal uses the E'' form with backslashes escaped, so the result is correct
-// regardless of the server's standard_conforming_strings setting.
+// literal uses PostgreSQL's escape string syntax (an E prefix) with
+// backslashes escaped, so the result is correct regardless of the server's
+// standard_conforming_strings setting.
 func quoteLiteral(s string) string {
 	quoted := strings.ReplaceAll(s, "'", "''")
 
