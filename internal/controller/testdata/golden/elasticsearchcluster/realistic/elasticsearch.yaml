@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-es-snapshot-role
+  labels:
+    camunda.io/cluster: my-cluster-es
+    camunda.io/component: elasticsearch
+  name: my-cluster-es-es
+  namespace: my-cluster-ns
+---
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  labels:
+    camunda.io/cluster: my-cluster-es
+    camunda.io/component: elasticsearch
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  auth:
+    fileRealm:
+    - secretName: my-cluster-es-es-user
+  http:
+    service:
+      metadata: {}
+      spec: {}
+    tls:
+      certificate: {}
+      client: {}
+  monitoring:
+    logs: {}
+    metrics: {}
+  nodeSets:
+  - count: 3
+    name: default
+    podTemplate:
+      metadata:
+        annotations:
+          prometheus.io/scrape: "true"
+        labels:
+          camunda.io/cluster: my-cluster-es
+          camunda.io/component: elasticsearch
+          team: platform
+      spec:
+        containers:
+        - env:
+          - name: ES_JAVA_OPTS
+            value: -Xms2g -Xmx2g
+          envFrom:
+          - prefix: EXTRA_
+          name: elasticsearch
+          resources:
+            limits:
+              memory: 4Gi
+            requests:
+              cpu: "2"
+              memory: 4Gi
+        serviceAccountName: my-cluster-es-es
+        tolerations:
+        - effect: NoSchedule
+          key: dedicated
+          operator: Equal
+          value: elasticsearch
+    volumeClaimTemplates:
+    - metadata:
+        labels:
+          camunda.io/cluster: my-cluster-es
+          camunda.io/component: elasticsearch
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 128Gi
+        storageClassName: ssd
+      status: {}
+  remoteClusterServer:
+    service:
+      metadata: {}
+      spec: {}
+  transport:
+    service:
+      metadata: {}
+      spec: {}
+    tls:
+      certificate: {}
+      certificateAuthorities: {}
+  updateStrategy:
+    changeBudget: {}
+  version: 9.2.4
+status:
+  conditions: null
+  inProgressOperations:
+    downscale:
+      lastUpdatedTime: null
+    upgrade:
+      lastUpdatedTime: null
+    upscale:
+      lastUpdatedTime: null
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    camunda.io/cluster: my-cluster-es
+    camunda.io/component: elasticsearch
+    release: prometheus
+  name: my-cluster-es-es
+  namespace: my-cluster-ns
+spec:
+  endpoints:
+  - basicAuth:
+      password:
+        key: password
+        name: my-cluster-es-es-user
+      username:
+        key: username
+        name: my-cluster-es-es-user
+    port: https
+    scheme: https
+    tlsConfig:
+      ca:
+        secret:
+          key: ca.crt
+          name: my-cluster-es-es-http-certs-public
+      serverName: my-cluster-es-es-http.my-cluster-ns.svc
+  selector:
+    matchLabels:
+      common.k8s.elastic.co/type: elasticsearch
+      elasticsearch.k8s.elastic.co/cluster-name: my-cluster-es
