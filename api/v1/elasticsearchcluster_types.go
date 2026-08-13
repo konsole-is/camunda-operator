@@ -199,6 +199,16 @@ func (in *ElasticsearchCluster) GetStatusConditions() *[]metav1.Condition {
 // metric recording.
 func (in *ElasticsearchCluster) GetKind() string { return "ElasticsearchCluster" }
 
+// GetStatusConditions returns a pointer to the status conditions, for the
+// operator component framework to stage per-component conditions on.
+func (in *ElasticsearchCluster) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the ElasticsearchCluster kind for the operator component
+// framework's event and metric recording.
+func (in *ElasticsearchCluster) GetKind() string { return "ElasticsearchCluster" }
+
 // +kubebuilder:object:root=true
 
 // ElasticsearchClusterList contains a list of ElasticsearchCluster
