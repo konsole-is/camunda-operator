@@ -24,7 +24,7 @@ You create this CR directly, or a composition layer above may create it after pr
 6. If `spec.secondaryStorageConfig` is set, it creates a `SecondaryStorageConfig` with `type: rdbms` in `spec.targetNamespace`, referencing that `DatabaseConfig`, making the database consumable as an orchestration cluster's secondary storage; omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler). The bindings land in `targetNamespace` because consumers resolve them by name in their own namespace — set it to the consuming cluster's namespace.
 7. It reports status conditions and `status.observedGeneration`.
 
-All created objects are applied with Server-Side Apply (SSA) under the field manager `camunda-operator/database`.
+All created objects are applied with Server-Side Apply (SSA) under the per-component field manager `Database/bindings`.
 Deleting a `Database` removes the `DatabaseConfig`, the optional `SecondaryStorageConfig`, and the credential Secrets it created, but it never drops the logical database or the SQL users — data removal stays a deliberate, manual act.
 
 ```mermaid

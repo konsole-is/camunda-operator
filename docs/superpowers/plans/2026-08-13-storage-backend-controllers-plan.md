@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- SSA exclusively; field managers `camunda-operator/elasticsearchcluster` and `camunda-operator/database`; the Batch A validation controllers keep `camunda-operator`.
+- SSA exclusively; component-managed resources carry ocf's derived field managers `<OwnerKind>/<component>` (e.g. `ElasticsearchCluster/elasticsearch`, `Database/bindings` — ocf hardcodes this, no override hook); controller status writes and the Batch A validation controllers keep `camunda-operator`.
 - Docs bind the implementation: `docs/crds/<kind>.md` is the contract; if implementation reveals a doc gap, correct the doc in the same PR.
 - Every exported symbol gets GoDoc; `make all` clean; no `t.Fatal` (testify asserts/requires); Ginkgo+gomega only for reconciliation-level specs.
 - ocf guidelines apply to all components (baseline desired state, pure mutations, one component per logical condition, registration order = dependency order). Verify exact ocf/ECK signatures with `go doc` before use — plan snippets are shape, not gospel.

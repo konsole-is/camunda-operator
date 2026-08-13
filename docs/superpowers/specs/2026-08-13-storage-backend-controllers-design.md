@@ -153,7 +153,8 @@ Three components, in dependency order:
    (`type: elasticsearch`, the ECK service's in-cluster HTTPS endpoint, credentials Secret
    ref), owner-referenced, guarded on the credentials Secret existing.
 
-All applies are SSA under field manager `camunda-operator/elasticsearchcluster`. The
+All applies are SSA under ocf's derived per-component field managers
+(`ElasticsearchCluster/<component>`). The
 `storageSize` no-shrink rule is CEL on the CRD (`self >= oldSelf` on the quantity) for the
 inline field; shrink-via-preset-edit is caught by the controller comparing against the applied
 ECK CR and reported as a `Ready: False` condition rather than silently applied.
@@ -193,7 +194,7 @@ ever find them.
 permit a namespaced dependent to name a cluster-scoped owner, so the bindings and credential
 Secrets carry a normal owner reference to the `Database` and are garbage-collected on CR
 deletion — no finalizer. The logical database and SQL users are never touched by deletion.
-All applies are SSA under field manager `camunda-operator/database`.
+All applies are SSA under ocf's derived per-component field managers (`Database/bindings`).
 
 (An earlier draft of this spec claimed the opposite — that owner references cannot cross this
 boundary — and prescribed a finalizer. That premise was wrong: only the reverse direction, a
