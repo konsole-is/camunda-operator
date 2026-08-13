@@ -67,9 +67,9 @@ func (b *Builder) WithMutation(ms ...Mutation) *Builder {
 // The default behavior uses DefaultConvergingStatusHandler, which maps the ECK
 // CR's reported health: green is Healthy, yellow is still converging (Creating
 // on first apply, Updating otherwise), red is Failing, and a missing or
-// unknown health reports Creating. This handler is required by the generic
-// layer, so it is registered in NewBuilder and can only be replaced, never
-// cleared.
+// unknown health is Creating on the first apply and Failing afterwards. This
+// handler is required by the generic layer, so it is registered in NewBuilder
+// and can only be replaced, never cleared.
 func (b *Builder) WithCustomConvergeStatus(
 	handler func(concepts.ConvergingOperation, *elasticsearchv1.Elasticsearch) (concepts.AliveStatusWithReason, error),
 ) *Builder {

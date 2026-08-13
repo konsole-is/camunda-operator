@@ -137,6 +137,13 @@ func needsPatch(obj Object, cond metav1.Condition) bool {
 // obj must be the freshly fetched resource with its status unmodified: the
 // skip and preservation decisions compare against obj's in-memory status, so a
 // locally mutated status produces wrong skips or transition times.
+//
+// PatchReady is for the CR-level conditions only. The apply lists exactly one
+// condition under FieldOwner with ForceOwnership, so any other condition
+// previously applied under the same manager is removed by the merge.
+// Per-component conditions staged by ocf components must be persisted through
+// the component's FlushStatus (a Status().Update that merges by condition
+// type), never SSA-applied under FieldOwner.
 func PatchReady(ctx context.Context, c client.Client, obj Object, cond metav1.Condition) error {
 	if !needsPatch(obj, cond) {
 		return nil

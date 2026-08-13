@@ -72,14 +72,29 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 			concepts.AliveConvergingStatusFailing,
 		},
 		{
-			"unknown health is creating",
-			concepts.ConvergingOperationNone, esv1.ElasticsearchUnknownHealth,
+			"unknown health on first apply is creating",
+			concepts.ConvergingOperationCreated, esv1.ElasticsearchUnknownHealth,
 			concepts.AliveConvergingStatusCreating,
 		},
 		{
-			"unreported health is creating",
+			"unknown health on a formed cluster is failing",
+			concepts.ConvergingOperationNone, esv1.ElasticsearchUnknownHealth,
+			concepts.AliveConvergingStatusFailing,
+		},
+		{
+			"unknown health on update is failing",
+			concepts.ConvergingOperationUpdated, esv1.ElasticsearchUnknownHealth,
+			concepts.AliveConvergingStatusFailing,
+		},
+		{
+			"unreported health on first apply is creating",
 			concepts.ConvergingOperationCreated, "",
 			concepts.AliveConvergingStatusCreating,
+		},
+		{
+			"unreported health past first apply is failing",
+			concepts.ConvergingOperationNone, "",
+			concepts.AliveConvergingStatusFailing,
 		},
 	}
 	for _, tt := range tests {
@@ -142,18 +157,24 @@ func TestDefaultSuspensionStatusHandler(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		availableNodes int32
-		want           concepts.SuspensionStatus
+		name               string
+		generation         int64
+		observedGeneration int64
+		availableNodes     int32
+		want               concepts.SuspensionStatus
 	}{
-		{"no available nodes is suspended", 0, concepts.SuspensionStatusSuspended},
-		{"remaining nodes are suspending", 2, concepts.SuspensionStatusSuspending},
+		{"unpopulated status is not yet suspended", 1, 0, 0, concepts.SuspensionStatusPending},
+		{"stale status is not yet suspended", 3, 2, 0, concepts.SuspensionStatusPending},
+		{"no available nodes at the current generation is suspended", 3, 3, 0, concepts.SuspensionStatusSuspended},
+		{"remaining nodes are suspending", 3, 3, 2, concepts.SuspensionStatusSuspending},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			es := testObject()
+			es.Generation = tt.generation
+			es.Status.ObservedGeneration = tt.observedGeneration
 			es.Status.AvailableNodes = tt.availableNodes
 
 			got, err := DefaultSuspensionStatusHandler(es)

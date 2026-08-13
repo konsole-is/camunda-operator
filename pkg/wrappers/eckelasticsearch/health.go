@@ -31,9 +31,11 @@ import (
 
 // DefaultConvergingStatusHandler maps ECK's reported cluster health to the
 // component convergence state: green is Healthy, yellow is still converging
-// (Creating on first apply, Updating otherwise), red is Failing, and a
-// missing or unknown health means ECK has not formed the cluster yet, so it
-// reports Creating.
+// (Creating on first apply, Updating otherwise), and red is Failing. A
+// missing or unknown health is Creating only on the first apply, when ECK has
+// simply not formed the cluster yet; on any later reconcile ECK also reports
+// unknown when it loses contact with a formed cluster, so it maps to Failing,
+// mirroring the grace handler's unknown-to-Down.
 func DefaultConvergingStatusHandler(
 	op concepts.ConvergingOperation, es *esv1.Elasticsearch,
 ) (concepts.AliveStatusWithReason, error) {
@@ -58,9 +60,15 @@ func DefaultConvergingStatusHandler(
 			Reason: "Elasticsearch reports red health",
 		}, nil
 	default:
+		if op == concepts.ConvergingOperationCreated {
+			return concepts.AliveStatusWithReason{
+				Status: concepts.AliveConvergingStatusCreating,
+				Reason: "Elasticsearch has not reported health yet",
+			}, nil
+		}
 		return concepts.AliveStatusWithReason{
-			Status: concepts.AliveConvergingStatusCreating,
-			Reason: "Elasticsearch has not reported health yet",
+			Status: concepts.AliveConvergingStatusFailing,
+			Reason: fmt.Sprintf("Elasticsearch reports %q health past its first apply", es.Status.Health),
 		}, nil
 	}
 }
@@ -102,14 +110,25 @@ func DefaultSuspendMutationHandler(m *Mutator) error {
 }
 
 // DefaultSuspensionStatusHandler reports Suspended once ECK reports no
-// available nodes, and Suspending while nodes are still running.
+// available nodes at the current generation, and Suspending while nodes are
+// still running. A status ECK has not yet caught up to the spec — unpopulated
+// or behind the CR's generation — also reads availableNodes == 0, so it
+// reports pending instead of a false Suspended.
 func DefaultSuspensionStatusHandler(es *esv1.Elasticsearch) (concepts.SuspensionStatusWithReason, error) {
+	if es.Status.ObservedGeneration < es.Generation {
+		return concepts.SuspensionStatusWithReason{
+			Status: concepts.SuspensionStatusPending,
+			Reason: "Elasticsearch status does not yet reflect the current generation",
+		}, nil
+	}
+
 	if es.Status.AvailableNodes == 0 {
 		return concepts.SuspensionStatusWithReason{
 			Status: concepts.SuspensionStatusSuspended,
 			Reason: "Elasticsearch reports no available nodes",
 		}, nil
 	}
+
 	return concepts.SuspensionStatusWithReason{
 		Status: concepts.SuspensionStatusSuspending,
 		Reason: fmt.Sprintf("Elasticsearch still reports %d available nodes", es.Status.AvailableNodes),

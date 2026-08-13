@@ -52,7 +52,15 @@ func ECKCRDPath() (string, error) {
 		return "", fmt.Errorf("resolving cloud-on-k8s module directory: %w", err)
 	}
 
-	return filepath.Join(strings.TrimSpace(string(out)), "config", "crds", "v1", "all-crds.yaml"), nil
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return "", fmt.Errorf(
+			"go list resolved no directory for github.com/elastic/cloud-on-k8s/v3; " +
+				"run go mod download to populate the module cache",
+		)
+	}
+
+	return filepath.Join(dir, "config", "crds", "v1", "all-crds.yaml"), nil
 }
 
 // Run executes the provided command within this context
