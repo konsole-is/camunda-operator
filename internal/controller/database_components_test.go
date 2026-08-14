@@ -109,12 +109,25 @@ func TestResolveBindings(t *testing.T) {
 }
 
 func TestBackupUserName(t *testing.T) {
-	assert.Equal(t, "camunda_backup", backupUserName("camunda"))
+	t.Run("short names keep the plain suffix form", func(t *testing.T) {
+		assert.Equal(t, "camunda_backup", backupUserName("camunda"))
+	})
 
-	long := "d" + strings.Repeat("b", 62)
-	truncated := backupUserName(long)
-	assert.LessOrEqual(t, len(truncated), 63, "backup role must stay a valid identifier")
-	assert.True(t, strings.HasSuffix(truncated, "_backup"))
+	t.Run("long names sharing a prefix derive distinct roles", func(t *testing.T) {
+		prefix := strings.Repeat("a", 56)
+		one := backupUserName(prefix + "1xyz")
+		two := backupUserName(prefix + "2xyz")
+
+		assert.NotEqual(t, one, two,
+			"database names differing past the truncation point must not share a backup role")
+		assert.LessOrEqual(t, len(one), 63, "backup role must stay a valid identifier")
+		assert.LessOrEqual(t, len(two), 63)
+		assert.True(t, strings.HasSuffix(one, "_backup"))
+		assert.True(t, strings.HasSuffix(two, "_backup"))
+		assert.Equal(t, one, backupUserName(prefix+"1xyz"),
+			"the disambiguated role must be deterministic across reconciles")
+		assert.Regexp(t, "^[a-z_][a-z0-9_]{0,62}$", one)
+	})
 }
 
 func TestDatabaseBindingsGolden(t *testing.T) {

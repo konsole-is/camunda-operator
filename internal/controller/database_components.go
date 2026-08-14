@@ -17,6 +17,9 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
@@ -53,6 +56,11 @@ const (
 
 	// maxSQLIdentifierLength is PostgreSQL's identifier length limit.
 	maxSQLIdentifierLength = 63
+
+	// backupUserHashLength is how many hex characters of the database name's
+	// SHA-256 disambiguate a backup role when the plain suffixed form would
+	// exceed maxSQLIdentifierLength.
+	backupUserHashLength = 8
 )
 
 // resolvedBindings carries the fully defaulted inputs the bindings component
@@ -124,18 +132,24 @@ func resolveBindings(db *v1.Database) resolvedBindings {
 	return rb
 }
 
-// backupUserName derives the backup SQL role from the database name,
-// truncating the base so the result stays within PostgreSQL's 63-character
-// identifier limit. Database names sharing their first 56 characters on one
-// server would collide on the same backup role; the collision rule makes that
-// combination unreachable for all but pathological name pairs.
+// backupUserName derives the backup SQL role from the database name. Short
+// names keep the plain "<databaseName>_backup" form. A name whose suffixed
+// form would exceed PostgreSQL's 63-character identifier limit is
+// disambiguated as "<first 47 characters>_<first 8 hex characters of the
+// name's SHA-256>_backup" — deterministic across reconciles, and distinct
+// database names sharing a long prefix can never share a backup role, which
+// plain truncation would allow, silently extending one database's backup
+// grants to another's role.
 func backupUserName(databaseName string) string {
-	base := databaseName
-	if max := maxSQLIdentifierLength - len(backupUserSuffix); len(base) > max {
-		base = base[:max]
+	if len(databaseName)+len(backupUserSuffix) <= maxSQLIdentifierLength {
+		return databaseName + backupUserSuffix
 	}
 
-	return base + backupUserSuffix
+	digest := sha256.Sum256([]byte(databaseName))
+	hash := hex.EncodeToString(digest[:])[:backupUserHashLength]
+	prefix := databaseName[:maxSQLIdentifierLength-len(backupUserSuffix)-backupUserHashLength-1]
+
+	return prefix + "_" + hash + backupUserSuffix
 }
 
 // databaseBindingsComponent assembles the single bindings component: the

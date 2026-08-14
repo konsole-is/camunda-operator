@@ -21,6 +21,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -342,6 +343,44 @@ var _ = Describe("Database controller", func() {
 
 		expectDatabaseReady(db, metav1.ConditionFalse, conditions.ReasonConnectionFailed,
 			fmt.Sprintf("Connecting to DatabaseServerConfig %q", server.Name))
+	})
+
+	It("derives distinct backup roles for long database names sharing a prefix", func() {
+		namespace := newDatabaseNamespace()
+		server := createDatabaseServer(namespace)
+
+		// Two 60-character names identical through the truncation point, so
+		// plain truncation would collapse both onto one backup role.
+		prefix := "db_" + utilrand.String(5) + strings.Repeat("x", 48)
+		first := databaseFor(server, namespace)
+		first.Spec.DatabaseName = prefix + "aaaa"
+		second := databaseFor(server, namespace)
+		second.Spec.DatabaseName = prefix + "bbbb"
+		createDatabase(first)
+		createDatabase(second)
+
+		expectDatabaseReady(first, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+		expectDatabaseReady(second, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+
+		By("creating one backup role per database")
+		firstRole := backupUserName(first.Spec.DatabaseName)
+		secondRole := backupUserName(second.Spec.DatabaseName)
+		Expect(firstRole).NotTo(Equal(secondRole))
+		Expect(sqlRoleExists(firstRole)).To(BeTrue())
+		Expect(sqlRoleExists(secondRole)).To(BeTrue())
+
+		By("granting each backup role access to its own database only")
+		password := publishedPassword(types.NamespacedName{
+			Namespace: namespace, Name: first.Name + "-backup-credentials",
+		})
+		own, err := pgConnect(ctx, firstRole, password, first.Spec.DatabaseName)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = own.Close(context.Background()) }()
+		Expect(own.Ping(ctx)).To(Succeed())
+
+		_, err = pgConnect(ctx, firstRole, password, second.Spec.DatabaseName)
+		Expect(err).To(HaveOccurred(),
+			"one database's backup role must not reach the sibling database")
 	})
 
 	It("rejects a later Database claiming an already claimed logical database", func() {
