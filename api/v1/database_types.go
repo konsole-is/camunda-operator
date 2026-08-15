@@ -95,10 +95,9 @@ type DatabaseStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. The Ready condition carries
-	// reasons Healthy, Progressing, InvalidReference, MissingSecret, or
-	// ConnectionFailed, and the operator's per-component conditions
-	// (BindingsReady) also appear here.
+	// Conditions represent the current state. Ready carries a pre-check
+	// reason (InvalidReference, MissingSecret, ConnectionFailed) or mirrors
+	// the BindingsReady component condition, which also appears here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

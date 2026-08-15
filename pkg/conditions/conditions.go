@@ -14,15 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package conditions derives the aggregate Ready condition that every CRD
-// reports. The condition vocabulary lives in api/v1, and every controller
-// persists status through the ocf FlushStatus. This package only holds the
-// derivation rule and its inputs.
+// Package conditions builds the aggregate Ready condition of a CRD that runs
+// ocf components. The condition vocabulary lives in api/v1, and every
+// controller persists status through the ocf FlushStatus.
 package conditions
 
 import (
 	"fmt"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -44,41 +44,6 @@ type PreCheckFailure struct {
 // Error returns the condition-ready message.
 func (f *PreCheckFailure) Error() string { return f.Message }
 
-// DeriveReady derives the CR-level Ready reason and message from the pre-check
-// result of the controller, the ocf component conditions, and the suspension
-// flag. A pre-check failure wins outright. Otherwise suspension reports
-// Suspended. Otherwise the first component condition whose status is not True
-// reports Progressing, with a message that names that component. With every
-// component True, the result is Healthy. An empty component list is
-// Progressing too. A controller always has at least one component, so an
-// empty list means that none has reported yet.
-func DeriveReady(pre *PreCheckFailure, componentConds []metav1.Condition, suspended bool) (reason, message string) {
-	if pre != nil {
-		return pre.Reason, pre.Message
-	}
-
-	if suspended {
-		return v1.ReasonSuspended, "Suspended by spec.suspend"
-	}
-
-	if len(componentConds) == 0 {
-		return v1.ReasonProgressing, "Waiting for components to report"
-	}
-
-	for _, cond := range componentConds {
-		if cond.Status == metav1.ConditionTrue {
-			continue
-		}
-		detail := cond.Message
-		if detail == "" {
-			detail = cond.Reason
-		}
-		return v1.ReasonProgressing, fmt.Sprintf("Waiting for %s: %s", cond.Type, detail)
-	}
-
-	return v1.ReasonHealthy, "All components ready"
-}
-
 // Ready builds a Ready condition observed at the given generation. It sets no
 // LastTransitionTime, because meta.SetStatusCondition supplies it.
 func Ready(status metav1.ConditionStatus, reason, message string, observedGeneration int64) metav1.Condition {
@@ -86,4 +51,34 @@ func Ready(status metav1.ConditionStatus, reason, message string, observedGenera
 		Type: v1.ConditionReady, Status: status, Reason: reason,
 		Message: message, ObservedGeneration: observedGeneration,
 	}
+}
+
+// Aggregate builds the Ready condition from the ocf component conditions of
+// the owner. It mirrors the representative component: the one whose reason
+// has the highest component.Status priority, with the first one winning a
+// tie. Ready takes the status and reason of that component, and its message
+// names the component. With no component conditions the result is Unknown.
+func Aggregate(componentConds []metav1.Condition, observedGeneration int64) metav1.Condition {
+	if len(componentConds) == 0 {
+		return Ready(
+			metav1.ConditionFalse,
+			string(component.Unknown),
+			"No component has reported yet",
+			observedGeneration,
+		)
+	}
+
+	representative := componentConds[0]
+	for _, cond := range componentConds[1:] {
+		if component.Status(cond.Reason).Priority() > component.Status(representative.Reason).Priority() {
+			representative = cond
+		}
+	}
+
+	return Ready(
+		representative.Status,
+		representative.Reason,
+		fmt.Sprintf("%s: %s", representative.Type, representative.Message),
+		observedGeneration,
+	)
 }

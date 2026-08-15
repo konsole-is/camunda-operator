@@ -212,24 +212,30 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 }
 
 // stageReady sets the Ready condition and observedGeneration on the in-memory
-// database. It derives them from the pre-check result and from the conditions
-// that the bindings component staged. FlushStatus persists them.
+// database. A pre-check failure becomes Ready directly. Otherwise Ready
+// mirrors the condition of the bindings component. FlushStatus persists them.
 func stageReady(database *v1.Database, pre *conditions.PreCheckFailure) {
-	componentConds := make([]metav1.Condition, 0, len(database.Status.Conditions))
+	ready := conditions.Ready(metav1.ConditionFalse, "", "", database.Generation)
+	if pre != nil {
+		ready.Reason, ready.Message = pre.Reason, pre.Message
+	} else {
+		ready = conditions.Aggregate(componentConditions(database), database.Generation)
+	}
+
+	meta.SetStatusCondition(&database.Status.Conditions, ready)
+	database.Status.ObservedGeneration = database.Generation
+}
+
+// componentConditions returns the ocf component conditions on database, that
+// is, every condition except Ready.
+func componentConditions(database *v1.Database) []metav1.Condition {
+	conds := make([]metav1.Condition, 0, len(database.Status.Conditions))
 	for _, cond := range database.Status.Conditions {
 		if cond.Type != v1.ConditionReady {
-			componentConds = append(componentConds, cond)
+			conds = append(conds, cond)
 		}
 	}
-
-	reason, message := conditions.DeriveReady(pre, componentConds, false)
-	status := metav1.ConditionFalse
-	if reason == v1.ReasonHealthy {
-		status = metav1.ConditionTrue
-	}
-
-	meta.SetStatusCondition(&database.Status.Conditions, conditions.Ready(status, reason, message, database.Generation))
-	database.Status.ObservedGeneration = database.Generation
+	return conds
 }
 
 // preCheck runs the documented pre-checks in order: server reference, admin

@@ -79,13 +79,11 @@ spec:
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
-| `Ready` | `Healthy` | Database, users, Secrets, and contract CRs are all in place. |
-| `Ready` | `Progressing` | Bootstrap SQL or contract creation is still in progress. |
 | `Ready` | `InvalidReference` | `spec.serverRef` does not resolve to an existing `DatabaseServerConfig`. Or another `Database`, named in the message, already claims the same `serverRef` and `databaseName` (first creation wins). |
 | `Ready` | `MissingSecret` | The server's admin credentials Secret is missing or lacks the expected keys. |
 | `Ready` | `ConnectionFailed` | The server is unreachable or the admin credentials are rejected. |
-
-The per-component condition `BindingsReady` also appears on the resource. It carries the operational detail of the component framework for the published bindings.
+| `Ready` | any component status | The pre-checks passed. `Ready` mirrors the `BindingsReady` component condition: same status, same reason, and the message names the component. The reason is a component framework status, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. |
+| `BindingsReady` | component status | The operational detail of the component framework for the published bindings. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
