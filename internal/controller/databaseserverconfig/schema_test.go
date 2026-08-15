@@ -14,37 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package databaseserverconfig
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
-
-// validDatabaseServerConfig returns the doc's minimal example with a unique name.
-func validDatabaseServerConfig() *v1.DatabaseServerConfig {
-	return &v1.DatabaseServerConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8)},
-		Spec: v1.DatabaseServerConfigSpec{
-			Engine: v1.DatabaseEnginePostgres,
-			Host:   "postgres.camunda-system.svc.cluster.local",
-			Port:   5432,
-			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "admin-creds", Namespace: "camunda-system",
-				UsernameKey: "username", PasswordKey: "password",
-			},
-		},
-	}
-}
 
 var _ = Describe("DatabaseServerConfig schema", func() {
 	DescribeTable("admission",
 		func(mutate func(*v1.DatabaseServerConfig), wantErr string) {
-			obj := validDatabaseServerConfig()
+			obj := fixtures.DatabaseServerConfig()
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {

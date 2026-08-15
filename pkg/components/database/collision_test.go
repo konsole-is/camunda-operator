@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package database
 
 import (
 	"testing"
@@ -28,7 +28,7 @@ import (
 )
 
 // collidingDatabase returns a Database fixture with the given name and
-// creation time; all fixtures share serverRef and databaseName.
+// creation time. All fixtures share serverRef and databaseName.
 func collidingDatabase(name string, created time.Time) v1.Database {
 	return v1.Database{
 		ObjectMeta: metav1.ObjectMeta{
@@ -45,7 +45,7 @@ func collidingDatabase(name string, created time.Time) v1.Database {
 
 func TestCollisionKey(t *testing.T) {
 	db := collidingDatabase("a", time.Now())
-	assert.Equal(t, "shared-server/camunda", collisionKey(&db))
+	assert.Equal(t, "shared-server/camunda", CollisionKey(&db))
 }
 
 func TestCollisionWinner(t *testing.T) {
@@ -90,11 +90,11 @@ func TestCollisionWinner(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			winner := collisionWinner(tt.items)
+			winner := CollisionWinner(tt.items)
 			require.NotNil(t, winner)
 			assert.Equal(t, tt.want, winner.Name)
 		})
 	}
 
-	assert.Nil(t, collisionWinner(nil), "no claimants means no winner")
+	assert.Nil(t, CollisionWinner(nil), "no claimants means no winner")
 }

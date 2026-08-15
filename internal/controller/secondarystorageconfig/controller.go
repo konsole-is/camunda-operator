@@ -14,7 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+// Package secondarystorageconfig validates SecondaryStorageConfig contracts
+// and maintains their Ready condition. It never provisions anything.
+package secondarystorageconfig
 
 import (
 	"context"
@@ -44,8 +46,8 @@ const (
 // and maintains their Ready condition.
 type SecondaryStorageConfigReconciler struct {
 	client.Client
-	// APIReader reads directly from the API server, bypassing the cache; used for
-	// Secret data because Secrets are watched metadata-only.
+	// APIReader reads directly from the API server and bypasses the cache.
+	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 }
@@ -55,8 +57,8 @@ type SecondaryStorageConfigReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
-// Reconcile validates the contract's references and maintains its Ready
-// condition; it never creates or mutates other resources.
+// Reconcile validates the references of the contract and maintains its Ready
+// condition. It never creates or mutates other resources.
 func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.SecondaryStorageConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
@@ -71,13 +73,16 @@ func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ct
 	return ctrl.Result{}, conditions.PatchReady(ctx, r.Client, &cfg, cond)
 }
 
-// validate branches on the contract's storage type: elasticsearch contracts
-// check their credentials Secret and, when set, their CA Secret; rdbms
-// contracts check the referenced DatabaseConfig exists in the contract's own
-// namespace. The CRD schema enforces that exactly the matching block is set;
-// an object that slipped past admission with a missing block or unknown type
-// yields an error rather than a condition.
-func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1.SecondaryStorageConfig) (metav1.Condition, error) {
+// validate branches on the storage type of the contract. An elasticsearch
+// contract checks its credentials Secret and, when set, its CA Secret. An
+// rdbms contract checks that the referenced DatabaseConfig exists in the
+// namespace of the contract. The CRD schema makes sure that exactly the
+// matching block is set. An object that passed admission with a missing block
+// or an unknown type yields an error, not a condition.
+func (r *SecondaryStorageConfigReconciler) validate(
+	ctx context.Context,
+	cfg *v1.SecondaryStorageConfig,
+) (metav1.Condition, error) {
 	switch {
 	case cfg.Spec.Type == v1.SecondaryStorageTypeElasticsearch && cfg.Spec.Elasticsearch != nil:
 		ref := cfg.Spec.Elasticsearch.CredentialsSecretRef
@@ -107,7 +112,12 @@ func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1
 		if err := r.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: name}, &db); err != nil {
 			if apierrors.IsNotFound(err) {
 				msg := fmt.Sprintf("DatabaseConfig %q not found", name)
-				return conditions.Ready(metav1.ConditionFalse, conditions.ReasonInvalidReference, msg, cfg.Generation), nil
+				return conditions.Ready(
+					metav1.ConditionFalse,
+					conditions.ReasonInvalidReference,
+					msg,
+					cfg.Generation,
+				), nil
 			}
 			return metav1.Condition{}, err
 		}
@@ -117,9 +127,9 @@ func (r *SecondaryStorageConfigReconciler) validate(ctx context.Context, cfg *v1
 	return conditions.Ready(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
-// SetupWithManager registers the controller, indexes of contracts by
-// referenced Secret and same-namespace DatabaseConfig, a metadata-only Secret
-// watch, and a typed DatabaseConfig watch.
+// SetupWithManager registers the controller, an index of contracts by
+// referenced Secret, an index by same-namespace DatabaseConfig, a
+// metadata-only Secret watch, and a typed DatabaseConfig watch.
 func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.SecondaryStorageConfig{},
 		secondaryStorageConfigSecretRefsField, func(o client.Object) []string {

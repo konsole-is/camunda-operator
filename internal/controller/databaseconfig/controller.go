@@ -14,7 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+// Package databaseconfig validates DatabaseConfig contracts and
+// maintains their Ready condition. It never provisions anything.
+package databaseconfig
 
 import (
 	"context"
@@ -44,8 +46,8 @@ const (
 // their Ready condition.
 type DatabaseConfigReconciler struct {
 	client.Client
-	// APIReader reads directly from the API server, bypassing the cache; used for
-	// Secret data because Secrets are watched metadata-only.
+	// APIReader reads directly from the API server and bypasses the cache.
+	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 }
@@ -55,8 +57,8 @@ type DatabaseConfigReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
-// Reconcile validates the contract's references and maintains its Ready
-// condition; it never creates or mutates other resources.
+// Reconcile validates the references of the contract and maintains its Ready
+// condition. It never creates or mutates other resources.
 func (r *DatabaseConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.DatabaseConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
@@ -71,9 +73,9 @@ func (r *DatabaseConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, conditions.PatchReady(ctx, r.Client, &cfg, cond)
 }
 
-// validate runs the contract's documented checks in order — server reference
-// first, then each credentials Secret — and returns the first failure as the
-// Ready condition.
+// validate runs the documented checks of the contract in order: the server
+// reference first, then each credentials Secret. It returns the first failure
+// as the Ready condition.
 func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.DatabaseConfig) (metav1.Condition, error) {
 	var server v1.DatabaseServerConfig
 	if err := r.Get(ctx, types.NamespacedName{Name: cfg.Spec.ServerRef}, &server); err != nil {
@@ -104,16 +106,24 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 	return conditions.Ready(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
-// SetupWithManager registers the controller, indexes of CRs by referenced
-// Secret and DatabaseServerConfig, a metadata-only Secret watch, and a typed
-// DatabaseServerConfig watch.
+// SetupWithManager registers the controller, an index of CRs by referenced
+// Secret, an index by referenced DatabaseServerConfig, a metadata-only Secret
+// watch, and a typed DatabaseServerConfig watch.
 func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.DatabaseConfig{},
 		databaseConfigSecretRefsField, func(o client.Object) []string {
 			spec := o.(*v1.DatabaseConfig).Spec
-			keys := []string{refindex.NamespacedKey(spec.CredentialsSecretRef.Namespace, spec.CredentialsSecretRef.Name)}
+			keys := []string{
+				refindex.NamespacedKey(spec.CredentialsSecretRef.Namespace, spec.CredentialsSecretRef.Name),
+			}
 			if spec.BackupCredentialsSecretRef != nil {
-				keys = append(keys, refindex.NamespacedKey(spec.BackupCredentialsSecretRef.Namespace, spec.BackupCredentialsSecretRef.Name))
+				keys = append(
+					keys,
+					refindex.NamespacedKey(
+						spec.BackupCredentialsSecretRef.Namespace,
+						spec.BackupCredentialsSecretRef.Name,
+					),
+				)
 			}
 			return keys
 		}); err != nil {

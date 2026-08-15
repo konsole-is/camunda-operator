@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package objectstorageconfig
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -30,9 +30,8 @@ import (
 var _ = Describe("ObjectStorageConfig controller", func() {
 	var storageConfig *v1.ObjectStorageConfig
 
-	// readyCondition fetches the CR, asserts status.observedGeneration has
-	// caught up to metadata.generation (failing g until the controller stamps
-	// status), and returns the Ready condition.
+	// readyCondition fetches the CR and returns its Ready condition. It fails
+	// g until status.observedGeneration matches metadata.generation.
 	readyCondition := func(g Gomega) *metav1.Condition {
 		fetched := &v1.ObjectStorageConfig{}
 		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, fetched)).To(Succeed())

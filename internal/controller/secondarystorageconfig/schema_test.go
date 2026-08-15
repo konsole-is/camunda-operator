@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package secondarystorageconfig
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -24,16 +24,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// notAURL is a value the schema's URL validation rules must reject.
-const notAURL = "not a url"
-
-// schemaTestNamespace hosts the throwaway objects the admission specs create.
-const schemaTestNamespace = "default"
-
-// validSecondaryStorageConfigES returns the doc's minimal Elasticsearch
-// example with a unique name; the caller chooses the namespace.
+// validSecondaryStorageConfigES returns the minimal Elasticsearch example of
+// the CRD doc with a unique name. The caller chooses the namespace.
 func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
 	return &v1.SecondaryStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
@@ -50,8 +45,8 @@ func validSecondaryStorageConfigES() *v1.SecondaryStorageConfig {
 	}
 }
 
-// validSecondaryStorageConfigRDBMS returns the doc's RDBMS example with a
-// unique name; the caller chooses the namespace.
+// validSecondaryStorageConfigRDBMS returns the RDBMS example of the CRD doc
+// with a unique name. The caller chooses the namespace.
 func validSecondaryStorageConfigRDBMS() *v1.SecondaryStorageConfig {
 	return &v1.SecondaryStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "ssc-" + utilrand.String(8)},
@@ -66,7 +61,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 	DescribeTable("admission",
 		func(build func() *v1.SecondaryStorageConfig, mutate func(*v1.SecondaryStorageConfig), wantErr string) {
 			obj := build()
-			obj.Namespace = schemaTestNamespace
+			obj.Namespace = fixtures.SchemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -98,7 +93,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 			}, "spec.type"),
 		Entry("rejects non-URL endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
-				o.Spec.Elasticsearch.Endpoint = notAURL
+				o.Spec.Elasticsearch.Endpoint = fixtures.NotAURL
 			}, "endpoint"),
 		Entry("rejects ftp endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
@@ -125,7 +120,7 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 
 	It("round-trips caSecretRef", func() {
 		obj := validSecondaryStorageConfigES()
-		obj.Namespace = schemaTestNamespace
+		obj.Namespace = fixtures.SchemaTestNamespace
 		obj.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
 			Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
 		}

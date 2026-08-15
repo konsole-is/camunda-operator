@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package objectstorageconfig
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -25,8 +25,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// validObjectStorageConfig returns the doc's minimal aws/S3 example with a
-// unique name.
+// validObjectStorageConfig returns the minimal aws/S3 example of the CRD doc
+// with a unique name.
 func validObjectStorageConfig() *v1.ObjectStorageConfig {
 	return &v1.ObjectStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},

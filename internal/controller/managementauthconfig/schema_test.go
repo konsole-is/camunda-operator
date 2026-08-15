@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package managementauthconfig
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -23,9 +23,11 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// validManagementAuthConfig returns the doc's minimal example with a unique name.
+// validManagementAuthConfig returns the minimal example of the CRD doc with a
+// unique name.
 func validManagementAuthConfig() *v1.ManagementAuthConfig {
 	return &v1.ManagementAuthConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "mac-" + utilrand.String(8)},
@@ -62,13 +64,13 @@ var _ = Describe("ManagementAuthConfig schema", func() {
 			o.Spec.IssuerBackendURL = "http://identity.camunda-management.svc.cluster.local/auth/realms/camunda-platform"
 		}, ""),
 		Entry("rejects non-URL baseUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.BaseURL = notAURL
+			o.Spec.BaseURL = fixtures.NotAURL
 		}, "baseUrl"),
 		Entry("rejects non-URL issuerUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.IssuerURL = notAURL
+			o.Spec.IssuerURL = fixtures.NotAURL
 		}, "issuerUrl"),
 		Entry("rejects non-URL issuerBackendUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.IssuerBackendURL = notAURL
+			o.Spec.IssuerBackendURL = fixtures.NotAURL
 		}, "issuerBackendUrl"),
 		Entry("rejects ftp authUrl", func(o *v1.ManagementAuthConfig) {
 			o.Spec.AuthURL = "ftp://identity.camunda.example.com/auth"
@@ -77,7 +79,7 @@ var _ = Describe("ManagementAuthConfig schema", func() {
 			o.Spec.TokenURL = "ftp://identity.camunda.example.com/token"
 		}, "tokenUrl"),
 		Entry("rejects non-URL jwksUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.JwksURL = notAURL
+			o.Spec.JwksURL = fixtures.NotAURL
 		}, "jwksUrl"),
 		Entry("rejects empty clientId", func(o *v1.ManagementAuthConfig) {
 			o.Spec.ClientID = ""

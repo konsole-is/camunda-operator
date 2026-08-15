@@ -14,38 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package databaseconfig
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// validDatabaseConfig returns the doc's minimal example with a unique name;
-// the caller chooses the namespace.
-func validDatabaseConfig() *v1.DatabaseConfig {
-	return &v1.DatabaseConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "dbc-" + utilrand.String(8)},
-		Spec: v1.DatabaseConfigSpec{
-			ServerRef:    "my-db-server",
-			DatabaseName: "camunda",
-			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "my-camunda-db-credentials", Namespace: "my-cluster-ns",
-				UsernameKey: "username", PasswordKey: "password",
-			},
-		},
-	}
-}
-
 var _ = Describe("DatabaseConfig schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(mutate func(*v1.DatabaseConfig), wantErr string) {
-			obj := validDatabaseConfig()
-			obj.Namespace = schemaTestNamespace
+			obj := fixtures.DatabaseConfig()
+			obj.Namespace = fixtures.SchemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -63,7 +47,11 @@ var _ = Describe("DatabaseConfig schema", func() {
 			}
 		}, ""),
 		Entry("rejects empty serverRef", func(o *v1.DatabaseConfig) { o.Spec.ServerRef = "" }, "spec.serverRef"),
-		Entry("rejects empty databaseName", func(o *v1.DatabaseConfig) { o.Spec.DatabaseName = "" }, "spec.databaseName"),
+		Entry(
+			"rejects empty databaseName",
+			func(o *v1.DatabaseConfig) { o.Spec.DatabaseName = "" },
+			"spec.databaseName",
+		),
 		Entry("rejects missing credentials namespace", func(o *v1.DatabaseConfig) {
 			o.Spec.CredentialsSecretRef.Namespace = ""
 		}, "namespace"),

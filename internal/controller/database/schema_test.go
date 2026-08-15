@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package database
 
 import (
 	"strings"
@@ -25,12 +25,10 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// notAResourceName is a value the schema's resource-name rules must reject.
-const notAResourceName = "Not_A_Name"
-
-// validDatabase returns the doc's minimal example with a unique name.
+// validDatabase returns the minimal example of the CRD doc with a unique name.
 func validDatabase() *v1.Database {
 	return &v1.Database{
 		ObjectMeta: metav1.ObjectMeta{Name: "db-" + utilrand.String(8)},
@@ -42,7 +40,8 @@ func validDatabase() *v1.Database {
 	}
 }
 
-// realisticDatabase returns the doc's realistic example with a unique name.
+// realisticDatabase returns the realistic example of the CRD doc with a unique
+// name.
 func realisticDatabase() *v1.Database {
 	db := validDatabase()
 	db.Spec.ApplicationCredentials = &v1.CredentialsSpec{
@@ -107,11 +106,11 @@ var _ = Describe("Database schema", func() {
 			}, "targetNamespace"),
 		Entry("rejects a non-DNS-1123 databaseConfig name",
 			validDatabase, func(o *v1.Database) {
-				o.Spec.DatabaseConfig = notAResourceName
+				o.Spec.DatabaseConfig = fixtures.NotAResourceName
 			}, "databaseConfig"),
 		Entry("rejects a non-DNS-1123 secondaryStorageConfig name",
 			validDatabase, func(o *v1.Database) {
-				o.Spec.SecondaryStorageConfig = notAResourceName
+				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
 			}, "secondaryStorageConfig"),
 	)
 })

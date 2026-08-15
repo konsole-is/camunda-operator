@@ -94,9 +94,9 @@ func TestDeriveReady(t *testing.T) {
 			wantMessage: "All components ready",
 		},
 		{
-			name:        "no components is healthy",
-			wantReason:  ReasonHealthy,
-			wantMessage: "All components ready",
+			name:        "no components reported yet is progressing",
+			wantReason:  ReasonProgressing,
+			wantMessage: "Waiting for components to report",
 		},
 	}
 	for _, tt := range tests {

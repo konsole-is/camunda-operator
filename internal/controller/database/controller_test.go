@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package database
 
 import (
 	"context"
@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -48,9 +50,9 @@ func newDatabaseNamespace() string {
 	return ns.Name
 }
 
-// createDatabaseServer creates a DatabaseServerConfig pointing at the shared
-// PostgreSQL container, with its admin credentials Secret in namespace, and
-// registers deletion of both. It returns the server's name.
+// createDatabaseServer creates a DatabaseServerConfig that points at the
+// shared PostgreSQL container, with its admin credentials Secret in namespace.
+// It registers deletion of both and returns the name of the server.
 func createDatabaseServer(namespace string) string {
 	GinkgoHelper()
 
@@ -67,7 +69,7 @@ func createDatabaseServer(namespace string) string {
 	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-	server := validDatabaseServerConfig()
+	server := fixtures.DatabaseServerConfig()
 	server.Spec.Host = pg.Host
 	server.Spec.Port = pg.Port
 	server.Spec.AdminCredentialsSecretRef = v1.CredentialsSecretRef{
@@ -80,8 +82,8 @@ func createDatabaseServer(namespace string) string {
 	return server.Name
 }
 
-// databaseFor returns a Database bound to server, publishing into namespace,
-// claiming a unique logical database name.
+// databaseFor returns a Database that is bound to server, publishes into
+// namespace, and claims a unique logical database name.
 func databaseFor(server, namespace string) *v1.Database {
 	db := validDatabase()
 	db.Spec.ServerRef = server
@@ -97,9 +99,8 @@ func createDatabase(db *v1.Database) {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, db) })
 }
 
-// expectDatabaseReady polls until db's Ready condition matches the given
-// status and reason, with a message containing messagePart, and returns the
-// matched condition.
+// expectDatabaseReady polls until the Ready condition of db matches the given
+// status and reason and its message contains messagePart.
 func expectDatabaseReady(db *v1.Database, status metav1.ConditionStatus, reason, messagePart string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -113,8 +114,9 @@ func expectDatabaseReady(db *v1.Database, status metav1.ConditionStatus, reason,
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectOwnedByDatabase asserts obj carries the controller owner reference to
-// db, the link garbage collection uses when the Database is deleted.
+// expectOwnedByDatabase asserts that obj carries the controller owner
+// reference to db. Garbage collection uses this link when the Database is
+// deleted.
 func expectOwnedByDatabase(obj client.Object, db *v1.Database) {
 	GinkgoHelper()
 
@@ -218,7 +220,9 @@ var _ = Describe("Database controller", func() {
 
 		By("publishing an owner-referenced rdbms SecondaryStorageConfig")
 		var storage v1.SecondaryStorageConfig
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "storage-config"}, &storage)).To(Succeed())
+		Expect(
+			k8sClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "storage-config"}, &storage),
+		).To(Succeed())
 		Expect(storage.Spec.Type).To(Equal(v1.SecondaryStorageTypeRDBMS))
 		Expect(storage.Spec.RDBMS).NotTo(BeNil())
 		Expect(storage.Spec.RDBMS.DatabaseConfigRef).To(Equal(db.Name))
@@ -303,7 +307,7 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-		server := validDatabaseServerConfig()
+		server := fixtures.DatabaseServerConfig()
 		server.Spec.AdminCredentialsSecretRef = v1.CredentialsSecretRef{
 			Name: secret.Name, Namespace: namespace,
 			UsernameKey: "username", PasswordKey: "password",
@@ -328,7 +332,7 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-		server := validDatabaseServerConfig()
+		server := fixtures.DatabaseServerConfig()
 		server.Spec.Host = "127.0.0.1"
 		server.Spec.Port = 1
 		server.Spec.AdminCredentialsSecretRef = v1.CredentialsSecretRef{
@@ -349,8 +353,8 @@ var _ = Describe("Database controller", func() {
 		namespace := newDatabaseNamespace()
 		server := createDatabaseServer(namespace)
 
-		// Two 60-character names identical through the truncation point, so
-		// plain truncation would collapse both onto one backup role.
+		// The two 60-character names are identical up to the truncation point.
+		// Plain truncation collapses both onto one backup role.
 		prefix := "db_" + utilrand.String(5) + strings.Repeat("x", 48)
 		first := databaseFor(server, namespace)
 		first.Spec.DatabaseName = prefix + "aaaa"
@@ -363,8 +367,8 @@ var _ = Describe("Database controller", func() {
 		expectDatabaseReady(second, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
 
 		By("creating one backup role per database")
-		firstRole := backupUserName(first.Spec.DatabaseName)
-		secondRole := backupUserName(second.Spec.DatabaseName)
+		firstRole := components.BackupUserName(first.Spec.DatabaseName)
+		secondRole := components.BackupUserName(second.Spec.DatabaseName)
 		Expect(firstRole).NotTo(Equal(secondRole))
 		Expect(sqlRoleExists(firstRole)).To(BeTrue())
 		Expect(sqlRoleExists(secondRole)).To(BeTrue())

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package database
 
 import (
 	"flag"
@@ -37,7 +37,7 @@ var update = flag.Bool("update", false, "update golden files")
 // golden fixture.
 const goldenStorageConfigName = "my-storage-config"
 
-// goldenScheme registers exactly the kinds the bindings component renders.
+// goldenScheme registers exactly the kinds that the bindings component renders.
 func goldenScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 
@@ -48,8 +48,8 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 	return s
 }
 
-// goldenDatabase returns the doc's minimal example with a fixed name, so the
-// rendered bindings are stable golden input.
+// goldenDatabase returns the minimal example of the CRD doc with a fixed name,
+// so the rendered bindings are stable golden input.
 func goldenDatabase() *v1.Database {
 	return &v1.Database{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-camunda-db"},
@@ -61,7 +61,8 @@ func goldenDatabase() *v1.Database {
 	}
 }
 
-// goldenFullDatabase returns the doc's realistic example with a fixed name.
+// goldenFullDatabase returns the realistic example of the CRD doc with a fixed
+// name.
 func goldenFullDatabase() *v1.Database {
 	db := goldenDatabase()
 	db.Spec.ApplicationCredentials = &v1.CredentialsSpec{
@@ -78,7 +79,7 @@ func goldenFullDatabase() *v1.Database {
 
 func TestResolveBindings(t *testing.T) {
 	t.Run("defaults derive from the CR name and targetNamespace", func(t *testing.T) {
-		rb := resolveBindings(goldenDatabase())
+		rb := ResolveBindings(goldenDatabase())
 
 		assert.Equal(t, "my-camunda-db-credentials", rb.AppSecret.Name)
 		assert.Equal(t, "my-cluster-ns", rb.AppSecret.Namespace)
@@ -91,7 +92,7 @@ func TestResolveBindings(t *testing.T) {
 	})
 
 	t.Run("explicit names and namespaces win over defaults", func(t *testing.T) {
-		rb := resolveBindings(goldenFullDatabase())
+		rb := ResolveBindings(goldenFullDatabase())
 
 		assert.Equal(t, "my-camunda-db-app", rb.AppSecret.Name)
 		assert.Equal(t, "my-secret-ns", rb.AppSecret.Namespace)
@@ -104,19 +105,19 @@ func TestResolveBindings(t *testing.T) {
 		db := goldenDatabase()
 		db.Spec.BackupCredentials = &v1.BackupCredentialsSpec{Disabled: true}
 
-		assert.False(t, resolveBindings(db).BackupEnabled)
+		assert.False(t, ResolveBindings(db).BackupEnabled)
 	})
 }
 
 func TestBackupUserName(t *testing.T) {
 	t.Run("short names keep the plain suffix form", func(t *testing.T) {
-		assert.Equal(t, "camunda_backup", backupUserName("camunda"))
+		assert.Equal(t, "camunda_backup", BackupUserName("camunda"))
 	})
 
 	t.Run("long names sharing a prefix derive distinct roles", func(t *testing.T) {
 		prefix := strings.Repeat("a", 56)
-		one := backupUserName(prefix + "1xyz")
-		two := backupUserName(prefix + "2xyz")
+		one := BackupUserName(prefix + "1xyz")
+		two := BackupUserName(prefix + "2xyz")
 
 		assert.NotEqual(t, one, two,
 			"database names differing past the truncation point must not share a backup role")
@@ -124,7 +125,7 @@ func TestBackupUserName(t *testing.T) {
 		assert.LessOrEqual(t, len(two), 63)
 		assert.True(t, strings.HasSuffix(one, "_backup"))
 		assert.True(t, strings.HasSuffix(two, "_backup"))
-		assert.Equal(t, one, backupUserName(prefix+"1xyz"),
+		assert.Equal(t, one, BackupUserName(prefix+"1xyz"),
 			"the disambiguated role must be deterministic across reconciles")
 		assert.Regexp(t, "^[a-z_][a-z0-9_]{0,62}$", one)
 	})
@@ -136,17 +137,17 @@ func TestDatabaseBindingsGolden(t *testing.T) {
 		db     *v1.Database
 		golden string
 	}{
-		{"minimal", goldenDatabase(), "testdata/golden/database/minimal.yaml"},
-		{"full", goldenFullDatabase(), "testdata/golden/database/full.yaml"},
+		{"minimal", goldenDatabase(), "testdata/golden/minimal.yaml"},
+		{"full", goldenFullDatabase(), "testdata/golden/full.yaml"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rb := resolveBindings(tt.db)
+			rb := ResolveBindings(tt.db)
 			rb.AppPassword = "app-password"
 			rb.BackupPassword = "backup-password"
 
-			comp, err := databaseBindingsComponent(tt.db, rb)
+			comp, err := BindingsComponent(tt.db, rb)
 			require.NoError(t, err)
 
 			golden.AssertComponentYAML(t, tt.golden, comp,
@@ -159,12 +160,12 @@ func TestDatabaseBindingsGoldenBackupDisabled(t *testing.T) {
 	db := goldenDatabase()
 	db.Spec.BackupCredentials = &v1.BackupCredentialsSpec{Disabled: true}
 
-	rb := resolveBindings(db)
+	rb := ResolveBindings(db)
 	rb.AppPassword = "app-password"
 
-	comp, err := databaseBindingsComponent(db, rb)
+	comp, err := BindingsComponent(db, rb)
 	require.NoError(t, err)
 
-	golden.AssertComponentYAML(t, "testdata/golden/database/backup-disabled.yaml", comp,
+	golden.AssertComponentYAML(t, "testdata/golden/backup-disabled.yaml", comp,
 		golden.WithScheme(goldenScheme(t)), golden.Update(*update))
 }

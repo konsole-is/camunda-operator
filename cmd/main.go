@@ -38,6 +38,12 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller"
+	"github.com/konsole-is/camunda-operator/internal/controller/database"
+	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/databaseserverconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -111,8 +117,15 @@ func main() {
 	}
 
 	if len(webhookCertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+		setupLog.Info(
+			"Initializing webhook certificate watcher using provided certificates",
+			"webhook-cert-path",
+			webhookCertPath,
+			"webhook-cert-name",
+			webhookCertName,
+			"webhook-cert-key",
+			webhookCertKey,
+		)
 
 		webhookServerOptions.CertDir = webhookCertPath
 		webhookServerOptions.CertName = webhookCertName
@@ -148,8 +161,15 @@ func main() {
 	// managed by cert-manager for the metrics server.
 	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
 	if len(metricsCertPath) > 0 {
-		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
-			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
+		setupLog.Info(
+			"Initializing metrics certificate watcher using provided certificates",
+			"metrics-cert-path",
+			metricsCertPath,
+			"metrics-cert-name",
+			metricsCertName,
+			"metrics-cert-key",
+			metricsCertKey,
+		)
 
 		metricsServerOptions.CertDir = metricsCertPath
 		metricsServerOptions.CertName = metricsCertName
@@ -202,7 +222,7 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "ElasticsearchCluster")
 		os.Exit(1)
 	}
-	if err := (&controller.DatabaseReconciler{
+	if err := (&database.DatabaseReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
@@ -210,7 +230,7 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "Database")
 		os.Exit(1)
 	}
-	if err := (&controller.DatabaseServerConfigReconciler{
+	if err := (&databaseserverconfig.DatabaseServerConfigReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
@@ -218,7 +238,7 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseServerConfig")
 		os.Exit(1)
 	}
-	if err := (&controller.DatabaseConfigReconciler{
+	if err := (&databaseconfig.DatabaseConfigReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
@@ -226,7 +246,7 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseConfig")
 		os.Exit(1)
 	}
-	if err := (&controller.SecondaryStorageConfigReconciler{
+	if err := (&secondarystorageconfig.SecondaryStorageConfigReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
@@ -234,7 +254,7 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "SecondaryStorageConfig")
 		os.Exit(1)
 	}
-	if err := (&controller.ObjectStorageConfigReconciler{
+	if err := (&objectstorageconfig.ObjectStorageConfigReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
@@ -291,7 +311,7 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaManagementCluster")
 		os.Exit(1)
 	}
-	if err := (&controller.ManagementAuthConfigReconciler{
+	if err := (&managementauthconfig.ManagementAuthConfigReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),

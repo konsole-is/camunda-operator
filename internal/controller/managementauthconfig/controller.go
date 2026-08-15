@@ -14,7 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+// Package managementauthconfig validates ManagementAuthConfig contracts and
+// maintains their Ready condition. It never provisions anything.
+package managementauthconfig
 
 import (
 	"context"
@@ -39,8 +41,8 @@ const managementAuthConfigSecretRefsField = "managementauthconfig.spec.secretRef
 // maintains their Ready condition.
 type ManagementAuthConfigReconciler struct {
 	client.Client
-	// APIReader reads directly from the API server, bypassing the cache; used for
-	// Secret data because Secrets are watched metadata-only.
+	// APIReader reads directly from the API server and bypasses the cache.
+	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 }
@@ -49,8 +51,8 @@ type ManagementAuthConfigReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
-// Reconcile validates the contract's references and maintains its Ready
-// condition; it never creates or mutates other resources.
+// Reconcile validates the references of the contract and maintains its Ready
+// condition. It never creates or mutates other resources.
 func (r *ManagementAuthConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.ManagementAuthConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
@@ -65,9 +67,12 @@ func (r *ManagementAuthConfigReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{}, conditions.PatchReady(ctx, r.Client, &cfg, cond)
 }
 
-// validate checks the machine-to-machine client secret reference; endpoint
-// URLs are validated by the CRD schema and never probed.
-func (r *ManagementAuthConfigReconciler) validate(ctx context.Context, cfg *v1.ManagementAuthConfig) (metav1.Condition, error) {
+// validate checks the machine-to-machine client secret reference. The CRD
+// schema validates the endpoint URLs, and validate never probes them.
+func (r *ManagementAuthConfigReconciler) validate(
+	ctx context.Context,
+	cfg *v1.ManagementAuthConfig,
+) (metav1.Condition, error) {
 	ref := cfg.Spec.ClientSecretRef
 	msg, err := secretref.CheckKeys(ctx, r.APIReader,
 		types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, ref.Key)

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package databaseserverconfig
 
 import (
 	"fmt"
@@ -28,6 +28,7 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -43,7 +44,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
 
-		serverConfig = validDatabaseServerConfig()
+		serverConfig = fixtures.DatabaseServerConfig()
 		serverConfig.Spec.AdminCredentialsSecretRef.Namespace = namespace
 	})
 
@@ -53,7 +54,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, serverConfig) })
 	}
 
-	// adminSecret builds the referenced admin-creds Secret holding the given keys.
+	// adminSecret builds the referenced admin-creds Secret with the given keys.
 	adminSecret := func(keys ...string) *corev1.Secret {
 		data := map[string][]byte{}
 		for _, key := range keys {
@@ -68,7 +69,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		}
 	}
 
-	// expectReady polls until the CR's Ready condition matches exactly.
+	// expectReady polls until the Ready condition of the CR matches exactly.
 	expectReady := func(status metav1.ConditionStatus, reason, message string) {
 		GinkgoHelper()
 		Eventually(func(g Gomega) {

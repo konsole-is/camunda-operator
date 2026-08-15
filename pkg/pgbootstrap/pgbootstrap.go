@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // Package pgbootstrap bootstraps logical databases and their users on an
-// existing PostgreSQL server over plain, idempotent SQL. It is the Database
-// controller's SQL layer and lives outside the component framework: it only
-// issues DDL through an admin connection and never touches Kubernetes.
+// existing PostgreSQL server over plain, idempotent SQL. It is the SQL layer
+// of the Database controller and lives outside the component framework. It
+// only issues DDL through an admin connection and never touches Kubernetes.
 package pgbootstrap
 
 import (
@@ -29,65 +29,67 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// maintenanceDatabase is the database the admin connection attaches to for
-// server-level statements; per-database grants open their own connection.
+// maintenanceDatabase is the database that the admin connection attaches to
+// for server-level statements. Per-database grants open their own connection.
 const maintenanceDatabase = "postgres"
 
-// Connection carries everything needed to open an admin connection to a
-// PostgreSQL server. An empty SSLMode defaults to "prefer".
+// Connection carries the values that open an admin connection to a PostgreSQL
+// server. An empty SSLMode defaults to "prefer".
 type Connection struct {
-	// Host the server is reachable at.
+	// Host is the address of the server.
 	Host string
-	// Port the server listens on.
+	// Port is the port that the server listens on.
 	Port int32
-	// AdminUser is a role allowed to create databases and roles.
+	// AdminUser is a role that can create databases and roles.
 	AdminUser string
 	// AdminPassword authenticates AdminUser.
 	AdminPassword string
-	// SSLMode is the libpq sslmode parameter for every connection this
+	// SSLMode is the libpq sslmode parameter for every connection that this
 	// package opens.
 	SSLMode string
 }
 
-// Bootstrapper is the idempotent SQL surface the Database controller drives.
-// Every operation is safe to re-run; names must be plain lowercase PostgreSQL
-// identifiers (^[a-z_][a-z0-9_]{0,62}$) and are rejected otherwise.
+// Bootstrapper is the idempotent SQL surface that the Database controller
+// drives. Every operation is safe to run again. Names must be plain lowercase
+// PostgreSQL identifiers (^[a-z_][a-z0-9_]{0,62}$), and other names are
+// rejected.
 type Bootstrapper interface {
-	// EnsureDatabase creates the logical database if it does not exist and
-	// revokes the default PUBLIC connect privilege, so only explicitly
-	// granted roles can reach it.
+	// EnsureDatabase creates the logical database if it does not exist. It
+	// also revokes the default PUBLIC connect privilege, so only explicitly
+	// granted roles can reach the database.
 	EnsureDatabase(ctx context.Context, name string) error
-	// EnsureUser creates the login role if it does not exist and sets its
-	// password unconditionally, so a rotated password converges on the server
-	// before it is published anywhere.
+	// EnsureUser creates the login role if it does not exist and always sets
+	// its password. A rotated password then converges on the server before
+	// it is published anywhere.
 	EnsureUser(ctx context.Context, name, password string) error
 	// GrantApplication grants user full privileges on database and makes it
-	// the database owner, giving it schema DDL rights for migrations.
+	// the database owner. The owner has the schema DDL rights that migrations
+	// need.
 	GrantApplication(ctx context.Context, user, database string) error
 	// EnsureBackupUser creates the backup login role and grants it read
-	// access on all of database's tables — including tables the owning
-	// application role creates later, via ALTER DEFAULT PRIVILEGES — plus
-	// the schema DDL and table write rights a restore needs. Call it after
-	// GrantApplication so the database owner's default privileges are
-	// altered for the application role.
+	// access on all tables of database. Through ALTER DEFAULT PRIVILEGES the
+	// grant includes tables that the application role creates later. It also
+	// grants the schema DDL and table write rights that a restore needs. Call
+	// it after GrantApplication, so the default privileges of the database
+	// owner are altered for the application role.
 	EnsureBackupUser(ctx context.Context, name, password, database string) error
-	// Ping verifies the admin connection is alive.
+	// Ping checks that the admin connection is alive.
 	Ping(ctx context.Context) error
 	// Close releases the admin connection.
 	Close()
 }
 
-// bootstrapper implements Bootstrapper over pgx connections: one long-lived
-// admin connection to the maintenance database, plus short-lived per-database
-// connections for schema-level grants.
+// bootstrapper implements Bootstrapper over pgx connections. It holds one
+// long-lived admin connection to the maintenance database, plus short-lived
+// per-database connections for schema-level grants.
 type bootstrapper struct {
 	conn  Connection
 	admin *pgx.Conn
 }
 
-// Connect opens the admin connection described by c and returns the
-// Bootstrapper over it. An unreachable server or rejected credentials surface
-// here as an error.
+// Connect opens the admin connection that c describes and returns the
+// Bootstrapper over it. An unreachable server or rejected credentials cause an
+// error here.
 func Connect(ctx context.Context, c Connection) (Bootstrapper, error) {
 	admin, err := dial(ctx, c, maintenanceDatabase)
 	if err != nil {
@@ -97,7 +99,7 @@ func Connect(ctx context.Context, c Connection) (Bootstrapper, error) {
 	return &bootstrapper{conn: c, admin: admin}, nil
 }
 
-// dial opens a connection to database on the server described by c.
+// dial opens a connection to database on the server that c describes.
 func dial(ctx context.Context, c Connection, database string) (*pgx.Conn, error) {
 	sslMode := c.SSLMode
 	if sslMode == "" {
@@ -139,7 +141,7 @@ func (b *bootstrapper) EnsureDatabase(ctx context.Context, name string) error {
 		}
 	}
 
-	// New databases grant CONNECT to PUBLIC by default; revoking it keeps
+	// A new database grants CONNECT to PUBLIC by default. The revoke keeps the
 	// logical databases on a shared server isolated to their granted roles.
 	if _, err := b.admin.Exec(ctx,
 		"REVOKE CONNECT ON DATABASE "+quoteIdentifier(name)+" FROM PUBLIC",
@@ -163,8 +165,8 @@ func (b *bootstrapper) EnsureUser(ctx context.Context, name, password string) er
 		return fmt.Errorf("checking role %q: %w", name, err)
 	}
 
-	// CREATE/ALTER ROLE cannot take bind parameters; the password goes
-	// through quoteLiteral. ALTER runs even for a pre-existing role so a
+	// CREATE ROLE and ALTER ROLE cannot take bind parameters, so the password
+	// goes through quoteLiteral. ALTER runs also for an existing role, so a
 	// rotated password always converges on the server.
 	verb := "CREATE"
 	if exists {
@@ -198,8 +200,8 @@ func (b *bootstrapper) GrantApplication(ctx context.Context, user, database stri
 		return err
 	}
 	if owner != user {
-		// ALTER DATABASE OWNER requires the admin to be a member of the new
-		// owning role; the membership is granted only for this statement.
+		// ALTER DATABASE OWNER requires that the admin is a member of the new
+		// owning role. The membership is granted only for this statement.
 		err := b.withRoleMembership(ctx, b.admin, user, func() error {
 			_, err := b.admin.Exec(ctx,
 				"ALTER DATABASE "+quoteIdentifier(database)+" OWNER TO "+quoteIdentifier(user))
@@ -210,9 +212,9 @@ func (b *bootstrapper) GrantApplication(ctx context.Context, user, database stri
 		}
 	}
 
-	// Schema privileges are per database. Ownership already implies them on
-	// PostgreSQL 15+ (schema public belongs to pg_database_owner); the
-	// explicit grant keeps older servers working.
+	// Schema privileges are per database. On PostgreSQL 15 and later,
+	// ownership already implies them, because schema public belongs to
+	// pg_database_owner. The explicit grant keeps older servers working.
 	db, err := dial(ctx, b.conn, database)
 	if err != nil {
 		return err
@@ -252,9 +254,9 @@ func (b *bootstrapper) EnsureBackupUser(ctx context.Context, name, password, dat
 	}
 	defer closeQuietly(db)
 
-	// Read access on everything current plus the DDL and write rights a
-	// restore needs: CREATE on the schema to recreate tables, and full DML
-	// on existing tables to refill them.
+	// Read access on all current tables, plus the DDL and write rights that a
+	// restore needs: CREATE on the schema to recreate tables, and full DML on
+	// existing tables to refill them.
 	grants := []string{
 		"GRANT USAGE, CREATE ON SCHEMA public TO " + quoteIdentifier(name),
 		"GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO " +
@@ -267,15 +269,16 @@ func (b *bootstrapper) EnsureBackupUser(ctx context.Context, name, password, dat
 		}
 	}
 
-	// Tables created later belong to the database owner (the application
-	// role); altering that role's default privileges keeps them readable.
+	// Tables created later belong to the database owner, which is the
+	// application role. The altered default privileges of that role keep
+	// them readable.
 	owner, err := b.databaseOwner(ctx, db, database)
 	if err != nil {
 		return err
 	}
 
-	// ALTER DEFAULT PRIVILEGES FOR ROLE requires membership of that role;
-	// the membership is granted only around these statements.
+	// ALTER DEFAULT PRIVILEGES FOR ROLE requires membership of that role. The
+	// membership is granted only around these statements.
 	err = b.withRoleMembership(ctx, db, owner, func() error {
 		defaults := []string{
 			"ALTER DEFAULT PRIVILEGES FOR ROLE " + quoteIdentifier(owner) +
@@ -297,8 +300,9 @@ func (b *bootstrapper) EnsureBackupUser(ctx context.Context, name, password, dat
 	return nil
 }
 
-// databaseOwner resolves the owning role of database via conn and validates
-// it as a plain identifier so it can be interpolated into DDL.
+// databaseOwner resolves the owning role of database through conn. It
+// validates the role as a plain identifier, so callers can interpolate it into
+// DDL.
 func (b *bootstrapper) databaseOwner(ctx context.Context, conn *pgx.Conn, database string) (string, error) {
 	var owner string
 	if err := conn.QueryRow(ctx,
@@ -314,11 +318,11 @@ func (b *bootstrapper) databaseOwner(ctx context.Context, conn *pgx.Conn, databa
 	return owner, nil
 }
 
-// withRoleMembership runs fn with the connected admin holding membership in
-// role, then restores the previous state: the membership is granted only when
-// absent — the admin is not the role itself and holds no direct membership —
-// and revoked afterwards only when this call granted it, so a pre-existing
-// membership survives untouched.
+// withRoleMembership runs fn while the connected admin is a member of role,
+// then restores the previous state. It grants the membership only when it is
+// absent, that is, when the admin is not the role itself and holds no direct
+// membership. It revokes the membership afterwards only when this call granted
+// it, so an existing membership survives untouched.
 func (b *bootstrapper) withRoleMembership(ctx context.Context, conn *pgx.Conn, role string, fn func() error) error {
 	var member bool
 	if err := conn.QueryRow(ctx,
@@ -355,7 +359,7 @@ func (b *bootstrapper) Close() {
 	closeQuietly(b.admin)
 }
 
-// closeQuietly closes conn with a fresh context so shutdown is not skipped
+// closeQuietly closes conn with a fresh context. The shutdown then runs also
 // when the reconcile context is already cancelled.
 func closeQuietly(conn *pgx.Conn) {
 	_ = conn.Close(context.Background())

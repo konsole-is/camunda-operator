@@ -25,11 +25,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
+
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// implementedKindSamples lists the sample manifests for kinds whose API types
-// are implemented and therefore validate a real schema; stub-kind samples are
-// covered when their batch lands.
+// implementedKindSamples lists the sample manifests of the kinds whose API
+// types are implemented and therefore validate a real schema. The samples of
+// stub kinds are covered when their batch lands.
 var implementedKindSamples = []string{
 	"core_v1_databaseserverconfig.yaml",
 	"core_v1_databaseconfig.yaml",
@@ -54,7 +56,7 @@ var _ = Describe("config/samples", func() {
 			mapping, err := k8sClient.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
 			Expect(err).NotTo(HaveOccurred(), file)
 			if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-				obj.SetNamespace(schemaTestNamespace)
+				obj.SetNamespace(fixtures.SchemaTestNamespace)
 			}
 
 			Expect(k8sClient.Create(ctx, &obj)).To(Succeed(), file)

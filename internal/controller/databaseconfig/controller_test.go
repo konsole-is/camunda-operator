@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package databaseconfig
 
 import (
 	"fmt"
@@ -28,11 +28,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// databaseConfigSecret builds a Secret at ref holding a placeholder value for
-// each key.
+// databaseConfigSecret builds a Secret at ref that holds a placeholder value
+// for each key.
 func databaseConfigSecret(ref v1.CredentialsSecretRef, keys ...string) *corev1.Secret {
 	data := make(map[string][]byte, len(keys))
 	for _, key := range keys {
@@ -77,8 +78,8 @@ var _ = Describe("DatabaseConfig controller", func() {
 		ns = "dbc-" + utilrand.String(8)
 		create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
 
-		server = validDatabaseServerConfig()
-		dbConfig = validDatabaseConfig()
+		server = fixtures.DatabaseServerConfig()
+		dbConfig = fixtures.DatabaseConfig()
 		dbConfig.Namespace = ns
 		dbConfig.Spec.ServerRef = server.Name
 		dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{

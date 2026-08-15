@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package managementauthconfig
 
 import (
 	"fmt"
@@ -65,8 +65,8 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 		}, timeout, interval).Should(Succeed())
 	}
 
-	// createClientSecret creates the Secret named by the CR's clientSecretRef
-	// with the configured key present.
+	// createClientSecret creates the Secret that the clientSecretRef of the CR
+	// names, with the configured key present.
 	createClientSecret := func() *corev1.Secret {
 		GinkgoHelper()
 		secret := &corev1.Secret{

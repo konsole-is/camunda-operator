@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package database
 
 import (
 	"context"
@@ -44,8 +44,8 @@ var (
 )
 
 // testPostgres starts the shared postgres:17 container on first use and
-// returns its coordinates; the testcontainers reaper removes the container
-// once the test binary exits.
+// returns its coordinates. The testcontainers reaper removes the container
+// when the test binary exits.
 func testPostgres() (testPostgresInfo, error) {
 	testPostgresOnce.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

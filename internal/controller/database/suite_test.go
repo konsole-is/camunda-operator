@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package database
 
 import (
 	"context"
@@ -30,11 +30,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konsole-is/camunda-operator/internal/testenv"
-	// +kubebuilder:scaffold:imports
 )
 
-// These tests use Ginkgo (BDD-style Go testing framework). Refer to
-// http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
+// timeout and interval bound the Eventually polling of every envtest assertion.
+const (
+	timeout  = testenv.Timeout
+	interval = testenv.Interval
+)
 
 var (
 	env       *testenv.Env
@@ -42,17 +44,21 @@ var (
 	k8sClient client.Client
 )
 
-func TestControllers(t *testing.T) {
+func TestDatabaseControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecs(t, "Controller Suite")
+	RunSpecs(t, "Database Controller Suite")
 }
 
+// The DatabaseServerConfig and DatabaseConfig controllers are deliberately
+// absent. The Database reconciler resolves and connects to the referenced
+// server itself and does not wait on the Ready condition of either contract.
+// Its specs therefore only need the objects to exist.
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
-		return (&ElasticsearchClusterReconciler{
+		return (&DatabaseReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),

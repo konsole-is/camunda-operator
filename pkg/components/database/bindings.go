@@ -14,7 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+// Package database renders the resources that a Database CR publishes. It
+// resolves the documented naming defaults, assembles the ocf bindings
+// component, and holds the collision rule. Everything here is pure: spec in,
+// resources out, no API calls. The controller in internal/controller/database
+// drives it.
+package database
 
 import (
 	"crypto/sha256"
@@ -33,17 +38,17 @@ import (
 )
 
 const (
-	// databaseBindingsComponentName is the single ocf component publishing
-	// the Database's bindings; its condition type is BindingsReady.
-	databaseBindingsComponentName = "bindings"
-	// databaseBindingsConditionType is the component condition the bindings
-	// component reports on the Database.
-	databaseBindingsConditionType = component.ConditionType("BindingsReady")
+	// bindingsComponentName is the single ocf component that publishes
+	// the bindings of the Database. Its condition type is BindingsReady.
+	bindingsComponentName = "bindings"
+	// BindingsConditionType is the component condition that the
+	// bindings component reports on the Database.
+	BindingsConditionType = component.ConditionType("BindingsReady")
 
-	// credentialUsernameKey and credentialPasswordKey are the keys of every
-	// credential Secret the Database controller publishes.
-	credentialUsernameKey = "username"
-	credentialPasswordKey = "password"
+	// CredentialUsernameKey and CredentialPasswordKey are the keys of every
+	// credential Secret that the Database controller publishes.
+	CredentialUsernameKey = "username"
+	CredentialPasswordKey = "password"
 
 	// appSecretSuffix and backupSecretSuffix derive the default credential
 	// Secret names from the CR name.
@@ -54,44 +59,46 @@ const (
 	// name.
 	backupUserSuffix = "_backup"
 
-	// maxSQLIdentifierLength is PostgreSQL's identifier length limit.
+	// maxSQLIdentifierLength is the identifier length limit of PostgreSQL.
 	maxSQLIdentifierLength = 63
 
-	// backupUserHashLength is how many hex characters of the database name's
-	// SHA-256 disambiguate a backup role when the plain suffixed form would
-	// exceed maxSQLIdentifierLength.
+	// backupUserHashLength is the number of hex characters of the SHA-256 of
+	// the database name that disambiguate a backup role. It applies when the
+	// plain suffixed form is longer than maxSQLIdentifierLength.
 	backupUserHashLength = 8
 )
 
-// resolvedBindings carries the fully defaulted inputs the bindings component
-// renders: object names and namespaces, the SQL role names, and — filled in
-// by the reconciler after credential resolution — the role passwords.
-type resolvedBindings struct {
+// Bindings carries the fully defaulted inputs that the bindings
+// component renders: object names and namespaces, the SQL role names, and the
+// role passwords. The reconciler fills the passwords after it resolves the
+// credentials.
+type Bindings struct {
 	// AppSecret locates the application credentials Secret.
 	AppSecret types.NamespacedName
 	// BackupSecret locates the backup credentials Secret.
 	BackupSecret types.NamespacedName
 	// DatabaseConfigName names the DatabaseConfig in targetNamespace.
 	DatabaseConfigName string
-	// AppUser is the application SQL role, named after the logical database.
+	// AppUser is the application SQL role. It has the name of the logical
+	// database.
 	AppUser string
 	// BackupUser is the backup SQL role.
 	BackupUser string
 	// BackupEnabled reports whether the backup user and Secret are managed.
 	BackupEnabled bool
-	// AppPassword is the application role's resolved password.
+	// AppPassword is the resolved password of the application role.
 	AppPassword string
-	// BackupPassword is the backup role's resolved password.
+	// BackupPassword is the resolved password of the backup role.
 	BackupPassword string
 }
 
-// resolveBindings applies the documented defaults to db's binding names: the
-// credential Secrets default to "<name>-credentials" and
-// "<name>-backup-credentials" in targetNamespace, the DatabaseConfig to the
-// CR name, and the SQL roles derive from the database name. Passwords are
-// left empty for the reconciler to fill.
-func resolveBindings(db *v1.Database) resolvedBindings {
-	rb := resolvedBindings{
+// ResolveBindings applies the documented defaults to the binding names of db.
+// The credential Secrets default to "<name>-credentials" and
+// "<name>-backup-credentials" in targetNamespace. The DatabaseConfig defaults
+// to the CR name. The SQL roles derive from the database name. Passwords stay
+// empty for the reconciler to fill.
+func ResolveBindings(db *v1.Database) Bindings {
+	rb := Bindings{
 		AppSecret: types.NamespacedName{
 			Namespace: db.Spec.TargetNamespace,
 			Name:      db.Name + appSecretSuffix,
@@ -102,7 +109,7 @@ func resolveBindings(db *v1.Database) resolvedBindings {
 		},
 		DatabaseConfigName: db.Name,
 		AppUser:            db.Spec.DatabaseName,
-		BackupUser:         backupUserName(db.Spec.DatabaseName),
+		BackupUser:         BackupUserName(db.Spec.DatabaseName),
 		BackupEnabled:      true,
 	}
 
@@ -132,15 +139,15 @@ func resolveBindings(db *v1.Database) resolvedBindings {
 	return rb
 }
 
-// backupUserName derives the backup SQL role from the database name. Short
-// names keep the plain "<databaseName>_backup" form. A name whose suffixed
-// form would exceed PostgreSQL's 63-character identifier limit is
-// disambiguated as "<first 47 characters>_<first 8 hex characters of the
-// name's SHA-256>_backup" — deterministic across reconciles, and distinct
-// database names sharing a long prefix can never share a backup role, which
-// plain truncation would allow, silently extending one database's backup
-// grants to another's role.
-func backupUserName(databaseName string) string {
+// BackupUserName derives the backup SQL role from the database name. A short
+// name keeps the plain "<databaseName>_backup" form. If the suffixed form is
+// longer than the 63-character identifier limit of PostgreSQL, the role
+// becomes "<first 47 characters>_<first 8 hex characters of the SHA-256 of
+// the name>_backup". This form is deterministic across reconciles. Two
+// database names that share a long prefix can never share a backup role.
+// With plain truncation they can, and the backup grants of one database then
+// extend to the role of another.
+func BackupUserName(databaseName string) string {
 	if len(databaseName)+len(backupUserSuffix) <= maxSQLIdentifierLength {
 		return databaseName + backupUserSuffix
 	}
@@ -152,14 +159,14 @@ func backupUserName(databaseName string) string {
 	return prefix + "_" + hash + backupUserSuffix
 }
 
-// databaseBindingsComponent assembles the single bindings component: the
-// application credentials Secret, the backup credentials Secret (gated on
-// backup being enabled), the DatabaseConfig, and — only when
-// spec.secondaryStorageConfig is set — the SecondaryStorageConfig wiring the
-// database up as rdbms secondary storage. All children land in
-// spec.targetNamespace (Secret namespaces overridable per Secret) and receive
-// an owner reference to the Database by the framework.
-func databaseBindingsComponent(db *v1.Database, rb resolvedBindings) (*component.Component, error) {
+// BindingsComponent assembles the single bindings component. It holds
+// the application credentials Secret, the backup credentials Secret (gated on
+// backup enabled), the DatabaseConfig, and the SecondaryStorageConfig. The
+// SecondaryStorageConfig is present only when spec.secondaryStorageConfig is
+// set. It registers the database as rdbms secondary storage. All children
+// land in spec.targetNamespace, and each Secret can override its namespace.
+// The framework gives each child an owner reference to the Database.
+func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, error) {
 	appSecret, err := secret.NewBuilder(
 		credentialSecret(rb.AppSecret, rb.AppUser, rb.AppPassword),
 	).Build()
@@ -190,16 +197,16 @@ func databaseBindingsComponent(db *v1.Database, rb resolvedBindings) (*component
 	}
 
 	builder := component.NewComponentBuilder().
-		WithName(databaseBindingsComponentName).
-		WithConditionType(databaseBindingsConditionType).
+		WithName(bindingsComponentName).
+		WithConditionType(BindingsConditionType).
 		WithResource(appSecret).
 		WithResource(backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled))).
 		WithResource(dbConfig)
 
-	// The SecondaryStorageConfig has no name when the field is unset, so it
-	// is omitted rather than gated: clearing the field leaves an existing
-	// contract in place until the Database is deleted and owner-reference
-	// garbage collection removes it.
+	// The SecondaryStorageConfig has no name when the field is unset, so it is
+	// omitted rather than gated. If the field is cleared, the existing contract
+	// stays in place until the Database is deleted and owner-reference garbage
+	// collection removes it.
 	if db.Spec.SecondaryStorageConfig != "" {
 		ssc, err := secondarystorageconfig.NewBuilder(&v1.SecondaryStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{
@@ -229,8 +236,8 @@ func credentialSecret(key types.NamespacedName, username, password string) *core
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			credentialUsernameKey: []byte(username),
-			credentialPasswordKey: []byte(password),
+			CredentialUsernameKey: []byte(username),
+			CredentialPasswordKey: []byte(password),
 		},
 	}
 }
@@ -240,14 +247,14 @@ func credentialsSecretRef(key types.NamespacedName) v1.CredentialsSecretRef {
 	return v1.CredentialsSecretRef{
 		Name:        key.Name,
 		Namespace:   key.Namespace,
-		UsernameKey: credentialUsernameKey,
-		PasswordKey: credentialPasswordKey,
+		UsernameKey: CredentialUsernameKey,
+		PasswordKey: CredentialPasswordKey,
 	}
 }
 
-// backupCredentialsRefMutation wires the backup credentials Secret into the
-// DatabaseConfig while backup is enabled.
-func backupCredentialsRefMutation(rb resolvedBindings) databaseconfig.Mutation {
+// backupCredentialsRefMutation sets the backup credentials Secret reference on
+// the DatabaseConfig while backup is enabled.
+func backupCredentialsRefMutation(rb Bindings) databaseconfig.Mutation {
 	return databaseconfig.Mutation{
 		Name:    "BackupCredentialsRef",
 		Feature: feature.NewBooleanGate(rb.BackupEnabled),

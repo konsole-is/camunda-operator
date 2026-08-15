@@ -24,15 +24,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// identifierPattern is the accepted shape for every SQL identifier this
-// package interpolates into DDL: lowercase PostgreSQL identifiers of at most
-// 63 characters, matching the Database CRD's databaseName schema pattern.
+// identifierPattern is the accepted shape of every SQL identifier that this
+// package interpolates into DDL: a lowercase PostgreSQL identifier of at most
+// 63 characters. It matches the databaseName schema pattern of the Database
+// CRD.
 var identifierPattern = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 
 // validateIdentifier rejects any name that is not a plain lowercase PostgreSQL
-// identifier. Quoting alone would make hostile input safe but silently accept
-// names the CRD schema forbids; validation keeps the SQL layer's contract as
-// strict as the API's.
+// identifier. Quoting alone makes hostile input safe, but it also accepts names
+// that the CRD schema forbids. Validation keeps the contract of the SQL layer
+// as strict as the contract of the API.
 func validateIdentifier(name string) error {
 	if !identifierPattern.MatchString(name) {
 		return fmt.Errorf("identifier %q must match %s", name, identifierPattern)
@@ -41,18 +42,18 @@ func validateIdentifier(name string) error {
 	return nil
 }
 
-// quoteIdentifier returns name double-quoted for interpolation into DDL.
-// Callers must have passed name through validateIdentifier first.
+// quoteIdentifier returns name double-quoted for interpolation into DDL. Pass
+// name through validateIdentifier first.
 func quoteIdentifier(name string) string {
 	return pgx.Identifier{name}.Sanitize()
 }
 
-// quoteLiteral returns s as a PostgreSQL string literal safe to interpolate
-// into DDL statements that cannot take bind parameters, such as ALTER ROLE
-// ... PASSWORD. Single quotes are doubled; when s contains a backslash the
-// literal uses PostgreSQL's escape string syntax (an E prefix) with
-// backslashes escaped, so the result is correct regardless of the server's
-// standard_conforming_strings setting.
+// quoteLiteral returns s as a PostgreSQL string literal that is safe to
+// interpolate into DDL statements that cannot take bind parameters, such as
+// ALTER ROLE ... PASSWORD. It doubles single quotes. If s contains a
+// backslash, the literal uses the escape string syntax of PostgreSQL (an E
+// prefix) with backslashes escaped. The result is then correct for any
+// standard_conforming_strings setting of the server.
 func quoteLiteral(s string) string {
 	quoted := strings.ReplaceAll(s, "'", "''")
 

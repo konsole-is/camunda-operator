@@ -32,8 +32,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-// adminConn is the shared connection target of the postgres:17 container
-// started once per test binary by TestMain.
+// adminConn is the shared connection target of the postgres:17 container that
+// TestMain starts once per test binary.
 var adminConn Connection
 
 func TestMain(m *testing.M) {
@@ -76,8 +76,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// connect returns a Bootstrapper against the shared container, closed on test
-// cleanup.
+// connect returns a Bootstrapper against the shared container. Test cleanup
+// closes it.
 func connect(t *testing.T) Bootstrapper {
 	t.Helper()
 
@@ -97,8 +97,8 @@ func connectAs(ctx context.Context, user, password, database string) (*pgx.Conn,
 	return pgx.Connect(ctx, url)
 }
 
-// mustConnectAs opens a direct connection to database as user, closed on test
-// cleanup.
+// mustConnectAs opens a direct connection to database as user. Test cleanup
+// closes it.
 func mustConnectAs(t *testing.T, user, password, database string) *pgx.Conn {
 	t.Helper()
 
