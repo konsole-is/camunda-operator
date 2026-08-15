@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -447,7 +448,7 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ElasticsearchCluster{}).
 		Owns(&esv1.Elasticsearch{}).
-		Owns(&corev1.Secret{}).
+		Owns(&corev1.Secret{}, builder.OnlyMetadata).
 		Owns(&v1.SecondaryStorageConfig{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
