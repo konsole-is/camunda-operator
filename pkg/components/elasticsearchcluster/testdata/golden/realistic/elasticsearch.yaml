@@ -126,7 +126,9 @@ spec:
         secret:
           key: ca.crt
           name: my-cluster-es-es-http-certs-public
+      cert: {}
       serverName: my-cluster-es-es-http.my-cluster-ns.svc
+  namespaceSelector: {}
   selector:
     matchLabels:
       common.k8s.elastic.co/type: elasticsearch

@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,6 +51,7 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, esv1.AddToScheme(scheme))
+	require.NoError(t, monitoringv1.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
 
 	return scheme

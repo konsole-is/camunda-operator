@@ -27,18 +27,19 @@ import (
 
 	commonv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/common/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
+	"github.com/sourcehawk/operator-component-framework/pkg/mutation/editors"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/serviceaccount"
-	unstructuredstatic "github.com/sourcehawk/operator-component-framework/pkg/primitives/unstructured/static"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/servicemonitor"
 )
 
 const (
@@ -79,8 +80,6 @@ const (
 	// A volumeClaimTemplate under this name overrides the default claim of
 	// ECK.
 	DataVolumeClaimName = "elasticsearch-data"
-	// containerName is the fixed name of ECK for the Elasticsearch container.
-	containerName = "elasticsearch"
 	// username is the file-realm user that the operator provisions for
 	// Camunda.
 	username = "camunda"
@@ -176,7 +175,7 @@ func ElasticsearchComponent(
 		return nil, err
 	}
 
-	monitor, err := unstructuredstatic.NewBuilder(serviceMonitor(cluster, merged)).Build()
+	monitor, err := servicemonitor.NewBuilder(serviceMonitor(cluster, merged)).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -334,8 +333,8 @@ func elasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsear
 			Name:    "NodeResources",
 			Feature: feature.NewBooleanGate(merged.Resources != nil),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
-				m.Edit(func(es *esv1.Elasticsearch) error {
-					ensureESContainer(&es.Spec.NodeSets[0].PodTemplate.Spec).Resources = *merged.Resources
+				m.EditContainer(nodeSetName, func(c *editors.ContainerEditor) error {
+					c.SetResources(*merged.Resources)
 					return nil
 				})
 				return nil
@@ -345,10 +344,9 @@ func elasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsear
 			Name:    "ExtraEnvironment",
 			Feature: feature.NewBooleanGate(len(merged.ExtraEnv) > 0 || len(merged.ExtraEnvFrom) > 0),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
-				m.Edit(func(es *esv1.Elasticsearch) error {
-					container := ensureESContainer(&es.Spec.NodeSets[0].PodTemplate.Spec)
-					container.Env = merged.ExtraEnv
-					container.EnvFrom = merged.ExtraEnvFrom
+				m.EditContainer(nodeSetName, func(c *editors.ContainerEditor) error {
+					c.EnsureEnvVars(merged.ExtraEnv)
+					c.Raw().EnvFrom = merged.ExtraEnvFrom
 					return nil
 				})
 				return nil
@@ -404,76 +402,64 @@ func elasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsear
 	}
 }
 
-// ensureESContainer returns the elasticsearch container of the pod spec. It
-// adds the entry when the template does not carry one yet. The returned
-// pointer aliases the slice element, so edits land on the pod spec.
-func ensureESContainer(pod *corev1.PodSpec) *corev1.Container {
-	for i := range pod.Containers {
-		if pod.Containers[i].Name == containerName {
-			return &pod.Containers[i]
-		}
-	}
-
-	pod.Containers = append(pod.Containers, corev1.Container{Name: containerName})
-	return &pod.Containers[len(pod.Containers)-1]
-}
-
 // serviceMonitor renders the Prometheus ServiceMonitor for the ECK HTTPS
-// service as unstructured content, because the operator does not depend on
-// the prometheus-operator API types. It scrapes the https port with the basic
-// auth of the Camunda user and checks TLS against the CA that ECK publishes.
-func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *unstructured.Unstructured {
-	labels := map[string]any{}
-	for k, v := range clusterLabels(cluster) {
-		labels[k] = v
-	}
-	annotations := map[string]any{}
+// service. It scrapes the https port with the basic auth of the Camunda user
+// and checks TLS against the CA that ECK publishes.
+func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *monitoringv1.ServiceMonitor {
+	labels := clusterLabels(cluster)
+	var annotations map[string]string
 	if merged.Monitoring != nil && merged.Monitoring.ServiceMonitor != nil {
-		for k, v := range merged.Monitoring.ServiceMonitor.Labels {
-			labels[k] = v
-		}
-		for k, v := range merged.Monitoring.ServiceMonitor.Annotations {
-			annotations[k] = v
-		}
+		maps.Copy(labels, merged.Monitoring.ServiceMonitor.Labels)
+		annotations = merged.Monitoring.ServiceMonitor.Annotations
 	}
 
-	metadata := map[string]any{
-		"name":      cluster.Name + serviceAccountSuffix,
-		"namespace": cluster.Namespace,
-		"labels":    labels,
-	}
-	if len(annotations) > 0 {
-		metadata["annotations"] = annotations
-	}
-
-	return &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1",
-		"kind":       "ServiceMonitor",
-		"metadata":   metadata,
-		"spec": map[string]any{
-			"selector": map[string]any{
-				"matchLabels": map[string]any{
-					"common.k8s.elastic.co/type": componentLabel,
-					ECKClusterNameLabel:          cluster.Name,
-				},
-			},
-			"endpoints": []any{map[string]any{
-				"port":   "https",
-				"scheme": "https",
-				"basicAuth": map[string]any{
-					"username": map[string]any{"name": UserSecretName(cluster), "key": usernameKey},
-					"password": map[string]any{"name": UserSecretName(cluster), "key": PasswordKey},
-				},
-				"tlsConfig": map[string]any{
-					"serverName": cluster.Name + httpServiceSuffix + "." + cluster.Namespace + ".svc",
-					"ca": map[string]any{
-						"secret": map[string]any{
-							"name": cluster.Name + certsSecretSuffix,
-							"key":  caCertKey,
+	return &monitoringv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        cluster.Name + serviceAccountSuffix,
+			Namespace:   cluster.Namespace,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		Spec: monitoringv1.ServiceMonitorSpec{
+			Selector: metav1.LabelSelector{MatchLabels: map[string]string{
+				"common.k8s.elastic.co/type": componentLabel,
+				ECKClusterNameLabel:          cluster.Name,
+			}},
+			Endpoints: []monitoringv1.Endpoint{{
+				Port: "https",
+				// Lowercase: the CRD enum of every prometheus-operator release
+				// accepts it, and older releases accept nothing else.
+				Scheme: new(monitoringv1.Scheme("https")),
+				HTTPConfigWithProxyAndTLSFiles: monitoringv1.HTTPConfigWithProxyAndTLSFiles{
+					HTTPConfigWithTLSFiles: monitoringv1.HTTPConfigWithTLSFiles{
+						HTTPConfigWithoutTLS: monitoringv1.HTTPConfigWithoutTLS{
+							BasicAuth: &monitoringv1.BasicAuth{
+								Username: corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: UserSecretName(cluster)},
+									Key:                  usernameKey,
+								},
+								Password: corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: UserSecretName(cluster)},
+									Key:                  PasswordKey,
+								},
+							},
+						},
+						TLSConfig: &monitoringv1.TLSConfig{
+							SafeTLSConfig: monitoringv1.SafeTLSConfig{
+								ServerName: new(cluster.Name + httpServiceSuffix + "." + cluster.Namespace + ".svc"),
+								CA: monitoringv1.SecretOrConfigMap{
+									Secret: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: cluster.Name + certsSecretSuffix,
+										},
+										Key: caCertKey,
+									},
+								},
+							},
 						},
 					},
 				},
 			}},
 		},
-	}}
+	}
 }
