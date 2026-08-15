@@ -143,8 +143,11 @@ type ElasticsearchClusterSpec struct {
 	// Monitoring configures the Prometheus scraping integration.
 	// +optional
 	Monitoring *MonitoringSpec `json:"monitoring,omitempty"`
-	// Suspend scales the Elasticsearch node set to zero while keeping all
-	// data volumes. Defaults to false.
+	// Suspend stops the Elasticsearch cluster and keeps its data volumes.
+	// The operator deletes the ECK Elasticsearch resource, whose volume
+	// claim delete policy is DeleteOnScaledownOnly, so ECK retains the
+	// data volumes. Setting the field back to false recreates the resource,
+	// and ECK reattaches the volumes. Defaults to false.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 }

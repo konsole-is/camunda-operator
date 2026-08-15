@@ -135,22 +135,19 @@ func TestDefaultGraceStatusHandler(t *testing.T) {
 	}
 }
 
-func TestDefaultSuspendMutationHandlerZeroesEveryNodeSet(t *testing.T) {
+func TestDefaultSuspendMutationHandlerSetsRetainingDeletePolicy(t *testing.T) {
 	t.Parallel()
 
 	es := testObject()
-	es.Spec.NodeSets = []esv1.NodeSet{
-		{Name: "default", Count: 3},
-		{Name: "warm", Count: 2},
-	}
+	es.Spec.NodeSets = []esv1.NodeSet{{Name: "default", Count: 3}}
+	es.Spec.VolumeClaimDeletePolicy = esv1.DeleteOnScaledownAndClusterDeletionPolicy
 
 	mutator := NewMutator(es)
 	require.NoError(t, DefaultSuspendMutationHandler(mutator))
 	require.NoError(t, mutator.Apply())
 
-	for _, nodeSet := range es.Spec.NodeSets {
-		assert.Zero(t, nodeSet.Count, "nodeSet %q", nodeSet.Name)
-	}
+	assert.Equal(t, esv1.DeleteOnScaledownOnlyPolicy, es.Spec.VolumeClaimDeletePolicy)
+	assert.Equal(t, int32(3), es.Spec.NodeSets[0].Count, "suspension must not scale nodes away")
 }
 
 func TestDefaultSuspensionStatusHandler(t *testing.T) {
@@ -158,24 +155,55 @@ func TestDefaultSuspensionStatusHandler(t *testing.T) {
 
 	tests := []struct {
 		name               string
+		policy             esv1.VolumeClaimDeletePolicy
 		generation         int64
 		observedGeneration int64
-		availableNodes     int32
+		phase              esv1.ElasticsearchOrchestrationPhase
 		want               concepts.SuspensionStatus
 	}{
-		{"unpopulated status is not yet suspended", 1, 0, 0, concepts.SuspensionStatusPending},
-		{"stale status is not yet suspended", 3, 2, 0, concepts.SuspensionStatusPending},
-		{"no available nodes at the current generation is suspended", 3, 3, 0, concepts.SuspensionStatusSuspended},
-		{"remaining nodes are suspending", 3, 3, 2, concepts.SuspensionStatusSuspending},
+		{
+			"a retaining policy that is not applied yet is pending",
+			esv1.DeleteOnScaledownAndClusterDeletionPolicy,
+			1,
+			1,
+			"",
+			concepts.SuspensionStatusPending,
+		},
+		{
+			"an unpopulated status is pending",
+			esv1.DeleteOnScaledownOnlyPolicy,
+			1,
+			0,
+			"",
+			concepts.SuspensionStatusPending,
+		},
+		{"a stale status is pending", esv1.DeleteOnScaledownOnlyPolicy, 3, 2, "", concepts.SuspensionStatusPending},
+		{
+			"a data migration is pending",
+			esv1.DeleteOnScaledownOnlyPolicy,
+			3,
+			3,
+			esv1.ElasticsearchMigratingDataPhase,
+			concepts.SuspensionStatusPending,
+		},
+		{
+			"a retaining policy at the current generation is suspended",
+			esv1.DeleteOnScaledownOnlyPolicy,
+			3,
+			3,
+			esv1.ElasticsearchReadyPhase,
+			concepts.SuspensionStatusSuspended,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			es := testObject()
+			es.Spec.VolumeClaimDeletePolicy = tt.policy
 			es.Generation = tt.generation
 			es.Status.ObservedGeneration = tt.observedGeneration
-			es.Status.AvailableNodes = tt.availableNodes
+			es.Status.Phase = tt.phase
 
 			got, err := DefaultSuspensionStatusHandler(es)
 			require.NoError(t, err)
@@ -183,4 +211,10 @@ func TestDefaultSuspensionStatusHandler(t *testing.T) {
 			assert.NotEmpty(t, got.Reason)
 		})
 	}
+}
+
+func TestDefaultDeleteOnSuspendHandlerDeletes(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, DefaultDeleteOnSuspendHandler(testObject()))
 }

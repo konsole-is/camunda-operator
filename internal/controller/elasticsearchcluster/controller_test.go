@@ -23,6 +23,7 @@ import (
 	"github.com/onsi/gomega/types"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -306,12 +307,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		)
 	})
 
-	It("scales the node set to zero on suspend and reports Suspended", func() {
+	It("suspends by deleting the ECK CR with retained volumes, and recreates it on resume", func() {
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		createElasticsearchCluster(cluster)
-		fetchOwnedElasticsearch(cluster)
+		es := fetchOwnedElasticsearch(cluster)
+		Expect(es.Spec.VolumeClaimDeletePolicy).To(Equal(esv1.DeleteOnScaledownOnlyPolicy))
 
 		Eventually(func(g Gomega) {
 			var latest v1.ElasticsearchCluster
@@ -320,23 +322,33 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		Eventually(func(g Gomega) {
-			var es esv1.Elasticsearch
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
-			g.Expect(es.Spec.NodeSets[0].Count).To(Equal(int32(0)))
-		}, timeout, interval).Should(Succeed())
-
-		// ECK confirms the scale-down. There are no available nodes at the
-		// current generation.
+		// The CR is deleted only once ECK has observed the retaining policy.
+		// envtest runs no ECK, so the spec stamps the observed generation.
 		updateECKStatus(cluster, func(es *esv1.Elasticsearch) {
-			es.Status.AvailableNodes = 0
+			es.Status.Phase = esv1.ElasticsearchReadyPhase
 		})
+
+		Eventually(func(g Gomega) {
+			var latest esv1.Elasticsearch
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the Elasticsearch CR must be deleted on suspension")
+		}, timeout, interval).Should(Succeed())
 
 		// Suspended is Ready=True: the cluster is in its desired state.
 		expectElasticsearchClusterReady(
 			cluster, metav1.ConditionTrue,
 			Equal(string(component.Suspended)), HavePrefix("ElasticsearchReady: "),
 		)
+
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			latest.Spec.Suspend = false
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// Resume recreates the CR; ECK reattaches the retained volumes by name.
+		fetchOwnedElasticsearch(cluster)
 	})
 
 	It("regenerates the password when the credentials Secret is deleted", func() {

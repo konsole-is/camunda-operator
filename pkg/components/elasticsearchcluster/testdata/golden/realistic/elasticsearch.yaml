@@ -90,6 +90,7 @@ spec:
   updateStrategy:
     changeBudget: {}
   version: 9.2.4
+  volumeClaimDeletePolicy: DeleteOnScaledownOnly
 status:
   conditions: null
   inProgressOperations:

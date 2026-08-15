@@ -287,6 +287,10 @@ func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClus
 		},
 		Spec: esv1.ElasticsearchSpec{
 			Version: merged.Version,
+			// The data volumes outlive the Elasticsearch CR: suspension deletes
+			// the CR and re-creation reattaches the volumes, and deleting the
+			// ElasticsearchCluster never erases data on its own.
+			VolumeClaimDeletePolicy: esv1.DeleteOnScaledownOnlyPolicy,
 			Auth: esv1.Auth{
 				FileRealm: []esv1.FileRealmSource{
 					{SecretRef: commonv1.SecretRef{SecretName: UserSecretName(cluster)}},
