@@ -104,6 +104,8 @@ spec:
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
+`status.storageSize` is the data volume size that the cluster has: the smallest capacity that its data PersistentVolumeClaims report. A resize outside the spec, for example by an auto-resize controller, shows here. Until a claim reports a capacity it is the size that the applied Elasticsearch CR requests.
+
 ## Validation
 
 - When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline; with a preset, the merged result must contain them.

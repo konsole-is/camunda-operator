@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -38,6 +39,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
@@ -90,6 +93,7 @@ type ElasticsearchClusterReconciler struct {
 // +kubebuilder:rbac:groups=elasticsearch.k8s.elastic.co,resources=elasticsearches,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
@@ -140,6 +144,12 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 	reconcileErr := reconcileComponents(ctx, recCtx, comps)
 	setReady(&cluster, conditions.Aggregate(&cluster, comps...))
+
+	storageSize, err := r.observedStorageSize(ctx, &cluster)
+	if err != nil {
+		return ctrl.Result{}, errors.Join(reconcileErr, err)
+	}
+	cluster.Status.StorageSize = storageSize
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -216,6 +226,65 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	merged.StorageSize = applied
 
 	return nil
+}
+
+// observedStorageSize returns the data volume size that the cluster has: the
+// smallest capacity that its data PersistentVolumeClaims report. ECK labels
+// the claims with the cluster name, and the data claims carry the data volume
+// claim name as prefix. Until a claim reports a capacity it returns the size
+// that the applied Elasticsearch CR requests, or nil before the first apply.
+func (r *ElasticsearchClusterReconciler) observedStorageSize(
+	ctx context.Context,
+	cluster *v1.ElasticsearchCluster,
+) (*resource.Quantity, error) {
+	var claims corev1.PersistentVolumeClaimList
+	if err := r.List(
+		ctx, &claims,
+		client.InNamespace(cluster.Namespace),
+		client.MatchingLabels{components.ECKClusterNameLabel: cluster.Name},
+	); err != nil {
+		return nil, fmt.Errorf("listing data volume claims of %q: %w", cluster.Name, err)
+	}
+
+	var smallest *resource.Quantity
+	for i := range claims.Items {
+		claim := &claims.Items[i]
+		if !strings.HasPrefix(claim.Name, components.DataVolumeClaimName+"-") {
+			continue
+		}
+		capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]
+		if !ok {
+			continue
+		}
+		if smallest == nil || capacity.Cmp(*smallest) < 0 {
+			smallest = &capacity
+		}
+	}
+	if smallest != nil {
+		return smallest, nil
+	}
+
+	var es esv1.Elasticsearch
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
+	}
+
+	return appliedDataClaimSize(&es), nil
+}
+
+// enqueueForDataClaim maps a PersistentVolumeClaim event to the cluster that
+// ECK labels it with, so a resize outside the spec updates status.storageSize.
+func enqueueForDataClaim() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
+		name, ok := o.GetLabels()[components.ECKClusterNameLabel]
+		if !ok {
+			return nil
+		}
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: name}}}
+	})
 }
 
 // appliedDataClaimSize returns the data volume claim size of the applied ECK
@@ -307,8 +376,9 @@ func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 }
 
 // SetupWithManager registers the controller, ownership watches on the ECK CR,
-// the user Secret, and the SecondaryStorageConfig, and a preset watch through
-// a field index on spec.presetRef.
+// the user Secret, and the SecondaryStorageConfig, a preset watch through a
+// field index on spec.presetRef, and a watch on the data volume claims that
+// ECK labels with the cluster name.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// The ReconcileContext.Recorder of ocf is the old events API, and the
 	// manager only vends it through the deprecated accessor.
@@ -350,6 +420,7 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 				elasticsearchClusterPresetRefField, refindex.ObjectName,
 			),
 		).
+		Watches(&corev1.PersistentVolumeClaim{}, enqueueForDataClaim()).
 		Named("elasticsearchcluster").
 		Complete(r)
 }

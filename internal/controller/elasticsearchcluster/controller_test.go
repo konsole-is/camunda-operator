@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 )
 
 // newElasticsearchClusterNamespace creates a uniquely named Namespace for one
@@ -150,6 +151,17 @@ func expectStorageShrinkIgnored(cluster *v1.ElasticsearchCluster, applied string
 	ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
 	Expect(ready).NotTo(BeNil())
 	Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+}
+
+// expectStorageSize polls until status.storageSize of cluster equals want.
+func expectStorageSize(cluster *v1.ElasticsearchCluster, want string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.ElasticsearchCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		g.Expect(latest.Status.StorageSize).NotTo(BeNil())
+		g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse(want))).To(BeZero())
+	}, timeout, interval).Should(Succeed())
 }
 
 // expectControlledBy asserts that obj carries a controller owner reference to
@@ -414,6 +426,41 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		expectStorageShrinkIgnored(cluster, "1Gi")
+	})
+
+	It("reports the data volume size in status.storageSize", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		createElasticsearchCluster(cluster)
+		fetchOwnedElasticsearch(cluster)
+
+		// Before any claim reports a capacity, the applied claim size is reported.
+		expectStorageSize(cluster, "1Gi")
+
+		// A data claim that ECK labels with the cluster name reports its
+		// capacity, for example after a resize outside the spec. envtest runs
+		// no ECK, so the spec creates the claim and stamps its capacity.
+		claim := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      components.DataVolumeClaimName + "-" + cluster.Name + "-es-default-0",
+				Namespace: cluster.Namespace,
+				Labels:    map[string]string{components.ECKClusterNameLabel: cluster.Name},
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, claim) })
+		claim.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")}
+		claim.Status.Phase = corev1.ClaimBound
+		Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
+
+		expectStorageSize(cluster, "2Gi")
 	})
 
 	It("records the reconciled generation in status.observedGeneration", func() {

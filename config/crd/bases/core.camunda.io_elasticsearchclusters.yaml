@@ -1089,6 +1089,18 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              storageSize:
+                anyOf:
+                - type: integer
+                - type: string
+                description: |-
+                  StorageSize is the data volume size that the cluster has. It is the
+                  smallest capacity that the data PersistentVolumeClaims of the cluster
+                  report, so a resize outside the spec, for example by an auto-resize
+                  controller, shows here. Until a claim reports a capacity it is the size
+                  that the applied Elasticsearch CR requests.
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
             type: object
         required:
         - spec

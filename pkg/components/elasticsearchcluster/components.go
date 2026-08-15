@@ -68,6 +68,9 @@ const (
 	// certsSecretSuffix appended to the CR name yields the name of the
 	// Secret in which ECK publishes the CA certificate of the cluster.
 	certsSecretSuffix = "-es-http-certs-public"
+	// ECKClusterNameLabel is the label that ECK puts on every object of an
+	// Elasticsearch cluster, with the cluster name as its value.
+	ECKClusterNameLabel = "elasticsearch.k8s.elastic.co/cluster-name"
 	// caCertKey is the key of the CA certificate inside the ECK certs Secret.
 	caCertKey = "ca.crt"
 	// nodeSetName names the single node set that the operator renders.
@@ -440,8 +443,8 @@ func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClu
 		"spec": map[string]any{
 			"selector": map[string]any{
 				"matchLabels": map[string]any{
-					"common.k8s.elastic.co/type":                componentLabel,
-					"elasticsearch.k8s.elastic.co/cluster-name": cluster.Name,
+					"common.k8s.elastic.co/type": componentLabel,
+					ECKClusterNameLabel:          cluster.Name,
 				},
 			},
 			"endpoints": []any{map[string]any{

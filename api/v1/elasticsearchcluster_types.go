@@ -154,6 +154,13 @@ type ElasticsearchClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// StorageSize is the data volume size that the cluster has. It is the
+	// smallest capacity that the data PersistentVolumeClaims of the cluster
+	// report, so a resize outside the spec, for example by an auto-resize
+	// controller, shows here. Until a claim reports a capacity it is the size
+	// that the applied Elasticsearch CR requests.
+	// +optional
+	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// Conditions represent the current state. Ready carries the pre-check
 	// reason InvalidReference or mirrors the representative component
 	// condition. The per-component conditions (CredentialsReady,
