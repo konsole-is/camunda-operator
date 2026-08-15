@@ -17,8 +17,8 @@ limitations under the License.
 // Package elasticsearchcluster renders the resources that an
 // ElasticsearchCluster CR publishes. It merges the preset into the spec,
 // validates the merged spec, and assembles the ocf components: the file-realm
-// credentials Secret, the ECK Elasticsearch CR, and the SecondaryStorageConfig
-// binding. Everything here is pure: spec in, resources out, no API calls. The
+// credentials Secret, the ECK Elasticsearch CR, the SecondaryStorageConfig
+// binding, and the optional metrics exporter. Everything here is pure: spec in, resources out, no API calls. The
 // controller in internal/controller drives it.
 package elasticsearchcluster
 
@@ -27,7 +27,6 @@ import (
 
 	commonv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/common/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/mutation/editors"
@@ -39,7 +38,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/servicemonitor"
 )
 
 const (
@@ -152,16 +150,11 @@ func CredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*c
 
 // ElasticsearchComponent builds the elasticsearch component from the
 // preset-merged spec: the ServiceAccount of the pods (gated on
-// spec.serviceAccount), the ECK Elasticsearch CR, and the ServiceMonitor
-// (gated on monitoring.serviceMonitor.enabled). serviceMonitorSupported
-// reports whether the cluster serves the ServiceMonitor kind. When it is
-// false, the resource is omitted, so the reconcile never touches a missing
-// kind. spec.suspend suspends the component, which scales the node set to
-// zero through the suspend mutation of the ECK wrapper.
+// spec.serviceAccount) and the ECK Elasticsearch CR. spec.suspend suspends the
+// component, which deletes the ECK CR with its data volumes retained.
 func ElasticsearchComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
-	serviceMonitorSupported bool,
 ) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccount(cluster, merged)).Build()
 	if err != nil {
@@ -175,29 +168,11 @@ func ElasticsearchComponent(
 		return nil, err
 	}
 
-	monitor, err := servicemonitor.NewBuilder(serviceMonitor(cluster, merged)).Build()
-	if err != nil {
-		return nil, err
-	}
-	monitorEnabled := merged.Monitoring != nil &&
-		merged.Monitoring.ServiceMonitor != nil &&
-		merged.Monitoring.ServiceMonitor.Enabled
-
-	// The ServiceMonitor is included only where the cluster serves the kind
-	// and never deleted by inclusion alone: when the CRD goes away, the API
-	// server removes every instance, and a delete against a missing kind
-	// fails. While the kind is served, the gate deletes it when monitoring is
-	// disabled.
 	return component.NewComponentBuilder().
 		WithName("elasticsearch").
 		WithConditionType(ConditionElasticsearch).
 		WithResource(account, component.GatedBy(feature.NewBooleanGate(merged.ServiceAccount != nil))).
 		WithResource(elasticsearch).
-		IncludeWhen(
-			serviceMonitorSupported,
-			func() component.Resource { return monitor },
-			component.GatedBy(feature.NewBooleanGate(monitorEnabled)),
-		).
 		Suspend(merged.Suspend).
 		Build()
 }
@@ -398,68 +373,6 @@ func elasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsear
 				})
 				return nil
 			},
-		},
-	}
-}
-
-// serviceMonitor renders the Prometheus ServiceMonitor for the ECK HTTPS
-// service. It scrapes the https port with the basic auth of the Camunda user
-// and checks TLS against the CA that ECK publishes.
-func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *monitoringv1.ServiceMonitor {
-	labels := clusterLabels(cluster)
-	var annotations map[string]string
-	if merged.Monitoring != nil && merged.Monitoring.ServiceMonitor != nil {
-		maps.Copy(labels, merged.Monitoring.ServiceMonitor.Labels)
-		annotations = merged.Monitoring.ServiceMonitor.Annotations
-	}
-
-	return &monitoringv1.ServiceMonitor{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        cluster.Name + serviceAccountSuffix,
-			Namespace:   cluster.Namespace,
-			Labels:      labels,
-			Annotations: annotations,
-		},
-		Spec: monitoringv1.ServiceMonitorSpec{
-			Selector: metav1.LabelSelector{MatchLabels: map[string]string{
-				"common.k8s.elastic.co/type": componentLabel,
-				ECKClusterNameLabel:          cluster.Name,
-			}},
-			Endpoints: []monitoringv1.Endpoint{{
-				Port: "https",
-				// Lowercase: the CRD enum of every prometheus-operator release
-				// accepts it, and older releases accept nothing else.
-				Scheme: new(monitoringv1.Scheme("https")),
-				HTTPConfigWithProxyAndTLSFiles: monitoringv1.HTTPConfigWithProxyAndTLSFiles{
-					HTTPConfigWithTLSFiles: monitoringv1.HTTPConfigWithTLSFiles{
-						HTTPConfigWithoutTLS: monitoringv1.HTTPConfigWithoutTLS{
-							BasicAuth: &monitoringv1.BasicAuth{
-								Username: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: UserSecretName(cluster)},
-									Key:                  usernameKey,
-								},
-								Password: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: UserSecretName(cluster)},
-									Key:                  PasswordKey,
-								},
-							},
-						},
-						TLSConfig: &monitoringv1.TLSConfig{
-							SafeTLSConfig: monitoringv1.SafeTLSConfig{
-								ServerName: new(cluster.Name + httpServiceSuffix + "." + cluster.Namespace + ".svc"),
-								CA: monitoringv1.SecretOrConfigMap{
-									Secret: &corev1.SecretKeySelector{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: cluster.Name + certsSecretSuffix,
-										},
-										Key: caCertKey,
-									},
-								},
-							},
-						},
-					},
-				},
-			}},
 		},
 	}
 }

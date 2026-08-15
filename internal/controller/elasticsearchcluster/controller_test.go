@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -473,6 +474,57 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
 
 		expectStorageSize(cluster, "2Gi")
+	})
+
+	It("deploys the metrics exporter while monitoring is enabled and removes it when disabled", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.Monitoring = &v1.MonitoringSpec{ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true}}
+		createElasticsearchCluster(cluster)
+		fetchOwnedElasticsearch(cluster)
+
+		exporterKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-es-exporter"}
+		metricsKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-es-metrics"}
+
+		var exporter appsv1.Deployment
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, exporterKey, &exporter)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectControlledBy(&exporter, cluster)
+		container := exporter.Spec.Template.Spec.Containers[0]
+		Expect(container.Image).To(Equal(components.DefaultExporterImage))
+		Expect(container.Args).To(ContainElement(
+			"--es.uri=https://" + cluster.Name + "-es-http." + cluster.Namespace + ".svc:9200",
+		))
+		Expect(container.Env).To(ContainElement(HaveField("Name", "ES_PASSWORD")))
+
+		var metrics corev1.Service
+		Expect(k8sClient.Get(ctx, metricsKey, &metrics)).To(Succeed())
+		expectControlledBy(&metrics, cluster)
+		Expect(metrics.Spec.Ports).To(ConsistOf(HaveField("Port", int32(9114))))
+
+		// Disabling monitoring flips the feature gate: the component deletes
+		// its resources and reports Disabled, which Ready leaves out.
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			latest.Spec.Monitoring.ServiceMonitor.Enabled = false
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, exporterKey, &appsv1.Deployment{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, metricsKey, &corev1.Service{}))).To(BeTrue())
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			metricsCond := meta.FindStatusCondition(latest.Status.Conditions, components.ConditionMetrics)
+			g.Expect(metricsCond).NotTo(BeNil())
+			g.Expect(metricsCond.Reason).To(Equal(string(component.Disabled)))
+			ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).NotTo(Equal(string(component.Disabled)))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("records the reconciled generation in status.observedGeneration", func() {

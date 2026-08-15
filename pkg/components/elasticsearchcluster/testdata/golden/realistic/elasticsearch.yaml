@@ -100,36 +100,3 @@ status:
       lastUpdatedTime: null
     upscale:
       lastUpdatedTime: null
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  labels:
-    camunda.io/cluster: my-cluster-es
-    camunda.io/component: elasticsearch
-    release: prometheus
-  name: my-cluster-es-es
-  namespace: my-cluster-ns
-spec:
-  endpoints:
-  - basicAuth:
-      password:
-        key: password
-        name: my-cluster-es-es-user
-      username:
-        key: username
-        name: my-cluster-es-es-user
-    port: https
-    scheme: https
-    tlsConfig:
-      ca:
-        secret:
-          key: ca.crt
-          name: my-cluster-es-es-http-certs-public
-      cert: {}
-      serverName: my-cluster-es-es-http.my-cluster-ns.svc
-  namespaceSelector: {}
-  selector:
-    matchLabels:
-      common.k8s.elastic.co/type: elasticsearch
-      elasticsearch.k8s.elastic.co/cluster-name: my-cluster-es

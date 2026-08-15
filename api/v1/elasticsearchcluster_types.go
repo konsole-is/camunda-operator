@@ -48,10 +48,14 @@ type SchedulingSpec struct {
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
-// ServiceMonitorSpec configures the optional Prometheus ServiceMonitor for a
-// managed workload's service.
+// ServiceMonitorSpec configures the Prometheus scraping of the Elasticsearch
+// cluster. Elasticsearch serves no Prometheus endpoint itself, so enabling it
+// deploys the prometheus-community elasticsearch_exporter next to the cluster
+// and, when the cluster serves the ServiceMonitor kind, a ServiceMonitor that
+// scrapes the exporter.
 type ServiceMonitorSpec struct {
-	// Enabled creates the ServiceMonitor when true. Defaults to false.
+	// Enabled deploys the exporter and creates the ServiceMonitor when true.
+	// Defaults to false.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 	// Labels are extra labels applied to the ServiceMonitor.
@@ -62,12 +66,29 @@ type ServiceMonitorSpec struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-// MonitoringSpec groups the Prometheus scraping integration of a managed
-// workload.
+// ExporterSpec tunes the elasticsearch_exporter Deployment that
+// ServiceMonitorSpec.Enabled deploys.
+type ExporterSpec struct {
+	// Image overrides the exporter image. Defaults to the pinned
+	// quay.io/prometheuscommunity/elasticsearch-exporter release of the
+	// operator.
+	// +optional
+	Image string `json:"image,omitempty"`
+	// Resources are the CPU and memory of the exporter container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// MonitoringSpec groups the Prometheus scraping integration of the
+// Elasticsearch cluster.
 type MonitoringSpec struct {
-	// ServiceMonitor configures the Prometheus ServiceMonitor.
+	// ServiceMonitor configures the exporter and the Prometheus
+	// ServiceMonitor.
 	// +optional
 	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
+	// Exporter tunes the exporter Deployment.
+	// +optional
+	Exporter *ExporterSpec `json:"exporter,omitempty"`
 }
 
 // ElasticsearchClusterSpec defines the desired state of ElasticsearchCluster.

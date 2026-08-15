@@ -75,13 +75,15 @@ func Failed(owner Owner, failure *PreCheckFailure) metav1.Condition {
 	return Ready(metav1.ConditionFalse, failure.Reason, failure.Message, owner.GetGeneration())
 }
 
-// Aggregate builds the Ready condition of owner from its ocf components. It
-// mirrors the representative component: the one whose condition reason has
-// the highest component.Status priority, with the first one winning a tie.
-// Ready takes the status and reason of that component, and its message names
-// the component. A component that has not reported yet counts as Unknown,
-// which component.GetCondition supplies. With no components the result is
-// Unknown.
+// Aggregate builds the Ready condition of owner from the given ocf
+// components. It mirrors the representative component: the one whose
+// condition reason has the highest component.Status priority, with the first
+// one winning a tie. Ready takes the status and reason of that component, and
+// its message names the component. A component that has not reported yet
+// counts as Unknown, which component.GetCondition supplies. With no components
+// the result is Unknown. The caller decides which components make up Ready: an
+// auxiliary component, for example a metrics exporter, keeps its own condition
+// and stays out of the list.
 func Aggregate(owner component.OperatorCRD, comps ...*component.Component) metav1.Condition {
 	generation := owner.GetGeneration()
 	if len(comps) == 0 {

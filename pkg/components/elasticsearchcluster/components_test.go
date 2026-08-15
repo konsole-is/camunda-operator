@@ -18,6 +18,7 @@ package elasticsearchcluster
 
 import (
 	"flag"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -127,8 +128,9 @@ func goldenRealisticElasticsearchCluster() *v1.ElasticsearchCluster {
 	}
 }
 
-// assertElasticsearchClusterGoldens renders all three components for the
-// merged spec and pins each against its golden manifest under dir.
+// assertElasticsearchClusterGoldens renders the components for the merged
+// spec and pins each against its golden manifest under dir. The metrics
+// component is pinned only when the fixture enables monitoring.
 func assertElasticsearchClusterGoldens(
 	t *testing.T,
 	dir string,
@@ -147,7 +149,7 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	elasticsearch, err := ElasticsearchComponent(cluster, merged, true)
+	elasticsearch, err := ElasticsearchComponent(cluster, merged)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
@@ -160,6 +162,15 @@ func assertElasticsearchClusterGoldens(
 		t, filepath.Join(base, "storage-contract.yaml"), storageContract,
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
+
+	if MonitoringEnabled(merged) {
+		metrics, err := MetricsComponent(cluster, merged, true)
+		require.NoError(t, err)
+		golden.AssertComponentYAML(
+			t, filepath.Join(base, "metrics.yaml"), metrics,
+			golden.WithScheme(scheme), golden.Update(*updateGolden),
+		)
+	}
 }
 
 func TestElasticsearchClusterGoldenMinimal(t *testing.T) {
@@ -205,19 +216,21 @@ func TestElasticsearchClusterGoldenSuspended(t *testing.T) {
 // A cluster without the ServiceMonitor CRD must not render one, even when
 // monitoring is enabled on the spec. The controller omits the resource
 // instead of failing every reconcile against a missing kind.
-func TestElasticsearchComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
+func TestMetricsComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
 	t.Parallel()
 
 	cluster := goldenRealisticElasticsearchCluster()
-
-	comp, err := ElasticsearchComponent(cluster, MergePreset(cluster.Spec, nil), false)
+	comp, err := MetricsComponent(cluster, cluster.Spec, false)
 	require.NoError(t, err)
 
+	// Typed objects carry no TypeMeta until serialized, so compare Go types.
 	objects, err := comp.Preview()
 	require.NoError(t, err)
+	types := make([]string, 0, len(objects))
 	for _, obj := range objects {
-		assert.NotEqual(t, "ServiceMonitor", obj.GetObjectKind().GroupVersionKind().Kind)
+		types = append(types, fmt.Sprintf("%T", obj))
 	}
+	assert.ElementsMatch(t, []string{"*v1.Deployment", "*v1.Service"}, types)
 }
 
 // The generated password must land in the published Secret verbatim, under

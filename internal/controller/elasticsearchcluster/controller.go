@@ -28,6 +28,7 @@ import (
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -92,14 +93,16 @@ type ElasticsearchClusterReconciler struct {
 // +kubebuilder:rbac:groups=elasticsearch.k8s.elastic.co,resources=elasticsearches,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile converges an ElasticsearchCluster. It resolves the preset, runs
-// the pre-checks, reconciles the credentials, elasticsearch, and
-// storage-contract components in dependency order, and derives the CR-level
-// Ready and Suspended conditions.
+// the pre-checks, reconciles the credentials, elasticsearch, storage-contract,
+// and metrics components in dependency order, and derives the CR-level Ready
+// condition.
 //
 // Status is written once per reconcile. The components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -136,13 +139,16 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	comps, err := r.buildComponents(ctx, &cluster, merged)
+	core, metrics, err := r.buildComponents(ctx, &cluster, merged)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	reconcileErr := reconcileComponents(ctx, recCtx, comps)
-	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps...))
+	// The metrics exporter is auxiliary: it keeps its own MetricsReady
+	// condition and stays out of Ready, so a broken exporter never marks the
+	// cluster not ready and a disabled one never shows up on it.
+	reconcileErr := reconcileComponents(ctx, recCtx, append(core, metrics))
+	conditions.Stage(&cluster, conditions.Aggregate(&cluster, core...))
 
 	storageSize, err := r.observedStorageSize(ctx, &cluster)
 	if err != nil {
@@ -303,39 +309,46 @@ func appliedDataClaimSize(es *esv1.Elasticsearch) *resource.Quantity {
 	return nil
 }
 
-// buildComponents builds the three components in dependency order. It reads
-// the password from the existing user Secret without the cache, so the
-// password stays stable after creation. To rotate it, delete the Secret.
+// buildComponents builds the components in dependency order: the three that
+// make up Ready (credentials, elasticsearch, storage-contract), and the
+// metrics component apart. It reads the password from the existing user
+// Secret without the cache, so the password stays stable after creation. To
+// rotate it, delete the Secret.
 func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
-) ([]*component.Component, error) {
+) (core []*component.Component, metrics *component.Component, err error) {
 	password, err := credentials.LookupOrNew(
 		ctx, r.APIReader, client.ObjectKey{
 			Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
 		}, components.PasswordKey,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	credentialsComp, err := components.CredentialsComponent(cluster, password)
 	if err != nil {
-		return nil, fmt.Errorf("building credentials component: %w", err)
+		return nil, nil, fmt.Errorf("building credentials component: %w", err)
 	}
 
-	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, r.serviceMonitorSupported())
+	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged)
 	if err != nil {
-		return nil, fmt.Errorf("building elasticsearch component: %w", err)
+		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
 	storageContractComp, err := components.StorageContractComponent(cluster, merged)
 	if err != nil {
-		return nil, fmt.Errorf("building storage-contract component: %w", err)
+		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}
 
-	return []*component.Component{credentialsComp, elasticsearchComp, storageContractComp}, nil
+	metricsComp, err := components.MetricsComponent(cluster, merged, r.serviceMonitorSupported())
+	if err != nil {
+		return nil, nil, fmt.Errorf("building metrics component: %w", err)
+	}
+
+	return []*component.Component{credentialsComp, elasticsearchComp, storageContractComp}, metricsComp, nil
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -354,7 +367,7 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 
 // serviceMonitorSupported reports whether the cluster serves the
 // ServiceMonitor kind. On a cluster without the prometheus-operator CRDs the
-// elasticsearch component then omits the resource instead of failing every
+// metrics component then omits the resource instead of failing every
 // reconcile.
 func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 	if r.restMapper == nil {
@@ -405,6 +418,8 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Owns(&esv1.Elasticsearch{}).
 		Owns(&corev1.Secret{}).
 		Owns(&v1.SecondaryStorageConfig{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}).
 		Watches(
 			&v1.ElasticsearchClusterPreset{},
 			refindex.Enqueue(

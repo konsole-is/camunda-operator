@@ -253,8 +253,80 @@ spec:
               monitoring:
                 description: Monitoring configures the Prometheus scraping integration.
                 properties:
+                  exporter:
+                    description: Exporter tunes the exporter Deployment.
+                    properties:
+                      image:
+                        description: |-
+                          Image overrides the exporter image. Defaults to the pinned
+                          quay.io/prometheuscommunity/elasticsearch-exporter release of the
+                          operator.
+                        type: string
+                      resources:
+                        description: Resources are the CPU and memory of the exporter
+                          container.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This field depends on the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                    type: object
                   serviceMonitor:
-                    description: ServiceMonitor configures the Prometheus ServiceMonitor.
+                    description: |-
+                      ServiceMonitor configures the exporter and the Prometheus
+                      ServiceMonitor.
                     properties:
                       annotations:
                         additionalProperties:
@@ -263,7 +335,8 @@ spec:
                           the ServiceMonitor.
                         type: object
                       enabled:
-                        description: Enabled creates the ServiceMonitor when true.
+                        description: |-
+                          Enabled deploys the exporter and creates the ServiceMonitor when true.
                           Defaults to false.
                         type: boolean
                       labels:

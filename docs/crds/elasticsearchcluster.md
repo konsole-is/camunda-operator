@@ -23,8 +23,9 @@ Camunda 8.9 also supports OpenSearch and RDBMS as secondary storage, but this CR
 5. It provisions a dedicated Camunda user through ECK's file realm, generates credentials for it, and stores them in a Secret it owns. The user carries the `superuser` role for now: snapshot-repository registration (done by the `CamundaCluster` controller with these credentials) needs cluster-manage rights, and narrowing to a dedicated role is deliberately deferred until that flow lands.
 6. It creates and keeps current a `SecondaryStorageConfig` named `spec.secondaryStorageConfig` in this CR's own namespace, with `type: elasticsearch`, the in-cluster HTTPS endpoint of the ECK-managed service, a reference to the generated credentials Secret, and a `caSecretRef` pointing at the ECK-generated CA certificate Secret so consumers can verify the cluster's self-signed HTTPS endpoint.
 7. It watches the ECK CR's health and reflects it in this CR's conditions.
-8. When `spec.suspend: true`, it stops the cluster the way Elastic documents: it deletes the ECK `Elasticsearch` resource. The resource always carries `volumeClaimDeletePolicy: DeleteOnScaledownOnly`, so ECK retains the data volumes. Before the deletion the operator waits until ECK has observed that policy and no data migration is in progress. `Ready` reports `Suspended`. Setting `spec.suspend` back to `false` recreates the resource, and ECK reattaches the volumes by name. The operator never scales node sets to zero: ECK removes the volume of every node that it scales away, under either policy. A composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
-9. On deletion, the ECK CR, the credentials Secret, the `SecondaryStorageConfig`, and the optional ServiceAccount and ServiceMonitor are all garbage-collected through their owner references. No finalizer is needed. The data volumes stay, because of `DeleteOnScaledownOnly`: data removal is a deliberate, manual act. Delete the PersistentVolumeClaims to remove the data.
+8. When `spec.monitoring.serviceMonitor.enabled: true`, it deploys the prometheus-community `elasticsearch_exporter` next to the cluster, because Elasticsearch serves no Prometheus endpoint itself. The exporter reads the cluster over the ECK HTTPS service with the Camunda user, checks TLS against the ECK CA, and serves metrics on port 9114 through the Service `<name>-es-metrics`. When the cluster serves the ServiceMonitor kind, a ServiceMonitor scrapes that Service. `spec.monitoring.exporter` overrides the exporter image and resources. The exporter reports its own `MetricsReady` condition and stays out of `Ready`.
+9. When `spec.suspend: true`, it stops the cluster the way Elastic documents: it deletes the ECK `Elasticsearch` resource. The resource always carries `volumeClaimDeletePolicy: DeleteOnScaledownOnly`, so ECK retains the data volumes. Before the deletion the operator waits until ECK has observed that policy and no data migration is in progress. `Ready` reports `Suspended`. Setting `spec.suspend` back to `false` recreates the resource, and ECK reattaches the volumes by name. The operator never scales node sets to zero: ECK removes the volume of every node that it scales away, under either policy. A composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
+10. On deletion, the ECK CR, the credentials Secret, the `SecondaryStorageConfig`, and the optional ServiceAccount, exporter Deployment, metrics Service, and ServiceMonitor are all garbage-collected through their owner references. No finalizer is needed. The data volumes stay, because of `DeleteOnScaledownOnly`: data removal is a deliberate, manual act. Delete the PersistentVolumeClaims to remove the data.
 
 ```mermaid
 graph LR
@@ -83,12 +84,17 @@ spec:
   # object. Optional. Prometheus scraping integration.
   monitoring:
     serviceMonitor:
-      # boolean. Optional, default: false. Create a ServiceMonitor for the Elasticsearch service. It requires the prometheus-operator ServiceMonitor CRD. On a cluster without that CRD the resource is omitted.
+      # boolean. Optional, default: false. Deploy the elasticsearch_exporter and create a ServiceMonitor that scrapes it. The ServiceMonitor requires the prometheus-operator CRD; on a cluster without it the exporter still runs and the ServiceMonitor is omitted.
       enabled: true
       # map[string]string. Optional. Extra labels applied to the ServiceMonitor.
       labels: {}
       # map[string]string. Optional. Extra annotations applied to the ServiceMonitor.
       annotations: {}
+    exporter:
+      # string. Optional. Overrides the exporter image. Defaults to the pinned quay.io/prometheuscommunity/elasticsearch-exporter release of the operator.
+      image: ""
+      # object (ResourceRequirements). Optional. CPU and memory of the exporter container.
+      resources: {}
   # boolean. Optional, default: false. Stop the cluster and keep its data volumes: the ECK resource is deleted with DeleteOnScaledownOnly and recreated on resume.
   suspend: false
 ```
@@ -100,7 +106,8 @@ spec:
 | `Ready` | `InvalidReference` | `spec.presetRef` does not resolve to an existing `ElasticsearchClusterPreset`, or the merged spec is incomplete or below the version floor. |
 | `Ready` | any component status | The pre-checks passed. `Ready` mirrors the representative component condition, that is, the one with the highest component framework priority: same status, same reason, and the message names the component. Reasons are component framework statuses, for example `Healthy`, `Creating`, `Updating`, `Failing`, `Degraded` (yellow health past the grace period), `Down` (red health past the grace period), `Suspended`, or `Error`. |
 | `Ready` | `Suspended` | `Ready` is `True` with this reason while the ECK resource is deleted for suspension and the data volumes are retained. The cluster is in its desired state and intentionally not serving. To gate on a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
-| `CredentialsReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The operational detail of the component framework for each component. |
+| `CredentialsReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The operational detail of the component framework for each component that makes up `Ready`. |
+| `MetricsReady` | component status | The exporter component. It is not part of `Ready`: a broken exporter never marks the cluster not ready. `Disabled` while monitoring is off. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
