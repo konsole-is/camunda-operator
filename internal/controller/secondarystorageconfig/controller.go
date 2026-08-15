@@ -91,9 +91,11 @@ func (r *SecondaryStorageConfigReconciler) validate(
 	switch {
 	case cfg.Spec.Type == v1.SecondaryStorageTypeElasticsearch && cfg.Spec.Elasticsearch != nil:
 		ref := cfg.Spec.Elasticsearch.CredentialsSecretRef
-		msg, err := secretref.CheckKeys(ctx, r.APIReader,
+		msg, err := secretref.CheckKeys(
+			ctx, r.APIReader,
 			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
-			ref.UsernameKey, ref.PasswordKey)
+			ref.UsernameKey, ref.PasswordKey,
+		)
 		if err != nil {
 			return metav1.Condition{}, err
 		}
@@ -102,8 +104,10 @@ func (r *SecondaryStorageConfigReconciler) validate(
 		}
 
 		if ca := cfg.Spec.Elasticsearch.CASecretRef; ca != nil {
-			msg, err := secretref.CheckKeys(ctx, r.APIReader,
-				types.NamespacedName{Namespace: ca.Namespace, Name: ca.Name}, ca.Key)
+			msg, err := secretref.CheckKeys(
+				ctx, r.APIReader,
+				types.NamespacedName{Namespace: ca.Namespace, Name: ca.Name}, ca.Key,
+			)
 			if err != nil {
 				return metav1.Condition{}, err
 			}
@@ -136,7 +140,8 @@ func (r *SecondaryStorageConfigReconciler) validate(
 // referenced Secret, an index by same-namespace DatabaseConfig, a
 // metadata-only Secret watch, and a typed DatabaseConfig watch.
 func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.SecondaryStorageConfig{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.SecondaryStorageConfig{},
 		secondaryStorageConfigSecretRefsField, func(o client.Object) []string {
 			es := o.(*v1.SecondaryStorageConfig).Spec.Elasticsearch
 			if es == nil {
@@ -147,30 +152,41 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 				keys = append(keys, refindex.NamespacedKey(es.CASecretRef.Namespace, es.CASecretRef.Name))
 			}
 			return keys
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.SecondaryStorageConfig{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.SecondaryStorageConfig{},
 		secondaryStorageConfigDatabaseConfigRefField, func(o client.Object) []string {
 			rdbms := o.(*v1.SecondaryStorageConfig).Spec.RDBMS
 			if rdbms == nil {
 				return nil
 			}
 			return []string{refindex.NamespacedKey(o.GetNamespace(), rdbms.DatabaseConfigRef)}
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.SecondaryStorageConfig{}).
-		Watches(&corev1.Secret{},
-			refindex.Enqueue(mgr.GetClient(), &v1.SecondaryStorageConfigList{},
-				secondaryStorageConfigSecretRefsField, refindex.ObjectNamespacedName),
-			builder.OnlyMetadata).
-		Watches(&v1.DatabaseConfig{},
-			refindex.Enqueue(mgr.GetClient(), &v1.SecondaryStorageConfigList{},
-				secondaryStorageConfigDatabaseConfigRefField, refindex.ObjectNamespacedName)).
+		Watches(
+			&corev1.Secret{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.SecondaryStorageConfigList{},
+				secondaryStorageConfigSecretRefsField, refindex.ObjectNamespacedName,
+			),
+			builder.OnlyMetadata,
+		).
+		Watches(
+			&v1.DatabaseConfig{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.SecondaryStorageConfigList{},
+				secondaryStorageConfigDatabaseConfigRefField, refindex.ObjectNamespacedName,
+			),
+		).
 		Named("secondarystorageconfig").
 		Complete(r)
 }

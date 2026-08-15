@@ -414,17 +414,21 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.componentClient = componentClient
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.Database{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.Database{},
 		databaseServerRefField, func(o client.Object) []string {
 			return []string{o.(*v1.Database).Spec.ServerRef}
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.Database{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.Database{},
 		databaseCollisionField, func(o client.Object) []string {
 			return []string{components.CollisionKey(o.(*v1.Database))}
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
@@ -433,15 +437,23 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Secret{}, builder.OnlyMetadata).
 		Owns(&v1.DatabaseConfig{}).
 		Owns(&v1.SecondaryStorageConfig{}).
-		Watches(&v1.DatabaseServerConfig{},
-			refindex.Enqueue(mgr.GetClient(), &v1.DatabaseList{},
-				databaseServerRefField, refindex.ObjectName)).
+		Watches(
+			&v1.DatabaseServerConfig{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.DatabaseList{},
+				databaseServerRefField, refindex.ObjectName,
+			),
+		).
 		Watches(&corev1.Secret{}, r.enqueueForAdminSecret(), builder.OnlyMetadata).
-		Watches(&v1.Database{},
-			refindex.Enqueue(mgr.GetClient(), &v1.DatabaseList{},
+		Watches(
+			&v1.Database{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.DatabaseList{},
 				databaseCollisionField, func(o client.Object) string {
 					return components.CollisionKey(o.(*v1.Database))
-				})).
+				},
+			),
+		).
 		Named("database").
 		Complete(r)
 }

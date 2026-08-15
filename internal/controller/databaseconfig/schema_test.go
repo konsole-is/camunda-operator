@@ -40,26 +40,32 @@ var _ = Describe("DatabaseConfig schema", func() {
 			}
 		},
 		Entry("accepts the minimal doc example", func(*v1.DatabaseConfig) {}, ""),
-		Entry("accepts with backup credentials ref", func(o *v1.DatabaseConfig) {
-			o.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
-				Name: "my-camunda-db-backup-credentials", Namespace: "my-cluster-ns",
-				UsernameKey: "username", PasswordKey: "password",
-			}
-		}, ""),
+		Entry(
+			"accepts with backup credentials ref", func(o *v1.DatabaseConfig) {
+				o.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+					Name: "my-camunda-db-backup-credentials", Namespace: "my-cluster-ns",
+					UsernameKey: "username", PasswordKey: "password",
+				}
+			}, "",
+		),
 		Entry("rejects empty serverRef", func(o *v1.DatabaseConfig) { o.Spec.ServerRef = "" }, "spec.serverRef"),
 		Entry(
 			"rejects empty databaseName",
 			func(o *v1.DatabaseConfig) { o.Spec.DatabaseName = "" },
 			"spec.databaseName",
 		),
-		Entry("rejects missing credentials namespace", func(o *v1.DatabaseConfig) {
-			o.Spec.CredentialsSecretRef.Namespace = ""
-		}, "namespace"),
-		Entry("rejects backup ref with empty usernameKey", func(o *v1.DatabaseConfig) {
-			o.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
-				Name: "my-camunda-db-backup-credentials", Namespace: "my-cluster-ns",
-				PasswordKey: "password",
-			}
-		}, "usernameKey"),
+		Entry(
+			"rejects missing credentials namespace", func(o *v1.DatabaseConfig) {
+				o.Spec.CredentialsSecretRef.Namespace = ""
+			}, "namespace",
+		),
+		Entry(
+			"rejects backup ref with empty usernameKey", func(o *v1.DatabaseConfig) {
+				o.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+					Name: "my-camunda-db-backup-credentials", Namespace: "my-cluster-ns",
+					PasswordKey: "password",
+				}
+			}, "usernameKey",
+		),
 	)
 })

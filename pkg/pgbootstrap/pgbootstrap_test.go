@@ -40,7 +40,8 @@ func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	container, err := postgres.Run(ctx, "postgres:17",
+	container, err := postgres.Run(
+		ctx, "postgres:17",
 		postgres.WithDatabase("postgres"),
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("admin-secret"),
@@ -91,8 +92,10 @@ func connect(t *testing.T) Bootstrapper {
 // connectAs opens a direct connection to database as user, or returns the
 // connection error.
 func connectAs(ctx context.Context, user, password, database string) (*pgx.Conn, error) {
-	url := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable&connect_timeout=5",
-		user, password, adminConn.Host, adminConn.Port, database)
+	url := fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=disable&connect_timeout=5",
+		user, password, adminConn.Host, adminConn.Port, database,
+	)
 
 	return pgx.Connect(ctx, url)
 }
@@ -219,8 +222,10 @@ func TestBackupUserReadsAllTablesIncludingFutureOnes(t *testing.T) {
 	var id int
 	require.NoError(t, backupDB.QueryRow(ctx, "SELECT id FROM before_grant").Scan(&id))
 	assert.Equal(t, 1, id)
-	require.NoError(t, backupDB.QueryRow(ctx, "SELECT id FROM after_grant").Scan(&id),
-		"backup user must read tables created after the grant")
+	require.NoError(
+		t, backupDB.QueryRow(ctx, "SELECT id FROM after_grant").Scan(&id),
+		"backup user must read tables created after the grant",
+	)
 	assert.Equal(t, 2, id)
 }
 
@@ -248,7 +253,8 @@ func adminIsMemberOf(t *testing.T, role string) bool {
 	conn := mustConnectAs(t, adminConn.AdminUser, adminConn.AdminPassword, "postgres")
 
 	var member bool
-	require.NoError(t, conn.QueryRow(t.Context(),
+	require.NoError(t, conn.QueryRow(
+		t.Context(),
 		`SELECT EXISTS (
 			SELECT FROM pg_auth_members
 			WHERE roleid = to_regrole($1) AND member = to_regrole($2)
@@ -267,10 +273,14 @@ func TestBootstrapLeavesNoAdminRoleMemberships(t *testing.T) {
 	require.NoError(t, b.GrantApplication(ctx, "resid_app", "resid_db"))
 	require.NoError(t, b.EnsureBackupUser(ctx, "resid_backup", "backup-pw", "resid_db"))
 
-	assert.False(t, adminIsMemberOf(t, "resid_app"),
-		"the membership granted for the ownership transfer and default privileges must be revoked")
-	assert.False(t, adminIsMemberOf(t, "resid_backup"),
-		"bootstrap must never leave the admin a member of the backup role")
+	assert.False(
+		t, adminIsMemberOf(t, "resid_app"),
+		"the membership granted for the ownership transfer and default privileges must be revoked",
+	)
+	assert.False(
+		t, adminIsMemberOf(t, "resid_backup"),
+		"bootstrap must never leave the admin a member of the backup role",
+	)
 }
 
 func TestBootstrapPreservesPreexistingAdminMembership(t *testing.T) {
@@ -287,8 +297,10 @@ func TestBootstrapPreservesPreexistingAdminMembership(t *testing.T) {
 	require.NoError(t, b.GrantApplication(ctx, "preex_app", "preex_db"))
 	require.NoError(t, b.EnsureBackupUser(ctx, "preex_backup", "backup-pw", "preex_db"))
 
-	assert.True(t, adminIsMemberOf(t, "preex_app"),
-		"a membership the bootstrap did not grant must not be revoked")
+	assert.True(
+		t, adminIsMemberOf(t, "preex_app"),
+		"a membership the bootstrap did not grant must not be revoked",
+	)
 }
 
 func TestEnsureUserRotatesPassword(t *testing.T) {

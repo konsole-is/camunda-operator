@@ -119,14 +119,18 @@ func TestBackupUserName(t *testing.T) {
 		one := BackupUserName(prefix + "1xyz")
 		two := BackupUserName(prefix + "2xyz")
 
-		assert.NotEqual(t, one, two,
-			"database names differing past the truncation point must not share a backup role")
+		assert.NotEqual(
+			t, one, two,
+			"database names differing past the truncation point must not share a backup role",
+		)
 		assert.LessOrEqual(t, len(one), 63, "backup role must stay a valid identifier")
 		assert.LessOrEqual(t, len(two), 63)
 		assert.True(t, strings.HasSuffix(one, "_backup"))
 		assert.True(t, strings.HasSuffix(two, "_backup"))
-		assert.Equal(t, one, BackupUserName(prefix+"1xyz"),
-			"the disambiguated role must be deterministic across reconciles")
+		assert.Equal(
+			t, one, BackupUserName(prefix+"1xyz"),
+			"the disambiguated role must be deterministic across reconciles",
+		)
 		assert.Regexp(t, "^[a-z_][a-z0-9_]{0,62}$", one)
 	})
 }
@@ -150,8 +154,10 @@ func TestDatabaseBindingsGolden(t *testing.T) {
 			comp, err := BindingsComponent(tt.db, rb)
 			require.NoError(t, err)
 
-			golden.AssertComponentYAML(t, tt.golden, comp,
-				golden.WithScheme(goldenScheme(t)), golden.Update(*update))
+			golden.AssertComponentYAML(
+				t, tt.golden, comp,
+				golden.WithScheme(goldenScheme(t)), golden.Update(*update),
+			)
 		})
 	}
 }
@@ -166,6 +172,8 @@ func TestDatabaseBindingsGoldenBackupDisabled(t *testing.T) {
 	comp, err := BindingsComponent(db, rb)
 	require.NoError(t, err)
 
-	golden.AssertComponentYAML(t, "testdata/golden/backup-disabled.yaml", comp,
-		golden.WithScheme(goldenScheme(t)), golden.Update(*update))
+	golden.AssertComponentYAML(
+		t, "testdata/golden/backup-disabled.yaml", comp,
+		golden.WithScheme(goldenScheme(t)), golden.Update(*update),
+	)
 }

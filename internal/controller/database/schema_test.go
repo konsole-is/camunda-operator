@@ -56,7 +56,8 @@ func realisticDatabase() *v1.Database {
 }
 
 var _ = Describe("Database schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(build func() *v1.Database, mutate func(*v1.Database), wantErr string) {
 			obj := build()
 			mutate(obj)
@@ -68,49 +69,73 @@ var _ = Describe("Database schema", func() {
 				Expect(err).To(MatchError(ContainSubstring(wantErr)))
 			}
 		},
-		Entry("accepts the minimal doc example",
-			validDatabase, func(*v1.Database) {}, ""),
-		Entry("accepts the realistic doc example",
-			realisticDatabase, func(*v1.Database) {}, ""),
-		Entry("accepts a 63-character databaseName",
+		Entry(
+			"accepts the minimal doc example",
+			validDatabase, func(*v1.Database) {}, "",
+		),
+		Entry(
+			"accepts the realistic doc example",
+			realisticDatabase, func(*v1.Database) {}, "",
+		),
+		Entry(
+			"accepts a 63-character databaseName",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.DatabaseName = "d" + strings.Repeat("b", 62)
-			}, ""),
-		Entry("rejects an uppercase databaseName",
+			}, "",
+		),
+		Entry(
+			"rejects an uppercase databaseName",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.DatabaseName = "Camunda"
-			}, "databaseName"),
-		Entry("rejects a leading-digit databaseName",
+			}, "databaseName",
+		),
+		Entry(
+			"rejects a leading-digit databaseName",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.DatabaseName = "1camunda"
-			}, "databaseName"),
-		Entry("rejects a 64-character databaseName",
+			}, "databaseName",
+		),
+		Entry(
+			"rejects a 64-character databaseName",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.DatabaseName = "d" + strings.Repeat("b", 63)
-			}, "databaseName"),
-		Entry("rejects a missing serverRef",
+			}, "databaseName",
+		),
+		Entry(
+			"rejects a missing serverRef",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.ServerRef = ""
-			}, "serverRef"),
-		Entry("rejects a missing targetNamespace",
+			}, "serverRef",
+		),
+		Entry(
+			"rejects a missing targetNamespace",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.TargetNamespace = ""
-			}, "targetNamespace"),
-		Entry("rejects a non-DNS-1123 targetNamespace",
+			}, "targetNamespace",
+		),
+		Entry(
+			"rejects a non-DNS-1123 targetNamespace",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.TargetNamespace = "My_Cluster_NS"
-			}, "targetNamespace"),
-		Entry("rejects a 64-character targetNamespace",
+			}, "targetNamespace",
+		),
+		Entry(
+			"rejects a 64-character targetNamespace",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.TargetNamespace = "n" + strings.Repeat("s", 63)
-			}, "targetNamespace"),
-		Entry("rejects a non-DNS-1123 databaseConfig name",
+			}, "targetNamespace",
+		),
+		Entry(
+			"rejects a non-DNS-1123 databaseConfig name",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.DatabaseConfig = fixtures.NotAResourceName
-			}, "databaseConfig"),
-		Entry("rejects a non-DNS-1123 secondaryStorageConfig name",
+			}, "databaseConfig",
+		),
+		Entry(
+			"rejects a non-DNS-1123 secondaryStorageConfig name",
 			validDatabase, func(o *v1.Database) {
 				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
-			}, "secondaryStorageConfig"),
+			}, "secondaryStorageConfig",
+		),
 	)
 })

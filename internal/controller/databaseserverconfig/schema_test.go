@@ -25,7 +25,8 @@ import (
 )
 
 var _ = Describe("DatabaseServerConfig schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(mutate func(*v1.DatabaseServerConfig), wantErr string) {
 			obj := fixtures.DatabaseServerConfig()
 			mutate(obj)
@@ -38,21 +39,29 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 			}
 		},
 		Entry("accepts the minimal doc example", func(*v1.DatabaseServerConfig) {}, ""),
-		Entry("accepts pitr with retention", func(o *v1.DatabaseServerConfig) {
-			o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(7))}
-		}, ""),
+		Entry(
+			"accepts pitr with retention", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(7))}
+			}, "",
+		),
 		Entry("rejects unknown engine", func(o *v1.DatabaseServerConfig) { o.Spec.Engine = "mysql" }, "spec.engine"),
 		Entry("rejects port 0", func(o *v1.DatabaseServerConfig) { o.Spec.Port = 0 }, "spec.port"),
 		Entry("rejects port above 65535", func(o *v1.DatabaseServerConfig) { o.Spec.Port = 70000 }, "spec.port"),
 		Entry("rejects empty host", func(o *v1.DatabaseServerConfig) { o.Spec.Host = "" }, "spec.host"),
-		Entry("rejects missing secret namespace", func(o *v1.DatabaseServerConfig) {
-			o.Spec.AdminCredentialsSecretRef.Namespace = ""
-		}, "namespace"),
-		Entry("rejects pitr enabled without retention", func(o *v1.DatabaseServerConfig) {
-			o.Spec.PITR = &v1.PITRCapability{Enabled: true}
-		}, "retentionPeriodDays"),
-		Entry("rejects pitr retention 0", func(o *v1.DatabaseServerConfig) {
-			o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(0))}
-		}, "retentionPeriodDays"),
+		Entry(
+			"rejects missing secret namespace", func(o *v1.DatabaseServerConfig) {
+				o.Spec.AdminCredentialsSecretRef.Namespace = ""
+			}, "namespace",
+		),
+		Entry(
+			"rejects pitr enabled without retention", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{Enabled: true}
+			}, "retentionPeriodDays",
+		),
+		Entry(
+			"rejects pitr retention 0", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(0))}
+			}, "retentionPeriodDays",
+		),
 	)
 })

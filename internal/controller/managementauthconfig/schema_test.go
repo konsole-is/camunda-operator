@@ -47,7 +47,8 @@ func validManagementAuthConfig() *v1.ManagementAuthConfig {
 }
 
 var _ = Describe("ManagementAuthConfig schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(mutate func(*v1.ManagementAuthConfig), wantErr string) {
 			obj := validManagementAuthConfig()
 			mutate(obj)
@@ -60,32 +61,50 @@ var _ = Describe("ManagementAuthConfig schema", func() {
 			}
 		},
 		Entry("accepts the minimal doc example", func(*v1.ManagementAuthConfig) {}, ""),
-		Entry("accepts with issuerBackendUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.IssuerBackendURL = "http://identity.camunda-management.svc.cluster.local/auth/realms/camunda-platform"
-		}, ""),
-		Entry("rejects non-URL baseUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.BaseURL = fixtures.NotAURL
-		}, "baseUrl"),
-		Entry("rejects non-URL issuerUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.IssuerURL = fixtures.NotAURL
-		}, "issuerUrl"),
-		Entry("rejects non-URL issuerBackendUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.IssuerBackendURL = fixtures.NotAURL
-		}, "issuerBackendUrl"),
-		Entry("rejects ftp authUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.AuthURL = "ftp://identity.camunda.example.com/auth"
-		}, "authUrl"),
-		Entry("rejects ftp tokenUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.TokenURL = "ftp://identity.camunda.example.com/token"
-		}, "tokenUrl"),
-		Entry("rejects non-URL jwksUrl", func(o *v1.ManagementAuthConfig) {
-			o.Spec.JwksURL = fixtures.NotAURL
-		}, "jwksUrl"),
-		Entry("rejects empty clientId", func(o *v1.ManagementAuthConfig) {
-			o.Spec.ClientID = ""
-		}, "clientId"),
-		Entry("rejects clientSecretRef with empty key", func(o *v1.ManagementAuthConfig) {
-			o.Spec.ClientSecretRef.Key = ""
-		}, "key"),
+		Entry(
+			"accepts with issuerBackendUrl", func(o *v1.ManagementAuthConfig) {
+				o.Spec.IssuerBackendURL = "http://identity.camunda-management.svc.cluster.local/auth/realms/camunda-platform"
+			}, "",
+		),
+		Entry(
+			"rejects non-URL baseUrl", func(o *v1.ManagementAuthConfig) {
+				o.Spec.BaseURL = fixtures.NotAURL
+			}, "baseUrl",
+		),
+		Entry(
+			"rejects non-URL issuerUrl", func(o *v1.ManagementAuthConfig) {
+				o.Spec.IssuerURL = fixtures.NotAURL
+			}, "issuerUrl",
+		),
+		Entry(
+			"rejects non-URL issuerBackendUrl", func(o *v1.ManagementAuthConfig) {
+				o.Spec.IssuerBackendURL = fixtures.NotAURL
+			}, "issuerBackendUrl",
+		),
+		Entry(
+			"rejects ftp authUrl", func(o *v1.ManagementAuthConfig) {
+				o.Spec.AuthURL = "ftp://identity.camunda.example.com/auth"
+			}, "authUrl",
+		),
+		Entry(
+			"rejects ftp tokenUrl", func(o *v1.ManagementAuthConfig) {
+				o.Spec.TokenURL = "ftp://identity.camunda.example.com/token"
+			}, "tokenUrl",
+		),
+		Entry(
+			"rejects non-URL jwksUrl", func(o *v1.ManagementAuthConfig) {
+				o.Spec.JwksURL = fixtures.NotAURL
+			}, "jwksUrl",
+		),
+		Entry(
+			"rejects empty clientId", func(o *v1.ManagementAuthConfig) {
+				o.Spec.ClientID = ""
+			}, "clientId",
+		),
+		Entry(
+			"rejects clientSecretRef with empty key", func(o *v1.ManagementAuthConfig) {
+				o.Spec.ClientSecretRef.Key = ""
+			}, "key",
+		),
 	)
 })

@@ -51,7 +51,8 @@ func testPostgres() (testPostgresInfo, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
-		container, err := postgres.Run(ctx, "postgres:17",
+		container, err := postgres.Run(
+			ctx, "postgres:17",
 			postgres.WithDatabase("postgres"),
 			postgres.WithUsername("postgres"),
 			postgres.WithPassword("admin-secret"),
@@ -92,8 +93,10 @@ func pgConnect(ctx context.Context, user, password, database string) (*pgx.Conn,
 		return nil, err
 	}
 
-	url := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable&connect_timeout=5",
-		user, password, pg.Host, pg.Port, database)
+	url := fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=disable&connect_timeout=5",
+		user, password, pg.Host, pg.Port, database,
+	)
 
 	return pgx.Connect(ctx, url)
 }

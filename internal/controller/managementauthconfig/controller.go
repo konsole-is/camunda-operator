@@ -79,8 +79,10 @@ func (r *ManagementAuthConfigReconciler) validate(
 	cfg *v1.ManagementAuthConfig,
 ) (metav1.Condition, error) {
 	ref := cfg.Spec.ClientSecretRef
-	msg, err := secretref.CheckKeys(ctx, r.APIReader,
-		types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, ref.Key)
+	msg, err := secretref.CheckKeys(
+		ctx, r.APIReader,
+		types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, ref.Key,
+	)
 	if err != nil {
 		return metav1.Condition{}, err
 	}
@@ -94,20 +96,26 @@ func (r *ManagementAuthConfigReconciler) validate(
 // SetupWithManager registers the controller, an index of CRs by referenced
 // Secret, and a metadata-only Secret watch.
 func (r *ManagementAuthConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.ManagementAuthConfig{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.ManagementAuthConfig{},
 		managementAuthConfigSecretRefsField, func(o client.Object) []string {
 			ref := o.(*v1.ManagementAuthConfig).Spec.ClientSecretRef
 			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ManagementAuthConfig{}).
-		Watches(&corev1.Secret{},
-			refindex.Enqueue(mgr.GetClient(), &v1.ManagementAuthConfigList{},
-				managementAuthConfigSecretRefsField, refindex.ObjectNamespacedName),
-			builder.OnlyMetadata).
+		Watches(
+			&corev1.Secret{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.ManagementAuthConfigList{},
+				managementAuthConfigSecretRefsField, refindex.ObjectNamespacedName,
+			),
+			builder.OnlyMetadata,
+		).
 		Named("managementauthconfig").
 		Complete(r)
 }

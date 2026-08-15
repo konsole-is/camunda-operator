@@ -85,7 +85,8 @@ func realisticElasticsearchCluster() *v1.ElasticsearchCluster {
 }
 
 var _ = Describe("ElasticsearchCluster schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(build func() *v1.ElasticsearchCluster, mutate func(*v1.ElasticsearchCluster), wantErr string) {
 			obj := build()
 			obj.Namespace = fixtures.SchemaTestNamespace
@@ -98,31 +99,45 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 				Expect(err).To(MatchError(ContainSubstring(wantErr)))
 			}
 		},
-		Entry("accepts the minimal doc example",
-			validElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, ""),
-		Entry("accepts the realistic doc example",
-			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, ""),
-		Entry("rejects a missing secondaryStorageConfig",
+		Entry(
+			"accepts the minimal doc example",
+			validElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
+		),
+		Entry(
+			"accepts the realistic doc example",
+			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
+		),
+		Entry(
+			"rejects a missing secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.SecondaryStorageConfig = ""
-			}, "secondaryStorageConfig"),
-		Entry("rejects a non-DNS-1123 secondaryStorageConfig",
+			}, "secondaryStorageConfig",
+		),
+		Entry(
+			"rejects a non-DNS-1123 secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
-			}, "secondaryStorageConfig"),
-		Entry("rejects a two-segment version",
+			}, "secondaryStorageConfig",
+		),
+		Entry(
+			"rejects a two-segment version",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.Version = "9.2"
-			}, "version"),
-		Entry("rejects a v-prefixed version",
+			}, "version",
+		),
+		Entry(
+			"rejects a v-prefixed version",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.Version = "v9.2.4"
-			}, "version"),
-		Entry("rejects zero replicas",
+			}, "version",
+		),
+		Entry(
+			"rejects zero replicas",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				zero := int32(0)
 				o.Spec.Replicas = &zero
-			}, "replicas"),
+			}, "replicas",
+		),
 	)
 
 	// storageSize serializes as int-or-string, so the no-shrink rule must

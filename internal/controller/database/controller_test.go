@@ -143,7 +143,8 @@ func sqlDatabaseExists(name string) bool {
 	defer func() { _ = conn.Close(context.Background()) }()
 
 	var exists bool
-	Expect(conn.QueryRow(ctx,
+	Expect(conn.QueryRow(
+		ctx,
 		"SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", name,
 	).Scan(&exists)).To(Succeed())
 	return exists
@@ -160,7 +161,8 @@ func sqlRoleExists(name string) bool {
 	defer func() { _ = conn.Close(context.Background()) }()
 
 	var exists bool
-	Expect(conn.QueryRow(ctx,
+	Expect(conn.QueryRow(
+		ctx,
 		"SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = $1)", name,
 	).Scan(&exists)).To(Succeed())
 	return exists
@@ -292,8 +294,10 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor("no-such-server", namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionFalse, v1.ReasonInvalidReference,
-			`DatabaseServerConfig "no-such-server" not found`)
+		expectDatabaseReady(
+			db, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			`DatabaseServerConfig "no-such-server" not found`,
+		)
 	})
 
 	It("reports MissingSecret when the admin credentials Secret lacks a key", func() {
@@ -317,8 +321,10 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			fmt.Sprintf(`Secret "%s/%s" is missing key "password"`, namespace, secret.Name))
+		expectDatabaseReady(
+			db, metav1.ConditionFalse, v1.ReasonMissingSecret,
+			fmt.Sprintf(`Secret "%s/%s" is missing key "password"`, namespace, secret.Name),
+		)
 	})
 
 	It("reports ConnectionFailed for an unreachable server", func() {
@@ -344,8 +350,10 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionFalse, v1.ReasonConnectionFailed,
-			fmt.Sprintf("Connecting to DatabaseServerConfig %q", server.Name))
+		expectDatabaseReady(
+			db, metav1.ConditionFalse, v1.ReasonConnectionFailed,
+			fmt.Sprintf("Connecting to DatabaseServerConfig %q", server.Name),
+		)
 	})
 
 	It("derives distinct backup roles for long database names sharing a prefix", func() {
@@ -382,8 +390,10 @@ var _ = Describe("Database controller", func() {
 		Expect(own.Ping(ctx)).To(Succeed())
 
 		_, err = pgConnect(ctx, firstRole, password, second.Spec.DatabaseName)
-		Expect(err).To(HaveOccurred(),
-			"one database's backup role must not reach the sibling database")
+		Expect(err).To(
+			HaveOccurred(),
+			"one database's backup role must not reach the sibling database",
+		)
 	})
 
 	It("rejects a later Database claiming an already claimed logical database", func() {
@@ -400,8 +410,10 @@ var _ = Describe("Database controller", func() {
 		loser.Spec.DatabaseName = winner.Spec.DatabaseName
 		createDatabase(loser)
 
-		expectDatabaseReady(loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
-			fmt.Sprintf("Database %q already claims database %q", winner.Name, winner.Spec.DatabaseName))
+		expectDatabaseReady(
+			loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			fmt.Sprintf("Database %q already claims database %q", winner.Name, winner.Spec.DatabaseName),
+		)
 	})
 
 	It("deletes without a finalizer, leaving the SQL database and users intact", func() {
@@ -415,11 +427,15 @@ var _ = Describe("Database controller", func() {
 		Expect(k8sClient.Delete(ctx, db)).To(Succeed())
 		Eventually(func() error {
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &v1.Database{})
-		}, timeout, interval).Should(MatchError(ContainSubstring("not found")),
-			"deletion must complete without a finalizer holding the CR")
+		}, timeout, interval).Should(
+			MatchError(ContainSubstring("not found")),
+			"deletion must complete without a finalizer holding the CR",
+		)
 
-		Expect(sqlDatabaseExists(db.Spec.DatabaseName)).To(BeTrue(),
-			"deleting the CR must never drop the logical database")
+		Expect(sqlDatabaseExists(db.Spec.DatabaseName)).To(
+			BeTrue(),
+			"deleting the CR must never drop the logical database",
+		)
 		Expect(sqlRoleExists(db.Spec.DatabaseName)).To(BeTrue())
 		Expect(sqlRoleExists(db.Spec.DatabaseName + "_backup")).To(BeTrue())
 	})

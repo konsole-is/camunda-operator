@@ -58,7 +58,8 @@ func validSecondaryStorageConfigRDBMS() *v1.SecondaryStorageConfig {
 }
 
 var _ = Describe("SecondaryStorageConfig schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(build func() *v1.SecondaryStorageConfig, mutate func(*v1.SecondaryStorageConfig), wantErr string) {
 			obj := build()
 			obj.Namespace = fixtures.SchemaTestNamespace
@@ -71,51 +72,73 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 				Expect(err).To(MatchError(ContainSubstring(wantErr)))
 			}
 		},
-		Entry("accepts the Elasticsearch doc example",
-			validSecondaryStorageConfigES, func(*v1.SecondaryStorageConfig) {}, ""),
-		Entry("accepts the RDBMS doc example",
-			validSecondaryStorageConfigRDBMS, func(*v1.SecondaryStorageConfig) {}, ""),
-		Entry("rejects type elasticsearch without elasticsearch block",
+		Entry(
+			"accepts the Elasticsearch doc example",
+			validSecondaryStorageConfigES, func(*v1.SecondaryStorageConfig) {}, "",
+		),
+		Entry(
+			"accepts the RDBMS doc example",
+			validSecondaryStorageConfigRDBMS, func(*v1.SecondaryStorageConfig) {}, "",
+		),
+		Entry(
+			"rejects type elasticsearch without elasticsearch block",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch = nil
-			}, "matching spec.type"),
-		Entry("rejects type rdbms with elasticsearch block set",
+			}, "matching spec.type",
+		),
+		Entry(
+			"rejects type rdbms with elasticsearch block set",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Type = v1.SecondaryStorageTypeRDBMS
-			}, "matching spec.type"),
-		Entry("rejects both blocks set",
+			}, "matching spec.type",
+		),
+		Entry(
+			"rejects both blocks set",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.RDBMS = &v1.RDBMSStorage{DatabaseConfigRef: "my-camunda-db"}
-			}, "matching spec.type"),
-		Entry("rejects unknown type",
+			}, "matching spec.type",
+		),
+		Entry(
+			"rejects unknown type",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Type = "opensearch"
-			}, "spec.type"),
-		Entry("rejects non-URL endpoint",
+			}, "spec.type",
+		),
+		Entry(
+			"rejects non-URL endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch.Endpoint = fixtures.NotAURL
-			}, "endpoint"),
-		Entry("rejects ftp endpoint",
+			}, "endpoint",
+		),
+		Entry(
+			"rejects ftp endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch.Endpoint = "ftp://x:9200"
-			}, "endpoint"),
-		Entry("rejects empty databaseConfigRef",
+			}, "endpoint",
+		),
+		Entry(
+			"rejects empty databaseConfigRef",
 			validSecondaryStorageConfigRDBMS, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.RDBMS.DatabaseConfigRef = ""
-			}, "databaseConfigRef"),
-		Entry("rejects caSecretRef with an http endpoint",
+			}, "databaseConfigRef",
+		),
+		Entry(
+			"rejects caSecretRef with an http endpoint",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch.Endpoint = "http://my-cluster-es:9200"
 				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
 					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",
 				}
-			}, "caSecretRef requires an https endpoint"),
-		Entry("rejects caSecretRef with empty key",
+			}, "caSecretRef requires an https endpoint",
+		),
+		Entry(
+			"rejects caSecretRef with empty key",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
 					Name: "my-cluster-es-http-certs-public", Namespace: "my-cluster-ns", Key: "",
 				}
-			}, "key"),
+			}, "key",
+		),
 	)
 
 	It("round-trips caSecretRef", func() {

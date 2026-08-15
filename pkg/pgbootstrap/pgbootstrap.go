@@ -128,7 +128,8 @@ func (b *bootstrapper) EnsureDatabase(ctx context.Context, name string) error {
 	}
 
 	var exists bool
-	err := b.admin.QueryRow(ctx,
+	err := b.admin.QueryRow(
+		ctx,
 		"SELECT EXISTS (SELECT FROM pg_database WHERE datname = $1)", name,
 	).Scan(&exists)
 	if err != nil {
@@ -143,7 +144,8 @@ func (b *bootstrapper) EnsureDatabase(ctx context.Context, name string) error {
 
 	// A new database grants CONNECT to PUBLIC by default. The revoke keeps the
 	// logical databases on a shared server isolated to their granted roles.
-	if _, err := b.admin.Exec(ctx,
+	if _, err := b.admin.Exec(
+		ctx,
 		"REVOKE CONNECT ON DATABASE "+quoteIdentifier(name)+" FROM PUBLIC",
 	); err != nil {
 		return fmt.Errorf("revoking public connect on database %q: %w", name, err)
@@ -158,7 +160,8 @@ func (b *bootstrapper) EnsureUser(ctx context.Context, name, password string) er
 	}
 
 	var exists bool
-	err := b.admin.QueryRow(ctx,
+	err := b.admin.QueryRow(
+		ctx,
 		"SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = $1)", name,
 	).Scan(&exists)
 	if err != nil {
@@ -172,7 +175,8 @@ func (b *bootstrapper) EnsureUser(ctx context.Context, name, password string) er
 	if exists {
 		verb = "ALTER"
 	}
-	if _, err := b.admin.Exec(ctx,
+	if _, err := b.admin.Exec(
+		ctx,
 		verb+" ROLE "+quoteIdentifier(name)+" WITH LOGIN PASSWORD "+quoteLiteral(password),
 	); err != nil {
 		return fmt.Errorf("ensuring role %q: %w", name, err)
@@ -189,7 +193,8 @@ func (b *bootstrapper) GrantApplication(ctx context.Context, user, database stri
 		return err
 	}
 
-	if _, err := b.admin.Exec(ctx,
+	if _, err := b.admin.Exec(
+		ctx,
 		"GRANT ALL PRIVILEGES ON DATABASE "+quoteIdentifier(database)+" TO "+quoteIdentifier(user),
 	); err != nil {
 		return fmt.Errorf("granting application privileges on %q to %q: %w", database, user, err)
@@ -203,8 +208,10 @@ func (b *bootstrapper) GrantApplication(ctx context.Context, user, database stri
 		// ALTER DATABASE OWNER requires that the admin is a member of the new
 		// owning role. The membership is granted only for this statement.
 		err := b.withRoleMembership(ctx, b.admin, user, func() error {
-			_, err := b.admin.Exec(ctx,
-				"ALTER DATABASE "+quoteIdentifier(database)+" OWNER TO "+quoteIdentifier(user))
+			_, err := b.admin.Exec(
+				ctx,
+				"ALTER DATABASE "+quoteIdentifier(database)+" OWNER TO "+quoteIdentifier(user),
+			)
 			return err
 		})
 		if err != nil {
@@ -221,7 +228,8 @@ func (b *bootstrapper) GrantApplication(ctx context.Context, user, database stri
 	}
 	defer closeQuietly(db)
 
-	if _, err := db.Exec(ctx,
+	if _, err := db.Exec(
+		ctx,
 		"GRANT USAGE, CREATE ON SCHEMA public TO "+quoteIdentifier(user),
 	); err != nil {
 		return fmt.Errorf("granting schema privileges on %q to %q: %w", database, user, err)
@@ -242,7 +250,8 @@ func (b *bootstrapper) EnsureBackupUser(ctx context.Context, name, password, dat
 		return err
 	}
 
-	if _, err := b.admin.Exec(ctx,
+	if _, err := b.admin.Exec(
+		ctx,
 		"GRANT CONNECT ON DATABASE "+quoteIdentifier(database)+" TO "+quoteIdentifier(name),
 	); err != nil {
 		return fmt.Errorf("granting connect on %q to %q: %w", database, name, err)
@@ -305,7 +314,8 @@ func (b *bootstrapper) EnsureBackupUser(ctx context.Context, name, password, dat
 // DDL.
 func (b *bootstrapper) databaseOwner(ctx context.Context, conn *pgx.Conn, database string) (string, error) {
 	var owner string
-	if err := conn.QueryRow(ctx,
+	if err := conn.QueryRow(
+		ctx,
 		"SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = $1", database,
 	).Scan(&owner); err != nil {
 		return "", fmt.Errorf("resolving owner of database %q: %w", database, err)
@@ -325,7 +335,8 @@ func (b *bootstrapper) databaseOwner(ctx context.Context, conn *pgx.Conn, databa
 // it, so an existing membership survives untouched.
 func (b *bootstrapper) withRoleMembership(ctx context.Context, conn *pgx.Conn, role string, fn func() error) error {
 	var member bool
-	if err := conn.QueryRow(ctx,
+	if err := conn.QueryRow(
+		ctx,
 		`SELECT to_regrole($1) = to_regrole(current_user::text) OR EXISTS (
 			SELECT FROM pg_auth_members
 			WHERE roleid = to_regrole($1) AND member = to_regrole(current_user::text)

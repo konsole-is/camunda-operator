@@ -41,7 +41,8 @@ func validObjectStorageConfig() *v1.ObjectStorageConfig {
 }
 
 var _ = Describe("ObjectStorageConfig schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(mutate func(*v1.ObjectStorageConfig), wantErr string) {
 			obj := validObjectStorageConfig()
 			mutate(obj)
@@ -54,35 +55,49 @@ var _ = Describe("ObjectStorageConfig schema", func() {
 			}
 		},
 		Entry("accepts the aws/S3 doc example", func(*v1.ObjectStorageConfig) {}, ""),
-		Entry("accepts the gcp/GCS doc example with basePath", func(o *v1.ObjectStorageConfig) {
-			o.Spec.Provider = v1.ObjectStorageProviderGCP
-			o.Spec.Type = v1.ObjectStorageTypeGCS
-			o.Spec.BucketID = "my-cluster-documents"
-			o.Spec.BucketName = "my-cluster-documents"
-			o.Spec.BasePath = "documents"
-			o.Spec.AccountID = "my-cluster-workload@my-project.iam.gserviceaccount.com"
-		}, ""),
-		Entry("accepts azure/AzureBlob", func(o *v1.ObjectStorageConfig) {
-			o.Spec.Provider = v1.ObjectStorageProviderAzure
-			o.Spec.Type = v1.ObjectStorageTypeAzureBlob
-			o.Spec.BucketID = "my-cluster-backups"
-			o.Spec.BucketName = "my-cluster-backups"
-			o.Spec.AccountID = "11111111-2222-3333-4444-555555555555"
-		}, ""),
-		Entry("rejects aws with GCS", func(o *v1.ObjectStorageConfig) {
-			o.Spec.Type = v1.ObjectStorageTypeGCS
-		}, "must match spec.provider"),
-		Entry("rejects gcp with S3", func(o *v1.ObjectStorageConfig) {
-			o.Spec.Provider = v1.ObjectStorageProviderGCP
-		}, "must match spec.provider"),
-		Entry("rejects unknown provider", func(o *v1.ObjectStorageConfig) {
-			o.Spec.Provider = "digitalocean"
-		}, "spec.provider"),
-		Entry("rejects empty bucketId", func(o *v1.ObjectStorageConfig) {
-			o.Spec.BucketID = ""
-		}, "bucketId"),
-		Entry("rejects empty accountId", func(o *v1.ObjectStorageConfig) {
-			o.Spec.AccountID = ""
-		}, "accountId"),
+		Entry(
+			"accepts the gcp/GCS doc example with basePath", func(o *v1.ObjectStorageConfig) {
+				o.Spec.Provider = v1.ObjectStorageProviderGCP
+				o.Spec.Type = v1.ObjectStorageTypeGCS
+				o.Spec.BucketID = "my-cluster-documents"
+				o.Spec.BucketName = "my-cluster-documents"
+				o.Spec.BasePath = "documents"
+				o.Spec.AccountID = "my-cluster-workload@my-project.iam.gserviceaccount.com"
+			}, "",
+		),
+		Entry(
+			"accepts azure/AzureBlob", func(o *v1.ObjectStorageConfig) {
+				o.Spec.Provider = v1.ObjectStorageProviderAzure
+				o.Spec.Type = v1.ObjectStorageTypeAzureBlob
+				o.Spec.BucketID = "my-cluster-backups"
+				o.Spec.BucketName = "my-cluster-backups"
+				o.Spec.AccountID = "11111111-2222-3333-4444-555555555555"
+			}, "",
+		),
+		Entry(
+			"rejects aws with GCS", func(o *v1.ObjectStorageConfig) {
+				o.Spec.Type = v1.ObjectStorageTypeGCS
+			}, "must match spec.provider",
+		),
+		Entry(
+			"rejects gcp with S3", func(o *v1.ObjectStorageConfig) {
+				o.Spec.Provider = v1.ObjectStorageProviderGCP
+			}, "must match spec.provider",
+		),
+		Entry(
+			"rejects unknown provider", func(o *v1.ObjectStorageConfig) {
+				o.Spec.Provider = "digitalocean"
+			}, "spec.provider",
+		),
+		Entry(
+			"rejects empty bucketId", func(o *v1.ObjectStorageConfig) {
+				o.Spec.BucketID = ""
+			}, "bucketId",
+		),
+		Entry(
+			"rejects empty accountId", func(o *v1.ObjectStorageConfig) {
+				o.Spec.AccountID = ""
+			}, "accountId",
+		),
 	)
 })

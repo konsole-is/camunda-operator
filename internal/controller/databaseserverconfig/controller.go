@@ -102,20 +102,26 @@ func (r *DatabaseServerConfigReconciler) validate(
 // SetupWithManager registers the controller, an index of CRs by referenced
 // Secret, and a metadata-only Secret watch.
 func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.DatabaseServerConfig{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.DatabaseServerConfig{},
 		databaseServerConfigSecretRefsField, func(o client.Object) []string {
 			ref := o.(*v1.DatabaseServerConfig).Spec.AdminCredentialsSecretRef
 			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.DatabaseServerConfig{}).
-		Watches(&corev1.Secret{},
-			refindex.Enqueue(mgr.GetClient(), &v1.DatabaseServerConfigList{},
-				databaseServerConfigSecretRefsField, refindex.ObjectNamespacedName),
-			builder.OnlyMetadata).
+		Watches(
+			&corev1.Secret{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.DatabaseServerConfigList{},
+				databaseServerConfigSecretRefsField, refindex.ObjectNamespacedName,
+			),
+			builder.OnlyMetadata,
+		).
 		Named("databaseserverconfig").
 		Complete(r)
 }

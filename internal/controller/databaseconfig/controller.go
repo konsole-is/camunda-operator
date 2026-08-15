@@ -97,9 +97,11 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 	}
 
 	for _, ref := range refs {
-		msg, err := secretref.CheckKeys(ctx, r.APIReader,
+		msg, err := secretref.CheckKeys(
+			ctx, r.APIReader,
 			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
-			ref.UsernameKey, ref.PasswordKey)
+			ref.UsernameKey, ref.PasswordKey,
+		)
 		if err != nil {
 			return metav1.Condition{}, err
 		}
@@ -115,7 +117,8 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 // Secret, an index by referenced DatabaseServerConfig, a metadata-only Secret
 // watch, and a typed DatabaseServerConfig watch.
 func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.DatabaseConfig{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.DatabaseConfig{},
 		databaseConfigSecretRefsField, func(o client.Object) []string {
 			spec := o.(*v1.DatabaseConfig).Spec
 			keys := []string{
@@ -131,26 +134,37 @@ func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				)
 			}
 			return keys
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.DatabaseConfig{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.DatabaseConfig{},
 		databaseConfigServerRefField, func(o client.Object) []string {
 			return []string{o.(*v1.DatabaseConfig).Spec.ServerRef}
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.DatabaseConfig{}).
-		Watches(&corev1.Secret{},
-			refindex.Enqueue(mgr.GetClient(), &v1.DatabaseConfigList{},
-				databaseConfigSecretRefsField, refindex.ObjectNamespacedName),
-			builder.OnlyMetadata).
-		Watches(&v1.DatabaseServerConfig{},
-			refindex.Enqueue(mgr.GetClient(), &v1.DatabaseConfigList{},
-				databaseConfigServerRefField, refindex.ObjectName)).
+		Watches(
+			&corev1.Secret{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.DatabaseConfigList{},
+				databaseConfigSecretRefsField, refindex.ObjectNamespacedName,
+			),
+			builder.OnlyMetadata,
+		).
+		Watches(
+			&v1.DatabaseServerConfig{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.DatabaseConfigList{},
+				databaseConfigServerRefField, refindex.ObjectName,
+			),
+		).
 		Named("databaseconfig").
 		Complete(r)
 }
