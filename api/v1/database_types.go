@@ -95,10 +95,9 @@ type DatabaseStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. The Ready condition carries
-	// reasons Healthy, Progressing, InvalidReference, MissingSecret, or
-	// ConnectionFailed, and the operator's per-component conditions
-	// (BindingsReady) also appear here.
+	// Conditions represent the current state. Ready carries a pre-check
+	// reason (InvalidReference, MissingSecret, ConnectionFailed) or mirrors
+	// the BindingsReady component condition, which also appears here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -131,11 +130,14 @@ type Database struct {
 	Status DatabaseStatus `json:"status,omitzero"`
 }
 
-// GetConditions returns the resource's status conditions.
-func (in *Database) GetConditions() []metav1.Condition { return in.Status.Conditions }
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages per-component conditions on the resource through
+// it.
+func (in *Database) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
 
-// GetObservedGeneration returns the last reconciled generation recorded in status.
-func (in *Database) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
+// GetKind returns the CRD kind. The component framework derives its
+// per-component SSA field managers (Database/<component>) from it.
+func (in *Database) GetKind() string { return "Database" }
 
 // +kubebuilder:object:root=true
 

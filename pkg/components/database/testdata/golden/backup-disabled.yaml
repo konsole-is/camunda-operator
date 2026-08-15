@@ -1,0 +1,23 @@
+apiVersion: v1
+data:
+  password: YXBwLXBhc3N3b3Jk
+  username: Y2FtdW5kYQ==
+kind: Secret
+metadata:
+  name: my-camunda-db-credentials
+  namespace: my-cluster-ns
+type: Opaque
+---
+apiVersion: core.camunda.io/v1
+kind: DatabaseConfig
+metadata:
+  name: my-camunda-db
+  namespace: my-cluster-ns
+spec:
+  credentialsSecretRef:
+    name: my-camunda-db-credentials
+    namespace: my-cluster-ns
+    passwordKey: password
+    usernameKey: username
+  databaseName: camunda
+  serverRef: my-db-server

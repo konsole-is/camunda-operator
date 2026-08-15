@@ -10,7 +10,7 @@ Module: `github.com/konsole-is/camunda-operator`
 ## Operator implementation guidelines
 
 - Use the operator component framework for resource and lifecycle management: https://github.com/sourcehawk/operator-component-framework
-- Use SSA exclusively unless explicitly otherwise required.
+- Apply every managed resource with SSA. A CR's own status is written once per reconcile through the ocf `FlushStatus`, never with SSA.
 - Write top level controller tests (reconciliation) using ginkgo and gomega, verifying high level concerns of operator logic
 - Write low level tests of features of a controller close to the method / file that implements it, covering all edge cases and expected outcomes, preferring
   pure go unit tests using testify.
@@ -65,6 +65,12 @@ approach — ask before writing any code.
 
 Every exported symbol has a GoDoc comment. Update it whenever you change the associated
 behaviour, signature, or semantics.
+
+### Writing prose: always load `simple-english`
+
+Before you write or edit prose, invoke the `simple-english:simple-english` skill. Then obey it.
+Prose includes GoDoc, inline comments, `docs/`, `README.md`, CRD field descriptions, and error and
+condition messages. This rule applies to a one-line docstring and to a full document.
 
 ### Documentation
 

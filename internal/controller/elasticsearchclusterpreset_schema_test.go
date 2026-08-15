@@ -79,7 +79,8 @@ func realisticElasticsearchClusterPreset() *v1.ElasticsearchClusterPreset {
 }
 
 var _ = Describe("ElasticsearchClusterPreset schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(build func() *v1.ElasticsearchClusterPreset, mutate func(*v1.ElasticsearchClusterPreset), wantErr string) {
 			obj := build()
 			mutate(obj)
@@ -91,32 +92,46 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 				Expect(err).To(MatchError(ContainSubstring(wantErr)))
 			}
 		},
-		Entry("accepts the minimal doc example",
-			validElasticsearchClusterPreset, func(*v1.ElasticsearchClusterPreset) {}, ""),
-		Entry("accepts the realistic doc example",
-			realisticElasticsearchClusterPreset, func(*v1.ElasticsearchClusterPreset) {}, ""),
-		Entry("rejects presetRef inside a preset",
+		Entry(
+			"accepts the minimal doc example",
+			validElasticsearchClusterPreset, func(*v1.ElasticsearchClusterPreset) {}, "",
+		),
+		Entry(
+			"accepts the realistic doc example",
+			realisticElasticsearchClusterPreset, func(*v1.ElasticsearchClusterPreset) {}, "",
+		),
+		Entry(
+			"rejects presetRef inside a preset",
 			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
 				o.Spec.Cluster.PresetRef = "other"
-			}, "instance-bound"),
-		Entry("rejects secondaryStorageConfig inside a preset",
+			}, "instance-bound",
+		),
+		Entry(
+			"rejects secondaryStorageConfig inside a preset",
 			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
 				o.Spec.Cluster.SecondaryStorageConfig = "my-storage-config"
-			}, "instance-bound"),
-		Entry("rejects suspend inside a preset",
+			}, "instance-bound",
+		),
+		Entry(
+			"rejects suspend inside a preset",
 			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
 				o.Spec.Cluster.Suspend = true
-			}, "instance-bound"),
-		Entry("rejects monitoring inside a preset",
+			}, "instance-bound",
+		),
+		Entry(
+			"rejects monitoring inside a preset",
 			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
 				o.Spec.Cluster.Monitoring = &v1.MonitoringSpec{
 					ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true},
 				}
-			}, "instance-bound"),
-		Entry("accepts an empty monitoring object",
+			}, "instance-bound",
+		),
+		Entry(
+			"accepts an empty monitoring object",
 			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
 				o.Spec.Cluster.Monitoring = &v1.MonitoringSpec{}
-			}, ""),
+			}, "",
+		),
 	)
 
 	// The no-shrink ratchet binds ElasticsearchCluster only: a preset is

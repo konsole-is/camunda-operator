@@ -31,13 +31,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
+// passwordPattern is the shape that every generated password must have.
+var passwordPattern = regexp.MustCompile(`^[A-Za-z0-9]{32}$`)
+
 func TestNewPasswordIs32AlphanumericChars(t *testing.T) {
 	t.Parallel()
 
 	password, err := NewPassword()
 	require.NoError(t, err)
 
-	assert.Regexp(t, regexp.MustCompile(`^[A-Za-z0-9]{32}$`), password)
+	assert.Regexp(t, passwordPattern, password)
 }
 
 func TestNewPasswordIsUniquePerCall(t *testing.T) {
@@ -51,7 +54,7 @@ func TestNewPasswordIsUniquePerCall(t *testing.T) {
 	assert.NotEqual(t, first, second)
 }
 
-func TestLookup(t *testing.T) {
+func TestLookupOrNew(t *testing.T) {
 	t.Parallel()
 
 	secret := &corev1.Secret{
@@ -61,47 +64,46 @@ func TestLookup(t *testing.T) {
 	key := client.ObjectKey{Name: "creds", Namespace: "ns"}
 
 	tests := []struct {
-		name      string
-		reader    client.Reader
-		field     string
-		wantValue string
-		wantFound bool
+		name   string
+		reader client.Reader
+		field  string
+		// wantExisting reports whether the stored value must come back. When it
+		// is false, a new password is generated instead.
+		wantExisting bool
 	}{
 		{
-			name:      "existing field is returned",
-			reader:    fake.NewClientBuilder().WithObjects(secret).Build(),
-			field:     "password",
-			wantValue: "s3cret",
-			wantFound: true,
+			name:         "existing field is reused",
+			reader:       fake.NewClientBuilder().WithObjects(secret).Build(),
+			field:        "password",
+			wantExisting: true,
 		},
 		{
-			name:      "missing Secret is not found",
-			reader:    fake.NewClientBuilder().Build(),
-			field:     "password",
-			wantValue: "",
-			wantFound: false,
+			name:   "missing Secret yields a new password",
+			reader: fake.NewClientBuilder().Build(),
+			field:  "password",
 		},
 		{
-			name:      "missing field is not found",
-			reader:    fake.NewClientBuilder().WithObjects(secret).Build(),
-			field:     "username",
-			wantValue: "",
-			wantFound: false,
+			name:   "missing field yields a new password",
+			reader: fake.NewClientBuilder().WithObjects(secret).Build(),
+			field:  "username",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			value, found, err := Lookup(context.Background(), tt.reader, key, tt.field)
+			value, err := LookupOrNew(context.Background(), tt.reader, key, tt.field)
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantValue, value)
-			assert.Equal(t, tt.wantFound, found)
+			if tt.wantExisting {
+				assert.Equal(t, "s3cret", value)
+				return
+			}
+			assert.Regexp(t, passwordPattern, value)
 		})
 	}
 }
 
-func TestLookupReturnsTransientErrors(t *testing.T) {
+func TestLookupOrNewReturnsTransientErrors(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
@@ -111,6 +113,6 @@ func TestLookupReturnsTransientErrors(t *testing.T) {
 		},
 	}).Build()
 
-	_, _, err := Lookup(context.Background(), reader, client.ObjectKey{Name: "creds", Namespace: "ns"}, "password")
+	_, err := LookupOrNew(context.Background(), reader, client.ObjectKey{Name: "creds", Namespace: "ns"}, "password")
 	require.ErrorIs(t, err, boom)
 }

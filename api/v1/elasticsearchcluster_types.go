@@ -189,11 +189,15 @@ type ElasticsearchCluster struct {
 	Status ElasticsearchClusterStatus `json:"status,omitzero"`
 }
 
-// GetConditions returns the resource's status conditions.
-func (in *ElasticsearchCluster) GetConditions() []metav1.Condition { return in.Status.Conditions }
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *ElasticsearchCluster) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
 
-// GetObservedGeneration returns the last reconciled generation recorded in status.
-func (in *ElasticsearchCluster) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *ElasticsearchCluster) GetKind() string { return "ElasticsearchCluster" }
 
 // +kubebuilder:object:root=true
 

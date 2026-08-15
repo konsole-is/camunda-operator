@@ -1,0 +1,48 @@
+apiVersion: v1
+data:
+  password: YXBwLXBhc3N3b3Jk
+  username: Y2FtdW5kYQ==
+kind: Secret
+metadata:
+  name: my-camunda-db-app
+  namespace: my-secret-ns
+type: Opaque
+---
+apiVersion: v1
+data:
+  password: YmFja3VwLXBhc3N3b3Jk
+  username: Y2FtdW5kYV9iYWNrdXA=
+kind: Secret
+metadata:
+  name: my-camunda-db-backup
+  namespace: my-cluster-ns
+type: Opaque
+---
+apiVersion: core.camunda.io/v1
+kind: DatabaseConfig
+metadata:
+  name: my-database-config
+  namespace: my-cluster-ns
+spec:
+  backupCredentialsSecretRef:
+    name: my-camunda-db-backup
+    namespace: my-cluster-ns
+    passwordKey: password
+    usernameKey: username
+  credentialsSecretRef:
+    name: my-camunda-db-app
+    namespace: my-secret-ns
+    passwordKey: password
+    usernameKey: username
+  databaseName: camunda
+  serverRef: my-db-server
+---
+apiVersion: core.camunda.io/v1
+kind: SecondaryStorageConfig
+metadata:
+  name: my-storage-config
+  namespace: my-cluster-ns
+spec:
+  rdbms:
+    databaseConfigRef: my-database-config
+  type: rdbms

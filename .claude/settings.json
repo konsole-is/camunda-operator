@@ -6,9 +6,16 @@
         "repo": "sourcehawk/operator-component-framework",
         "ref": "v0.18.1"
       }
+    },
+    "simple-english": {
+      "source": {
+        "source": "github",
+        "repo": "AminBlg/SimpleEnglish"
+      }
     }
   },
   "enabledPlugins": {
-    "ocf@operator-component-framework": true
+    "ocf@operator-component-framework": true,
+    "simple-english@simple-english": true
   }
 }

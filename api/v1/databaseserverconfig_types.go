@@ -99,11 +99,15 @@ type DatabaseServerConfig struct {
 	Status DatabaseServerConfigStatus `json:"status,omitzero"`
 }
 
-// GetConditions returns the resource's status conditions.
-func (in *DatabaseServerConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *DatabaseServerConfig) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
 
-// GetObservedGeneration returns the last reconciled generation recorded in status.
-func (in *DatabaseServerConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *DatabaseServerConfig) GetKind() string { return "DatabaseServerConfig" }
 
 // +kubebuilder:object:root=true
 

@@ -26,6 +26,7 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // validElasticsearchCluster returns the doc's minimal example with a unique
@@ -84,10 +85,11 @@ func realisticElasticsearchCluster() *v1.ElasticsearchCluster {
 }
 
 var _ = Describe("ElasticsearchCluster schema", func() {
-	DescribeTable("admission",
+	DescribeTable(
+		"admission",
 		func(build func() *v1.ElasticsearchCluster, mutate func(*v1.ElasticsearchCluster), wantErr string) {
 			obj := build()
-			obj.Namespace = schemaTestNamespace
+			obj.Namespace = fixtures.SchemaTestNamespace
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -97,31 +99,45 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 				Expect(err).To(MatchError(ContainSubstring(wantErr)))
 			}
 		},
-		Entry("accepts the minimal doc example",
-			validElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, ""),
-		Entry("accepts the realistic doc example",
-			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, ""),
-		Entry("rejects a missing secondaryStorageConfig",
+		Entry(
+			"accepts the minimal doc example",
+			validElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
+		),
+		Entry(
+			"accepts the realistic doc example",
+			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
+		),
+		Entry(
+			"rejects a missing secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.SecondaryStorageConfig = ""
-			}, "secondaryStorageConfig"),
-		Entry("rejects a non-DNS-1123 secondaryStorageConfig",
+			}, "secondaryStorageConfig",
+		),
+		Entry(
+			"rejects a non-DNS-1123 secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
-				o.Spec.SecondaryStorageConfig = notAResourceName
-			}, "secondaryStorageConfig"),
-		Entry("rejects a two-segment version",
+				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
+			}, "secondaryStorageConfig",
+		),
+		Entry(
+			"rejects a two-segment version",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.Version = "9.2"
-			}, "version"),
-		Entry("rejects a v-prefixed version",
+			}, "version",
+		),
+		Entry(
+			"rejects a v-prefixed version",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.Version = "v9.2.4"
-			}, "version"),
-		Entry("rejects zero replicas",
+			}, "version",
+		),
+		Entry(
+			"rejects zero replicas",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				zero := int32(0)
 				o.Spec.Replicas = &zero
-			}, "replicas"),
+			}, "replicas",
+		),
 	)
 
 	// storageSize serializes as int-or-string, so the no-shrink rule must
@@ -132,7 +148,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 			"kind":       "ElasticsearchCluster",
 			"metadata": map[string]any{
 				"name":      "esc-" + utilrand.String(8),
-				"namespace": schemaTestNamespace,
+				"namespace": fixtures.SchemaTestNamespace,
 			},
 			"spec": map[string]any{
 				"version":                "9.2.4",
@@ -157,7 +173,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 
 	It("rejects shrinking storageSize on update and accepts growth", func() {
 		obj := realisticElasticsearchCluster()
-		obj.Namespace = schemaTestNamespace
+		obj.Namespace = fixtures.SchemaTestNamespace
 
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })

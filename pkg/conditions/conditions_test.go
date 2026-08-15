@@ -26,82 +26,11 @@ import (
 )
 
 func TestReadyBuildsConditionVerbatim(t *testing.T) {
-	cond := Ready(metav1.ConditionFalse, ReasonMissingSecret, `Secret "ns/name" not found`, 3)
+	cond := Ready(metav1.ConditionFalse, v1.ReasonMissingSecret, `Secret "ns/name" not found`, 3)
 
-	assert.Equal(t, TypeReady, cond.Type)
+	assert.Equal(t, v1.ConditionReady, cond.Type)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, ReasonMissingSecret, cond.Reason)
+	assert.Equal(t, v1.ReasonMissingSecret, cond.Reason)
 	assert.Equal(t, `Secret "ns/name" not found`, cond.Message)
 	assert.Equal(t, int64(3), cond.ObservedGeneration)
-}
-
-// objectWith returns a contract CR whose persisted status carries the given
-// Ready condition and observed generation.
-func objectWith(observedGeneration int64, cond *metav1.Condition) Object {
-	obj := &v1.DatabaseServerConfig{}
-	obj.Status.ObservedGeneration = observedGeneration
-	if cond != nil {
-		obj.Status.Conditions = []metav1.Condition{*cond}
-	}
-	return obj
-}
-
-func TestNeedsPatch(t *testing.T) {
-	healthy := Ready(metav1.ConditionTrue, ReasonHealthy, "All checks passed", 2)
-
-	tests := []struct {
-		name string
-		obj  Object
-		cond metav1.Condition
-		want bool
-	}{
-		{
-			name: "no Ready condition",
-			obj:  objectWith(2, nil),
-			cond: healthy,
-			want: true,
-		},
-		{
-			name: "status differs",
-			obj:  objectWith(2, &healthy),
-			cond: Ready(metav1.ConditionFalse, ReasonHealthy, "All checks passed", 2),
-			want: true,
-		},
-		{
-			name: "reason differs",
-			obj:  objectWith(2, &healthy),
-			cond: Ready(metav1.ConditionTrue, ReasonMissingSecret, "All checks passed", 2),
-			want: true,
-		},
-		{
-			name: "message differs",
-			obj:  objectWith(2, &healthy),
-			cond: Ready(metav1.ConditionTrue, ReasonHealthy, `Secret "ns/s" not found`, 2),
-			want: true,
-		},
-		{
-			name: "status observedGeneration lags",
-			obj:  objectWith(1, &healthy),
-			cond: healthy,
-			want: true,
-		},
-		{
-			name: "condition observedGeneration lags",
-			obj:  objectWith(3, &healthy),
-			cond: Ready(metav1.ConditionTrue, ReasonHealthy, "All checks passed", 3),
-			want: true,
-		},
-		{
-			name: "everything matches",
-			obj:  objectWith(2, &healthy),
-			cond: healthy,
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, needsPatch(tt.obj, tt.cond))
-		})
-	}
 }

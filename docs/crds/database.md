@@ -18,10 +18,10 @@ You create this CR directly, or a composition layer above may create it after pr
 
 1. The operator resolves `spec.serverRef` to a `DatabaseServerConfig` and reads the server's connection details and admin credentials Secret.
 2. It connects to the server and creates the logical database named `spec.databaseName` if it does not exist; all SQL is idempotent, so re-runs are safe.
-3. It creates the application user with a generated password, grants it full privileges on the logical database, and writes the credentials to the Secret named by `spec.applicationCredentials` (keys `username` and `password`).
-4. Unless `spec.backupCredentials.disabled` is `true`, it creates a separate backup user — granted read access on all tables in the database for dumps, plus the DDL and write rights restore needs: in effect a role like the application role plus SELECT on all tables — and writes its credentials to the Secret named by `spec.backupCredentials.secretName`.
+3. It creates the application user with a generated password. This user is a SQL role with the name of `spec.databaseName`. The operator grants it full privileges on the logical database and makes it the owner, so schema migrations work. It writes the credentials to the Secret that `spec.applicationCredentials` names (keys `username` and `password`).
+4. Unless `spec.backupCredentials.disabled` is `true`, it creates a separate backup user. This user is a SQL role named `<databaseName>_backup`. If that name is longer than the 63-character identifier limit of PostgreSQL, the role is named `<first 47 characters of databaseName>_<first 8 hex characters of the SHA-256 of databaseName>_backup`. Two long names that share a prefix then never share a backup role. The operator grants the backup user read access on all tables in the database for dumps, including tables created later (through `ALTER DEFAULT PRIVILEGES`). It also grants the DDL and write rights that a restore needs. In effect the backup user is a role like the application role plus SELECT on all tables. The operator writes its credentials to the Secret that `spec.backupCredentials.secretName` names.
 5. It creates and keeps current a `DatabaseConfig` named `spec.databaseConfig` in `spec.targetNamespace`, wiring in the `serverRef`, the `databaseName`, the application credentials Secret, and the backup credentials Secret when one exists.
-6. If `spec.secondaryStorageConfig` is set, it creates a `SecondaryStorageConfig` with `type: rdbms` in `spec.targetNamespace`, referencing that `DatabaseConfig`, making the database consumable as an orchestration cluster's secondary storage; omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler). The bindings land in `targetNamespace` because consumers resolve them by name in their own namespace — set it to the consuming cluster's namespace.
+6. If `spec.secondaryStorageConfig` is set, it creates a `SecondaryStorageConfig` with `type: rdbms` in `spec.targetNamespace`. This contract references that `DatabaseConfig`, and an orchestration cluster can then use the database as secondary storage. Omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler). If you clear the field later, the operator stops managing the contract. An existing contract stays in place until the `Database` is deleted. The bindings land in `targetNamespace` because consumers resolve them by name in their own namespace. Set it to the namespace of the consuming cluster.
 7. It reports status conditions and `status.observedGeneration`.
 
 All created objects are applied with Server-Side Apply (SSA) under the per-component field manager `Database/bindings`.
@@ -79,11 +79,11 @@ spec:
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
-| `Ready` | `Healthy` | Database, users, Secrets, and contract CRs are all in place. |
-| `Ready` | `Progressing` | Bootstrap SQL or contract creation is still in progress. |
-| `Ready` | `InvalidReference` | `spec.serverRef` does not resolve to an existing `DatabaseServerConfig`. |
+| `Ready` | `InvalidReference` | `spec.serverRef` does not resolve to an existing `DatabaseServerConfig`. Or another `Database`, named in the message, already claims the same `serverRef` and `databaseName` (first creation wins). |
 | `Ready` | `MissingSecret` | The server's admin credentials Secret is missing or lacks the expected keys. |
 | `Ready` | `ConnectionFailed` | The server is unreachable or the admin credentials are rejected. |
+| `Ready` | any component status | The pre-checks passed. `Ready` mirrors the `BindingsReady` component condition: same status, same reason, and the message names the component. The reason is a component framework status, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. |
+| `BindingsReady` | component status | The operational detail of the component framework for the published bindings. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
