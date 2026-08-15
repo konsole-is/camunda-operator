@@ -296,6 +296,12 @@ if err := ensureDeployment(ctx, resource); errors.Is(err, ErrNotReady) {
 }
 ```
 
+## Labels
+
+Every rendered resource gets its labels from `pkg/labels`, never from a literal in a component. `labels.Managed(owner, component)` for objects the operator applies; `labels.Discovery(owner, component)` for pod templates and volume claims that another operator runs from our template, and for selectors; `labels.Merge(user, operator)` when a spec field lets users add labels, so an operator label always wins.
+
+Two kinds of key: a standard `app.kubernetes.io/*` key for a generic fact that nothing selects on (`managed-by`), and a `camunda.io/*` key for anything an extension selects on — the owner (one key per owning kind: `camunda.io/cluster`, `camunda.io/elasticsearch-cluster`, `camunda.io/database`) and `camunda.io/component`. Do not use `app.kubernetes.io/component` or `instance` for selection: other tools write those keys with their own values on adjacent objects, and one owner key for every kind would let two owners of different kinds with the same name collide.
+
 ## Typed string constants
 
 Event reasons, condition types, label keys, annotation keys, and any string that crosses a package boundary must be declared as constants, not written inline.
