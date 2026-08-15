@@ -35,7 +35,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 // newDatabaseNamespace creates a uniquely named Namespace for one spec and
@@ -106,7 +105,7 @@ func expectDatabaseReady(db *v1.Database, status metav1.ConditionStatus, reason,
 	Eventually(func(g Gomega) {
 		var latest v1.Database
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &latest)).To(Succeed())
-		ready := meta.FindStatusCondition(latest.Status.Conditions, conditions.TypeReady)
+		ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
 		g.Expect(ready).NotTo(BeNil())
 		g.Expect(ready.Status).To(Equal(status))
 		g.Expect(ready.Reason).To(Equal(reason))
@@ -185,7 +184,7 @@ var _ = Describe("Database controller", func() {
 		db.Spec.SecondaryStorageConfig = "storage-config"
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "All components ready")
 
 		By("creating the SQL objects")
 		Expect(sqlDatabaseExists(db.Spec.DatabaseName)).To(BeTrue())
@@ -246,7 +245,7 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "All components ready")
 
 		appKey := types.NamespacedName{Namespace: namespace, Name: db.Name + "-credentials"}
 		var original corev1.Secret
@@ -275,7 +274,7 @@ var _ = Describe("Database controller", func() {
 		db.Spec.BackupCredentials = &v1.BackupCredentialsSpec{Disabled: true}
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "All components ready")
 
 		var secret corev1.Secret
 		backupKey := types.NamespacedName{Namespace: namespace, Name: db.Name + "-backup-credentials"}
@@ -293,7 +292,7 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor("no-such-server", namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+		expectDatabaseReady(db, metav1.ConditionFalse, v1.ReasonInvalidReference,
 			`DatabaseServerConfig "no-such-server" not found`)
 	})
 
@@ -318,7 +317,7 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+		expectDatabaseReady(db, metav1.ConditionFalse, v1.ReasonMissingSecret,
 			fmt.Sprintf(`Secret "%s/%s" is missing key "password"`, namespace, secret.Name))
 	})
 
@@ -345,7 +344,7 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server.Name, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionFalse, conditions.ReasonConnectionFailed,
+		expectDatabaseReady(db, metav1.ConditionFalse, v1.ReasonConnectionFailed,
 			fmt.Sprintf("Connecting to DatabaseServerConfig %q", server.Name))
 	})
 
@@ -363,8 +362,8 @@ var _ = Describe("Database controller", func() {
 		createDatabase(first)
 		createDatabase(second)
 
-		expectDatabaseReady(first, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
-		expectDatabaseReady(second, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+		expectDatabaseReady(first, metav1.ConditionTrue, v1.ReasonHealthy, "All components ready")
+		expectDatabaseReady(second, metav1.ConditionTrue, v1.ReasonHealthy, "All components ready")
 
 		By("creating one backup role per database")
 		firstRole := components.BackupUserName(first.Spec.DatabaseName)
@@ -394,14 +393,14 @@ var _ = Describe("Database controller", func() {
 		winner := databaseFor(server, namespace)
 		winner.Name = "colla-" + utilrand.String(8)
 		createDatabase(winner)
-		expectDatabaseReady(winner, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+		expectDatabaseReady(winner, metav1.ConditionTrue, v1.ReasonHealthy, "All components ready")
 
 		loser := databaseFor(server, namespace)
 		loser.Name = "collb-" + utilrand.String(8)
 		loser.Spec.DatabaseName = winner.Spec.DatabaseName
 		createDatabase(loser)
 
-		expectDatabaseReady(loser, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+		expectDatabaseReady(loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
 			fmt.Sprintf("Database %q already claims database %q", winner.Name, winner.Spec.DatabaseName))
 	})
 
@@ -411,7 +410,7 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, conditions.ReasonHealthy, "All components ready")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "All components ready")
 
 		Expect(k8sClient.Delete(ctx, db)).To(Succeed())
 		Eventually(func() error {

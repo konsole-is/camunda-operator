@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 var _ = Describe("ObjectStorageConfig controller", func() {
@@ -36,7 +35,7 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 		fetched := &v1.ObjectStorageConfig{}
 		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, fetched)).To(Succeed())
 		g.Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
-		return meta.FindStatusCondition(fetched.Status.Conditions, conditions.TypeReady)
+		return meta.FindStatusCondition(fetched.Status.Conditions, v1.ConditionReady)
 	}
 
 	BeforeEach(func() {
@@ -50,7 +49,7 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 			cond := readyCondition(g)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
+			g.Expect(cond.Reason).To(Equal(v1.ReasonHealthy))
 			g.Expect(cond.Message).To(Equal("All checks passed"))
 			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
 		}, timeout, interval).Should(Succeed())
@@ -70,7 +69,7 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 			cond := readyCondition(g)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			g.Expect(cond.Reason).To(Equal(conditions.ReasonHealthy))
+			g.Expect(cond.Reason).To(Equal(v1.ReasonHealthy))
 			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
 		}, timeout, interval).Should(Succeed())
 	})

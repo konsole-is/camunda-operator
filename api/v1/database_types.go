@@ -131,12 +131,6 @@ type Database struct {
 	Status DatabaseStatus `json:"status,omitzero"`
 }
 
-// GetConditions returns the resource's status conditions.
-func (in *Database) GetConditions() []metav1.Condition { return in.Status.Conditions }
-
-// GetObservedGeneration returns the last reconciled generation recorded in status.
-func (in *Database) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
-
 // GetStatusConditions returns a pointer to the status conditions. The
 // component framework stages per-component conditions on the resource through
 // it.

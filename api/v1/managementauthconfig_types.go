@@ -92,11 +92,15 @@ type ManagementAuthConfig struct {
 	Status ManagementAuthConfigStatus `json:"status,omitzero"`
 }
 
-// GetConditions returns the resource's status conditions.
-func (in *ManagementAuthConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *ManagementAuthConfig) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
 
-// GetObservedGeneration returns the last reconciled generation recorded in status.
-func (in *ManagementAuthConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *ManagementAuthConfig) GetKind() string { return "ManagementAuthConfig" }
 
 // +kubebuilder:object:root=true
 

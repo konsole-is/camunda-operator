@@ -28,7 +28,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 var _ = Describe("ManagementAuthConfig controller", func() {
@@ -56,7 +55,7 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 		Eventually(func(g Gomega) {
 			var current v1.ManagementAuthConfig
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: authConfig.Name}, &current)).To(Succeed())
-			cond := meta.FindStatusCondition(current.Status.Conditions, conditions.TypeReady)
+			cond := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(status))
 			g.Expect(cond.Reason).To(Equal(reason))
@@ -86,27 +85,27 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 	}
 
 	It("reports MissingSecret when the referenced Secret does not exist", func() {
-		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, notFoundMessage())
 	})
 
 	It("flips to Healthy when the Secret with the configured key appears, without touching the CR", func() {
-		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, notFoundMessage())
 
 		createClientSecret()
 
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 	})
 
 	It("flips back to MissingSecret naming the key when the key is removed from the Secret", func() {
 		secret := createClientSecret()
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
 		secret.Data = map[string][]byte{"unrelated": []byte("x")}
 		Expect(k8sClient.Update(ctx, secret)).To(Succeed())
 
 		expectReady(
 			metav1.ConditionFalse,
-			conditions.ReasonMissingSecret,
+			v1.ReasonMissingSecret,
 			fmt.Sprintf(
 				"Secret %q is missing key %q",
 				namespace+"/"+authConfig.Spec.ClientSecretRef.Name, authConfig.Spec.ClientSecretRef.Key,
@@ -116,16 +115,16 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 
 	It("flips back to MissingSecret when the Secret is deleted", func() {
 		secret := createClientSecret()
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
 		Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
 
-		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, notFoundMessage())
 	})
 
 	It("keeps status.observedGeneration in step with spec updates", func() {
 		createClientSecret()
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
 		var current v1.ManagementAuthConfig
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: authConfig.Name}, &current)).To(Succeed())
@@ -133,6 +132,6 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 		Expect(k8sClient.Update(ctx, &current)).To(Succeed())
 		Expect(current.Generation).To(BeNumerically(">", int64(1)))
 
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 	})
 })

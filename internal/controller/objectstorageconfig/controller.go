@@ -21,6 +21,8 @@ package objectstorageconfig
 import (
 	"context"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -59,7 +61,10 @@ func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, conditions.PatchReady(ctx, r.Client, &cfg, cond)
+	meta.SetStatusCondition(&cfg.Status.Conditions, cond)
+	cfg.Status.ObservedGeneration = cfg.Generation
+
+	return ctrl.Result{}, component.FlushStatus(ctx, component.ReconcileContext{Client: r.Client, Owner: &cfg})
 }
 
 // validate always reports Healthy. The CRD schema enforces every
@@ -71,7 +76,7 @@ func (r *ObjectStorageConfigReconciler) validate(
 	_ context.Context,
 	cfg *v1.ObjectStorageConfig,
 ) (metav1.Condition, error) {
-	return conditions.Ready(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed", cfg.Generation), nil
+	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
 // SetupWithManager registers the controller. The contract references no other

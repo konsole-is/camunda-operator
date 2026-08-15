@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 func TestDatabaseConfigValidate(t *testing.T) {
@@ -64,14 +63,14 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			objects:     nil,
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonInvalidReference,
+			wantReason:  v1.ReasonInvalidReference,
 			wantMessage: `DatabaseServerConfig "server" not found`,
 		},
 		{
 			name:        "app secret checked once the server exists",
 			objects:     []client.Object{server},
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "ns/app-creds" not found`,
 		},
 		{
@@ -79,21 +78,21 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			objects:     []client.Object{server},
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "ns/app-creds" not found`,
 		},
 		{
 			name:        "missing key names the secret and key",
 			objects:     []client.Object{server, appSecretNoPassword},
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "ns/app-creds" is missing key "password"`,
 		},
 		{
 			name:        "absent backup ref skips the backup check",
 			objects:     []client.Object{server, appSecret},
 			wantStatus:  metav1.ConditionTrue,
-			wantReason:  conditions.ReasonHealthy,
+			wantReason:  v1.ReasonHealthy,
 			wantMessage: "All checks passed",
 		},
 		{
@@ -101,7 +100,7 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			objects:     []client.Object{server, appSecret},
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "ns/backup-creds" not found`,
 		},
 	}
@@ -127,7 +126,7 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			cond, err := r.validate(context.Background(), cfg)
 			require.NoError(t, err)
 
-			assert.Equal(t, conditions.TypeReady, cond.Type)
+			assert.Equal(t, v1.ConditionReady, cond.Type)
 			assert.Equal(t, tt.wantStatus, cond.Status)
 			assert.Equal(t, tt.wantReason, cond.Reason)
 			assert.Equal(t, tt.wantMessage, cond.Message)

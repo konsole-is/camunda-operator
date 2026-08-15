@@ -21,6 +21,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 func TestDeriveReady(t *testing.T) {
@@ -42,19 +44,19 @@ func TestDeriveReady(t *testing.T) {
 		{
 			name: "pre-check failure wins over everything",
 			pre: &PreCheckFailure{
-				Reason:  ReasonInvalidReference,
+				Reason:  v1.ReasonInvalidReference,
 				Message: `ElasticsearchClusterPreset "standard" not found`,
 			},
 			components:  []metav1.Condition{falseCond("ElasticsearchReady", "Creating", "still converging")},
 			suspended:   true,
-			wantReason:  ReasonInvalidReference,
+			wantReason:  v1.ReasonInvalidReference,
 			wantMessage: `ElasticsearchClusterPreset "standard" not found`,
 		},
 		{
 			name:        "suspended wins over converging components",
 			components:  []metav1.Condition{falseCond("ElasticsearchReady", "Suspending", "scaling to zero")},
 			suspended:   true,
-			wantReason:  ReasonSuspended,
+			wantReason:  v1.ReasonSuspended,
 			wantMessage: "Suspended by spec.suspend",
 		},
 		{
@@ -63,7 +65,7 @@ func TestDeriveReady(t *testing.T) {
 				trueCond("CredentialsReady"),
 				falseCond("ElasticsearchReady", "Creating", "Elasticsearch reports yellow health while converging"),
 			},
-			wantReason:  ReasonProgressing,
+			wantReason:  v1.ReasonProgressing,
 			wantMessage: "Waiting for ElasticsearchReady: Elasticsearch reports yellow health while converging",
 		},
 		{
@@ -71,7 +73,7 @@ func TestDeriveReady(t *testing.T) {
 			components: []metav1.Condition{
 				{Type: "BindingsReady", Status: metav1.ConditionUnknown, Reason: "Unknown"},
 			},
-			wantReason:  ReasonProgressing,
+			wantReason:  v1.ReasonProgressing,
 			wantMessage: "Waiting for BindingsReady: Unknown",
 		},
 		{
@@ -80,7 +82,7 @@ func TestDeriveReady(t *testing.T) {
 				falseCond("CredentialsReady", "Creating", "generating credentials"),
 				falseCond("ElasticsearchReady", "Creating", "still converging"),
 			},
-			wantReason:  ReasonProgressing,
+			wantReason:  v1.ReasonProgressing,
 			wantMessage: "Waiting for CredentialsReady: generating credentials",
 		},
 		{
@@ -90,12 +92,12 @@ func TestDeriveReady(t *testing.T) {
 				trueCond("ElasticsearchReady"),
 				trueCond("StorageContractReady"),
 			},
-			wantReason:  ReasonHealthy,
+			wantReason:  v1.ReasonHealthy,
 			wantMessage: "All components ready",
 		},
 		{
 			name:        "no components reported yet is progressing",
-			wantReason:  ReasonProgressing,
+			wantReason:  v1.ReasonProgressing,
 			wantMessage: "Waiting for components to report",
 		},
 	}

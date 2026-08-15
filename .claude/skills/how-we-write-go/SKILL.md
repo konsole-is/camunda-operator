@@ -555,40 +555,35 @@ func NewBackupReconciler(owner client.Object, ...) *BackupReconciler
 
 Use `meta.SetStatusCondition` to write conditions — never append or assign directly to the slice. It handles deduplication and sets `LastTransitionTime` only when the status changes.
 
-**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Prefer a single deferred flush at the top of the reconcile loop over scattering `Status().Update()` calls at each early-return point — deferred flushing ensures exactly one write per reconcile, skips the write when nothing changed, and makes it impossible to accidentally discard condition updates by forgetting a persist call.
+**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Every controller persists status through the ocf `component.FlushStatus`, once per reconcile, deferred at the top of the reconcile loop. That holds for a controller with no components too: stage the condition, set `observedGeneration`, flush. There is no second write path — no SSA of the status subresource, no `Status().Update()` at early returns.
 
 ```go
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-    obj := &v1alpha1.ZeebeCluster{}
-    if err := r.client.Get(ctx, req.NamespacedName, obj); err != nil {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+    var obj v1.Database
+    if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
-    original := obj.DeepCopy()
+    rec := component.ReconcileContext{Client: r.componentClient, Scheme: r.Scheme, Recorder: r.Recorder, Owner: &obj}
     defer func() {
-        if equality.Semantic.DeepEqual(original.Status, obj.Status) {
-            return
-        }
-        if updateErr := r.client.Status().Update(ctx, obj); updateErr != nil {
-            err = fmt.Errorf("updating status: %w", updateErr)
+        if flushErr := component.FlushStatus(ctx, rec); flushErr != nil {
+            err = errors.Join(err, flushErr)
         }
     }()
 
-    // Call meta.SetStatusCondition freely throughout; the defer handles the write.
+    // Stage conditions freely with meta.SetStatusCondition; the defer writes them.
     ...
 }
 ```
 
-The named return `(result ctrl.Result, err error)` lets the deferred update overwrite `err` when the status write fails, even if the reconcile itself succeeded.
+The named return `(_ ctrl.Result, err error)` lets the deferred flush join its error onto `err`, even when the reconcile itself succeeded. `FlushStatus` retries on 409 and re-merges the staged conditions by type.
 
-Condition types and reasons are typed string constants, not freeform strings:
+**Condition vocabulary is API surface and lives in `api/v1`.** Users match it with `kubectl wait`, and the operators above import `api/v1` to gate on it. `api/v1/conditions.go` holds the vocabulary that more than one CRD reports (`ConditionReady`, `ReasonHealthy`, `ReasonProgressing`, `ReasonInvalidReference`, `ReasonMissingSecret`, `ReasonConnectionFailed`, `ReasonSuspended`). A reason or condition type that one CRD reports is declared in that CRD's types file, next to its spec. The CRD doc under `docs/crds` is the contract for both. `pkg/conditions` derives the aggregate `Ready`; it declares no vocabulary.
 
 ```go
-const (
-    ConditionTypeReady    = "Ready"
-    ReasonReconciled      = "Reconciled"
-    ReasonProvisionFailed = "ProvisionFailed"
-)
+// api/v1/elasticsearchcluster_types.go
+// ConditionSuspended reports whether the node set is scaled to zero by spec.suspend.
+const ConditionSuspended = "Suspended"
 ```
 
 Always set `ObservedGeneration` to `obj.Generation` — it lets consumers know whether the condition reflects the current spec revision.

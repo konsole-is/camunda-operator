@@ -128,7 +128,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		stageReady(&database, failure)
-		if failure.Reason == conditions.ReasonConnectionFailed {
+		if failure.Reason == v1.ReasonConnectionFailed {
 			return ctrl.Result{RequeueAfter: connectionRetryInterval}, nil
 		}
 		return ctrl.Result{}, nil
@@ -217,14 +217,14 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 func stageReady(database *v1.Database, pre *conditions.PreCheckFailure) {
 	componentConds := make([]metav1.Condition, 0, len(database.Status.Conditions))
 	for _, cond := range database.Status.Conditions {
-		if cond.Type != conditions.TypeReady {
+		if cond.Type != v1.ConditionReady {
 			componentConds = append(componentConds, cond)
 		}
 	}
 
 	reason, message := conditions.DeriveReady(pre, componentConds, false)
 	status := metav1.ConditionFalse
-	if reason == conditions.ReasonHealthy {
+	if reason == v1.ReasonHealthy {
 		status = metav1.ConditionTrue
 	}
 
@@ -264,7 +264,7 @@ func (r *DatabaseReconciler) resolveServer(
 	if err := r.Get(ctx, types.NamespacedName{Name: database.Spec.ServerRef}, &server); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, &conditions.PreCheckFailure{
-				Reason:  conditions.ReasonInvalidReference,
+				Reason:  v1.ReasonInvalidReference,
 				Message: fmt.Sprintf("DatabaseServerConfig %q not found", database.Spec.ServerRef),
 			}
 		}
@@ -288,7 +288,7 @@ func (r *DatabaseReconciler) adminCredentials(
 		return "", "", err
 	}
 	if msg != "" {
-		return "", "", &conditions.PreCheckFailure{Reason: conditions.ReasonMissingSecret, Message: msg}
+		return "", "", &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
 	}
 
 	var secret corev1.Secret
@@ -318,7 +318,7 @@ func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Da
 	}
 
 	return &conditions.PreCheckFailure{
-		Reason: conditions.ReasonInvalidReference,
+		Reason: v1.ReasonInvalidReference,
 		Message: fmt.Sprintf(
 			"Database %q already claims database %q on server %q",
 			winner.Name, database.Spec.DatabaseName, database.Spec.ServerRef,
@@ -344,7 +344,7 @@ func connect(
 	}
 	if err != nil {
 		return nil, &conditions.PreCheckFailure{
-			Reason:  conditions.ReasonConnectionFailed,
+			Reason:  v1.ReasonConnectionFailed,
 			Message: fmt.Sprintf("Connecting to DatabaseServerConfig %q: %v", server.Name, err),
 		}
 	}

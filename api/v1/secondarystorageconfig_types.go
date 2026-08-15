@@ -109,11 +109,15 @@ type SecondaryStorageConfig struct {
 	Status SecondaryStorageConfigStatus `json:"status,omitzero"`
 }
 
-// GetConditions returns the resource's status conditions.
-func (in *SecondaryStorageConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *SecondaryStorageConfig) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
 
-// GetObservedGeneration returns the last reconciled generation recorded in status.
-func (in *SecondaryStorageConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *SecondaryStorageConfig) GetKind() string { return "SecondaryStorageConfig" }
 
 // +kubebuilder:object:root=true
 

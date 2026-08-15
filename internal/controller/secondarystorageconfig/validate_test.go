@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 func TestSecondaryStorageConfigValidate(t *testing.T) {
@@ -90,14 +89,14 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        elasticsearch,
 			objects:     []client.Object{credentialsSecret},
 			wantStatus:  metav1.ConditionTrue,
-			wantReason:  conditions.ReasonHealthy,
+			wantReason:  v1.ReasonHealthy,
 			wantMessage: "All checks passed",
 		},
 		{
 			name:        "elasticsearch with missing secret reports MissingSecret",
 			spec:        elasticsearch,
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "camunda/es-credentials" not found`,
 		},
 		{
@@ -105,7 +104,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        elasticsearch,
 			objects:     []client.Object{partialSecret},
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "camunda/es-credentials" is missing key "password"`,
 		},
 		{
@@ -113,7 +112,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        elasticsearchWithCA,
 			objects:     []client.Object{credentialsSecret, caSecret},
 			wantStatus:  metav1.ConditionTrue,
-			wantReason:  conditions.ReasonHealthy,
+			wantReason:  v1.ReasonHealthy,
 			wantMessage: "All checks passed",
 		},
 		{
@@ -121,7 +120,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        elasticsearchWithCA,
 			objects:     []client.Object{credentialsSecret},
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "camunda/es-ca" not found`,
 		},
 		{
@@ -129,7 +128,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        elasticsearchWithCA,
 			objects:     []client.Object{credentialsSecret, caSecretNoKey},
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonMissingSecret,
+			wantReason:  v1.ReasonMissingSecret,
 			wantMessage: `Secret "camunda/es-ca" is missing key "ca.crt"`,
 		},
 		{
@@ -137,14 +136,14 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        rdbms,
 			objects:     []client.Object{database},
 			wantStatus:  metav1.ConditionTrue,
-			wantReason:  conditions.ReasonHealthy,
+			wantReason:  v1.ReasonHealthy,
 			wantMessage: "All checks passed",
 		},
 		{
 			name:        "rdbms with dangling DatabaseConfig reports InvalidReference",
 			spec:        rdbms,
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonInvalidReference,
+			wantReason:  v1.ReasonInvalidReference,
 			wantMessage: `DatabaseConfig "camunda-db" not found`,
 		},
 		{
@@ -152,7 +151,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        rdbms,
 			objects:     []client.Object{databaseElsewhere},
 			wantStatus:  metav1.ConditionFalse,
-			wantReason:  conditions.ReasonInvalidReference,
+			wantReason:  v1.ReasonInvalidReference,
 			wantMessage: `DatabaseConfig "camunda-db" not found`,
 		},
 		{
@@ -187,7 +186,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			assert.Equal(t, conditions.TypeReady, cond.Type)
+			assert.Equal(t, v1.ConditionReady, cond.Type)
 			assert.Equal(t, tt.wantStatus, cond.Status)
 			assert.Equal(t, tt.wantReason, cond.Reason)
 			assert.Equal(t, tt.wantMessage, cond.Message)

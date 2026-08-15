@@ -29,7 +29,6 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 var _ = Describe("DatabaseServerConfig controller", func() {
@@ -75,7 +74,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		Eventually(func(g Gomega) {
 			var got v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: serverConfig.Name}, &got)).To(Succeed())
-			cond := meta.FindStatusCondition(got.Status.Conditions, conditions.TypeReady)
+			cond := meta.FindStatusCondition(got.Status.Conditions, v1.ConditionReady)
 			g.Expect(cond).NotTo(BeNil())
 			g.Expect(cond.Status).To(Equal(status))
 			g.Expect(cond.Reason).To(Equal(reason))
@@ -90,18 +89,18 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 	It("reports MissingSecret when the admin credentials Secret does not exist", func() {
 		createServerConfig()
 
-		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, notFoundMessage())
 	})
 
 	It("flips to Healthy when the Secret appears, without the CR being touched", func() {
 		createServerConfig()
-		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, notFoundMessage())
 
 		secret := adminSecret("username", "password")
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 	})
 
 	It("flips back to MissingSecret when the Secret is deleted", func() {
@@ -109,11 +108,11 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
 		createServerConfig()
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
 		Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
 
-		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, notFoundMessage())
+		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, notFoundMessage())
 	})
 
 	It("reports MissingSecret naming the key when the Secret lacks the password key", func() {
@@ -123,7 +122,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 
 		createServerConfig()
 
-		expectReady(metav1.ConditionFalse, conditions.ReasonMissingSecret, fmt.Sprintf(
+		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, fmt.Sprintf(
 			"Secret %q is missing key %q",
 			namespace+"/"+serverConfig.Spec.AdminCredentialsSecretRef.Name,
 			serverConfig.Spec.AdminCredentialsSecretRef.PasswordKey,
@@ -136,7 +135,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
 
 		createServerConfig()
-		expectReady(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
 		var fetched v1.DatabaseServerConfig
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: serverConfig.Name}, &fetched)).To(Succeed())

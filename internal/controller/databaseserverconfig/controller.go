@@ -21,7 +21,9 @@ package databaseserverconfig
 import (
 	"context"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,7 +67,10 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, conditions.PatchReady(ctx, r.Client, &cfg, cond)
+	meta.SetStatusCondition(&cfg.Status.Conditions, cond)
+	cfg.Status.ObservedGeneration = cfg.Generation
+
+	return ctrl.Result{}, component.FlushStatus(ctx, component.ReconcileContext{Client: r.Client, Owner: &cfg})
 }
 
 // validate runs the documented checks of the contract and returns the Ready
@@ -88,10 +93,10 @@ func (r *DatabaseServerConfigReconciler) validate(
 		return metav1.Condition{}, err
 	}
 	if msg != "" {
-		return conditions.Ready(metav1.ConditionFalse, conditions.ReasonMissingSecret, msg, cfg.Generation), nil
+		return conditions.Ready(metav1.ConditionFalse, v1.ReasonMissingSecret, msg, cfg.Generation), nil
 	}
 
-	return conditions.Ready(metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed", cfg.Generation), nil
+	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
 // SetupWithManager registers the controller, an index of CRs by referenced

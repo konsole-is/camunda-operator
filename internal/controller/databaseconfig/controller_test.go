@@ -29,7 +29,6 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 // databaseConfigSecret builds a Secret at ref that holds a placeholder value
@@ -53,7 +52,7 @@ func expectDatabaseConfigReady(dbConfig *v1.DatabaseConfig, status metav1.Condit
 	Eventually(func(g Gomega) {
 		var latest v1.DatabaseConfig
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(dbConfig), &latest)).To(Succeed())
-		cond := meta.FindStatusCondition(latest.Status.Conditions, conditions.TypeReady)
+		cond := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
 		g.Expect(cond).NotTo(BeNil())
 		g.Expect(cond.Status).To(Equal(status))
 		g.Expect(cond.Reason).To(Equal(reason))
@@ -92,7 +91,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
-			dbConfig, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			dbConfig, metav1.ConditionFalse, v1.ReasonInvalidReference,
 			fmt.Sprintf("DatabaseServerConfig %q not found", dbConfig.Spec.ServerRef),
 		)
 	})
@@ -100,14 +99,14 @@ var _ = Describe("DatabaseConfig controller", func() {
 	It("moves validation forward to the Secret checks when the server appears", func() {
 		create(dbConfig)
 		expectDatabaseConfigReady(
-			dbConfig, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			dbConfig, metav1.ConditionFalse, v1.ReasonInvalidReference,
 			fmt.Sprintf("DatabaseServerConfig %q not found", dbConfig.Spec.ServerRef),
 		)
 
 		create(server)
 
 		expectDatabaseConfigReady(
-			dbConfig, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q not found", ns+"/app-creds"),
 		)
 	})
@@ -116,13 +115,13 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(server)
 		create(dbConfig)
 		expectDatabaseConfigReady(
-			dbConfig, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q not found", ns+"/app-creds"),
 		)
 
 		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 
-		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 	})
 
 	It("reports Healthy when the server and all Secrets exist", func() {
@@ -135,19 +134,19 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(databaseConfigSecret(*dbConfig.Spec.BackupCredentialsSecretRef, "username", "password"))
 		create(dbConfig)
 
-		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 	})
 
 	It("flips a Healthy contract to InvalidReference when the server is deleted", func() {
 		create(server)
 		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 		create(dbConfig)
-		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
 		Expect(k8sClient.Delete(ctx, server)).To(Succeed())
 
 		expectDatabaseConfigReady(
-			dbConfig, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+			dbConfig, metav1.ConditionFalse, v1.ReasonInvalidReference,
 			fmt.Sprintf("DatabaseServerConfig %q not found", dbConfig.Spec.ServerRef),
 		)
 	})
@@ -158,7 +157,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
-			dbConfig, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q is missing key %q", ns+"/app-creds", "password"),
 		)
 	})
@@ -173,7 +172,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 
 		expectDatabaseConfigReady(
-			dbConfig, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
 			fmt.Sprintf("Secret %q not found", ns+"/backup-creds"),
 		)
 	})
@@ -182,7 +181,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(server)
 		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
 		create(dbConfig)
-		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed")
+		expectDatabaseConfigReady(dbConfig, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed")
 
 		Eventually(func(g Gomega) {
 			var latest v1.DatabaseConfig

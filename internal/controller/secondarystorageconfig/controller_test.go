@@ -29,7 +29,6 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 // newSecondaryStorageNamespace creates a uniquely named Namespace for one spec
@@ -62,7 +61,7 @@ func expectSecondaryStorageReady(
 	Eventually(func(g Gomega) {
 		var latest v1.SecondaryStorageConfig
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secondaryStorage), &latest)).To(Succeed())
-		ready := meta.FindStatusCondition(latest.Status.Conditions, conditions.TypeReady)
+		ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
 		g.Expect(ready).NotTo(BeNil())
 		g.Expect(ready.Status).To(Equal(status))
 		g.Expect(ready.Reason).To(Equal(reason))
@@ -95,7 +94,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			createSecondaryStorageConfig(secondaryStorage)
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
 				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
 			)
 		})
@@ -103,14 +102,14 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 		It("flips to Healthy when the credentials Secret is created", func() {
 			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
 				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
 			)
 
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 			)
 		})
 
@@ -122,7 +121,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			createSecondaryStorageConfig(secondaryStorage)
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
 				fmt.Sprintf("Secret \"%s/es-ca\" not found", secret.Namespace),
 			)
 
@@ -133,7 +132,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			Expect(k8sClient.Create(ctx, caSecret)).To(Succeed())
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 			)
 		})
 
@@ -141,13 +140,13 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 			)
 
 			Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonMissingSecret,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonMissingSecret,
 				fmt.Sprintf("Secret \"%s/%s\" not found", secret.Namespace, secret.Name),
 			)
 		})
@@ -172,7 +171,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			createSecondaryStorageConfig(secondaryStorage)
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonInvalidReference,
 				fmt.Sprintf("DatabaseConfig %q not found", database.Name),
 			)
 		})
@@ -180,7 +179,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 		It("flips to Healthy when the DatabaseConfig is created", func() {
 			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonInvalidReference,
 				fmt.Sprintf("DatabaseConfig %q not found", database.Name),
 			)
 
@@ -188,7 +187,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, database) })
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 			)
 		})
 
@@ -196,13 +195,13 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			Expect(k8sClient.Create(ctx, database)).To(Succeed())
 			createSecondaryStorageConfig(secondaryStorage)
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 			)
 
 			Expect(k8sClient.Delete(ctx, database)).To(Succeed())
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonInvalidReference,
 				fmt.Sprintf("DatabaseConfig %q not found", database.Name),
 			)
 		})
@@ -218,7 +217,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			createSecondaryStorageConfig(secondaryStorage)
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionFalse, conditions.ReasonInvalidReference,
+				secondaryStorage, metav1.ConditionFalse, v1.ReasonInvalidReference,
 				fmt.Sprintf("DatabaseConfig %q not found", database.Name),
 			)
 
@@ -226,7 +225,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 			DeferCleanup(func() { _ = k8sClient.Delete(ctx, database) })
 
 			expectSecondaryStorageReady(
-				secondaryStorage, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+				secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 			)
 		})
 	})
@@ -243,7 +242,7 @@ var _ = Describe("SecondaryStorageConfig controller", func() {
 		secondaryStorage.Spec.RDBMS.DatabaseConfigRef = database.Name
 		createSecondaryStorageConfig(secondaryStorage)
 		expectSecondaryStorageReady(
-			secondaryStorage, metav1.ConditionTrue, conditions.ReasonHealthy, "All checks passed",
+			secondaryStorage, metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed",
 		)
 
 		other := fixtures.DatabaseConfig()
