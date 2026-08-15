@@ -8,6 +8,14 @@ and are signed with [cosign](https://docs.sigstore.dev/) keyless signatures.
 (Helm 4.1.4 is pinned in `.tool-versions` and used by the chart and release
 workflows; `make install-helm` installs that same version when Helm is missing).
 
+**External operators:** `ElasticsearchCluster` renders an
+[ECK](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html)
+`Elasticsearch` resource and the controller manager watches that kind. Install
+the ECK operator (the API types are compiled against ECK 3.5) before this
+operator: without the ECK CRDs the manager does not start. `Database` needs a
+reachable PostgreSQL server that a `DatabaseServerConfig` describes; the
+operator does not run PostgreSQL.
+
 ## Install with Helm
 
 ```bash
