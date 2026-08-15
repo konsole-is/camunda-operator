@@ -78,7 +78,7 @@ Problems with a preset (a dangling `presetRef`, or a merge that still lacks requ
 ## Validation
 
 - `spec.cluster` must not set the instance-bound fields `presetRef` (presets cannot chain), `secondaryStorageConfig`, `suspend`, or `monitoring.serviceMonitor`. Explicit zero values — an empty `presetRef`, `suspend: false`, or an empty `monitoring` object — count as unset, so templated YAML that renders unset fields as zero values still applies. An empty-string `secondaryStorageConfig` is rejected by the resource-name pattern; omit the field instead.
-- No other rules beyond schema validation; completeness of the merged configuration is validated on the consuming `ElasticsearchCluster`. In particular the `ElasticsearchCluster` no-shrink rule for `storageSize` does not bind a preset: its baseline may be resized freely, and a resulting shrink for a referencing cluster is reported by that cluster's controller.
+- No other rules beyond schema validation; completeness of the merged configuration is validated on the consuming `ElasticsearchCluster`. In particular the `ElasticsearchCluster` no-shrink rule for `storageSize` does not bind a preset. Its baseline can be resized freely. A referencing cluster that already applied a larger size keeps that size and records a `StorageShrinkIgnored` event; a new cluster uses the new baseline.
 
 ## Relationships
 

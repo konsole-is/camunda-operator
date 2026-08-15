@@ -97,7 +97,7 @@ spec:
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
-| `Ready` | `InvalidReference` | `spec.presetRef` does not resolve to an existing `ElasticsearchClusterPreset`, the merged spec is incomplete or below the version floor, or `storageSize` would shrink the applied data volume. |
+| `Ready` | `InvalidReference` | `spec.presetRef` does not resolve to an existing `ElasticsearchClusterPreset`, or the merged spec is incomplete or below the version floor. |
 | `Ready` | any component status | The pre-checks passed. `Ready` mirrors the representative component condition, that is, the one with the highest component framework priority: same status, same reason, and the message names the component. Reasons are component framework statuses, for example `Healthy`, `Creating`, `Updating`, `Failing`, `Degraded` (yellow health past the grace period), `Down` (red health past the grace period), `Suspended`, or `Error`. |
 | `Ready` | `Suspended` | `Ready` is `True` with this reason while the node set is scaled to zero. The cluster is in its desired state and intentionally not serving. To gate on a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
 | `CredentialsReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The operational detail of the component framework for each component. |
@@ -108,7 +108,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline; with a preset, the merged result must contain them.
 - `spec.version` must be a version supported by Camunda 8.9: Elasticsearch 8.19+ or 9.2+.
-- `spec.storageSize` must not shrink: Elasticsearch data volumes cannot be reduced in place. Lowering an inline `storageSize` relative to its previous inline value is rejected at admission; a shrink relative to a preset-provided baseline (for example, setting an inline value below the preset's after having relied on the preset) cannot be checked at admission and surfaces as `Ready: False` from the controller instead.
+- `spec.storageSize` cannot shrink. Elasticsearch data volumes cannot be reduced in place. Admission rejects an inline `storageSize` that is lower than its previous inline value. A shrink that admission cannot see is ignored: a preset baseline lowered under a running cluster, or an inline value set below the size that a preset provided before. The controller keeps the applied size, records a Warning event with reason `StorageShrinkIgnored`, and continues to reconcile. To lower the size of a running cluster, delete and recreate it.
 - `spec.secondaryStorageConfig` must be a valid resource name.
 
 !!! note "Deviation from the original proposal"

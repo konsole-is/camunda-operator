@@ -51,6 +51,12 @@ import (
 // spec.presetRef, so a preset edit enqueues every cluster that references it.
 const elasticsearchClusterPresetRefField = "elasticsearchcluster.spec.presetRef"
 
+// eventReasonStorageShrinkIgnored is the Warning event that the controller
+// records when the merged storageSize is below the applied data volume size.
+// It keeps the applied size, because Elasticsearch data volumes cannot be
+// reduced in place.
+const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
+
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
 // the external ECK operator. It renders an ECK Elasticsearch CR, generates the
 // file-realm credentials, and publishes a SecondaryStorageConfig binding in
@@ -123,6 +129,10 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
+	if err := r.keepAppliedStorageSize(ctx, &cluster, &merged); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	comps, err := r.buildComponents(ctx, &cluster, merged)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -136,10 +146,9 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 // preCheck resolves the preset and validates the merged spec. It returns the
 // preset-merged spec. A failed check returns a *conditions.PreCheckFailure
-// that carries its Ready reason. A dangling presetRef, an incomplete merge, a
-// version below the floor, and a storageSize shrink relative to the applied
-// ECK CR all report InvalidReference. Any other error is a transient API
-// failure.
+// that carries its Ready reason. A dangling presetRef, an incomplete merge,
+// and a version below the floor all report InvalidReference. Any other error
+// is a transient API failure.
 func (r *ElasticsearchClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
@@ -167,19 +176,20 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 		}
 	}
 
-	return merged, r.checkStorageShrink(ctx, cluster, merged)
+	return merged, nil
 }
 
-// checkStorageShrink guards against the shrinks that admission cannot see: a
-// preset baseline lowered under a referencing cluster, or an inline
+// keepAppliedStorageSize guards against the shrinks that admission cannot
+// see: a preset baseline lowered under a referencing cluster, or an inline
 // storageSize set below a size that a preset provided before. It compares the
-// merged size against the data volume claim of the applied ECK CR. A shrink
-// is reported and not applied, because Elasticsearch data volumes cannot be
-// reduced in place.
-func (r *ElasticsearchClusterReconciler) checkStorageShrink(
+// merged size against the data volume claim of the applied ECK CR. If the
+// merged size is smaller, it keeps the applied size in merged and records a
+// Warning event, because Elasticsearch data volumes cannot be reduced in
+// place. The reconcile continues with the applied size.
+func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
-	merged v1.ElasticsearchClusterSpec,
+	merged *v1.ElasticsearchClusterSpec,
 ) error {
 	var es esv1.Elasticsearch
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
@@ -190,20 +200,20 @@ func (r *ElasticsearchClusterReconciler) checkStorageShrink(
 	}
 
 	applied := appliedDataClaimSize(&es)
-	if applied == nil {
+	if applied == nil || merged.StorageSize == nil || merged.StorageSize.Cmp(*applied) >= 0 {
 		return nil
 	}
 
-	if merged.StorageSize.Cmp(*applied) < 0 {
-		return &conditions.PreCheckFailure{
-			Reason: v1.ReasonInvalidReference,
-			Message: fmt.Sprintf(
-				"storageSize %s would shrink the applied data volume size %s; Elasticsearch data volumes cannot be reduced",
-				merged.StorageSize,
-				applied,
-			),
-		}
-	}
+	r.Recorder.Eventf(
+		cluster,
+		corev1.EventTypeWarning,
+		eventReasonStorageShrinkIgnored,
+		"storageSize %s is below the applied data volume size %s; keeping %s, Elasticsearch data volumes cannot be reduced",
+		merged.StorageSize,
+		applied,
+		applied,
+	)
+	merged.StorageSize = applied
 
 	return nil
 }

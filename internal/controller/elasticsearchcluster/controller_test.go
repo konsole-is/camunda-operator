@@ -124,6 +124,34 @@ func updateECKStatus(cluster *v1.ElasticsearchCluster, mutate func(*esv1.Elastic
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectStorageShrinkIgnored polls until the controller has recorded the
+// StorageShrinkIgnored event for cluster, then asserts that the applied ECK
+// data volume claim still requests applied and that Ready does not report
+// InvalidReference.
+func expectStorageShrinkIgnored(cluster *v1.ElasticsearchCluster, applied string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var events corev1.EventList
+		g.Expect(k8sClient.List(ctx, &events, client.InNamespace(cluster.Namespace))).To(Succeed())
+		g.Expect(events.Items).To(ContainElement(SatisfyAll(
+			HaveField("Reason", "StorageShrinkIgnored"),
+			HaveField("InvolvedObject.Name", cluster.Name),
+			HaveField("Type", corev1.EventTypeWarning),
+		)))
+	}, timeout, interval).Should(Succeed())
+
+	var es esv1.Elasticsearch
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+	Expect(es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]).
+		To(Equal(resource.MustParse(applied)))
+
+	var latest v1.ElasticsearchCluster
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+	ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+	Expect(ready).NotTo(BeNil())
+	Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+}
+
 // expectControlledBy asserts that obj carries a controller owner reference to
 // cluster. Deletion then garbage-collects it without a finalizer.
 func expectControlledBy(obj client.Object, cluster *v1.ElasticsearchCluster) {
@@ -352,7 +380,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("refuses a preset-driven storageSize shrink and keeps the applied size", func() {
+	It("ignores a preset-driven storageSize shrink, keeps the applied size, and records an event", func() {
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
@@ -366,18 +394,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		expectElasticsearchClusterReady(
-			cluster, metav1.ConditionFalse,
-			Equal(v1.ReasonInvalidReference), ContainSubstring("shrink"),
-		)
-
-		var es esv1.Elasticsearch
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
-		Expect(es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]).
-			To(Equal(resource.MustParse("1Gi")))
+		expectStorageShrinkIgnored(cluster, "1Gi")
 	})
 
-	It("refuses an inline storageSize below the applied preset baseline", func() {
+	It("ignores an inline storageSize below the applied preset baseline", func() {
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
@@ -393,15 +413,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		expectElasticsearchClusterReady(
-			cluster, metav1.ConditionFalse,
-			Equal(v1.ReasonInvalidReference), ContainSubstring("shrink"),
-		)
-
-		var es esv1.Elasticsearch
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
-		Expect(es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]).
-			To(Equal(resource.MustParse("1Gi")))
+		expectStorageShrinkIgnored(cluster, "1Gi")
 	})
 
 	It("records the reconciled generation in status.observedGeneration", func() {
