@@ -178,9 +178,6 @@ func TestMergePresetKeepsInstanceBoundFieldsFromSpec(t *testing.T) {
 		PresetRef:              "standard",
 		SecondaryStorageConfig: "my-storage-config",
 		Suspend:                true,
-		Monitoring: &v1.MonitoringSpec{
-			ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true},
-		},
 	}
 
 	merged := MergePreset(spec, fullPresetSpec())
@@ -188,7 +185,32 @@ func TestMergePresetKeepsInstanceBoundFieldsFromSpec(t *testing.T) {
 	assert.Equal(t, spec.PresetRef, merged.PresetRef)
 	assert.Equal(t, spec.SecondaryStorageConfig, merged.SecondaryStorageConfig)
 	assert.Equal(t, spec.Suspend, merged.Suspend)
-	assert.Equal(t, spec.Monitoring, merged.Monitoring)
+}
+
+func TestMergePresetMonitoringIsInheritedAndOverriddenWholesale(t *testing.T) {
+	t.Parallel()
+
+	preset := &v1.ElasticsearchClusterPresetSpec{Cluster: v1.ElasticsearchClusterSpec{
+		Monitoring: &v1.MonitoringSpec{
+			ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true, Labels: map[string]string{"release": "prometheus"}},
+			Exporter:       &v1.ExporterSpec{Image: "registry.example.com/mirror/elasticsearch-exporter:v1.9.0"},
+		},
+	}}
+
+	inherited := MergePreset(v1.ElasticsearchClusterSpec{}, preset)
+	assert.Equal(t, preset.Cluster.Monitoring, inherited.Monitoring, "an unset monitoring block inherits the preset")
+
+	override := v1.ElasticsearchClusterSpec{Monitoring: &v1.MonitoringSpec{
+		ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: false},
+	}}
+	merged := MergePreset(override, preset)
+	assert.Equal(
+		t,
+		override.Monitoring,
+		merged.Monitoring,
+		"an inline monitoring block replaces the preset's wholesale",
+	)
+	assert.Nil(t, merged.Monitoring.Exporter, "the exporter image of the preset does not survive a wholesale override")
 }
 
 func TestMergePresetDoesNotAliasThePresetBaseline(t *testing.T) {

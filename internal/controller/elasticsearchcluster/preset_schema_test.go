@@ -119,17 +119,14 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 			}, "instance-bound",
 		),
 		Entry(
-			"rejects monitoring inside a preset",
+			"accepts monitoring inside a preset",
 			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
 				o.Spec.Cluster.Monitoring = &v1.MonitoringSpec{
 					ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true},
+					Exporter: &v1.ExporterSpec{
+						Image: "registry.example.com/mirror/elasticsearch-exporter:v1.9.0",
+					},
 				}
-			}, "instance-bound",
-		),
-		Entry(
-			"accepts an empty monitoring object",
-			validElasticsearchClusterPreset, func(o *v1.ElasticsearchClusterPreset) {
-				o.Spec.Cluster.Monitoring = &v1.MonitoringSpec{}
 			}, "",
 		),
 	)

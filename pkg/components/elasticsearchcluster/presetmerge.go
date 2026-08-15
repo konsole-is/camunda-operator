@@ -31,9 +31,9 @@ import (
 // the API drops an empty value on the way in, so the merge cannot see it. To
 // drop a list that the preset provides, override it with the list you want,
 // or reference a preset without it. The scheduling block is replaced
-// entirely, never merged field by field. The instance-bound fields
-// (presetRef, secondaryStorageConfig, suspend, monitoring) always come from
-// spec, and a preset cannot set them. A nil preset returns spec unchanged.
+// entirely, never merged field by field, and so is the monitoring block. The
+// instance-bound fields (presetRef, secondaryStorageConfig, suspend) always
+// come from spec, and a preset cannot set them. A nil preset returns spec unchanged.
 // The result shares no memory with preset, so callers can mutate it freely.
 func MergePreset(
 	spec v1.ElasticsearchClusterSpec,
@@ -78,11 +78,13 @@ func MergePreset(
 	if spec.Scheduling != nil {
 		merged.Scheduling = spec.Scheduling
 	}
+	if spec.Monitoring != nil {
+		merged.Monitoring = spec.Monitoring
+	}
 
 	merged.PresetRef = spec.PresetRef
 	merged.SecondaryStorageConfig = spec.SecondaryStorageConfig
 	merged.Suspend = spec.Suspend
-	merged.Monitoring = spec.Monitoring
 
 	return merged
 }

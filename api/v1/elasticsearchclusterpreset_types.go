@@ -24,12 +24,14 @@ import (
 // ElasticsearchClusterPreset.
 type ElasticsearchClusterPresetSpec struct {
 	// Cluster is the full configuration baseline consumers inherit. It reuses
-	// the ElasticsearchCluster spec type so the two never drift apart; the
-	// instance-bound fields of that type — presetRef, secondaryStorageConfig,
-	// suspend, and monitoring — must be left unset inside a preset. Explicit
-	// zero values (an empty presetRef, suspend: false, an empty monitoring
-	// object), as templated YAML renders unset fields, count as unset.
-	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.secondaryStorageConfig) || self.secondaryStorageConfig == '') && (!has(self.suspend) || !self.suspend) && (!has(self.monitoring) || !has(self.monitoring.serviceMonitor))",message="instance-bound fields (presetRef, secondaryStorageConfig, suspend, monitoring.serviceMonitor) must not be set in a preset"
+	// the ElasticsearchCluster spec type so the two never drift apart. The
+	// instance-bound fields of that type, presetRef, secondaryStorageConfig,
+	// and suspend, must be left unset inside a preset. Explicit zero values
+	// (an empty presetRef, suspend: false), as templated YAML renders unset
+	// fields, count as unset. monitoring is a baseline like any other field:
+	// a preset can enable scraping and pin the exporter image and resources
+	// for every cluster that references it.
+	// +kubebuilder:validation:XValidation:rule="(!has(self.presetRef) || self.presetRef == '') && (!has(self.secondaryStorageConfig) || self.secondaryStorageConfig == '') && (!has(self.suspend) || !self.suspend)",message="instance-bound fields (presetRef, secondaryStorageConfig, suspend) must not be set in a preset"
 	// +required
 	Cluster ElasticsearchClusterSpec `json:"cluster"`
 }

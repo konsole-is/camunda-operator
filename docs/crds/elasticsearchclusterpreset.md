@@ -30,7 +30,7 @@ graph LR
 ## API reference
 
 `spec.cluster` reuses the `ElasticsearchCluster` spec type directly, so the two never drift apart.
-The instance-bound fields of that type — `presetRef`, `secondaryStorageConfig`, `suspend`, and `monitoring` — must be left unset inside a preset.
+The instance-bound fields of that type — `presetRef`, `secondaryStorageConfig`, and `suspend` — must be left unset inside a preset. `monitoring` is a baseline like any other field: a preset can enable scraping and pin the exporter image and resources for every cluster that references it, and a cluster that sets its own `monitoring` block replaces the preset's wholesale.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -77,7 +77,7 @@ Problems with a preset (a dangling `presetRef`, or a merge that still lacks requ
 
 ## Validation
 
-- `spec.cluster` must not set the instance-bound fields `presetRef` (presets cannot chain), `secondaryStorageConfig`, `suspend`, or `monitoring.serviceMonitor`. Explicit zero values — an empty `presetRef`, `suspend: false`, or an empty `monitoring` object — count as unset, so templated YAML that renders unset fields as zero values still applies. An empty-string `secondaryStorageConfig` is rejected by the resource-name pattern; omit the field instead.
+- `spec.cluster` must not set the instance-bound fields `presetRef` (presets cannot chain), `secondaryStorageConfig`, or `suspend`. Explicit zero values — an empty `presetRef` or `suspend: false` — count as unset, so templated YAML that renders unset fields as zero values still applies. An empty-string `secondaryStorageConfig` is rejected by the resource-name pattern; omit the field instead.
 - No other rules beyond schema validation; completeness of the merged configuration is validated on the consuming `ElasticsearchCluster`. In particular the `ElasticsearchCluster` no-shrink rule for `storageSize` does not bind a preset. Its baseline can be resized freely. A referencing cluster that already applied a larger size keeps that size and records a `StorageShrinkIgnored` event; a new cluster uses the new baseline.
 
 ## Relationships

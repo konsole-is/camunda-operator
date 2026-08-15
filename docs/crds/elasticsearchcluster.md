@@ -81,7 +81,7 @@ spec:
     tolerations: []
   # string. Required. Name of the SecondaryStorageConfig the operator creates in this CR's own namespace with the connection details and generated credentials.
   secondaryStorageConfig: "my-storage-config"
-  # object. Optional. Prometheus scraping integration.
+  # object. Optional. Prometheus scraping integration. Inheritable from the preset; a block set here replaces the preset's wholesale.
   monitoring:
     serviceMonitor:
       # boolean. Optional, default: false. Deploy the elasticsearch_exporter and create a ServiceMonitor that scrapes it. The ServiceMonitor requires the prometheus-operator CRD; on a cluster without it the exporter still runs and the ServiceMonitor is omitted.
