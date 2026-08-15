@@ -21,25 +21,49 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// componentCond builds a component condition with the given ocf status.
-func componentCond(
-	condType string,
-	status metav1.ConditionStatus,
-	reason component.Status,
-	message string,
-) metav1.Condition {
-	return metav1.Condition{Type: condType, Status: status, Reason: string(reason), Message: message}
+// staged is one component and the condition it staged on the owner.
+type staged struct {
+	condType string
+	status   metav1.ConditionStatus
+	reason   component.Status
+	message  string
+}
+
+// ownerWith returns an owner that carries the given staged component
+// conditions, and the matching components in the same order.
+func ownerWith(t *testing.T, stagedConds ...staged) (component.OperatorCRD, []*component.Component) {
+	t.Helper()
+
+	owner := &v1.Database{}
+	owner.Generation = 4
+	comps := make([]*component.Component, 0, len(stagedConds))
+	for _, sc := range stagedConds {
+		comp, err := component.NewComponentBuilder().
+			WithName(sc.condType).
+			WithConditionType(component.ConditionType(sc.condType)).
+			Build()
+		require.NoError(t, err)
+		comps = append(comps, comp)
+		if sc.reason == "" {
+			continue // registered but never reported
+		}
+		owner.Status.Conditions = append(owner.Status.Conditions, metav1.Condition{
+			Type: sc.condType, Status: sc.status, Reason: string(sc.reason), Message: sc.message,
+		})
+	}
+	return owner, comps
 }
 
 func TestAggregate(t *testing.T) {
 	tests := []struct {
 		name        string
-		components  []metav1.Condition
+		staged      []staged
 		wantStatus  metav1.ConditionStatus
 		wantReason  string
 		wantMessage string
@@ -51,10 +75,17 @@ func TestAggregate(t *testing.T) {
 			wantMessage: "No component has reported yet",
 		},
 		{
+			name:        "a component that has not reported is Unknown",
+			staged:      []staged{{condType: "BindingsReady"}},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  string(component.Unknown),
+			wantMessage: "BindingsReady: Component has not been reconciled yet.",
+		},
+		{
 			name: "all healthy mirrors a healthy component",
-			components: []metav1.Condition{
-				componentCond("CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."),
-				componentCond("ElasticsearchReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."),
+			staged: []staged{
+				{"CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
+				{"ElasticsearchReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
 			},
 			wantStatus:  metav1.ConditionTrue,
 			wantReason:  v1.ReasonHealthy,
@@ -62,14 +93,9 @@ func TestAggregate(t *testing.T) {
 		},
 		{
 			name: "a converging component outranks a healthy one",
-			components: []metav1.Condition{
-				componentCond("CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."),
-				componentCond(
-					"ElasticsearchReady",
-					metav1.ConditionFalse,
-					component.AliveCreating,
-					"yellow while converging",
-				),
+			staged: []staged{
+				{"CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
+				{"ElasticsearchReady", metav1.ConditionFalse, component.AliveCreating, "yellow while converging"},
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.AliveCreating),
@@ -77,10 +103,10 @@ func TestAggregate(t *testing.T) {
 		},
 		{
 			name: "down outranks degraded outranks creating",
-			components: []metav1.Condition{
-				componentCond("A", metav1.ConditionFalse, component.AliveCreating, "creating"),
-				componentCond("B", metav1.ConditionFalse, component.Down, "red"),
-				componentCond("C", metav1.ConditionFalse, component.Degraded, "yellow"),
+			staged: []staged{
+				{"A", metav1.ConditionFalse, component.AliveCreating, "creating"},
+				{"B", metav1.ConditionFalse, component.Down, "red"},
+				{"C", metav1.ConditionFalse, component.Degraded, "yellow"},
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Down),
@@ -88,14 +114,9 @@ func TestAggregate(t *testing.T) {
 		},
 		{
 			name: "a suspended component is mirrored as True",
-			components: []metav1.Condition{
-				componentCond("CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."),
-				componentCond(
-					"ElasticsearchReady",
-					metav1.ConditionTrue,
-					component.Suspended,
-					"node set scaled to zero",
-				),
+			staged: []staged{
+				{"CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
+				{"ElasticsearchReady", metav1.ConditionTrue, component.Suspended, "node set scaled to zero"},
 			},
 			wantStatus:  metav1.ConditionTrue,
 			wantReason:  string(component.Suspended),
@@ -103,8 +124,8 @@ func TestAggregate(t *testing.T) {
 		},
 		{
 			name: "suspending is not yet suspended",
-			components: []metav1.Condition{
-				componentCond("ElasticsearchReady", metav1.ConditionFalse, component.Suspending, "scaling down"),
+			staged: []staged{
+				{"ElasticsearchReady", metav1.ConditionFalse, component.Suspending, "scaling down"},
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Suspending),
@@ -112,9 +133,9 @@ func TestAggregate(t *testing.T) {
 		},
 		{
 			name: "an error outranks everything",
-			components: []metav1.Condition{
-				componentCond("A", metav1.ConditionFalse, component.Down, "red"),
-				componentCond("B", metav1.ConditionFalse, component.Error, "apply failed"),
+			staged: []staged{
+				{"A", metav1.ConditionFalse, component.Down, "red"},
+				{"B", metav1.ConditionFalse, component.Error, "apply failed"},
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Error),
@@ -122,9 +143,9 @@ func TestAggregate(t *testing.T) {
 		},
 		{
 			name: "the first component wins a tie",
-			components: []metav1.Condition{
-				componentCond("A", metav1.ConditionFalse, component.AliveCreating, "first"),
-				componentCond("B", metav1.ConditionFalse, component.AliveCreating, "second"),
+			staged: []staged{
+				{"A", metav1.ConditionFalse, component.AliveCreating, "first"},
+				{"B", metav1.ConditionFalse, component.AliveCreating, "second"},
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.AliveCreating),
@@ -133,7 +154,9 @@ func TestAggregate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cond := Aggregate(tt.components, 4)
+			owner, comps := ownerWith(t, tt.staged...)
+
+			cond := Aggregate(owner, comps...)
 
 			assert.Equal(t, v1.ConditionReady, cond.Type)
 			assert.Equal(t, tt.wantStatus, cond.Status)

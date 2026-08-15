@@ -53,24 +53,23 @@ func Ready(status metav1.ConditionStatus, reason, message string, observedGenera
 	}
 }
 
-// Aggregate builds the Ready condition from the ocf component conditions of
-// the owner. It mirrors the representative component: the one whose reason
-// has the highest component.Status priority, with the first one winning a
-// tie. Ready takes the status and reason of that component, and its message
-// names the component. With no component conditions the result is Unknown.
-func Aggregate(componentConds []metav1.Condition, observedGeneration int64) metav1.Condition {
-	if len(componentConds) == 0 {
-		return Ready(
-			metav1.ConditionFalse,
-			string(component.Unknown),
-			"No component has reported yet",
-			observedGeneration,
-		)
+// Aggregate builds the Ready condition of owner from its ocf components. It
+// mirrors the representative component: the one whose condition reason has
+// the highest component.Status priority, with the first one winning a tie.
+// Ready takes the status and reason of that component, and its message names
+// the component. A component that has not reported yet counts as Unknown,
+// which component.GetCondition supplies. With no components the result is
+// Unknown.
+func Aggregate(owner component.OperatorCRD, comps ...*component.Component) metav1.Condition {
+	generation := owner.GetGeneration()
+	if len(comps) == 0 {
+		return Ready(metav1.ConditionFalse, string(component.Unknown), "No component has reported yet", generation)
 	}
 
-	representative := componentConds[0]
-	for _, cond := range componentConds[1:] {
-		if component.Status(cond.Reason).Priority() > component.Status(representative.Reason).Priority() {
+	representative := comps[0].GetCondition(owner)
+	for _, comp := range comps[1:] {
+		cond := comp.GetCondition(owner)
+		if cond.ComponentStatus().Priority() > representative.ComponentStatus().Priority() {
 			representative = cond
 		}
 	}
@@ -79,6 +78,6 @@ func Aggregate(componentConds []metav1.Condition, observedGeneration int64) meta
 		representative.Status,
 		representative.Reason,
 		fmt.Sprintf("%s: %s", representative.Type, representative.Message),
-		observedGeneration,
+		generation,
 	)
 }

@@ -92,7 +92,7 @@ type ElasticsearchClusterReconciler struct {
 // storage-contract components in dependency order, and derives the CR-level
 // Ready and Suspended conditions.
 //
-// Status is written once per reconcile. The components and stageReady
+// Status is written once per reconcile. The components and setReady
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
 // persists them together.
 func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
@@ -116,15 +116,20 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	merged, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		stageReady(&cluster, failure)
+		setReady(&cluster, conditions.Ready(metav1.ConditionFalse, failure.Reason, failure.Message, cluster.Generation))
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	reconcileErr := r.reconcileComponents(ctx, recCtx, &cluster, merged)
-	stageReady(&cluster, nil)
+	comps, err := r.buildComponents(ctx, &cluster, merged)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	reconcileErr := reconcileComponents(ctx, recCtx, comps)
+	setReady(&cluster, conditions.Aggregate(&cluster, comps...))
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -220,43 +225,47 @@ func appliedDataClaimSize(es *esv1.Elasticsearch) *resource.Quantity {
 	return nil
 }
 
-// reconcileComponents builds and reconciles the three components in
-// dependency order. It continues past a failing component, so one failure
-// does not stall the rest, and returns the first error. It reads the password
-// from the existing user Secret without the cache, so the password stays
-// stable after creation. To rotate it, delete the Secret.
-func (r *ElasticsearchClusterReconciler) reconcileComponents(
+// buildComponents builds the three components in dependency order. It reads
+// the password from the existing user Secret without the cache, so the
+// password stays stable after creation. To rotate it, delete the Secret.
+func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
-	recCtx component.ReconcileContext,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
-) error {
+) ([]*component.Component, error) {
 	password, err := credentials.LookupOrNew(
 		ctx, r.APIReader, client.ObjectKey{
 			Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
 		}, components.PasswordKey,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	credentialsComp, err := components.CredentialsComponent(cluster, password)
 	if err != nil {
-		return fmt.Errorf("building credentials component: %w", err)
+		return nil, fmt.Errorf("building credentials component: %w", err)
 	}
 
 	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, r.serviceMonitorSupported())
 	if err != nil {
-		return fmt.Errorf("building elasticsearch component: %w", err)
+		return nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
 	storageContractComp, err := components.StorageContractComponent(cluster, merged)
 	if err != nil {
-		return fmt.Errorf("building storage-contract component: %w", err)
+		return nil, fmt.Errorf("building storage-contract component: %w", err)
 	}
 
+	return []*component.Component{credentialsComp, elasticsearchComp, storageContractComp}, nil
+}
+
+// reconcileComponents reconciles comps in order. It continues past a failing
+// component, so one failure does not stall the rest, and returns the first
+// error.
+func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext, comps []*component.Component) error {
 	var firstErr error
-	for _, comp := range []*component.Component{credentialsComp, elasticsearchComp, storageContractComp} {
+	for _, comp := range comps {
 		if err := comp.Reconcile(ctx, recCtx); err != nil && firstErr == nil {
 			firstErr = err
 		}
@@ -265,33 +274,11 @@ func (r *ElasticsearchClusterReconciler) reconcileComponents(
 	return firstErr
 }
 
-// stageReady sets the Ready condition and observedGeneration on the in-memory
-// cluster. A pre-check failure becomes Ready directly. Otherwise Ready mirrors
-// the representative component condition. FlushStatus persists them.
-func stageReady(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckFailure) {
-	ready := conditions.Ready(metav1.ConditionFalse, "", "", cluster.Generation)
-	if pre != nil {
-		ready.Reason, ready.Message = pre.Reason, pre.Message
-	} else {
-		ready = conditions.Aggregate(componentConditions(cluster), cluster.Generation)
-	}
-
+// setReady stages ready and observedGeneration on the in-memory cluster.
+// FlushStatus persists them.
+func setReady(cluster *v1.ElasticsearchCluster, ready metav1.Condition) {
 	meta.SetStatusCondition(&cluster.Status.Conditions, ready)
 	cluster.Status.ObservedGeneration = cluster.Generation
-}
-
-// componentConditions returns the ocf component conditions on cluster, in
-// component registration order.
-func componentConditions(cluster *v1.ElasticsearchCluster) []metav1.Condition {
-	conds := make([]metav1.Condition, 0, 3)
-	for _, condType := range []string{
-		components.ConditionCredentials, components.ConditionElasticsearch, components.ConditionStorageContract,
-	} {
-		if cond := meta.FindStatusCondition(cluster.Status.Conditions, condType); cond != nil {
-			conds = append(conds, *cond)
-		}
-	}
-	return conds
 }
 
 // serviceMonitorSupported reports whether the cluster serves the
