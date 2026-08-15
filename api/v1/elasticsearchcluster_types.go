@@ -48,10 +48,14 @@ type SchedulingSpec struct {
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
-// ServiceMonitorSpec configures the optional Prometheus ServiceMonitor for a
-// managed workload's service.
+// ServiceMonitorSpec configures the Prometheus scraping of the Elasticsearch
+// cluster. Elasticsearch serves no Prometheus endpoint itself, so enabling it
+// deploys the prometheus-community elasticsearch_exporter next to the cluster
+// and, when the cluster serves the ServiceMonitor kind, a ServiceMonitor that
+// scrapes the exporter.
 type ServiceMonitorSpec struct {
-	// Enabled creates the ServiceMonitor when true. Defaults to false.
+	// Enabled deploys the exporter and creates the ServiceMonitor when true.
+	// Defaults to false.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 	// Labels are extra labels applied to the ServiceMonitor.
@@ -62,12 +66,29 @@ type ServiceMonitorSpec struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-// MonitoringSpec groups the Prometheus scraping integration of a managed
-// workload.
+// ExporterSpec tunes the elasticsearch_exporter Deployment that
+// ServiceMonitorSpec.Enabled deploys.
+type ExporterSpec struct {
+	// Image overrides the exporter image. Defaults to the pinned
+	// quay.io/prometheuscommunity/elasticsearch-exporter release of the
+	// operator.
+	// +optional
+	Image string `json:"image,omitempty"`
+	// Resources are the CPU and memory of the exporter container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// MonitoringSpec groups the Prometheus scraping integration of the
+// Elasticsearch cluster.
 type MonitoringSpec struct {
-	// ServiceMonitor configures the Prometheus ServiceMonitor.
+	// ServiceMonitor configures the exporter and the Prometheus
+	// ServiceMonitor.
 	// +optional
 	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
+	// Exporter tunes the exporter Deployment.
+	// +optional
+	Exporter *ExporterSpec `json:"exporter,omitempty"`
 }
 
 // ElasticsearchClusterSpec defines the desired state of ElasticsearchCluster.
@@ -98,12 +119,13 @@ type ElasticsearchClusterSpec struct {
 	// Resources are the CPU and memory for each Elasticsearch node.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// StorageSize is the size of each node's data volume. It must never
-	// shrink: Elasticsearch data volumes cannot be reduced in place. The
-	// no-shrink rule binds the ElasticsearchCluster usage of this type only —
-	// it is a CEL transition rule on that CR's spec, not on this shared
-	// field, so a preset's baseline may be resized freely. Required unless
-	// the resolved preset provides it.
+	// StorageSize is the size of the data volume of each node. It cannot
+	// shrink, because Elasticsearch data volumes cannot be reduced in place.
+	// Admission rejects a lower inline value on an ElasticsearchCluster
+	// through a CEL transition rule. That rule does not bind this shared
+	// field, so a preset baseline can be resized freely: a cluster that
+	// applied a larger size keeps it and records a StorageShrinkIgnored
+	// event. Required unless the resolved preset provides it.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass for the data volumes. Defaults to
@@ -142,8 +164,11 @@ type ElasticsearchClusterSpec struct {
 	// Monitoring configures the Prometheus scraping integration.
 	// +optional
 	Monitoring *MonitoringSpec `json:"monitoring,omitempty"`
-	// Suspend scales the Elasticsearch node set to zero while keeping all
-	// data volumes. Defaults to false.
+	// Suspend stops the Elasticsearch cluster and keeps its data volumes.
+	// The operator deletes the ECK Elasticsearch resource, whose volume
+	// claim delete policy is DeleteOnScaledownOnly, so ECK retains the
+	// data volumes. Setting the field back to false recreates the resource,
+	// and ECK reattaches the volumes. Defaults to false.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 }
@@ -153,11 +178,17 @@ type ElasticsearchClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. The Ready condition carries
-	// reasons Healthy, Progressing, InvalidReference, or Suspended; the
-	// Suspended condition reports suspension, and the operator's per-component
-	// conditions (CredentialsReady, ElasticsearchReady, StorageContractReady)
-	// also appear here.
+	// StorageSize is the data volume size that the cluster has. It is the
+	// smallest capacity that the data PersistentVolumeClaims of the cluster
+	// report, so a resize outside the spec, for example by an auto-resize
+	// controller, shows here. Until a claim reports a capacity it is the size
+	// that the applied Elasticsearch CR requests.
+	// +optional
+	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
+	// Conditions represent the current state. Ready carries the pre-check
+	// reason InvalidReference or mirrors the representative component
+	// condition. The per-component conditions (CredentialsReady,
+	// ElasticsearchReady, StorageContractReady) also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -190,14 +221,21 @@ type ElasticsearchCluster struct {
 }
 
 // GetStatusConditions returns a pointer to the status conditions. The
-// component framework stages conditions on the resource through it.
+// component framework stages per-component conditions on the resource through
+// it.
 func (in *ElasticsearchCluster) GetStatusConditions() *[]metav1.Condition {
 	return &in.Status.Conditions
 }
 
-// GetKind returns the CRD kind. The component framework uses it for event and
-// metric recording.
+// GetKind returns the CRD kind. The component framework uses it for event
+// and metric recording and derives its per-component SSA field managers
+// (ElasticsearchCluster/<component>) from it.
 func (in *ElasticsearchCluster) GetKind() string { return "ElasticsearchCluster" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *ElasticsearchCluster) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
 
 // +kubebuilder:object:root=true
 

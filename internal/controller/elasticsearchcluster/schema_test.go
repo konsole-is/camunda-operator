@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package elasticsearchcluster
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -29,8 +29,8 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// validElasticsearchCluster returns the doc's minimal example with a unique
-// name; the caller chooses the namespace.
+// validElasticsearchCluster returns the minimal example of the CRD doc with a
+// unique name. The caller chooses the namespace.
 func validElasticsearchCluster() *v1.ElasticsearchCluster {
 	return &v1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "esc-" + utilrand.String(8)},
@@ -41,8 +41,8 @@ func validElasticsearchCluster() *v1.ElasticsearchCluster {
 	}
 }
 
-// realisticElasticsearchCluster returns the doc's realistic example with a
-// unique name; the caller chooses the namespace.
+// realisticElasticsearchCluster returns the realistic example of the CRD doc
+// with a unique name. The caller chooses the namespace.
 func realisticElasticsearchCluster() *v1.ElasticsearchCluster {
 	replicas := int32(3)
 	storageSize := resource.MustParse("128Gi")
@@ -141,7 +141,7 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 	)
 
 	// storageSize serializes as int-or-string, so the no-shrink rule must
-	// handle the integer form a raw manifest can submit.
+	// handle the integer form that a raw manifest can submit.
 	It("accepts integer-form storageSize and still rejects shrink", func() {
 		obj := &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "core.camunda.io/v1",

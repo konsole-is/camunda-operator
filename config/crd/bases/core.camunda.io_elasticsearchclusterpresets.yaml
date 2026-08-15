@@ -46,11 +46,13 @@ spec:
               cluster:
                 description: |-
                   Cluster is the full configuration baseline consumers inherit. It reuses
-                  the ElasticsearchCluster spec type so the two never drift apart; the
-                  instance-bound fields of that type — presetRef, secondaryStorageConfig,
-                  suspend, and monitoring — must be left unset inside a preset. Explicit
-                  zero values (an empty presetRef, suspend: false, an empty monitoring
-                  object), as templated YAML renders unset fields, count as unset.
+                  the ElasticsearchCluster spec type so the two never drift apart. The
+                  instance-bound fields of that type, presetRef, secondaryStorageConfig,
+                  and suspend, must be left unset inside a preset. Explicit zero values
+                  (an empty presetRef, suspend: false), as templated YAML renders unset
+                  fields, count as unset. monitoring is a baseline like any other field:
+                  a preset can enable scraping and pin the exporter image and resources
+                  for every cluster that references it.
                 properties:
                   extraEnv:
                     description: ExtraEnv are extra environment variables for every
@@ -263,8 +265,81 @@ spec:
                   monitoring:
                     description: Monitoring configures the Prometheus scraping integration.
                     properties:
+                      exporter:
+                        description: Exporter tunes the exporter Deployment.
+                        properties:
+                          image:
+                            description: |-
+                              Image overrides the exporter image. Defaults to the pinned
+                              quay.io/prometheuscommunity/elasticsearch-exporter release of the
+                              operator.
+                            type: string
+                          resources:
+                            description: Resources are the CPU and memory of the exporter
+                              container.
+                            properties:
+                              claims:
+                                description: |-
+                                  Claims lists the names of resources, defined in spec.resourceClaims,
+                                  that are used by this container.
+
+                                  This field depends on the
+                                  DynamicResourceAllocation feature gate.
+
+                                  This field is immutable. It can only be set for containers.
+                                items:
+                                  description: ResourceClaim references one entry
+                                    in PodSpec.ResourceClaims.
+                                  properties:
+                                    name:
+                                      description: |-
+                                        Name must match the name of one entry in pod.spec.resourceClaims of
+                                        the Pod where this field is used. It makes that resource available
+                                        inside a container.
+                                      type: string
+                                    request:
+                                      description: |-
+                                        Request is the name chosen for a request in the referenced claim.
+                                        If empty, everything from the claim is made available, otherwise
+                                        only the result of this request.
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              limits:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Limits describes the maximum amount of compute resources allowed.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                              requests:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Requests describes the minimum amount of compute resources required.
+                                  If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                  otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                            type: object
+                        type: object
                       serviceMonitor:
-                        description: ServiceMonitor configures the Prometheus ServiceMonitor.
+                        description: |-
+                          ServiceMonitor configures the exporter and the Prometheus
+                          ServiceMonitor.
                         properties:
                           annotations:
                             additionalProperties:
@@ -273,7 +348,8 @@ spec:
                               to the ServiceMonitor.
                             type: object
                           enabled:
-                            description: Enabled creates the ServiceMonitor when true.
+                            description: |-
+                              Enabled deploys the exporter and creates the ServiceMonitor when true.
                               Defaults to false.
                             type: boolean
                           labels:
@@ -1001,18 +1077,22 @@ spec:
                     - type: integer
                     - type: string
                     description: |-
-                      StorageSize is the size of each node's data volume. It must never
-                      shrink: Elasticsearch data volumes cannot be reduced in place. The
-                      no-shrink rule binds the ElasticsearchCluster usage of this type only —
-                      it is a CEL transition rule on that CR's spec, not on this shared
-                      field, so a preset's baseline may be resized freely. Required unless
-                      the resolved preset provides it.
+                      StorageSize is the size of the data volume of each node. It cannot
+                      shrink, because Elasticsearch data volumes cannot be reduced in place.
+                      Admission rejects a lower inline value on an ElasticsearchCluster
+                      through a CEL transition rule. That rule does not bind this shared
+                      field, so a preset baseline can be resized freely: a cluster that
+                      applied a larger size keeps it and records a StorageShrinkIgnored
+                      event. Required unless the resolved preset provides it.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   suspend:
                     description: |-
-                      Suspend scales the Elasticsearch node set to zero while keeping all
-                      data volumes. Defaults to false.
+                      Suspend stops the Elasticsearch cluster and keeps its data volumes.
+                      The operator deletes the ECK Elasticsearch resource, whose volume
+                      claim delete policy is DeleteOnScaledownOnly, so ECK retains the
+                      data volumes. Setting the field back to false recreates the resource,
+                      and ECK reattaches the volumes. Defaults to false.
                     type: boolean
                   version:
                     description: |-
@@ -1026,10 +1106,10 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: instance-bound fields (presetRef, secondaryStorageConfig,
-                    suspend, monitoring.serviceMonitor) must not be set in a preset
+                    suspend) must not be set in a preset
                   rule: (!has(self.presetRef) || self.presetRef == '') && (!has(self.secondaryStorageConfig)
                     || self.secondaryStorageConfig == '') && (!has(self.suspend) ||
-                    !self.suspend) && (!has(self.monitoring) || !has(self.monitoring.serviceMonitor))
+                    !self.suspend)
             required:
             - cluster
             type: object

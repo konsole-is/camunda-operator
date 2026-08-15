@@ -119,6 +119,11 @@ func (in *SecondaryStorageConfig) GetStatusConditions() *[]metav1.Condition {
 // metric recording.
 func (in *SecondaryStorageConfig) GetKind() string { return "SecondaryStorageConfig" }
 
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *SecondaryStorageConfig) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // SecondaryStorageConfigList contains a list of SecondaryStorageConfig

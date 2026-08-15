@@ -29,8 +29,6 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -103,8 +101,8 @@ type DatabaseReconciler struct {
 // credential Secrets. A published Secret then never names a password that the
 // server does not know.
 //
-// Status is written once per reconcile. The component and stageReady stage
-// conditions on the in-memory Database, and the deferred FlushStatus persists
+// Status is written once per reconcile. The component and conditions.Stage
+// stage conditions on the in-memory Database, and the deferred FlushStatus persists
 // them together.
 func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var database v1.Database
@@ -127,7 +125,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	bootstrapper, err := r.preCheck(ctx, &database)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		stageReady(&database, failure)
+		conditions.Stage(&database, conditions.Failed(&database, failure))
 		if failure.Reason == v1.ReasonConnectionFailed {
 			return ctrl.Result{RequeueAfter: connectionRetryInterval}, nil
 		}
@@ -153,7 +151,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	}
 
 	reconcileErr := comp.Reconcile(ctx, rec)
-	stageReady(&database, nil)
+	conditions.Stage(&database, conditions.Aggregate(&database, comp))
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -209,33 +207,6 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 	}
 
 	return nil
-}
-
-// stageReady sets the Ready condition and observedGeneration on the in-memory
-// database. A pre-check failure becomes Ready directly. Otherwise Ready
-// mirrors the condition of the bindings component. FlushStatus persists them.
-func stageReady(database *v1.Database, pre *conditions.PreCheckFailure) {
-	ready := conditions.Ready(metav1.ConditionFalse, "", "", database.Generation)
-	if pre != nil {
-		ready.Reason, ready.Message = pre.Reason, pre.Message
-	} else {
-		ready = conditions.Aggregate(componentConditions(database), database.Generation)
-	}
-
-	meta.SetStatusCondition(&database.Status.Conditions, ready)
-	database.Status.ObservedGeneration = database.Generation
-}
-
-// componentConditions returns the ocf component conditions on database, that
-// is, every condition except Ready.
-func componentConditions(database *v1.Database) []metav1.Condition {
-	conds := make([]metav1.Condition, 0, len(database.Status.Conditions))
-	for _, cond := range database.Status.Conditions {
-		if cond.Type != v1.ConditionReady {
-			conds = append(conds, cond)
-		}
-	}
-	return conds
 }
 
 // preCheck runs the documented pre-checks in order: server reference, admin

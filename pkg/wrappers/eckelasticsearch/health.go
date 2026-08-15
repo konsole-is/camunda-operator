@@ -96,25 +96,36 @@ func DefaultGraceStatusHandler(es *esv1.Elasticsearch) (concepts.GraceStatusWith
 	}
 }
 
-// DefaultSuspendMutationHandler records a scale-to-zero of every nodeSet, the
-// ECK-sanctioned way to stop all Elasticsearch nodes while keeping the data
-// volumes.
+// DefaultSuspendMutationHandler makes sure that the applied Elasticsearch CR
+// retains its data volumes when it is deleted: it sets the volume claim delete
+// policy to DeleteOnScaledownOnly. Suspension deletes the CR, because ECK
+// removes the PersistentVolumeClaim of every node that it scales away, under
+// either policy. Scaling the node sets to zero would therefore erase the data
+// that suspension must keep. The rendered CR carries this policy already; the
+// mutation guards a CR that predates it.
 func DefaultSuspendMutationHandler(m *Mutator) error {
 	m.Edit(func(es *esv1.Elasticsearch) error {
-		for i := range es.Spec.NodeSets {
-			es.Spec.NodeSets[i].Count = 0
-		}
+		es.Spec.VolumeClaimDeletePolicy = esv1.DeleteOnScaledownOnlyPolicy
 		return nil
 	})
 	return nil
 }
 
-// DefaultSuspensionStatusHandler reports Suspended once ECK reports no
-// available nodes at the current generation, and Suspending while nodes are
-// still running. A status ECK has not yet caught up to the spec — unpopulated
-// or behind the CR's generation — also reads availableNodes == 0, so it
-// reports pending instead of a false Suspended.
+// DefaultSuspensionStatusHandler reports Suspended when the applied
+// Elasticsearch CR can be deleted without data loss: it carries
+// DeleteOnScaledownOnly, ECK has observed the current generation, so the
+// policy is in effect, and no data migration is in progress. Otherwise it
+// reports PendingSuspension with the reason. The component then deletes the
+// CR. On the next reconcile the CR is absent, and the component reports
+// Suspended on its own.
 func DefaultSuspensionStatusHandler(es *esv1.Elasticsearch) (concepts.SuspensionStatusWithReason, error) {
+	if es.Spec.VolumeClaimDeletePolicy != esv1.DeleteOnScaledownOnlyPolicy {
+		return concepts.SuspensionStatusWithReason{
+			Status: concepts.SuspensionStatusPending,
+			Reason: "Elasticsearch volume claim delete policy is not yet DeleteOnScaledownOnly",
+		}, nil
+	}
+
 	if es.Status.ObservedGeneration < es.Generation {
 		return concepts.SuspensionStatusWithReason{
 			Status: concepts.SuspensionStatusPending,
@@ -122,22 +133,23 @@ func DefaultSuspensionStatusHandler(es *esv1.Elasticsearch) (concepts.Suspension
 		}, nil
 	}
 
-	if es.Status.AvailableNodes == 0 {
+	if es.Status.Phase == esv1.ElasticsearchMigratingDataPhase {
 		return concepts.SuspensionStatusWithReason{
-			Status: concepts.SuspensionStatusSuspended,
-			Reason: "Elasticsearch reports no available nodes",
+			Status: concepts.SuspensionStatusPending,
+			Reason: "Elasticsearch is migrating data",
 		}, nil
 	}
 
 	return concepts.SuspensionStatusWithReason{
-		Status: concepts.SuspensionStatusSuspending,
-		Reason: fmt.Sprintf("Elasticsearch still reports %d available nodes", es.Status.AvailableNodes),
+		Status: concepts.SuspensionStatusSuspended,
+		Reason: "Elasticsearch can be deleted; DeleteOnScaledownOnly retains the data volumes",
 	}, nil
 }
 
-// DefaultDeleteOnSuspendHandler keeps the Elasticsearch CR in the cluster
-// during suspension: suspension scales the nodeSets to zero instead of
-// deleting anything.
+// DefaultDeleteOnSuspendHandler deletes the Elasticsearch CR on suspension.
+// ECK retains the data volumes under DeleteOnScaledownOnly, and re-creation
+// of the CR reattaches them. This is the way that Elastic documents to stop a
+// cluster and keep its data.
 func DefaultDeleteOnSuspendHandler(_ *esv1.Elasticsearch) bool {
-	return false
+	return true
 }

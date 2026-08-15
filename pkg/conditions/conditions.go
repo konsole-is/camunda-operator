@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -53,24 +54,46 @@ func Ready(status metav1.ConditionStatus, reason, message string, observedGenera
 	}
 }
 
-// Aggregate builds the Ready condition from the ocf component conditions of
-// the owner. It mirrors the representative component: the one whose reason
-// has the highest component.Status priority, with the first one winning a
-// tie. Ready takes the status and reason of that component, and its message
-// names the component. With no component conditions the result is Unknown.
-func Aggregate(componentConds []metav1.Condition, observedGeneration int64) metav1.Condition {
-	if len(componentConds) == 0 {
-		return Ready(
-			metav1.ConditionFalse,
-			string(component.Unknown),
-			"No component has reported yet",
-			observedGeneration,
-		)
+// Owner is a CRD that stages its Ready condition: the ocf owner plus the
+// observedGeneration setter that every CRD of this operator implements.
+type Owner interface {
+	component.OperatorCRD
+	// SetObservedGeneration records the last reconciled generation in status.
+	SetObservedGeneration(generation int64)
+}
+
+// Stage sets ready on owner and records the current generation as observed,
+// in memory. FlushStatus persists both. Every controller stages Ready through
+// Stage, so observedGeneration always moves with Ready.
+func Stage(owner Owner, ready metav1.Condition) {
+	meta.SetStatusCondition(owner.GetStatusConditions(), ready)
+	owner.SetObservedGeneration(owner.GetGeneration())
+}
+
+// Failed builds the Ready condition for a pre-check failure of owner.
+func Failed(owner Owner, failure *PreCheckFailure) metav1.Condition {
+	return Ready(metav1.ConditionFalse, failure.Reason, failure.Message, owner.GetGeneration())
+}
+
+// Aggregate builds the Ready condition of owner from the given ocf
+// components. It mirrors the representative component: the one whose
+// condition reason has the highest component.Status priority, with the first
+// one winning a tie. Ready takes the status and reason of that component, and
+// its message names the component. A component that has not reported yet
+// counts as Unknown, which component.GetCondition supplies. With no components
+// the result is Unknown. The caller decides which components make up Ready: an
+// auxiliary component, for example a metrics exporter, keeps its own condition
+// and stays out of the list.
+func Aggregate(owner component.OperatorCRD, comps ...*component.Component) metav1.Condition {
+	generation := owner.GetGeneration()
+	if len(comps) == 0 {
+		return Ready(metav1.ConditionFalse, string(component.Unknown), "No component has reported yet", generation)
 	}
 
-	representative := componentConds[0]
-	for _, cond := range componentConds[1:] {
-		if component.Status(cond.Reason).Priority() > component.Status(representative.Reason).Priority() {
+	representative := comps[0].GetCondition(owner)
+	for _, comp := range comps[1:] {
+		cond := comp.GetCondition(owner)
+		if cond.ComponentStatus().Priority() > representative.ComponentStatus().Priority() {
 			representative = cond
 		}
 	}
@@ -79,6 +102,6 @@ func Aggregate(componentConds []metav1.Condition, observedGeneration int64) meta
 		representative.Status,
 		representative.Reason,
 		fmt.Sprintf("%s: %s", representative.Type, representative.Message),
-		observedGeneration,
+		generation,
 	)
 }

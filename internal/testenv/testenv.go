@@ -31,6 +31,7 @@ import (
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -76,6 +77,7 @@ func Start(register func(mgr ctrl.Manager) error) *Env {
 
 	gomega.Expect(v1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(esv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
+	gomega.Expect(monitoringv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 
 	root, err := moduleRoot()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())

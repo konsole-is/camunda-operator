@@ -23,7 +23,6 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -67,8 +66,7 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	meta.SetStatusCondition(&cfg.Status.Conditions, cond)
-	cfg.Status.ObservedGeneration = cfg.Generation
+	conditions.Stage(&cfg, cond)
 
 	return ctrl.Result{}, component.FlushStatus(ctx, component.ReconcileContext{Client: r.Client, Owner: &cfg})
 }

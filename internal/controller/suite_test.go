@@ -51,13 +51,10 @@ func TestControllers(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	env = testenv.Start(func(mgr ctrl.Manager) error {
-		return (&ElasticsearchClusterReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
-		}).SetupWithManager(mgr)
-	})
+	// Every implemented controller has its own package and suite. This suite
+	// only serves the schema specs that span kinds, so it registers no
+	// reconciler.
+	env = testenv.Start(func(ctrl.Manager) error { return nil })
 
 	ctx, k8sClient = env.Ctx, env.Client
 })

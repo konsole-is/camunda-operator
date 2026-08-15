@@ -4,6 +4,10 @@ data:
   username: Y2FtdW5kYQ==
 kind: Secret
 metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: database
+    camunda.io/database: my-camunda-db
   name: my-camunda-db-credentials
   namespace: my-cluster-ns
 type: Opaque
@@ -11,6 +15,10 @@ type: Opaque
 apiVersion: core.camunda.io/v1
 kind: DatabaseConfig
 metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: database
+    camunda.io/database: my-camunda-db
   name: my-camunda-db
   namespace: my-cluster-ns
 spec:

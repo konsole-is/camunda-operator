@@ -296,6 +296,12 @@ if err := ensureDeployment(ctx, resource); errors.Is(err, ErrNotReady) {
 }
 ```
 
+## Labels
+
+Every rendered resource gets its labels from `pkg/labels`, never from a literal in a component. `labels.Managed(owner, component)` for objects the operator applies; `labels.Discovery(owner, component)` for pod templates and volume claims that another operator runs from our template, and for selectors; `labels.Merge(user, operator)` when a spec field lets users add labels, so an operator label always wins.
+
+Two kinds of key: a standard `app.kubernetes.io/*` key for a generic fact that nothing selects on (`managed-by`), and a `camunda.io/*` key for anything an extension selects on — the owner (one key per owning kind: `camunda.io/cluster`, `camunda.io/elasticsearch-cluster`, `camunda.io/database`) and `camunda.io/component`. Do not use `app.kubernetes.io/component` or `instance` for selection: other tools write those keys with their own values on adjacent objects, and one owner key for every kind would let two owners of different kinds with the same name collide.
+
 ## Typed string constants
 
 Event reasons, condition types, label keys, annotation keys, and any string that crosses a package boundary must be declared as constants, not written inline.
@@ -582,7 +588,7 @@ The named return `(_ ctrl.Result, err error)` lets the deferred flush join its e
 
 **Condition vocabulary is API surface and lives in `api/v1`.** Users match it with `kubectl wait`, and the operators above import `api/v1` to gate on it. `api/v1/conditions.go` holds the vocabulary that more than one CRD reports (`ConditionReady`, `ReasonHealthy`, `ReasonInvalidReference`, `ReasonMissingSecret`, `ReasonConnectionFailed`). A reason or condition type that one CRD reports is declared in that CRD's types file, next to its spec. The CRD doc under `docs/crds` is the contract for both. `pkg/conditions` builds the aggregate `Ready`; it declares no vocabulary.
 
-**Do not reimplement the ocf status model.** ocf already classifies every component: alive, operational, completable, suspendable, graceful (`Degraded`, `Down`), and it ranks them with `component.Status.Priority()`. A controller that runs components sets `Ready` in two steps only. A failed pre-check (a dangling reference, a missing Secret, an unreachable server) becomes `Ready` with one of the `api/v1` pre-check reasons. Otherwise `conditions.Aggregate` mirrors the highest-priority component condition onto `Ready`: same status, same reason, message names the component. `Suspended` is a `Ready=True` per ocf: the resource is in its desired state. Never map component statuses onto a second vocabulary such as `Progressing`.
+**Do not reimplement the ocf status model.** ocf already classifies every component: alive, operational, completable, suspendable, graceful (`Degraded`, `Down`), and it ranks them with `component.Status.Priority()`. A controller that runs components sets `Ready` in two steps only. A failed pre-check (a dangling reference, a missing Secret, an unreachable server) becomes `conditions.Failed(owner, failure)`. Otherwise `conditions.Aggregate(owner, comps...)` mirrors the highest-priority component condition onto `Ready`: same status, same reason, message names the component. Either way the condition goes through `conditions.Stage(owner, cond)`, which also records the observed generation. Never set `status.observedGeneration` or call `meta.SetStatusCondition` for `Ready` by hand; every CRD implements `conditions.Owner` for this. `Suspended` is a `Ready=True` per ocf: the resource is in its desired state. Never map component statuses onto a second vocabulary such as `Progressing`.
 
 ```go
 // api/v1/elasticsearchcluster_types.go

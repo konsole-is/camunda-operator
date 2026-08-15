@@ -83,6 +83,11 @@ func (in *DatabaseConfig) GetStatusConditions() *[]metav1.Condition { return &in
 // metric recording.
 func (in *DatabaseConfig) GetKind() string { return "DatabaseConfig" }
 
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *DatabaseConfig) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // DatabaseConfigList contains a list of DatabaseConfig
