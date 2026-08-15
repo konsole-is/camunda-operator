@@ -97,15 +97,13 @@ spec:
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
-| `Ready` | `Healthy` | The ECK-managed Elasticsearch cluster reports healthy and the `SecondaryStorageConfig` is in place. |
-| `Ready` | `Progressing` | The ECK CR is applied but Elasticsearch has not yet reached a healthy state. |
-| `Ready` | `InvalidReference` | `spec.presetRef` does not resolve to an existing `ElasticsearchClusterPreset`. |
-| `Ready` | `Suspended` | The cluster is suspended and intentionally not serving. |
-| `Suspended` | `Suspended` | `spec.suspend: true` and the node set is scaled to zero. |
+| `Ready` | `InvalidReference` | `spec.presetRef` does not resolve to an existing `ElasticsearchClusterPreset`, the merged spec is incomplete or below the version floor, or `storageSize` would shrink the applied data volume. |
+| `Ready` | any component status | The pre-checks passed. `Ready` mirrors the representative component condition, that is, the one with the highest component framework priority: same status, same reason, and the message names the component. Reasons are component framework statuses, for example `Healthy`, `Creating`, `Updating`, `Failing`, `Degraded` (yellow health past the grace period), `Down` (red health past the grace period), `Suspended`, or `Error`. |
+| `Ready` | `Suspended` | `Ready` is `True` with this reason while the node set is scaled to zero. The cluster is in its desired state and intentionally not serving. To gate on a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
+| `Suspended` | `Suspended` | `True` while `spec.suspend: true` and the node set is scaled to zero. `False` otherwise, with a message that says whether suspension is in progress. |
+| `CredentialsReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The operational detail of the component framework for each component. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
-
-The per-component conditions `CredentialsReady`, `ElasticsearchReady`, and `StorageContractReady` also appear in `status.conditions`. They use the reason vocabulary of the component framework and give per-component operational detail beneath the aggregate `Ready`.
 
 ## Validation
 

@@ -153,11 +153,11 @@ type ElasticsearchClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. The Ready condition carries
-	// reasons Healthy, Progressing, InvalidReference, or Suspended; the
-	// Suspended condition reports suspension, and the operator's per-component
-	// conditions (CredentialsReady, ElasticsearchReady, StorageContractReady)
-	// also appear here.
+	// Conditions represent the current state. Ready carries the pre-check
+	// reason InvalidReference or mirrors the representative component
+	// condition. Suspended reports suspension. The per-component conditions
+	// (CredentialsReady, ElasticsearchReady, StorageContractReady) also appear
+	// here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -193,6 +193,10 @@ type ElasticsearchCluster struct {
 // scaled the node set to zero. It is True while the cluster is suspended and
 // False otherwise, always with reason ReasonSuspended.
 const ConditionSuspended = "Suspended"
+
+// ReasonSuspended is the only reason of the Suspended condition. It is also
+// the ocf status that Ready mirrors while the cluster is suspended.
+const ReasonSuspended = "Suspended"
 
 // GetStatusConditions returns a pointer to the status conditions. The
 // component framework stages per-component conditions on the resource through

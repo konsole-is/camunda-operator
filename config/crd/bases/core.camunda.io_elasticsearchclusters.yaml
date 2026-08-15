@@ -1021,11 +1021,11 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current state. The Ready condition carries
-                  reasons Healthy, Progressing, InvalidReference, or Suspended; the
-                  Suspended condition reports suspension, and the operator's per-component
-                  conditions (CredentialsReady, ElasticsearchReady, StorageContractReady)
-                  also appear here.
+                  Conditions represent the current state. Ready carries the pre-check
+                  reason InvalidReference or mirrors the representative component
+                  condition. Suspended reports suspension. The per-component conditions
+                  (CredentialsReady, ElasticsearchReady, StorageContractReady) also appear
+                  here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

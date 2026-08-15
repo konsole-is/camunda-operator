@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -136,7 +137,7 @@ func expectControlledBy(obj client.Object, cluster *v1.ElasticsearchCluster) {
 }
 
 var _ = Describe("ElasticsearchCluster controller", func() {
-	It("publishes the ECK CR, user Secret and storage contract and reports Progressing", func() {
+	It("publishes the ECK CR, user Secret and storage contract and mirrors the creating component", func() {
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
@@ -189,10 +190,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		expectControlledBy(&contract, cluster)
 
 		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			v1.ReasonProgressing, ContainSubstring("ElasticsearchReady"))
+			string(component.AliveCreating), HavePrefix("ElasticsearchReady: "))
 	})
 
-	It("flips Ready between Progressing and Healthy as ECK health transitions", func() {
+	It("mirrors the Elasticsearch component onto Ready as ECK health transitions", func() {
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
@@ -204,13 +205,13 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			es.Status.AvailableNodes = 1
 		})
 		expectElasticsearchClusterReady(cluster, metav1.ConditionTrue,
-			v1.ReasonHealthy, Equal("All components ready"))
+			v1.ReasonHealthy, HaveSuffix(": Component is healthy."))
 
 		updateECKStatus(cluster, func(es *esv1.Elasticsearch) {
 			es.Status.Health = esv1.ElasticsearchRedHealth
 		})
 		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			v1.ReasonProgressing, ContainSubstring("ElasticsearchReady"))
+			string(component.AliveFailing), Equal("ElasticsearchReady: Elasticsearch reports red health"))
 	})
 
 	It("reports InvalidReference for a dangling presetRef and applies nothing", func() {
@@ -273,8 +274,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			es.Status.AvailableNodes = 0
 		})
 
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			v1.ReasonSuspended, Equal("Suspended by spec.suspend"))
+		// Suspended is Ready=True: the cluster is in its desired state.
+		expectElasticsearchClusterReady(cluster, metav1.ConditionTrue,
+			string(component.Suspended), HavePrefix("ElasticsearchReady: "))
 		Eventually(func(g Gomega) {
 			var latest v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())

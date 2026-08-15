@@ -264,44 +264,48 @@ func (r *ElasticsearchClusterReconciler) reconcileComponents(
 }
 
 // stageConditions sets the CR-level Ready and Suspended conditions and
-// observedGeneration on the in-memory cluster. It derives them from the
-// pre-check result and from the conditions that the components staged.
-// FlushStatus persists them.
+// observedGeneration on the in-memory cluster. A pre-check failure becomes
+// Ready directly. Otherwise Ready mirrors the representative component
+// condition. Suspended is True while that representative reports the ocf
+// Suspended status. FlushStatus persists them.
 func stageConditions(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckFailure) {
-	componentConds := make([]metav1.Condition, 0, 3)
-	for _, condType := range []string{components.ConditionCredentials, components.ConditionElasticsearch, components.ConditionStorageContract} {
-		if cond := meta.FindStatusCondition(cluster.Status.Conditions, condType); cond != nil {
-			componentConds = append(componentConds, *cond)
-		}
-	}
-
-	readyReason, readyMessage := conditions.DeriveReady(pre, componentConds, cluster.Spec.Suspend)
-	readyStatus := metav1.ConditionFalse
-	if readyReason == v1.ReasonHealthy {
-		readyStatus = metav1.ConditionTrue
+	ready := conditions.Ready(metav1.ConditionFalse, "", "", cluster.Generation)
+	if pre != nil {
+		ready.Reason, ready.Message = pre.Reason, pre.Message
+	} else {
+		ready = conditions.Aggregate(componentConditions(cluster), cluster.Generation)
 	}
 
 	suspendedStatus := metav1.ConditionFalse
 	suspendedMessage := "Suspension not requested"
-	if cluster.Spec.Suspend {
-		elasticsearchCond := meta.FindStatusCondition(cluster.Status.Conditions, components.ConditionElasticsearch)
-		if elasticsearchCond != nil && elasticsearchCond.Reason == string(component.Suspended) {
-			suspendedStatus = metav1.ConditionTrue
-			suspendedMessage = "Node set scaled to zero by spec.suspend"
-		} else {
-			suspendedMessage = "Suspension in progress"
-		}
+	switch {
+	case ready.Reason == string(component.Suspended):
+		suspendedStatus = metav1.ConditionTrue
+		suspendedMessage = "Node set scaled to zero by spec.suspend"
+	case cluster.Spec.Suspend:
+		suspendedMessage = "Suspension in progress"
 	}
 
-	meta.SetStatusCondition(
-		&cluster.Status.Conditions,
-		conditions.Ready(readyStatus, readyReason, readyMessage, cluster.Generation),
-	)
+	meta.SetStatusCondition(&cluster.Status.Conditions, ready)
 	meta.SetStatusCondition(
 		&cluster.Status.Conditions,
 		components.SuspendedCondition(suspendedStatus, suspendedMessage, cluster.Generation),
 	)
 	cluster.Status.ObservedGeneration = cluster.Generation
+}
+
+// componentConditions returns the ocf component conditions on cluster, in
+// component registration order.
+func componentConditions(cluster *v1.ElasticsearchCluster) []metav1.Condition {
+	conds := make([]metav1.Condition, 0, 3)
+	for _, condType := range []string{
+		components.ConditionCredentials, components.ConditionElasticsearch, components.ConditionStorageContract,
+	} {
+		if cond := meta.FindStatusCondition(cluster.Status.Conditions, condType); cond != nil {
+			conds = append(conds, *cond)
+		}
+	}
+	return conds
 }
 
 // serviceMonitorSupported reports whether the cluster serves the
