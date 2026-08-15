@@ -146,7 +146,7 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset); err != nil {
 			if apierrors.IsNotFound(err) {
 				return merged, &conditions.PreCheckFailure{
-					Reason:  conditions.ReasonInvalidReference,
+					Reason:  v1.ReasonInvalidReference,
 					Message: fmt.Sprintf("ElasticsearchClusterPreset %q not found", cluster.Spec.PresetRef),
 				}
 			}
@@ -157,7 +157,7 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 
 	if err := components.ValidateMerged(merged); err != nil {
 		return merged, &conditions.PreCheckFailure{
-			Reason:  conditions.ReasonInvalidReference,
+			Reason:  v1.ReasonInvalidReference,
 			Message: err.Error(),
 		}
 	}
@@ -191,7 +191,7 @@ func (r *ElasticsearchClusterReconciler) checkStorageShrink(
 
 	if merged.StorageSize.Cmp(*applied) < 0 {
 		return &conditions.PreCheckFailure{
-			Reason: conditions.ReasonInvalidReference,
+			Reason: v1.ReasonInvalidReference,
 			Message: fmt.Sprintf(
 				"storageSize %s would shrink the applied data volume size %s; Elasticsearch data volumes cannot be reduced",
 				merged.StorageSize,
@@ -277,7 +277,7 @@ func stageConditions(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckF
 
 	readyReason, readyMessage := conditions.DeriveReady(pre, componentConds, cluster.Spec.Suspend)
 	readyStatus := metav1.ConditionFalse
-	if readyReason == conditions.ReasonHealthy {
+	if readyReason == v1.ReasonHealthy {
 		readyStatus = metav1.ConditionTrue
 	}
 
@@ -299,7 +299,7 @@ func stageConditions(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckF
 	)
 	meta.SetStatusCondition(
 		&cluster.Status.Conditions,
-		conditions.Suspended(suspendedStatus, suspendedMessage, cluster.Generation),
+		components.SuspendedCondition(suspendedStatus, suspendedMessage, cluster.Generation),
 	)
 	cluster.Status.ObservedGeneration = cluster.Generation
 }

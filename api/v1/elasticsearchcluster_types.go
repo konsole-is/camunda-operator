@@ -189,15 +189,10 @@ type ElasticsearchCluster struct {
 	Status ElasticsearchClusterStatus `json:"status,omitzero"`
 }
 
-// GetStatusConditions returns a pointer to the status conditions. The
-// component framework stages conditions on the resource through it.
-func (in *ElasticsearchCluster) GetStatusConditions() *[]metav1.Condition {
-	return &in.Status.Conditions
-}
-
-// GetKind returns the CRD kind. The component framework uses it for event and
-// metric recording.
-func (in *ElasticsearchCluster) GetKind() string { return "ElasticsearchCluster" }
+// ConditionSuspended is the condition that reports whether spec.suspend has
+// scaled the node set to zero. It is True while the cluster is suspended and
+// False otherwise, always with reason ReasonSuspended.
+const ConditionSuspended = "Suspended"
 
 // GetStatusConditions returns a pointer to the status conditions. The
 // component framework stages per-component conditions on the resource through
