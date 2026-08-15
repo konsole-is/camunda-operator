@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package elasticsearchcluster
 
 import (
 	"testing"
@@ -31,7 +31,7 @@ import (
 const versionBelowFloor = "8.18.0"
 
 // fullPresetSpec returns a preset baseline with every inheritable field set,
-// so overlay tests can prove per-field inheritance and override.
+// so the overlay tests can prove per-field inheritance and override.
 func fullPresetSpec() *v1.ElasticsearchClusterPresetSpec {
 	return &v1.ElasticsearchClusterPresetSpec{
 		Cluster: v1.ElasticsearchClusterSpec{
@@ -73,9 +73,9 @@ func fullPresetSpec() *v1.ElasticsearchClusterPresetSpec {
 func TestMergePresetNilPresetPassesSpecThrough(t *testing.T) {
 	t.Parallel()
 
-	spec := realisticElasticsearchCluster().Spec
+	spec := goldenRealisticElasticsearchCluster().Spec
 
-	merged := mergePreset(spec, nil)
+	merged := MergePreset(spec, nil)
 
 	assert.Equal(t, spec, merged)
 }
@@ -89,7 +89,7 @@ func TestMergePresetInheritsUnsetFields(t *testing.T) {
 	}
 	preset := fullPresetSpec()
 
-	merged := mergePreset(spec, preset)
+	merged := MergePreset(spec, preset)
 
 	assert.Equal(t, preset.Cluster.Version, merged.Version)
 	assert.Equal(t, preset.Cluster.Replicas, merged.Replicas)
@@ -127,7 +127,7 @@ func TestMergePresetOverridesInlineFieldsWholesale(t *testing.T) {
 	}
 	preset := fullPresetSpec()
 
-	merged := mergePreset(spec, preset)
+	merged := MergePreset(spec, preset)
 
 	assert.Equal(t, spec.Version, merged.Version)
 	assert.Equal(t, spec.Replicas, merged.Replicas)
@@ -161,7 +161,7 @@ func TestMergePresetReplacesSchedulingBlockEntirely(t *testing.T) {
 		SecondaryStorageConfig: "my-storage-config",
 	}
 
-	merged := mergePreset(spec, fullPresetSpec())
+	merged := MergePreset(spec, fullPresetSpec())
 
 	require.NotNil(t, merged.Scheduling)
 	assert.Equal(t, inline, merged.Scheduling)
@@ -181,7 +181,7 @@ func TestMergePresetKeepsInstanceBoundFieldsFromSpec(t *testing.T) {
 		},
 	}
 
-	merged := mergePreset(spec, fullPresetSpec())
+	merged := MergePreset(spec, fullPresetSpec())
 
 	assert.Equal(t, spec.PresetRef, merged.PresetRef)
 	assert.Equal(t, spec.SecondaryStorageConfig, merged.SecondaryStorageConfig)
@@ -194,7 +194,7 @@ func TestMergePresetDoesNotAliasThePresetBaseline(t *testing.T) {
 
 	preset := fullPresetSpec()
 
-	merged := mergePreset(v1.ElasticsearchClusterSpec{
+	merged := MergePreset(v1.ElasticsearchClusterSpec{
 		SecondaryStorageConfig: "my-storage-config",
 	}, preset)
 	merged.PodLabels["mutated"] = "yes"
@@ -286,7 +286,7 @@ func TestValidateMerged(t *testing.T) {
 			spec := complete()
 			tt.mutate(&spec)
 
-			err := validateMerged(spec)
+			err := ValidateMerged(spec)
 			if len(tt.wantErr) == 0 {
 				assert.NoError(t, err)
 				return

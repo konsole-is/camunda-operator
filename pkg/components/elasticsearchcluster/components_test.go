@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package elasticsearchcluster
 
 import (
 	"flag"
@@ -35,15 +35,15 @@ import (
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
-// go test ./internal/controller/ -run Golden -update-golden
+// go test ./pkg/components/elasticsearchcluster/ -run Golden -update-golden
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
-// goldenPassword stands in for the generated password so golden manifests
+// goldenPassword replaces the generated password, so the golden manifests
 // stay deterministic.
 const goldenPassword = "golden-test-password"
 
-// goldenScheme registers every type the golden serializer must resolve
-// TypeMeta for.
+// goldenScheme registers every type for which the golden serializer must
+// resolve TypeMeta.
 func goldenScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 
@@ -55,8 +55,9 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
-// goldenMinimalElasticsearchCluster is the doc's minimal example with a
-// deterministic name, resolved against the doc's "standard" preset.
+// goldenMinimalElasticsearchCluster is the minimal example of the CRD doc
+// with a deterministic name, resolved against the "standard" preset of the
+// doc.
 func goldenMinimalElasticsearchCluster() (*v1.ElasticsearchCluster, *v1.ElasticsearchClusterPresetSpec) {
 	cluster := &v1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-es", Namespace: "my-cluster-ns"},
@@ -76,9 +77,9 @@ func goldenMinimalElasticsearchCluster() (*v1.ElasticsearchCluster, *v1.Elastics
 	return cluster, preset
 }
 
-// goldenRealisticElasticsearchCluster is the doc's realistic example with a
-// deterministic name, extended with every optional rendering input (service
-// account, extra env, pod annotations) so the goldens pin all of them.
+// goldenRealisticElasticsearchCluster is the realistic example of the CRD doc
+// with a deterministic name. It adds every optional rendering input (service
+// account, extra env, pod annotations), so the goldens pin all of them.
 func goldenRealisticElasticsearchCluster() *v1.ElasticsearchCluster {
 	return &v1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-es", Namespace: "my-cluster-ns"},
@@ -135,19 +136,19 @@ func assertElasticsearchClusterGoldens(
 	t.Helper()
 
 	scheme := goldenScheme(t)
-	base := filepath.Join("testdata", "golden", "elasticsearchcluster", dir)
+	base := filepath.Join("testdata", "golden", dir)
 
-	credentials, err := escCredentialsComponent(cluster, goldenPassword)
+	credentials, err := CredentialsComponent(cluster, goldenPassword)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(t, filepath.Join(base, "credentials.yaml"), credentials,
 		golden.WithScheme(scheme), golden.Update(*updateGolden))
 
-	elasticsearch, err := escElasticsearchComponent(cluster, merged, true)
+	elasticsearch, err := ElasticsearchComponent(cluster, merged, true)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
 		golden.WithScheme(scheme), golden.Update(*updateGolden))
 
-	storageContract, err := escStorageContractComponent(cluster, merged)
+	storageContract, err := StorageContractComponent(cluster, merged)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(t, filepath.Join(base, "storage-contract.yaml"), storageContract,
 		golden.WithScheme(scheme), golden.Update(*updateGolden))
@@ -158,18 +159,18 @@ func TestElasticsearchClusterGoldenMinimal(t *testing.T) {
 
 	cluster, preset := goldenMinimalElasticsearchCluster()
 
-	assertElasticsearchClusterGoldens(t, "minimal", cluster, mergePreset(cluster.Spec, preset))
+	assertElasticsearchClusterGoldens(t, "minimal", cluster, MergePreset(cluster.Spec, preset))
 }
 
-// The 8.19+ line is the other supported version family; its rendering is
-// pinned separately from the 9.2+ fixtures.
+// The 8.19 line is the other supported version family. Its rendering is
+// pinned separately from the 9.2 fixtures.
 func TestElasticsearchClusterGoldenMinimalES8(t *testing.T) {
 	t.Parallel()
 
 	cluster, preset := goldenMinimalElasticsearchCluster()
 	preset.Cluster.Version = "8.19.0"
 
-	assertElasticsearchClusterGoldens(t, "minimal-es8", cluster, mergePreset(cluster.Spec, preset))
+	assertElasticsearchClusterGoldens(t, "minimal-es8", cluster, MergePreset(cluster.Spec, preset))
 }
 
 func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
@@ -177,12 +178,12 @@ func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
 
 	cluster := goldenRealisticElasticsearchCluster()
 
-	assertElasticsearchClusterGoldens(t, "realistic", cluster, mergePreset(cluster.Spec, nil))
+	assertElasticsearchClusterGoldens(t, "realistic", cluster, MergePreset(cluster.Spec, nil))
 }
 
-// The suspended variant must render identical desired content to its
-// non-suspended baseline: suspension is a runtime mutation (node sets scaled
-// to zero) and must never alter the declared state — in particular the data
+// The suspended variant must render the same desired content as its
+// non-suspended baseline. Suspension is a runtime mutation (node sets scaled
+// to zero) and must never alter the declared state, in particular the data
 // volume claims.
 func TestElasticsearchClusterGoldenSuspended(t *testing.T) {
 	t.Parallel()
@@ -190,18 +191,18 @@ func TestElasticsearchClusterGoldenSuspended(t *testing.T) {
 	cluster, preset := goldenMinimalElasticsearchCluster()
 	cluster.Spec.Suspend = true
 
-	assertElasticsearchClusterGoldens(t, "suspended", cluster, mergePreset(cluster.Spec, preset))
+	assertElasticsearchClusterGoldens(t, "suspended", cluster, MergePreset(cluster.Spec, preset))
 }
 
-// A cluster without the ServiceMonitor CRD installed must not render one,
-// even when monitoring is enabled on the spec: the controller omits the
-// resource instead of failing every reconcile against a missing kind.
-func TestEscElasticsearchComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
+// A cluster without the ServiceMonitor CRD must not render one, even when
+// monitoring is enabled on the spec. The controller omits the resource
+// instead of failing every reconcile against a missing kind.
+func TestElasticsearchComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
 	t.Parallel()
 
 	cluster := goldenRealisticElasticsearchCluster()
 
-	comp, err := escElasticsearchComponent(cluster, mergePreset(cluster.Spec, nil), false)
+	comp, err := ElasticsearchComponent(cluster, MergePreset(cluster.Spec, nil), false)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -213,12 +214,12 @@ func TestEscElasticsearchComponentOmitsUnsupportedServiceMonitor(t *testing.T) {
 
 // The generated password must land in the published Secret verbatim, under
 // the documented basic-auth file-realm keys.
-func TestEscCredentialsComponentCarriesThePassword(t *testing.T) {
+func TestCredentialsComponentCarriesThePassword(t *testing.T) {
 	t.Parallel()
 
 	cluster, _ := goldenMinimalElasticsearchCluster()
 
-	comp, err := escCredentialsComponent(cluster, "s3cret")
+	comp, err := CredentialsComponent(cluster, "s3cret")
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()

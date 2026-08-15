@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package elasticsearchcluster
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -29,8 +29,8 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
-// validElasticsearchCluster returns the doc's minimal example with a unique
-// name; the caller chooses the namespace.
+// validElasticsearchCluster returns the minimal example of the CRD doc with a
+// unique name. The caller chooses the namespace.
 func validElasticsearchCluster() *v1.ElasticsearchCluster {
 	return &v1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "esc-" + utilrand.String(8)},
@@ -41,8 +41,8 @@ func validElasticsearchCluster() *v1.ElasticsearchCluster {
 	}
 }
 
-// realisticElasticsearchCluster returns the doc's realistic example with a
-// unique name; the caller chooses the namespace.
+// realisticElasticsearchCluster returns the realistic example of the CRD doc
+// with a unique name. The caller chooses the namespace.
 func realisticElasticsearchCluster() *v1.ElasticsearchCluster {
 	replicas := int32(3)
 	storageSize := resource.MustParse("128Gi")
@@ -85,8 +85,7 @@ func realisticElasticsearchCluster() *v1.ElasticsearchCluster {
 }
 
 var _ = Describe("ElasticsearchCluster schema", func() {
-	DescribeTable(
-		"admission",
+	DescribeTable("admission",
 		func(build func() *v1.ElasticsearchCluster, mutate func(*v1.ElasticsearchCluster), wantErr string) {
 			obj := build()
 			obj.Namespace = fixtures.SchemaTestNamespace
@@ -99,49 +98,35 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 				Expect(err).To(MatchError(ContainSubstring(wantErr)))
 			}
 		},
-		Entry(
-			"accepts the minimal doc example",
-			validElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
-		),
-		Entry(
-			"accepts the realistic doc example",
-			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, "",
-		),
-		Entry(
-			"rejects a missing secondaryStorageConfig",
+		Entry("accepts the minimal doc example",
+			validElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, ""),
+		Entry("accepts the realistic doc example",
+			realisticElasticsearchCluster, func(*v1.ElasticsearchCluster) {}, ""),
+		Entry("rejects a missing secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.SecondaryStorageConfig = ""
-			}, "secondaryStorageConfig",
-		),
-		Entry(
-			"rejects a non-DNS-1123 secondaryStorageConfig",
+			}, "secondaryStorageConfig"),
+		Entry("rejects a non-DNS-1123 secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
-			}, "secondaryStorageConfig",
-		),
-		Entry(
-			"rejects a two-segment version",
+			}, "secondaryStorageConfig"),
+		Entry("rejects a two-segment version",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.Version = "9.2"
-			}, "version",
-		),
-		Entry(
-			"rejects a v-prefixed version",
+			}, "version"),
+		Entry("rejects a v-prefixed version",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.Version = "v9.2.4"
-			}, "version",
-		),
-		Entry(
-			"rejects zero replicas",
+			}, "version"),
+		Entry("rejects zero replicas",
 			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				zero := int32(0)
 				o.Spec.Replicas = &zero
-			}, "replicas",
-		),
+			}, "replicas"),
 	)
 
 	// storageSize serializes as int-or-string, so the no-shrink rule must
-	// handle the integer form a raw manifest can submit.
+	// handle the integer form that a raw manifest can submit.
 	It("accepts integer-form storageSize and still rejects shrink", func() {
 		obj := &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "core.camunda.io/v1",

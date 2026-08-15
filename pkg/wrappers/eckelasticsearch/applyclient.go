@@ -27,17 +27,17 @@ import (
 )
 
 // NewApplyClient wraps c so that Server-Side Apply patches of typed
-// Elasticsearch objects are serialized without the fields ECK's CRD schema
-// does not declare. The ECK CRDs prune status and creationTimestamp from the
-// volumeClaimTemplate schema, and SSA rejects undeclared fields, so applying
-// a typed esv1.Elasticsearch — whose PersistentVolumeClaim entries always
-// serialize those zero-value fields — fails against a real ECK installation.
-// The wrapper converts such a patch to sanitized unstructured content, applies
-// it, and decodes the server response back into the typed object. Every other
-// call passes through unchanged.
+// Elasticsearch objects are serialized without the fields that the ECK CRD
+// schema does not declare. The ECK CRDs prune status and creationTimestamp
+// from the volumeClaimTemplate schema, and SSA rejects undeclared fields. The
+// PersistentVolumeClaim entries of a typed esv1.Elasticsearch always serialize
+// those zero-value fields, so a typed apply fails against a real ECK
+// installation. The wrapper converts such a patch to sanitized unstructured
+// content, applies it, and decodes the server response back into the typed
+// object. Every other call passes through unchanged.
 //
-// Controllers reconciling the Elasticsearch Resource through an ocf component
-// must place this wrapper in the ReconcileContext's Client.
+// A controller that reconciles the Elasticsearch Resource through an ocf
+// component must place this wrapper in the Client of the ReconcileContext.
 func NewApplyClient(c client.Client) client.Client {
 	return &applyClient{Client: c}
 }
@@ -48,7 +48,7 @@ type applyClient struct {
 
 // Patch converts Server-Side Apply patches of *esv1.Elasticsearch to
 // sanitized unstructured content and decodes the server response back into
-// obj; all other patches pass through.
+// obj. All other patches pass through.
 func (c *applyClient) Patch(
 	ctx context.Context,
 	obj client.Object,
@@ -78,10 +78,10 @@ func (c *applyClient) Patch(
 	return nil
 }
 
-// sanitizeForApply converts es to unstructured content carrying only fields
-// the ECK CRD schema declares: the top-level status and every
-// volumeClaimTemplate's status and creationTimestamp — always serialized by
-// the typed structs as zero values — are removed.
+// sanitizeForApply converts es to unstructured content that carries only the
+// fields that the ECK CRD schema declares. It removes the top-level status and
+// the status and creationTimestamp of every volumeClaimTemplate, which the
+// typed structs always serialize as zero values.
 func sanitizeForApply(es *esv1.Elasticsearch) (*unstructured.Unstructured, error) {
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(es)
 	if err != nil {

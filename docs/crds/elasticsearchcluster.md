@@ -19,12 +19,12 @@ Camunda 8.9 also supports OpenSearch and RDBMS as secondary storage, but this CR
 1. The operator resolves `spec.presetRef` to an `ElasticsearchClusterPreset` if set, then applies any pointer fields set inline on the spec as overrides; a field set on this CR replaces the preset's value for that field wholesale, and `scheduling` in particular replaces the preset's scheduling block entirely rather than merging.
 2. It renders an ECK `Elasticsearch` CR (named after this CR) from the resolved configuration — version, node count, resources, storage — and applies it with Server-Side Apply (SSA) under the per-component field manager `ElasticsearchCluster/elasticsearch`.
 3. It labels the Elasticsearch pods and data PVCs with `camunda.io/cluster: <this CR's name>` and `camunda.io/component: elasticsearch` through the ECK pod and volume claim templates, so extensions such as `PVCAutoResize` can discover them.
-4. When `spec.serviceAccount` is set, it creates a dedicated ServiceAccount named `<name>-es` carrying `spec.serviceAccount.annotations` and points the Elasticsearch pods at it through the ECK podTemplate, giving the nodes the workload identity (IRSA, GCP Workload Identity, ...) that grants access to the snapshot bucket used for backups. The snapshot repository itself is registered inside Elasticsearch by the `CamundaCluster` controller — via the Elasticsearch API, authenticated with the `SecondaryStorageConfig` credentials — while the bucket access for the Elasticsearch nodes flows from this workload identity.
+4. When `spec.serviceAccount` is set, it creates a dedicated ServiceAccount named `<name>-es` with `spec.serviceAccount.annotations`. It points the Elasticsearch pods at that ServiceAccount through the ECK podTemplate. The nodes then have the workload identity (IRSA, GCP Workload Identity, and more) that grants access to the snapshot bucket for backups. The `CamundaCluster` controller registers the snapshot repository itself inside Elasticsearch through the Elasticsearch API, authenticated with the `SecondaryStorageConfig` credentials. The bucket access of the Elasticsearch nodes comes from this workload identity.
 5. It provisions a dedicated Camunda user through ECK's file realm, generates credentials for it, and stores them in a Secret it owns. The user carries the `superuser` role for now: snapshot-repository registration (done by the `CamundaCluster` controller with these credentials) needs cluster-manage rights, and narrowing to a dedicated role is deliberately deferred until that flow lands.
 6. It creates and keeps current a `SecondaryStorageConfig` named `spec.secondaryStorageConfig` in this CR's own namespace, with `type: elasticsearch`, the in-cluster HTTPS endpoint of the ECK-managed service, a reference to the generated credentials Secret, and a `caSecretRef` pointing at the ECK-generated CA certificate Secret so consumers can verify the cluster's self-signed HTTPS endpoint.
 7. It watches the ECK CR's health and reflects it in this CR's conditions.
 8. When `spec.suspend: true`, it scales the ECK node set to zero and reports the `Suspended` condition; a composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
-9. On deletion, the ECK CR, the credentials Secret, the `SecondaryStorageConfig`, and the optional ServiceAccount and ServiceMonitor are all garbage-collected through their owner references; no finalizer is needed.
+9. On deletion, the ECK CR, the credentials Secret, the `SecondaryStorageConfig`, and the optional ServiceAccount and ServiceMonitor are all garbage-collected through their owner references. No finalizer is needed.
 
 ```mermaid
 graph LR
@@ -57,7 +57,7 @@ spec:
   storageSize: "64Gi"
   # string. Optional, default: the cluster's default StorageClass. StorageClass for the data volumes.
   storageClassName: "ssd"
-  # object. Optional. ServiceAccount settings for the Elasticsearch pods; when set, the operator creates a dedicated ServiceAccount named <name>-es and points the pods at it through the ECK podTemplate.
+  # object. Optional. ServiceAccount settings for the Elasticsearch pods. When set, the operator creates a dedicated ServiceAccount named <name>-es and points the pods at it through the ECK podTemplate.
   serviceAccount:
     # map[string]string. Optional. Annotations for workload identity (IRSA, GCP Workload Identity, ...); required for Elasticsearch to access the snapshot bucket for backups.
     annotations:
@@ -83,7 +83,7 @@ spec:
   # object. Optional. Prometheus scraping integration.
   monitoring:
     serviceMonitor:
-      # boolean. Optional, default: false. Create a ServiceMonitor for the Elasticsearch service. Requires the prometheus-operator ServiceMonitor CRD; on a cluster without it the resource is omitted.
+      # boolean. Optional, default: false. Create a ServiceMonitor for the Elasticsearch service. It requires the prometheus-operator ServiceMonitor CRD. On a cluster without that CRD the resource is omitted.
       enabled: true
       # map[string]string. Optional. Extra labels applied to the ServiceMonitor.
       labels: {}
@@ -105,7 +105,7 @@ spec:
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
-The per-component conditions `CredentialsReady`, `ElasticsearchReady`, and `StorageContractReady` also appear in `status.conditions`, with the operator component framework's own reason vocabulary, giving per-component operational detail beneath the aggregate `Ready`.
+The per-component conditions `CredentialsReady`, `ElasticsearchReady`, and `StorageContractReady` also appear in `status.conditions`. They use the reason vocabulary of the component framework and give per-component operational detail beneath the aggregate `Ready`.
 
 ## Validation
 

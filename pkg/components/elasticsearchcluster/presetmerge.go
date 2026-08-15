@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package elasticsearchcluster
 
 import (
 	"fmt"
@@ -24,15 +24,18 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// mergePreset resolves an ElasticsearchCluster spec against its preset
-// baseline: fields set inline override the preset's value for that field
-// wholesale, fields left unset inherit from the preset, and the scheduling
-// block in particular is replaced entirely, never merged field by field. The
-// instance-bound fields (presetRef, secondaryStorageConfig, suspend,
-// monitoring) always come from spec — a preset cannot set them. A nil preset
-// returns spec unchanged. The result shares no memory with preset, so callers
-// may mutate it freely.
-func mergePreset(spec v1.ElasticsearchClusterSpec, preset *v1.ElasticsearchClusterPresetSpec) v1.ElasticsearchClusterSpec {
+// MergePreset resolves an ElasticsearchCluster spec against its preset
+// baseline. A field set inline overrides the value of the preset for that
+// field wholesale. A field left unset inherits from the preset. The scheduling
+// block is replaced entirely, never merged field by field. The instance-bound
+// fields (presetRef, secondaryStorageConfig, suspend, monitoring) always come
+// from spec, and a preset cannot set them. A nil preset returns spec
+// unchanged. The result shares no memory with preset, so callers can mutate
+// it freely.
+func MergePreset(
+	spec v1.ElasticsearchClusterSpec,
+	preset *v1.ElasticsearchClusterPresetSpec,
+) v1.ElasticsearchClusterSpec {
 	if preset == nil {
 		return spec
 	}
@@ -81,12 +84,12 @@ func mergePreset(spec v1.ElasticsearchClusterSpec, preset *v1.ElasticsearchClust
 	return merged
 }
 
-// validateMerged checks the preset-merged spec for the cross-resource rules
-// admission cannot enforce: version, replicas, and storageSize must be
-// present, and the version must meet the Camunda 8.9 floor of Elasticsearch
-// 8.19+ or 9.2+ (any later major is above the floor). The error names every
-// missing field and, when set, the offending version.
-func validateMerged(spec v1.ElasticsearchClusterSpec) error {
+// ValidateMerged checks the preset-merged spec for the cross-resource rules
+// that admission cannot enforce. Version, replicas, and storageSize must be
+// present. The version must meet the Camunda 8.9 floor of Elasticsearch 8.19
+// or 9.2, and any later major is above the floor. The error names every
+// missing field and, when set, the rejected version.
+func ValidateMerged(spec v1.ElasticsearchClusterSpec) error {
 	var problems []string
 
 	var missing []string
@@ -116,9 +119,9 @@ func validateMerged(spec v1.ElasticsearchClusterSpec) error {
 	return nil
 }
 
-// checkVersionFloor rejects Elasticsearch versions below the Camunda 8.9
-// floor: 8.x needs 8.19+, 9.x needs 9.2+, earlier majors are unsupported, and
-// later majors pass.
+// checkVersionFloor rejects an Elasticsearch version below the Camunda 8.9
+// floor. 8.x needs 8.19 or later, 9.x needs 9.2 or later, earlier majors are
+// unsupported, and later majors pass.
 func checkVersionFloor(version string) error {
 	unsupported := fmt.Errorf("version %q is not supported: Camunda 8.9 requires Elasticsearch 8.19+ or 9.2+", version)
 

@@ -14,10 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+// Package elasticsearchcluster reconciles the ElasticsearchCluster CR. The
+// controller merges the preset into the spec, drives the ECK operator through
+// a rendered Elasticsearch CR, generates the file-realm credentials, and
+// publishes the SecondaryStorageConfig binding.
+package elasticsearchcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
@@ -35,35 +40,36 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 )
 
-// elasticsearchClusterPresetRefField indexes ElasticsearchClusters by their
-// spec.presetRef, so preset edits enqueue every referencing cluster.
+// elasticsearchClusterPresetRefField indexes ElasticsearchClusters by
+// spec.presetRef, so a preset edit enqueues every cluster that references it.
 const elasticsearchClusterPresetRefField = "elasticsearchcluster.spec.presetRef"
 
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
-// the external ECK operator: it renders an ECK Elasticsearch CR, generates
+// the external ECK operator. It renders an ECK Elasticsearch CR, generates the
 // file-realm credentials, and publishes a SecondaryStorageConfig binding in
-// the CR's namespace.
+// the namespace of the CR.
 type ElasticsearchClusterReconciler struct {
 	client.Client
-	// APIReader reads uncached, for credential Secrets whose data must be
-	// read live.
+	// APIReader reads without the cache. The credential Secrets must be read
+	// live.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// Recorder publishes the component lifecycle events. SetupWithManager
 	// sets it from the manager.
 	Recorder record.EventRecorder
 
-	// componentClient is the uncached client the ocf components reconcile
-	// through, wrapped for ECK apply sanitization. SetupWithManager builds
-	// it; the manager's cached client must not be used here because ocf's
-	// typed Gets would spin up a cluster-wide Secret informer, breaking the
-	// operator's metadata-only Secret posture.
+	// componentClient is the uncached client that the ocf components
+	// reconcile through, wrapped for ECK apply sanitization. SetupWithManager
+	// builds it. The cached client of the manager must not be used here: the
+	// typed Gets of ocf start a cluster-wide Secret informer, which breaks
+	// the metadata-only Secret posture of the operator.
 	componentClient client.Client
 	// restMapper resolves whether the cluster serves the ServiceMonitor
 	// kind. SetupWithManager sets it from the manager.
@@ -81,12 +87,14 @@ type ElasticsearchClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile converges an ElasticsearchCluster: it resolves the preset, runs
+// Reconcile converges an ElasticsearchCluster. It resolves the preset, runs
 // the pre-checks, reconciles the credentials, elasticsearch, and
 // storage-contract components in dependency order, and derives the CR-level
-// Ready and Suspended conditions. Component conditions are persisted through
-// ocf's FlushStatus; the CR-level conditions and status.observedGeneration
-// through pkg/conditions SSA.
+// Ready and Suspended conditions.
+//
+// Status is written once per reconcile. The components and stageConditions
+// stage conditions on the in-memory cluster, and the deferred FlushStatus
+// persists them together.
 func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.ElasticsearchCluster
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
@@ -99,91 +107,86 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		Recorder: r.Recorder,
 		Owner:    &cluster,
 	}
+	defer func() {
+		if flushErr := component.FlushStatus(ctx, recCtx); flushErr != nil {
+			err = errors.Join(err, flushErr)
+		}
+	}()
 
-	pre, merged, err := r.preCheck(ctx, &cluster)
+	merged, err := r.preCheck(ctx, &cluster)
+	var failure *conditions.PreCheckFailure
+	if errors.As(err, &failure) {
+		stageConditions(&cluster, failure)
+		return ctrl.Result{}, nil
+	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if pre == nil {
-		componentErr := r.reconcileComponents(ctx, recCtx, &cluster, merged)
+	reconcileErr := r.reconcileComponents(ctx, recCtx, &cluster, merged)
+	stageConditions(&cluster, nil)
 
-		// Flush even when a component errored: conditions staged on error
-		// paths must still be persisted.
-		if flushErr := component.FlushStatus(ctx, recCtx); flushErr != nil && componentErr == nil {
-			componentErr = flushErr
-		}
-		if componentErr != nil {
-			return ctrl.Result{}, componentErr
-		}
-	}
-
-	return ctrl.Result{}, r.patchCRConditions(ctx, &cluster, pre)
+	return ctrl.Result{}, reconcileErr
 }
 
-// preCheck resolves the preset and validates the merged spec, mapping every
-// failure admission cannot catch to its documented Ready reason: a dangling
-// presetRef, an incomplete merge, a below-floor version, and a storageSize
-// shrink relative to the applied ECK CR all report InvalidReference. A
-// non-nil failure short-circuits component reconciliation for the cycle. The
-// returned spec is the preset-merged configuration.
+// preCheck resolves the preset and validates the merged spec. It returns the
+// preset-merged spec. A failed check returns a *conditions.PreCheckFailure
+// that carries its Ready reason. A dangling presetRef, an incomplete merge, a
+// version below the floor, and a storageSize shrink relative to the applied
+// ECK CR all report InvalidReference. Any other error is a transient API
+// failure.
 func (r *ElasticsearchClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
-) (*conditions.PreCheckFailure, v1.ElasticsearchClusterSpec, error) {
+) (v1.ElasticsearchClusterSpec, error) {
 	merged := cluster.Spec
 
 	if cluster.Spec.PresetRef != "" {
 		var preset v1.ElasticsearchClusterPreset
 		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset); err != nil {
 			if apierrors.IsNotFound(err) {
-				return &conditions.PreCheckFailure{
+				return merged, &conditions.PreCheckFailure{
 					Reason:  conditions.ReasonInvalidReference,
 					Message: fmt.Sprintf("ElasticsearchClusterPreset %q not found", cluster.Spec.PresetRef),
-				}, merged, nil
+				}
 			}
-			return nil, merged, fmt.Errorf("resolving preset %q: %w", cluster.Spec.PresetRef, err)
+			return merged, fmt.Errorf("resolving preset %q: %w", cluster.Spec.PresetRef, err)
 		}
-		merged = mergePreset(cluster.Spec, &preset.Spec)
+		merged = components.MergePreset(cluster.Spec, &preset.Spec)
 	}
 
-	if err := validateMerged(merged); err != nil {
-		return &conditions.PreCheckFailure{
+	if err := components.ValidateMerged(merged); err != nil {
+		return merged, &conditions.PreCheckFailure{
 			Reason:  conditions.ReasonInvalidReference,
 			Message: err.Error(),
-		}, merged, nil
+		}
 	}
 
-	shrink, err := r.checkStorageShrink(ctx, cluster, merged)
-	if err != nil {
-		return nil, merged, err
-	}
-
-	return shrink, merged, nil
+	return merged, r.checkStorageShrink(ctx, cluster, merged)
 }
 
-// checkStorageShrink guards against the shrinks admission cannot see — a
+// checkStorageShrink guards against the shrinks that admission cannot see: a
 // preset baseline lowered under a referencing cluster, or an inline
-// storageSize set below a previously preset-provided size — by comparing the
-// merged size against the applied ECK CR's data volume claim. A shrink is
-// reported instead of applied: Elasticsearch data volumes cannot be reduced
-// in place.
+// storageSize set below a size that a preset provided before. It compares the
+// merged size against the data volume claim of the applied ECK CR. A shrink
+// is reported and not applied, because Elasticsearch data volumes cannot be
+// reduced in place.
 func (r *ElasticsearchClusterReconciler) checkStorageShrink(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
-) (*conditions.PreCheckFailure, error) {
+) error {
 	var es esv1.Elasticsearch
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, nil
+			return nil
 		}
-		return nil, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
+		return fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
 	}
 
 	applied := appliedDataClaimSize(&es)
 	if applied == nil {
-		return nil, nil
+		return nil
 	}
 
 	if merged.StorageSize.Cmp(*applied) < 0 {
@@ -191,20 +194,21 @@ func (r *ElasticsearchClusterReconciler) checkStorageShrink(
 			Reason: conditions.ReasonInvalidReference,
 			Message: fmt.Sprintf(
 				"storageSize %s would shrink the applied data volume size %s; Elasticsearch data volumes cannot be reduced",
-				merged.StorageSize, applied,
+				merged.StorageSize,
+				applied,
 			),
-		}, nil
+		}
 	}
 
-	return nil, nil
+	return nil
 }
 
-// appliedDataClaimSize returns the applied ECK CR's data volume claim size,
-// or nil when the CR carries no such claim.
+// appliedDataClaimSize returns the data volume claim size of the applied ECK
+// CR, or nil when the CR carries no such claim.
 func appliedDataClaimSize(es *esv1.Elasticsearch) *resource.Quantity {
 	for _, nodeSet := range es.Spec.NodeSets {
 		for _, claim := range nodeSet.VolumeClaimTemplates {
-			if claim.Name != escDataVolumeClaimName {
+			if claim.Name != components.DataVolumeClaimName {
 				continue
 			}
 			if size, ok := claim.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
@@ -217,39 +221,34 @@ func appliedDataClaimSize(es *esv1.Elasticsearch) *resource.Quantity {
 }
 
 // reconcileComponents builds and reconciles the three components in
-// dependency order, continuing past a failing component so one failure does
-// not stall the rest, and returning the first error. The password is read
-// from the existing user Secret uncached so it stays stable once created;
-// deleting the Secret is the rotation mechanism.
+// dependency order. It continues past a failing component, so one failure
+// does not stall the rest, and returns the first error. It reads the password
+// from the existing user Secret without the cache, so the password stays
+// stable after creation. To rotate it, delete the Secret.
 func (r *ElasticsearchClusterReconciler) reconcileComponents(
 	ctx context.Context,
 	recCtx component.ReconcileContext,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 ) error {
-	password, found, err := credentials.Lookup(ctx, r.APIReader, client.ObjectKey{
-		Namespace: cluster.Namespace, Name: escUserSecretName(cluster),
-	}, escPasswordKey)
+	password, err := credentials.LookupOrNew(ctx, r.APIReader, client.ObjectKey{
+		Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
+	}, components.PasswordKey)
 	if err != nil {
 		return err
 	}
-	if !found {
-		if password, err = credentials.NewPassword(); err != nil {
-			return err
-		}
-	}
 
-	credentialsComp, err := escCredentialsComponent(cluster, password)
+	credentialsComp, err := components.CredentialsComponent(cluster, password)
 	if err != nil {
 		return fmt.Errorf("building credentials component: %w", err)
 	}
 
-	elasticsearchComp, err := escElasticsearchComponent(cluster, merged, r.serviceMonitorSupported())
+	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, r.serviceMonitorSupported())
 	if err != nil {
 		return fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
-	storageContractComp, err := escStorageContractComponent(cluster, merged)
+	storageContractComp, err := components.StorageContractComponent(cluster, merged)
 	if err != nil {
 		return fmt.Errorf("building storage-contract component: %w", err)
 	}
@@ -264,16 +263,13 @@ func (r *ElasticsearchClusterReconciler) reconcileComponents(
 	return firstErr
 }
 
-// patchCRConditions derives and server-side-applies the CR-level Ready and
-// Suspended conditions plus status.observedGeneration, from the pre-check
-// result and the in-memory component conditions the reconcile staged.
-func (r *ElasticsearchClusterReconciler) patchCRConditions(
-	ctx context.Context,
-	cluster *v1.ElasticsearchCluster,
-	pre *conditions.PreCheckFailure,
-) error {
+// stageConditions sets the CR-level Ready and Suspended conditions and
+// observedGeneration on the in-memory cluster. It derives them from the
+// pre-check result and from the conditions that the components staged.
+// FlushStatus persists them.
+func stageConditions(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckFailure) {
 	componentConds := make([]metav1.Condition, 0, 3)
-	for _, condType := range []string{escConditionCredentials, escConditionElasticsearch, escConditionStorageContract} {
+	for _, condType := range []string{components.ConditionCredentials, components.ConditionElasticsearch, components.ConditionStorageContract} {
 		if cond := meta.FindStatusCondition(cluster.Status.Conditions, condType); cond != nil {
 			componentConds = append(componentConds, *cond)
 		}
@@ -288,7 +284,7 @@ func (r *ElasticsearchClusterReconciler) patchCRConditions(
 	suspendedStatus := metav1.ConditionFalse
 	suspendedMessage := "Suspension not requested"
 	if cluster.Spec.Suspend {
-		elasticsearchCond := meta.FindStatusCondition(cluster.Status.Conditions, escConditionElasticsearch)
+		elasticsearchCond := meta.FindStatusCondition(cluster.Status.Conditions, components.ConditionElasticsearch)
 		if elasticsearchCond != nil && elasticsearchCond.Reason == string(component.Suspended) {
 			suspendedStatus = metav1.ConditionTrue
 			suspendedMessage = "Node set scaled to zero by spec.suspend"
@@ -297,15 +293,20 @@ func (r *ElasticsearchClusterReconciler) patchCRConditions(
 		}
 	}
 
-	return conditions.PatchConditions(ctx, r.Client, cluster, cluster.Generation,
+	meta.SetStatusCondition(
+		&cluster.Status.Conditions,
 		conditions.Ready(readyStatus, readyReason, readyMessage, cluster.Generation),
+	)
+	meta.SetStatusCondition(
+		&cluster.Status.Conditions,
 		conditions.Suspended(suspendedStatus, suspendedMessage, cluster.Generation),
 	)
+	cluster.Status.ObservedGeneration = cluster.Generation
 }
 
 // serviceMonitorSupported reports whether the cluster serves the
-// ServiceMonitor kind, so the elasticsearch component omits the resource on
-// clusters without the prometheus-operator CRDs instead of failing every
+// ServiceMonitor kind. On a cluster without the prometheus-operator CRDs the
+// elasticsearch component then omits the resource instead of failing every
 // reconcile.
 func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 	if r.restMapper == nil {
@@ -318,18 +319,18 @@ func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 	return err == nil
 }
 
-// SetupWithManager sets up the controller with the Manager: ownership
-// watches on the ECK CR, the user Secret, and the SecondaryStorageConfig,
-// plus a preset watch through a field index on spec.presetRef.
+// SetupWithManager registers the controller, ownership watches on the ECK CR,
+// the user Secret, and the SecondaryStorageConfig, and a preset watch through
+// a field index on spec.presetRef.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// ocf's ReconcileContext.Recorder is the old events API; the manager
-	// only vends it through the deprecated accessor.
+	// The ReconcileContext.Recorder of ocf is the old events API, and the
+	// manager only vends it through the deprecated accessor.
 	r.Recorder = mgr.GetEventRecorderFor("elasticsearchcluster") //nolint:staticcheck
 	r.restMapper = mgr.GetRESTMapper()
 
-	// Uncached: see the componentClient field GoDoc. The apply wrapper
-	// sanitizes typed Elasticsearch patches down to the fields the ECK CRD
-	// schema declares.
+	// Uncached: see the componentClient field doc. The apply wrapper
+	// sanitizes typed Elasticsearch patches down to the fields that the ECK
+	// CRD schema declares.
 	componentClient, err := client.New(mgr.GetConfig(), client.Options{
 		Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper(),
 	})

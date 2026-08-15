@@ -14,7 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+// Package elasticsearchcluster renders the resources that an
+// ElasticsearchCluster CR publishes. It merges the preset into the spec,
+// validates the merged spec, and assembles the ocf components: the file-realm
+// credentials Secret, the ECK Elasticsearch CR, and the SecondaryStorageConfig
+// binding. Everything here is pure: spec in, resources out, no API calls. The
+// controller in internal/controller drives it.
+package elasticsearchcluster
 
 import (
 	"maps"
@@ -36,9 +42,10 @@ import (
 )
 
 const (
-	// clusterLabelKey labels every managed resource — and the Elasticsearch
-	// pods and data PVCs through the ECK templates — with the owning CR's
-	// name, so extensions such as PVCAutoResize can discover them.
+	// clusterLabelKey labels every managed resource with the name of the
+	// owning CR. Through the ECK templates it also labels the Elasticsearch
+	// pods and data PVCs, so extensions such as PVCAutoResize can discover
+	// them.
 	clusterLabelKey = "camunda.io/cluster"
 	// componentLabelKey labels every managed resource with the component it
 	// belongs to.
@@ -46,85 +53,88 @@ const (
 )
 
 const (
-	// escComponentLabel is the componentLabelKey value on everything an
+	// componentLabel is the componentLabelKey value on everything that an
 	// ElasticsearchCluster manages.
-	escComponentLabel = "elasticsearch"
-	// escUserSecretSuffix appended to the CR name yields the file-realm user
-	// Secret's name.
-	escUserSecretSuffix = "-es-user"
-	// escServiceAccountSuffix appended to the CR name yields the pods'
-	// ServiceAccount name.
-	escServiceAccountSuffix = "-es"
-	// escHTTPServiceSuffix appended to the CR name yields the name of the
-	// HTTPS service ECK creates for the cluster.
-	escHTTPServiceSuffix = "-es-http"
-	// escCertsSecretSuffix appended to the CR name yields the name of the
-	// Secret ECK publishes the cluster's CA certificate in.
-	escCertsSecretSuffix = "-es-http-certs-public"
-	// escCACertKey is the CA certificate's key inside the ECK certs Secret.
-	escCACertKey = "ca.crt"
-	// escNodeSetName names the single node set the operator renders.
-	escNodeSetName = "default"
-	// escDataVolumeClaimName is ECK's fixed claim name for the data volume;
-	// a volumeClaimTemplate under this name overrides ECK's default claim.
-	escDataVolumeClaimName = "elasticsearch-data"
-	// escContainerName is ECK's fixed name for the Elasticsearch container.
-	escContainerName = "elasticsearch"
-	// escUsername is the file-realm user the operator provisions for Camunda.
-	escUsername = "camunda"
-	// escUserRole is the role granted to the Camunda user. It is superuser
-	// for now: snapshot-repository registration by the CamundaCluster
-	// controller needs cluster-manage rights; narrowing is deferred until
-	// that flow lands (Batch C).
-	escUserRole = "superuser"
-	// escUsernameKey is the username's key in the user Secret.
-	escUsernameKey = "username"
-	// escPasswordKey is the password's key in the user Secret.
-	escPasswordKey = "password"
-	// escRolesKey is the roles' key in the user Secret.
-	escRolesKey = "roles"
+	componentLabel = "elasticsearch"
+	// userSecretSuffix appended to the CR name yields the name of the
+	// file-realm user Secret.
+	userSecretSuffix = "-es-user"
+	// serviceAccountSuffix appended to the CR name yields the name of the
+	// ServiceAccount of the pods.
+	serviceAccountSuffix = "-es"
+	// httpServiceSuffix appended to the CR name yields the name of the
+	// HTTPS service that ECK creates for the cluster.
+	httpServiceSuffix = "-es-http"
+	// certsSecretSuffix appended to the CR name yields the name of the
+	// Secret in which ECK publishes the CA certificate of the cluster.
+	certsSecretSuffix = "-es-http-certs-public"
+	// caCertKey is the key of the CA certificate inside the ECK certs Secret.
+	caCertKey = "ca.crt"
+	// nodeSetName names the single node set that the operator renders.
+	nodeSetName = "default"
+	// DataVolumeClaimName is the fixed claim name of ECK for the data volume.
+	// A volumeClaimTemplate under this name overrides the default claim of
+	// ECK.
+	DataVolumeClaimName = "elasticsearch-data"
+	// containerName is the fixed name of ECK for the Elasticsearch container.
+	containerName = "elasticsearch"
+	// username is the file-realm user that the operator provisions for
+	// Camunda.
+	username = "camunda"
+	// userRole is the role that the Camunda user holds. It is superuser for
+	// now, because snapshot-repository registration by the CamundaCluster
+	// controller needs cluster-manage rights. The role is narrowed when that
+	// flow lands (Batch C).
+	userRole = "superuser"
+	// usernameKey is the key of the username in the user Secret.
+	usernameKey = "username"
+	// PasswordKey is the key of the password in the user Secret.
+	PasswordKey = "password"
+	// rolesKey is the key of the roles in the user Secret.
+	rolesKey = "roles"
 )
 
 const (
-	// escConditionCredentials is the credentials component's condition type.
-	escConditionCredentials = "CredentialsReady"
-	// escConditionElasticsearch is the elasticsearch component's condition
-	// type.
-	escConditionElasticsearch = "ElasticsearchReady"
-	// escConditionStorageContract is the storage-contract component's
-	// condition type.
-	escConditionStorageContract = "StorageContractReady"
+	// ConditionCredentials is the condition type of the credentials
+	// component.
+	ConditionCredentials = "CredentialsReady"
+	// ConditionElasticsearch is the condition type of the elasticsearch
+	// component.
+	ConditionElasticsearch = "ElasticsearchReady"
+	// ConditionStorageContract is the condition type of the storage-contract
+	// component.
+	ConditionStorageContract = "StorageContractReady"
 )
 
-// escLabels returns the discovery labels every resource an
-// ElasticsearchCluster manages carries.
-func escLabels(cluster *v1.ElasticsearchCluster) map[string]string {
+// clusterLabels returns the discovery labels that every resource of an
+// ElasticsearchCluster carries.
+func clusterLabels(cluster *v1.ElasticsearchCluster) map[string]string {
 	return map[string]string{
 		clusterLabelKey:   cluster.Name,
-		componentLabelKey: escComponentLabel,
+		componentLabelKey: componentLabel,
 	}
 }
 
-// escUserSecretName returns the name of the file-realm user Secret.
-func escUserSecretName(cluster *v1.ElasticsearchCluster) string {
-	return cluster.Name + escUserSecretSuffix
+// UserSecretName returns the name of the file-realm user Secret.
+func UserSecretName(cluster *v1.ElasticsearchCluster) string {
+	return cluster.Name + userSecretSuffix
 }
 
-// escCredentialsComponent builds the credentials component: the basic-auth
-// style file-realm Secret carrying the Camunda user, the given password, and
-// the superuser role grant, consumed by ECK through spec.auth.fileRealm.
-func escCredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*component.Component, error) {
+// CredentialsComponent builds the credentials component: the basic-auth style
+// file-realm Secret with the Camunda user, the given password, and the
+// superuser role. ECK consumes it through spec.auth.fileRealm.
+func CredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*component.Component, error) {
 	userSecret, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      escUserSecretName(cluster),
+			Name:      UserSecretName(cluster),
 			Namespace: cluster.Namespace,
-			Labels:    escLabels(cluster),
+			Labels:    clusterLabels(cluster),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			escUsernameKey: []byte(escUsername),
-			escPasswordKey: []byte(password),
-			escRolesKey:    []byte(escUserRole),
+			usernameKey: []byte(username),
+			PasswordKey: []byte(password),
+			rolesKey:    []byte(userRole),
 		},
 	}).Build()
 	if err != nil {
@@ -133,31 +143,31 @@ func escCredentialsComponent(cluster *v1.ElasticsearchCluster, password string) 
 
 	return component.NewComponentBuilder().
 		WithName("credentials").
-		WithConditionType(escConditionCredentials).
+		WithConditionType(ConditionCredentials).
 		WithResource(userSecret).
 		Build()
 }
 
-// escElasticsearchComponent builds the elasticsearch component from the
-// preset-merged spec: the pods' ServiceAccount (gated on
+// ElasticsearchComponent builds the elasticsearch component from the
+// preset-merged spec: the ServiceAccount of the pods (gated on
 // spec.serviceAccount), the ECK Elasticsearch CR, and the ServiceMonitor
 // (gated on monitoring.serviceMonitor.enabled). serviceMonitorSupported
-// reports whether the cluster serves the ServiceMonitor kind; when false the
-// resource is omitted entirely so reconciliation never touches a missing
+// reports whether the cluster serves the ServiceMonitor kind. When it is
+// false, the resource is omitted, so the reconcile never touches a missing
 // kind. spec.suspend suspends the component, which scales the node set to
-// zero through the ECK wrapper's suspend mutation.
-func escElasticsearchComponent(
+// zero through the suspend mutation of the ECK wrapper.
+func ElasticsearchComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 	serviceMonitorSupported bool,
 ) (*component.Component, error) {
-	account, err := serviceaccount.NewBuilder(escServiceAccount(cluster, merged)).Build()
+	account, err := serviceaccount.NewBuilder(serviceAccount(cluster, merged)).Build()
 	if err != nil {
 		return nil, err
 	}
 
-	elasticsearch, err := eckelasticsearch.NewBuilder(escElasticsearch(cluster, merged)).
-		WithMutation(escElasticsearchMutations(merged)...).
+	elasticsearch, err := eckelasticsearch.NewBuilder(elasticsearch(cluster, merged)).
+		WithMutation(elasticsearchMutations(merged)...).
 		Build()
 	if err != nil {
 		return nil, err
@@ -165,13 +175,13 @@ func escElasticsearchComponent(
 
 	builder := component.NewComponentBuilder().
 		WithName("elasticsearch").
-		WithConditionType(escConditionElasticsearch).
+		WithConditionType(ConditionElasticsearch).
 		WithResource(account, component.GatedBy(feature.NewBooleanGate(merged.ServiceAccount != nil))).
 		WithResource(elasticsearch).
 		Suspend(merged.Suspend)
 
 	if serviceMonitorSupported {
-		serviceMonitor, err := unstructuredstatic.NewBuilder(escServiceMonitor(cluster, merged)).Build()
+		serviceMonitor, err := unstructuredstatic.NewBuilder(serviceMonitor(cluster, merged)).Build()
 		if err != nil {
 			return nil, err
 		}
@@ -184,19 +194,19 @@ func escElasticsearchComponent(
 	return builder.Build()
 }
 
-// escStorageContractComponent builds the storage-contract component: the
-// SecondaryStorageConfig named by the spec, published in the CR's own
-// namespace with the in-cluster HTTPS endpoint, the user Secret credentials
-// reference, and the ECK CA certificate reference. The contract is guarded on
-// the credentials Secret existing through a read-only registration that
-// blocks on its absence.
-func escStorageContractComponent(
+// StorageContractComponent builds the storage-contract component: the
+// SecondaryStorageConfig that the spec names, published in the namespace of
+// the CR. It carries the in-cluster HTTPS endpoint, the reference to the user
+// Secret credentials, and the reference to the ECK CA certificate. A
+// read-only registration guards the contract on the credentials Secret, and
+// blocks while that Secret is absent.
+func StorageContractComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 ) (*component.Component, error) {
 	userSecret, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      escUserSecretName(cluster),
+			Name:      UserSecretName(cluster),
 			Namespace: cluster.Namespace,
 		},
 	}).Build()
@@ -208,22 +218,22 @@ func escStorageContractComponent(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      merged.SecondaryStorageConfig,
 			Namespace: cluster.Namespace,
-			Labels:    escLabels(cluster),
+			Labels:    clusterLabels(cluster),
 		},
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
-				Endpoint: "https://" + cluster.Name + escHTTPServiceSuffix + "." + cluster.Namespace + ".svc:9200",
+				Endpoint: "https://" + cluster.Name + httpServiceSuffix + "." + cluster.Namespace + ".svc:9200",
 				CredentialsSecretRef: v1.CredentialsSecretRef{
-					Name:        escUserSecretName(cluster),
+					Name:        UserSecretName(cluster),
 					Namespace:   cluster.Namespace,
-					UsernameKey: escUsernameKey,
-					PasswordKey: escPasswordKey,
+					UsernameKey: usernameKey,
+					PasswordKey: PasswordKey,
 				},
 				CASecretRef: &v1.SecretKeyRef{
-					Name:      cluster.Name + escCertsSecretSuffix,
+					Name:      cluster.Name + certsSecretSuffix,
 					Namespace: cluster.Namespace,
-					Key:       escCACertKey,
+					Key:       caCertKey,
 				},
 			},
 		},
@@ -234,15 +244,15 @@ func escStorageContractComponent(
 
 	return component.NewComponentBuilder().
 		WithName("storage-contract").
-		WithConditionType(escConditionStorageContract).
+		WithConditionType(ConditionStorageContract).
 		WithResource(userSecret, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
 		WithResource(contract).
 		Build()
 }
 
-// escServiceAccount renders the pods' ServiceAccount carrying the
+// serviceAccount renders the ServiceAccount of the pods with the
 // workload-identity annotations from spec.serviceAccount.
-func escServiceAccount(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *corev1.ServiceAccount {
+func serviceAccount(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *corev1.ServiceAccount {
 	var annotations map[string]string
 	if merged.ServiceAccount != nil {
 		annotations = merged.ServiceAccount.Annotations
@@ -250,21 +260,21 @@ func escServiceAccount(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearch
 
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        cluster.Name + escServiceAccountSuffix,
+			Name:        cluster.Name + serviceAccountSuffix,
 			Namespace:   cluster.Namespace,
-			Labels:      escLabels(cluster),
+			Labels:      clusterLabels(cluster),
 			Annotations: annotations,
 		},
 	}
 }
 
-// escElasticsearch renders the baseline ECK Elasticsearch CR: version, the
+// elasticsearch renders the baseline ECK Elasticsearch CR: the version, the
 // single default node set with the merged replica count, the labeled pod
-// template and data volume claim, and the file-realm auth block. Optional
-// concerns (resources, env, pod metadata, scheduling, service account) are
-// layered by escElasticsearchMutations.
-func escElasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *esv1.Elasticsearch {
-	labels := escLabels(cluster)
+// template and data volume claim, and the file-realm auth block.
+// elasticsearchMutations layers the optional concerns (resources, env, pod
+// metadata, scheduling, service account) on top.
+func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *esv1.Elasticsearch {
+	labels := clusterLabels(cluster)
 
 	return &esv1.Elasticsearch{
 		ObjectMeta: metav1.ObjectMeta{
@@ -276,18 +286,18 @@ func escElasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchC
 			Version: merged.Version,
 			Auth: esv1.Auth{
 				FileRealm: []esv1.FileRealmSource{
-					{SecretRef: commonv1.SecretRef{SecretName: escUserSecretName(cluster)}},
+					{SecretRef: commonv1.SecretRef{SecretName: UserSecretName(cluster)}},
 				},
 			},
 			NodeSets: []esv1.NodeSet{{
-				Name:  escNodeSetName,
+				Name:  nodeSetName,
 				Count: *merged.Replicas,
 				PodTemplate: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{Labels: maps.Clone(labels)},
 				},
 				VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:   escDataVolumeClaimName,
+						Name:   DataVolumeClaimName,
 						Labels: maps.Clone(labels),
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
@@ -303,9 +313,9 @@ func escElasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchC
 	}
 }
 
-// escElasticsearchMutations layers the optional concerns of the merged spec
-// onto the baseline ECK CR, each gated on its field being set.
-func escElasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsearch.Mutation {
+// elasticsearchMutations layers the optional concerns of the merged spec onto
+// the baseline ECK CR. Each mutation is gated on its field.
+func elasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsearch.Mutation {
 	return []eckelasticsearch.Mutation{
 		{
 			Name:    "NodeResources",
@@ -372,7 +382,7 @@ func escElasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelastics
 			Feature: feature.NewBooleanGate(merged.ServiceAccount != nil),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
-					es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName = es.Name + escServiceAccountSuffix
+					es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName = es.Name + serviceAccountSuffix
 					return nil
 				})
 				return nil
@@ -381,27 +391,27 @@ func escElasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelastics
 	}
 }
 
-// ensureESContainer returns the pod spec's elasticsearch container, adding
-// the entry when the template does not carry one yet. The returned pointer
-// aliases the slice element, so edits land on the pod spec.
+// ensureESContainer returns the elasticsearch container of the pod spec. It
+// adds the entry when the template does not carry one yet. The returned
+// pointer aliases the slice element, so edits land on the pod spec.
 func ensureESContainer(pod *corev1.PodSpec) *corev1.Container {
 	for i := range pod.Containers {
-		if pod.Containers[i].Name == escContainerName {
+		if pod.Containers[i].Name == containerName {
 			return &pod.Containers[i]
 		}
 	}
 
-	pod.Containers = append(pod.Containers, corev1.Container{Name: escContainerName})
+	pod.Containers = append(pod.Containers, corev1.Container{Name: containerName})
 	return &pod.Containers[len(pod.Containers)-1]
 }
 
-// escServiceMonitor renders the Prometheus ServiceMonitor for the ECK HTTPS
-// service as unstructured content, since the operator does not depend on the
-// prometheus-operator API types. It scrapes the https port with the Camunda
-// user's basic auth and verifies TLS against the ECK-published CA.
-func escServiceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *unstructured.Unstructured {
+// serviceMonitor renders the Prometheus ServiceMonitor for the ECK HTTPS
+// service as unstructured content, because the operator does not depend on
+// the prometheus-operator API types. It scrapes the https port with the basic
+// auth of the Camunda user and checks TLS against the CA that ECK publishes.
+func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *unstructured.Unstructured {
 	labels := map[string]any{}
-	for k, v := range escLabels(cluster) {
+	for k, v := range clusterLabels(cluster) {
 		labels[k] = v
 	}
 	annotations := map[string]any{}
@@ -415,7 +425,7 @@ func escServiceMonitor(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearch
 	}
 
 	metadata := map[string]any{
-		"name":      cluster.Name + escServiceAccountSuffix,
+		"name":      cluster.Name + serviceAccountSuffix,
 		"namespace": cluster.Namespace,
 		"labels":    labels,
 	}
@@ -430,7 +440,7 @@ func escServiceMonitor(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearch
 		"spec": map[string]any{
 			"selector": map[string]any{
 				"matchLabels": map[string]any{
-					"common.k8s.elastic.co/type":                escComponentLabel,
+					"common.k8s.elastic.co/type":                componentLabel,
 					"elasticsearch.k8s.elastic.co/cluster-name": cluster.Name,
 				},
 			},
@@ -438,15 +448,15 @@ func escServiceMonitor(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearch
 				"port":   "https",
 				"scheme": "https",
 				"basicAuth": map[string]any{
-					"username": map[string]any{"name": escUserSecretName(cluster), "key": escUsernameKey},
-					"password": map[string]any{"name": escUserSecretName(cluster), "key": escPasswordKey},
+					"username": map[string]any{"name": UserSecretName(cluster), "key": usernameKey},
+					"password": map[string]any{"name": UserSecretName(cluster), "key": PasswordKey},
 				},
 				"tlsConfig": map[string]any{
-					"serverName": cluster.Name + escHTTPServiceSuffix + "." + cluster.Namespace + ".svc",
+					"serverName": cluster.Name + httpServiceSuffix + "." + cluster.Namespace + ".svc",
 					"ca": map[string]any{
 						"secret": map[string]any{
-							"name": cluster.Name + escCertsSecretSuffix,
-							"key":  escCACertKey,
+							"name": cluster.Name + certsSecretSuffix,
+							"key":  caCertKey,
 						},
 					},
 				},

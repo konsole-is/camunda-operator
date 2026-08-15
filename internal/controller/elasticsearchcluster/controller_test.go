@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package elasticsearchcluster
 
 import (
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
@@ -34,6 +34,9 @@ import (
 
 // newElasticsearchClusterNamespace creates a uniquely named Namespace for one
 // spec and registers its deletion.
+// versionBelowFloor is an Elasticsearch version below the Camunda 8.9 floor.
+const versionBelowFloor = "8.18.0"
+
 func newElasticsearchClusterNamespace() string {
 	GinkgoHelper()
 	ns := &corev1.Namespace{
@@ -44,8 +47,8 @@ func newElasticsearchClusterNamespace() string {
 	return ns.Name
 }
 
-// smallClusterSpec is a complete single-node baseline used as a preset's
-// cluster block.
+// smallClusterSpec is a complete single-node baseline that presets use as
+// their cluster block.
 func smallClusterSpec() v1.ElasticsearchClusterSpec {
 	return v1.ElasticsearchClusterSpec{
 		Version:     "9.2.4",
@@ -76,8 +79,9 @@ func createElasticsearchCluster(cluster *v1.ElasticsearchCluster) {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
 }
 
-// expectElasticsearchClusterReady polls until cluster's Ready condition
-// matches the given status and reason, and its message the given matcher.
+// expectElasticsearchClusterReady polls until the Ready condition of cluster
+// matches the given status and reason, and its message matches the given
+// matcher.
 func expectElasticsearchClusterReady(
 	cluster *v1.ElasticsearchCluster,
 	status metav1.ConditionStatus,
@@ -96,8 +100,8 @@ func expectElasticsearchClusterReady(
 	}, timeout, interval).Should(Succeed())
 }
 
-// fetchOwnedElasticsearch polls until the ECK CR named after cluster exists
-// and returns it.
+// fetchOwnedElasticsearch polls until the ECK CR with the name of cluster
+// exists, and returns it.
 func fetchOwnedElasticsearch(cluster *v1.ElasticsearchCluster) *esv1.Elasticsearch {
 	GinkgoHelper()
 	var es esv1.Elasticsearch
@@ -107,10 +111,10 @@ func fetchOwnedElasticsearch(cluster *v1.ElasticsearchCluster) *esv1.Elasticsear
 	return &es
 }
 
-// updateECKStatus patches the ECK CR's status subresource, always stamping
-// status.observedGeneration with the CR's current generation so the wrapper's
-// handlers trust the reported state. envtest runs no ECK operator, so specs
-// drive health transitions this way.
+// updateECKStatus patches the status subresource of the ECK CR. It always
+// stamps status.observedGeneration with the current generation of the CR, so
+// the handlers of the wrapper trust the reported state. envtest runs no ECK
+// operator, so the specs drive health transitions this way.
 func updateECKStatus(cluster *v1.ElasticsearchCluster, mutate func(*esv1.Elasticsearch)) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -122,8 +126,8 @@ func updateECKStatus(cluster *v1.ElasticsearchCluster, mutate func(*esv1.Elastic
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectControlledBy asserts obj carries a controller owner reference to
-// cluster, so deletion garbage-collects it without a finalizer.
+// expectControlledBy asserts that obj carries a controller owner reference to
+// cluster. Deletion then garbage-collects it without a finalizer.
 func expectControlledBy(obj client.Object, cluster *v1.ElasticsearchCluster) {
 	GinkgoHelper()
 	controller := metav1.GetControllerOf(obj)
@@ -264,8 +268,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(es.Spec.NodeSets[0].Count).To(Equal(int32(0)))
 		}, timeout, interval).Should(Succeed())
 
-		// ECK confirms the scale-down: no available nodes at the current
-		// generation.
+		// ECK confirms the scale-down. There are no available nodes at the
+		// current generation.
 		updateECKStatus(cluster, func(es *esv1.Elasticsearch) {
 			es.Status.AvailableNodes = 0
 		})
@@ -363,8 +367,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		createElasticsearchCluster(cluster)
 		fetchOwnedElasticsearch(cluster)
 
-		// Admission cannot catch this shrink: storageSize was previously
-		// unset inline, so the CEL transition rule does not fire.
+		// Admission cannot catch this shrink. storageSize was unset inline
+		// before, so the CEL transition rule does not fire.
 		Eventually(func(g Gomega) {
 			var latest v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
@@ -407,8 +411,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		expectObservedGeneration()
 	})
 
-	// The rendered ECK CR must actually apply against the API server in
-	// envtest, so the suite loads the ECK CRDs from the resolved module.
+	// The rendered ECK CR must apply against the API server in envtest, so
+	// the suite loads the ECK CRDs from the resolved module.
 	It("accepts an ECK Elasticsearch resource in the test environment", func() {
 		es := &esv1.Elasticsearch{
 			ObjectMeta: metav1.ObjectMeta{

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package elasticsearchcluster
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -28,8 +28,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// validElasticsearchClusterPreset returns the doc's minimal example with a
-// unique name.
+// validElasticsearchClusterPreset returns the minimal example of the CRD doc
+// with a unique name.
 func validElasticsearchClusterPreset() *v1.ElasticsearchClusterPreset {
 	replicas := int32(3)
 	storageSize := resource.MustParse("64Gi")
@@ -46,8 +46,8 @@ func validElasticsearchClusterPreset() *v1.ElasticsearchClusterPreset {
 	}
 }
 
-// realisticElasticsearchClusterPreset returns the doc's realistic example with
-// a unique name.
+// realisticElasticsearchClusterPreset returns the realistic example of the
+// CRD doc with a unique name.
 func realisticElasticsearchClusterPreset() *v1.ElasticsearchClusterPreset {
 	preset := validElasticsearchClusterPreset()
 	replicas := int32(5)
@@ -134,8 +134,8 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 		),
 	)
 
-	// The no-shrink ratchet binds ElasticsearchCluster only: a preset is
-	// passive data whose baseline may be resized freely.
+	// The no-shrink ratchet binds ElasticsearchCluster only. A preset is
+	// passive data, and its baseline can be resized freely.
 	It("allows lowering a preset's storageSize baseline", func() {
 		preset := realisticElasticsearchClusterPreset()
 
@@ -147,7 +147,7 @@ var _ = Describe("ElasticsearchClusterPreset schema", func() {
 		Expect(k8sClient.Update(ctx, preset)).To(Succeed())
 	})
 
-	// Templated YAML renders unset fields as explicit zero values; the
+	// Templated YAML renders unset fields as explicit zero values. The
 	// instance-bound deny list must not trip on them.
 	It("tolerates explicit zero values for instance-bound fields", func() {
 		obj := &unstructured.Unstructured{Object: map[string]any{
