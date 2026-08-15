@@ -32,7 +32,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -102,7 +101,7 @@ type ElasticsearchClusterReconciler struct {
 // storage-contract components in dependency order, and derives the CR-level
 // Ready and Suspended conditions.
 //
-// Status is written once per reconcile. The components and setReady
+// Status is written once per reconcile. The components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
 // persists them together.
 func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
@@ -126,7 +125,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	merged, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		setReady(&cluster, conditions.Ready(metav1.ConditionFalse, failure.Reason, failure.Message, cluster.Generation))
+		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
@@ -143,7 +142,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	reconcileErr := reconcileComponents(ctx, recCtx, comps)
-	setReady(&cluster, conditions.Aggregate(&cluster, comps...))
+	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps...))
 
 	storageSize, err := r.observedStorageSize(ctx, &cluster)
 	if err != nil {
@@ -351,13 +350,6 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 	}
 
 	return firstErr
-}
-
-// setReady stages ready and observedGeneration on the in-memory cluster.
-// FlushStatus persists them.
-func setReady(cluster *v1.ElasticsearchCluster, ready metav1.Condition) {
-	meta.SetStatusCondition(&cluster.Status.Conditions, ready)
-	cluster.Status.ObservedGeneration = cluster.Generation
 }
 
 // serviceMonitorSupported reports whether the cluster serves the

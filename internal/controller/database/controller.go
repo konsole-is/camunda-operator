@@ -29,8 +29,6 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -103,8 +101,8 @@ type DatabaseReconciler struct {
 // credential Secrets. A published Secret then never names a password that the
 // server does not know.
 //
-// Status is written once per reconcile. The component and setReady stage
-// conditions on the in-memory Database, and the deferred FlushStatus persists
+// Status is written once per reconcile. The component and conditions.Stage
+// stage conditions on the in-memory Database, and the deferred FlushStatus persists
 // them together.
 func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var database v1.Database
@@ -127,10 +125,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	bootstrapper, err := r.preCheck(ctx, &database)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		setReady(
-			&database,
-			conditions.Ready(metav1.ConditionFalse, failure.Reason, failure.Message, database.Generation),
-		)
+		conditions.Stage(&database, conditions.Failed(&database, failure))
 		if failure.Reason == v1.ReasonConnectionFailed {
 			return ctrl.Result{RequeueAfter: connectionRetryInterval}, nil
 		}
@@ -156,7 +151,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	}
 
 	reconcileErr := comp.Reconcile(ctx, rec)
-	setReady(&database, conditions.Aggregate(&database, comp))
+	conditions.Stage(&database, conditions.Aggregate(&database, comp))
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -212,13 +207,6 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 	}
 
 	return nil
-}
-
-// setReady stages ready and observedGeneration on the in-memory database.
-// FlushStatus persists them.
-func setReady(database *v1.Database, ready metav1.Condition) {
-	meta.SetStatusCondition(&database.Status.Conditions, ready)
-	database.Status.ObservedGeneration = database.Generation
 }
 
 // preCheck runs the documented pre-checks in order: server reference, admin

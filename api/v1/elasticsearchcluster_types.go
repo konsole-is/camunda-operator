@@ -211,6 +211,11 @@ func (in *ElasticsearchCluster) GetStatusConditions() *[]metav1.Condition {
 // (ElasticsearchCluster/<component>) from it.
 func (in *ElasticsearchCluster) GetKind() string { return "ElasticsearchCluster" }
 
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *ElasticsearchCluster) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // ElasticsearchClusterList contains a list of ElasticsearchCluster

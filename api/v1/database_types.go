@@ -139,6 +139,11 @@ func (in *Database) GetStatusConditions() *[]metav1.Condition { return &in.Statu
 // per-component SSA field managers (Database/<component>) from it.
 func (in *Database) GetKind() string { return "Database" }
 
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *Database) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // DatabaseList contains a list of Database

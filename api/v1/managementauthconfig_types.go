@@ -102,6 +102,11 @@ func (in *ManagementAuthConfig) GetStatusConditions() *[]metav1.Condition {
 // metric recording.
 func (in *ManagementAuthConfig) GetKind() string { return "ManagementAuthConfig" }
 
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *ManagementAuthConfig) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // ManagementAuthConfigList contains a list of ManagementAuthConfig

@@ -22,7 +22,6 @@ import (
 	"context"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -61,8 +60,7 @@ func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	meta.SetStatusCondition(&cfg.Status.Conditions, cond)
-	cfg.Status.ObservedGeneration = cfg.Generation
+	conditions.Stage(&cfg, cond)
 
 	return ctrl.Result{}, component.FlushStatus(ctx, component.ReconcileContext{Client: r.Client, Owner: &cfg})
 }

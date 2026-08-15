@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -51,6 +52,27 @@ func Ready(status metav1.ConditionStatus, reason, message string, observedGenera
 		Type: v1.ConditionReady, Status: status, Reason: reason,
 		Message: message, ObservedGeneration: observedGeneration,
 	}
+}
+
+// Owner is a CRD that stages its Ready condition: the ocf owner plus the
+// observedGeneration setter that every CRD of this operator implements.
+type Owner interface {
+	component.OperatorCRD
+	// SetObservedGeneration records the last reconciled generation in status.
+	SetObservedGeneration(generation int64)
+}
+
+// Stage sets ready on owner and records the current generation as observed,
+// in memory. FlushStatus persists both. Every controller stages Ready through
+// Stage, so observedGeneration always moves with Ready.
+func Stage(owner Owner, ready metav1.Condition) {
+	meta.SetStatusCondition(owner.GetStatusConditions(), ready)
+	owner.SetObservedGeneration(owner.GetGeneration())
+}
+
+// Failed builds the Ready condition for a pre-check failure of owner.
+func Failed(owner Owner, failure *PreCheckFailure) metav1.Condition {
+	return Ready(metav1.ConditionFalse, failure.Reason, failure.Message, owner.GetGeneration())
 }
 
 // Aggregate builds the Ready condition of owner from its ocf components. It
