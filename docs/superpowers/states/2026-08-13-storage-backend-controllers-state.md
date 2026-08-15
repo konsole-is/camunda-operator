@@ -26,10 +26,10 @@ status: consumer-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #35 | batch-b/binding-scope | .claude/worktrees/storage-backend-controllers/.claude/worktrees/storage-backend-controllers--binding-scope | #40 → feat/storage-backend-controllers | self-merged |
-| #36 | batch-b/foundations | .claude/worktrees/storage-backend-controllers--foundations | #41 → feat/storage-backend-controllers | self-merged |
-| #37 | batch-b/elasticsearchcluster | .claude/worktrees/storage-backend-controllers--elasticsearchcluster | — | in-progress |
-| #38 | batch-b/database | .claude/worktrees/storage-backend-controllers--database | #42 → feat/storage-backend-controllers | ready |
+| #35 | batch-b/binding-scope (deleted) | (removed) | #40 → feat/storage-backend-controllers | self-merged |
+| #36 | batch-b/foundations (deleted) | (removed) | #41 → feat/storage-backend-controllers | self-merged |
+| #37 | batch-b/elasticsearchcluster (deleted) | (removed) | #43 → feat/storage-backend-controllers | merged (user, f29bc78, 2026-08-15) |
+| #38 | batch-b/database (deleted) | (removed) | #42 → feat/storage-backend-controllers | merged (user, b9fb40b, 2026-08-15) |
 | #39 | batch-b/e2e | .claude/worktrees/storage-backend-controllers--e2e | — | not-started |
 
 ## Contracts
@@ -68,8 +68,8 @@ status: consumer-wave
 
 ## Pending snapshot
 
-1. **Consumer wave in flight**: #37 (Tasks 8–11, worktree `--elasticsearchcluster`) and #38 (Tasks 12–15, worktree `--database`) dispatched in parallel off feature tip ca39cf7; orchestrator watch loop active (`feature-dev-workflow:fanning-out-with-worktrees` Steps 4–5). On each report-back: Copilot review-loop (fan-out mode), spec-compliance gate against the issue's Verification bullets, quality pass (`code-review <PR> medium`), route findings to the implementer, then merge bundle (merge → `gh issue close` → ff feature worktree → state row/contract updates).
-2. Wave checkpoint after both self-merge (`feature-dev-workflow:reviewing-feature-progress`): full suite on the feature branch, coherence sweep across the two controller PRs, **and surface the parked user decision** (secret-oracle posture: accept-and-document vs controller-enforced same-namespace refs — see bubble-up 2026-08-13).
+1. ~~Consumer wave~~ done: #42 and #43 merged by the user on 2026-08-15 after three Copilot rounds each and an interactive review session (see the 2026-08-15/16 bubble-ups). Sub-branches and worktrees removed 2026-08-16.
+2. Wave checkpoint now (`feature-dev-workflow:reviewing-feature-progress`): full suite on the feature branch, coherence sweep across the two controller PRs, **and surface the parked user decision** (secret-oracle posture: accept-and-document vs controller-enforced same-namespace refs — see bubble-up 2026-08-13).
 3. Phase 4: #39 (Task 16, e2e) on `batch-b/e2e` after the checkpoint — dispatch prompt must carry both implementers' e2e-relevant bubble-ups.
 4. Phase 5: integration checkpoint (Task 17), integration PR to `main` (`Closes #34`) left ready for the user — never self-merged; after merge, delete the plan and this state file in the orchestrator's final commit.
 
