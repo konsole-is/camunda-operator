@@ -26,12 +26,15 @@ import (
 
 // MergePreset resolves an ElasticsearchCluster spec against its preset
 // baseline. A field set inline overrides the value of the preset for that
-// field wholesale. A field left unset inherits from the preset. The scheduling
-// block is replaced entirely, never merged field by field. The instance-bound
-// fields (presetRef, secondaryStorageConfig, suspend, monitoring) always come
-// from spec, and a preset cannot set them. A nil preset returns spec
-// unchanged. The result shares no memory with preset, so callers can mutate
-// it freely.
+// field wholesale. A field left unset inherits from the preset. An empty list
+// or map (extraEnv, extraEnvFrom, podLabels, podAnnotations) counts as unset:
+// the API drops an empty value on the way in, so the merge cannot see it. To
+// drop a list that the preset provides, override it with the list you want,
+// or reference a preset without it. The scheduling block is replaced
+// entirely, never merged field by field. The instance-bound fields
+// (presetRef, secondaryStorageConfig, suspend, monitoring) always come from
+// spec, and a preset cannot set them. A nil preset returns spec unchanged.
+// The result shares no memory with preset, so callers can mutate it freely.
 func MergePreset(
 	spec v1.ElasticsearchClusterSpec,
 	preset *v1.ElasticsearchClusterPresetSpec,

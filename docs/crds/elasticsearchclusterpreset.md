@@ -14,7 +14,7 @@ You create presets directly, or a composition layer above may install a standard
 
 1. An `ElasticsearchCluster` names a preset through its `spec.presetRef` (a plain string, since presets are cluster-scoped).
 2. The `ElasticsearchCluster` controller reads `spec.cluster` from the preset as the full configuration baseline.
-3. Any field set inline on the `ElasticsearchCluster` overrides the preset's value for that field wholesale; fields left unset inherit from the preset.
+3. Any field set inline on the `ElasticsearchCluster` overrides the preset's value for that field wholesale; fields left unset inherit from the preset. An empty list or map (`extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`) counts as unset, because the API drops it: to remove a list that the preset provides, override it with the list you want, or reference a preset without it.
 4. `scheduling` is the explicit exception spelled out for emphasis: an inline `scheduling` block replaces the preset's entire scheduling block, it is never merged field by field.
 5. Editing a preset flows to every `ElasticsearchCluster` that references it on their next reconciliation.
 
