@@ -231,12 +231,15 @@ func metricsService(cluster *v1.ElasticsearchCluster) *corev1.Service {
 // The exporter serves plain HTTP inside the cluster, so the endpoint needs no
 // auth and no TLS.
 func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *monitoringv1.ServiceMonitor {
-	labels := exporterLabels(cluster)
+	labels := map[string]string{}
 	var annotations map[string]string
 	if merged.Monitoring != nil && merged.Monitoring.ServiceMonitor != nil {
 		maps.Copy(labels, merged.Monitoring.ServiceMonitor.Labels)
 		annotations = merged.Monitoring.ServiceMonitor.Annotations
 	}
+	// User labels select the ServiceMonitor for a Prometheus; the discovery
+	// labels of the operator win over them.
+	maps.Copy(labels, exporterLabels(cluster))
 
 	return &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{

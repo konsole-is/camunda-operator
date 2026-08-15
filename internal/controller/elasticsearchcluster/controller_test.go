@@ -143,10 +143,14 @@ func expectStorageShrinkIgnored(cluster *v1.ElasticsearchCluster, applied string
 		)))
 	}, timeout, interval).Should(Succeed())
 
-	var es esv1.Elasticsearch
-	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
-	Expect(es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]).
-		To(Equal(resource.MustParse(applied)))
+	// The event lands before the component applies the ECK CR in the same
+	// reconcile, so the CR is polled too.
+	Eventually(func(g Gomega) {
+		var es esv1.Elasticsearch
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+		g.Expect(es.Spec.NodeSets[0].VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]).
+			To(Equal(resource.MustParse(applied)))
+	}, timeout, interval).Should(Succeed())
 
 	var latest v1.ElasticsearchCluster
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
@@ -438,6 +442,65 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
+		expectStorageShrinkIgnored(cluster, "1Gi")
+	})
+
+	It("ignores a preset shrink made during suspension and resumes with the retained volume size", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		createElasticsearchCluster(cluster)
+		fetchOwnedElasticsearch(cluster)
+
+		// The retained data volume of a node. envtest runs no ECK, so the
+		// spec creates the claim ECK would have created and stamps its size.
+		claim := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      components.DataVolumeClaimName + "-" + cluster.Name + "-es-default-0",
+				Namespace: cluster.Namespace,
+				Labels:    map[string]string{components.ECKClusterNameLabel: cluster.Name},
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, claim) })
+		claim.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+		claim.Status.Phase = corev1.ClaimBound
+		Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
+
+		// Suspend: the ECK CR goes away, the claim stays.
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			latest.Spec.Suspend = true
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		updateECKStatus(cluster, func(es *esv1.Elasticsearch) { es.Status.Phase = esv1.ElasticsearchReadyPhase })
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &esv1.Elasticsearch{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		// Shrink the preset while suspended, then resume.
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.StorageSize = new(resource.MustParse("512Mi"))
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			var latest v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			latest.Spec.Suspend = false
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The recreated ECK CR requests the retained size, not the shrunk one.
 		expectStorageShrinkIgnored(cluster, "1Gi")
 	})
 

@@ -162,7 +162,7 @@ func ElasticsearchComponent(
 	}
 
 	elasticsearch, err := eckelasticsearch.NewBuilder(elasticsearch(cluster, merged)).
-		WithMutation(elasticsearchMutations(merged)...).
+		WithMutation(elasticsearchMutations(cluster, merged)...).
 		Build()
 	if err != nil {
 		return nil, err
@@ -302,7 +302,10 @@ func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClus
 
 // elasticsearchMutations layers the optional concerns of the merged spec onto
 // the baseline ECK CR. Each mutation is gated on its field.
-func elasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsearch.Mutation {
+func elasticsearchMutations(
+	cluster *v1.ElasticsearchCluster,
+	merged v1.ElasticsearchClusterSpec,
+) []eckelasticsearch.Mutation {
 	return []eckelasticsearch.Mutation{
 		{
 			Name:    "NodeResources",
@@ -333,7 +336,10 @@ func elasticsearchMutations(merged v1.ElasticsearchClusterSpec) []eckelasticsear
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
 					template := &es.Spec.NodeSets[0].PodTemplate
+					// User labels never override the discovery labels: extensions
+					// find the pods by them, so the operator wins.
 					maps.Copy(template.Labels, merged.PodLabels)
+					maps.Copy(template.Labels, clusterLabels(cluster))
 					if len(merged.PodAnnotations) > 0 {
 						if template.Annotations == nil {
 							template.Annotations = map[string]string{}

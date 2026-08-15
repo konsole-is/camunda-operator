@@ -117,7 +117,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - When `spec.presetRef` is unset, `version`, `replicas`, and `storageSize` must be set inline; with a preset, the merged result must contain them.
 - `spec.version` must be a version supported by Camunda 8.9: Elasticsearch 8.19+ or 9.2+.
-- `spec.storageSize` cannot shrink. Elasticsearch data volumes cannot be reduced in place. Admission rejects an inline `storageSize` that is lower than its previous inline value. A shrink that admission cannot see is ignored: a preset baseline lowered under a running cluster, or an inline value set below the size that a preset provided before. The controller keeps the applied size, records a Warning event with reason `StorageShrinkIgnored`, and continues to reconcile. To lower the size of a running cluster, delete and recreate it.
+- `spec.storageSize` cannot shrink. Elasticsearch data volumes cannot be reduced in place. Admission rejects an inline `storageSize` that is lower than its previous inline value. A shrink that admission cannot see is ignored: a preset baseline lowered under a cluster, or an inline value set below the size that a preset provided before. The controller compares against the largest data volume that exists (the applied ECK claim and the data PersistentVolumeClaims, which stay during suspension), keeps that size, records a Warning event with reason `StorageShrinkIgnored`, and continues to reconcile. To lower the size of a running cluster, delete and recreate it.
 - `spec.secondaryStorageConfig` must be a valid resource name.
 
 !!! note "Deviation from the original proposal"

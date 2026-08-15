@@ -150,11 +150,11 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	reconcileErr := reconcileComponents(ctx, recCtx, append(core, metrics))
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, core...))
 
-	storageSize, err := r.observedStorageSize(ctx, &cluster)
+	sizes, err := r.dataVolumeSizes(ctx, &cluster)
 	if err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
 	}
-	cluster.Status.StorageSize = storageSize
+	cluster.Status.StorageSize = sizes.smallest()
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -195,27 +195,26 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 }
 
 // keepAppliedStorageSize guards against the shrinks that admission cannot
-// see: a preset baseline lowered under a referencing cluster, or an inline
-// storageSize set below a size that a preset provided before. It compares the
-// merged size against the data volume claim of the applied ECK CR. If the
-// merged size is smaller, it keeps the applied size in merged and records a
-// Warning event, because Elasticsearch data volumes cannot be reduced in
-// place. The reconcile continues with the applied size.
+// see: a preset baseline lowered under a cluster, or an inline storageSize set
+// below a size that a preset provided before. It compares the merged size
+// against the largest data volume that exists: the claim of the applied ECK
+// CR, and the data PersistentVolumeClaims themselves. The claims matter on
+// their own during suspension, when the ECK CR is deleted and the volumes
+// stay. If the merged size is smaller, it keeps the existing size in merged
+// and records a Warning event, because Elasticsearch data volumes cannot be
+// reduced in place. The reconcile continues with that size.
 func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged *v1.ElasticsearchClusterSpec,
 ) error {
-	var es esv1.Elasticsearch
-	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
+	sizes, err := r.dataVolumeSizes(ctx, cluster)
+	if err != nil {
+		return err
 	}
 
-	applied := appliedDataClaimSize(&es)
-	if applied == nil || merged.StorageSize == nil || merged.StorageSize.Cmp(*applied) >= 0 {
+	largest := sizes.largest()
+	if largest == nil || merged.StorageSize == nil || merged.StorageSize.Cmp(*largest) >= 0 {
 		return nil
 	}
 
@@ -223,61 +222,93 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 		cluster,
 		corev1.EventTypeWarning,
 		eventReasonStorageShrinkIgnored,
-		"storageSize %s is below the applied data volume size %s; keeping %s, Elasticsearch data volumes cannot be reduced",
+		"storageSize %s is below the existing data volume size %s; keeping %s, Elasticsearch data volumes cannot be reduced",
 		merged.StorageSize,
-		applied,
-		applied,
+		largest,
+		largest,
 	)
-	merged.StorageSize = applied
+	merged.StorageSize = largest
 
 	return nil
 }
 
-// observedStorageSize returns the data volume size that the cluster has: the
-// smallest capacity that its data PersistentVolumeClaims report. ECK labels
+// dataVolumeSizes are the data volume sizes that the cluster has: the
+// capacities that its data PersistentVolumeClaims report, and the claim size
+// of the applied ECK CR when that CR exists.
+type dataVolumeSizes struct {
+	claims  []resource.Quantity
+	applied *resource.Quantity
+}
+
+// smallest returns the smallest claim capacity, or the applied claim size when
+// no claim reports a capacity, or nil before the first apply. It is the size
+// that every node has, so status reports it.
+func (s dataVolumeSizes) smallest() *resource.Quantity {
+	if len(s.claims) == 0 {
+		return s.applied
+	}
+	smallest := s.claims[0]
+	for _, size := range s.claims[1:] {
+		if size.Cmp(smallest) < 0 {
+			smallest = size
+		}
+	}
+	return &smallest
+}
+
+// largest returns the largest of the claim capacities and the applied claim
+// size, or nil when neither exists. It is the size that a rendered claim must
+// not go below.
+func (s dataVolumeSizes) largest() *resource.Quantity {
+	var largest *resource.Quantity
+	if s.applied != nil {
+		largest = s.applied
+	}
+	for i := range s.claims {
+		if largest == nil || s.claims[i].Cmp(*largest) > 0 {
+			largest = &s.claims[i]
+		}
+	}
+	return largest
+}
+
+// dataVolumeSizes lists the sizes of the data volumes of cluster. ECK labels
 // the claims with the cluster name, and the data claims carry the data volume
-// claim name as prefix. Until a claim reports a capacity it returns the size
-// that the applied Elasticsearch CR requests, or nil before the first apply.
-func (r *ElasticsearchClusterReconciler) observedStorageSize(
+// claim name as prefix.
+func (r *ElasticsearchClusterReconciler) dataVolumeSizes(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
-) (*resource.Quantity, error) {
+) (dataVolumeSizes, error) {
 	var claims corev1.PersistentVolumeClaimList
 	if err := r.List(
 		ctx, &claims,
 		client.InNamespace(cluster.Namespace),
 		client.MatchingLabels{components.ECKClusterNameLabel: cluster.Name},
 	); err != nil {
-		return nil, fmt.Errorf("listing data volume claims of %q: %w", cluster.Name, err)
+		return dataVolumeSizes{}, fmt.Errorf("listing data volume claims of %q: %w", cluster.Name, err)
 	}
 
-	var smallest *resource.Quantity
+	var sizes dataVolumeSizes
 	for i := range claims.Items {
 		claim := &claims.Items[i]
 		if !strings.HasPrefix(claim.Name, components.DataVolumeClaimName+"-") {
 			continue
 		}
-		capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]
-		if !ok {
-			continue
+		if capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]; ok {
+			sizes.claims = append(sizes.claims, capacity)
 		}
-		if smallest == nil || capacity.Cmp(*smallest) < 0 {
-			smallest = &capacity
-		}
-	}
-	if smallest != nil {
-		return smallest, nil
 	}
 
 	var es esv1.Elasticsearch
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, nil
+			return sizes, nil
 		}
-		return nil, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
+		return dataVolumeSizes{}, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
 	}
+	sizes.applied = appliedDataClaimSize(&es)
 
-	return appliedDataClaimSize(&es), nil
+	return sizes, nil
 }
 
 // enqueueForDataClaim maps a PersistentVolumeClaim event to the cluster that

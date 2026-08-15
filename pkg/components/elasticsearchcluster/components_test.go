@@ -254,3 +254,33 @@ func TestCredentialsComponentCarriesThePassword(t *testing.T) {
 	assert.Equal(t, []byte("s3cret"), secret.Data["password"])
 	assert.Equal(t, []byte("superuser"), secret.Data["roles"])
 }
+
+// User pod labels must not override the discovery labels that extensions
+// find the pods by.
+func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
+	t.Parallel()
+
+	cluster := goldenRealisticElasticsearchCluster()
+	cluster.Spec.PodLabels = map[string]string{
+		"camunda.io/cluster":   "someone-else",
+		"camunda.io/component": "not-elasticsearch",
+		"team":                 "platform",
+	}
+	comp, err := ElasticsearchComponent(cluster, cluster.Spec)
+	require.NoError(t, err)
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+	var es *esv1.Elasticsearch
+	for _, obj := range objects {
+		if typed, ok := obj.(*esv1.Elasticsearch); ok {
+			es = typed
+		}
+	}
+	require.NotNil(t, es)
+
+	labels := es.Spec.NodeSets[0].PodTemplate.Labels
+	assert.Equal(t, cluster.Name, labels["camunda.io/cluster"])
+	assert.Equal(t, "elasticsearch", labels["camunda.io/component"])
+	assert.Equal(t, "platform", labels["team"])
+}
