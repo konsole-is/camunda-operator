@@ -41,6 +41,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/database"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseserverconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
@@ -222,7 +223,7 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaPlatformConfig")
 		os.Exit(1)
 	}
-	if err := (&controller.ElasticsearchClusterReconciler{
+	if err := (&elasticsearchcluster.ElasticsearchClusterReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
