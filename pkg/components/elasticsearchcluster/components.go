@@ -176,25 +176,31 @@ func ElasticsearchComponent(
 		return nil, err
 	}
 
-	builder := component.NewComponentBuilder().
+	monitor, err := unstructuredstatic.NewBuilder(serviceMonitor(cluster, merged)).Build()
+	if err != nil {
+		return nil, err
+	}
+	monitorEnabled := merged.Monitoring != nil &&
+		merged.Monitoring.ServiceMonitor != nil &&
+		merged.Monitoring.ServiceMonitor.Enabled
+
+	// The ServiceMonitor is included only where the cluster serves the kind
+	// and never deleted by inclusion alone: when the CRD goes away, the API
+	// server removes every instance, and a delete against a missing kind
+	// fails. While the kind is served, the gate deletes it when monitoring is
+	// disabled.
+	return component.NewComponentBuilder().
 		WithName("elasticsearch").
 		WithConditionType(ConditionElasticsearch).
 		WithResource(account, component.GatedBy(feature.NewBooleanGate(merged.ServiceAccount != nil))).
 		WithResource(elasticsearch).
-		Suspend(merged.Suspend)
-
-	if serviceMonitorSupported {
-		serviceMonitor, err := unstructuredstatic.NewBuilder(serviceMonitor(cluster, merged)).Build()
-		if err != nil {
-			return nil, err
-		}
-		enabled := merged.Monitoring != nil &&
-			merged.Monitoring.ServiceMonitor != nil &&
-			merged.Monitoring.ServiceMonitor.Enabled
-		builder.WithResource(serviceMonitor, component.GatedBy(feature.NewBooleanGate(enabled)))
-	}
-
-	return builder.Build()
+		IncludeWhen(
+			serviceMonitorSupported,
+			func() component.Resource { return monitor },
+			component.GatedBy(feature.NewBooleanGate(monitorEnabled)),
+		).
+		Suspend(merged.Suspend).
+		Build()
 }
 
 // StorageContractComponent builds the storage-contract component: the
