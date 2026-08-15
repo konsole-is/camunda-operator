@@ -57,7 +57,8 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
-fmt: golangci-lint ## Format code with the formatters configured in .golangci.yml.
+fmt: golangci-lint ## Format code: callsplit, then the formatters configured in .golangci.yml.
+	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
 	"$(GOLANGCI_LINT)" fmt
 
 .PHONY: vet
@@ -98,11 +99,13 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
+lint: golangci-lint ## Run callsplit in check mode, then golangci-lint.
+	go run ./hack/callsplit -check ./api ./cmd ./internal ./pkg ./test
 	"$(GOLANGCI_LINT)" run
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
 	"$(GOLANGCI_LINT)" fmt
 	"$(GOLANGCI_LINT)" run --fix
 

@@ -103,6 +103,8 @@ The anti-pattern to avoid is inserting blank lines *within* a logical unit — e
 
 ## Line breaking long calls
 
+Two tools enforce this section. `golines` (through `make fmt`) breaks any line over 120 characters. `hack/callsplit` (through `make fmt` to fix, `make lint` to check) rejects the mixed form: a call whose first argument sits on the paren line while a later argument starts on another line. Write the shapes below and both tools stay quiet.
+
 When a function call does not fit on one line, use judgment. If the function name alone is what makes the line long and the arguments are few or short, breaking after the opening parenthesis and keeping the arguments together is sufficient:
 
 ```go

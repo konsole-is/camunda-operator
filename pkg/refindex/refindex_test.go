@@ -104,10 +104,12 @@ func TestEnqueue(t *testing.T) {
 		q := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 		h.Create(context.Background(), secretEvent("ns", "s"), q)
 
-		assert.ElementsMatch(t, []reconcile.Request{
-			{NamespacedName: types.NamespacedName{Name: "matching-a"}},
-			{NamespacedName: types.NamespacedName{Name: "matching-b"}},
-		}, drain(q))
+		assert.ElementsMatch(
+			t, []reconcile.Request{
+				{NamespacedName: types.NamespacedName{Name: "matching-a"}},
+				{NamespacedName: types.NamespacedName{Name: "matching-b"}},
+			}, drain(q),
+		)
 	})
 
 	t.Run("maps an unreferenced Secret to no requests", func(t *testing.T) {
