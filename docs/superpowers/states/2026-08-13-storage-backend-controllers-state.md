@@ -30,7 +30,7 @@ status: e2e-wave
 | #36 | batch-b/foundations (deleted) | (removed) | #41 → feat/storage-backend-controllers | self-merged |
 | #37 | batch-b/elasticsearchcluster (deleted) | (removed) | #43 → feat/storage-backend-controllers | merged (user, f29bc78, 2026-08-15) |
 | #38 | batch-b/database (deleted) | (removed) | #42 → feat/storage-backend-controllers | merged (user, b9fb40b, 2026-08-15) |
-| #39 | batch-b/e2e | .claude/worktrees/storage-backend-controllers--e2e | — | next (dispatch after the checkpoint, 2026-08-16) |
+| #39 | batch-b/e2e | .claude/worktrees/storage-backend-controllers--e2e | — | in-progress (dispatched 2026-08-16) |
 
 ## Contracts
 
