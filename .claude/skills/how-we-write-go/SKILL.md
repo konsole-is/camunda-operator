@@ -646,24 +646,32 @@ File and package organization follows concern, not type. When a group of related
 Name the file after the concern it holds, not after the type it operates on. `backup_reconciler.go` is clearer than `zeebeclusterbackup_reconciler.go`. Enqueue and watch logic, for instance, naturally belongs in its own file rather than cluttering the main controller file, and any predicate or index registration that belongs to the same watch setup should live there too.
 
 ```
-internal/controller/cloud/zeebecluster/
-  zeebecluster_controller.go   ← Reconcile(), Setup(), manager wiring
-  backup_reconciler.go         ← sub-reconciler for backup lifecycle
-  network_policy_reconciler.go ← sub-reconciler for network policy
-  enqueuers.go                 ← watch handlers, predicates, index registrations
+internal/controller/database/
+  controller.go   ← Reconcile(), pre-checks and other I/O, watches, SetupWithManager
+  suite_test.go   ← the envtest suite of this package, through internal/testenv
 ```
 
-**Reusable construction and transformation logic belongs in `pkg/`**, not inline in a controller. Resource builders, label helpers, feature gates, and shared utility functions go in `pkg/` where they can be used and tested independently.
+**Controller packages hold I/O and wiring. Everything that maps a spec to resources belongs in `pkg/`.** A controller package under `internal/controller/<crd>/` contains `Reconcile`, the pre-checks and other calls against the API server or external systems, the watches, the indexes, and `SetupWithManager`. It does not contain builders.
+
+Put the following in `pkg/components/<crd>/`:
+
+- Resolution of the documented defaults (names, namespaces, derived identifiers)
+- Naming rules that a user or another operator can observe
+- ocf component assembly and resource builders
+- Pure rules that the reconcile applies, for example a collision rule or a preset merge
 
 ```
-pkg/apps/analytics/   ← resource builders for the analytics component
-pkg/features/         ← feature gate declarations
-pkg/cluster/          ← cluster composition logic
+pkg/components/database/             ← ResolveBindings, BackupUserName, BindingsComponent, collision rule
+pkg/components/elasticsearchcluster/ ← MergePreset, ValidateMerged, the three components
+pkg/pgbootstrap/                     ← SQL layer
+pkg/credentials/, pkg/conditions/    ← shared primitives
 ```
 
-Most `pkg/` code should stay API-free: use it for construction, transformation, and evaluation, and keep `Get`/`Update`/`Create`/`Patch` calls in controller packages. If `pkg/` must touch the API (e.g. small retrieval helpers), keep it narrowly scoped and explicit in naming.
+The package is pure: spec in, resources out, no API calls. Its golden tests live next to it and run without envtest. The controller imports it with the alias `components`, so `components.ResolveBindings(&database)` reads the same in every controller.
 
-As a rule of thumb: put code in `pkg/` only when it is genuinely reusable across multiple consumers. Don't extract into `pkg/` just because a function happens to be pure — extract it because it serves more than one place in the codebase. A pure helper that is only meaningful within one controller's context belongs in the controller package.
+A single consumer is not a reason to keep a builder in the controller. The next operator up the stack must be able to predict the names and shapes this operator publishes, and it cannot import `internal/`. Move a builder to `pkg/` when you write it, not when a second consumer appears.
+
+Most `pkg/` code stays API-free: use it for construction, transformation, and evaluation, and keep `Get`/`Update`/`Create`/`Patch` calls in controller packages. If a `pkg/` package must touch the API, for example a small retrieval helper, keep it narrow and name it for what it does.
 
 **Webhook logic stays in the webhook package.** Defaulting and validation logic belongs in `internal/webhook/`, not in the controller. The controller should not replicate webhook defaults, and the webhook should not perform reconcile-style API calls.
 

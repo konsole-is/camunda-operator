@@ -58,6 +58,17 @@ formatters:
   enable:
     - gofmt
     - goimports
+    - golines
+  settings:
+    golines:
+      # This matches the lll limit, so the formatter never leaves a line that the linter rejects.
+      max-len: 120
+      tab-len: 4
+      # Comments are prose, not code. A rewrap mangles markers and doc links.
+      shorten-comments: false
+      # A long chain breaks at the dots. Otherwise the arguments of the last
+      # call are nested, which makes Gomega assertions hard to read.
+      chain-split-dots: true
   exclusions:
     generated: lax
     paths:

@@ -66,6 +66,12 @@ approach — ask before writing any code.
 Every exported symbol has a GoDoc comment. Update it whenever you change the associated
 behaviour, signature, or semantics.
 
+### Writing prose: always load `simple-english`
+
+Before you write or edit prose, invoke the `simple-english:simple-english` skill. Then obey it.
+Prose includes GoDoc, inline comments, `docs/`, `README.md`, CRD field descriptions, and error and
+condition messages. This rule applies to a one-line docstring and to a full document.
+
 ### Documentation
 
 Update documentation in the **same response** as the code change — never leave them out of sync.

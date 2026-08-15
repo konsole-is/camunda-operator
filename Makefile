@@ -57,8 +57,8 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
-fmt: ## Run go fmt against code.
-	go fmt ./...
+fmt: golangci-lint ## Format code with the formatters configured in .golangci.yml.
+	"$(GOLANGCI_LINT)" fmt
 
 .PHONY: vet
 vet: ## Run go vet against code.
@@ -103,6 +103,7 @@ lint: golangci-lint ## Run golangci-lint linter
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+	"$(GOLANGCI_LINT)" fmt
 	"$(GOLANGCI_LINT)" run --fix
 
 .PHONY: lint-config
