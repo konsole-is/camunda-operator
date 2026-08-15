@@ -141,8 +141,8 @@ func TestDatabaseBindingsGolden(t *testing.T) {
 		db     *v1.Database
 		golden string
 	}{
-		{"minimal", goldenDatabase(), "testdata/golden/minimal.yaml"},
-		{"full", goldenFullDatabase(), "testdata/golden/full.yaml"},
+		{"minimal", goldenDatabase(), "testdata/golden/minimal/bindings.yaml"},
+		{"full", goldenFullDatabase(), "testdata/golden/full/bindings.yaml"},
 	}
 
 	for _, tt := range tests {
@@ -173,7 +173,7 @@ func TestDatabaseBindingsGoldenBackupDisabled(t *testing.T) {
 	require.NoError(t, err)
 
 	golden.AssertComponentYAML(
-		t, "testdata/golden/backup-disabled.yaml", comp,
+		t, "testdata/golden/backup-disabled/bindings.yaml", comp,
 		golden.WithScheme(goldenScheme(t)), golden.Update(*update),
 	)
 }

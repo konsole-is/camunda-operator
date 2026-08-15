@@ -417,21 +417,26 @@ func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 // field index on spec.presetRef, and a watch on the data volume claims that
 // ECK labels with the cluster name.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// The ReconcileContext.Recorder of ocf is the old events API, and the
-	// manager only vends it through the deprecated accessor.
-	r.Recorder = mgr.GetEventRecorderFor("elasticsearchcluster") //nolint:staticcheck
+	if r.Recorder == nil {
+		// The ReconcileContext of the component framework takes the legacy
+		// record.EventRecorder, so the deprecated accessor is required here.
+		r.Recorder = mgr.GetEventRecorderFor("elasticsearchcluster") //nolint:staticcheck
+	}
 	r.restMapper = mgr.GetRESTMapper()
 
-	// Uncached: see the componentClient field doc. The apply wrapper
-	// sanitizes typed Elasticsearch patches down to the fields that the ECK
-	// CRD schema declares.
-	componentClient, err := client.New(mgr.GetConfig(), client.Options{
-		Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper(),
-	})
-	if err != nil {
-		return fmt.Errorf("building the component client: %w", err)
+	if r.componentClient == nil {
+		// Uncached: see the componentClient field doc. The apply wrapper
+		// sanitizes typed Elasticsearch patches down to the fields that the
+		// ECK CRD schema declares.
+		componentClient, err := client.New(mgr.GetConfig(), client.Options{
+			Scheme: mgr.GetScheme(),
+			Mapper: mgr.GetRESTMapper(),
+		})
+		if err != nil {
+			return fmt.Errorf("building the component client: %w", err)
+		}
+		r.componentClient = eckelasticsearch.NewApplyClient(componentClient)
 	}
-	r.componentClient = eckelasticsearch.NewApplyClient(componentClient)
 
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.ElasticsearchCluster{},

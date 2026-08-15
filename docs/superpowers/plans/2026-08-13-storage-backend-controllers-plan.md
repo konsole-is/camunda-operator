@@ -36,15 +36,22 @@ All code-shaped contracts are realized by the foundations PR (#36) merging into 
 
 ## Conventions
 
-- File layout per controller (mirrors Batch A): `internal/controller/<kind>_controller.go` (reconciler + pre-checks), `<kind>_components.go` (pure component-building functions), `<kind>_controller_test.go` (Ginkgo envtest), `<kind>_schema_test.go` (admission specs), plus feature-specific files (`elasticsearchcluster_presetmerge.go`, `database_collision.go`) with sibling `_test.go` testify tables.
-- Component names: lowercase single words (`credentials`, `elasticsearch`, `storage-contract`, `bindings`). Condition types: `CredentialsReady`, `ElasticsearchReady`, `StorageContractReady`, `BindingsReady`.
-- ocf mutation names: PascalCase descriptive (`SuspendNodeSet`, `SchedulingConstraints`) — golden manifests reference them.
-- Golden manifests: `internal/controller/testdata/golden/<kind>/…` via ocf `pkg/testing/golden`.
-- Generated wrappers live under `pkg/wrappers/<package>`; regenerate with `go tool ocf scaffold wrapper … --force`, never hand-edit generated files; hand-written status handlers sit next to them in a separate file.
-- Error wrapping: `%w` everywhere except `IndexField` errors (Batch A recorded unwrapped as deliberate — stay consistent).
-- Import alias: `corev1 "k8s.io/api/core/v1"` is aliased `v1` in Batch A controller files — follow the file you're editing; new files use `corev1`. ECK types: `esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"`.
-- envtest loads ECK CRDs from the module dir (`go list -m -f '{{.Dir}}' github.com/elastic/cloud-on-k8s/v3` + `/config/crds`) — never vendored copies.
-- The ES file-realm Secret is basic-auth style (`username`/`password`/`roles` keys — ECK hashes it); the Camunda user's role is `superuser` in this batch (snapshot-repo registration in Batch C needs cluster-manage; revisit narrowing then — noted in `elasticsearchcluster.md`).
+Updated 2026-08-16 at the consumer-wave checkpoint to what #42/#43 shipped. The bubble-up log in the state file records each decision.
+
+- Layout: `internal/controller/<crd>/` per CRD holds `controller.go` (Reconcile, pre-checks and other I/O, watches, `SetupWithManager`), the envtest `suite_test.go` (through `internal/testenv`), and the schema specs. Pure spec-to-resource code (default resolution, naming rules, ocf component assembly, pure reconcile rules) lives in `pkg/components/<crd>/`, imported as `components`. Cross-package fixtures live in `internal/fixtures`. See `how-we-write-go` "Where to put code".
+- Status: one write path per reconcile through ocf `FlushStatus`. `conditions.Stage(owner, cond)` sets Ready and observedGeneration. `conditions.Failed(owner, failure)` records a pre-check failure. `conditions.Aggregate(owner, comps...)` mirrors the highest-priority ocf component condition onto Ready. The caller decides which components make up Ready (the ES metrics component stays out). Vocabulary in `api/v1/conditions.go` (pre-check reasons and `Healthy`). A reason that one CRD reports lives in the types file of that CRD. `Suspended` is Ready=True. No `Progressing`.
+- Labels: `pkg/labels` only. Per-kind owner key (`camunda.io/cluster`, `camunda.io/elasticsearch-cluster`, `camunda.io/database`), `camunda.io/component`, `app.kubernetes.io/managed-by`. `labels.Discovery` on pod templates that ECK runs and on selectors. `labels.Merge` where users add labels.
+- `SetupWithManager` shape: nil-guard `Recorder` and the component client so tests can inject them. The recorder name equals the `Named()` controller name.
+- Component names: lowercase single words (`credentials`, `elasticsearch`, `storage-contract`, `metrics`, `bindings`). Condition types as exported constants in the component package: `ConditionCredentials`, `ConditionElasticsearch`, `ConditionStorageContract`, `ConditionMetrics`, `ConditionBindings`.
+- ocf mutation names: PascalCase descriptive (`NodeResources`, `SchedulingConstraints`, `BackupCredentialsRef`). Golden manifests reference them.
+- Golden manifests: `pkg/components/<crd>/testdata/golden/<fixture>/<component>.yaml` through ocf `pkg/testing/golden`. Regenerate with the update flag of the package.
+- Generated wrappers live under `pkg/wrappers/<package>`, scaffolded with `go tool ocf scaffold wrapper` (`--variant static` for CRs without health, `workload` for ECK). Never hand-edit generated files. Hand-written handlers and mutator helpers sit next to them in separate files (`health.go`, `podtemplate.go`, `applyclient.go`).
+- Suspension of an external CR that destroys state on scale-down (ECK) is delete-and-retain: the rendered CR carries the retaining policy, `DeleteOnSuspend` is true, and the status handler gates deletion on the observed policy. Never scale ES to zero.
+- Error wrapping: `%w` everywhere except `IndexField` errors (Batch A recorded unwrapped as deliberate).
+- Import alias: `corev1 "k8s.io/api/core/v1"`; ECK types `esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"`; prometheus-operator `monitoringv1`.
+- envtest loads ECK CRDs from the module dir (`test/utils.ECKCRDPath`), never vendored copies. The specs stamp the status of external CRs (`updateECKStatus`) because the external operator does not run in envtest.
+- The ES file-realm Secret is basic-auth style (`username`/`password`/`roles` keys, ECK hashes it). The Camunda user's role is `superuser` in this batch. Batch C revisits this when it registers snapshot repositories.
+- Prose (GoDoc, comments, docs) goes through the `simple-english` skill. Multi-line calls break after the paren (`golines` + `hack/callsplit` enforce it).
 
 ---
 

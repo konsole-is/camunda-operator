@@ -371,7 +371,7 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Recorder == nil {
 		// The ReconcileContext of the component framework takes the legacy
 		// record.EventRecorder, so the deprecated accessor is required here.
-		r.Recorder = mgr.GetEventRecorderFor("database-controller") //nolint:staticcheck
+		r.Recorder = mgr.GetEventRecorderFor("database") //nolint:staticcheck
 	}
 
 	if r.componentClient == nil {
