@@ -2,8 +2,9 @@ apiVersion: core.camunda.io/v1
 kind: SecondaryStorageConfig
 metadata:
   labels:
-    camunda.io/cluster: my-cluster-es
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch
+    camunda.io/elasticsearch-cluster: my-cluster-es
   name: my-storage-config
   namespace: my-cluster-ns
 spec:

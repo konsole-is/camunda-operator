@@ -36,23 +36,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
 const (
-	// clusterLabelKey labels every managed resource with the name of the
-	// owning CR. Through the ECK templates it also labels the Elasticsearch
-	// pods and data PVCs, so extensions such as PVCAutoResize can discover
-	// them.
-	clusterLabelKey = "camunda.io/cluster"
-	// componentLabelKey labels every managed resource with the component it
-	// belongs to.
-	componentLabelKey = "camunda.io/component"
-)
-
-const (
-	// componentLabel is the componentLabelKey value on everything that an
+	// componentLabel is the labels.ComponentKey value on everything that an
 	// ElasticsearchCluster manages.
 	componentLabel = "elasticsearch"
 	// userSecretSuffix appended to the CR name yields the name of the
@@ -106,13 +96,18 @@ const (
 	ConditionStorageContract = "StorageContractReady"
 )
 
-// clusterLabels returns the discovery labels that every resource of an
-// ElasticsearchCluster carries.
-func clusterLabels(cluster *v1.ElasticsearchCluster) map[string]string {
-	return map[string]string{
-		clusterLabelKey:   cluster.Name,
-		componentLabelKey: componentLabel,
-	}
+// managedLabels returns the labels of a resource that the operator applies
+// for cluster.
+func managedLabels(cluster *v1.ElasticsearchCluster) map[string]string {
+	return labels.Managed(labels.ElasticsearchCluster(cluster.Name), componentLabel)
+}
+
+// discoveryLabels returns the labels of the pods and data volumes that ECK
+// runs from the template of cluster. They carry the owner and component, so
+// extensions such as PVCAutoResize can discover them, but not the manager
+// label: ECK manages those objects.
+func discoveryLabels(cluster *v1.ElasticsearchCluster) map[string]string {
+	return labels.Discovery(labels.ElasticsearchCluster(cluster.Name), componentLabel)
 }
 
 // UserSecretName returns the name of the file-realm user Secret.
@@ -128,7 +123,7 @@ func CredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*c
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      UserSecretName(cluster),
 			Namespace: cluster.Namespace,
-			Labels:    clusterLabels(cluster),
+			Labels:    managedLabels(cluster),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
@@ -201,7 +196,7 @@ func StorageContractComponent(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      merged.SecondaryStorageConfig,
 			Namespace: cluster.Namespace,
-			Labels:    clusterLabels(cluster),
+			Labels:    managedLabels(cluster),
 		},
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type: v1.SecondaryStorageTypeElasticsearch,
@@ -245,7 +240,7 @@ func serviceAccount(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClu
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        cluster.Name + serviceAccountSuffix,
 			Namespace:   cluster.Namespace,
-			Labels:      clusterLabels(cluster),
+			Labels:      managedLabels(cluster),
 			Annotations: annotations,
 		},
 	}
@@ -257,13 +252,11 @@ func serviceAccount(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClu
 // elasticsearchMutations layers the optional concerns (resources, env, pod
 // metadata, scheduling, service account) on top.
 func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *esv1.Elasticsearch {
-	labels := clusterLabels(cluster)
-
 	return &esv1.Elasticsearch{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
 			Namespace: cluster.Namespace,
-			Labels:    labels,
+			Labels:    managedLabels(cluster),
 		},
 		Spec: esv1.ElasticsearchSpec{
 			Version: merged.Version,
@@ -280,12 +273,12 @@ func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClus
 				Name:  nodeSetName,
 				Count: *merged.Replicas,
 				PodTemplate: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{Labels: maps.Clone(labels)},
+					ObjectMeta: metav1.ObjectMeta{Labels: discoveryLabels(cluster)},
 				},
 				VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:   DataVolumeClaimName,
-						Labels: maps.Clone(labels),
+						Labels: discoveryLabels(cluster),
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -336,10 +329,10 @@ func elasticsearchMutations(
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
 					template := &es.Spec.NodeSets[0].PodTemplate
-					// User labels never override the discovery labels: extensions
-					// find the pods by them, so the operator wins.
-					maps.Copy(template.Labels, merged.PodLabels)
-					maps.Copy(template.Labels, clusterLabels(cluster))
+					template.Labels = labels.Merge(
+						labels.Merge(template.Labels, merged.PodLabels),
+						discoveryLabels(cluster),
+					)
 					if len(merged.PodAnnotations) > 0 {
 						if template.Annotations == nil {
 							template.Annotations = map[string]string{}

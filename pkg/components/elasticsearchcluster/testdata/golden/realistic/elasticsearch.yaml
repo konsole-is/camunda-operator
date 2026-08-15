@@ -4,8 +4,9 @@ metadata:
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-es-snapshot-role
   labels:
-    camunda.io/cluster: my-cluster-es
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch
+    camunda.io/elasticsearch-cluster: my-cluster-es
   name: my-cluster-es-es
   namespace: my-cluster-ns
 ---
@@ -13,8 +14,9 @@ apiVersion: elasticsearch.k8s.elastic.co/v1
 kind: Elasticsearch
 metadata:
   labels:
-    camunda.io/cluster: my-cluster-es
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch
+    camunda.io/elasticsearch-cluster: my-cluster-es
   name: my-cluster-es
   namespace: my-cluster-ns
 spec:
@@ -39,8 +41,8 @@ spec:
         annotations:
           prometheus.io/scrape: "true"
         labels:
-          camunda.io/cluster: my-cluster-es
           camunda.io/component: elasticsearch
+          camunda.io/elasticsearch-cluster: my-cluster-es
           team: platform
       spec:
         containers:
@@ -65,8 +67,8 @@ spec:
     volumeClaimTemplates:
     - metadata:
         labels:
-          camunda.io/cluster: my-cluster-es
           camunda.io/component: elasticsearch
+          camunda.io/elasticsearch-cluster: my-cluster-es
         name: elasticsearch-data
       spec:
         accessModes:

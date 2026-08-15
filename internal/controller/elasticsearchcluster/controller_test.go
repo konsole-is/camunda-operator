@@ -33,6 +33,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // newElasticsearchClusterNamespace creates a uniquely named Namespace for one
@@ -193,12 +194,14 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		Expect(es.Spec.Auth.FileRealm[0].SecretName).To(Equal(cluster.Name + "-es-user"))
 		Expect(es.Spec.NodeSets).To(HaveLen(1))
 		Expect(es.Spec.NodeSets[0].Count).To(Equal(int32(1)))
-		Expect(es.Spec.NodeSets[0].PodTemplate.Labels).To(HaveKeyWithValue("camunda.io/cluster", cluster.Name))
-		Expect(es.Spec.NodeSets[0].PodTemplate.Labels).To(HaveKeyWithValue("camunda.io/component", "elasticsearch"))
+		Expect(
+			es.Spec.NodeSets[0].PodTemplate.Labels,
+		).To(HaveKeyWithValue(labels.ElasticsearchClusterKey, cluster.Name))
+		Expect(es.Spec.NodeSets[0].PodTemplate.Labels).To(HaveKeyWithValue(labels.ComponentKey, "elasticsearch"))
 		Expect(es.Spec.NodeSets[0].VolumeClaimTemplates).To(HaveLen(1))
 		claim := es.Spec.NodeSets[0].VolumeClaimTemplates[0]
 		Expect(claim.Name).To(Equal("elasticsearch-data"))
-		Expect(claim.Labels).To(HaveKeyWithValue("camunda.io/cluster", cluster.Name))
+		Expect(claim.Labels).To(HaveKeyWithValue(labels.ElasticsearchClusterKey, cluster.Name))
 		Expect(claim.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("1Gi")))
 		expectControlledBy(es, cluster)
 

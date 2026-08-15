@@ -2,8 +2,9 @@ apiVersion: elasticsearch.k8s.elastic.co/v1
 kind: Elasticsearch
 metadata:
   labels:
-    camunda.io/cluster: my-cluster-es
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch
+    camunda.io/elasticsearch-cluster: my-cluster-es
   name: my-cluster-es
   namespace: my-cluster-ns
 spec:
@@ -26,15 +27,15 @@ spec:
     podTemplate:
       metadata:
         labels:
-          camunda.io/cluster: my-cluster-es
           camunda.io/component: elasticsearch
+          camunda.io/elasticsearch-cluster: my-cluster-es
       spec:
         containers: null
     volumeClaimTemplates:
     - metadata:
         labels:
-          camunda.io/cluster: my-cluster-es
           camunda.io/component: elasticsearch
+          camunda.io/elasticsearch-cluster: my-cluster-es
         name: elasticsearch-data
       spec:
         accessModes:

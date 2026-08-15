@@ -33,11 +33,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseconfig"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
 const (
+	// bindingsComponentLabel is the labels.ComponentKey value on every binding
+	// that the Database publishes.
+	bindingsComponentLabel = "database"
+
 	// bindingsComponentName is the single ocf component that publishes
 	// the bindings of the Database. Its condition type is BindingsReady.
 	bindingsComponentName = "bindings"
@@ -168,14 +173,14 @@ func BackupUserName(databaseName string) string {
 // The framework gives each child an owner reference to the Database.
 func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, error) {
 	appSecret, err := secret.NewBuilder(
-		credentialSecret(rb.AppSecret, rb.AppUser, rb.AppPassword),
+		credentialSecret(db, rb.AppSecret, rb.AppUser, rb.AppPassword),
 	).Build()
 	if err != nil {
 		return nil, err
 	}
 
 	backupSecret, err := secret.NewBuilder(
-		credentialSecret(rb.BackupSecret, rb.BackupUser, rb.BackupPassword),
+		credentialSecret(db, rb.BackupSecret, rb.BackupUser, rb.BackupPassword),
 	).Build()
 	if err != nil {
 		return nil, err
@@ -185,6 +190,7 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rb.DatabaseConfigName,
 			Namespace: db.Spec.TargetNamespace,
+			Labels:    bindingLabels(db),
 		},
 		Spec: v1.DatabaseConfigSpec{
 			ServerRef:            db.Spec.ServerRef,
@@ -212,6 +218,7 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      db.Spec.SecondaryStorageConfig,
 				Namespace: db.Spec.TargetNamespace,
+				Labels:    bindingLabels(db),
 			},
 			Spec: v1.SecondaryStorageConfigSpec{
 				Type:  v1.SecondaryStorageTypeRDBMS,
@@ -227,12 +234,18 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 	return builder.Build()
 }
 
+// bindingLabels returns the labels of every binding that db publishes.
+func bindingLabels(db *v1.Database) map[string]string {
+	return labels.Managed(labels.Database(db.Name), bindingsComponentLabel)
+}
+
 // credentialSecret builds the baseline for a published credential Secret.
-func credentialSecret(key types.NamespacedName, username, password string) *corev1.Secret {
+func credentialSecret(db *v1.Database, key types.NamespacedName, username, password string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      key.Name,
 			Namespace: key.Namespace,
+			Labels:    bindingLabels(db),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{

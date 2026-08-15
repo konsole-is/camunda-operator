@@ -17,8 +17,6 @@ limitations under the License.
 package elasticsearchcluster
 
 import (
-	"maps"
-
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -30,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/servicemonitor"
 )
 
@@ -41,7 +40,7 @@ const (
 	// operator deploys unless spec.monitoring.exporter.image overrides it.
 	DefaultExporterImage = "quay.io/prometheuscommunity/elasticsearch-exporter:v1.9.0"
 
-	// exporterComponentLabel is the componentLabelKey value on the exporter
+	// exporterComponentLabel is the labels.ComponentKey value on the exporter
 	// Deployment, its Service, and the ServiceMonitor that selects them.
 	exporterComponentLabel = "elasticsearch-exporter"
 	// exporterSuffix appended to the CR name yields the exporter Deployment
@@ -114,14 +113,19 @@ func MetricsComponent(
 		Build()
 }
 
-// exporterLabels returns the labels of the exporter Deployment, its pods, and
-// its Service. They differ from clusterLabels only in the component label, so
-// the ServiceMonitor can select the exporter and not the Elasticsearch pods.
+// exporterLabels returns the labels of the exporter Deployment and its
+// Service. They differ from the Elasticsearch labels in the component, so the
+// ServiceMonitor selects the exporter and not the Elasticsearch pods.
 func exporterLabels(cluster *v1.ElasticsearchCluster) map[string]string {
-	return map[string]string{
-		clusterLabelKey:   cluster.Name,
-		componentLabelKey: exporterComponentLabel,
-	}
+	return labels.Managed(labels.ElasticsearchCluster(cluster.Name), exporterComponentLabel)
+}
+
+// exporterSelector returns the labels that the Deployment and the Service
+// select the exporter pods by, and that the ServiceMonitor selects the Service
+// by. A selector is immutable on a Deployment, so it carries only the owner
+// and component.
+func exporterSelector(cluster *v1.ElasticsearchCluster) map[string]string {
+	return labels.Discovery(labels.ElasticsearchCluster(cluster.Name), exporterComponentLabel)
 }
 
 // exporterDeployment renders the elasticsearch_exporter Deployment. It talks
@@ -140,7 +144,6 @@ func exporterDeployment(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearc
 		}
 	}
 
-	labels := exporterLabels(cluster)
 	secretEnv := func(name, key string) corev1.EnvVar {
 		return corev1.EnvVar{
 			Name: name,
@@ -155,13 +158,13 @@ func exporterDeployment(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearc
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name + exporterSuffix,
 			Namespace: cluster.Namespace,
-			Labels:    labels,
+			Labels:    exporterLabels(cluster),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: new(int32(1)),
-			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Selector: &metav1.LabelSelector{MatchLabels: exporterSelector(cluster)},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: exporterLabels(cluster)},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
 						Name:  exporterContainerName,
@@ -208,15 +211,14 @@ func exporterDeployment(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearc
 
 // metricsService renders the Service that exposes the exporter metrics port.
 func metricsService(cluster *v1.ElasticsearchCluster) *corev1.Service {
-	labels := exporterLabels(cluster)
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name + metricsServiceSuffix,
 			Namespace: cluster.Namespace,
-			Labels:    labels,
+			Labels:    exporterLabels(cluster),
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: labels,
+			Selector: exporterSelector(cluster),
 			Ports: []corev1.ServicePort{{
 				Name:       metricsPortName,
 				Port:       metricsPort,
@@ -231,25 +233,21 @@ func metricsService(cluster *v1.ElasticsearchCluster) *corev1.Service {
 // The exporter serves plain HTTP inside the cluster, so the endpoint needs no
 // auth and no TLS.
 func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *monitoringv1.ServiceMonitor {
-	labels := map[string]string{}
-	var annotations map[string]string
+	var userLabels, annotations map[string]string
 	if merged.Monitoring != nil && merged.Monitoring.ServiceMonitor != nil {
-		maps.Copy(labels, merged.Monitoring.ServiceMonitor.Labels)
+		userLabels = merged.Monitoring.ServiceMonitor.Labels
 		annotations = merged.Monitoring.ServiceMonitor.Annotations
 	}
-	// User labels select the ServiceMonitor for a Prometheus; the discovery
-	// labels of the operator win over them.
-	maps.Copy(labels, exporterLabels(cluster))
 
 	return &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        cluster.Name + metricsServiceSuffix,
 			Namespace:   cluster.Namespace,
-			Labels:      labels,
+			Labels:      labels.Merge(userLabels, exporterLabels(cluster)),
 			Annotations: annotations,
 		},
 		Spec: monitoringv1.ServiceMonitorSpec{
-			Selector:  metav1.LabelSelector{MatchLabels: exporterLabels(cluster)},
+			Selector:  metav1.LabelSelector{MatchLabels: exporterSelector(cluster)},
 			Endpoints: []monitoringv1.Endpoint{{Port: metricsPortName}},
 		},
 	}

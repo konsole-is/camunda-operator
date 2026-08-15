@@ -262,9 +262,9 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 
 	cluster := goldenRealisticElasticsearchCluster()
 	cluster.Spec.PodLabels = map[string]string{
-		"camunda.io/cluster":   "someone-else",
-		"camunda.io/component": "not-elasticsearch",
-		"team":                 "platform",
+		"camunda.io/elasticsearch-cluster": "someone-else",
+		"camunda.io/component":             "not-elasticsearch",
+		"team":                             "platform",
 	}
 	comp, err := ElasticsearchComponent(cluster, cluster.Spec)
 	require.NoError(t, err)
@@ -280,7 +280,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 	require.NotNil(t, es)
 
 	labels := es.Spec.NodeSets[0].PodTemplate.Labels
-	assert.Equal(t, cluster.Name, labels["camunda.io/cluster"])
+	assert.Equal(t, cluster.Name, labels["camunda.io/elasticsearch-cluster"])
 	assert.Equal(t, "elasticsearch", labels["camunda.io/component"])
 	assert.Equal(t, "platform", labels["team"])
 }

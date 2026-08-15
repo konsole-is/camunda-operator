@@ -2,22 +2,24 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    camunda.io/cluster: my-cluster-es
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
   name: my-cluster-es-es-exporter
   namespace: my-cluster-ns
 spec:
   replicas: 1
   selector:
     matchLabels:
-      camunda.io/cluster: my-cluster-es
       camunda.io/component: elasticsearch-exporter
+      camunda.io/elasticsearch-cluster: my-cluster-es
   strategy: {}
   template:
     metadata:
       labels:
-        camunda.io/cluster: my-cluster-es
+        app.kubernetes.io/managed-by: camunda-operator
         camunda.io/component: elasticsearch-exporter
+        camunda.io/elasticsearch-cluster: my-cluster-es
     spec:
       containers:
       - args:
@@ -65,8 +67,9 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    camunda.io/cluster: my-cluster-es
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
   name: my-cluster-es-es-metrics
   namespace: my-cluster-ns
 spec:
@@ -76,8 +79,8 @@ spec:
     protocol: TCP
     targetPort: metrics
   selector:
-    camunda.io/cluster: my-cluster-es
     camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
 status:
   loadBalancer: {}
 ---
@@ -85,8 +88,9 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   labels:
-    camunda.io/cluster: my-cluster-es
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
     release: prometheus
   name: my-cluster-es-es-metrics
   namespace: my-cluster-ns
@@ -96,5 +100,5 @@ spec:
   namespaceSelector: {}
   selector:
     matchLabels:
-      camunda.io/cluster: my-cluster-es
       camunda.io/component: elasticsearch-exporter
+      camunda.io/elasticsearch-cluster: my-cluster-es
