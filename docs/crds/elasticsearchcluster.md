@@ -23,7 +23,7 @@ Camunda 8.9 also supports OpenSearch and RDBMS as secondary storage, but this CR
 5. It provisions a dedicated Camunda user through ECK's file realm, generates credentials for it, and stores them in a Secret it owns. The user carries the `superuser` role for now: snapshot-repository registration (done by the `CamundaCluster` controller with these credentials) needs cluster-manage rights, and narrowing to a dedicated role is deliberately deferred until that flow lands.
 6. It creates and keeps current a `SecondaryStorageConfig` named `spec.secondaryStorageConfig` in this CR's own namespace, with `type: elasticsearch`, the in-cluster HTTPS endpoint of the ECK-managed service, a reference to the generated credentials Secret, and a `caSecretRef` pointing at the ECK-generated CA certificate Secret so consumers can verify the cluster's self-signed HTTPS endpoint.
 7. It watches the ECK CR's health and reflects it in this CR's conditions.
-8. When `spec.suspend: true`, it scales the ECK node set to zero and reports the `Suspended` condition; a composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
+8. When `spec.suspend: true`, it scales the ECK node set to zero, and `Ready` reports `Suspended`; a composition layer above may suspend both a `CamundaCluster` and its `ElasticsearchCluster` through its own fields, but neither controls the other.
 9. On deletion, the ECK CR, the credentials Secret, the `SecondaryStorageConfig`, and the optional ServiceAccount and ServiceMonitor are all garbage-collected through their owner references. No finalizer is needed.
 
 ```mermaid
@@ -100,7 +100,6 @@ spec:
 | `Ready` | `InvalidReference` | `spec.presetRef` does not resolve to an existing `ElasticsearchClusterPreset`, the merged spec is incomplete or below the version floor, or `storageSize` would shrink the applied data volume. |
 | `Ready` | any component status | The pre-checks passed. `Ready` mirrors the representative component condition, that is, the one with the highest component framework priority: same status, same reason, and the message names the component. Reasons are component framework statuses, for example `Healthy`, `Creating`, `Updating`, `Failing`, `Degraded` (yellow health past the grace period), `Down` (red health past the grace period), `Suspended`, or `Error`. |
 | `Ready` | `Suspended` | `Ready` is `True` with this reason while the node set is scaled to zero. The cluster is in its desired state and intentionally not serving. To gate on a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
-| `Suspended` | `Suspended` | `True` while `spec.suspend: true` and the node set is scaled to zero. `False` otherwise, with a message that says whether suspension is in progress. |
 | `CredentialsReady`, `ElasticsearchReady`, `StorageContractReady` | component status | The operational detail of the component framework for each component. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.

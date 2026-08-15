@@ -1023,9 +1023,8 @@ spec:
                 description: |-
                   Conditions represent the current state. Ready carries the pre-check
                   reason InvalidReference or mirrors the representative component
-                  condition. Suspended reports suspension. The per-component conditions
-                  (CredentialsReady, ElasticsearchReady, StorageContractReady) also appear
-                  here.
+                  condition. The per-component conditions (CredentialsReady,
+                  ElasticsearchReady, StorageContractReady) also appear here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

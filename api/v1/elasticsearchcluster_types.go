@@ -155,9 +155,8 @@ type ElasticsearchClusterStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. Ready carries the pre-check
 	// reason InvalidReference or mirrors the representative component
-	// condition. Suspended reports suspension. The per-component conditions
-	// (CredentialsReady, ElasticsearchReady, StorageContractReady) also appear
-	// here.
+	// condition. The per-component conditions (CredentialsReady,
+	// ElasticsearchReady, StorageContractReady) also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -188,15 +187,6 @@ type ElasticsearchCluster struct {
 	// +optional
 	Status ElasticsearchClusterStatus `json:"status,omitzero"`
 }
-
-// ConditionSuspended is the condition that reports whether spec.suspend has
-// scaled the node set to zero. It is True while the cluster is suspended and
-// False otherwise, always with reason ReasonSuspended.
-const ConditionSuspended = "Suspended"
-
-// ReasonSuspended is the only reason of the Suspended condition. It is also
-// the ocf status that Ready mirrors while the cluster is suspended.
-const ReasonSuspended = "Suspended"
 
 // GetStatusConditions returns a pointer to the status conditions. The
 // component framework stages per-component conditions on the resource through

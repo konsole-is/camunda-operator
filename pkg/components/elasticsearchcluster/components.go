@@ -464,13 +464,3 @@ func serviceMonitor(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClu
 		},
 	}}
 }
-
-// SuspendedCondition builds the Suspended condition observed at the given
-// generation. It sets no LastTransitionTime, because meta.SetStatusCondition
-// supplies it.
-func SuspendedCondition(status metav1.ConditionStatus, message string, observedGeneration int64) metav1.Condition {
-	return metav1.Condition{
-		Type: v1.ConditionSuspended, Status: status, Reason: v1.ReasonSuspended,
-		Message: message, ObservedGeneration: observedGeneration,
-	}
-}

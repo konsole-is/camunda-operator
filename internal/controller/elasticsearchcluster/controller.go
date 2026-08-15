@@ -92,7 +92,7 @@ type ElasticsearchClusterReconciler struct {
 // storage-contract components in dependency order, and derives the CR-level
 // Ready and Suspended conditions.
 //
-// Status is written once per reconcile. The components and stageConditions
+// Status is written once per reconcile. The components and stageReady
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
 // persists them together.
 func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
@@ -116,7 +116,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	merged, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		stageConditions(&cluster, failure)
+		stageReady(&cluster, failure)
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
@@ -124,7 +124,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	reconcileErr := r.reconcileComponents(ctx, recCtx, &cluster, merged)
-	stageConditions(&cluster, nil)
+	stageReady(&cluster, nil)
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -265,12 +265,10 @@ func (r *ElasticsearchClusterReconciler) reconcileComponents(
 	return firstErr
 }
 
-// stageConditions sets the CR-level Ready and Suspended conditions and
-// observedGeneration on the in-memory cluster. A pre-check failure becomes
-// Ready directly. Otherwise Ready mirrors the representative component
-// condition. Suspended is True while that representative reports the ocf
-// Suspended status. FlushStatus persists them.
-func stageConditions(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckFailure) {
+// stageReady sets the Ready condition and observedGeneration on the in-memory
+// cluster. A pre-check failure becomes Ready directly. Otherwise Ready mirrors
+// the representative component condition. FlushStatus persists them.
+func stageReady(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckFailure) {
 	ready := conditions.Ready(metav1.ConditionFalse, "", "", cluster.Generation)
 	if pre != nil {
 		ready.Reason, ready.Message = pre.Reason, pre.Message
@@ -278,21 +276,7 @@ func stageConditions(cluster *v1.ElasticsearchCluster, pre *conditions.PreCheckF
 		ready = conditions.Aggregate(componentConditions(cluster), cluster.Generation)
 	}
 
-	suspendedStatus := metav1.ConditionFalse
-	suspendedMessage := "Suspension not requested"
-	switch {
-	case ready.Reason == string(component.Suspended):
-		suspendedStatus = metav1.ConditionTrue
-		suspendedMessage = "Node set scaled to zero by spec.suspend"
-	case cluster.Spec.Suspend:
-		suspendedMessage = "Suspension in progress"
-	}
-
 	meta.SetStatusCondition(&cluster.Status.Conditions, ready)
-	meta.SetStatusCondition(
-		&cluster.Status.Conditions,
-		components.SuspendedCondition(suspendedStatus, suspendedMessage, cluster.Generation),
-	)
 	cluster.Status.ObservedGeneration = cluster.Generation
 }
 
