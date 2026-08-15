@@ -165,8 +165,10 @@ func TestMergePresetReplacesSchedulingBlockEntirely(t *testing.T) {
 
 	require.NotNil(t, merged.Scheduling)
 	assert.Equal(t, inline, merged.Scheduling)
-	assert.Empty(t, merged.Scheduling.Tolerations,
-		"an inline scheduling block must drop the preset's tolerations, not merge them")
+	assert.Empty(
+		t, merged.Scheduling.Tolerations,
+		"an inline scheduling block must drop the preset's tolerations, not merge them",
+	)
 }
 
 func TestMergePresetKeepsInstanceBoundFieldsFromSpec(t *testing.T) {
@@ -199,8 +201,10 @@ func TestMergePresetDoesNotAliasThePresetBaseline(t *testing.T) {
 	}, preset)
 	merged.PodLabels["mutated"] = "yes"
 
-	assert.NotContains(t, preset.Cluster.PodLabels, "mutated",
-		"mutating the merged spec must not write through to the preset")
+	assert.NotContains(
+		t, preset.Cluster.PodLabels, "mutated",
+		"mutating the merged spec must not write through to the preset",
+	)
 }
 
 func TestValidateMerged(t *testing.T) {

@@ -160,9 +160,11 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		var secret corev1.Secret
 		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
-				Namespace: cluster.Namespace, Name: cluster.Name + "-es-user",
-			}, &secret)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{
+					Namespace: cluster.Namespace, Name: cluster.Name + "-es-user",
+				}, &secret,
+			)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Expect(secret.Data["username"]).To(Equal([]byte("camunda")))
 		Expect(secret.Data["roles"]).To(Equal([]byte("superuser")))
@@ -171,9 +173,11 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		var contract v1.SecondaryStorageConfig
 		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
-				Namespace: cluster.Namespace, Name: cluster.Spec.SecondaryStorageConfig,
-			}, &contract)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{
+					Namespace: cluster.Namespace, Name: cluster.Spec.SecondaryStorageConfig,
+				}, &contract,
+			)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Expect(contract.Spec.Type).To(Equal(v1.SecondaryStorageTypeElasticsearch))
 		Expect(contract.Spec.Elasticsearch).NotTo(BeNil())
@@ -189,8 +193,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}))
 		expectControlledBy(&contract, cluster)
 
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			string(component.AliveCreating), HavePrefix("ElasticsearchReady: "))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			string(component.AliveCreating), HavePrefix("ElasticsearchReady: "),
+		)
 	})
 
 	It("mirrors the Elasticsearch component onto Ready as ECK health transitions", func() {
@@ -204,14 +210,18 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			es.Status.Health = esv1.ElasticsearchGreenHealth
 			es.Status.AvailableNodes = 1
 		})
-		expectElasticsearchClusterReady(cluster, metav1.ConditionTrue,
-			v1.ReasonHealthy, HaveSuffix(": Component is healthy."))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionTrue,
+			v1.ReasonHealthy, HaveSuffix(": Component is healthy."),
+		)
 
 		updateECKStatus(cluster, func(es *esv1.Elasticsearch) {
 			es.Status.Health = esv1.ElasticsearchRedHealth
 		})
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			string(component.AliveFailing), Equal("ElasticsearchReady: Elasticsearch reports red health"))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			string(component.AliveFailing), Equal("ElasticsearchReady: Elasticsearch reports red health"),
+		)
 	})
 
 	It("reports InvalidReference for a dangling presetRef and applies nothing", func() {
@@ -219,8 +229,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster.Spec.PresetRef = "does-not-exist-" + utilrand.String(8)
 		createElasticsearchCluster(cluster)
 
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			v1.ReasonInvalidReference, ContainSubstring(cluster.Spec.PresetRef))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			v1.ReasonInvalidReference, ContainSubstring(cluster.Spec.PresetRef),
+		)
 
 		var es esv1.Elasticsearch
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).NotTo(Succeed())
@@ -232,9 +244,11 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster.Spec.PresetRef = preset.Name
 		createElasticsearchCluster(cluster)
 
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
 			v1.ReasonInvalidReference,
-			And(ContainSubstring("replicas"), ContainSubstring("storageSize")))
+			And(ContainSubstring("replicas"), ContainSubstring("storageSize")),
+		)
 	})
 
 	It("enforces the version floor on the merged result", func() {
@@ -244,8 +258,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster.Spec.Version = versionBelowFloor
 		createElasticsearchCluster(cluster)
 
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			v1.ReasonInvalidReference, ContainSubstring(versionBelowFloor))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			v1.ReasonInvalidReference, ContainSubstring(versionBelowFloor),
+		)
 	})
 
 	It("scales the node set to zero on suspend and reports Suspended", func() {
@@ -275,8 +291,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		})
 
 		// Suspended is Ready=True: the cluster is in its desired state.
-		expectElasticsearchClusterReady(cluster, metav1.ConditionTrue,
-			string(component.Suspended), HavePrefix("ElasticsearchReady: "))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionTrue,
+			string(component.Suspended), HavePrefix("ElasticsearchReady: "),
+		)
 		Eventually(func(g Gomega) {
 			var latest v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
@@ -311,9 +329,11 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		var contract v1.SecondaryStorageConfig
-		Expect(k8sClient.Get(ctx, client.ObjectKey{
-			Namespace: cluster.Namespace, Name: cluster.Spec.SecondaryStorageConfig,
-		}, &contract)).To(Succeed())
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{
+				Namespace: cluster.Namespace, Name: cluster.Spec.SecondaryStorageConfig,
+			}, &contract,
+		)).To(Succeed())
 		Expect(contract.Spec.Elasticsearch.CredentialsSecretRef.Name).To(Equal(secretKey.Name))
 	})
 
@@ -352,8 +372,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			v1.ReasonInvalidReference, ContainSubstring("shrink"))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			v1.ReasonInvalidReference, ContainSubstring("shrink"),
+		)
 
 		var es esv1.Elasticsearch
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
@@ -377,8 +399,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		expectElasticsearchClusterReady(cluster, metav1.ConditionFalse,
-			v1.ReasonInvalidReference, ContainSubstring("shrink"))
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			v1.ReasonInvalidReference, ContainSubstring("shrink"),
+		)
 
 		var es esv1.Elasticsearch
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())

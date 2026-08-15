@@ -231,9 +231,11 @@ func (r *ElasticsearchClusterReconciler) reconcileComponents(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 ) error {
-	password, err := credentials.LookupOrNew(ctx, r.APIReader, client.ObjectKey{
-		Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
-	}, components.PasswordKey)
+	password, err := credentials.LookupOrNew(
+		ctx, r.APIReader, client.ObjectKey{
+			Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
+		}, components.PasswordKey,
+	)
 	if err != nil {
 		return err
 	}
@@ -343,13 +345,15 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	}
 	r.componentClient = eckelasticsearch.NewApplyClient(componentClient)
 
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.ElasticsearchCluster{},
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.ElasticsearchCluster{},
 		elasticsearchClusterPresetRefField, func(o client.Object) []string {
 			if ref := o.(*v1.ElasticsearchCluster).Spec.PresetRef; ref != "" {
 				return []string{ref}
 			}
 			return nil
-		}); err != nil {
+		},
+	); err != nil {
 		return err
 	}
 
@@ -358,9 +362,13 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Owns(&esv1.Elasticsearch{}).
 		Owns(&corev1.Secret{}).
 		Owns(&v1.SecondaryStorageConfig{}).
-		Watches(&v1.ElasticsearchClusterPreset{},
-			refindex.Enqueue(mgr.GetClient(), &v1.ElasticsearchClusterList{},
-				elasticsearchClusterPresetRefField, refindex.ObjectName)).
+		Watches(
+			&v1.ElasticsearchClusterPreset{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.ElasticsearchClusterList{},
+				elasticsearchClusterPresetRefField, refindex.ObjectName,
+			),
+		).
 		Named("elasticsearchcluster").
 		Complete(r)
 }

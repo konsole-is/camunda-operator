@@ -140,18 +140,24 @@ func assertElasticsearchClusterGoldens(
 
 	credentials, err := CredentialsComponent(cluster, goldenPassword)
 	require.NoError(t, err)
-	golden.AssertComponentYAML(t, filepath.Join(base, "credentials.yaml"), credentials,
-		golden.WithScheme(scheme), golden.Update(*updateGolden))
+	golden.AssertComponentYAML(
+		t, filepath.Join(base, "credentials.yaml"), credentials,
+		golden.WithScheme(scheme), golden.Update(*updateGolden),
+	)
 
 	elasticsearch, err := ElasticsearchComponent(cluster, merged, true)
 	require.NoError(t, err)
-	golden.AssertComponentYAML(t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
-		golden.WithScheme(scheme), golden.Update(*updateGolden))
+	golden.AssertComponentYAML(
+		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
+		golden.WithScheme(scheme), golden.Update(*updateGolden),
+	)
 
 	storageContract, err := StorageContractComponent(cluster, merged)
 	require.NoError(t, err)
-	golden.AssertComponentYAML(t, filepath.Join(base, "storage-contract.yaml"), storageContract,
-		golden.WithScheme(scheme), golden.Update(*updateGolden))
+	golden.AssertComponentYAML(
+		t, filepath.Join(base, "storage-contract.yaml"), storageContract,
+		golden.WithScheme(scheme), golden.Update(*updateGolden),
+	)
 }
 
 func TestElasticsearchClusterGoldenMinimal(t *testing.T) {
