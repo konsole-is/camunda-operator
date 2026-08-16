@@ -39,6 +39,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller"
+	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/database"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseserverconfig"
@@ -218,9 +219,10 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaCluster")
 		os.Exit(1)
 	}
-	if err := (&controller.CamundaPlatformConfigReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+	if err := (&camundaplatformconfig.CamundaPlatformConfigReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaPlatformConfig")
 		os.Exit(1)
