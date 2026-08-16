@@ -54,7 +54,6 @@ rules:
   - camundaclusters
   - camundamanagementclusters
   - camundaoptimizes
-  - camundaplatformconfigs
   - databaseconfigs
   - databases
   - elasticsearchclusters
@@ -79,7 +78,6 @@ rules:
   - camundaclusters/finalizers
   - camundamanagementclusters/finalizers
   - camundaoptimizes/finalizers
-  - camundaplatformconfigs/finalizers
   - databases/finalizers
   - elasticsearchclusters/finalizers
   - logicalrestores/finalizers
@@ -114,6 +112,7 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
+  - camundaplatformconfigs
   - databaseserverconfigs
   - elasticsearchclusterpresets
   - managementauthconfigs

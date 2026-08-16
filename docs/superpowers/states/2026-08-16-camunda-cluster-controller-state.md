@@ -26,8 +26,8 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #48 | batch-c/platform-config | .claude/worktrees/camunda-cluster-controller--platform-config | — → feat/camunda-cluster-controller | not-started |
-| #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | — → feat/camunda-cluster-controller | not-started |
+| #48 | batch-c/platform-config | .claude/worktrees/camunda-cluster-controller--platform-config | #53 → feat/camunda-cluster-controller | self-merged |
+| #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | #54 → feat/camunda-cluster-controller | ready |
 | #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | — → feat/camunda-cluster-controller | not-started |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | — → feat/camunda-cluster-controller | not-started |
 | #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | — → feat/camunda-cluster-controller | not-started |
@@ -43,6 +43,7 @@ The interfaces between the sequential PRs (B → C → D) are the **Interfaces**
 
 ## Bubble-up log
 
+- 2026-08-16 — PR B (#54): the six CamundaCluster CEL rules moved from the shared `CamundaClusterSpec` type to the `Spec` field of `CamundaCluster`, so a preset can still lower partitions/storageSize (the controller clamps). Plan Task B1 updated to match; C and D unaffected. Also from B: `Effective.Replicas`/`Workload` switch on literal component names — PR C replaces them with the `Component*` constants when `names.go` lands; the ES-specific GoDoc of the shared `PersistentVolumeClaimRetentionPolicy`/`ServiceMonitorSpec` types is generalized in PR E. From PR A (#53): the RBAC role narrows to get/list/watch for platform configs; PR C must render `jwk-set-uri`/`token-uri` (doc advice for split-horizon) and default `audiences` to the client id.
 - 2026-08-16 — Spec amended before planning: `camunda.mode` replaced by Spring profiles (gateway mode loses `consolidated-auth` when the auth method is set), node id through a command wrapper, JDBC bundled, redirect `<externalUrl>/sso-callback`, `issuerBackendUrl` dropped, connectors image `camunda/connectors-bundle` with its own `spec.connectors.version`, `CamundaPlatformConfig` types and controller added to the batch (they were still scaffolds). Propagated to the spec, the epic, and the plan.
 - 2026-08-16 — Watch strategy for the deep Secret chain decided in the plan (Task D2): a Secret watch with a map handler (same namespace + own auth index + platform config index), `DatabaseConfig` by namespace, `DatabaseServerConfig` to all clusters. Reason: a validation controller re-checking a Secret writes nothing when the condition is unchanged, so status bumps cannot fan out.
 
