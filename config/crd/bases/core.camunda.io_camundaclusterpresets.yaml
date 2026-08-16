@@ -984,6 +984,7 @@ spec:
                               A client entry matches only when the platform config sets
                               auth.oidc.clientIdClaim.
                             items:
+                              minLength: 1
                               type: string
                             type: array
                           mappingRules:
@@ -1023,6 +1024,7 @@ spec:
                             description: Users are the values of the username claim
                               that get the admin role.
                             items:
+                              minLength: 1
                               type: string
                             type: array
                         type: object

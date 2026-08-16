@@ -211,11 +211,13 @@ type ClusterAuthSpec struct {
 // administrator.
 type ClusterAdminSpec struct {
 	// Users are the values of the username claim that get the admin role.
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	Users []string `json:"users,omitempty"`
 	// Clients are the values of the client id claim that get the admin role.
 	// A client entry matches only when the platform config sets
 	// auth.oidc.clientIdClaim.
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	Clients []string `json:"clients,omitempty"`
 	// MappingRules give the admin role to every token that holds a claim with
