@@ -83,7 +83,4 @@ const (
 	// ReasonStorageTypeMismatch means the backup kind does not match the
 	// storage type of the cluster's SecondaryStorageConfig.
 	ReasonStorageTypeMismatch = "StorageTypeMismatch"
-	// ReasonMissingCredentials means the bucket uses static credentials and
-	// the referenced Secret is unresolvable.
-	ReasonMissingCredentials = "MissingCredentials"
 )
