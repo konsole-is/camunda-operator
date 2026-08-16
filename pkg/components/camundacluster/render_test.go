@@ -617,3 +617,23 @@ func TestRenderOnlyDeclaredKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAuthAdmin(t *testing.T) {
+	t.Parallel()
+
+	admin := &v1.ClusterAdminSpec{Clients: []string{"my-cluster-client"}}
+
+	basic := ResolveAuth(newInput(t, func(in *Input) {
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Admin: admin}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	assert.Nil(t, basic.Admin, "basic authentication seeds its own administrator")
+
+	oidc := ResolveAuth(newInput(t, func(in *Input) {
+		in.Platform = oidcPlatform()
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Admin: admin}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	require.NotNil(t, oidc.Admin)
+	assert.Equal(t, []string{"my-cluster-client"}, oidc.Admin.Clients)
+}
