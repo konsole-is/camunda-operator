@@ -736,6 +736,57 @@ var _ = Describe("CamundaCluster controller", func() {
 		configHash(cluster, hash)
 	})
 
+	It("rolls an RDBMS cluster when its DatabaseServerConfig or DatabaseConfig changes", func() {
+		ns := newNamespace()
+		server := fixtures.DatabaseServerConfig()
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+		dbConfig := fixtures.DatabaseConfig()
+		dbConfig.Namespace = ns
+		dbConfig.Spec.ServerRef = server.Name
+		dbConfig.Spec.CredentialsSecretRef.Namespace = ns
+		Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+		createSecret(ns, dbConfig.Spec.CredentialsSecretRef.Name, map[string]string{
+			"username": "camunda", "password": "db-password",
+		})
+		binding := &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: ns},
+			Spec: v1.SecondaryStorageConfigSpec{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: dbConfig.Name},
+			},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		cluster := newCluster(ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+
+		hash := configHash(cluster, "")
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_URL")).
+			To(Equal("jdbc:postgresql://" + server.Spec.Host + ":5432/camunda"))
+
+		By("editing the DatabaseServerConfig host")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.Host = "other-postgres." + ns + ".svc"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		hash = configHash(cluster, hash)
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_URL")).
+			To(Equal("jdbc:postgresql://other-postgres." + ns + ".svc:5432/camunda"))
+
+		By("editing the DatabaseConfig database name")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(dbConfig), &latest)).To(Succeed())
+			latest.Spec.DatabaseName = "camunda2"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		configHash(cluster, hash)
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_URL")).
+			To(Equal("jdbc:postgresql://other-postgres." + ns + ".svc:5432/camunda2"))
+	})
+
 	It("mirrors a referenced Secret from another namespace and follows its changes", func() {
 		ns := newNamespace()
 		sourceNamespace := newNamespace()
