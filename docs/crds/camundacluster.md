@@ -169,13 +169,10 @@ spec:
       # []string. Optional. Values of the platform config's clientIdClaim that get the admin role; needs clientIdClaim to be set.
       clients:
         - "my-cluster-client"
-      # []object. Optional. Claim rules whose matching tokens get the admin role.
+      # []object. Optional. Claim rules whose matching tokens get the admin role. All three fields are required: id is the rule name that the Admin web application lists, claimName is a claim name or a JSONPath expression that points at one, and claimValue is the value the claim must hold.
       mappingRules:
-          # string. Required. Rule id, shown in the Admin web application under Mapping Rules.
         - id: "platform-admins"
-          # string. Required. Claim name, or a JSONPath expression that points at a claim.
           claimName: "groups"
-          # string. Required. Value the claim must hold for the rule to match.
           claimValue: "camunda-admins"
   # object. Optional. Zeebe brokers; always rendered as a standalone StatefulSet.
   zeebe:

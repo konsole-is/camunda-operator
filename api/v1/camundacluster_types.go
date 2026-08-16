@@ -206,9 +206,10 @@ type ClusterAuthSpec struct {
 }
 
 // ClusterAdminSpec holds the identities that get the admin role of one
-// cluster. The identity provider authenticates a caller, and this block is
-// the only thing that authorizes one, so a cluster without it has no
-// administrator.
+// cluster under OIDC. The identity provider authenticates a caller, and
+// nothing else authorizes one, so an OIDC cluster without this block has no
+// administrator. Basic authentication seeds its own administrator and ignores
+// the block.
 type ClusterAdminSpec struct {
 	// Users are the values of the username claim that get the admin role.
 	// +kubebuilder:validation:items:MinLength=1
