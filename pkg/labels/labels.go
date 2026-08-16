@@ -56,6 +56,10 @@ type Owner struct {
 	Name string
 }
 
+// Cluster returns the Owner of resources that a CamundaCluster with the given
+// name renders.
+func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: name} }
+
 // ElasticsearchCluster returns the Owner of resources that an
 // ElasticsearchCluster with the given name renders.
 func ElasticsearchCluster(name string) Owner { return Owner{Key: ElasticsearchClusterKey, Name: name} }

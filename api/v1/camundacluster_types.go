@@ -17,41 +17,301 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// The per-process conditions of a CamundaCluster. Each standalone process
+// reports one. An embedded web application has no condition of its own: the
+// condition of its host process covers it.
+const (
+	// ConditionZeebeReady reports whether every broker replica is ready.
+	ConditionZeebeReady = "ZeebeReady"
+	// ConditionGatewayReady reports whether every gateway replica is ready.
+	// It is present only when the gateway is standalone.
+	ConditionGatewayReady = "GatewayReady"
+	// ConditionOperateReady reports whether every standalone Operate replica
+	// is ready.
+	ConditionOperateReady = "OperateReady"
+	// ConditionTasklistReady reports whether every standalone Tasklist replica
+	// is ready.
+	ConditionTasklistReady = "TasklistReady"
+	// ConditionIdentityReady reports whether every standalone Identity replica
+	// is ready.
+	ConditionIdentityReady = "IdentityReady"
+	// ConditionConnectorsReady reports whether every connectors replica is
+	// ready. It is present only when connectors are enabled.
+	ConditionConnectorsReady = "ConnectorsReady"
+)
 
-// CamundaClusterSpec defines the desired state of CamundaCluster
-type CamundaClusterSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+// ComponentMode says where a process of the unified binary runs.
+// +kubebuilder:validation:Enum=Standalone;Embedded
+type ComponentMode string
 
-	// foo is an example field of CamundaCluster. Edit camundacluster_types.go to remove/update
+const (
+	// ComponentModeStandalone runs the process as its own Deployment of the
+	// unified binary.
+	ComponentModeStandalone ComponentMode = "Standalone"
+	// ComponentModeEmbedded runs the process inside the nearest standalone
+	// host up the chain: the gateway when it is standalone, otherwise zeebe.
+	ComponentModeEmbedded ComponentMode = "Embedded"
+)
+
+// WorkloadSpec is the override surface that every component block shares. It
+// tunes the size, the environment, the pod metadata, and the scheduling of
+// one process.
+type WorkloadSpec struct {
+	// Replicas is the number of pods of this process. Defaults to 1. It has
+	// no effect on an embedded web application.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Replicas *int32 `json:"replicas,omitempty"`
+	// Resources are the CPU and memory of the container of this process.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// ExtraEnv are extra environment variables of the container of this
+	// process. A per-component entry wins over a top-level entry with the
+	// same name. For an embedded web application the entries apply to the
+	// host process.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+	// container of this process.
+	// +optional
+	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
+	// PodLabels are extra labels of the pods of this process.
+	// +optional
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	// PodAnnotations are extra annotations of the pods of this process.
+	// +optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+	// Scheduling constraints of the pods of this process. When set, it
+	// replaces the top-level scheduling block and the scheduling block of a
+	// preset for this process entirely (no merge).
+	// +optional
+	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 }
 
-// CamundaClusterStatus defines the observed state of CamundaCluster.
+// ZeebeSpec configures the brokers. Zeebe is always a standalone StatefulSet
+// with persistent volumes.
+type ZeebeSpec struct {
+	WorkloadSpec `json:",inline"`
+	// Partitions is the number of partitions. Defaults to 1. It cannot be
+	// decreased after creation.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Partitions *int32 `json:"partitions,omitempty"`
+	// ReplicationFactor is the number of brokers that hold a copy of each
+	// partition. Defaults to 1. It must not exceed replicas.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	ReplicationFactor *int32 `json:"replicationFactor,omitempty"`
+	// StorageClassName is the StorageClass of the broker volumes. Defaults to
+	// the default StorageClass of the Kubernetes cluster. It is immutable
+	// after creation, because a StatefulSet volume claim template cannot
+	// change its storage class.
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+	// StorageSize is the size of the data volume of each broker. Defaults to
+	// 10Gi. It can only grow. Admission rejects a lower inline value on a
+	// CamundaCluster through a CEL transition rule. That rule does not bind
+	// this shared field, so a preset baseline can be resized freely: a
+	// cluster that applied a larger size keeps it and records a
+	// StorageShrinkIgnored event. On growth the operator expands the existing
+	// claims in place, so the storage class must support volume expansion.
+	// +optional
+	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
+	// PersistentVolumeClaimRetentionPolicy says what happens to the broker
+	// volumes when the CamundaCluster is deleted. A scale-down and a
+	// suspension always keep them.
+	// +optional
+	PersistentVolumeClaimRetentionPolicy *PersistentVolumeClaimRetentionPolicy `json:"persistentVolumeClaimRetentionPolicy,omitempty"`
+}
+
+// GatewaySpec configures the gateway.
+type GatewaySpec struct {
+	// Mode selects a Deployment of the unified binary (Standalone) or the
+	// embedded gateway of the brokers (Embedded). Defaults to Standalone.
+	// +optional
+	Mode         ComponentMode `json:"mode,omitempty"`
+	WorkloadSpec `              json:",inline"`
+}
+
+// WebAppSpec configures one of the web applications Operate, Tasklist, and
+// Identity.
+type WebAppSpec struct {
+	// Mode selects a Deployment of the unified binary that serves only this
+	// application (Standalone) or the nearest standalone host up the chain
+	// (Embedded). Defaults to Embedded. The workload fields have an effect
+	// only when the mode is Standalone, except extraEnv and extraEnvFrom,
+	// which apply to the host process when the mode is Embedded.
+	// +optional
+	Mode         ComponentMode `json:"mode,omitempty"`
+	WorkloadSpec `              json:",inline"`
+}
+
+// ConnectorsSpec configures the connectors runtime. It is a separate
+// application, never part of the unified binary, and always its own
+// Deployment.
+type ConnectorsSpec struct {
+	// Enabled runs the connectors runtime when true. Defaults to false.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+	// Version is the version of the connectors bundle image, as a full
+	// semantic version. The bundle has its own patch line, so it does not
+	// follow the cluster version. Required when connectors are enabled,
+	// unless the resolved preset provides it.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	// +optional
+	Version      string `json:"version,omitempty"`
+	WorkloadSpec `       json:",inline"`
+}
+
+// ClusterAuthSpec holds the OIDC client credentials of one cluster. It
+// overrides the defaults of the platform config and of the preset.
+type ClusterAuthSpec struct {
+	// ClientID is the OIDC client ID of this cluster.
+	// +optional
+	ClientID string `json:"clientId,omitempty"`
+	// Audience is the audience that access tokens must carry. Defaults to
+	// the clientId.
+	// +optional
+	Audience string `json:"audience,omitempty"`
+	// ClientSecretRef names the Secret that holds the OIDC client secret of
+	// this cluster.
+	// +optional
+	ClientSecretRef *SecretKeyRef `json:"clientSecretRef,omitempty"`
+}
+
+// ClusterMonitoringSpec groups the monitoring integrations of a
+// CamundaCluster.
+type ClusterMonitoringSpec struct {
+	// ServiceMonitor configures the Prometheus ServiceMonitor of each
+	// standalone process. When enabled, the operator creates one
+	// ServiceMonitor per standalone process that scrapes the management port.
+	// +optional
+	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
+}
+
+// CamundaClusterSpec defines the desired state of CamundaCluster.
+//
+// The type doubles as the configuration baseline of a CamundaClusterPreset,
+// so fields that are required on a CamundaCluster (storageRef,
+// platformConfigRef) are optional at the schema level here and enforced on
+// the CamundaCluster usage instead. The instance-bound fields are cluster-only
+// and rejected in a preset.
+type CamundaClusterSpec struct {
+	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
+	// provides auth, license, and image registry. Required on a
+	// CamundaCluster, forbidden in a preset.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
+	// PresetRef names a cluster-scoped CamundaClusterPreset used as the
+	// configuration baseline. The preset doc lists the merge rules.
+	// +optional
+	PresetRef string `json:"presetRef,omitempty"`
+	// Version is the Camunda version to deploy, as a full semantic version.
+	// The floor of 8.9.0 is enforced by the controller on the preset-merged
+	// result, the schema pins only the three-segment shape. Required unless
+	// the resolved preset provides it.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	// +optional
+	Version string `json:"version,omitempty"`
+	// ExternalURL is the external base URL of the cluster. The operator uses
+	// it for OIDC redirect URLs and web application links. It creates no
+	// Ingress.
+	// +optional
+	ExternalURL string `json:"externalUrl,omitempty"`
+	// ServiceAccount configures the ServiceAccount of every workload. Bucket
+	// access for backupStorageRef and documentStorageRef flows from this
+	// identity.
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
+	// Auth holds the OIDC client credentials of this cluster.
+	// +optional
+	Auth *ClusterAuthSpec `json:"auth,omitempty"`
+	// Zeebe configures the brokers.
+	// +optional
+	Zeebe *ZeebeSpec `json:"zeebe,omitempty"`
+	// Gateway configures the gateway.
+	// +optional
+	Gateway *GatewaySpec `json:"gateway,omitempty"`
+	// Operate configures the Operate web application.
+	// +optional
+	Operate *WebAppSpec `json:"operate,omitempty"`
+	// Tasklist configures the Tasklist web application.
+	// +optional
+	Tasklist *WebAppSpec `json:"tasklist,omitempty"`
+	// Identity configures the Identity (Orchestration Cluster Admin) web
+	// application.
+	// +optional
+	Identity *WebAppSpec `json:"identity,omitempty"`
+	// Connectors configures the connectors runtime.
+	// +optional
+	Connectors *ConnectorsSpec `json:"connectors,omitempty"`
+	// ExtraEnv are extra environment variables of every workload. A
+	// per-component entry wins over an entry here with the same name.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
+	// every workload.
+	// +optional
+	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
+	// PodLabels are extra labels of every workload pod.
+	// +optional
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	// PodAnnotations are extra annotations of every workload pod.
+	// +optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+	// Scheduling constraints of every workload, unless a component sets its
+	// own. When set, it replaces the scheduling block of a preset entirely
+	// (no merge).
+	// +optional
+	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
+	// StorageRef names the SecondaryStorageConfig, in the namespace of this
+	// cluster, that describes the secondary storage backend. Required on a
+	// CamundaCluster, forbidden in a preset.
+	// +optional
+	StorageRef string `json:"storageRef,omitempty"`
+	// BackupStorageRef names a cluster-scoped ObjectStorageConfig for
+	// backups.
+	// +optional
+	BackupStorageRef string `json:"backupStorageRef,omitempty"`
+	// DocumentStorageRef names a cluster-scoped ObjectStorageConfig for
+	// document storage.
+	// +optional
+	DocumentStorageRef string `json:"documentStorageRef,omitempty"`
+	// Monitoring configures the monitoring integrations.
+	// +optional
+	Monitoring *ClusterMonitoringSpec `json:"monitoring,omitempty"`
+	// Suspend scales every workload to zero and keeps the data. Defaults to
+	// false.
+	// +optional
+	Suspend bool `json:"suspend,omitempty"`
+	// Pause halts the reconciliation of this cluster entirely and leaves the
+	// workloads as they are. Defaults to false.
+	// +optional
+	Pause bool `json:"pause,omitempty"`
+}
+
+// CamundaClusterStatus is the observed state of a CamundaCluster.
 type CamundaClusterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the CamundaCluster resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// StorageSize is the data volume size that the brokers have. It is the
+	// smallest capacity that the bound broker PersistentVolumeClaims report,
+	// so a resize outside the spec, for example by an auto-resize
+	// controller, shows here.
+	// +optional
+	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
+	// Conditions represent the current state. Ready carries a pre-check
+	// reason or mirrors the representative process condition. The
+	// per-process conditions (ZeebeReady, GatewayReady, OperateReady,
+	// TasklistReady, IdentityReady, ConnectorsReady) also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,7 +321,10 @@ type CamundaClusterStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// CamundaCluster is the Schema for the camundaclusters API
+// CamundaCluster describes one Camunda orchestration cluster: the Zeebe
+// brokers, the gateway, the web applications, and optionally the connectors
+// runtime. The operator turns it into StatefulSets, Deployments, and Services
+// and keeps them converged.
 type CamundaCluster struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -70,6 +333,12 @@ type CamundaCluster struct {
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the desired state of CamundaCluster
+	// +kubebuilder:validation:XValidation:rule="has(self.storageRef) && self.storageRef != ''",message="spec.storageRef is required"
+	// +kubebuilder:validation:XValidation:rule="has(self.platformConfigRef) && self.platformConfigRef != ''",message="spec.platformConfigRef is required"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || !has(self.zeebe) || !has(self.zeebe.partitions) || self.zeebe.partitions >= oldSelf.zeebe.partitions",message="zeebe.partitions may not be decreased"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageClassName) || (has(self.zeebe) && has(self.zeebe.storageClassName) && self.zeebe.storageClassName == oldSelf.zeebe.storageClassName)",message="zeebe.storageClassName is immutable"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageSize) || !has(self.zeebe) || !has(self.zeebe.storageSize) || !quantity(string(self.zeebe.storageSize)).isLessThan(quantity(string(oldSelf.zeebe.storageSize)))",message="zeebe.storageSize may not be shrunk"
+	// +kubebuilder:validation:XValidation:rule="!has(self.zeebe) || !has(self.zeebe.replicas) || !has(self.zeebe.replicationFactor) || self.zeebe.replicationFactor <= self.zeebe.replicas",message="zeebe.replicationFactor must not exceed zeebe.replicas"
 	// +required
 	Spec CamundaClusterSpec `json:"spec"`
 
@@ -78,12 +347,29 @@ type CamundaCluster struct {
 	Status CamundaClusterStatus `json:"status,omitzero"`
 }
 
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages per-component conditions on the resource through
+// it.
+func (in *CamundaCluster) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event
+// and metric recording and derives its per-component SSA field managers
+// (CamundaCluster/<component>) from it.
+func (in *CamundaCluster) GetKind() string { return "CamundaCluster" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *CamundaCluster) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // CamundaClusterList contains a list of CamundaCluster
 type CamundaClusterList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.TypeMeta `                 json:",inline"`
+	metav1.ListMeta `                 json:"metadata,omitzero"`
 	Items           []CamundaCluster `json:"items"`
 }
 

@@ -20,49 +20,30 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// CamundaClusterPresetSpec defines the desired state of CamundaClusterPreset
+// CamundaClusterPresetSpec defines the desired state of CamundaClusterPreset.
 type CamundaClusterPresetSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of CamundaClusterPreset. Edit camundaclusterpreset_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
-}
-
-// CamundaClusterPresetStatus defines the observed state of CamundaClusterPreset.
-type CamundaClusterPresetStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the CamundaClusterPreset resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// Cluster is the configuration baseline that referencing clusters
+	// inherit. It reuses the CamundaCluster spec type so the two never drift
+	// apart. The instance-bound fields of that type (platformConfigRef,
+	// presetRef, externalUrl, serviceAccount, storageRef, backupStorageRef,
+	// documentStorageRef, monitoring, suspend, pause) must be left unset
+	// inside a preset. Explicit zero values (an empty presetRef, suspend:
+	// false), as templated YAML renders unset fields, count as unset. The
+	// CamundaCluster doc lists the field details, the CamundaClusterPreset
+	// doc lists the merge rules.
+	// +kubebuilder:validation:XValidation:rule="(!has(self.platformConfigRef) || self.platformConfigRef == '') && (!has(self.presetRef) || self.presetRef == '') && (!has(self.externalUrl) || self.externalUrl == '') && !has(self.serviceAccount) && (!has(self.storageRef) || self.storageRef == '') && (!has(self.backupStorageRef) || self.backupStorageRef == '') && (!has(self.documentStorageRef) || self.documentStorageRef == '') && !has(self.monitoring) && (!has(self.suspend) || !self.suspend) && (!has(self.pause) || !self.pause)",message="instance-bound fields (platformConfigRef, presetRef, externalUrl, serviceAccount, storageRef, backupStorageRef, documentStorageRef, monitoring, suspend, pause) must not be set in a preset"
+	// +required
+	Cluster CamundaClusterSpec `json:"cluster"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// CamundaClusterPreset is the Schema for the camundaclusterpresets API
+// CamundaClusterPreset is a cluster-scoped, passive baseline configuration
+// for CamundaCluster resources: no controller reconciles it, it provisions
+// nothing and reports no status. A CamundaCluster resolves it through its
+// presetRef and merges its own fields over it under the rules of the preset
+// doc.
 type CamundaClusterPreset struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -73,10 +54,6 @@ type CamundaClusterPreset struct {
 	// spec defines the desired state of CamundaClusterPreset
 	// +required
 	Spec CamundaClusterPresetSpec `json:"spec"`
-
-	// status defines the observed state of CamundaClusterPreset
-	// +optional
-	Status CamundaClusterPresetStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
