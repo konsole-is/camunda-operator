@@ -522,8 +522,7 @@ api/v1/
   common_types.go            (+ ClusterRef)
   objectstorageconfig_types.go, elasticsearchcluster_types.go, camundacluster_types.go (edited)
 pkg/
-  camundaadmin/              management API client: exporting pause/resume, backupHistory,
-                             backupRuntime (with and without ID), polling. Pure HTTP, no k8s.
+  camundaadmin/              the management API client (own design section below)
   esadmin/                   Elasticsearch admin client: snapshot repository PUT, snapshot
                              create/get/delete, reload_secure_settings. Pure HTTP, no k8s.
   objectstore/               gocloud.dev/blob wrapper: open bucket from ObjectStorageConfig,
@@ -548,6 +547,40 @@ test/utils/minio.go, test/e2e/testdata/minio.yaml, test/e2e/backup_test.go
 Deleted: `api/v1/backup_types.go`, `api/v1/backupretention_types.go`, both scaffold controllers
 and tests, both CRD bases, six RBAC roles, two samples, two `PROJECT` entries, `cmd/main.go`
 wiring, `docs/crds/backup.md`, `docs/crds/backupretention.md`.
+
+### pkg/camundaadmin: a narrow, version-aware management client
+
+The client is constructed from the management binding and nothing else: endpoint, auth, and the
+Camunda version. It is pure HTTP with no Kubernetes types, the `pkg/pgbootstrap` layer for the
+management API.
+
+**Version-aware.** The version from the binding selects the endpoint set at construction. One
+set exists today, `8.9`: the unified management API on the management port
+(`/actuator/exporting/*`, `/actuator/backupHistory`, `/actuator/backupRuntime`). A version the
+client does not know is a constructor error with the version in the message, never a guess. The
+structure exists so that 8.10 (`/v2/backups`) becomes a second endpoint set behind the same
+interface, not a rewrite of the callers. The legacy `/actuator/backups` endpoint of standalone
+component deployments is deliberately absent; this operator never creates such deployments.
+
+**Only what backups need.** The initial surface is typed methods, not a generic actuator
+client:
+
+```go
+PauseExporting(ctx, soft bool) error       // idempotent: already-paused is success
+ResumeExporting(ctx) error                 // idempotent: already-running is success
+StartHistoryBackup(ctx, id int64) error    // conflict with same id is success
+HistoryBackupStatus(ctx, id int64) (BackupStatus, error)
+StartRuntimeBackup(ctx, id *int64) (int64, error)   // nil id: cluster generates one (RDBMS)
+RuntimeBackupStatus(ctx, id int64) (BackupStatus, error)
+DeleteRuntimeBackup(ctx, id int64) error   // finalizer; not-found is success
+```
+
+`BackupStatus` is a typed state (in progress, completed, failed, incomplete) with the raw
+per-part details for the failure message. The idempotency notes are part of the contract: the
+state machine re-enters after a crash, so "already done" is success and never an error. Errors
+distinguish unreachable (maps to `ConnectionFailed`) from a rejected call (maps to `Failed` with
+the body in the message). Nothing else goes in until a consumer exists: no cluster topology, no
+actuator generics, no 8.10 surface.
 
 ### Shared skeleton (`pkg/logicalbackup`)
 
