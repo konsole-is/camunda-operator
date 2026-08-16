@@ -44,7 +44,7 @@ func NewEffective(merged v1.CamundaClusterSpec) Effective {
 }
 
 // ZeebeReplicas returns the number of brokers. Defaults to 1.
-func (e Effective) ZeebeReplicas() int32 { return e.Replicas("zeebe") }
+func (e Effective) ZeebeReplicas() int32 { return e.Replicas(ComponentZeebe) }
 
 // Partitions returns the partition count. Defaults to 1.
 func (e Effective) Partitions() int32 {
@@ -111,10 +111,9 @@ func (e Effective) ConnectorsEnabled() bool {
 	return e.Connectors != nil && e.Connectors.Enabled != nil && *e.Connectors.Enabled
 }
 
-// Replicas returns the number of pods of the named component (zeebe,
-// gateway, operate, tasklist, identity, connectors). Defaults to 1 when the
-// component block or its replicas field is unset. An unknown component name
-// returns 0.
+// Replicas returns the number of pods of the named component, one of the
+// Component constants. Defaults to 1 when the component block or its replicas
+// field is unset. An unknown component name returns 0.
 func (e Effective) Replicas(component string) int32 {
 	workload, known := e.workload(component)
 	if !known {
@@ -127,9 +126,9 @@ func (e Effective) Replicas(component string) int32 {
 	return *workload.Replicas
 }
 
-// Workload returns the per-component block of the named component (zeebe,
-// gateway, operate, tasklist, identity, connectors). It returns the zero
-// value when the block is unset or the name is unknown.
+// Workload returns the per-component block of the named component, one of
+// the Component constants. It returns the zero value when the block is unset
+// or the name is unknown.
 func (e Effective) Workload(component string) v1.WorkloadSpec {
 	workload, _ := e.workload(component)
 	return workload
@@ -139,27 +138,27 @@ func (e Effective) Workload(component string) v1.WorkloadSpec {
 // so Replicas can tell an unknown name from an unset block.
 func (e Effective) workload(component string) (v1.WorkloadSpec, bool) {
 	switch component {
-	case "zeebe":
+	case ComponentZeebe:
 		if e.Zeebe != nil {
 			return e.Zeebe.WorkloadSpec, true
 		}
-	case "gateway":
+	case ComponentGateway:
 		if e.Gateway != nil {
 			return e.Gateway.WorkloadSpec, true
 		}
-	case "operate":
+	case ComponentOperate:
 		if e.Operate != nil {
 			return e.Operate.WorkloadSpec, true
 		}
-	case "tasklist":
+	case ComponentTasklist:
 		if e.Tasklist != nil {
 			return e.Tasklist.WorkloadSpec, true
 		}
-	case "identity":
+	case ComponentIdentity:
 		if e.Identity != nil {
 			return e.Identity.WorkloadSpec, true
 		}
-	case "connectors":
+	case ComponentConnectors:
 		if e.Connectors != nil {
 			return e.Connectors.WorkloadSpec, true
 		}
