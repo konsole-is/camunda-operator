@@ -31,7 +31,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #65 | feat/backup-controllers--foundation | .claude/worktrees/backup-controllers--foundation | → feat/backup-controllers | not-started |
+| #65 | feat/backup-controllers--foundation | .claude/worktrees/backup-controllers--foundation | → feat/backup-controllers | in-progress |
 | #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | → feat/backup-controllers | not-started |
 | #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | → feat/backup-controllers | not-started |
 | #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | → feat/backup-controllers | not-started |
@@ -58,8 +58,7 @@ status: foundational-wave
 
 ## Pending snapshot
 
-1. Push `feat/backup-controllers` (spec, plan, state file committed).
-2. Phase 1: dispatch #65 per the plan's PR1 section (`feature-dev-workflow:developing-a-feature` → fan-out worktree `backup-controllers--foundation`), review-loop to clean, self-merge into the feature branch, close #65.
+1. Phase 1 in flight: #65 implementer dispatched in worktree `backup-controllers--foundation`; on ready — copilot-review-loop to clean (no cap), two-stage review, self-merge, `gh issue close 65`, lock the five PR1 contracts.
 3. Phase 2: fan out #66 and #67 in parallel worktrees; loop to clean; self-merge; close.
 4. Phase 3: fan out #68 and #69; loop to clean; **stop for user review of both PRs**; merge on approval; close.
 5. Phase 4: #70; loop; self-merge; close.
