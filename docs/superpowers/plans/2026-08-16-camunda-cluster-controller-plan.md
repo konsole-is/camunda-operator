@@ -382,10 +382,10 @@ type CamundaClusterStatus struct {
 
 // On the `Spec` field of `CamundaCluster` (the ElasticsearchCluster model) — NOT on the shared
 // CamundaClusterSpec type, so a preset's `spec.cluster` stays free to lower partitions or storageSize
-// (the controller clamps a preset-driven decrease). Rules use `self.<field>` paths:
+// (the controller clamps a preset-driven decrease). Rules use `self.<field>` paths. Once `partitions` is set inline it can neither be decreased nor removed (removal would fall back to the default or the preset, an effective decrease with no runtime clamp):
 // +kubebuilder:validation:XValidation:rule="has(self.storageRef) && self.storageRef != ''",message="spec.storageRef is required"
 // +kubebuilder:validation:XValidation:rule="has(self.platformConfigRef) && self.platformConfigRef != ''",message="spec.platformConfigRef is required"
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || !has(self.zeebe) || !has(self.zeebe.partitions) || self.zeebe.partitions >= oldSelf.zeebe.partitions",message="zeebe.partitions may not be decreased"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || (has(self.zeebe) && has(self.zeebe.partitions) && self.zeebe.partitions >= oldSelf.zeebe.partitions)",message="zeebe.partitions may not be decreased"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageClassName) || (has(self.zeebe) && has(self.zeebe.storageClassName) && self.zeebe.storageClassName == oldSelf.zeebe.storageClassName)",message="zeebe.storageClassName is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageSize) || !has(self.zeebe) || !has(self.zeebe.storageSize) || !quantity(string(self.zeebe.storageSize)).isLessThan(quantity(string(oldSelf.zeebe.storageSize)))",message="zeebe.storageSize may not be shrunk"
 // +kubebuilder:validation:XValidation:rule="!has(self.zeebe) || !has(self.zeebe.replicas) || !has(self.zeebe.replicationFactor) || self.zeebe.replicationFactor <= self.zeebe.replicas",message="zeebe.replicationFactor must not exceed zeebe.replicas"
