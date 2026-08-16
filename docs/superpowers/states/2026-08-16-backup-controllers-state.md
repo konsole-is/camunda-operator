@@ -9,7 +9,7 @@ sub_pr_approval: autonomous   # EXCEPT #68, #69, integration PR: manual (user re
 sub_pr_review_loop: on        # no round cap — loop until clean
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: consumer-wave
 ---
 
 # Backup controllers — orchestration state
@@ -31,7 +31,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #65 | feat/backup-controllers--foundation | .claude/worktrees/backup-controllers--foundation | #74 → feat/backup-controllers | review-fixes |
+| #65 | feat/backup-controllers--foundation | (removed) | #74 → feat/backup-controllers | self-merged |
 | #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | → feat/backup-controllers | not-started |
 | #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | → feat/backup-controllers | not-started |
 | #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | → feat/backup-controllers | not-started |
@@ -43,12 +43,12 @@ status: foundational-wave
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| bucket-contract | merged producer PR | #65's PR | pending |
-| objectstore-api | merged producer PR | #65's PR | pending |
-| esadmin-api | merged producer PR | #65's PR | pending |
-| camundaadmin-api | merged producer PR | #65's PR | pending |
-| logicalbackup-skeleton | merged producer PR (complete in PR1, no stub) | #65's PR | pending |
-| snapshot-repository-field | merged producer PR | #66's PR | pending |
+| bucket-contract | merged producer PR | #74 | locked |
+| objectstore-api | merged producer PR (`List` became streaming `Walk`; `Upload` aborts partial writes) | #74 | locked |
+| esadmin-api | merged producer PR (`New` now returns `(*Client, error)`) | #74 | locked |
+| camundaadmin-api | merged producer PR (+`ErrConflict`; four verified 8.9 protocol corrections) | #74 | locked |
+| logicalbackup-skeleton | merged producer PR (status vocabulary in `api/v1`; `PreCheckRequest` with injected `InProgress`) | #74 | locked |
+| snapshot-repository-field | pre-merge stub committed to the feature branch so #66 and #67 build in parallel; #66 fills it, #67 reads it | feat/backup-controllers@1ba9d1c | locked |
 | management-binding | merged producer PR | #67's PR | pending |
 | backup-kind-types | PR6 branches after #68+#69 merge | n/a | pending |
 
@@ -62,7 +62,7 @@ status: foundational-wave
 
 ## Pending snapshot
 
-1. Phase 1: PR #74 open; spec-compliance review returned BLOCKED on one item plus three carry-forwards, all routed to the implementer (docs/crds/objectstorageconfig.md rewrite, GCS/Azure shape verification, duplicate schedule label, MissingCredentials placement). On its report — re-run the spec pass over the changed surface, then the code-quality pass, then self-merge #74, `gh issue close 65`, lock the five PR1 contracts, reconcile #65's body to match the plan (it never recorded that PR1 ships pkg/logicalbackup).
+1. Phase 2 in flight: #66 and #67 dispatched in parallel worktrees. On each ready — two-stage orchestrator review (Copilot is unavailable, see bubble-up), fix-loop to clean with no round cap, self-merge, `gh issue close <n>`, lock `snapshot-repository-field` and `management-binding`.
 3. Phase 2: fan out #66 and #67 in parallel worktrees; loop to clean; self-merge; close.
 4. Phase 3: fan out #68 and #69; loop to clean; **stop for user review of both PRs**; merge on approval; close.
 5. Phase 4: #70; loop; self-merge; close.
