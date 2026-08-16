@@ -769,4 +769,62 @@ var _ = Describe("CamundaCluster controller", func() {
 			}, 2*time.Second, interval).Should(Succeed())
 		},
 	)
+
+	It("mirrors the OIDC client secret that a preset references and follows its changes", func() {
+		ns := newNamespace()
+		sourceNamespace := newNamespace()
+		platformSecret := createSecret(sourceNamespace, "platform-oidc", map[string]string{"client-secret": "platform"})
+		presetSecret := createSecret(sourceNamespace, "preset-oidc", map[string]string{"client-secret": "preset-v1"})
+		cfg := createPlatformConfig()
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaPlatformConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cfg), &latest)).To(Succeed())
+			latest.Spec.Auth = &v1.PlatformAuthSpec{
+				Method: v1.AuthenticationMethodOIDC,
+				OIDC: &v1.OIDCSpec{
+					IssuerURL: "https://idp.example.com/realms/camunda",
+					ClientID:  "platform-client",
+					ClientSecretRef: v1.SecretKeyRef{
+						Name: platformSecret.Name, Namespace: sourceNamespace, Key: "client-secret",
+					},
+				},
+			}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		preset := minimalPreset()
+		preset.Spec.Cluster.Auth = &v1.ClusterAuthSpec{
+			ClientID: "preset-client",
+			ClientSecretRef: &v1.SecretKeyRef{
+				Name: presetSecret.Name, Namespace: sourceNamespace, Key: "client-secret",
+			},
+		}
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+		cluster := newCluster(ns, cfg, createBinding(ns, true))
+		cluster.Spec.PresetRef = preset.Name
+		createCluster(cluster)
+
+		container := zeebeContainer(cluster)
+		Expect(envValue(container, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTID")).To(Equal("preset-client"))
+		ref := secretKeyRef(container, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTSECRET")
+		Expect(ref).NotTo(BeNil())
+		Expect(ref.Name).To(Equal(cluster.Name + "-camunda-auth-client"))
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda-admin"}, &corev1.Secret{},
+		)).NotTo(Succeed(), "no admin Secret under oidc")
+		hash := configHash(cluster, "")
+
+		Eventually(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(presetSecret), &latest)).To(Succeed())
+			latest.StringData = map[string]string{"client-secret": "preset-v2"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		configHash(cluster, hash)
+		Eventually(func(g Gomega) {
+			var mirror corev1.Secret
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref.Name}, &mirror)).To(Succeed())
+			g.Expect(mirror.Data["client-secret"]).To(Equal([]byte("preset-v2")))
+		}, timeout, interval).Should(Succeed())
+	})
 })

@@ -46,6 +46,10 @@ const (
 	// secretRefsField lists the Secrets that the cluster references on its
 	// own: spec.auth.clientSecretRef.
 	secretRefsField = "camundacluster.spec.secretRefs"
+	// presetSecretRefsField lists the Secrets that a preset references:
+	// spec.cluster.auth.clientSecretRef. No other controller reads presets,
+	// so this controller owns the index.
+	presetSecretRefsField = "camundaclusterpreset.spec.secretRefs"
 )
 
 // indexers are the index functions of the fields above.
@@ -77,6 +81,15 @@ var indexers = map[string]client.IndexerFunc{
 	},
 }
 
+// presetSecretRefs is the index function of presetSecretRefsField.
+func presetSecretRefs(o client.Object) []string {
+	auth := o.(*v1.CamundaClusterPreset).Spec.Cluster.Auth
+	if auth == nil || auth.ClientSecretRef == nil {
+		return nil
+	}
+	return []string{refindex.NamespacedKey(auth.ClientSecretRef.Namespace, auth.ClientSecretRef.Name)}
+}
+
 // nonEmpty returns the non-empty values.
 func nonEmpty(values ...string) []string {
 	var result []string
@@ -91,8 +104,9 @@ func nonEmpty(values ...string) []string {
 // enqueueForSecret maps a Secret event to every cluster that can reference
 // it: every cluster of the Secret namespace (the binding, its DatabaseConfig,
 // and a same-namespace auth Secret live there), every cluster whose own auth
-// reference names it, and every cluster whose platform config references it.
-// The reads go through the cached client; the Secret watch is metadata-only.
+// reference names it, and every cluster whose platform config or preset
+// references it. The reads go through the cached client; the Secret watch is
+// metadata-only.
 func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		key := refindex.ObjectNamespacedName(o)
@@ -107,6 +121,14 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 		}
 		for _, cfg := range cfgs.Items {
 			set.addList(ctx, r.Client, client.MatchingFields{platformConfigRefField: cfg.Name})
+		}
+
+		var presets v1.CamundaClusterPresetList
+		if err := r.List(ctx, &presets, client.MatchingFields{presetSecretRefsField: key}); err != nil {
+			logf.FromContext(ctx).Error(err, "listing presets for Secret enqueue", "secret", key)
+		}
+		for _, preset := range presets.Items {
+			set.addList(ctx, r.Client, client.MatchingFields{presetRefField: preset.Name})
 		}
 
 		return set.requests()
@@ -170,13 +192,14 @@ func (s requestSet) requests() []reconcile.Request {
 	return reqs
 }
 
-// SetupWithManager registers the controller, the reference indexes, and the
-// watches. It owns the workloads, Services, ServiceAccounts, and Secrets
-// (metadata only) it applies, and watches the broker claims by the
-// camunda.io/cluster label. Every reference is watched: platform configs,
-// presets, bindings, and object storage configs through the indexes,
-// DatabaseConfigs by namespace, DatabaseServerConfigs for every cluster, and
-// Secrets (metadata only) through enqueueForSecret. The pre-checks put the
+// SetupWithManager registers the controller, the reference indexes of the
+// clusters, the Secret index of the presets, and the watches. It owns the
+// workloads, Services, ServiceAccounts, and Secrets (metadata only) it
+// applies, and watches the broker claims by the camunda.io/cluster label.
+// Every reference is watched: platform configs, presets, bindings, and object
+// storage configs through the indexes, DatabaseConfigs by namespace,
+// DatabaseServerConfigs for every cluster, and Secrets (metadata only)
+// through enqueueForSecret. The pre-checks put the
 // resource versions of the Secrets and the generations of the CRs they read
 // into the config hash, so any of these events rolls the pods whose rendered
 // configuration changed. It also sets Recorder to the recorder of the manager
@@ -206,6 +229,11 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		); err != nil {
 			return err
 		}
+	}
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.CamundaClusterPreset{}, presetSecretRefsField, presetSecretRefs,
+	); err != nil {
+		return err
 	}
 
 	cached := mgr.GetClient()
