@@ -1,8 +1,8 @@
-# Backup: ElasticsearchBackup, RDBMSBackup, BackupSchedule (Batch D, first epic)
+# Backup: LogicalBackupElasticsearch, LogicalBackupRDBMS, BackupSchedule (Batch D, first epic)
 
 **Status:** approved in dialogue (2026-08-16), spec pending review
 **Date:** 2026-08-16
-**Scope:** `ElasticsearchBackup` and `RDBMSBackup` (new, replace `Backup`), `BackupSchedule`
+**Scope:** `LogicalBackupElasticsearch` and `LogicalBackupRDBMS` (new, replace `Backup`), `BackupSchedule`
 (with retention), removal of `BackupRetention`, `ObjectStorageConfig` (S3-compatible fields),
 `ElasticsearchCluster` (keystore passthrough, narrowed user role), `CamundaCluster` and
 `CamundaClusterPreset` (`spec.backup`, backup wiring), MinIO in the kind e2e suite
@@ -16,9 +16,9 @@ schedule and prunes the old ones. `LogicalRestore` and `PointInTimeRestore` cons
 later epic.
 
 The epic changes the CRD set that the docs describe today. It splits `Backup` into
-`ElasticsearchBackup` and `RDBMSBackup`, and it removes `BackupRetention`. The reasons are in
-"Design decisions". The CRD docs are the starting point, not the contract. Where this spec finds a
-better shape, the doc changes in the same PR (see "Doc deviations").
+`LogicalBackupElasticsearch` and `LogicalBackupRDBMS`, and it removes `BackupRetention`. The reasons
+are in "Design decisions". The CRD docs are the starting point, not the contract. Where this spec
+finds a better shape, the doc changes in the same PR (see "Doc deviations").
 
 The epic is built the Batch B and C way: ocf components for Kubernetes resources, pure packages
 outside ocf for external protocols (the `pkg/pgbootstrap` pattern), `conditions.Aggregate` for
@@ -51,9 +51,9 @@ Optimize always stores its data in Elasticsearch or OpenSearch and is backed up 
 
 ## Goals
 
-- `ElasticsearchBackup`: run the coordinated Elasticsearch procedure from the operator process,
+- `LogicalBackupElasticsearch`: run the coordinated Elasticsearch procedure from the operator process,
   crash-safe, and never leave a cluster soft-paused.
-- `RDBMSBackup`: dump the logical database to the backup bucket with a Job, then request one
+- `LogicalBackupRDBMS`: dump the logical database to the backup bucket with a Job, then request one
   primary-storage backup so the CR is a complete restore point.
 - `BackupSchedule`: create the backup kind that matches the storage type of the cluster on a
   cron schedule, skip overlaps and suspended clusters, and prune to
@@ -96,8 +96,16 @@ along this line, because `PointInTimeRestore` is RDBMS-only.
 The counterweight is `SecondaryStorageConfig`, which models the same fork with a `type`
 discriminator and two blocks. That CR is a static contract with no behavior. A discriminator
 organizes fields, but it cannot separate two lifecycles, two status vocabularies, two finalizers,
-and two restore contracts. The kinds are `ElasticsearchBackup` and `RDBMSBackup`, after
-`SecondaryStorageTypeElasticsearch` and `SecondaryStorageTypeRDBMS`.
+and two restore contracts. The kinds are `LogicalBackupElasticsearch` and `LogicalBackupRDBMS`,
+after `SecondaryStorageTypeElasticsearch` and `SecondaryStorageTypeRDBMS`.
+
+The `LogicalBackup` prefix names the pairing with the restore kinds. A logical backup is a
+discrete restore point that a user creates and deletes, and `LogicalRestore` consumes it.
+`PointInTimeRestore` rides on the continuous primary-storage range that Zeebe manages, and it has
+no backup CR at all. The variant is a suffix on the base concept, as in `CamundaClusterPreset`.
+Only logical backups are scheduled by this operator, so `BackupSchedule` keeps its short name.
+The plurals are set explicitly (`logicalbackupelasticsearches` is not typed by anyone) with the
+short names `lbes` and `lbrdbms`.
 
 ### Retention lives on the schedule
 
@@ -144,13 +152,14 @@ retention, and the placement, resources, and scratch volume of the dump Job. `ba
 holds where they go. `CamundaClusterPresetSpec.Cluster` reuses `CamundaClusterSpec`, so
 `spec.backup` is in the preset by construction. `backupStorageRef` stays in the instance-bound
 exclusion list. `spec.backup` does not join it. A scheduled backup inherits the dump settings from
-the cluster, so `BackupSchedule` needs no passthrough. A one-off `RDBMSBackup` can override them.
+the cluster, so `BackupSchedule` needs no passthrough. A one-off `LogicalBackupRDBMS` can override
+them.
 
 ### The RDBMS finalizer deletes the dump only
 
 Primary-storage backups belong to the continuous range that Zeebe manages under
 `retention.window`. Every restore point in the window shares them, and `PointInTimeRestore` will
-use them. Deleting one because a `RDBMSBackup` CR was pruned tears a hole in that range. The
+use them. Deleting one because a `LogicalBackupRDBMS` CR was pruned tears a hole in that range. The
 finalizer removes the dump object and nothing else.
 
 ## API
@@ -244,11 +253,11 @@ Preset merge rules for `backup`: `primaryStorage` merges per field, the cluster 
 concatenates. `dump.podLabels` and `dump.podAnnotations` use `mergeMap`. `dump.scheduling`
 replaces as a whole block. `dump.scratchVolume` replaces as a whole block.
 
-### ElasticsearchBackup
+### LogicalBackupElasticsearch
 
 ```yaml
 apiVersion: core.camunda.io/v1
-kind: ElasticsearchBackup
+kind: LogicalBackupElasticsearch
 metadata:
   name: my-cluster-1748937221
   namespace: my-cluster-ns
@@ -274,11 +283,11 @@ status:
 
 `ClusterRef{name, namespace}` is a new shared type in `common_types.go`.
 
-### RDBMSBackup
+### LogicalBackupRDBMS
 
 ```yaml
 apiVersion: core.camunda.io/v1
-kind: RDBMSBackup
+kind: LogicalBackupRDBMS
 metadata: {...}                  # same labels as above
 spec:
   clusterRef: {...}              # immutable
@@ -347,7 +356,7 @@ conditions.
 
 ```
 api/v1/
-  elasticsearchbackup_types.go, rdbmsbackup_types.go, backupschedule_types.go
+  logicalbackupelasticsearch_types.go, logicalbackuprdbms_types.go, backupschedule_types.go
   common_types.go            (+ ClusterRef)
   objectstorageconfig_types.go, elasticsearchcluster_types.go, camundacluster_types.go (edited)
 pkg/
@@ -362,9 +371,9 @@ pkg/
                              pre-checks, per-cluster serialization, finalizer contract,
                              backup ID allocation, object key layout, labels.
   components/camundacluster/ (+ backup wiring in render.go, repository component)
-  components/rdbmsbackup/    Job builder (pure), scratch volume, ServiceAccount, env.
+  components/logicalbackuprdbms/    Job builder (pure), scratch volume, ServiceAccount, env.
 internal/controller/
-  elasticsearchbackup/, rdbmsbackup/, backupschedule/
+  logicalbackupelasticsearch/, logicalbackuprdbms/, backupschedule/
   camundacluster/            (+ repository registration, storage-type gated wiring)
 cmd/                         subcommand `upload` used by the dump Job's main container
 test/utils/minio.go, test/e2e/testdata/minio.yaml, test/e2e/backup_test.go
@@ -374,7 +383,7 @@ Deleted: `api/v1/backup_types.go`, `api/v1/backupretention_types.go`, both scaff
 and tests, both CRD bases, six RBAC roles, two samples, two `PROJECT` entries, `cmd/main.go`
 wiring, `docs/crds/backup.md`, `docs/crds/backupretention.md`.
 
-### Shared skeleton (`pkg/backup`)
+### Shared skeleton (`pkg/logicalbackup`)
 
 Both kinds are one-shot. `spec` is immutable through a CEL transition rule. Phases are `Pending`,
 `Running`, `Completed`, `Failed`. Terminal phases are never re-entered. A retry is a new CR.
@@ -398,7 +407,7 @@ Finalizer `core.camunda.io/backup-artifacts` on both kinds. Deletion keys strict
 `backupId`. Never a repository-wide or prefix-wide delete. Best effort: if the cluster or the
 bucket config is gone, record an event and release the finalizer.
 
-### ElasticsearchBackup state machine
+### LogicalBackupElasticsearch state machine
 
 `status.step` is the resume marker. Every step is written as: query the current state, act only
 if not already started, poll. A crash mid-step re-enters and does not repeat a POST.
@@ -432,7 +441,7 @@ takes the result as a client option. The Elasticsearch endpoint, CA, and `camund
 Finalizer: delete the `backupHistory` snapshots and the records snapshot in Elasticsearch, and
 delete the partition backup with `DELETE /actuator/backupRuntime/{backupId}`.
 
-### RDBMSBackup state machine
+### LogicalBackupRDBMS state machine
 
 | Step | Action |
 | --- | --- |
@@ -583,7 +592,7 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
 
 ## Doc deviations (applied in this epic)
 
-- `docs/crds/backup.md` splits into `elasticsearchbackup.md` and `rdbmsbackup.md`.
+- `docs/crds/backup.md` splits into `logicalbackupelasticsearch.md` and `logicalbackuprdbms.md`.
 - `docs/crds/backupretention.md` is removed. References in `index.md`, `backupschedule.md`,
   `camundacluster.md`, and `architecture.md` are updated. `mkdocs.yml` follows.
 - `backupschedule.md`: `retained` block, schedule-owned pruning, watches on both kinds.
@@ -594,7 +603,7 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
   `BackupRepositoryReady`, the `WHEN_REQUIRED` env, the pairing note on retention.
 - `camundaclusterpreset.md`: merge rules for `backup`.
 - `index.md`: the Batch D list and the graph (two backup kinds, no retention).
-- RDBMS path: an `RDBMSBackup` requests one primary-storage backup after the dump. The old
+- RDBMS path: an `LogicalBackupRDBMS` requests one primary-storage backup after the dump. The old
   `backup.md` said a Backup never triggers one.
 
 ## Verified facts (Camunda 8.9 docs)
