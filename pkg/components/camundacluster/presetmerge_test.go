@@ -448,3 +448,33 @@ func TestValidateMergedJoinsEveryProblem(t *testing.T) {
 		err.Error(),
 	)
 }
+
+// The admin block never merges per field: a cluster that sets it replaces the
+// block of the preset entirely, so one manifest names every administrator.
+func TestMergePresetAdminBlockReplacesWholesale(t *testing.T) {
+	t.Parallel()
+
+	preset := &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+		Auth: &v1.ClusterAuthSpec{
+			ClientID: "preset-client",
+			Admin: &v1.ClusterAdminSpec{
+				Users:   []string{"platform-ops@example.com"},
+				Clients: []string{"platform-ops"},
+			},
+		},
+	}}
+
+	inherited := MergePreset(v1.CamundaClusterSpec{}, preset)
+	require.NotNil(t, inherited.Auth)
+	require.NotNil(t, inherited.Auth.Admin)
+	assert.Equal(t, []string{"platform-ops@example.com"}, inherited.Auth.Admin.Users)
+	assert.Equal(t, []string{"platform-ops"}, inherited.Auth.Admin.Clients)
+
+	replaced := MergePreset(v1.CamundaClusterSpec{
+		Auth: &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{Users: []string{"team-a@example.com"}}},
+	}, preset)
+	require.NotNil(t, replaced.Auth.Admin)
+	assert.Equal(t, []string{"team-a@example.com"}, replaced.Auth.Admin.Users)
+	assert.Empty(t, replaced.Auth.Admin.Clients, "the clients of the preset do not survive a cluster block")
+	assert.Equal(t, "preset-client", replaced.Auth.ClientID, "the other auth fields still merge per field")
+}

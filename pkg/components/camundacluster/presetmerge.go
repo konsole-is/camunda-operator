@@ -60,8 +60,8 @@ const versionFloor = "8.9.0"
 // merges by variable name, preset entries first, and a cluster entry with
 // the same name replaces the entry of the preset. ExtraEnvFrom concatenates,
 // preset entries first. PodLabels and podAnnotations merge by key with the
-// cluster winning. Scheduling never merges: a block set on the cluster
-// replaces the block of the preset at that level (top-level or per
+// cluster winning. Scheduling and auth.admin never merge: a block set on the
+// cluster replaces the block of the preset at that level (top-level or per
 // component) entirely. The instance-bound fields (platformConfigRef,
 // presetRef, externalUrl, serviceAccount, storageRef, backupStorageRef,
 // documentStorageRef, monitoring, suspend, pause) always come from spec. A
@@ -125,6 +125,9 @@ func mergeAuth(base, over *v1.ClusterAuthSpec) *v1.ClusterAuthSpec {
 	}
 	if over.ClientSecretRef != nil {
 		base.ClientSecretRef = over.ClientSecretRef
+	}
+	if over.Admin != nil {
+		base.Admin = over.Admin
 	}
 
 	return base
