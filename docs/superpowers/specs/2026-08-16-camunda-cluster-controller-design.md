@@ -54,9 +54,11 @@ endpoint that the operator renders is verified against the Camunda source before
   verified names.
 
 The rule is enforced in code: `pkg/camundaconfig` declares every key the operator sets, each
-with a comment that names the source file (and line at the time of writing). The renderer
-emits only declared keys, and a unit test asserts that. A key without a source pointer does
-not exist.
+with a comment that names the configuration class or file that declares it. The renderer
+emits only declared keys, and a unit test asserts that. A second test scans a local checkout
+of camunda/camunda (`CAMUNDA_SOURCE_DIR`) for every declared key in `defaults.yaml`; the keys
+that the generated file does not carry are listed in the test with a reason. A key without a
+source does not exist.
 
 The keys verified for this spec are listed under "Verified configuration". The open points of
 the first draft (identity profile, node id, JDBC driver, redirect path, connectors image) were
@@ -121,8 +123,8 @@ The controller follows the Batch B layout:
   (metadata only) through `refindex`.
 - `pkg/components/camundacluster/` — pure: `MergePreset`, `ValidateMerged`, the topology
   resolver, the configuration renderer, one component builder per process, goldens.
-- `pkg/camundaconfig/` — the declared vocabulary of unified-configuration keys with source
-  pointers, the Spring relaxed-binding conversion (`camunda.data.secondary-storage.type` →
+- `pkg/camundaconfig/` — the declared vocabulary of unified-configuration keys, each naming
+  its configuration class, the Spring relaxed-binding conversion (`camunda.data.secondary-storage.type` →
   `CAMUNDA_DATA_SECONDARYSTORAGE_TYPE`; a dash is dropped, a dot becomes an underscore, list
   indexes `[0]` become `_0_`), and typed helpers for the few list-valued keys.
 - Workloads use the ocf StatefulSet, Deployment, and Service primitives; ServiceMonitors the
@@ -365,11 +367,12 @@ PersistentVolumeClaim events the cluster that labels them.
 ## Risks
 
 - **Configuration drift.** The main risk is a key that 8.9 does not read. Mitigation is the
-  source-of-truth rule, `pkg/camundaconfig` with pointers, the declared-keys test, and e2e
+  source-of-truth rule, `pkg/camundaconfig` (every key names its configuration class), the
+  declared-keys test, the source scan against a local checkout (`CAMUNDA_SOURCE_DIR`), and e2e
   that proves effect (topology, export) rather than shape.
 - **Profile drift.** The profile names (`broker`, `gateway`, `operate`, `tasklist`, `admin`,
   `consolidated-auth`) are the control surface; a rename upstream breaks a process. Mitigation:
-  `pkg/camundaconfig` declares them with source pointers like every key, and e2e proves the
+  `pkg/camundaconfig` declares them next to the keys, and e2e proves the
   8.9 default topology serves all three web applications behind auth.
 - **Connectors env names** are verified with the docs MCP, not the monorepo (the runtime is a
   separate repository); the e2e "connectors ready" check is the proof.
@@ -393,8 +396,8 @@ PersistentVolumeClaim events the cluster that labels them.
 
 ## Verified configuration (8.9.9)
 
-Keys the operator renders, with the source that declares them. `pkg/camundaconfig` carries
-these pointers in code.
+Keys the operator renders, with the source that declares them (lines as of 8.9.9).
+`pkg/camundaconfig` names the class of each key in code; this table keeps the line pointers.
 
 | Key | Source |
 | --- | --- |
