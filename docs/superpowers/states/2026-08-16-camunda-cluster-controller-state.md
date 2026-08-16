@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: consumer-wave
+status: review
 ---
 
 # CamundaCluster controller (Batch C) — orchestration state
@@ -30,7 +30,7 @@ status: consumer-wave
 | #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | #54 → feat/camunda-cluster-controller | self-merged |
 | #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | #55 → feat/camunda-cluster-controller | self-merged |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | #56 → feat/camunda-cluster-controller | self-merged |
-| #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | #57 → feat/camunda-cluster-controller | ready |
+| #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | #57 → feat/camunda-cluster-controller | self-merged |
 
 ## Contracts
 
@@ -55,10 +55,9 @@ The interfaces between the sequential PRs (B → C → D) are the **Interfaces**
 
 ## Pending snapshot
 
-1. Push the feature branch (`git push -u origin feat/camunda-cluster-controller`).
-2. Invoke `feature-dev-workflow:developing-a-feature`; dispatch Wave 1 (#48, #49) in parallel with `feature-dev-workflow:fanning-out-with-worktrees`; Copilot loop on each sub-PR; self-merge into the feature branch.
-3. Waves 2, 3, 4 sequentially; update this file after each burst.
-4. `feature-dev-workflow:reviewing-feature-progress`, then the integration PR with `Closes #47`; Copilot loop; stop and hand to the user for review.
+1. All five sub-PRs (#53–#57) self-merged; #48–#52 closed. Run `feature-dev-workflow:reviewing-feature-progress` on the feature worktree (full `make test`, `make lint`; e2e already green on #57's head).
+2. Open the integration PR `feat/camunda-cluster-controller` → `main` with `Closes #47`; Copilot loop; stop at ready-to-merge for the user's review (the merge to main is the user's).
+3. After the user merges: tear down plan + state file, keep the spec, delete worktrees/branches, update memory.
 
 ## Resume checklist
 
