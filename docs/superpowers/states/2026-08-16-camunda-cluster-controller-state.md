@@ -26,7 +26,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #48 | batch-c/platform-config | .claude/worktrees/camunda-cluster-controller--platform-config | — → feat/camunda-cluster-controller | in-progress |
+| #48 | batch-c/platform-config | .claude/worktrees/camunda-cluster-controller--platform-config | #53 → feat/camunda-cluster-controller | ready |
 | #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | — → feat/camunda-cluster-controller | in-progress |
 | #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | — → feat/camunda-cluster-controller | not-started |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | — → feat/camunda-cluster-controller | not-started |
