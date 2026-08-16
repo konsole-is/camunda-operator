@@ -244,6 +244,16 @@ var _ = Describe("CamundaCluster schema", func() {
 		Expect(k8sClient.Update(ctx, obj)).To(Succeed())
 	})
 
+	It("rejects removing partitions once set", func() {
+		obj := realisticCamundaCluster()
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		obj.Spec.Zeebe.Partitions = nil
+		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.partitions may not be decreased")))
+	})
+
 	It("rejects a storageClassName change on update", func() {
 		obj := realisticCamundaCluster()
 

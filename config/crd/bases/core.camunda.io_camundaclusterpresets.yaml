@@ -5779,8 +5779,8 @@ spec:
                         type: array
                       partitions:
                         description: |-
-                          Partitions is the number of partitions. Defaults to 1. It cannot be
-                          decreased after creation.
+                          Partitions is the number of partitions. Defaults to 1. Once set, it can
+                          neither be decreased nor removed.
                         format: int32
                         minimum: 1
                         type: integer

@@ -5730,8 +5730,8 @@ spec:
                     type: array
                   partitions:
                     description: |-
-                      Partitions is the number of partitions. Defaults to 1. It cannot be
-                      decreased after creation.
+                      Partitions is the number of partitions. Defaults to 1. Once set, it can
+                      neither be decreased nor removed.
                     format: int32
                     minimum: 1
                     type: integer
@@ -6468,8 +6468,8 @@ spec:
             - message: spec.platformConfigRef is required
               rule: has(self.platformConfigRef) && self.platformConfigRef != ''
             - message: zeebe.partitions may not be decreased
-              rule: '!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || !has(self.zeebe)
-                || !has(self.zeebe.partitions) || self.zeebe.partitions >= oldSelf.zeebe.partitions'
+              rule: '!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || (has(self.zeebe)
+                && has(self.zeebe.partitions) && self.zeebe.partitions >= oldSelf.zeebe.partitions)'
             - message: zeebe.storageClassName is immutable
               rule: '!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageClassName) ||
                 (has(self.zeebe) && has(self.zeebe.storageClassName) && self.zeebe.storageClassName

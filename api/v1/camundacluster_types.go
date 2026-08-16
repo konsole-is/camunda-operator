@@ -97,8 +97,8 @@ type WorkloadSpec struct {
 // with persistent volumes.
 type ZeebeSpec struct {
 	WorkloadSpec `json:",inline"`
-	// Partitions is the number of partitions. Defaults to 1. It cannot be
-	// decreased after creation.
+	// Partitions is the number of partitions. Defaults to 1. Once set, it can
+	// neither be decreased nor removed.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Partitions *int32 `json:"partitions,omitempty"`
@@ -335,7 +335,7 @@ type CamundaCluster struct {
 	// spec defines the desired state of CamundaCluster
 	// +kubebuilder:validation:XValidation:rule="has(self.storageRef) && self.storageRef != ''",message="spec.storageRef is required"
 	// +kubebuilder:validation:XValidation:rule="has(self.platformConfigRef) && self.platformConfigRef != ''",message="spec.platformConfigRef is required"
-	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || !has(self.zeebe) || !has(self.zeebe.partitions) || self.zeebe.partitions >= oldSelf.zeebe.partitions",message="zeebe.partitions may not be decreased"
+	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || (has(self.zeebe) && has(self.zeebe.partitions) && self.zeebe.partitions >= oldSelf.zeebe.partitions)",message="zeebe.partitions may not be decreased"
 	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageClassName) || (has(self.zeebe) && has(self.zeebe.storageClassName) && self.zeebe.storageClassName == oldSelf.zeebe.storageClassName)",message="zeebe.storageClassName is immutable"
 	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageSize) || !has(self.zeebe) || !has(self.zeebe.storageSize) || !quantity(string(self.zeebe.storageSize)).isLessThan(quantity(string(oldSelf.zeebe.storageSize)))",message="zeebe.storageSize may not be shrunk"
 	// +kubebuilder:validation:XValidation:rule="!has(self.zeebe) || !has(self.zeebe.replicas) || !has(self.zeebe.replicationFactor) || self.zeebe.replicationFactor <= self.zeebe.replicas",message="zeebe.replicationFactor must not exceed zeebe.replicas"
