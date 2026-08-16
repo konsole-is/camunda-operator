@@ -29,6 +29,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -243,7 +244,7 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 		Eventually(func(g Gomega) {
 			expectGone(g, "deployment", operate, ccNamespace)
 			expectGone(g, "service", operate, ccNamespace)
-			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionOperateReady, "Disabled")
+			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionOperateReady, string(component.Disabled))
 		}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("serving Operate on the gateway again")

@@ -45,8 +45,9 @@ type brokerStorage struct {
 	claims      []corev1.PersistentVolumeClaim
 }
 
-// readBrokerStorage reads the applied broker StatefulSet and lists the bound
-// broker claims of cluster.
+// readBrokerStorage reads the applied broker StatefulSet without the cache,
+// so the requested size annotation is the one the last apply wrote, and lists
+// the bound broker claims of cluster.
 func (r *CamundaClusterReconciler) readBrokerStorage(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -58,7 +59,7 @@ func (r *CamundaClusterReconciler) readBrokerStorage(
 		Name:      components.WorkloadName(cluster, components.ComponentZeebe),
 	}
 	var sts appsv1.StatefulSet
-	switch err := r.Get(ctx, key, &sts); {
+	switch err := r.APIReader.Get(ctx, key, &sts); {
 	case err == nil:
 		storage.statefulSet = &sts
 	case !apierrors.IsNotFound(err):
@@ -135,14 +136,16 @@ func (s brokerStorage) requestedSizeApplied(size resource.Quantity) bool {
 	return err == nil && applied.Cmp(size) == 0
 }
 
-// volumes returns one status entry per bound claim, sorted by name.
+// volumes returns one status entry per bound claim that reports a capacity,
+// sorted by name.
 func (s brokerStorage) volumes() []v1.VolumeStatus {
 	volumes := make([]v1.VolumeStatus, 0, len(s.claims))
 	for _, claim := range s.claims {
-		volumes = append(volumes, v1.VolumeStatus{
-			Name:     claim.Name,
-			Capacity: claim.Status.Capacity[corev1.ResourceStorage],
-		})
+		capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]
+		if !ok {
+			continue
+		}
+		volumes = append(volumes, v1.VolumeStatus{Name: claim.Name, Capacity: capacity})
 	}
 	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 	return volumes

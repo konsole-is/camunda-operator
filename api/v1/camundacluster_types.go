@@ -50,7 +50,8 @@ const (
 	ConditionAdminSecretReady = "AdminSecretReady"
 	// ConditionMirroredSecretsReady reports whether every referenced Secret
 	// that lives outside the cluster namespace is copied into it. It takes
-	// part in Ready only when such a Secret is referenced.
+	// part in Ready only when such a Secret is referenced and reads Disabled
+	// when none is.
 	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 )
 

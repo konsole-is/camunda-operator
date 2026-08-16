@@ -244,10 +244,10 @@ func expectEvent(cluster *v1.CamundaCluster, reason, eventType string) {
 // countEvents returns the number of times an event with the given reason was
 // recorded for cluster: the sum of the counts of the matching Event objects,
 // because the recorder aggregates repeats of the same event into one object.
-func countEvents(cluster *v1.CamundaCluster, reason string) int32 {
+func countEvents(g Gomega, cluster *v1.CamundaCluster, reason string) int32 {
 	GinkgoHelper()
 	var events corev1.EventList
-	Expect(k8sClient.List(ctx, &events, client.InNamespace(cluster.Namespace))).To(Succeed())
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(cluster.Namespace))).To(Succeed())
 	var count int32
 	for _, event := range events.Items {
 		if event.Reason == reason && event.InvolvedObject.Name == cluster.Name {
@@ -432,6 +432,9 @@ var _ = Describe("CamundaCluster controller", func() {
 
 		expectCondition(cluster, v1.ConditionZeebeReady, Not(Equal(v1.ReasonHealthy)))
 		expectCondition(cluster, v1.ConditionGatewayReady, Not(Equal(v1.ReasonHealthy)))
+		// No referenced Secret lives outside the namespace, so the mirrored
+		// Secrets component is disabled and stays out of Ready.
+		expectCondition(cluster, v1.ConditionMirroredSecretsReady, Equal(string(component.Disabled)))
 		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonHealthy)), Not(BeEmpty()))
 
 		stampStatefulSetReady(zeebeKey)
@@ -904,7 +907,7 @@ var _ = Describe("CamundaCluster controller", func() {
 				g.Expect(latest.Spec.Template.Labels).To(HaveKeyWithValue("touch", "1"))
 			}, timeout, interval).Should(Succeed())
 			Consistently(func(g Gomega) {
-				g.Expect(countEvents(cluster, "StorageShrinkIgnored")).To(Equal(int32(1)))
+				g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(Equal(int32(1)))
 				var latest appsv1.StatefulSet
 				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
 				g.Expect(latest.UID).To(Equal(sts.UID))

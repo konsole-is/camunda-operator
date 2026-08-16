@@ -66,14 +66,16 @@ func MirroredSecretName(cluster *v1.CamundaCluster, purpose string) string {
 // purposes that are present, the values the copied data (only the keys that
 // the reference names). The Secret of an absent purpose is gated off, so a
 // reference that moved into the cluster namespace or went away deletes its
-// copy. The component takes part in Ready when any purpose is present.
+// copy. The component is gated on any purpose being present: without one it
+// reads Disabled and stays out of Ready.
 func MirroredSecretComponent(
 	cluster *v1.CamundaCluster,
 	mirrors map[string]map[string][]byte,
 ) (*component.Component, error) {
 	builder := component.NewComponentBuilder().
 		WithName(mirroredComponentName).
-		WithConditionType(component.ConditionType(v1.ConditionMirroredSecretsReady))
+		WithConditionType(component.ConditionType(v1.ConditionMirroredSecretsReady)).
+		WithFeatureGate(feature.NewBooleanGate(len(mirrors) > 0))
 
 	for _, purpose := range MirrorPurposes {
 		data, present := mirrors[purpose]
