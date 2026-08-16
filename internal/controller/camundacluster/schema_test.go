@@ -24,9 +24,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
+
+// updateSpec applies mutate to the latest revision of obj and returns the
+// admission error of the update. The controller writes status concurrently,
+// so a stale revision would conflict.
+func updateSpec(obj *v1.CamundaCluster, mutate func(*v1.CamundaCluster)) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var latest v1.CamundaCluster
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &latest); err != nil {
+			return err
+		}
+		mutate(&latest)
+		return k8sClient.Update(ctx, &latest)
+	})
+}
 
 // minimalCamundaCluster returns the minimal example of the CRD doc with a
 // unique name in the schema test namespace.
@@ -237,13 +254,11 @@ var _ = Describe("CamundaCluster schema", func() {
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 
-		obj.Spec.Zeebe.Partitions = new(int32(2))
 		Expect(
-			k8sClient.Update(ctx, obj),
+			updateSpec(obj, func(c *v1.CamundaCluster) { c.Spec.Zeebe.Partitions = new(int32(2)) }),
 		).To(MatchError(ContainSubstring("zeebe.partitions cannot be decreased or removed once set")))
 
-		obj.Spec.Zeebe.Partitions = new(int32(4))
-		Expect(k8sClient.Update(ctx, obj)).To(Succeed())
+		Expect(updateSpec(obj, func(c *v1.CamundaCluster) { c.Spec.Zeebe.Partitions = new(int32(4)) })).To(Succeed())
 	})
 
 	It("rejects removing partitions once set", func() {
@@ -252,9 +267,8 @@ var _ = Describe("CamundaCluster schema", func() {
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 
-		obj.Spec.Zeebe.Partitions = nil
 		Expect(
-			k8sClient.Update(ctx, obj),
+			updateSpec(obj, func(c *v1.CamundaCluster) { c.Spec.Zeebe.Partitions = nil }),
 		).To(MatchError(ContainSubstring("zeebe.partitions cannot be decreased or removed once set")))
 	})
 
@@ -264,11 +278,13 @@ var _ = Describe("CamundaCluster schema", func() {
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 
-		obj.Spec.Zeebe.StorageClassName = new("hdd")
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.storageClassName is immutable")))
+		Expect(
+			updateSpec(obj, func(c *v1.CamundaCluster) { c.Spec.Zeebe.StorageClassName = new("hdd") }),
+		).To(MatchError(ContainSubstring("zeebe.storageClassName is immutable")))
 
-		obj.Spec.Zeebe.StorageClassName = nil
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.storageClassName is immutable")))
+		Expect(
+			updateSpec(obj, func(c *v1.CamundaCluster) { c.Spec.Zeebe.StorageClassName = nil }),
+		).To(MatchError(ContainSubstring("zeebe.storageClassName is immutable")))
 	})
 
 	It("rejects a storageSize shrink on update and accepts growth", func() {
@@ -277,11 +293,13 @@ var _ = Describe("CamundaCluster schema", func() {
 		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 
-		obj.Spec.Zeebe.StorageSize = new(resource.MustParse("16Gi"))
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.storageSize cannot be shrunk")))
+		Expect(
+			updateSpec(obj, func(c *v1.CamundaCluster) { c.Spec.Zeebe.StorageSize = new(resource.MustParse("16Gi")) }),
+		).To(MatchError(ContainSubstring("zeebe.storageSize cannot be shrunk")))
 
-		obj.Spec.Zeebe.StorageSize = new(resource.MustParse("64Gi"))
-		Expect(k8sClient.Update(ctx, obj)).To(Succeed())
+		Expect(
+			updateSpec(obj, func(c *v1.CamundaCluster) { c.Spec.Zeebe.StorageSize = new(resource.MustParse("64Gi")) }),
+		).To(Succeed())
 	})
 })
 
