@@ -394,6 +394,7 @@ func itRunsTheOrchestrationCluster(cluster *v1.CamundaCluster) {
 			g.Expect(status).To(Equal(http.StatusOK), body)
 			g.Expect(json.Unmarshal([]byte(body), &topology)).To(Succeed(), body)
 			g.Expect(topology.Brokers).To(HaveLen(1), body)
+			g.Expect(topology.Brokers[0].Partitions).To(HaveLen(1), body)
 			g.Expect(topology.Brokers[0].Partitions).To(HaveEach(HaveField("Health", "healthy")), body)
 			g.Expect(topology.ClusterSize).To(Equal(1), body)
 			g.Expect(topology.PartitionsCount).To(Equal(1), body)
