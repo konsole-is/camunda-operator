@@ -41,6 +41,9 @@ var implementedKindSamples = []string{
 	"core_v1_elasticsearchcluster.yaml",
 	"core_v1_elasticsearchclusterpreset.yaml",
 	"core_v1_database.yaml",
+	"core_v1_camundaplatformconfig.yaml",
+	"core_v1_camundacluster.yaml",
+	"core_v1_camundaclusterpreset.yaml",
 }
 
 var _ = Describe("config/samples", func() {

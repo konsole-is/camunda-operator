@@ -38,10 +38,12 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-const (
-	databaseConfigSecretRefsField = "databaseconfig.spec.secretRefs"
-	databaseConfigServerRefField  = "databaseconfig.spec.serverRef"
-)
+// SecretRefsField is the index field that lists DatabaseConfigs by the
+// Secrets they reference, keyed with refindex.NamespacedKey. Other
+// controllers look DatabaseConfigs up by it when a Secret changes.
+const SecretRefsField = "databaseconfig.spec.secretRefs"
+
+const databaseConfigServerRefField = "databaseconfig.spec.serverRef"
 
 // DatabaseConfigReconciler validates DatabaseConfig contracts and maintains
 // their Ready condition.
@@ -117,7 +119,7 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseConfig{},
-		databaseConfigSecretRefsField, func(o client.Object) []string {
+		SecretRefsField, func(o client.Object) []string {
 			spec := o.(*v1.DatabaseConfig).Spec
 			keys := []string{
 				refindex.NamespacedKey(spec.CredentialsSecretRef.Namespace, spec.CredentialsSecretRef.Name),
@@ -152,7 +154,7 @@ func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Secret{},
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.DatabaseConfigList{},
-				databaseConfigSecretRefsField, refindex.ObjectNamespacedName,
+				SecretRefsField, refindex.ObjectNamespacedName,
 			),
 			builder.OnlyMetadata,
 		).

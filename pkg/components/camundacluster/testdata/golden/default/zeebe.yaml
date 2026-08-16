@@ -1,0 +1,245 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/my-cluster-role
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: zeebe
+  name: my-cluster-camunda
+  namespace: my-cluster-ns
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    camunda.io/requested-storage-size: 32Gi
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: zeebe
+  name: my-cluster-zeebe
+  namespace: my-cluster-ns
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  podManagementPolicy: Parallel
+  replicas: 3
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: zeebe
+  serviceName: my-cluster-zeebe
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: 762506e3858f3338
+        company.com/cluster-preset: medium
+        prometheus.io/scrape: "true"
+      labels:
+        camunda.io/cluster: my-cluster
+        camunda.io/component: zeebe
+        company.com/team: automation-ops
+        team: platform
+    spec:
+      containers:
+      - command:
+        - bash
+        - -c
+        - export CAMUNDA_CLUSTER_NODEID=${HOSTNAME##*-}; exec /usr/local/camunda/bin/camunda
+        env:
+        - name: CAMUNDA_CLUSTER_NAME
+          value: my-cluster
+        - name: CAMUNDA_CLUSTER_SIZE
+          value: "3"
+        - name: CAMUNDA_CLUSTER_PARTITIONCOUNT
+          value: "3"
+        - name: CAMUNDA_CLUSTER_REPLICATIONFACTOR
+          value: "3"
+        - name: CAMUNDA_CLUSTER_INITIALCONTACTPOINTS
+          value: my-cluster-zeebe-0.my-cluster-zeebe.my-cluster-ns.svc:26502,my-cluster-zeebe-1.my-cluster-zeebe.my-cluster-ns.svc:26502,my-cluster-zeebe-2.my-cluster-zeebe.my-cluster-ns.svc:26502
+        - name: CAMUNDA_API_GRPC_ADDRESS
+          value: 0.0.0.0
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_TYPE
+          value: elasticsearch
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_URL
+          value: https://es-http.my-cluster-ns.svc:9200
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: es-user
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: es-user
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_SECURITY_ENABLED
+          value: "true"
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_SECURITY_CERTIFICATEPATH
+          value: /etc/camunda/es-ca/ca.crt
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_SECURITY_VERIFYHOSTNAME
+          value: "true"
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_SECURITY_SELFSIGNED
+          value: "false"
+        - name: CAMUNDA_SECURITY_AUTHENTICATION_METHOD
+          value: basic
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME
+          value: admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-camunda-admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME
+          value: admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL
+          value: admin@localhost
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
+          value: admin
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: key
+              name: camunda-license
+        - name: SPRING_PROFILES_ACTIVE
+          value: broker,consolidated-auth
+        - name: JAVA_TOOL_OPTIONS
+          value: -XX:+ExitOnOutOfMemoryError -Xmx6g
+        - name: ZEEBE_BROKER_GATEWAY_ENABLE
+          value: "false"
+        - name: TZ
+          value: UTC
+        - name: JAVA_OPTS
+          value: -Xmx4g
+        envFrom:
+        - configMapRef:
+            name: overrides
+        image: registry.example.com/camunda/camunda:8.9.9
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: management
+          periodSeconds: 30
+        name: camunda
+        ports:
+        - containerPort: 26501
+          name: command
+          protocol: TCP
+        - containerPort: 26502
+          name: internal
+          protocol: TCP
+        - containerPort: 9600
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: management
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: "1"
+            memory: 8Gi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /actuator/health/startup
+            port: management
+          periodSeconds: 5
+        volumeMounts:
+        - mountPath: /usr/local/camunda/data
+          name: data
+        - mountPath: /etc/camunda/es-ca
+          name: es-ca
+          readOnly: true
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      serviceAccountName: my-cluster-camunda
+      tolerations:
+      - effect: NoSchedule
+        key: dedicated
+        operator: Equal
+        value: camunda
+      volumes:
+      - name: es-ca
+        secret:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          secretName: my-cluster-es-es-http-certs-public
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - metadata:
+      labels:
+        camunda.io/cluster: my-cluster
+        camunda.io/component: zeebe
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 32Gi
+      storageClassName: ssd
+    status: {}
+status:
+  availableReplicas: 0
+  replicas: 0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: zeebe
+  name: my-cluster-zeebe
+  namespace: my-cluster-ns
+spec:
+  clusterIP: None
+  ports:
+  - name: command
+    port: 26501
+    protocol: TCP
+    targetPort: command
+  - name: internal
+    port: 26502
+    protocol: TCP
+    targetPort: internal
+  - name: management
+    port: 9600
+    protocol: TCP
+    targetPort: management
+  publishNotReadyAddresses: true
+  selector:
+    camunda.io/cluster: my-cluster
+    camunda.io/component: zeebe
+status:
+  loadBalancer: {}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: zeebe
+    release: prometheus
+  name: my-cluster-zeebe
+  namespace: my-cluster-ns
+spec:
+  endpoints:
+  - path: /actuator/prometheus
+    port: management
+  namespaceSelector: {}
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: zeebe

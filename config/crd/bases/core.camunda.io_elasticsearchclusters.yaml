@@ -336,8 +336,8 @@ spec:
                         type: object
                       enabled:
                         description: |-
-                          Enabled deploys the exporter and creates the ServiceMonitor when true.
-                          Defaults to false.
+                          Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+                          the exporter) when true. Defaults to false.
                         type: boolean
                       labels:
                         additionalProperties:
@@ -355,10 +355,10 @@ spec:
                   whenDeleted:
                     default: Delete
                     description: |-
-                      WhenDeleted is what happens to the data volumes when the
-                      ElasticsearchCluster is deleted. Delete removes them with the
-                      cluster. Retain keeps them, and a later cluster with the same name
-                      reattaches them. Defaults to Delete.
+                      WhenDeleted is what happens to the data volumes when the resource is
+                      deleted. Delete removes them with the resource. Retain keeps them, and
+                      a later resource with the same name reattaches them. Defaults to
+                      Delete.
                     enum:
                     - Retain
                     - Delete
@@ -1184,18 +1184,36 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
-              storageSize:
-                anyOf:
-                - type: integer
-                - type: string
+              volumes:
                 description: |-
-                  StorageSize is the data volume size that the cluster has. It is the
-                  smallest capacity that the data PersistentVolumeClaims of the cluster
-                  report, so a resize outside the spec, for example by an auto-resize
-                  controller, shows here. Until a claim reports a capacity it is the size
-                  that the applied Elasticsearch CR requests.
-                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                x-kubernetes-int-or-string: true
+                  Volumes lists the bound data PersistentVolumeClaims of the cluster and
+                  the capacity that each one reports, sorted by name.
+                items:
+                  description: |-
+                    VolumeStatus is the observed size of one data PersistentVolumeClaim of a
+                    cluster. A status lists one entry per bound claim, sorted by name, so a
+                    resize of a single claim outside the spec, for example by an auto-resize
+                    controller, shows here.
+                  properties:
+                    capacity:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Capacity is the storage capacity that the bound
+                        claim reports.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    name:
+                      description: Name is the name of the PersistentVolumeClaim.
+                      type: string
+                  required:
+                  - capacity
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

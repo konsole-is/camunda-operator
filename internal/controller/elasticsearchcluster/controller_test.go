@@ -17,6 +17,9 @@ limitations under the License.
 package elasticsearchcluster
 
 import (
+	"maps"
+	"slices"
+
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -173,15 +176,45 @@ func expectStorageShrinkIgnored(cluster *v1.ElasticsearchCluster, applied string
 	Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
 }
 
-// expectStorageSize polls until status.storageSize of cluster equals want.
-func expectStorageSize(cluster *v1.ElasticsearchCluster, want string) {
+// expectVolumes polls until status.volumes of cluster lists exactly the
+// given claim names with the given capacities, in name order.
+func expectVolumes(cluster *v1.ElasticsearchCluster, want map[string]string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var latest v1.ElasticsearchCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-		g.Expect(latest.Status.StorageSize).NotTo(BeNil())
-		g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse(want))).To(BeZero())
+		g.Expect(latest.Status.Volumes).To(HaveLen(len(want)))
+		for i, volume := range latest.Status.Volumes {
+			g.Expect(volume.Name).To(Equal(slices.Sorted(maps.Keys(want))[i]))
+			g.Expect(volume.Capacity.Cmp(resource.MustParse(want[volume.Name]))).To(BeZero(), volume.Name)
+		}
 	}, timeout, interval).Should(Succeed())
+}
+
+// createDataClaim creates a data claim of cluster with the given ordinal, as
+// ECK would name and label it, bound with the given capacity, and registers
+// its deletion.
+func createDataClaim(cluster *v1.ElasticsearchCluster, ordinal, capacity string) *corev1.PersistentVolumeClaim {
+	GinkgoHelper()
+	claim := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      components.DataVolumeClaimName + "-" + cluster.Name + "-es-default-" + ordinal,
+			Namespace: cluster.Namespace,
+			Labels:    map[string]string{components.ECKClusterNameLabel: cluster.Name},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(capacity)},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, claim) })
+	claim.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(capacity)}
+	claim.Status.Phase = corev1.ClaimBound
+	Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
+	return claim
 }
 
 // expectControlledBy asserts that obj carries a controller owner reference to
@@ -538,39 +571,25 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		expectStorageShrinkIgnored(cluster, "1Gi")
 	})
 
-	It("reports the data volume size in status.storageSize", func() {
+	It("reports every bound data volume with its capacity in status.volumes", func() {
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		createElasticsearchCluster(cluster)
 		fetchOwnedElasticsearch(cluster)
 
-		// Before any claim reports a capacity, the applied claim size is reported.
-		expectStorageSize(cluster, "1Gi")
+		// Before any claim reports a capacity, nothing is listed.
+		expectVolumes(cluster, map[string]string{})
 
 		// A data claim that ECK labels with the cluster name reports its
 		// capacity, for example after a resize outside the spec. envtest runs
-		// no ECK, so the spec creates the claim and stamps its capacity.
-		claim := &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      components.DataVolumeClaimName + "-" + cluster.Name + "-es-default-0",
-				Namespace: cluster.Namespace,
-				Labels:    map[string]string{components.ECKClusterNameLabel: cluster.Name},
-			},
-			Spec: corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, claim)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, claim) })
-		claim.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")}
-		claim.Status.Phase = corev1.ClaimBound
-		Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
+		// no ECK, so the spec creates the claims and stamps their capacities.
+		// The claims grow apart, so the status must list them one by one.
+		claim0 := createDataClaim(cluster, "0", "2Gi")
+		expectVolumes(cluster, map[string]string{claim0.Name: "2Gi"})
 
-		expectStorageSize(cluster, "2Gi")
+		claim1 := createDataClaim(cluster, "1", "1Gi")
+		expectVolumes(cluster, map[string]string{claim0.Name: "2Gi", claim1.Name: "1Gi"})
 	})
 
 	It("deploys the metrics exporter while monitoring is enabled and removes it when disabled", func() {

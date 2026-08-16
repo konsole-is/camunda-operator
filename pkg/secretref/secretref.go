@@ -33,19 +33,32 @@ import (
 // all keys are present. Pass an uncached reader: callers watch Secrets
 // metadata-only, so data must be read live.
 func CheckKeys(ctx context.Context, reader client.Reader, ref types.NamespacedName, keys ...string) (string, error) {
+	_, msg, err := Get(ctx, reader, ref, keys...)
+	return msg, err
+}
+
+// Get is CheckKeys for a caller that also needs the Secret: it returns the
+// Secret when every key is present, or a nil Secret and the failure message
+// of CheckKeys. It returns an error only for transient API failures.
+func Get(
+	ctx context.Context,
+	reader client.Reader,
+	ref types.NamespacedName,
+	keys ...string,
+) (*corev1.Secret, string, error) {
 	var secret corev1.Secret
 	if err := reader.Get(ctx, ref, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return fmt.Sprintf("Secret %q not found", ref), nil
+			return nil, fmt.Sprintf("Secret %q not found", ref), nil
 		}
-		return "", err
+		return nil, "", err
 	}
 
 	for _, key := range keys {
 		if _, ok := secret.Data[key]; !ok {
-			return fmt.Sprintf("Secret %q is missing key %q", ref, key), nil
+			return nil, fmt.Sprintf("Secret %q is missing key %q", ref, key), nil
 		}
 	}
 
-	return "", nil
+	return &secret, "", nil
 }

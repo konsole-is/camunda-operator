@@ -28,6 +28,11 @@ graph LR
     CMC[CamundaManagementCluster] -.->|auth defaults| PFC
 ```
 
+!!! note "Deviation from the original proposal"
+    The proposal had an `issuerBackendUrl` field for split-horizon setups, where the issuer is reachable at a different URL from inside the Kubernetes cluster.
+    Camunda 8.9 has no property for a backend issuer URL: `camunda.security.authentication.oidc.*` carries `issuer-uri`, `jwk-set-uri`, `token-uri`, `authorization-uri`, and `redirect-uri` (`OidcAuthenticationConfiguration.java:33-61`), so the field is dropped.
+    In a split-horizon setup, keep `issuerUrl` equal to the issuer claim of the tokens, and set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
+
 ## API reference
 
 ```yaml
@@ -45,8 +50,6 @@ spec:
     oidc:
       # string. Required. Issuer URL of the identity provider; endpoints are resolved from its OIDC discovery document unless overridden below.
       issuerUrl: "https://login.example.com/realms/camunda"
-      # string. Optional, default: the issuerUrl. Issuer URL as reachable from inside the Kubernetes cluster, for split-horizon DNS setups.
-      issuerBackendUrl: "https://login.internal.svc.cluster.local/realms/camunda"
       # string. Optional. Explicit JWKS endpoint; overrides the value from OIDC discovery.
       jwksUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/certs"
       # string. Optional. Explicit token endpoint; overrides the value from OIDC discovery.
@@ -73,8 +76,8 @@ spec:
     namespace: "camunda-system"
     # string. Required. Key inside the Secret.
     key: "license-key"
-  # string. Optional, default: the upstream Camunda registry. Registry prefix for all Camunda component images.
-  imageRegistry: "registry.example.com/camunda"
+  # string. Optional, default: the upstream Camunda registry. Registry prefix put in front of the image repositories camunda/camunda and camunda/connectors-bundle, for example registry.example.com/camunda/camunda:8.9.9.
+  imageRegistry: "registry.example.com"
 ```
 
 ## Status
@@ -126,7 +129,6 @@ spec:
     method: oidc
     oidc:
       issuerUrl: "https://login.example.com/realms/camunda"
-      issuerBackendUrl: "https://login.internal.svc.cluster.local/realms/camunda"
       clientId: "camunda-orchestration"
       audience: "camunda-orchestration"
       clientSecretRef:
@@ -137,5 +139,5 @@ spec:
     name: "camunda-license"
     namespace: "camunda-system"
     key: "license-key"
-  imageRegistry: "registry.example.com/camunda"
+  imageRegistry: "registry.example.com"
 ```

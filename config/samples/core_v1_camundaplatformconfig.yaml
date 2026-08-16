@@ -6,4 +6,18 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: camundaplatformconfig-sample
 spec:
-  # TODO(user): Add fields here
+  auth:
+    method: oidc
+    oidc:
+      issuerUrl: "https://login.example.com/realms/camunda"
+      clientId: "camunda-orchestration"
+      audience: "camunda-orchestration"
+      clientSecretRef:
+        name: "oidc-credentials"
+        namespace: "camunda-system"
+        key: "client-secret"
+  licenseSecretRef:
+    name: "camunda-license"
+    namespace: "camunda-system"
+    key: "license-key"
+  imageRegistry: "registry.example.com"

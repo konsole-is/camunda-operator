@@ -17,7 +17,7 @@ The CamundaCluster controller resolves `presetRef` on each reconcile, so editing
 
 1. Start from the preset's `spec.cluster` as the baseline.
 2. Instance-bound fields are cluster-only and rejected in a preset (see Validation): the baseline carries only configuration that is meaningful for any number of clusters.
-3. Scalar and pointer fields override individually: a value set on the CamundaCluster replaces the preset's value, and an absent field inherits it. This covers `version`, the `auth` client-credential fields, per-component `mode`, `replicas`, `partitions`, `replicationFactor`, `storageClassName`, `storageSize`, and `connectors.enabled`.
+3. Scalar and pointer fields override individually: a value set on the CamundaCluster replaces the preset's value, and an absent field inherits it. This covers `version`, the `auth` client-credential fields, per-component `mode`, `replicas`, `partitions`, `replicationFactor`, `storageClassName`, `storageSize`, `persistentVolumeClaimRetentionPolicy`, `connectors.enabled`, and `connectors.version`.
 4. `resources` merges per entry: a request or limit value set on the CamundaCluster replaces the preset's matching entry, and unset entries inherit.
 5. `extraEnv` lists merge by variable name: preset entries come first, and a CamundaCluster entry with the same name replaces the preset's entry.
 6. `extraEnvFrom` lists concatenate: preset entries first, then CamundaCluster entries.
@@ -87,12 +87,16 @@ spec:
         requests: { cpu: "1", memory: "2Gi" }
       # string. Optional. StorageClass for broker volumes.
       storageClassName: "ssd"
-      # quantity. Optional. Broker volume size.
+      # quantity. Optional. Broker volume size. A cluster that applied a larger size keeps it and records a StorageShrinkIgnored event.
       storageSize: "32Gi"
-      # list. Optional. Env var baseline, merged by name with cluster-level entries.
+      # object. Optional. What happens to the broker volumes when a referencing cluster is deleted; same shape as on the CamundaCluster.
+      persistentVolumeClaimRetentionPolicy:
+        # string (Retain | Delete). Optional, default: Delete.
+        whenDeleted: Delete
+      # list. Optional. Env var baseline, merged by name with cluster-level entries; an entry replaces an operator entry with the same name.
       extraEnv:
-        - name: JAVA_OPTS
-          value: "-Xmx4g"
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
     # object. Optional. Gateway baseline.
     gateway:
       # string. Optional. Standalone | Embedded.
@@ -110,14 +114,16 @@ spec:
     tasklist:
       # string. Optional. Standalone | Embedded.
       mode: Embedded
-    # object. Optional. Identity baseline.
-    identity:
+    # object. Optional. Admin baseline. Identity was renamed to Admin in Camunda 8.9; the profile is `admin`.
+    admin:
       # string. Optional. Standalone | Embedded.
       mode: Embedded
     # object. Optional. Connectors baseline; connectors are standalone-only.
     connectors:
       # boolean. Optional. Whether referencing clusters run the connectors runtime.
       enabled: true
+      # string. Optional. Connectors bundle version applied to clusters that do not set their own.
+      version: "8.9.7"
       # integer. Optional. Connectors replica baseline.
       replicas: 1
       # object. Optional. Compute resources baseline.
@@ -134,7 +140,7 @@ Reference errors surface on the consumer instead — a [CamundaCluster](camundac
 
 - `spec.cluster` must be present and must conform to the preset-legal subset of the CamundaCluster spec schema.
 - Instance-bound CamundaCluster fields are rejected at admission inside `spec.cluster`: `platformConfigRef`, `presetRef` (no preset chaining), `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`.
-- Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `identity`, `connectors`), and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`.
+- Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`), and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`.
 - There is no cross-resource validation: preset resolution problems are reported by the consuming controller.
 
 ## Relationships
@@ -188,8 +194,8 @@ spec:
       storageClassName: "ssd"
       storageSize: "32Gi"
       extraEnv:
-        - name: JAVA_OPTS
-          value: "-Xmx4g"
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
     gateway:
       mode: Standalone
       replicas: 2
@@ -199,10 +205,11 @@ spec:
       mode: Embedded
     tasklist:
       mode: Embedded
-    identity:
+    admin:
       mode: Embedded
     connectors:
       enabled: true
+      version: "8.9.7"
       replicas: 1
       resources:
         requests: { cpu: "250m", memory: "512Mi" }

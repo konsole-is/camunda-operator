@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A one-task process for the CamundaCluster e2e flow. The service task
+     waits for a worker of type "e2e" that never comes, so an instance stays
+     active and searchable. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="Definitions_e2e"
+                  targetNamespace="http://camunda.org/e2e">
+  <bpmn:process id="e2e-process" name="e2e process" isExecutable="true">
+    <bpmn:startEvent id="start">
+      <bpmn:outgoing>to-task</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="to-task" sourceRef="start" targetRef="task"/>
+    <bpmn:serviceTask id="task" name="e2e task">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="e2e"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>to-task</bpmn:incoming>
+      <bpmn:outgoing>to-end</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="to-end" sourceRef="task" targetRef="end"/>
+    <bpmn:endEvent id="end">
+      <bpmn:incoming>to-end</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

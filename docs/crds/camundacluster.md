@@ -13,19 +13,19 @@ Features such as backups, Optimize, and PVC auto-resizing attach to the cluster 
 
 ### Component topology
 
-Camunda 8.9 ships the orchestration cluster as a single unified binary: Zeebe, the gateway, and the Operate, Tasklist, and Identity web applications are one Spring Boot artifact, and which parts run in a given process is activated by configuration, not by different images.
+Camunda 8.9 ships the orchestration cluster as a single unified binary: Zeebe, the gateway, and the Operate, Tasklist, and Admin web applications are one Spring Boot artifact, and which parts run in a given process is activated by configuration, not by different images.
 The topology is therefore a configuration choice on this CR:
 
 - `zeebe` is always required and always standalone: a StatefulSet of brokers with `replicas`, `partitions`, `replicationFactor`, and persistent volumes.
 - `gateway` runs `Standalone` (its own Deployment of the unified binary) or `Embedded` (the brokers enable their embedded gateway).
-- `operate`, `tasklist`, and `identity` each run `Standalone` or `Embedded`. Embedded applications run inside the nearest standalone application up the chain: inside the gateway if it is standalone, otherwise inside zeebe.
+- `operate`, `tasklist`, and `admin` each run `Standalone` or `Embedded`. Embedded applications run inside the nearest standalone application up the chain: inside the gateway if it is standalone, otherwise inside zeebe. Identity was renamed to Admin in Camunda 8.9; the profile is `admin`.
 - `connectors` is a separate runtime application, never part of the unified binary; when enabled it is always its own standalone Deployment that connects to the cluster's REST and gRPC APIs.
 
-!!! note "Deviation from the original proposal"
-    The proposal described one Spring profile per application as the topology switch; verified against the Camunda 8.9 source, the driving control surface is the unified configuration instead.
-    `camunda.mode` (`all-in-one | broker | gateway`) and `camunda.webapps.enabled` select the embedded gateway and which web applications a gateway process serves, and the per-application profiles (`operate`, `tasklist`, `admin` — `identity` is the legacy profile name) are derived from those properties.
-    An `Embedded` web application is served by its host's gateway process; a `Standalone` one is rendered as its own Deployment of the unified binary serving only that application — a shape the binary supports but Camunda's own charts do not use.
-    The mode vocabulary on this CR is unchanged; only the rendering differs from the proposal's per-app-profile description.
+!!! note "Profiles select the role of a process"
+    The operator selects the role of each process with Spring profiles (`SPRING_PROFILES_ACTIVE`) and the embedded gateway with `ZEEBE_BROKER_GATEWAY_ENABLE`, never with `camunda.mode`.
+    In Camunda 8.9, `camunda.mode=gateway` adds the `consolidated-auth` profile only when `camunda.security.authentication.method` is unset. The operator always sets that property, so a gateway under `camunda.mode` starts without a security filter chain.
+    Every unified process therefore carries `consolidated-auth` next to its role profiles. The role profiles are `broker` for the brokers, `gateway` for the gateway, and `operate`, `tasklist`, and `admin` for the web applications that the process serves (`identity` is the legacy name of `admin`).
+    The host process serves an `Embedded` web application. A `Standalone` web application gets its own Deployment of the unified binary with the `gateway` profile and only that application's profile. The binary supports this shape, but Camunda's own charts do not use it.
 
 This supports every deployment model from all-in-one (everything embedded in zeebe, simplest for development) through the 8.9 default (standalone gateway hosting the embedded web applications) to fully separated Deployments per application.
 
@@ -33,14 +33,14 @@ This supports every deployment model from all-in-one (everything embedded in zee
 
 1. The operator resolves `presetRef` (if set) and computes the effective spec under the merge rules documented in [CamundaClusterPreset](camundaclusterpreset.md).
 2. The operator resolves `platformConfigRef`, the required `storageRef`, and the optional `backupStorageRef` / `documentStorageRef`; a missing target sets `Ready` to `False` with reason `InvalidReference`.
-3. The operator renders the workloads for the effective topology: the zeebe StatefulSet, a Deployment per standalone component, Services, and the configuration wiring — all expressed as unified-configuration environment variables on the single Camunda image (Spring Boot relaxed binding, e.g. `CAMUNDA_MODE`, `CAMUNDA_WEBAPPS_ENABLED`, `CAMUNDA_SECURITY_AUTHENTICATION_*`) — with auth from the platform config, secondary storage from the resolved `SecondaryStorageConfig`, and `externalUrl` as the base URL for OIDC redirects and web application links. The operator creates no Ingress resources; you (or a composition layer above) route traffic to `externalUrl`.
-4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources. The operator uses the component values `zeebe`, `gateway`, `operate`, `tasklist`, `identity`, and `connectors`.
-5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `camunda-operator/camundacluster`, leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
+3. The operator renders the workloads for the effective topology: the zeebe StatefulSet, a Deployment per standalone component, Services, and the configuration wiring — all expressed as unified-configuration environment variables on the single Camunda image (Spring Boot relaxed binding, for example `SPRING_PROFILES_ACTIVE`, `ZEEBE_BROKER_GATEWAY_ENABLE`, `CAMUNDA_SECURITY_AUTHENTICATION_METHOD`, `CAMUNDA_DATA_SECONDARYSTORAGE_*`) — with auth from the platform config, secondary storage from the resolved `SecondaryStorageConfig`, and `externalUrl` as the base URL for OIDC redirects and web application links. The operator creates no Ingress resources; you (or a composition layer above) route traffic to `externalUrl`.
+4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources. The operator uses the component values `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
+5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `CamundaCluster/<process>` (for example `CamundaCluster/zeebe`), leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
 6. The operator watches workload health into per-component conditions and the aggregate `Ready` condition.
-7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md) and contract CRDs, so changes to them roll out to the cluster without touching this CR.
-8. When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: for Elasticsearch-backed clusters, the CamundaCluster controller itself registers the snapshot repository (derived from `backupStorageRef`) in the cluster's Elasticsearch via the Elasticsearch API and configures the same repository name on the Camunda components; in all cases it configures the Zeebe primary-storage backup store. The Elasticsearch nodes' access to the snapshot bucket comes from the [ElasticsearchCluster](elasticsearchcluster.md)'s own workload identity (`serviceAccount.annotations` on that CR), not from this cluster's. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
-9. For RDBMS-backed clusters (`storageRef` resolves to `type: rdbms`), the operator additionally auto-enables continuous and scheduled backup of zeebe's primary storage (`camunda.data.primary-storage.backup`: continuous operation, schedule, and checkpoint interval), so database and primary storage stay restorable to matching positions — required both for `PointInTimeRestore` and for restoring RDBMS `Backup`s.
-10. `suspend: true` scales all workloads to zero and sets the `Suspended` condition; `pause: true` halts reconciliation of this CR entirely, leaving workloads as they are.
+7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md), the preset, the storage binding and its `DatabaseConfig` / `DatabaseServerConfig` chain, and every referenced Secret. A change to any of them changes the configuration hash on the pod templates (`camunda.io/config-hash`). The change rolls out to the cluster without a change to this CR.
+8. *(lands with Batch D)* When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: for Elasticsearch-backed clusters, the CamundaCluster controller itself registers the snapshot repository (derived from `backupStorageRef`) in the cluster's Elasticsearch via the Elasticsearch API and configures the same repository name on the Camunda components; in all cases it configures the Zeebe primary-storage backup store. The Elasticsearch nodes' access to the snapshot bucket comes from the [ElasticsearchCluster](elasticsearchcluster.md)'s own workload identity (`serviceAccount.annotations` on that CR), not from this cluster's. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
+9. *(lands with Batch D)* For RDBMS-backed clusters (`storageRef` resolves to `type: rdbms`), the operator additionally auto-enables continuous and scheduled backup of zeebe's primary storage (`camunda.data.primary-storage.backup`: continuous operation, schedule, and checkpoint interval), so database and primary storage stay restorable to matching positions — required both for `PointInTimeRestore` and for restoring RDBMS `Backup`s.
+10. `suspend: true` scales every workload to zero replicas and keeps the broker volumes; `Ready` is then `True` with reason `Suspended`. When `suspend` returns to false, `Ready` stays `True` with reason `Updating` while the workloads scale up, then `Healthy`. `pause: true` stops the reconciliation of this CR: the operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
 !!! note "Deviation from the original proposal"
     The proposal enabled continuous primary-storage backup only when the storage chain had point-in-time recovery enabled (`pitr.enabled: true` on the `DatabaseServerConfig`).
@@ -54,6 +54,55 @@ graph LR
     CC -.->|backupStorageRef / documentStorageRef| OSC["ObjectStorageConfig"]
     CC -->|creates| WL["Workloads: Zeebe StatefulSet, Gateway Deployment, Services"]
 ```
+
+### Services and endpoints
+
+Every process gets a Service with the name of its workload: `<name>-zeebe` (headless), `<name>-gateway`, `<name>-operate`, `<name>-tasklist`, `<name>-admin`, and `<name>-connectors`.
+The gateway Service (the zeebe Service, when the gateway is `Embedded`) exposes the gRPC API on port `26500` and the HTTP API on port `8080`.
+The HTTP port serves the Orchestration Cluster REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`.
+A standalone web application gets a Service of its own that exposes port `8080`. Every unified process exposes the health and metrics endpoints on the management port `9600`. Connectors expose them on their HTTP port `8080`.
+
+### Basic authentication
+
+Camunda 8.9 seeds no user on its own. When the platform config selects basic authentication, the operator creates the initial admin user of the cluster.
+The credentials live in the Secret `<name>-camunda-admin` in the namespace of the CamundaCluster, under the keys `username` (`admin`) and `password`.
+The operator generates the password once and keeps it stable across reconciles. The password reaches the containers as a `secretKeyRef`, and the user is a member of the `admin` role.
+The connectors runtime authenticates against the cluster with the same user. The Secret reports the condition `AdminSecretReady`, and it takes part in `Ready`.
+
+### Referenced Secrets in other namespaces
+
+A pod can only read a Secret in its own namespace. When a referenced Secret (the license, the OIDC client secret, the storage credentials, the CA, or the DatabaseConfig credentials) lives in another namespace, the operator copies the referenced keys into the namespace of the CamundaCluster.
+The copy is the owned Secret `<name>-camunda-<purpose>`, where `purpose` is one of `license`, `oidc-client`, `auth-client`, `es-credentials`, `es-ca`, and `db-credentials`. The containers reference the copy. A change to the source Secret updates the copy and rolls the pods. The copies report the condition `MirroredSecretsReady`, and it takes part in `Ready`.
+
+### Zeebe storage
+
+The brokers keep their data on one PersistentVolumeClaim per pod, from the `data` volume claim template of the StatefulSet.
+When the effective `spec.zeebe.storageSize` grows, the operator patches every bound broker claim up to the new size, in place and without a restart. A claim of a new replica is patched after it binds. The storage class must allow volume expansion; the API server rejects the patch otherwise, and the reconcile stops with that error and is retried with backoff.
+The volume claim template of a StatefulSet is immutable, so the operator never changes it and never recreates the StatefulSet: the template keeps the size it was created with, and the StatefulSet carries the effective size in the annotation `camunda.io/requested-storage-size`.
+The operator never reduces a claim. When the effective size is below the largest bound broker claim (only possible through the preset, since admission rejects an inline decrease), the operator records the Warning event `StorageShrinkIgnored` once per requested size and continues; the claims and the template keep their size.
+The retention policy of the StatefulSet maps `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (`Delete` by default); a scale-down always retains the claims. `status.volumes` lists every bound broker claim with its capacity.
+
+### JVM options
+
+Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the JVM exits on an OutOfMemoryError and the kubelet restarts the pod.
+Heap sizing is left to the container-aware defaults of the JVM. To change the JVM options of a process, set `JAVA_TOOL_OPTIONS` in its `extraEnv`; the entry replaces the value of the operator.
+
+### Extra environment variables
+
+The operator renders the configuration of a process first, then the user entries in layers. A later entry with the same name wins:
+
+1. the top-level `extraEnv`,
+2. the `extraEnv` of the embedded gateway (on the brokers, when the gateway is `Embedded`),
+3. the `extraEnv` of every embedded web application that the process hosts,
+4. the `extraEnv` of the process's own component block.
+
+An embedded component has no process of its own, so its `extraEnv` and `extraEnvFrom` apply to its host process: the gateway when it is standalone, otherwise zeebe. `extraEnvFrom` sources are concatenated in the same order. Connectors get only the top-level entries and their own block.
+
+### ServiceMonitors
+
+When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one ServiceMonitor per process, named like the workload.
+It scrapes `/actuator/prometheus` on the management port `9600` of a unified process, and on the HTTP port `8080` of connectors.
+On a Kubernetes cluster that does not serve the `ServiceMonitor` kind, the operator creates none and reports no error.
 
 ## API reference
 
@@ -87,7 +136,7 @@ spec:
     clientSecretRef:
       # string. Required. Name of the Secret.
       name: "my-cluster-oidc-secret"
-      # string. Optional, default: this CR's namespace. Namespace of the Secret.
+      # string. Required. Namespace of the Secret (always explicit; it never defaults to this CR's namespace).
       namespace: "my-cluster-ns"
       # string. Required. Key inside the Secret.
       key: "client-secret"
@@ -95,7 +144,7 @@ spec:
   zeebe:
     # integer. Optional, default: 1. Number of brokers.
     replicas: 3
-    # integer. Optional, default: 1. Number of partitions; cannot be decreased.
+    # integer. Optional, default: 1. Number of partitions; cannot be decreased, and once set it cannot be removed.
     partitions: 3
     # integer. Optional, default: 1. Replication factor; must not exceed replicas.
     replicationFactor: 3
@@ -104,12 +153,16 @@ spec:
       requests: { cpu: "1", memory: "2Gi" }
     # string. Optional, default: the cluster default StorageClass. StorageClass for broker volumes.
     storageClassName: "ssd"
-    # quantity. Optional, default: 10Gi. Persistent volume size per broker.
+    # quantity. Optional, default: 10Gi. Persistent volume size per broker; can only grow.
     storageSize: "32Gi"
-    # list. Optional. Individual env vars appended to the component's containers.
+    # object. Optional. What happens to the broker volumes when the CamundaCluster is deleted. A scale-down and a suspension always keep them.
+    persistentVolumeClaimRetentionPolicy:
+      # string (Retain | Delete). Optional, default: Delete. Delete removes the broker volumes with the cluster. Retain keeps them, and a later cluster with the same name reattaches them.
+      whenDeleted: Delete
+    # list. Optional. Individual env vars appended to the component's containers; an entry replaces an operator entry with the same name.
     extraEnv:
-      - name: JAVA_OPTS
-        value: "-Xmx4g"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
     # list. Optional. Bulk env from ConfigMaps/Secrets.
     extraEnvFrom:
       - configMapRef:
@@ -132,17 +185,17 @@ spec:
     mode: Standalone
     # integer. Optional, default: 1. Replicas; only meaningful when Standalone.
     replicas: 2
-    # object. Optional. Compute resources.
+    # object. Optional. Compute resources; only meaningful when Standalone.
     resources: {}
-    # list. Optional. Individual env vars.
+    # list. Optional. Individual env vars; applied to the brokers when Embedded.
     extraEnv: []
-    # list. Optional. Bulk env from ConfigMaps/Secrets.
+    # list. Optional. Bulk env from ConfigMaps/Secrets; applied to the brokers when Embedded.
     extraEnvFrom: []
-    # map[string]string. Optional. Extra pod labels.
+    # map[string]string. Optional. Extra pod labels; only meaningful when Standalone.
     podLabels: {}
-    # map[string]string. Optional. Extra pod annotations.
+    # map[string]string. Optional. Extra pod annotations; only meaningful when Standalone.
     podAnnotations: {}
-    # object. Optional. Scheduling constraints; same shape as zeebe.scheduling.
+    # object. Optional. Scheduling constraints; same shape as zeebe.scheduling, only meaningful when Standalone.
     scheduling: {}
   # object. Optional. Operate web application.
   operate:
@@ -154,7 +207,7 @@ spec:
     resources: {}
     # list. Optional. Individual env vars; applied to the host process when Embedded.
     extraEnv: []
-    # list. Optional. Bulk env from ConfigMaps/Secrets.
+    # list. Optional. Bulk env from ConfigMaps/Secrets; applied to the host process when Embedded.
     extraEnvFrom: []
     # map[string]string. Optional. Extra pod labels; only meaningful when Standalone.
     podLabels: {}
@@ -166,14 +219,16 @@ spec:
   tasklist:
     # string. Optional, default: Embedded. One of: Standalone | Embedded.
     mode: Embedded
-  # object. Optional. Identity (Orchestration Cluster Admin) web application; same fields and semantics as operate.
-  identity:
+  # object. Optional. Admin web application (Identity before Camunda 8.9); same fields and semantics as operate.
+  admin:
     # string. Optional, default: Embedded. One of: Standalone | Embedded.
     mode: Embedded
   # object. Optional. Connectors runtime; a separate application, standalone-only.
   connectors:
     # boolean. Optional, default: false. Whether to run the connectors runtime.
     enabled: true
+    # string. Required when enabled, unless the resolved preset provides it. Version of the connectors bundle image (e.g. "8.9.7"); the bundle has its own patch line and does not follow spec.version.
+    version: "8.9.7"
     # integer. Optional, default: 1. Connectors replicas.
     replicas: 2
     # object. Optional. Compute resources.
@@ -208,7 +263,7 @@ spec:
   monitoring:
     # object. Optional. Prometheus ServiceMonitor creation.
     serviceMonitor:
-      # boolean. Optional, default: false. When true, the operator creates a ServiceMonitor per standalone component, scraping the management port (9600).
+      # boolean. Optional, default: false. When true, the operator creates a ServiceMonitor per process that scrapes /actuator/prometheus on the management port 9600 (connectors: on the HTTP port 8080).
       enabled: true
       # map[string]string. Optional. Extra labels applied to all created ServiceMonitors.
       labels: {}
@@ -222,33 +277,37 @@ spec:
 
 ## Status
 
-Status uses conditions exclusively: one condition per standalone component plus the aggregate `Ready` — no health enums, no URL fields.
-Embedded applications do not get their own condition; they are covered by their host's condition (for example `GatewayReady` covers embedded operate/tasklist/identity).
+Status uses conditions exclusively: one condition per process, the internal Secret conditions, and the aggregate `Ready` — no health enums, no URL fields.
+Every process reports a condition. The condition of an embedded gateway, an embedded web application, or disabled connectors reads `True` with reason `Disabled`: the operator keeps a component for it and deletes what an earlier topology created. An embedded application is covered by the condition of its host (for example `GatewayReady` covers embedded operate/tasklist/admin).
+`Ready` mirrors the highest-priority condition of the components the cluster needs; a `Disabled` component never takes part. Its status and reason are those of that component, and its message names the component. The reasons of the component conditions come from the component framework (`Healthy`, `Creating`, `Updating`, `Degraded`, `Down`, `Suspended`, `Disabled`, and more).
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
 | `ZeebeReady` | `Healthy` | All broker replicas are ready. |
-| `GatewayReady` | `Healthy` | All gateway replicas are ready (only present when the gateway is standalone). |
-| `OperateReady` / `TasklistReady` / `IdentityReady` | `Healthy` | The standalone web application's replicas are ready (only present for standalone modes). |
-| `ConnectorsReady` | `Healthy` | All connectors replicas are ready (only present when connectors are enabled). |
-| `Ready` | `Healthy` | Aggregate: every component condition is `True`. |
-| `Ready` | `Progressing` | Workloads are still rolling toward the desired state. |
-| `Ready` | `InvalidReference` | A referenced CR (`platformConfigRef`, `presetRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`) does not exist. |
-| `Ready` | `MissingSecret` | A Secret referenced by the effective auth configuration is missing. |
-| `Ready` | `Suspended` | The cluster is suspended and intentionally not serving. |
-| `Suspended` | `Suspended` | `spec.suspend` is true and workloads are scaled to zero. |
+| `GatewayReady` | `Healthy` | All gateway replicas are ready. `Disabled` when the gateway is embedded. |
+| `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` | The standalone web application's replicas are ready. `Disabled` when the application is embedded. |
+| `ConnectorsReady` | `Healthy` | All connectors replicas are ready. `Disabled` when connectors are not enabled. |
+| `AdminSecretReady` | `Healthy` | The admin Secret `<name>-camunda-admin` is applied. `Disabled` under OIDC: a switch from basic to OIDC deletes the Secret. |
+| `MirroredSecretsReady` | `Healthy` | Every copy of a referenced Secret from another namespace is applied; a copy whose reference went away or moved into the cluster namespace is deleted. `Disabled` when no referenced Secret lives outside the cluster namespace; takes part in `Ready` only when one does. |
+| `Ready` | `Healthy` | Every component the cluster needs is `Healthy`. |
+| `Ready` | `InvalidReference` | A referenced CR (`platformConfigRef`, `presetRef`, `storageRef` and its `DatabaseConfig` / `DatabaseServerConfig` chain, `backupStorageRef`, `documentStorageRef`) does not exist, or the merged spec is invalid (the message starts with `invalid effective spec:` and names the fields). |
+| `Ready` | `MissingSecret` | A referenced Secret (auth client secret, license, storage credentials, CA, DatabaseConfig credentials) or one of its keys is missing. |
+| `Ready` | `Suspended` | `spec.suspend` is true and every workload is scaled to zero. `Ready` is `True`: the cluster is in its desired state. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
+`status.volumes` lists the bound broker PersistentVolumeClaims, sorted by name, each with the capacity that it reports (`name`, `capacity`). The claims can differ in size, so a resize of one claim outside the spec (for example by [PVCAutoResize](pvcautoresize.md)) shows here.
 
 ## Validation
 
 - `spec.storageRef` is required: a CamundaCluster without secondary storage is not a functional Camunda cluster.
 - `spec.platformConfigRef` is required.
 - The effective version (inline or inherited from the preset) must be present and 8.9 or later.
-- `spec.zeebe.partitions` cannot be decreased after creation.
+- `spec.zeebe.partitions` cannot be decreased, and once set inline it cannot be removed (removal would fall back to the preset or the default, an effective decrease).
 - `spec.zeebe.storageClassName` is immutable after creation: StatefulSet PVC templates cannot change their storage class.
-- `spec.zeebe.storageSize` may only grow; updates that shrink it are rejected, like [ElasticsearchCluster](elasticsearchcluster.md)'s `storageSize`. On growth the operator expands the existing PVCs in place — the storage class must support volume expansion — and applies the new size for future replicas.
+- `spec.zeebe.storageSize` may only grow; updates that shrink it are rejected, like [ElasticsearchCluster](elasticsearchcluster.md)'s `storageSize`. On growth the operator expands the existing PVCs in place — the storage class must support volume expansion — and expands the PVC of a new replica after it binds. A decrease through the preset is ignored with the event `StorageShrinkIgnored`.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
+- `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
+- `spec.connectors.version` must be a full three-segment version (`8.9.7`, not `8.9`). The effective value (inline or inherited from the preset) must be present when `spec.connectors.enabled` is true.
 - `spec.connectors.replicas` and connectors sizing fields are only meaningful when `spec.connectors.enabled` is true.
 - Existence of referenced CRs and Secrets is checked at reconcile time and surfaced as `InvalidReference` / `MissingSecret` conditions, not at admission, because references may be created in any order.
 
@@ -304,8 +363,8 @@ spec:
       requests:
         memory: "8Gi"
     extraEnv:
-      - name: JAVA_OPTS
-        value: "-Xmx6g"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx6g"
   storageRef: "my-storage-config"
   backupStorageRef: "my-backup-config"
   monitoring:

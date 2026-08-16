@@ -307,15 +307,15 @@ install-helm: ## Install the pinned version of Helm if it is missing.
 helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify an image with IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
 
-## Maximum rendered chart size in bytes before helm-verify fails.
+## Maximum gzipped rendered chart size in bytes before helm-verify fails.
 ## The real bound is the gzipped Helm release Secret against etcd's ~1MB object
-## limit. This uncompressed proxy is deliberately conservative — gzip on CRD text
-## buys several-fold headroom, so the wire trips well before an install would
-## actually fail. It is an early warning to trigger the CRD-split conversation,
-## not a correctness check. The tripwire measures the worst case across all
-## rendered permutations. When it trips, the CRD set has outgrown in-chart
-## delivery and the CRDs should move to a chart of their own.
-HELM_MAX_RENDER_BYTES ?= 1048576
+## limit. The check measures `helm template ... | gzip -9 | wc -c` for every
+## rendered permutation and keeps the worst case. The limit is deliberately half
+## of the etcd bound, so the tripwire fires well before an install would fail.
+## It is an early warning to trigger the CRD-split conversation, not a
+## correctness check. When it trips, the CRD set has outgrown in-chart delivery
+## and the CRDs must move to a chart of their own.
+HELM_MAX_RENDER_GZIP_BYTES ?= 524288
 
 .PHONY: helm-verify
 helm-verify: install-helm ## Lint and render the Helm chart across value permutations. No cluster required.
@@ -334,13 +334,17 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		"--set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
 	; do \
 		label="$${opts:-<defaults>}"; \
-		bytes="$$( $(HELM) template verify "$(HELM_CHART_DIR)" $$opts | wc -c )"; \
-		printf '  %9s bytes  helm template %s\n' "$$bytes" "$$label"; \
-		if [ "$$bytes" -gt "$$max" ]; then max=$$bytes; worst="$$label"; fi; \
+		tmp="$$(mktemp)"; \
+		$(HELM) template verify "$(HELM_CHART_DIR)" $$opts > "$$tmp"; \
+		bytes="$$(wc -c < "$$tmp")"; \
+		gz="$$(gzip -9 -c "$$tmp" | wc -c)"; \
+		rm -f "$$tmp"; \
+		printf '  %9s bytes (%7s gzipped)  helm template %s\n' "$$bytes" "$$gz" "$$label"; \
+		if [ "$$gz" -gt "$$max" ]; then max=$$gz; worst="$$label"; fi; \
 	done; \
-	echo "  worst case: $$max bytes ($$worst), limit $(HELM_MAX_RENDER_BYTES)"; \
-	if [ "$$max" -gt "$(HELM_MAX_RENDER_BYTES)" ]; then \
-		echo "ERROR: rendered chart exceeds $(HELM_MAX_RENDER_BYTES) bytes in configuration: $$worst" >&2; \
+	echo "  worst case: $$max bytes gzipped ($$worst), limit $(HELM_MAX_RENDER_GZIP_BYTES)"; \
+	if [ "$$max" -gt "$(HELM_MAX_RENDER_GZIP_BYTES)" ]; then \
+		echo "ERROR: gzipped rendered chart exceeds $(HELM_MAX_RENDER_GZIP_BYTES) bytes in configuration: $$worst" >&2; \
 		echo "The CRD set has outgrown in-chart delivery. Consider splitting CRDs" >&2; \
 		echo "into a separate chart shipped alongside this one." >&2; \
 		exit 1; \

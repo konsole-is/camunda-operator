@@ -34,6 +34,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -48,6 +49,13 @@ import (
 const (
 	Timeout  = 10 * time.Second
 	Interval = 250 * time.Millisecond
+)
+
+// eventBurst and eventQPS size the event spam filter of the manager, so every
+// event of a suite reaches the API server.
+const (
+	eventBurst = 100000
+	eventQPS   = 1000
 )
 
 // Env is a running envtest control plane with a manager started against it.
@@ -109,6 +117,14 @@ func Start(register func(mgr ctrl.Manager) error) *Env {
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:  scheme.Scheme,
 		Metrics: metricsserver.Options{BindAddress: "0"},
+		// The component framework records an event per applied resource on
+		// every reconcile. The default spam filter of client-go then drops
+		// every later event of the object (25 per object, one more each 5
+		// minutes), so a suite could not observe the events of a controller.
+		EventBroadcaster: record.NewBroadcasterWithCorrelatorOptions(record.CorrelatorOptions{
+			BurstSize: eventBurst,
+			QPS:       eventQPS,
+		}),
 	})
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	gomega.Expect(register(mgr)).To(gomega.Succeed(), "registering the suite's controllers")
