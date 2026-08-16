@@ -69,7 +69,7 @@ const versionFloor = "8.9.0"
 // or preset, so callers can mutate it freely.
 func MergePreset(spec v1.CamundaClusterSpec, preset *v1.CamundaClusterPresetSpec) v1.CamundaClusterSpec {
 	if preset == nil {
-		return spec
+		return *spec.DeepCopy()
 	}
 
 	merged := *preset.Cluster.DeepCopy()

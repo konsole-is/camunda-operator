@@ -354,6 +354,17 @@ func TestMergePresetSharesNoMemoryWithSpecOrPreset(t *testing.T) {
 	assert.Equal(t, "b", spec.ServiceAccount.Annotations["a"])
 }
 
+func TestMergePresetNilPresetSharesNoMemoryWithSpec(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.CamundaClusterSpec{PodLabels: map[string]string{"own": "cluster"}}
+	merged := MergePreset(spec, nil)
+
+	merged.PodLabels["own"] = "changed"
+
+	assert.Equal(t, "cluster", spec.PodLabels["own"])
+}
+
 func TestValidateMerged(t *testing.T) {
 	t.Parallel()
 
