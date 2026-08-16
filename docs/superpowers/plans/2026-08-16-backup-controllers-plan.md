@@ -104,6 +104,7 @@ Implements spec §ElasticsearchCluster (API), §ElasticsearchCluster owns the El
 - [ ] TDD types + schema (SA `create:false` semantics, secureSettings shape)
 - [ ] TDD annotation derivation per storage type (pure, in the components package)
 - [ ] TDD keystore Secret + secureSettings render (goldens)
+- [ ] Elasticsearch `gcs`/`azure` **repository** settings are Elastic's surface, not Camunda's (PR1 verified only the Camunda side and deliberately did not claim them) — verify them against Elasticsearch/ECK documentation before rendering, the same way the `s3` repository settings are verified
 - [ ] Narrow the `camunda` role (snapshot perms on the repo + `monitor`); prove in e2e later, envtest now asserts the rendered role string
 - [ ] envtest: registration idempotence, `SnapshotRepositoryReady`, published `snapshotRepository`, `InvalidReference` on missing pre-existing SA
 - [ ] Update `docs/crds/{elasticsearchcluster,secondarystorageconfig}.md`
@@ -120,6 +121,7 @@ Implements spec §CamundaCluster and CamundaClusterPreset (API), §Backup policy
 
 **Steps:**
 - [ ] Verify every rendered key with the camunda-docs MCP before writing it into `pkg/camundaconfig` (backup store `s3/gcs/azure` blocks, `repository-name`, continuous/schedule/checkpoint/retention)
+- [ ] **Three GCS/Azure mapping rules verified in PR1 against `camunda/camunda` 8.9.16 — do NOT re-infer them from field names:** (a) Azure's `base-path` **is the container name** (the azure block has no container field; `AzureBackupConfig.containerName` maps to `basePath`), so render `azure.base-path: <container>` and never concatenate our `basePath` into it; (b) Azure's `endpoint` is effectively required without a connection string — derive `https://<accountName>.blob.core.windows.net` when unset; (c) GCS accepts **no key as configuration** (`gcs.auth` is only `auto | none`; credentials resolve through `GoogleCredentials.getApplicationDefault()`), so a static GCS key is mounted as a file with `GOOGLE_APPLICATION_CREDENTIALS` set and `auth: auto` — never rendered as a property
 - [ ] TDD presetmerge for `backup` (incl. `continuous` `*bool` three-state)
 - [ ] TDD render goldens: ES-path and RDBMS-path backup variants (backup store env, repository name, `WHEN_REQUIRED`, static keys vs none)
 - [ ] TDD binding publication + clear-on-suspend (envtest), precheck rejections

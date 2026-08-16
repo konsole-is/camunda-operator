@@ -861,3 +861,9 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
 - The Camunda document store does not support MinIO. `documentStorageRef` stays untestable in
   kind. Not in scope.
 - ECK v3.5.0: `spec.secureSettings []commonv1.SecretSource{secretName, entries[]{key, path}}`.
+- Verified against `camunda/camunda` 8.9.16 while implementing the bucket contract, because the field names mislead:
+    - `camunda.data.primary-storage.backup.azure` has **no container field**: `AzureBackupConfig.containerName` maps to `base-path`. Render the container as `azure.base-path`, and keep the contract's own `basePath` out of it (it prefixes operator-written objects and the Elasticsearch `base_path`).
+    - The azure `endpoint` is required unless a connection string is given, and the contract carries no connection string, so derive `https://<accountName>.blob.core.windows.net` when it is unset.
+    - `camunda.data.primary-storage.backup.gcs.auth` accepts only `auto | none`, and credentials resolve through `GoogleCredentials.getApplicationDefault()`. A static GCS key therefore cannot be a property: mount it as a file, set `GOOGLE_APPLICATION_CREDENTIALS`, and leave `auth: auto`.
+    - Deliberate contract limits: no `host` override for GCS (emulators are unaddressable), and no `connectionString` or `sasToken` for Azure.
+    - The Elasticsearch `gcs` and `azure` **repository** settings are Elastic's surface, not Camunda's, and are verified in the ElasticsearchCluster PR rather than here.
