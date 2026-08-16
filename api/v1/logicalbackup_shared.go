@@ -16,6 +16,23 @@ limitations under the License.
 
 package v1
 
+import "k8s.io/apimachinery/pkg/api/resource"
+
+// LogicalBackupStorageSizes are the effective restore sizes of the
+// storage-bearing components, recorded when a backup starts so a restore can
+// create right-sized volumes instead of guessing. Recording is best effort: a
+// value that could not be computed stays unset. The RDBMS kind never sets
+// Elasticsearch, whose data it does not back up.
+type LogicalBackupStorageSizes struct {
+	// Elasticsearch is the effective restore size of one Elasticsearch data
+	// volume.
+	// +optional
+	Elasticsearch *resource.Quantity `json:"elasticsearch,omitempty"`
+	// Zeebe is the effective restore size of one broker data volume.
+	// +optional
+	Zeebe *resource.Quantity `json:"zeebe,omitempty"`
+}
+
 // ClusterRef references a CamundaCluster by name and namespace.
 type ClusterRef struct {
 	// Name of the CamundaCluster.
