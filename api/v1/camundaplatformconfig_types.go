@@ -40,18 +40,21 @@ type OIDCSpec struct {
 	// IssuerURL is the issuer URL of the identity provider. Consumers resolve
 	// the endpoints from its OIDC discovery document unless the explicit
 	// endpoint fields override them.
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerUrl must be a valid http or https URL"
 	IssuerURL string `json:"issuerUrl"`
 	// JWKSURL is an explicit JWKS endpoint. It overrides the value from OIDC
 	// discovery.
+	// +kubebuilder:validation:XValidation:rule="self == '' || (isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https'))",message="jwksUrl must be empty or a valid http or https URL"
 	// +optional
 	JWKSURL string `json:"jwksUrl,omitempty"`
 	// TokenURL is an explicit token endpoint. It overrides the value from OIDC
 	// discovery.
+	// +kubebuilder:validation:XValidation:rule="self == '' || (isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https'))",message="tokenUrl must be empty or a valid http or https URL"
 	// +optional
 	TokenURL string `json:"tokenUrl,omitempty"`
 	// AuthURL is an explicit authorization endpoint. It overrides the value
 	// from OIDC discovery.
+	// +kubebuilder:validation:XValidation:rule="self == '' || (isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https'))",message="authUrl must be empty or a valid http or https URL"
 	// +optional
 	AuthURL string `json:"authUrl,omitempty"`
 	// ClientID is the default OIDC client ID that all clusters share unless a

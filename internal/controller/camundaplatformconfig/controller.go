@@ -20,6 +20,7 @@ package camundaplatformconfig
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
@@ -75,11 +76,17 @@ func (r *CamundaPlatformConfigReconciler) Reconcile(ctx context.Context, req ctr
 
 // validate checks every Secret reference of the platform config: the OIDC
 // client secret when the method is oidc, and the license when it is set. The
-// first missing Secret or key becomes the condition message.
+// first missing Secret or key becomes the condition message. The CRD schema
+// ties the oidc block to method oidc. An object that passed admission with
+// method oidc and no block yields an error, not a condition.
 func (r *CamundaPlatformConfigReconciler) validate(
 	ctx context.Context,
 	cfg *v1.CamundaPlatformConfig,
 ) (metav1.Condition, error) {
+	if cfg.Spec.Method() == v1.AuthenticationMethodOIDC && cfg.Spec.Auth.OIDC == nil {
+		return metav1.Condition{}, fmt.Errorf("spec.auth.method %q has no oidc block", cfg.Spec.Method())
+	}
+
 	for _, ref := range secretRefs(cfg) {
 		msg, err := secretref.CheckKeys(
 			ctx, r.APIReader,
@@ -96,8 +103,7 @@ func (r *CamundaPlatformConfigReconciler) validate(
 	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
-// secretRefs returns the Secret references that the platform config makes:
-// the OIDC client secret when the method is oidc, then the license when set.
+// secretRefs is shared by validate and the SecretRefsField indexer so both see the same references.
 func secretRefs(cfg *v1.CamundaPlatformConfig) []v1.SecretKeyRef {
 	var refs []v1.SecretKeyRef
 	if cfg.Spec.Method() == v1.AuthenticationMethodOIDC && cfg.Spec.Auth.OIDC != nil {

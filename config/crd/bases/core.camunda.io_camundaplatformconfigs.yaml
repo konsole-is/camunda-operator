@@ -71,6 +71,11 @@ spec:
                           AuthURL is an explicit authorization endpoint. It overrides the value
                           from OIDC discovery.
                         type: string
+                        x-kubernetes-validations:
+                        - message: authUrl must be empty or a valid http or https
+                            URL
+                          rule: self == '' || (isURL(self) && (url(self).getScheme()
+                            == 'http' || url(self).getScheme() == 'https'))
                       clientId:
                         description: |-
                           ClientID is the default OIDC client ID that all clusters share unless a
@@ -104,18 +109,31 @@ spec:
                           IssuerURL is the issuer URL of the identity provider. Consumers resolve
                           the endpoints from its OIDC discovery document unless the explicit
                           endpoint fields override them.
-                        minLength: 1
                         type: string
+                        x-kubernetes-validations:
+                        - message: issuerUrl must be a valid http or https URL
+                          rule: isURL(self) && (url(self).getScheme() == 'http' ||
+                            url(self).getScheme() == 'https')
                       jwksUrl:
                         description: |-
                           JWKSURL is an explicit JWKS endpoint. It overrides the value from OIDC
                           discovery.
                         type: string
+                        x-kubernetes-validations:
+                        - message: jwksUrl must be empty or a valid http or https
+                            URL
+                          rule: self == '' || (isURL(self) && (url(self).getScheme()
+                            == 'http' || url(self).getScheme() == 'https'))
                       tokenUrl:
                         description: |-
                           TokenURL is an explicit token endpoint. It overrides the value from OIDC
                           discovery.
                         type: string
+                        x-kubernetes-validations:
+                        - message: tokenUrl must be empty or a valid http or https
+                            URL
+                          rule: self == '' || (isURL(self) && (url(self).getScheme()
+                            == 'http' || url(self).getScheme() == 'https'))
                     required:
                     - clientId
                     - clientSecretRef

@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 )
 
 // minimalPlatformConfig returns the minimal example of the CRD doc with a
@@ -127,6 +128,30 @@ var _ = Describe("CamundaPlatformConfig schema", func() {
 			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
 				o.Spec.Auth.OIDC.IssuerURL = ""
 			}, "issuerUrl",
+		),
+		Entry(
+			"rejects an issuerUrl that is not a URL",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Auth.OIDC.IssuerURL = fixtures.NotAURL
+			}, "issuerUrl must be a valid http or https URL",
+		),
+		Entry(
+			"rejects a jwksUrl with an ftp scheme",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Auth.OIDC.JWKSURL = "ftp://login.example.com/certs"
+			}, "jwksUrl must be empty or a valid http or https URL",
+		),
+		Entry(
+			"rejects a tokenUrl that is not a URL",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Auth.OIDC.TokenURL = fixtures.NotAURL
+			}, "tokenUrl must be empty or a valid http or https URL",
+		),
+		Entry(
+			"rejects an authUrl that is not a URL",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Auth.OIDC.AuthURL = fixtures.NotAURL
+			}, "authUrl must be empty or a valid http or https URL",
 		),
 		Entry(
 			"rejects an oidc block without clientId",
