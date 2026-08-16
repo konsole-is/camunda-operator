@@ -1,108 +1,118 @@
 # camunda-operator
 
-Core Kubernetes operator for the Camunda platform. Manages the orchestration cluster lifecycle,
-storage backends, backup/restore, Optimize, and the management plane.
+Core Kubernetes operator for the Camunda platform. It manages the orchestration cluster lifecycle,
+storage backends, backup and restore, Optimize, and the management plane.
 
 Module: `github.com/konsole-is/camunda-operator`
 
+This file is the entry point. It tells you which skill to load for each kind of work. The skills hold
+the detail. Do not work from memory when a skill covers the task.
+
+@AGENTS.md
+
 ---
 
-## Operator implementation guidelines
+## Skills: load before you act
 
-- Use the operator component framework for resource and lifecycle management: https://github.com/sourcehawk/operator-component-framework
-- Apply every managed resource with SSA. A CR's own status is written once per reconcile through the ocf `FlushStatus`, never with SSA.
-- Write top level controller tests (reconciliation) using ginkgo and gomega, verifying high level concerns of operator logic
-- Write low level tests of features of a controller close to the method / file that implements it, covering all edge cases and expected outcomes, preferring
-  pure go unit tests using testify.
-- If the proposed architecture conflicts with our goals, challenge the idea with followup questions and explanations of why it does not fit.
-- The architecture is high level and not all details may have been covered. If you see missing or inaccurate definitions, either ask or implement if clearly obvious.
-- Use the `camunda-docs` mcp server rigorously to gather context on subjects required for implementation.
-- Follow kubernetes best practices and go conventions
+| Before you ... | Load this skill |
+| --- | --- |
+| Write, change, or review any Go code | `how-we-write-go` |
+| Write or edit prose: GoDoc, comments, `docs/`, `README.md`, CRD field descriptions, error and condition messages | `simple-english:simple-english` |
+| Write or change Camunda application config (env vars, Spring properties) | `verifying-camunda-app-config` |
+| Design or review how a controller or component is structured | `ocf:structuring-operators` |
+| Create or change an ocf component: builder, lifecycle, conditions, status, `FlushStatus` | `ocf:building-components` |
+| Create or edit resource primitives, mutations, feature gates | `ocf:using-primitives` |
+| Wrap a custom resource as an ocf primitive with `pkg/generic` | `ocf:custom-resource-wrappers` |
+| Write or update tests for a component: mutation tests, golden snapshots, version matrix | `ocf:testing-operators` |
+| Start a feature, plan it, or split it into PRs | `feature-dev-workflow:planning-a-feature`, then `feature-dev-workflow:developing-a-feature` |
+| Open or edit a pull request | `feature-dev-workflow:opening-a-pull-request` |
+| Say that work is complete | `superpowers:verification-before-completion` |
 
-## Before Making Changes
+The operator uses the operator component framework (ocf):
+https://github.com/sourcehawk/operator-component-framework. The `ocf:*` skills come from that
+repository through the plugin in `.claude/settings.json`.
 
-**Read before writing.** Always gather context from the actual source code and documentation before
-proposing or making changes. Do not reason from assumptions.
+Use the `camunda-docs` MCP server for every question about Camunda behavior. Do not answer from memory.
 
-### Documentation to read
+---
 
-- `README.md` — architecture overview and quick start
-- `docs/architecture.md` — operator design, CRD ownership, extension model
+## Read before you write
 
-### Source to read
+Get context from the code and the docs before you propose or make a change. Do not reason from
+assumptions.
 
-- `api/v1/` — CRD types and their GoDoc
-- `internal/controller/` — reconciler implementations
-- `pkg/` — shared utilities and clients
+- `README.md`: architecture overview and quick start
+- `docs/architecture.md`: operator design, CRD ownership, extension model
+- `docs/crds/`: design docs for each CRD
+- `api/v1/`: CRD types and their GoDoc
+- `internal/controller/`: reconcilers
+- `pkg/`: shared utilities and clients
+
+If a prompt is not clear in scope or intent, ask before you write code.
+
+If a proposed design conflicts with the goals in `docs/architecture.md`, say so. Ask questions and
+explain why the design does not fit. The design docs are guidelines. If the code finds a better shape,
+change the doc in the same change.
 
 ---
 
 ## Architecture
 
-This is the bottom layer of a three-operator stack. It has zero knowledge of
+This operator is the bottom layer of a three-operator stack. It has no knowledge of
 `camunda-cloud-operator` or `camunda-saas-operator`.
 
 ```
 CloudCamundaCluster (camunda-cloud-operator)
 └─ CamundaCluster (this operator)
-└─ Workloads (Deployments, StatefulSets, Services)
+   └─ Workloads (Deployments, StatefulSets, Services)
 ```
 
-**Core principle:** features attach to workloads — workloads don't know about features.
-`CamundaCluster` creates labeled workloads. Extensions discover and attach via `clusterRef`
-or label selectors. `CamundaCluster` never imports or calls extension controllers.
+Core principle: features attach to workloads. Workloads do not know about features. `CamundaCluster`
+creates labeled workloads. Extensions find them and attach through `clusterRef` or label selectors.
+`CamundaCluster` never imports or calls an extension controller.
 
 ---
 
-## Rules for Code Changes
+## Rules that are not in a skill
 
-### Clarify before implementing
+### Resources and status
 
-If a prompt is ambiguous in scope, intent, or missing context that would materially affect the
-approach — ask before writing any code.
-
-### GoDoc
-
-Every exported symbol has a GoDoc comment. Update it whenever you change the associated
-behaviour, signature, or semantics.
-
-### Writing prose: always load `simple-english`
-
-Before you write or edit prose, invoke the `simple-english:simple-english` skill. Then obey it.
-Prose includes GoDoc, inline comments, `docs/`, `README.md`, CRD field descriptions, and error and
-condition messages. This rule applies to a one-line docstring and to a full document.
-
-### Documentation
-
-Update documentation in the **same response** as the code change — never leave them out of sync.
-
-| Code area changed                       | Documentation to update |
-|-----------------------------------------|-------------------------|
-| CRD types, spec fields, status model    | `api/v1/` GoDoc         |
-| Operator setup, deployment, quick start | `README.md`             |
-| Comments in docstrings, methods etc     | entire project          |
+- Apply every managed resource with server-side apply (SSA).
+- Write the status of a CR once per reconcile through the ocf `FlushStatus`. Never write status with SSA.
 
 ### Tests
 
-Uses Ginkgo/Gomega and testify. Do not use `t.Fatal` — use asserts and requires.
+- Write top-level controller tests with Ginkgo and Gomega. They cover the reconciliation and the
+  high-level behavior of the operator.
+- Write low-level tests next to the file that holds the feature. Cover each edge case and each expected
+  result. Prefer pure Go unit tests with testify.
+- Do not use `t.Fatal`. Use `assert` and `require`.
+- Tests encode intent, not implementation. Never change a test only to make it pass.
 
-Run with:
+### GoDoc and docs
 
-```bash
-go test ./...
-```
+- Each exported symbol has a GoDoc comment. Update it when you change the behavior, the signature, or
+  the meaning.
+- Update the docs in the same response as the code change:
 
-Lint and format with:
+| Code area changed | Docs to update |
+| --- | --- |
+| CRD types, spec fields, status model | `api/v1/` GoDoc and `docs/crds/` |
+| Operator setup, deployment, quick start | `README.md` |
+| Behavior described in a comment | The comment, wherever it is |
 
-```bash
-make all
-```
+### Hard boundaries
 
-**Tests encode intent, not implementation.** Never modify a test purely to make it pass.
-
-### Hard boundaries — never cross these
-
-- This is a clean slate project. There is no migration, no legacy compatibility layer,
-  and no ZeebeCluster. Do not introduce any of these concepts.
-- Never create cloud infrastructure resources (IAM, KMS, buckets). That belongs in
+- This is a clean-slate project. There is no migration, no legacy compatibility layer, and no
+  ZeebeCluster. Do not add any of these.
+- Never create cloud infrastructure resources (IAM, KMS, buckets). That work belongs to
   `camunda-cloud-operator`.
+
+---
+
+## Commands
+
+```bash
+go test ./...   # run the tests
+make all        # lint and format
+```
