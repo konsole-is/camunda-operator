@@ -28,6 +28,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -565,6 +566,68 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(recreated.Data["password"]).To(HaveLen(32))
 			g.Expect(string(recreated.Data["password"])).NotTo(Equal(password))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	It("deletes what a topology or auth change no longer needs and reports Disabled for it", func() {
+		cluster := createDefaultCluster()
+		operateKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-operate"}
+		connectorsKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-connectors"}
+		adminKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-camunda-admin"}
+		fetchStatefulSet(client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"})
+		expectCondition(cluster, v1.ConditionOperateReady, Equal(string(component.Disabled)))
+		expectCondition(cluster, v1.ConditionConnectorsReady, Equal(string(component.Disabled)))
+
+		By("running Operate standalone and connectors")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			c.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
+		})
+		fetchDeployment(operateKey)
+		fetchDeployment(connectorsKey)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, operateKey, &corev1.Service{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectCondition(cluster, v1.ConditionOperateReady, Not(Equal(string(component.Disabled))))
+		expectCondition(cluster, v1.ConditionConnectorsReady, Not(Equal(string(component.Disabled))))
+
+		By("embedding Operate again and disabling connectors")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Operate.Mode = v1.ComponentModeEmbedded
+			c.Spec.Connectors.Enabled = new(false)
+		})
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, operateKey, &appsv1.Deployment{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, operateKey, &corev1.Service{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, connectorsKey, &appsv1.Deployment{}))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		expectCondition(cluster, v1.ConditionOperateReady, Equal(string(component.Disabled)))
+		expectCondition(cluster, v1.ConditionConnectorsReady, Equal(string(component.Disabled)))
+
+		By("switching the platform config from basic to oidc")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, adminKey, &corev1.Secret{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		oidcSecret := createSecret(cluster.Namespace, "oidc", map[string]string{"client-secret": "s"})
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaPlatformConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}, &latest)).To(Succeed())
+			latest.Spec.Auth = &v1.PlatformAuthSpec{
+				Method: v1.AuthenticationMethodOIDC,
+				OIDC: &v1.OIDCSpec{
+					IssuerURL: "https://idp.example.com/realms/camunda",
+					ClientID:  "platform-client",
+					ClientSecretRef: v1.SecretKeyRef{
+						Name: oidcSecret.Name, Namespace: cluster.Namespace, Key: "client-secret",
+					},
+				},
+			}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, adminKey, &corev1.Secret{}))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(string(component.Disabled)))
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_SECURITY_AUTHENTICATION_METHOD")).To(Equal("oidc"))
 	})
 
 	It("does nothing while paused, not even status", func() {

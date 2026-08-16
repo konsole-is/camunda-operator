@@ -270,9 +270,14 @@ Probes on the management port 9600 (`application.properties`,
 `/actuator/health/readiness` and liveness `/actuator/health/liveness` on port 8080 (Helm chart
 `templates/connectors/deployment.yaml:108-119`). ocf's workload primitives turn pod
 readiness into the component condition: `ZeebeReady`, `GatewayReady`, `OperateReady`,
-`TasklistReady`, `AdminReady` (only for standalone processes), `ConnectorsReady`.
-`Ready` is `conditions.Aggregate` over every process component; connectors is part of it (a
-user-enabled workload, unlike the ES metrics exporter). Pre-check failures use
+`TasklistReady`, `AdminReady`, `ConnectorsReady`. Every process has a component on every
+reconcile, gated with `WithFeatureGate` on whether the topology enables it, so an embedded or
+disabled process deletes what an earlier topology created and reads `Disabled`; the admin Secret
+component is gated on basic auth and the mirrored Secrets are `GatedBy` presence per purpose.
+`Ready` is `conditions.Aggregate` over the components the cluster needs (enabled processes, the
+admin Secret under basic auth, the mirrored Secrets when any exists), so it never mirrors
+`Disabled`; connectors is part of it (a user-enabled workload, unlike the ES metrics exporter).
+Pre-check failures use
 `InvalidReference` (preset, platform config, storageRef binding and its DatabaseConfig and
 DatabaseServerConfig chain, backup/document ObjectStorageConfig, invalid merged spec with the
 fields named) and `MissingSecret` (auth client secret, license, storage credentials, CA,

@@ -33,8 +33,10 @@ func TestMirroredSecretName(t *testing.T) {
 	assert.Equal(t, "my-cluster-camunda-license", MirroredSecretName(fixtureMinimal(t).Cluster, MirrorPurposeLicense))
 }
 
-// One component carries every mirrored Secret, in purpose order, each with
-// only the copied keys, in the cluster namespace, under the managed labels.
+// One component carries the Secret of every purpose, in MirrorPurposes
+// order, each with only the copied keys, in the cluster namespace, under the
+// managed labels. The Secret of an absent purpose is gated off, so Preview
+// leaves it out (a gated-off resource is a delete marker).
 func TestMirroredSecretComponentCarriesEveryMirror(t *testing.T) {
 	t.Parallel()
 

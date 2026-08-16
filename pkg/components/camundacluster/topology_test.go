@@ -20,18 +20,56 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
+
+// enabledNames returns the components of the enabled processes, in order.
+func enabledNames(processes []Process) []string {
+	var names []string
+	for _, p := range processes {
+		if p.Enabled {
+			names = append(names, p.Component)
+		}
+	}
+	return names
+}
+
+// Resolve always returns the six processes in the same order, so a
+// component exists for every process that an earlier topology enabled.
+func TestResolveReturnsEveryProcess(t *testing.T) {
+	t.Parallel()
+
+	got := Resolve(NewEffective(v1.CamundaClusterSpec{}))
+	names := make([]string, 0, len(got))
+	for _, p := range got {
+		names = append(names, p.Component)
+	}
+	assert.Equal(
+		t,
+		[]string{
+			ComponentZeebe,
+			ComponentGateway,
+			ComponentOperate,
+			ComponentTasklist,
+			ComponentAdmin,
+			ComponentConnectors,
+		},
+		names,
+	)
+	assert.Equal(t, v1.ConditionOperateReady, got[2].ConditionType)
+	assert.Equal(t, ProcessDeployment, got[2].Kind)
+	assert.False(t, got[2].Enabled)
+	assert.False(t, got[5].Enabled)
+}
 
 // The 8.9 default: a standalone gateway hosts every web application.
 func TestResolveDefaultTopology(t *testing.T) {
 	t.Parallel()
 
 	got := Resolve(NewEffective(v1.CamundaClusterSpec{}))
-	require.Len(t, got, 2)
+	assert.Equal(t, []string{ComponentZeebe, ComponentGateway}, enabledNames(got))
 
 	zeebe, gateway := got[0], got[1]
 	assert.Equal(t, ComponentZeebe, zeebe.Component)
@@ -58,7 +96,7 @@ func TestResolveAllInOne(t *testing.T) {
 	got := Resolve(NewEffective(v1.CamundaClusterSpec{
 		Gateway: &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded},
 	}))
-	require.Len(t, got, 1)
+	assert.Equal(t, []string{ComponentZeebe}, enabledNames(got))
 
 	zeebe := got[0]
 	assert.Equal(t, []string{"admin", "broker", "consolidated-auth", "operate", "tasklist"}, zeebe.Profiles)
@@ -78,7 +116,7 @@ func TestResolveStandaloneWebApp(t *testing.T) {
 			WorkloadSpec: v1.WorkloadSpec{Replicas: new(int32(2))},
 		},
 	}))
-	require.Len(t, got, 3)
+	assert.Equal(t, []string{ComponentZeebe, ComponentGateway, ComponentOperate}, enabledNames(got))
 
 	gateway, operate := got[1], got[2]
 	assert.Equal(t, []string{"admin", "consolidated-auth", "gateway", "tasklist"}, gateway.Profiles)
@@ -101,15 +139,16 @@ func TestResolveStandaloneWebAppWithEmbeddedGateway(t *testing.T) {
 		Gateway: &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded},
 		Admin:   &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
 	}))
-	require.Len(t, got, 2)
+	assert.Equal(t, []string{ComponentZeebe, ComponentAdmin}, enabledNames(got))
 
 	assert.Equal(t, []string{"broker", "consolidated-auth", "operate", "tasklist"}, got[0].Profiles)
-	assert.Equal(t, ComponentAdmin, got[1].Component)
-	assert.Equal(t, []string{"admin", "consolidated-auth", "gateway"}, got[1].Profiles)
-	assert.Equal(t, v1.ConditionAdminReady, got[1].ConditionType)
+	assert.Equal(t, ComponentAdmin, got[4].Component)
+	assert.Equal(t, []string{"admin", "consolidated-auth", "gateway"}, got[4].Profiles)
+	assert.Equal(t, v1.ConditionAdminReady, got[4].ConditionType)
 }
 
-// Every web application standalone: five processes in a stable order.
+// Every web application standalone: five enabled processes in a stable
+// order.
 func TestResolveSeparated(t *testing.T) {
 	t.Parallel()
 
@@ -118,16 +157,10 @@ func TestResolveSeparated(t *testing.T) {
 		Tasklist: &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
 		Admin:    &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
 	}))
-	require.Len(t, got, 5)
-
-	names := make([]string, 0, len(got))
-	for _, p := range got {
-		names = append(names, p.Component)
-	}
 	assert.Equal(
 		t,
 		[]string{ComponentZeebe, ComponentGateway, ComponentOperate, ComponentTasklist, ComponentAdmin},
-		names,
+		enabledNames(got),
 	)
 	assert.Equal(t, []string{"consolidated-auth", "gateway"}, got[1].Profiles)
 	assert.Equal(t, []string{"consolidated-auth", "gateway", "tasklist"}, got[3].Profiles)
@@ -146,9 +179,10 @@ func TestResolveConnectors(t *testing.T) {
 			WorkloadSpec: v1.WorkloadSpec{Replicas: new(int32(2))},
 		},
 	}))
-	require.Len(t, got, 3)
+	assert.Equal(t, []string{ComponentZeebe, ComponentGateway, ComponentConnectors}, enabledNames(got))
 
-	connectors := got[2]
+	connectors := got[5]
+	assert.True(t, connectors.Enabled)
 	assert.Equal(t, ComponentConnectors, connectors.Component)
 	assert.Equal(t, ProcessDeployment, connectors.Kind)
 	assert.Equal(t, int32(2), connectors.Replicas)

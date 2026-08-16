@@ -22,34 +22,35 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// The per-process conditions of a CamundaCluster. Each standalone process
-// reports one. An embedded web application has no condition of its own: the
-// condition of its host process covers it.
+// The per-process conditions of a CamundaCluster. Every process reports one.
+// The condition of an embedded gateway, an embedded web application, or
+// disabled connectors reads True with reason Disabled and stays out of Ready;
+// the condition of the host process covers an embedded web application.
 const (
 	// ConditionZeebeReady reports whether every broker replica is ready.
 	ConditionZeebeReady = "ZeebeReady"
 	// ConditionGatewayReady reports whether every gateway replica is ready.
-	// It is present only when the gateway is standalone.
+	// It reads Disabled when the gateway is embedded.
 	ConditionGatewayReady = "GatewayReady"
 	// ConditionOperateReady reports whether every standalone Operate replica
-	// is ready.
+	// is ready. It reads Disabled when Operate is embedded.
 	ConditionOperateReady = "OperateReady"
 	// ConditionTasklistReady reports whether every standalone Tasklist replica
-	// is ready.
+	// is ready. It reads Disabled when Tasklist is embedded.
 	ConditionTasklistReady = "TasklistReady"
-	// ConditionAdminReady reports whether every standalone Admin replica
-	// is ready.
+	// ConditionAdminReady reports whether every standalone Admin replica is
+	// ready. It reads Disabled when Admin is embedded.
 	ConditionAdminReady = "AdminReady"
 	// ConditionConnectorsReady reports whether every connectors replica is
-	// ready. It is present only when connectors are enabled.
+	// ready. It reads Disabled when connectors are not enabled.
 	ConditionConnectorsReady = "ConnectorsReady"
 	// ConditionAdminSecretReady reports whether the admin credentials Secret
-	// of a basic-auth cluster is applied. It is present only under basic
-	// authentication and takes part in Ready.
+	// of a basic-auth cluster is applied. It takes part in Ready under basic
+	// authentication and reads Disabled under OIDC.
 	ConditionAdminSecretReady = "AdminSecretReady"
 	// ConditionMirroredSecretsReady reports whether every referenced Secret
-	// that lives outside the cluster namespace is copied into it. It is
-	// present only when such a Secret is referenced and takes part in Ready.
+	// that lives outside the cluster namespace is copied into it. It takes
+	// part in Ready only when such a Secret is referenced.
 	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 )
 

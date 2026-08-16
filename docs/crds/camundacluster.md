@@ -277,19 +277,19 @@ spec:
 
 ## Status
 
-Status uses conditions exclusively: one condition per standalone process, the internal Secret conditions, and the aggregate `Ready` — no health enums, no URL fields.
-Embedded applications do not get their own condition; they are covered by their host's condition (for example `GatewayReady` covers embedded operate/tasklist/admin).
-`Ready` mirrors the highest-priority component condition: its status and reason are those of that component, and its message names the component. The reasons of the component conditions come from the component framework (`Healthy`, `Creating`, `Updating`, `Degraded`, `Down`, `Suspended`, and more).
+Status uses conditions exclusively: one condition per process, the internal Secret conditions, and the aggregate `Ready` — no health enums, no URL fields.
+Every process reports a condition. The condition of an embedded gateway, an embedded web application, or disabled connectors reads `True` with reason `Disabled`: the operator keeps a component for it and deletes what an earlier topology created. An embedded application is covered by the condition of its host (for example `GatewayReady` covers embedded operate/tasklist/admin).
+`Ready` mirrors the highest-priority condition of the components the cluster needs; a `Disabled` component never takes part. Its status and reason are those of that component, and its message names the component. The reasons of the component conditions come from the component framework (`Healthy`, `Creating`, `Updating`, `Degraded`, `Down`, `Suspended`, `Disabled`, and more).
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
 | `ZeebeReady` | `Healthy` | All broker replicas are ready. |
-| `GatewayReady` | `Healthy` | All gateway replicas are ready (only present when the gateway is standalone). |
-| `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` | The standalone web application's replicas are ready (only present for standalone modes). |
-| `ConnectorsReady` | `Healthy` | All connectors replicas are ready (only present when connectors are enabled). |
-| `AdminSecretReady` | `Healthy` | The admin Secret `<name>-camunda-admin` is applied (only present under basic authentication). |
-| `MirroredSecretsReady` | `Healthy` | Every copy of a referenced Secret from another namespace is applied (only present when such a Secret is referenced). |
-| `Ready` | `Healthy` | Every component condition is `True`. |
+| `GatewayReady` | `Healthy` | All gateway replicas are ready. `Disabled` when the gateway is embedded. |
+| `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` | The standalone web application's replicas are ready. `Disabled` when the application is embedded. |
+| `ConnectorsReady` | `Healthy` | All connectors replicas are ready. `Disabled` when connectors are not enabled. |
+| `AdminSecretReady` | `Healthy` | The admin Secret `<name>-camunda-admin` is applied. `Disabled` under OIDC: a switch from basic to OIDC deletes the Secret. |
+| `MirroredSecretsReady` | `Healthy` | Every copy of a referenced Secret from another namespace is applied; a copy whose reference went away or moved into the cluster namespace is deleted. Takes part in `Ready` only when such a Secret is referenced. |
+| `Ready` | `Healthy` | Every component the cluster needs is `Healthy`. |
 | `Ready` | `InvalidReference` | A referenced CR (`platformConfigRef`, `presetRef`, `storageRef` and its `DatabaseConfig` / `DatabaseServerConfig` chain, `backupStorageRef`, `documentStorageRef`) does not exist, or the merged spec is invalid (the message starts with `invalid effective spec:` and names the fields). |
 | `Ready` | `MissingSecret` | A referenced Secret (auth client secret, license, storage credentials, CA, DatabaseConfig credentials) or one of its keys is missing. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is scaled to zero. `Ready` is `True`: the cluster is in its desired state. |

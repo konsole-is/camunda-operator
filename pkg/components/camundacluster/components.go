@@ -80,14 +80,25 @@ const (
 // (helm chart 14.8.3 values.yaml:2438 fsGroup, :2455 runAsUser).
 const camundaUID int64 = 1001
 
-// Build returns one component per process, in Resolve order. Every one of
-// them takes part in Ready. The admin Secret component is returned separately
-// by AdminSecretComponent, because it exists only for basic auth and needs
-// the password. The first component (zeebe) also carries the ServiceAccount
-// when spec.serviceAccount is set, so it exists before any pod references it.
-func Build(in Input) ([]*component.Component, error) {
+// ProcessComponent is the ocf component of one process, together with the
+// process it renders.
+type ProcessComponent struct {
+	Process   Process
+	Component *component.Component
+}
+
+// Build returns one component per process, in Resolve order, for every
+// process of the cluster. The component of a disabled process is gated off:
+// its reconcile deletes the workload, the Service, and the ServiceMonitor
+// that an earlier topology created and reports Disabled. Only the components
+// of enabled processes take part in Ready. The admin Secret and the mirrored
+// Secrets are separate components, see AdminSecretComponent and
+// MirroredSecretComponent. The zeebe component also carries the
+// ServiceAccount when spec.serviceAccount is set, so it exists before any pod
+// references it.
+func Build(in Input) ([]ProcessComponent, error) {
 	processes := Resolve(in.Effective)
-	comps := make([]*component.Component, 0, len(processes))
+	comps := make([]ProcessComponent, 0, len(processes))
 
 	for _, p := range processes {
 		var comp *component.Component
@@ -100,7 +111,7 @@ func Build(in Input) ([]*component.Component, error) {
 		if err != nil {
 			return nil, fmt.Errorf("building %s component: %w", p.Component, err)
 		}
-		comps = append(comps, comp)
+		comps = append(comps, ProcessComponent{Process: p, Component: comp})
 	}
 
 	return comps, nil
@@ -124,7 +135,8 @@ func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string 
 }
 
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
-// StatefulSet, the headless Service, and the optional ServiceMonitor.
+// StatefulSet, the headless Service, and the optional ServiceMonitor. It is
+// gated on p.Enabled like every process component.
 func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccountFor(in)).Build()
 	if err != nil {
@@ -149,6 +161,7 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	return component.NewComponentBuilder().
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
+		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
 		WithResource(account, component.GatedBy(feature.NewBooleanGate(in.Effective.ServiceAccount != nil))).
 		WithResource(sts).
 		WithResource(svc).
@@ -159,7 +172,8 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 
 // deploymentComponent builds a Deployment-backed process (the gateway, a web
 // application, or connectors): the Deployment, its Service, and the optional
-// ServiceMonitor.
+// ServiceMonitor. It is gated on p.Enabled, so an embedded or disabled
+// process deletes its resources.
 func deploymentComponent(in Input, p Process) (*component.Component, error) {
 	workload, err := deployment.NewBuilder(deploymentFor(in, p)).Build()
 	if err != nil {
@@ -179,6 +193,7 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 	return component.NewComponentBuilder().
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
+		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
 		WithResource(workload).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).

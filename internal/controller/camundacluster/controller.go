@@ -95,8 +95,9 @@ type CamundaClusterReconciler struct {
 // lifecycle then grows the bound broker claims in place and records an
 // ignored shrink; the claim template keeps its applied size, so the
 // StatefulSet is never recreated. Then the components are reconciled in
-// order: the admin Secret, the mirrored Secrets, then every process. Ready
-// mirrors the highest-priority component condition.
+// order: the admin Secret, the mirrored Secrets, then every process, each
+// gated on whether the cluster needs it. Ready mirrors the highest-priority
+// condition of the components the cluster needs.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -152,58 +153,78 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	reconcileErr := reconcileComponents(ctx, rec, comps)
-	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps...))
+	reconcileErr := reconcileComponents(ctx, rec, comps.all)
+	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps.ready...))
 	cluster.Status.Volumes = storage.volumes()
 
 	return ctrl.Result{}, reconcileErr
 }
 
-// buildComponents builds every component that makes up Ready, in reconcile
-// order: the admin Secret of a basic-auth cluster, the mirrored Secrets when
-// a referenced Secret lives outside the cluster namespace, then one component
-// per process. It reads the admin password from the existing admin Secret
-// without the cache, so the password stays stable after creation. To rotate
-// it, delete the Secret.
+// clusterComponents are the components of one cluster: all of them are
+// reconciled in order, and the ready ones make up Ready.
+type clusterComponents struct {
+	all   []*component.Component
+	ready []*component.Component
+}
+
+// buildComponents builds every component of the cluster in reconcile order:
+// the admin Secret, the mirrored Secrets, then one component per process.
+// Every component is always built, so a switch of the authentication method,
+// a reference that went away, or a topology change deletes what is no longer
+// needed through its gate. Only the admin Secret of a basic-auth cluster, the
+// mirrored Secrets when a referenced Secret lives outside the cluster
+// namespace, and the enabled processes take part in Ready, so Ready never
+// mirrors Disabled. The admin password is read from the existing admin
+// Secret without the cache, so it stays stable after creation; to rotate it,
+// delete the Secret.
 func (r *CamundaClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	in components.Input,
 	mirrors mirroredSecrets,
-) ([]*component.Component, error) {
-	var comps []*component.Component
+) (clusterComponents, error) {
+	var comps clusterComponents
+	add := func(comp *component.Component, ready bool) {
+		comps.all = append(comps.all, comp)
+		if ready {
+			comps.ready = append(comps.ready, comp)
+		}
+	}
 
-	if components.ResolveAuth(in).Method == v1.AuthenticationMethodBasic {
-		password, err := credentials.LookupOrNew(
+	basic := components.ResolveAuth(in).Method == v1.AuthenticationMethodBasic
+	var password string
+	if basic {
+		var err error
+		password, err = credentials.LookupOrNew(
 			ctx, r.APIReader,
 			client.ObjectKey{Namespace: cluster.Namespace, Name: components.AdminSecretName(cluster)},
 			components.AdminPasswordKey,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("looking up admin password: %w", err)
+			return clusterComponents{}, fmt.Errorf("looking up admin password: %w", err)
 		}
-
-		admin, err := components.AdminSecretComponent(cluster, password)
-		if err != nil {
-			return nil, fmt.Errorf("building admin secret component: %w", err)
-		}
-		comps = append(comps, admin)
 	}
-
-	if len(mirrors) > 0 {
-		mirrored, err := components.MirroredSecretComponent(cluster, mirrors)
-		if err != nil {
-			return nil, fmt.Errorf("building mirrored secrets component: %w", err)
-		}
-		comps = append(comps, mirrored)
+	admin, err := components.AdminSecretComponent(cluster, basic, password)
+	if err != nil {
+		return clusterComponents{}, fmt.Errorf("building admin secret component: %w", err)
 	}
+	add(admin, basic)
+
+	mirrored, err := components.MirroredSecretComponent(cluster, mirrors)
+	if err != nil {
+		return clusterComponents{}, fmt.Errorf("building mirrored secrets component: %w", err)
+	}
+	add(mirrored, len(mirrors) > 0)
 
 	processes, err := components.Build(in)
 	if err != nil {
-		return nil, fmt.Errorf("building process components: %w", err)
+		return clusterComponents{}, fmt.Errorf("building process components: %w", err)
+	}
+	for _, pc := range processes {
+		add(pc.Component, pc.Process.Enabled)
 	}
 
-	return append(comps, processes...), nil
+	return comps, nil
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing

@@ -18,10 +18,9 @@ package camundacluster
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +41,17 @@ const (
 	MirrorPurposeDBCredentials = "db-credentials"
 )
 
+// MirrorPurposes lists every purpose in the order the component renders its
+// Secrets.
+var MirrorPurposes = []string{
+	MirrorPurposeLicense,
+	MirrorPurposeOIDCClient,
+	MirrorPurposeAuthClient,
+	MirrorPurposeESCredentials,
+	MirrorPurposeESCA,
+	MirrorPurposeDBCredentials,
+}
+
 // mirroredComponentName is the ocf name of the mirrored Secrets component.
 const mirroredComponentName = "mirrored-secrets"
 
@@ -51,10 +61,12 @@ func MirroredSecretName(cluster *v1.CamundaCluster, purpose string) string {
 	return cluster.Name + "-camunda-" + purpose
 }
 
-// MirroredSecretComponent renders one Secret per purpose in the cluster
-// namespace, each carrying only the keys that the reference names, in one
-// component. The keys of mirrors are the purposes, the values the copied
-// data. The component takes part in Ready.
+// MirroredSecretComponent renders one Secret per purpose of MirrorPurposes
+// in the cluster namespace, in one component. The keys of mirrors are the
+// purposes that are present, the values the copied data (only the keys that
+// the reference names). The Secret of an absent purpose is gated off, so a
+// reference that moved into the cluster namespace or went away deletes its
+// copy. The component takes part in Ready when any purpose is present.
 func MirroredSecretComponent(
 	cluster *v1.CamundaCluster,
 	mirrors map[string]map[string][]byte,
@@ -63,7 +75,8 @@ func MirroredSecretComponent(
 		WithName(mirroredComponentName).
 		WithConditionType(component.ConditionType(v1.ConditionMirroredSecretsReady))
 
-	for _, purpose := range slices.Sorted(maps.Keys(mirrors)) {
+	for _, purpose := range MirrorPurposes {
+		data, present := mirrors[purpose]
 		mirrored, err := secret.NewBuilder(&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      MirroredSecretName(cluster, purpose),
@@ -71,12 +84,12 @@ func MirroredSecretComponent(
 				Labels:    labels.Managed(labels.Cluster(cluster.Name), mirroredComponentName),
 			},
 			Type: corev1.SecretTypeOpaque,
-			Data: mirrors[purpose],
+			Data: data,
 		}).Build()
 		if err != nil {
 			return nil, fmt.Errorf("building %s component: %w", mirroredComponentName, err)
 		}
-		builder = builder.WithResource(mirrored)
+		builder = builder.WithResource(mirrored, component.GatedBy(feature.NewBooleanGate(present)))
 	}
 
 	return builder.Build()
