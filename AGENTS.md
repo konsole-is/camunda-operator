@@ -1,5 +1,8 @@
 # camunda-operator - AI Agent Guide
 
+This file holds the Kubebuilder scaffold rules. Read `CLAUDE.md` too. It is the entry point for this
+repository: architecture, project rules, and the skills to load before you write code or prose.
+
 ## Project Structure
 
 **Single-group layout (default):**
