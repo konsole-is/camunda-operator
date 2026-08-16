@@ -48,14 +48,15 @@ type SchedulingSpec struct {
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
-// ServiceMonitorSpec configures the Prometheus scraping of the Elasticsearch
-// cluster. Elasticsearch serves no Prometheus endpoint itself, so enabling it
-// deploys the prometheus-community elasticsearch_exporter next to the cluster
-// and, when the cluster serves the ServiceMonitor kind, a ServiceMonitor that
-// scrapes the exporter.
+// ServiceMonitorSpec configures the Prometheus ServiceMonitors of a resource
+// that runs workloads. The owning kind says what is scraped: an
+// ElasticsearchCluster deploys the prometheus-community elasticsearch_exporter
+// (Elasticsearch serves no Prometheus endpoint itself) and scrapes it; a
+// CamundaCluster scrapes /actuator/prometheus of every process. The
+// ServiceMonitor is created only when the Kubernetes cluster serves the kind.
 type ServiceMonitorSpec struct {
-	// Enabled deploys the exporter and creates the ServiceMonitor when true.
-	// Defaults to false.
+	// Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+	// the exporter) when true. Defaults to false.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 	// Labels are extra labels applied to the ServiceMonitor.
@@ -180,29 +181,34 @@ type ElasticsearchClusterSpec struct {
 }
 
 // PersistentVolumeClaimRetentionPolicyType is what happens to the data
-// volumes of an ElasticsearchCluster when the resource is deleted.
+// volumes of a resource (an ElasticsearchCluster, the brokers of a
+// CamundaCluster) when the resource is deleted.
 // +kubebuilder:validation:Enum=Retain;Delete
 type PersistentVolumeClaimRetentionPolicyType string
 
 const (
 	// RetainPersistentVolumeClaimRetentionPolicyType keeps the data volumes.
-	// The ECK resource carries the volume claim delete policy
-	// DeleteOnScaledownOnly. Removing the data is a manual act.
+	// Removing the data is a manual act. For an ElasticsearchCluster the ECK
+	// resource carries the volume claim delete policy DeleteOnScaledownOnly;
+	// for a CamundaCluster the broker StatefulSet carries whenDeleted Retain.
 	RetainPersistentVolumeClaimRetentionPolicyType PersistentVolumeClaimRetentionPolicyType = "Retain"
 	// DeletePersistentVolumeClaimRetentionPolicyType deletes the data volumes
-	// with the cluster. The ECK resource carries the volume claim delete
-	// policy DeleteOnScaledownAndClusterDeletion, the ECK default.
+	// with the resource. For an ElasticsearchCluster the ECK resource carries
+	// the volume claim delete policy DeleteOnScaledownAndClusterDeletion, the
+	// ECK default; for a CamundaCluster the broker StatefulSet carries
+	// whenDeleted Delete.
 	DeletePersistentVolumeClaimRetentionPolicyType PersistentVolumeClaimRetentionPolicyType = "Delete"
 )
 
 // PersistentVolumeClaimRetentionPolicy mirrors the StatefulSet field of the
-// same name. Only whenDeleted exists: ECK deletes the volume of every node
-// that it scales away, so there is no whenScaled choice.
+// same name. Only whenDeleted exists: ECK deletes the volume of every
+// Elasticsearch node that it scales away, and the operator always keeps the
+// volume of a broker that is scaled away, so there is no whenScaled choice.
 type PersistentVolumeClaimRetentionPolicy struct {
-	// WhenDeleted is what happens to the data volumes when the
-	// ElasticsearchCluster is deleted. Delete removes them with the
-	// cluster. Retain keeps them, and a later cluster with the same name
-	// reattaches them. Defaults to Delete.
+	// WhenDeleted is what happens to the data volumes when the resource is
+	// deleted. Delete removes them with the resource. Retain keeps them, and
+	// a later resource with the same name reattaches them. Defaults to
+	// Delete.
 	// +kubebuilder:default=Delete
 	// +optional
 	WhenDeleted PersistentVolumeClaimRetentionPolicyType `json:"whenDeleted,omitempty"`

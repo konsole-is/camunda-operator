@@ -53,7 +53,7 @@ spec:
         envFrom:
         - configMapRef:
             name: overrides
-        image: registry.example.com/camunda/camunda/connectors-bundle:8.9.7
+        image: registry.example.com/camunda/connectors-bundle:8.9.7
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness

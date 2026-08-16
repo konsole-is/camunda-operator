@@ -76,8 +76,8 @@ spec:
     namespace: "camunda-system"
     # string. Required. Key inside the Secret.
     key: "license-key"
-  # string. Optional, default: the upstream Camunda registry. Registry prefix for all Camunda component images.
-  imageRegistry: "registry.example.com/camunda"
+  # string. Optional, default: the upstream Camunda registry. Registry prefix put in front of the image repositories camunda/camunda and camunda/connectors-bundle, for example registry.example.com/camunda/camunda:8.9.9.
+  imageRegistry: "registry.example.com"
 ```
 
 ## Status
@@ -139,5 +139,5 @@ spec:
     name: "camunda-license"
     namespace: "camunda-system"
     key: "license-key"
-  imageRegistry: "registry.example.com/camunda"
+  imageRegistry: "registry.example.com"
 ```

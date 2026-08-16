@@ -20,4 +20,4 @@ spec:
     name: "camunda-license"
     namespace: "camunda-system"
     key: "license-key"
-  imageRegistry: "registry.example.com/camunda"
+  imageRegistry: "registry.example.com"

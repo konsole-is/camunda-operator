@@ -198,9 +198,11 @@ type ClusterAuthSpec struct {
 // ClusterMonitoringSpec groups the monitoring integrations of a
 // CamundaCluster.
 type ClusterMonitoringSpec struct {
-	// ServiceMonitor configures the Prometheus ServiceMonitor of each
-	// standalone process. When enabled, the operator creates one
-	// ServiceMonitor per standalone process that scrapes the management port.
+	// ServiceMonitor configures the Prometheus ServiceMonitors. When
+	// enabled, the operator creates one ServiceMonitor per process, named
+	// like the workload, that scrapes /actuator/prometheus on the management
+	// port 9600 of a unified process and on the HTTP port 8080 of
+	// connectors.
 	// +optional
 	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
 }

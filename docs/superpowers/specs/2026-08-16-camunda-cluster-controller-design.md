@@ -289,8 +289,8 @@ broker PVCs stay). `spec.pause`: reconcile returns before the pre-checks and rec
 
 - `spec.zeebe.storageSize` grows in place: the operator patches the broker
   PersistentVolumeClaims (`camunda.io/cluster` + `camunda.io/component=zeebe` selector) to the
-  new size; the storage class must allow expansion, and a rejected patch surfaces on
-  `ZeebeReady` through the PVC event message. Shrink: CEL rejects an inline decrease; a decrease
+  new size; the storage class must allow expansion, and a rejected patch is returned as a reconcile
+  error (retried with backoff). Shrink: CEL rejects an inline decrease; a decrease
   through the preset is clamped to the largest bound claim with a `StorageShrinkIgnored`
   Warning event (Batch B rule). `status.storageSize` reports the smallest bound broker claim.
 - The volume claim template of the StatefulSet is immutable. When the rendered template
@@ -321,9 +321,15 @@ preset by CEL. `ValidateMerged` checks: version present and 8.9 or later (three-
 ### Watches and indexes
 
 `pkg/refindex` field indexes on `spec.presetRef`, `spec.platformConfigRef`, `spec.storageRef`
-(namespaced), the DatabaseConfig behind an rdbms binding, the ObjectStorageConfig refs, and
-every Secret the effective configuration references (auth, license, storage credentials, CA,
-DatabaseConfig credentials). Metadata-only Secret watches, as in Batch A and B.
+(namespaced), the ObjectStorageConfig refs, the cluster's own `spec.auth.clientSecretRef`, and
+the `auth.clientSecretRef` of a preset. The deep Secret chain is not indexed on the cluster: a
+metadata-only Secret watch with a map handler enqueues every cluster of the Secret namespace,
+every cluster whose own auth or preset references it, every cluster whose platform config
+references it (through the exported Batch A platform-config index), every cluster whose binding
+references it, and every cluster in the namespace of a DatabaseConfig that references it (through
+the exported Batch B binding and DatabaseConfig indexes). `DatabaseConfig` events enqueue the
+clusters of their namespace, `DatabaseServerConfig` events every cluster, and broker
+PersistentVolumeClaim events the cluster that labels them.
 
 ### Testing
 

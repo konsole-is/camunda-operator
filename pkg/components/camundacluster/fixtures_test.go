@@ -130,7 +130,7 @@ func fixtureDefault(t *testing.T) Input {
 		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, mediumPreset()))
 		in.Platform = v1.CamundaPlatformConfigSpec{
 			LicenseSecretRef: &v1.SecretKeyRef{Name: "camunda-license", Namespace: "camunda-system", Key: "key"},
-			ImageRegistry:    "registry.example.com/camunda",
+			ImageRegistry:    "registry.example.com",
 		}
 		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
 			Name: "my-cluster-es-es-http-certs-public", Namespace: "my-cluster-ns", Key: "ca.crt",

@@ -37,10 +37,10 @@ This supports every deployment model from all-in-one (everything embedded in zee
 4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources. The operator uses the component values `zeebe`, `gateway`, `operate`, `tasklist`, `identity`, and `connectors`.
 5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `CamundaCluster/<process>` (for example `CamundaCluster/zeebe`), leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
 6. The operator watches workload health into per-component conditions and the aggregate `Ready` condition.
-7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md) and contract CRDs, so changes to them roll out to the cluster without touching this CR.
+7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md), the preset, the storage binding and its `DatabaseConfig` / `DatabaseServerConfig` chain, and every referenced Secret. A change to any of them changes the configuration hash on the pod templates (`camunda.io/config-hash`). The change rolls out to the cluster without a change to this CR.
 8. *(lands with Batch D)* When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: for Elasticsearch-backed clusters, the CamundaCluster controller itself registers the snapshot repository (derived from `backupStorageRef`) in the cluster's Elasticsearch via the Elasticsearch API and configures the same repository name on the Camunda components; in all cases it configures the Zeebe primary-storage backup store. The Elasticsearch nodes' access to the snapshot bucket comes from the [ElasticsearchCluster](elasticsearchcluster.md)'s own workload identity (`serviceAccount.annotations` on that CR), not from this cluster's. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
 9. *(lands with Batch D)* For RDBMS-backed clusters (`storageRef` resolves to `type: rdbms`), the operator additionally auto-enables continuous and scheduled backup of zeebe's primary storage (`camunda.data.primary-storage.backup`: continuous operation, schedule, and checkpoint interval), so database and primary storage stay restorable to matching positions — required both for `PointInTimeRestore` and for restoring RDBMS `Backup`s.
-10. `suspend: true` scales every workload to zero replicas and keeps the broker volumes; `Ready` is then `True` with reason `Suspended`. `pause: true` stops the reconciliation of this CR: the operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
+10. `suspend: true` scales every workload to zero replicas and keeps the broker volumes; `Ready` is then `True` with reason `Suspended`. When `suspend` returns to false, `Ready` stays `True` with reason `Updating` while the workloads scale up, then `Healthy`. `pause: true` stops the reconciliation of this CR: the operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
 !!! note "Deviation from the original proposal"
     The proposal enabled continuous primary-storage backup only when the storage chain had point-in-time recovery enabled (`pitr.enabled: true` on the `DatabaseServerConfig`).
@@ -54,6 +54,13 @@ graph LR
     CC -.->|backupStorageRef / documentStorageRef| OSC["ObjectStorageConfig"]
     CC -->|creates| WL["Workloads: Zeebe StatefulSet, Gateway Deployment, Services"]
 ```
+
+### Services and endpoints
+
+Every process gets a Service with the name of its workload: `<name>-zeebe` (headless), `<name>-gateway`, `<name>-operate`, `<name>-tasklist`, `<name>-identity`, and `<name>-connectors`.
+The gateway Service (the zeebe Service, when the gateway is `Embedded`) exposes the gRPC API on port `26500` and the HTTP API on port `8080`.
+The HTTP port serves the Orchestration Cluster REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`.
+A standalone web application gets a Service of its own that exposes port `8080`. Every unified process exposes the health and metrics endpoints on the management port `9600`. Connectors expose them on their HTTP port `8080`.
 
 ### Basic authentication
 
@@ -70,7 +77,7 @@ The copy is the owned Secret `<name>-camunda-<purpose>`, where `purpose` is one 
 ### Zeebe storage
 
 The brokers keep their data on one PersistentVolumeClaim per pod, from the `data` volume claim template of the StatefulSet.
-When the effective `spec.zeebe.storageSize` grows, the operator patches every bound broker claim up to the new size. The storage class must allow volume expansion; the API server rejects the patch otherwise.
+When the effective `spec.zeebe.storageSize` grows, the operator patches every bound broker claim up to the new size. The storage class must allow volume expansion; the API server rejects the patch otherwise, and the reconcile stops with that error and is retried with backoff.
 The volume claim template of a StatefulSet is immutable. When the applied template differs from the rendered one, the operator deletes the StatefulSet with `orphan` propagation and applies it again; the pods and claims stay, the new StatefulSet adopts them, and the operator records the event `StatefulSetRecreated`.
 A decrease of the effective size (through the preset, since admission rejects an inline decrease) is clamped to the largest broker volume size that exists (a bound claim's capacity or request, or the applied claim template), with the Warning event `StorageShrinkIgnored`.
 The retention policy of the StatefulSet maps `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (`Delete` by default); a scale-down always retains the claims. `status.storageSize` reports the smallest capacity of the bound broker claims.
@@ -79,6 +86,23 @@ The retention policy of the StatefulSet maps `spec.zeebe.persistentVolumeClaimRe
 
 Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the JVM exits on an OutOfMemoryError and the kubelet restarts the pod.
 Heap sizing is left to the container-aware defaults of the JVM. To change the JVM options of a process, set `JAVA_TOOL_OPTIONS` in its `extraEnv`; the entry replaces the value of the operator.
+
+### Extra environment variables
+
+The operator renders the configuration of a process first, then the user entries in layers. A later entry with the same name wins:
+
+1. the top-level `extraEnv`,
+2. the `extraEnv` of the embedded gateway (on the brokers, when the gateway is `Embedded`),
+3. the `extraEnv` of every embedded web application that the process hosts,
+4. the `extraEnv` of the process's own component block.
+
+An embedded component has no process of its own, so its `extraEnv` and `extraEnvFrom` apply to its host process: the gateway when it is standalone, otherwise zeebe. `extraEnvFrom` sources are concatenated in the same order. Connectors get only the top-level entries and their own block.
+
+### ServiceMonitors
+
+When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one ServiceMonitor per process, named like the workload.
+It scrapes `/actuator/prometheus` on the management port `9600` of a unified process, and on the HTTP port `8080` of connectors.
+On a Kubernetes cluster that does not serve the `ServiceMonitor` kind, the operator creates none and reports no error.
 
 ## API reference
 
@@ -135,10 +159,10 @@ spec:
     persistentVolumeClaimRetentionPolicy:
       # string (Retain | Delete). Optional, default: Delete. Delete removes the broker volumes with the cluster. Retain keeps them, and a later cluster with the same name reattaches them.
       whenDeleted: Delete
-    # list. Optional. Individual env vars appended to the component's containers.
+    # list. Optional. Individual env vars appended to the component's containers; an entry replaces an operator entry with the same name.
     extraEnv:
-      - name: JAVA_OPTS
-        value: "-Xmx4g"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
     # list. Optional. Bulk env from ConfigMaps/Secrets.
     extraEnvFrom:
       - configMapRef:
@@ -161,17 +185,17 @@ spec:
     mode: Standalone
     # integer. Optional, default: 1. Replicas; only meaningful when Standalone.
     replicas: 2
-    # object. Optional. Compute resources.
+    # object. Optional. Compute resources; only meaningful when Standalone.
     resources: {}
-    # list. Optional. Individual env vars.
+    # list. Optional. Individual env vars; applied to the brokers when Embedded.
     extraEnv: []
-    # list. Optional. Bulk env from ConfigMaps/Secrets.
+    # list. Optional. Bulk env from ConfigMaps/Secrets; applied to the brokers when Embedded.
     extraEnvFrom: []
-    # map[string]string. Optional. Extra pod labels.
+    # map[string]string. Optional. Extra pod labels; only meaningful when Standalone.
     podLabels: {}
-    # map[string]string. Optional. Extra pod annotations.
+    # map[string]string. Optional. Extra pod annotations; only meaningful when Standalone.
     podAnnotations: {}
-    # object. Optional. Scheduling constraints; same shape as zeebe.scheduling.
+    # object. Optional. Scheduling constraints; same shape as zeebe.scheduling, only meaningful when Standalone.
     scheduling: {}
   # object. Optional. Operate web application.
   operate:
@@ -183,7 +207,7 @@ spec:
     resources: {}
     # list. Optional. Individual env vars; applied to the host process when Embedded.
     extraEnv: []
-    # list. Optional. Bulk env from ConfigMaps/Secrets.
+    # list. Optional. Bulk env from ConfigMaps/Secrets; applied to the host process when Embedded.
     extraEnvFrom: []
     # map[string]string. Optional. Extra pod labels; only meaningful when Standalone.
     podLabels: {}
@@ -239,7 +263,7 @@ spec:
   monitoring:
     # object. Optional. Prometheus ServiceMonitor creation.
     serviceMonitor:
-      # boolean. Optional, default: false. When true, the operator creates a ServiceMonitor per standalone component, scraping the management port (9600).
+      # boolean. Optional, default: false. When true, the operator creates a ServiceMonitor per process that scrapes /actuator/prometheus on the management port 9600 (connectors: on the HTTP port 8080).
       enabled: true
       # map[string]string. Optional. Extra labels applied to all created ServiceMonitors.
       labels: {}
@@ -339,8 +363,8 @@ spec:
       requests:
         memory: "8Gi"
     extraEnv:
-      - name: JAVA_OPTS
-        value: "-Xmx6g"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx6g"
   storageRef: "my-storage-config"
   backupStorageRef: "my-backup-config"
   monitoring:

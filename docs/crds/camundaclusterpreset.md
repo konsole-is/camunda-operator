@@ -87,12 +87,16 @@ spec:
         requests: { cpu: "1", memory: "2Gi" }
       # string. Optional. StorageClass for broker volumes.
       storageClassName: "ssd"
-      # quantity. Optional. Broker volume size.
+      # quantity. Optional. Broker volume size. A cluster that applied a larger size keeps it and records a StorageShrinkIgnored event.
       storageSize: "32Gi"
-      # list. Optional. Env var baseline, merged by name with cluster-level entries.
+      # object. Optional. What happens to the broker volumes when a referencing cluster is deleted; same shape as on the CamundaCluster.
+      persistentVolumeClaimRetentionPolicy:
+        # string (Retain | Delete). Optional, default: Delete.
+        whenDeleted: Delete
+      # list. Optional. Env var baseline, merged by name with cluster-level entries; an entry replaces an operator entry with the same name.
       extraEnv:
-        - name: JAVA_OPTS
-          value: "-Xmx4g"
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
     # object. Optional. Gateway baseline.
     gateway:
       # string. Optional. Standalone | Embedded.
@@ -190,8 +194,8 @@ spec:
       storageClassName: "ssd"
       storageSize: "32Gi"
       extraEnv:
-        - name: JAVA_OPTS
-          value: "-Xmx4g"
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
     gateway:
       mode: Standalone
       replicas: 2
