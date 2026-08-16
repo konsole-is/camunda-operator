@@ -334,8 +334,8 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: region is required unless endpoint is set
-                  rule: (has(self.region) && self.region != '') || (has(self.endpoint)
-                    && self.endpoint != '')
+                  rule: (has(self.region) && self.region.size() > 0) || (has(self.endpoint)
+                    && self.endpoint.size() > 0)
               type:
                 description: Type selects the storage API of the bucket.
                 enum:

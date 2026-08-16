@@ -101,7 +101,11 @@ type S3StorageAuth struct {
 }
 
 // S3Storage describes an S3 or S3-compatible bucket.
-// +kubebuilder:validation:XValidation:rule="(has(self.region) && self.region != ”) || (has(self.endpoint) && self.endpoint != ”)",message="region is required unless endpoint is set"
+//
+// The rule below compares with size() rather than the empty string literal:
+// gofmt rewrites a doubled single quote in the doc comment of a declaration
+// into a typographic quote, which would silently invalidate the expression.
+// +kubebuilder:validation:XValidation:rule="(has(self.region) && self.region.size() > 0) || (has(self.endpoint) && self.endpoint.size() > 0)",message="region is required unless endpoint is set"
 type S3Storage struct {
 	// BucketName is the bucket name as used by storage client SDKs.
 	// +kubebuilder:validation:MinLength=1
