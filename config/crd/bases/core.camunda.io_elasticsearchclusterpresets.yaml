@@ -359,6 +359,24 @@ spec:
                             type: object
                         type: object
                     type: object
+                  persistentVolumeClaimRetentionPolicy:
+                    description: |-
+                      PersistentVolumeClaimRetentionPolicy says what happens to the data
+                      volumes when the ElasticsearchCluster is deleted. Suspension always
+                      keeps them.
+                    properties:
+                      whenDeleted:
+                        default: Delete
+                        description: |-
+                          WhenDeleted is what happens to the data volumes when the
+                          ElasticsearchCluster is deleted. Delete removes them with the
+                          cluster. Retain keeps them, and a later cluster with the same name
+                          reattaches them. Defaults to Delete.
+                        enum:
+                        - Retain
+                        - Delete
+                        type: string
+                    type: object
                   podAnnotations:
                     additionalProperties:
                       type: string
@@ -1089,10 +1107,11 @@ spec:
                   suspend:
                     description: |-
                       Suspend stops the Elasticsearch cluster and keeps its data volumes.
-                      The operator deletes the ECK Elasticsearch resource, whose volume
-                      claim delete policy is DeleteOnScaledownOnly, so ECK retains the
-                      data volumes. Setting the field back to false recreates the resource,
-                      and ECK reattaches the volumes. Defaults to false.
+                      The operator sets the volume claim delete policy of the ECK
+                      Elasticsearch resource to DeleteOnScaledownOnly, waits until ECK has
+                      observed it, and deletes the resource. Setting the field back to
+                      false recreates the resource, and ECK reattaches the volumes.
+                      Defaults to false.
                     type: boolean
                   version:
                     description: |-

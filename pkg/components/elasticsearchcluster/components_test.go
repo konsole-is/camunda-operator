@@ -124,6 +124,9 @@ func goldenRealisticElasticsearchCluster() *v1.ElasticsearchCluster {
 					Labels:  map[string]string{"release": "prometheus"},
 				},
 			},
+			PersistentVolumeClaimRetentionPolicy: &v1.PersistentVolumeClaimRetentionPolicy{
+				WhenDeleted: v1.RetainPersistentVolumeClaimRetentionPolicyType,
+			},
 		},
 	}
 }
@@ -201,9 +204,10 @@ func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
 }
 
 // The suspended variant must render the same desired content as its
-// non-suspended baseline. Suspension is a runtime mutation (node sets scaled
-// to zero) and must never alter the declared state, in particular the data
-// volume claims.
+// non-suspended baseline. Suspension is a runtime mutation (the wrapper
+// switches the applied CR to the retaining volume policy, then deletes it)
+// and must never alter the declared state, in particular the data volume
+// claims.
 func TestElasticsearchClusterGoldenSuspended(t *testing.T) {
 	t.Parallel()
 

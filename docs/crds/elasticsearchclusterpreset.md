@@ -78,6 +78,9 @@ spec:
       exporter:
         image: ""
         resources: {}
+    # object. Optional. Data volume retention on cluster deletion; see ElasticsearchCluster.
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Delete
 ```
 
 ## Status

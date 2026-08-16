@@ -260,10 +260,10 @@ func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClus
 		},
 		Spec: esv1.ElasticsearchSpec{
 			Version: merged.Version,
-			// The data volumes outlive the Elasticsearch CR: suspension deletes
-			// the CR and re-creation reattaches the volumes, and deleting the
-			// ElasticsearchCluster never erases data on its own.
-			VolumeClaimDeletePolicy: esv1.DeleteOnScaledownOnlyPolicy,
+			// The ECK default: the data volumes go with the cluster. The
+			// VolumeRetention mutation switches to retention for a Retain
+			// policy, and suspension switches to it before it deletes the CR.
+			VolumeClaimDeletePolicy: esv1.DeleteOnScaledownAndClusterDeletionPolicy,
 			Auth: esv1.Auth{
 				FileRealm: []esv1.FileRealmSource{
 					{SecretRef: commonv1.SecretRef{SecretName: UserSecretName(cluster)}},
@@ -363,6 +363,14 @@ func elasticsearchMutations(
 			},
 		},
 		{
+			Name:    "VolumeRetention",
+			Feature: feature.NewBooleanGate(retainsVolumes(merged)),
+			Mutate: func(m *eckelasticsearch.Mutator) error {
+				m.RetainVolumesOnDeletion()
+				return nil
+			},
+		},
+		{
 			Name:    "ServiceAccount",
 			Feature: feature.NewBooleanGate(merged.ServiceAccount != nil),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
@@ -374,4 +382,11 @@ func elasticsearchMutations(
 			},
 		},
 	}
+}
+
+// retainsVolumes reports whether the retention policy of the merged spec keeps
+// the data volumes when the cluster is deleted.
+func retainsVolumes(merged v1.ElasticsearchClusterSpec) bool {
+	policy := merged.PersistentVolumeClaimRetentionPolicy
+	return policy != nil && policy.WhenDeleted == v1.RetainPersistentVolumeClaimRetentionPolicyType
 }

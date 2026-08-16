@@ -101,13 +101,11 @@ func DefaultGraceStatusHandler(es *esv1.Elasticsearch) (concepts.GraceStatusWith
 // policy to DeleteOnScaledownOnly. Suspension deletes the CR, because ECK
 // removes the PersistentVolumeClaim of every node that it scales away, under
 // either policy. Scaling the node sets to zero would therefore erase the data
-// that suspension must keep. The rendered CR carries this policy already; the
-// mutation guards a CR that predates it.
+// that suspension must keep. The rendered CR carries the policy that the
+// retention policy of the owner asks for, so this mutation is the step that
+// switches a cluster with a Delete policy to retention before the deletion.
 func DefaultSuspendMutationHandler(m *Mutator) error {
-	m.Edit(func(es *esv1.Elasticsearch) error {
-		es.Spec.VolumeClaimDeletePolicy = esv1.DeleteOnScaledownOnlyPolicy
-		return nil
-	})
+	m.RetainVolumesOnDeletion()
 	return nil
 }
 

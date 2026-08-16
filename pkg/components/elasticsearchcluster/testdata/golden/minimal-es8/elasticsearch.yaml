@@ -58,7 +58,7 @@ spec:
   updateStrategy:
     changeBudget: {}
   version: 8.19.0
-  volumeClaimDeletePolicy: DeleteOnScaledownOnly
+  volumeClaimDeletePolicy: DeleteOnScaledownAndClusterDeletion
 status:
   conditions: null
   inProgressOperations:

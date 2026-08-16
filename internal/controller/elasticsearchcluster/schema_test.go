@@ -80,6 +80,9 @@ func realisticElasticsearchCluster() *v1.ElasticsearchCluster {
 					Labels:  map[string]string{"release": "prometheus"},
 				},
 			},
+			PersistentVolumeClaimRetentionPolicy: &v1.PersistentVolumeClaimRetentionPolicy{
+				WhenDeleted: v1.RetainPersistentVolumeClaimRetentionPolicyType,
+			},
 		},
 	}
 }
@@ -118,6 +121,12 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName
 			}, "secondaryStorageConfig",
+		),
+		Entry(
+			"rejects an unknown retention policy",
+			realisticElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				o.Spec.PersistentVolumeClaimRetentionPolicy.WhenDeleted = "Keep"
+			}, "whenDeleted",
 		),
 		Entry(
 			"rejects a two-segment version",

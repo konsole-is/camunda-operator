@@ -81,6 +81,9 @@ func MergePreset(
 	if spec.Monitoring != nil {
 		merged.Monitoring = spec.Monitoring
 	}
+	if spec.PersistentVolumeClaimRetentionPolicy != nil {
+		merged.PersistentVolumeClaimRetentionPolicy = spec.PersistentVolumeClaimRetentionPolicy
+	}
 
 	merged.PresetRef = spec.PresetRef
 	merged.SecondaryStorageConfig = spec.SecondaryStorageConfig

@@ -240,7 +240,7 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 		}, 3*time.Minute).Should(Succeed())
 	})
 
-	It("garbage-collects its bindings on deletion and keeps the data volume", func() {
+	It("garbage-collects its bindings and, by default, the data volume on deletion", func() {
 		_, err := utils.Kubectl("delete", esResource, esName, "-n", esNamespace, "--wait=false")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -254,10 +254,10 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 			expectGone(g, "service", esName+"-es-metrics", esNamespace)
 		}, 5*time.Minute).Should(Succeed())
 
-		By("checking that the data volume survives")
-		var claim corev1.PersistentVolumeClaim
-		Expect(utils.Get("pvc", dataVolume.Name, esNamespace, &claim)).To(Succeed())
-		Expect(claim.UID).To(Equal(dataVolume.UID))
+		By("waiting for ECK to remove the data volume")
+		Eventually(func(g Gomega) {
+			expectGone(g, "pvc", dataVolume.Name, esNamespace)
+		}, 3*time.Minute).Should(Succeed())
 	})
 })
 

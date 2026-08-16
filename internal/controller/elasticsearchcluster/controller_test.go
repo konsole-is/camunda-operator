@@ -128,6 +128,19 @@ func updateECKStatus(cluster *v1.ElasticsearchCluster, mutate func(*esv1.Elastic
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectRetainingPolicy polls until the applied Elasticsearch CR of cluster
+// carries DeleteOnScaledownOnly: the suspend mutation switches the policy
+// before the CR is deleted, and the specs stamp the ECK status only after
+// that generation exists.
+func expectRetainingPolicy(cluster *v1.ElasticsearchCluster) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest esv1.Elasticsearch
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		g.Expect(latest.Spec.VolumeClaimDeletePolicy).To(Equal(esv1.DeleteOnScaledownOnlyPolicy))
+	}, timeout, interval).Should(Succeed())
+}
+
 // expectStorageShrinkIgnored polls until the controller has recorded the
 // StorageShrinkIgnored event for cluster, then asserts that the applied ECK
 // data volume claim still requests applied and that Ready does not report
@@ -321,7 +334,8 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		cluster.Spec.PresetRef = preset.Name
 		createElasticsearchCluster(cluster)
 		es := fetchOwnedElasticsearch(cluster)
-		Expect(es.Spec.VolumeClaimDeletePolicy).To(Equal(esv1.DeleteOnScaledownOnlyPolicy))
+		// The default retention policy deletes the volumes with the cluster.
+		Expect(es.Spec.VolumeClaimDeletePolicy).To(Equal(esv1.DeleteOnScaledownAndClusterDeletionPolicy))
 
 		Eventually(func(g Gomega) {
 			var latest v1.ElasticsearchCluster
@@ -329,6 +343,9 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			latest.Spec.Suspend = true
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
+
+		// Suspension first switches the applied CR to the retaining policy.
+		expectRetainingPolicy(cluster)
 
 		// The CR is deleted only once ECK has observed the retaining policy.
 		// envtest runs no ECK, so the spec stamps the observed generation.
@@ -357,6 +374,19 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		// Resume recreates the CR; ECK reattaches the retained volumes by name.
 		fetchOwnedElasticsearch(cluster)
+	})
+
+	It("renders the retaining volume policy when the retention policy is Retain", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.PersistentVolumeClaimRetentionPolicy = &v1.PersistentVolumeClaimRetentionPolicy{
+			WhenDeleted: v1.RetainPersistentVolumeClaimRetentionPolicyType,
+		}
+		createElasticsearchCluster(cluster)
+
+		es := fetchOwnedElasticsearch(cluster)
+		Expect(es.Spec.VolumeClaimDeletePolicy).To(Equal(esv1.DeleteOnScaledownOnlyPolicy))
 	})
 
 	It("regenerates the password when the credentials Secret is deleted", func() {
@@ -483,6 +513,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			latest.Spec.Suspend = true
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
+		expectRetainingPolicy(cluster)
 		updateECKStatus(cluster, func(es *esv1.Elasticsearch) { es.Status.Phase = esv1.ElasticsearchReadyPhase })
 		Eventually(func(g Gomega) {
 			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &esv1.Elasticsearch{})

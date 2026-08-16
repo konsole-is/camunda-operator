@@ -164,13 +164,48 @@ type ElasticsearchClusterSpec struct {
 	// Monitoring configures the Prometheus scraping integration.
 	// +optional
 	Monitoring *MonitoringSpec `json:"monitoring,omitempty"`
+	// PersistentVolumeClaimRetentionPolicy says what happens to the data
+	// volumes when the ElasticsearchCluster is deleted. Suspension always
+	// keeps them.
+	// +optional
+	PersistentVolumeClaimRetentionPolicy *PersistentVolumeClaimRetentionPolicy `json:"persistentVolumeClaimRetentionPolicy,omitempty"`
 	// Suspend stops the Elasticsearch cluster and keeps its data volumes.
-	// The operator deletes the ECK Elasticsearch resource, whose volume
-	// claim delete policy is DeleteOnScaledownOnly, so ECK retains the
-	// data volumes. Setting the field back to false recreates the resource,
-	// and ECK reattaches the volumes. Defaults to false.
+	// The operator sets the volume claim delete policy of the ECK
+	// Elasticsearch resource to DeleteOnScaledownOnly, waits until ECK has
+	// observed it, and deletes the resource. Setting the field back to
+	// false recreates the resource, and ECK reattaches the volumes.
+	// Defaults to false.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
+}
+
+// PersistentVolumeClaimRetentionPolicyType is what happens to the data
+// volumes of an ElasticsearchCluster when the resource is deleted.
+// +kubebuilder:validation:Enum=Retain;Delete
+type PersistentVolumeClaimRetentionPolicyType string
+
+const (
+	// RetainPersistentVolumeClaimRetentionPolicyType keeps the data volumes.
+	// The ECK resource carries the volume claim delete policy
+	// DeleteOnScaledownOnly. Removing the data is a manual act.
+	RetainPersistentVolumeClaimRetentionPolicyType PersistentVolumeClaimRetentionPolicyType = "Retain"
+	// DeletePersistentVolumeClaimRetentionPolicyType deletes the data volumes
+	// with the cluster. The ECK resource carries the volume claim delete
+	// policy DeleteOnScaledownAndClusterDeletion, the ECK default.
+	DeletePersistentVolumeClaimRetentionPolicyType PersistentVolumeClaimRetentionPolicyType = "Delete"
+)
+
+// PersistentVolumeClaimRetentionPolicy mirrors the StatefulSet field of the
+// same name. Only whenDeleted exists: ECK deletes the volume of every node
+// that it scales away, so there is no whenScaled choice.
+type PersistentVolumeClaimRetentionPolicy struct {
+	// WhenDeleted is what happens to the data volumes when the
+	// ElasticsearchCluster is deleted. Delete removes them with the
+	// cluster. Retain keeps them, and a later cluster with the same name
+	// reattaches them. Defaults to Delete.
+	// +kubebuilder:default=Delete
+	// +optional
+	WhenDeleted PersistentVolumeClaimRetentionPolicyType `json:"whenDeleted,omitempty"`
 }
 
 // ElasticsearchClusterStatus is the observed state of an ElasticsearchCluster.
@@ -241,8 +276,8 @@ func (in *ElasticsearchCluster) SetObservedGeneration(generation int64) {
 
 // ElasticsearchClusterList contains a list of ElasticsearchCluster
 type ElasticsearchClusterList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.TypeMeta `                       json:",inline"`
+	metav1.ListMeta `                       json:"metadata,omitzero"`
 	Items           []ElasticsearchCluster `json:"items"`
 }
 

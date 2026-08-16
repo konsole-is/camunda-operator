@@ -52,6 +52,9 @@ func fullPresetSpec() *v1.ElasticsearchClusterPresetSpec {
 			ExtraEnvFrom:   []corev1.EnvFromSource{{Prefix: "PRESET_"}},
 			PodLabels:      map[string]string{"preset": "label"},
 			PodAnnotations: map[string]string{"preset": "annotation"},
+			PersistentVolumeClaimRetentionPolicy: &v1.PersistentVolumeClaimRetentionPolicy{
+				WhenDeleted: v1.RetainPersistentVolumeClaimRetentionPolicyType,
+			},
 			Scheduling: &v1.SchedulingSpec{
 				NodeAffinity: &corev1.NodeAffinity{
 					RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
@@ -102,6 +105,24 @@ func TestMergePresetInheritsUnsetFields(t *testing.T) {
 	assert.Equal(t, preset.Cluster.PodLabels, merged.PodLabels)
 	assert.Equal(t, preset.Cluster.PodAnnotations, merged.PodAnnotations)
 	assert.Equal(t, preset.Cluster.Scheduling, merged.Scheduling)
+	assert.Equal(
+		t,
+		preset.Cluster.PersistentVolumeClaimRetentionPolicy,
+		merged.PersistentVolumeClaimRetentionPolicy,
+	)
+}
+
+func TestMergePresetRetentionPolicyIsOverriddenInline(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.ElasticsearchClusterSpec{
+		PersistentVolumeClaimRetentionPolicy: &v1.PersistentVolumeClaimRetentionPolicy{
+			WhenDeleted: v1.DeletePersistentVolumeClaimRetentionPolicyType,
+		},
+	}
+	merged := MergePreset(spec, fullPresetSpec())
+
+	assert.Equal(t, spec.PersistentVolumeClaimRetentionPolicy, merged.PersistentVolumeClaimRetentionPolicy)
 }
 
 func TestMergePresetOverridesInlineFieldsWholesale(t *testing.T) {
