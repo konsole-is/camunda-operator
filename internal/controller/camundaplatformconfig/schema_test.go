@@ -108,13 +108,13 @@ var _ = Describe("CamundaPlatformConfig schema", func() {
 			"rejects method basic with an oidc block",
 			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
 				o.Spec.Auth.Method = v1.AuthenticationMethodBasic
-			}, "oidc is required when method is oidc",
+			}, "must not be set when method is basic",
 		),
 		Entry(
 			"rejects an oidc block when method is omitted and defaults to basic",
 			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
 				o.Spec.Auth.Method = ""
-			}, "oidc is required when method is oidc",
+			}, "must not be set when method is basic",
 		),
 		Entry(
 			"rejects an unknown method",
