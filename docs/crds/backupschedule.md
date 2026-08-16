@@ -1,12 +1,12 @@
 # BackupSchedule
 
-A BackupSchedule creates [Backup](backup.md) CRs for one orchestration cluster on a cron schedule.
+A BackupSchedule creates Backup CRs for one orchestration cluster on a cron schedule.
 
 ## Purpose
 
-A BackupSchedule automates recurring backups of a `CamundaCluster` so you do not have to create [Backup](backup.md) CRs by hand.
+A BackupSchedule automates recurring backups of a `CamundaCluster` so you do not have to create Backup CRs by hand.
 You create it, or a composition layer above creates it as part of a managed backup policy.
-It only creates Backup CRs — the backup procedure itself is owned by the Backup controller, and old backups are cleaned up by [BackupRetention](backupretention.md), not by the schedule.
+It only creates Backup CRs — the backup procedure itself is owned by the Backup controller, and old backups are cleaned up by BackupRetention, not by the schedule.
 
 ## How it works
 
@@ -15,7 +15,7 @@ It only creates Backup CRs — the backup procedure itself is owned by the Backu
 3. If the referenced cluster is suspended, the operator skips the trigger without creating a Backup — a suspended cluster's management API is unreachable, so the Backup would only fail. The skip is recorded as an event and the trigger is not retried; the next trigger fires normally once the cluster is unsuspended.
 4. If a Backup previously created by this schedule is still `Pending` or `Running`, the trigger is skipped the same way — overlapping backups are never created.
 5. Otherwise the operator creates a Backup named `<schedule-name>-<unix-timestamp>`, for example `my-cluster-schedule-1748937221`, labeled with `camunda.io/cluster: <cluster-name>` and `camunda.io/backup-schedule: <schedule-name>`.
-6. Created Backups carry no owner reference to the schedule: deleting a BackupSchedule must never delete the backups it produced. Retention is [BackupRetention](backupretention.md)'s job.
+6. Created Backups carry no owner reference to the schedule: deleting a BackupSchedule must never delete the backups it produced. Retention is BackupRetention's job.
 7. The operator records the trigger in `status.lastScheduleTime` and the created CR in `status.lastBackupName`.
 
 ```mermaid
@@ -63,8 +63,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- [Backup](backup.md) — created by this CR on each trigger.
-- [BackupRetention](backupretention.md) — complements this CR by deleting the oldest completed Backups.
+- Backup — created by this CR on each trigger.
+- BackupRetention — complements this CR by deleting the oldest completed Backups.
 - [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; its suspend state gates trigger execution.
 
 ## Examples

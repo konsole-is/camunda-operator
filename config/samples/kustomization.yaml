@@ -10,9 +10,7 @@ resources:
 - core_v1_databaseconfig.yaml
 - core_v1_secondarystorageconfig.yaml
 - core_v1_objectstorageconfig.yaml
-- core_v1_backup.yaml
 - core_v1_backupschedule.yaml
-- core_v1_backupretention.yaml
 - core_v1_pointintimerestore.yaml
 - core_v1_logicalrestore.yaml
 - core_v1_camundaoptimize.yaml

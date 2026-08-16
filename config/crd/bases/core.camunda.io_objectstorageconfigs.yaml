@@ -18,9 +18,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          ObjectStorageConfig is the contract CRD that describes a cloud bucket — for
-          backups or document storage — and the workload identity trusted to access
-          it.
+          ObjectStorageConfig is the contract CRD that describes a bucket — for
+          backups or document storage — and how consumers authenticate against it:
+          workload identity on the consumer's ServiceAccount, or static credentials
+          in a Secret.
         properties:
           apiVersion:
             description: |-
@@ -42,66 +43,320 @@ spec:
           spec:
             description: spec defines the desired state of ObjectStorageConfig
             properties:
-              accountId:
+              azureBlob:
                 description: |-
-                  AccountID is the workload identity the bucket trusts: an IAM role ARN
-                  (aws), a service account email (gcp), or a managed identity client ID
-                  (azure).
-                minLength: 1
-                type: string
-              basePath:
+                  AzureBlob describes an Azure Blob Storage container. Required when
+                  type is AzureBlob, forbidden otherwise.
+                properties:
+                  accountName:
+                    description: AccountName is the storage account that holds the
+                      container.
+                    minLength: 1
+                    type: string
+                  auth:
+                    default:
+                      type: workloadIdentity
+                    description: |-
+                      Auth selects how consumers authenticate. An absent block means
+                      workload identity through the ServiceAccount chain.
+                    properties:
+                      credentials:
+                        description: |-
+                          Credentials is a static storage account key. Required with type
+                          credentials, forbidden otherwise.
+                        properties:
+                          secretRef:
+                            description: SecretRef names the Secret key that holds
+                              the storage account key.
+                            properties:
+                              key:
+                                description: Key in the Secret holding the value.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: Name of the Secret holding the value.
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: Namespace of the Secret.
+                                minLength: 1
+                                type: string
+                            required:
+                            - key
+                            - name
+                            - namespace
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                      type:
+                        default: workloadIdentity
+                        description: Type is the authentication choice. Defaults to
+                          workloadIdentity.
+                        enum:
+                        - workloadIdentity
+                        - credentials
+                        type: string
+                      workloadIdentity:
+                        description: |-
+                          WorkloadIdentity names the trusted principal. Only valid with type
+                          workloadIdentity; an empty or absent block means "trust the
+                          ServiceAccount chain, add nothing".
+                        properties:
+                          clientId:
+                            description: |-
+                              ClientID is the managed identity that consumers use. When set, the
+                              operator puts it in the azure.workload.identity/client-id annotation
+                              of the consumer's ServiceAccount.
+                            type: string
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: credentials is required when auth.type is credentials
+                        and must not be set otherwise
+                      rule: (self.type == 'credentials') == has(self.credentials)
+                    - message: workloadIdentity is only valid when auth.type is workloadIdentity
+                      rule: '!has(self.workloadIdentity) || self.type == ''workloadIdentity'''
+                  basePath:
+                    description: |-
+                      BasePath is the blob prefix under which consumers write objects. Empty
+                      means the container root.
+                    type: string
+                  container:
+                    description: Container is the blob container that consumers write
+                      to.
+                    minLength: 1
+                    type: string
+                  endpoint:
+                    description: |-
+                      Endpoint is the URL of the blob service. Empty means the public Azure
+                      endpoint of the account. Set it for Azurite and sovereign clouds.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: endpoint must be a valid http or https URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https')
+                required:
+                - accountName
+                - container
+                type: object
+              gcs:
                 description: |-
-                  BasePath is the key prefix under which consumers write objects. Empty
-                  means the bucket root.
-                type: string
-              bucketId:
+                  GCS describes a Google Cloud Storage bucket. Required when type is
+                  GCS, forbidden otherwise.
+                properties:
+                  auth:
+                    default:
+                      type: workloadIdentity
+                    description: |-
+                      Auth selects how consumers authenticate. An absent block means
+                      workload identity through the ServiceAccount chain.
+                    properties:
+                      credentials:
+                        description: |-
+                          Credentials is a static service-account key. Required with type
+                          credentials, forbidden otherwise.
+                        properties:
+                          secretRef:
+                            description: |-
+                              SecretRef names the Secret key that holds the service-account JSON
+                              key.
+                            properties:
+                              key:
+                                description: Key in the Secret holding the value.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: Name of the Secret holding the value.
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: Namespace of the Secret.
+                                minLength: 1
+                                type: string
+                            required:
+                            - key
+                            - name
+                            - namespace
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                      type:
+                        default: workloadIdentity
+                        description: Type is the authentication choice. Defaults to
+                          workloadIdentity.
+                        enum:
+                        - workloadIdentity
+                        - credentials
+                        type: string
+                      workloadIdentity:
+                        description: |-
+                          WorkloadIdentity names the trusted principal. Only valid with type
+                          workloadIdentity; an empty or absent block means "trust the
+                          ServiceAccount chain, add nothing".
+                        properties:
+                          serviceAccountEmail:
+                            description: |-
+                              ServiceAccountEmail is the Google service account that consumers
+                              impersonate. When set, the operator puts it in the
+                              iam.gke.io/gcp-service-account annotation of the consumer's
+                              ServiceAccount.
+                            type: string
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: credentials is required when auth.type is credentials
+                        and must not be set otherwise
+                      rule: (self.type == 'credentials') == has(self.credentials)
+                    - message: workloadIdentity is only valid when auth.type is workloadIdentity
+                      rule: '!has(self.workloadIdentity) || self.type == ''workloadIdentity'''
+                  basePath:
+                    description: |-
+                      BasePath is the key prefix under which consumers write objects. Empty
+                      means the bucket root.
+                    type: string
+                  bucketName:
+                    description: BucketName is the bucket name as used by storage
+                      client SDKs.
+                    minLength: 1
+                    type: string
+                required:
+                - bucketName
+                type: object
+              s3:
                 description: |-
-                  BucketID is the provider-specific unique identifier of the bucket, for
-                  example an ARN on AWS.
-                minLength: 1
-                type: string
-              bucketName:
-                description: BucketName is the bucket name as used by storage client
-                  SDKs.
-                minLength: 1
-                type: string
-              provider:
-                description: |-
-                  Provider is the cloud provider hosting the bucket; it determines the
-                  workload-identity mechanism.
-                enum:
-                - aws
-                - gcp
-                - azure
-                type: string
+                  S3 describes an S3 or S3-compatible bucket. Required when type is S3,
+                  forbidden otherwise.
+                properties:
+                  auth:
+                    default:
+                      type: workloadIdentity
+                    description: |-
+                      Auth selects how consumers authenticate. An absent block means
+                      workload identity through the ServiceAccount chain.
+                    properties:
+                      credentials:
+                        description: |-
+                          Credentials are static keys. Required with type credentials, forbidden
+                          otherwise.
+                        properties:
+                          secretRef:
+                            description: SecretRef names the Secret keys that hold
+                              the access-key pair.
+                            properties:
+                              accessKeyIdKey:
+                                description: AccessKeyIDKey is the key in the Secret
+                                  holding the access key ID.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: Name of the Secret holding the keys.
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: Namespace of the Secret.
+                                minLength: 1
+                                type: string
+                              secretAccessKeyKey:
+                                description: |-
+                                  SecretAccessKeyKey is the key in the Secret holding the secret access
+                                  key.
+                                minLength: 1
+                                type: string
+                            required:
+                            - accessKeyIdKey
+                            - name
+                            - namespace
+                            - secretAccessKeyKey
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                      type:
+                        default: workloadIdentity
+                        description: Type is the authentication choice. Defaults to
+                          workloadIdentity.
+                        enum:
+                        - workloadIdentity
+                        - credentials
+                        type: string
+                      workloadIdentity:
+                        description: |-
+                          WorkloadIdentity names the trusted principal. Only valid with type
+                          workloadIdentity; an empty or absent block means "trust the
+                          ServiceAccount chain, add nothing".
+                        properties:
+                          roleArn:
+                            description: |-
+                              RoleARN is the IAM role that consumers assume. When set, the operator
+                              puts it in the eks.amazonaws.com/role-arn annotation of the consumer's
+                              ServiceAccount (IRSA).
+                            type: string
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: credentials is required when auth.type is credentials
+                        and must not be set otherwise
+                      rule: (self.type == 'credentials') == has(self.credentials)
+                    - message: workloadIdentity is only valid when auth.type is workloadIdentity
+                      rule: '!has(self.workloadIdentity) || self.type == ''workloadIdentity'''
+                  basePath:
+                    description: |-
+                      BasePath is the key prefix under which consumers write objects. Empty
+                      means the bucket root.
+                    type: string
+                  bucketName:
+                    description: BucketName is the bucket name as used by storage
+                      client SDKs.
+                    minLength: 1
+                    type: string
+                  endpoint:
+                    description: |-
+                      Endpoint is the URL of an S3-compatible store (MinIO, Ceph, and more).
+                      Empty means AWS S3, addressed through region.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: endpoint must be a valid http or https URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https')
+                  forcePathStyle:
+                    description: |-
+                      ForcePathStyle forces path-style bucket addressing. Set it for
+                      S3-compatible stores that do not serve virtual-hosted-style requests.
+                    type: boolean
+                  region:
+                    description: Region of the bucket. Required unless endpoint is
+                      set.
+                    type: string
+                required:
+                - bucketName
+                type: object
+                x-kubernetes-validations:
+                - message: region is required unless endpoint is set
+                  rule: (has(self.region) && self.region != '') || (has(self.endpoint)
+                    && self.endpoint != '')
               type:
-                description: Type is the storage API of the bucket; it must match
-                  the provider.
+                description: Type selects the storage API of the bucket.
                 enum:
                 - S3
                 - GCS
                 - AzureBlob
                 type: string
             required:
-            - accountId
-            - bucketId
-            - bucketName
-            - provider
             - type
             type: object
             x-kubernetes-validations:
-            - message: 'spec.type must match spec.provider: aws pairs with S3, gcp
-                with GCS, azure with AzureBlob'
-              rule: (self.provider == 'aws' && self.type == 'S3') || (self.provider
-                == 'gcp' && self.type == 'GCS') || (self.provider == 'azure' && self.type
-                == 'AzureBlob')
+            - message: exactly the block matching spec.type must be set
+              rule: (self.type == 'S3') == has(self.s3) && (self.type == 'GCS') ==
+                has(self.gcs) && (self.type == 'AzureBlob') == has(self.azureBlob)
           status:
             description: status defines the observed state of ObjectStorageConfig
             properties:
               conditions:
                 description: |-
                   Conditions represent the current validation state; the Ready condition
-                  carries the reason Healthy.
+                  carries the reasons Healthy and MissingSecret.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

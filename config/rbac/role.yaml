@@ -50,8 +50,6 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - backupretentions
-  - backups
   - backupschedules
   - camundaclusters
   - camundamanagementclusters
@@ -74,8 +72,6 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - backupretentions/finalizers
-  - backups/finalizers
   - backupschedules/finalizers
   - camundaclusters/finalizers
   - camundamanagementclusters/finalizers
@@ -90,8 +86,6 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - backupretentions/status
-  - backups/status
   - backupschedules/status
   - camundaclusters/status
   - camundamanagementclusters/status

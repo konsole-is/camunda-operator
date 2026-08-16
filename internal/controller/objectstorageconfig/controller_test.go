@@ -19,9 +19,11 @@ package objectstorageconfig
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -38,39 +40,96 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 		return meta.FindStatusCondition(fetched.Status.Conditions, v1.ConditionReady)
 	}
 
-	BeforeEach(func() {
-		storageConfig = validObjectStorageConfig()
-		Expect(k8sClient.Create(ctx, storageConfig)).To(Succeed())
-		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, storageConfig)).To(Succeed()) })
-	})
-
-	It("reports an admitted contract Ready and Healthy at its current generation", func() {
+	expectReady := func(status metav1.ConditionStatus, reason string) {
+		GinkgoHelper()
 		Eventually(func(g Gomega) {
 			cond := readyCondition(g)
 			g.Expect(cond).NotTo(BeNil())
-			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			g.Expect(cond.Reason).To(Equal(v1.ReasonHealthy))
-			g.Expect(cond.Message).To(Equal("All checks passed"))
-			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
+			g.Expect(cond.Status).To(Equal(status))
+			g.Expect(cond.Reason).To(Equal(reason))
 		}, timeout, interval).Should(Succeed())
+	}
+
+	Context("with workload identity", func() {
+		BeforeEach(func() {
+			storageConfig = validObjectStorageConfig()
+			Expect(k8sClient.Create(ctx, storageConfig)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, storageConfig)).To(Succeed()) })
+		})
+
+		It("reports an admitted contract Ready and Healthy at its current generation", func() {
+			Eventually(func(g Gomega) {
+				cond := readyCondition(g)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Reason).To(Equal(v1.ReasonHealthy))
+				g.Expect(cond.Message).To(Equal("All checks passed"))
+				g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
+			}, timeout, interval).Should(Succeed())
+		})
+
+		It("re-stamps observedGeneration after a spec update", func() {
+			Eventually(func(g Gomega) {
+				g.Expect(readyCondition(g)).NotTo(BeNil())
+			}, timeout, interval).Should(Succeed())
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, storageConfig)).To(Succeed())
+			storageConfig.Spec.S3.BasePath = "backups"
+			Expect(k8sClient.Update(ctx, storageConfig)).To(Succeed())
+			Expect(storageConfig.Generation).To(BeNumerically(">", 1))
+
+			expectReady(metav1.ConditionTrue, v1.ReasonHealthy)
+		})
 	})
 
-	It("re-stamps observedGeneration after a spec update", func() {
-		Eventually(func(g Gomega) {
-			g.Expect(readyCondition(g)).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+	Context("with static credentials", func() {
+		var secret *corev1.Secret
 
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: storageConfig.Name}, storageConfig)).To(Succeed())
-		storageConfig.Spec.BasePath = "backups"
-		Expect(k8sClient.Update(ctx, storageConfig)).To(Succeed())
-		Expect(storageConfig.Generation).To(BeNumerically(">", 1))
+		BeforeEach(func() {
+			secret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "minio-credentials-" + utilrand.String(8),
+					Namespace: "default",
+				},
+				Data: map[string][]byte{
+					"accessKeyId":     []byte("minio"),
+					"secretAccessKey": []byte("minio123"),
+				},
+			}
 
-		Eventually(func(g Gomega) {
-			cond := readyCondition(g)
-			g.Expect(cond).NotTo(BeNil())
-			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			g.Expect(cond.Reason).To(Equal(v1.ReasonHealthy))
-			g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
-		}, timeout, interval).Should(Succeed())
+			storageConfig = validObjectStorageConfig()
+			storageConfig.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
+			storageConfig.Spec.S3.Auth = v1.S3StorageAuth{
+				Type: v1.ObjectStorageAuthTypeCredentials,
+				Credentials: &v1.S3Credentials{
+					SecretRef: v1.S3CredentialsSecretRef{
+						Name:               secret.Name,
+						Namespace:          secret.Namespace,
+						AccessKeyIDKey:     "accessKeyId",
+						SecretAccessKeyKey: "secretAccessKey",
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, storageConfig)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, storageConfig)).To(Succeed()) })
+		})
+
+		It("reports MissingSecret until the Secret exists, then Healthy", func() {
+			expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret)
+
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, secret)).To(Succeed()) })
+
+			expectReady(metav1.ConditionTrue, v1.ReasonHealthy)
+		})
+
+		It("reports MissingSecret when a configured key is absent", func() {
+			secret.Data = map[string][]byte{"accessKeyId": []byte("minio")}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, secret)).To(Succeed()) })
+
+			expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret)
+		})
 	})
 })

@@ -6,8 +6,11 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: objectstorageconfig-sample
 spec:
-  provider: aws
   type: S3
-  bucketId: "arn:aws:s3:::objectstorageconfig-sample-bucket"
-  bucketName: objectstorageconfig-sample-bucket
-  accountId: "arn:aws:iam::123456789012:role/objectstorageconfig-sample-role"
+  s3:
+    bucketName: objectstorageconfig-sample-bucket
+    region: eu-west-1
+    auth:
+      type: workloadIdentity
+      workloadIdentity:
+        roleArn: "arn:aws:iam::123456789012:role/objectstorageconfig-sample-role"
