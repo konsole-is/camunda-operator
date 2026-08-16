@@ -32,6 +32,12 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 )
 
+// timeout and interval bound the Eventually polling of every envtest assertion.
+const (
+	timeout  = testenv.Timeout
+	interval = testenv.Interval
+)
+
 var (
 	env       *testenv.Env
 	ctx       context.Context
@@ -48,7 +54,11 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
-		return nil
+		return (&CamundaPlatformConfigReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr)
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client
