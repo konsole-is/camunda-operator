@@ -28,7 +28,7 @@ status: consumer-wave
 | --- | --- | --- | --- | --- |
 | #48 | batch-c/platform-config | .claude/worktrees/camunda-cluster-controller--platform-config | #53 → feat/camunda-cluster-controller | self-merged |
 | #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | #54 → feat/camunda-cluster-controller | self-merged |
-| #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | — → feat/camunda-cluster-controller | in-progress |
+| #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | #55 → feat/camunda-cluster-controller | ready |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | — → feat/camunda-cluster-controller | not-started |
 | #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | — → feat/camunda-cluster-controller | not-started |
 
@@ -43,6 +43,7 @@ The interfaces between the sequential PRs (B → C → D) are the **Interfaces**
 
 ## Bubble-up log
 
+- 2026-08-16 — From PR C (#55): (1) cross-namespace Secrets cannot be `secretKeyRef`ed → decision: PR D mirrors them into the cluster namespace (`<name>-camunda-<purpose>`), renderer gets local names; plan Task D1 updated. (2) `imageRegistry` is a prefix before `camunda/camunda`; the platform-config doc example `registry.example.com/camunda` would double `camunda` — PR E changes the doc example to `registry.example.com` (semantics unchanged). (3) Embedded web-app `extraEnv` applies to the host process, layered global → embedded apps → the process's own block — PR E documents it. (4) Doc examples still show `JAVA_OPTS`; PR E unifies on `JAVA_TOOL_OPTIONS`. (5) Admin Secret uses `Data` (ocf normalizes StringData); the `suspended` golden equals `minimal` because suspension is a runtime mutation.
 - 2026-08-16 — Copilot loop on #54 hit the 3-round cap with one trivial suppressed nit left (nil-preset deep copy); the author applied it (`90c323e`) and the PR merged without a fourth round. Loop on #53 converged in round 3.
 - 2026-08-16 — PR B (#54): the six CamundaCluster CEL rules moved from the shared `CamundaClusterSpec` type to the `Spec` field of `CamundaCluster`, so a preset can still lower partitions/storageSize (the controller clamps). Plan Task B1 updated to match; C and D unaffected. Also from B: `Effective.Replicas`/`Workload` switch on literal component names — PR C replaces them with the `Component*` constants when `names.go` lands; the ES-specific GoDoc of the shared `PersistentVolumeClaimRetentionPolicy`/`ServiceMonitorSpec` types is generalized in PR E. From PR A (#53): the RBAC role narrows to get/list/watch for platform configs; PR C must render `jwk-set-uri`/`token-uri` (doc advice for split-horizon) and default `audiences` to the client id.
 - 2026-08-16 — Spec amended before planning: `camunda.mode` replaced by Spring profiles (gateway mode loses `consolidated-auth` when the auth method is set), node id through a command wrapper, JDBC bundled, redirect `<externalUrl>/sso-callback`, `issuerBackendUrl` dropped, connectors image `camunda/connectors-bundle` with its own `spec.connectors.version`, `CamundaPlatformConfig` types and controller added to the batch (they were still scaffolds). Propagated to the spec, the epic, and the plan.
