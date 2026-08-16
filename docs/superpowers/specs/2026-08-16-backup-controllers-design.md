@@ -3,7 +3,7 @@
 **Status:** approved in dialogue (2026-08-16), spec pending review
 **Date:** 2026-08-16
 **Scope:** `LogicalBackupElasticsearch` and `LogicalBackupRDBMS` (new, replace `Backup`), `BackupSchedule`
-(with retention), removal of `BackupRetention`, `ObjectStorageConfig` (S3-compatible fields),
+(with retention), removal of `BackupRetention`, `ObjectStorageConfig` (keyed shape, auth choice),
 `ElasticsearchCluster` (keystore passthrough, narrowed user role), `CamundaCluster` and
 `CamundaClusterPreset` (`spec.backup`, backup wiring), MinIO in the kind e2e suite
 
@@ -65,9 +65,10 @@ Optimize always stores its data in Elasticsearch or OpenSearch and is backed up 
   backup on the RDBMS path. `CamundaClusterPreset` carries the same `spec.backup` block.
 - `CamundaCluster` publishes a management binding in `status.management` that every extension
   consumes instead of the cluster internals.
-- `ObjectStorageConfig` describes S3-compatible storage (endpoint, region, path style, static
-  credentials) in addition to the three cloud providers, so MinIO works in production and in
-  kind.
+- `ObjectStorageConfig` becomes a discriminated union keyed by storage type, with an explicit
+  `auth` choice (workload identity or credentials) per type. S3-compatible storage (endpoint,
+  region, path style) is first-class, so MinIO works in production and in kind. The operator
+  derives the workload-identity annotation onto the cluster ServiceAccount from the contract.
 - `ElasticsearchCluster` accepts keystore secure settings and drops the `superuser` role.
 - e2e in kind proves both paths against MinIO.
 
@@ -131,21 +132,58 @@ that it finds soft-paused. A Job that dies between pause and resume leaves the c
 until a controller notices, which rebuilds the controller machinery anyway. The RDBMS dump is a
 Job regardless: gigabytes of dump do not stream through the operator process.
 
-### Static credentials only behind an explicit endpoint
+### ObjectStorageConfig is keyed by storage type, with an explicit auth choice
 
-`ObjectStorageConfig` states that access is granted through workload identity and that the
-contract references no Secrets. That stance survives for every cloud provider. Static keys exist
-only when `endpoint` is set, which marks S3-compatible storage (MinIO, Ceph, NetApp). This is a
-production capability, not a test affordance, and it lets the kind suite run the same code path
-as production.
+The flat contract (`provider`, `type`, `bucketId`, `bucketName`, `basePath`, `accountId`) does not
+extend well. `provider` and `type` pair one to one, so the CEL rule between them polices a
+redundancy. `region`, `endpoint`, and path style are S3-only. `accountId` means three different
+things (a role ARN, a service-account email, a managed-identity client ID). A static credential
+is S3-shaped for S3 (access key and secret key), a JSON key for GCS, and an account key for Azure.
+The contract becomes a discriminated union, the shape that `SecondaryStorageConfig` already
+uses: `type` plus exactly the matching block (`s3`, `gcs`, `azureBlob`). Each block carries an
+`auth` block with the same two-value discriminator, `workloadIdentity` or `credentials`.
+`provider` and `bucketId` go away. Nothing consumes them: the only reader today is the schema
+test of the Batch A validation controller. MinIO is `type: S3` with an `endpoint`, not
+`provider: aws`.
+
+Static credentials are an explicit choice on every storage type, not a shape that hides behind
+an S3 endpoint. Workload identity is the default and the shape that `camunda-cloud-operator`
+emits. Credentials serve S3-compatible storage (MinIO, Ceph, NetApp) and the on-premise user
+who runs access keys against a cloud bucket. This is a production capability, not a test
+affordance, and it lets the kind suite run the same code path as production.
+
+### The operator derives workload-identity annotations from the contract
+
+Workload identity binds a cloud principal to a Kubernetes ServiceAccount. IRSA annotates the
+ServiceAccount with `eks.amazonaws.com/role-arn`, GKE Workload Identity with
+`iam.gke.io/gcp-service-account`, Azure Workload Identity with
+`azure.workload.identity/client-id` plus the pod label `azure.workload.identity/use: "true"`. In
+the flat contract the identity field was inert. The user stated the identity a second time in
+`CamundaCluster.spec.serviceAccount.annotations`, and only that copy did anything.
+
+The operator applies the annotation itself. When a `CamundaCluster` references a bucket whose
+`auth.type` is `workloadIdentity` with an identity set, the operator renders the ServiceAccount
+`<cluster-name>-camunda` even when `spec.serviceAccount` is unset, and adds the annotation of
+the storage type. Every workload pod and the dump Job run under that ServiceAccount. User
+annotations from `spec.serviceAccount.annotations` merge in, and an explicit user value on the
+same key wins over the derived one. Two referenced buckets (`backupStorageRef`,
+`documentStorageRef`) with different identities of the same storage type are rejected with
+`InvalidReference`: a pod has one ServiceAccount.
+
+The identity fields are optional on purpose. EKS Pod Identity and GKE Workload Identity
+Federation for GKE (the direct form) need no annotation. The binding lives on the cloud side and
+names the ServiceAccount by namespace and name. For those, `auth.type: workloadIdentity` with
+an empty block means "trust the ServiceAccount chain, add nothing". The ServiceAccount name is
+therefore part of the contract, and the CRD doc states it: the principal to bind is
+`system:serviceaccount:<cluster-namespace>:<cluster-name>-camunda`.
 
 Elasticsearch reads S3 credentials from the node keystore only, never from the repository
 settings. ECK fills the keystore from `spec.secureSettings`. `ElasticsearchCluster` gains the
 same field as a passthrough. The keystore belongs to the ECK object that the
-`ElasticsearchCluster` controller owns, so the `CamundaCluster` controller does not write it. This
-matches the existing stance that the Elasticsearch nodes get their bucket access on the
-`ElasticsearchCluster` (`serviceAccount.annotations` for workload identity, `secureSettings` for
-static keys).
+`ElasticsearchCluster` controller owns, so the `CamundaCluster` controller does not write it.
+`ElasticsearchCluster` has no bucket reference, so its identity annotation stays user-supplied in
+its `serviceAccount.annotations`, and its Pod Identity principal is its own ServiceAccount. Both
+CRD docs state that.
 
 ### Backup policy on the cluster and in the preset, the bucket on the cluster only
 
@@ -187,38 +225,63 @@ in the backup controller, called against the published endpoint.
 
 ### ObjectStorageConfig
 
-New optional fields. `accountId` becomes optional.
+The spec is rewritten as a discriminated union. `provider`, `bucketId`, and `accountId` are
+removed.
 
 ```yaml
 spec:
-  provider: aws                  # unchanged: aws | gcp | azure
-  type: S3                       # unchanged: must match provider
-  bucketId: arn:aws:s3:::camunda-backups
-  bucketName: camunda-backups
-  basePath: clusters             # unchanged
-  accountId: arn:aws:iam::123456789012:role/camunda   # now optional
-  region: eu-west-1              # new. Required for S3 unless endpoint is set.
-  endpoint: http://minio.minio.svc:9000   # new. Marks S3-compatible storage.
-  forcePathStyle: true           # new. Path-style addressing.
-  credentialsSecretRef:          # new. Static keys, S3-compatible only.
-    name: minio-credentials
-    namespace: camunda
-    accessKeyIdKey: accessKeyId
-    secretAccessKeyKey: secretAccessKey
+  type: S3                              # S3 | GCS | AzureBlob
+  s3:
+    bucketName: camunda-backups
+    basePath: clusters                  # optional
+    region: eu-west-1                   # required unless endpoint is set
+    endpoint: http://minio.minio.svc:9000   # optional. S3-compatible storage.
+    forcePathStyle: true                # optional. Path-style addressing.
+    auth:
+      type: workloadIdentity            # workloadIdentity | credentials
+      workloadIdentity:                 # optional block; empty means "trust the SA chain"
+        roleArn: arn:aws:iam::123456789012:role/camunda   # optional. IRSA annotation source.
+      credentials:                      # required when auth.type is credentials
+        secretRef:
+          name: minio-credentials
+          namespace: camunda
+          accessKeyIdKey: accessKeyId
+          secretAccessKeyKey: secretAccessKey
+  gcs:
+    bucketName: camunda-backups
+    basePath: clusters
+    auth:
+      type: workloadIdentity
+      workloadIdentity:
+        serviceAccountEmail: camunda@my-project.iam.gserviceaccount.com   # optional
+      credentials:
+        secretRef: {name: gcs-key, namespace: camunda, key: key.json}     # service-account JSON key
+  azureBlob:
+    accountName: camundabackups
+    container: backups
+    basePath: clusters
+    endpoint: http://azurite:10000/camundabackups   # optional. Azurite and sovereign clouds.
+    auth:
+      type: workloadIdentity
+      workloadIdentity:
+        clientId: 11111111-2222-3333-4444-555555555555   # optional
+      credentials:
+        secretRef: {name: azure-key, namespace: camunda, key: accountKey}  # account key
 ```
 
 CEL rules:
 
-- `credentialsSecretRef` requires `endpoint`.
-- `endpoint` and `forcePathStyle` require `type: S3`.
-- Exactly one of `accountId` and `credentialsSecretRef` is set.
-- `type: S3` without `endpoint` requires `region`.
+- Exactly the block matching `type` is set (the `SecondaryStorageConfig` rule).
+- In every `auth` block, exactly the block matching `auth.type` is set, except that
+  `workloadIdentity` may be omitted when `auth.type` is `workloadIdentity`.
+- `s3`: `region` is required unless `endpoint` is set.
 
-MinIO is modeled as `provider: aws, type: S3, endpoint: ...`. The provider enum does not widen.
-The doc names this shape "S3-compatible" and explains it.
-
-The validation controller (Batch A) gains `Ready: MissingSecret` when `credentialsSecretRef`
+The validation controller (Batch A) gains `Ready: MissingSecret` when `credentials.secretRef`
 names a Secret or key that does not exist.
+
+The S3 block is proven end to end against MinIO with both auth types. The GCS and Azure
+credential shapes and their mapping onto the Zeebe backup store and the Elasticsearch repository
+settings are verified against the docs in the foundation PR before the types are final.
 
 ### ElasticsearchCluster
 
@@ -386,7 +449,7 @@ Declared next to the backup types, reported by both backup kinds:
 | `ClusterSuspended` | The cluster is suspended. Its management API is unreachable. |
 | `BackupInProgress` | Another backup of this cluster is not terminal. This one waits. |
 | `StorageTypeMismatch` | The kind does not match the storage type of the cluster. |
-| `MissingCredentials` | The bucket has no `credentialsSecretRef` and the cluster has no `serviceAccount`. |
+| `MissingCredentials` | RDBMS only. The bucket uses `credentials` and the Secret is unresolvable at Job time. |
 | `ResumeFailed` | Elasticsearch only. Resume exporting did not succeed before the deadline. |
 
 `BackupSchedule` reports `Healthy` and `InvalidReference`. Skipped triggers are events, not
@@ -417,7 +480,8 @@ pkg/
 internal/controller/
   logicalbackupelasticsearch/, logicalbackuprdbms/, backupschedule/
   camundacluster/            (+ repository registration, storage-type gated wiring,
-                             status.management binding)
+                             status.management binding, derived SA annotation)
+  objectstorageconfig/       (+ MissingSecret for credentials.secretRef)
 cmd/                         subcommand `upload` used by the dump Job's main container
 test/utils/minio.go, test/e2e/testdata/minio.yaml, test/e2e/backup_test.go
 ```
@@ -492,16 +556,16 @@ delete the partition backup with `DELETE /actuator/backupRuntime/{backupId}`.
 | `PrimaryBackup` | `POST /actuator/backupRuntime` without an ID, record `status.primaryBackupId`, poll to completion. |
 
 Extra pre-checks: `storageRef` → `SecondaryStorageConfig` → `DatabaseConfig` has no
-`backupCredentialsSecretRef`: `MissingSecret`. The bucket has no `credentialsSecretRef` and the
-cluster has no `serviceAccount`: `MissingCredentials`.
+`backupCredentialsSecretRef`: `MissingSecret`. The bucket uses `credentials` and its Secret does
+not resolve: `MissingCredentials`.
 
 The Job runs one pod. An initContainer from `postgres:<major>` runs `pg_dump -Fc` of the entire
 logical database into a scratch volume. The major version comes from the
 `DatabaseServerConfig`. The main container is the operator image with the `upload` subcommand.
 It uploads the archive with `pkg/objectstore` and exits. Job success means the upload
-succeeded. The pod runs under the cluster's `<name>-camunda` ServiceAccount when
-`spec.serviceAccount` is set, so workload identity applies. With `credentialsSecretRef`, the keys
-are mounted as env. Scratch volume: `emptyDir` with `sizeLimit` by default, a PVC when
+succeeded. The pod runs under the cluster's `<name>-camunda` ServiceAccount, which carries the
+derived workload-identity annotation. With `auth.type: credentials`, the keys are mounted as
+env from the referenced Secret. Scratch volume: `emptyDir` with `sizeLimit` by default, a PVC when
 `storageClassName` is set. Pod placement, resources, labels, annotations, and extra env come from
 the effective `dump` block. `podAnnotations` matters for meshes: an injected sidecar keeps a Job
 from completing.
@@ -534,9 +598,11 @@ A storage-type gated part of the render, active when `backupStorageRef` is set.
 **Both paths.** The Zeebe backup store: `camunda.data.primary-storage.backup.store` and the
 matching `s3`, `gcs`, or `azure` block, rendered as `CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_*`
 through `pkg/camundaconfig`. For S3: bucket name, base path, region, endpoint,
-`force-path-style-access`, and access key and secret key from `credentialsSecretRef` (mirrored
-into the cluster namespace the way the OIDC client secret is). Without static keys the AWS chain
-picks up workload identity from the pod ServiceAccount. With `endpoint` set, the components also
+`force-path-style-access`, and access key and secret key from `auth.credentials.secretRef`
+(mirrored into the cluster namespace the way the OIDC client secret is). With
+`auth.type: workloadIdentity` no keys are rendered and the AWS chain picks up the identity from
+the pod ServiceAccount, which the controller annotates from `auth.workloadIdentity` (see design
+decisions). With `endpoint` set, the components also
 get `AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED` and
 `AWS_RESPONSE_CHECKSUM_CALCULATION=WHEN_REQUIRED`, the documented workaround for AWS SDK 2.30+
 chunked encoding on S3-compatible stores.
@@ -597,7 +663,7 @@ creates the kind that matches the storage type, skips on suspend and on overlap,
 
 **e2e (kind).** MinIO from `test/utils/minio.go` and `testdata/minio.yaml`, with a bucket and a
 credentials Secret. Then the production path on both backends: an `ObjectStorageConfig` with
-`endpoint` and `credentialsSecretRef`, an `ElasticsearchCluster` with `secureSettings`, a
+`s3.endpoint` and `auth.type: credentials`, an `ElasticsearchCluster` with `secureSettings`, a
 `CamundaCluster` with `backupStorageRef`. Assertions: the snapshots exist in Elasticsearch, the
 objects exist in MinIO, the dump is non-empty, `primaryBackupId` is set, and exporting runs again
 afterwards, queried from the actuator, not trusted from status. A `BackupSchedule` with a
@@ -649,11 +715,16 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
 - `docs/crds/backupretention.md` is removed. References in `index.md`, `backupschedule.md`,
   `camundacluster.md`, and `architecture.md` are updated. `mkdocs.yml` follows.
 - `backupschedule.md`: `retained` block, schedule-owned pruning, watches on both kinds.
-- `objectstorageconfig.md`: S3-compatible fields, `accountId` optional, the either-or rule, the
-  new `MissingSecret` reason.
+- `objectstorageconfig.md`: rewritten for the keyed shape (`type` + `s3`/`gcs`/`azureBlob`,
+  `auth.type`), `provider`, `bucketId`, and `accountId` removed, the derived annotations, the
+  ServiceAccount principal for annotation-less identity, the new `MissingSecret` reason.
 - `elasticsearchcluster.md`: `secureSettings`, the narrowed role.
 - `camundacluster.md`: `spec.backup`, `status.management`, steps 8 and 9 no longer "lands with
-  Batch D", `BackupRepositoryReady`, the `WHEN_REQUIRED` env, the pairing note on retention.
+  Batch D", `BackupRepositoryReady`, the `WHEN_REQUIRED` env, the pairing note on retention, the
+  derived ServiceAccount annotation and the `<name>-camunda` principal for annotation-less
+  identity, the two-identities rejection.
+- `elasticsearchcluster.md`: its own ServiceAccount as the principal for annotation-less
+  identity, next to `serviceAccount.annotations` and `secureSettings`.
 - `architecture.md`: the management binding as the contract that extensions consume.
 - `camundaclusterpreset.md`: merge rules for `backup`.
 - `index.md`: the Batch D list and the graph (two backup kinds, no retention).
