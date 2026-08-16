@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: identity
+  name: my-cluster-identity
+  namespace: my-cluster-ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: identity
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: b9d95258f970f85f
+      labels:
+        camunda.io/cluster: my-cluster
+        camunda.io/component: identity
+    spec:
+      containers:
+      - env:
+        - name: CAMUNDA_CLUSTER_NAME
+          value: my-cluster
+        - name: CAMUNDA_CLUSTER_SIZE
+          value: "1"
+        - name: CAMUNDA_CLUSTER_PARTITIONCOUNT
+          value: "1"
+        - name: CAMUNDA_CLUSTER_REPLICATIONFACTOR
+          value: "1"
+        - name: CAMUNDA_CLUSTER_INITIALCONTACTPOINTS
+          value: my-cluster-zeebe-0.my-cluster-zeebe.my-cluster-ns.svc:26502
+        - name: CAMUNDA_API_GRPC_ADDRESS
+          value: 0.0.0.0
+        - name: CAMUNDA_CLUSTER_GATEWAYID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_TYPE
+          value: elasticsearch
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_URL
+          value: https://es-http.my-cluster-ns.svc:9200
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: es-user
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: es-user
+        - name: CAMUNDA_SECURITY_AUTHENTICATION_METHOD
+          value: basic
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME
+          value: admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-camunda-admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME
+          value: admin
+        - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL
+          value: admin@localhost
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
+          value: admin
+        - name: SPRING_PROFILES_ACTIVE
+          value: admin,consolidated-auth,gateway
+        - name: JAVA_TOOL_OPTIONS
+          value: -XX:+ExitOnOutOfMemoryError
+        image: camunda/camunda:8.9.9
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: management
+          periodSeconds: 30
+        name: camunda
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 9600
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: management
+          periodSeconds: 10
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /actuator/health/startup
+            port: management
+          periodSeconds: 5
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: identity
+  name: my-cluster-identity
+  namespace: my-cluster-ns
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 9600
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/cluster: my-cluster
+    camunda.io/component: identity
+status:
+  loadBalancer: {}

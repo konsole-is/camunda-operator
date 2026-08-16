@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: connectors
+  name: my-cluster-connectors
+  namespace: my-cluster-ns
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: connectors
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: 3eac75871f5fea1a
+        company.com/cluster-preset: medium
+      labels:
+        camunda.io/cluster: my-cluster
+        camunda.io/component: connectors
+        company.com/team: automation-ops
+        team: platform
+    spec:
+      containers:
+      - env:
+        - name: CAMUNDA_CLIENT_MODE
+          value: selfManaged
+        - name: CAMUNDA_CLIENT_GRPCADDRESS
+          value: http://my-cluster-gateway.my-cluster-ns.svc:26500
+        - name: CAMUNDA_CLIENT_RESTADDRESS
+          value: http://my-cluster-gateway.my-cluster-ns.svc:8080
+        - name: CAMUNDA_CLIENT_AUTH_METHOD
+          value: basic
+        - name: CAMUNDA_CLIENT_AUTH_USERNAME
+          value: admin
+        - name: CAMUNDA_CLIENT_AUTH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-camunda-admin
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: key
+              name: camunda-license
+        - name: TZ
+          value: UTC
+        envFrom:
+        - configMapRef:
+            name: overrides
+        image: registry.example.com/camunda/camunda/connectors-bundle:8.9.7
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: http
+          periodSeconds: 30
+        name: connectors
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: http
+          periodSeconds: 10
+        resources: {}
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      serviceAccountName: my-cluster-camunda
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: connectors
+  name: my-cluster-connectors
+  namespace: my-cluster-ns
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  selector:
+    camunda.io/cluster: my-cluster
+    camunda.io/component: connectors
+status:
+  loadBalancer: {}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: connectors
+    release: prometheus
+  name: my-cluster-connectors
+  namespace: my-cluster-ns
+spec:
+  endpoints:
+  - port: http
+  namespaceSelector: {}
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: connectors

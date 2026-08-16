@@ -43,6 +43,10 @@ const (
 	// ConditionConnectorsReady reports whether every connectors replica is
 	// ready. It is present only when connectors are enabled.
 	ConditionConnectorsReady = "ConnectorsReady"
+	// ConditionAdminSecretReady reports whether the admin credentials Secret
+	// of a basic-auth cluster is applied. It is present only under basic
+	// authentication and takes part in Ready.
+	ConditionAdminSecretReady = "AdminSecretReady"
 )
 
 // ComponentMode says where a process of the unified binary runs.
