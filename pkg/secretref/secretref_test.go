@@ -100,3 +100,35 @@ func TestCheckKeys(t *testing.T) {
 		})
 	}
 }
+
+// Get returns the Secret when every key is present, and the CheckKeys message
+// otherwise, so a caller that needs the data or the resource version reads
+// the Secret once.
+func TestGet(t *testing.T) {
+	ref := types.NamespacedName{Namespace: "ns", Name: "name"}
+
+	t.Run("secret absent", func(t *testing.T) {
+		got, msg, err := Get(context.Background(), fake.NewClientBuilder().Build(), ref, "username")
+		require.NoError(t, err)
+		assert.Nil(t, got)
+		assert.Equal(t, `Secret "ns/name" not found`, msg)
+	})
+
+	t.Run("key absent", func(t *testing.T) {
+		reader := fake.NewClientBuilder().WithObjects(secret("username")).Build()
+		got, msg, err := Get(context.Background(), reader, ref, "username", "password")
+		require.NoError(t, err)
+		assert.Nil(t, got)
+		assert.Equal(t, `Secret "ns/name" is missing key "password"`, msg)
+	})
+
+	t.Run("all keys present", func(t *testing.T) {
+		reader := fake.NewClientBuilder().WithObjects(secret("username", "password")).Build()
+		got, msg, err := Get(context.Background(), reader, ref, "username", "password")
+		require.NoError(t, err)
+		assert.Empty(t, msg)
+		require.NotNil(t, got)
+		assert.Equal(t, []byte("value"), got.Data["password"])
+		assert.NotEmpty(t, got.ResourceVersion)
+	})
+}

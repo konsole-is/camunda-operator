@@ -35,12 +35,12 @@ This supports every deployment model from all-in-one (everything embedded in zee
 2. The operator resolves `platformConfigRef`, the required `storageRef`, and the optional `backupStorageRef` / `documentStorageRef`; a missing target sets `Ready` to `False` with reason `InvalidReference`.
 3. The operator renders the workloads for the effective topology: the zeebe StatefulSet, a Deployment per standalone component, Services, and the configuration wiring — all expressed as unified-configuration environment variables on the single Camunda image (Spring Boot relaxed binding, for example `SPRING_PROFILES_ACTIVE`, `ZEEBE_BROKER_GATEWAY_ENABLE`, `CAMUNDA_SECURITY_AUTHENTICATION_METHOD`, `CAMUNDA_DATA_SECONDARYSTORAGE_*`) — with auth from the platform config, secondary storage from the resolved `SecondaryStorageConfig`, and `externalUrl` as the base URL for OIDC redirects and web application links. The operator creates no Ingress resources; you (or a composition layer above) route traffic to `externalUrl`.
 4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources. The operator uses the component values `zeebe`, `gateway`, `operate`, `tasklist`, `identity`, and `connectors`.
-5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `camunda-operator/camundacluster`, leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
+5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `CamundaCluster/<process>` (for example `CamundaCluster/zeebe`), leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
 6. The operator watches workload health into per-component conditions and the aggregate `Ready` condition.
 7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md) and contract CRDs, so changes to them roll out to the cluster without touching this CR.
-8. When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: for Elasticsearch-backed clusters, the CamundaCluster controller itself registers the snapshot repository (derived from `backupStorageRef`) in the cluster's Elasticsearch via the Elasticsearch API and configures the same repository name on the Camunda components; in all cases it configures the Zeebe primary-storage backup store. The Elasticsearch nodes' access to the snapshot bucket comes from the [ElasticsearchCluster](elasticsearchcluster.md)'s own workload identity (`serviceAccount.annotations` on that CR), not from this cluster's. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
-9. For RDBMS-backed clusters (`storageRef` resolves to `type: rdbms`), the operator additionally auto-enables continuous and scheduled backup of zeebe's primary storage (`camunda.data.primary-storage.backup`: continuous operation, schedule, and checkpoint interval), so database and primary storage stay restorable to matching positions — required both for `PointInTimeRestore` and for restoring RDBMS `Backup`s.
-10. `suspend: true` scales all workloads to zero and sets the `Suspended` condition; `pause: true` halts reconciliation of this CR entirely, leaving workloads as they are.
+8. *(lands with Batch D)* When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: for Elasticsearch-backed clusters, the CamundaCluster controller itself registers the snapshot repository (derived from `backupStorageRef`) in the cluster's Elasticsearch via the Elasticsearch API and configures the same repository name on the Camunda components; in all cases it configures the Zeebe primary-storage backup store. The Elasticsearch nodes' access to the snapshot bucket comes from the [ElasticsearchCluster](elasticsearchcluster.md)'s own workload identity (`serviceAccount.annotations` on that CR), not from this cluster's. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
+9. *(lands with Batch D)* For RDBMS-backed clusters (`storageRef` resolves to `type: rdbms`), the operator additionally auto-enables continuous and scheduled backup of zeebe's primary storage (`camunda.data.primary-storage.backup`: continuous operation, schedule, and checkpoint interval), so database and primary storage stay restorable to matching positions — required both for `PointInTimeRestore` and for restoring RDBMS `Backup`s.
+10. `suspend: true` scales every workload to zero replicas and keeps the broker volumes; `Ready` is then `True` with reason `Suspended`. `pause: true` stops the reconciliation of this CR: the operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
 !!! note "Deviation from the original proposal"
     The proposal enabled continuous primary-storage backup only when the storage chain had point-in-time recovery enabled (`pitr.enabled: true` on the `DatabaseServerConfig`).
@@ -61,6 +61,19 @@ Camunda 8.9 seeds no user on its own. When the platform config selects basic aut
 The credentials live in the Secret `<name>-camunda-admin` in the namespace of the CamundaCluster, under the keys `username` (`admin`) and `password`.
 The operator generates the password once and keeps it stable across reconciles. The password reaches the containers as a `secretKeyRef`, and the user is a member of the `admin` role.
 The connectors runtime authenticates against the cluster with the same user. The Secret reports the condition `AdminSecretReady`, and it takes part in `Ready`.
+
+### Referenced Secrets in other namespaces
+
+A pod can only read a Secret in its own namespace. When a referenced Secret (the license, the OIDC client secret, the storage credentials, the CA, or the DatabaseConfig credentials) lives in another namespace, the operator copies the referenced keys into the namespace of the CamundaCluster.
+The copy is the owned Secret `<name>-camunda-<purpose>`, where `purpose` is one of `license`, `oidc-client`, `auth-client`, `es-credentials`, `es-ca`, and `db-credentials`. The containers reference the copy. A change to the source Secret updates the copy and rolls the pods. The copies report the condition `MirroredSecretsReady`, and it takes part in `Ready`.
+
+### Zeebe storage
+
+The brokers keep their data on one PersistentVolumeClaim per pod, from the `data` volume claim template of the StatefulSet.
+When the effective `spec.zeebe.storageSize` grows, the operator patches every bound broker claim up to the new size. The storage class must allow volume expansion; the API server rejects the patch otherwise.
+The volume claim template of a StatefulSet is immutable. When the applied template differs from the rendered one, the operator deletes the StatefulSet with `orphan` propagation and applies it again; the pods and claims stay, the new StatefulSet adopts them, and the operator records the event `StatefulSetRecreated`.
+A decrease of the effective size (through the preset, since admission rejects an inline decrease) is clamped to the largest broker volume size that exists (a bound claim's capacity or request, or the applied claim template), with the Warning event `StorageShrinkIgnored`.
+The retention policy of the StatefulSet maps `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (`Delete` by default); a scale-down always retains the claims. `status.storageSize` reports the smallest capacity of the bound broker claims.
 
 ### JVM options
 
@@ -240,8 +253,9 @@ spec:
 
 ## Status
 
-Status uses conditions exclusively: one condition per standalone component plus the aggregate `Ready` — no health enums, no URL fields.
+Status uses conditions exclusively: one condition per standalone process, the internal Secret conditions, and the aggregate `Ready` — no health enums, no URL fields.
 Embedded applications do not get their own condition; they are covered by their host's condition (for example `GatewayReady` covers embedded operate/tasklist/identity).
+`Ready` mirrors the highest-priority component condition: its status and reason are those of that component, and its message names the component. The reasons of the component conditions come from the component framework (`Healthy`, `Creating`, `Updating`, `Degraded`, `Down`, `Suspended`, and more).
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
@@ -249,12 +263,12 @@ Embedded applications do not get their own condition; they are covered by their 
 | `GatewayReady` | `Healthy` | All gateway replicas are ready (only present when the gateway is standalone). |
 | `OperateReady` / `TasklistReady` / `IdentityReady` | `Healthy` | The standalone web application's replicas are ready (only present for standalone modes). |
 | `ConnectorsReady` | `Healthy` | All connectors replicas are ready (only present when connectors are enabled). |
-| `Ready` | `Healthy` | Aggregate: every component condition is `True`. |
-| `Ready` | `Progressing` | Workloads are still rolling toward the desired state. |
-| `Ready` | `InvalidReference` | A referenced CR (`platformConfigRef`, `presetRef`, `storageRef`, `backupStorageRef`, `documentStorageRef`) does not exist. |
-| `Ready` | `MissingSecret` | A Secret referenced by the effective auth configuration is missing. |
-| `Ready` | `Suspended` | The cluster is suspended and intentionally not serving. |
-| `Suspended` | `Suspended` | `spec.suspend` is true and workloads are scaled to zero. |
+| `AdminSecretReady` | `Healthy` | The admin Secret `<name>-camunda-admin` is applied (only present under basic authentication). |
+| `MirroredSecretsReady` | `Healthy` | Every copy of a referenced Secret from another namespace is applied (only present when such a Secret is referenced). |
+| `Ready` | `Healthy` | Every component condition is `True`. |
+| `Ready` | `InvalidReference` | A referenced CR (`platformConfigRef`, `presetRef`, `storageRef` and its `DatabaseConfig` / `DatabaseServerConfig` chain, `backupStorageRef`, `documentStorageRef`) does not exist, or the merged spec is invalid (the message starts with `invalid effective spec:` and names the fields). |
+| `Ready` | `MissingSecret` | A referenced Secret (auth client secret, license, storage credentials, CA, DatabaseConfig credentials) or one of its keys is missing. |
+| `Ready` | `Suspended` | `spec.suspend` is true and every workload is scaled to zero. `Ready` is `True`: the cluster is in its desired state. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 `status.storageSize` reports the data volume size that the brokers have: the smallest capacity that the bound broker PersistentVolumeClaims report, so a resize outside the spec (for example by [PVCAutoResize](pvcautoresize.md)) shows here.

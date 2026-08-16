@@ -47,6 +47,10 @@ const (
 	// of a basic-auth cluster is applied. It is present only under basic
 	// authentication and takes part in Ready.
 	ConditionAdminSecretReady = "AdminSecretReady"
+	// ConditionMirroredSecretsReady reports whether every referenced Secret
+	// that lives outside the cluster namespace is copied into it. It is
+	// present only when such a Secret is referenced and takes part in Ready.
+	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 )
 
 // ComponentMode says where a process of the unified binary runs.

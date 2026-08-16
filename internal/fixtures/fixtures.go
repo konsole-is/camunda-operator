@@ -71,3 +71,35 @@ func DatabaseConfig() *v1.DatabaseConfig {
 		},
 	}
 }
+
+// SecondaryStorageConfigElasticsearch returns an Elasticsearch binding with a
+// unique name in namespace. Its credentials Secret is <name>-credentials in
+// the same namespace, with the keys username and password. The caller creates
+// that Secret.
+func SecondaryStorageConfigElasticsearch(namespace string) *v1.SecondaryStorageConfig {
+	name := "ssc-" + utilrand.String(8)
+	return &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Type: v1.SecondaryStorageTypeElasticsearch,
+			Elasticsearch: &v1.ElasticsearchStorage{
+				Endpoint: "https://" + name + "-es-http." + namespace + ".svc:9200",
+				CredentialsSecretRef: v1.CredentialsSecretRef{
+					Name: name + "-credentials", Namespace: namespace,
+					UsernameKey: "username", PasswordKey: "password",
+				},
+			},
+		},
+	}
+}
+
+// CamundaPlatformConfigBasic returns a platform config with basic
+// authentication, no license, and no registry, with a unique name.
+func CamundaPlatformConfigBasic() *v1.CamundaPlatformConfig {
+	return &v1.CamundaPlatformConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cpc-" + utilrand.String(8)},
+		Spec: v1.CamundaPlatformConfigSpec{
+			Auth: &v1.PlatformAuthSpec{Method: v1.AuthenticationMethodBasic},
+		},
+	}
+}

@@ -18,6 +18,7 @@ rules:
   verbs:
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - ""
@@ -37,6 +38,7 @@ rules:
   - apps
   resources:
   - deployments
+  - statefulsets
   verbs:
   - create
   - delete
@@ -112,6 +114,7 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
+  - camundaclusterpresets
   - camundaplatformconfigs
   - databaseserverconfigs
   - elasticsearchclusterpresets

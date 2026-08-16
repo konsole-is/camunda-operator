@@ -29,7 +29,16 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
+)
+
+// timeout and interval bound the Eventually polling of every envtest assertion.
+const (
+	timeout  = testenv.Timeout
+	interval = testenv.Interval
 )
 
 var (
@@ -47,9 +56,38 @@ func TestCamundaClusterController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	// The suite registers no reconciler yet: it covers the schema of the
-	// CamundaCluster and CamundaClusterPreset kinds.
-	env = testenv.Start(func(mgr ctrl.Manager) error { return nil })
+	// The contract controllers are registered too: the Secret watch of the
+	// cluster controller lists platform configs, bindings, and DatabaseConfigs
+	// through their indexes.
+	env = testenv.Start(func(mgr ctrl.Manager) error {
+		if err := (&camundaplatformconfig.CamundaPlatformConfigReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			return err
+		}
+		if err := (&secondarystorageconfig.SecondaryStorageConfigReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			return err
+		}
+		if err := (&databaseconfig.DatabaseConfigReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			return err
+		}
+
+		return (&CamundaClusterReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr)
+	})
 
 	ctx, k8sClient = env.Ctx, env.Client
 })
