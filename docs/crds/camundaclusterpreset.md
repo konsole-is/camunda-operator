@@ -22,7 +22,7 @@ The CamundaCluster controller resolves `presetRef` on each reconcile, so editing
 5. `extraEnv` lists merge by variable name: preset entries come first, and a CamundaCluster entry with the same name replaces the preset's entry.
 6. `extraEnvFrom` lists concatenate: preset entries first, then CamundaCluster entries.
 7. `podLabels` and `podAnnotations` maps merge by key, with the CamundaCluster winning on conflicts.
-8. `scheduling` is the exception and never merges: if the CamundaCluster sets `scheduling` at some level (top-level or per component), it replaces the preset's `scheduling` at that level entirely, because partial scheduling merges are error-prone.
+8. `scheduling` and `auth.admin` are the exceptions and never merge: if the CamundaCluster sets one of them, it replaces the preset's block entirely. For `scheduling` this holds at each level (top-level or per component), because partial scheduling merges are error-prone. For `auth.admin` it means one manifest names every administrator of the cluster, and a cluster can drop an administrator that the preset grants.
 
 The override surface is deliberately small — sizing, env vars, and metadata that commonly vary per cluster.
 Clusters that fit no preset skip `presetRef` and configure everything inline.
@@ -60,6 +60,10 @@ spec:
         name: "medium-clusters-oidc-secret"
         namespace: "camunda-system"
         key: "client-secret"
+      # object. Optional. Default administrators of referencing clusters; a cluster that sets its own admin block replaces this entirely (no merge).
+      admin:
+        clients:
+          - "platform-ops"
     # list. Optional. Env vars applied to ALL workloads of referencing clusters; merged by name, with cluster entries winning.
     extraEnv:
       - name: TZ

@@ -183,12 +183,15 @@ func fixtureRDBMS(t *testing.T) Input {
 	})
 }
 
-// fixtureOIDC uses a platform config with OIDC and discovery overrides, a
-// cluster auth override of the client id, and an externalUrl.
+// fixtureOIDC uses a platform config with OIDC, discovery overrides, and both
+// claim names, a cluster auth override of the client id, an admin bootstrap
+// with all three member kinds, and an externalUrl.
 func fixtureOIDC(t *testing.T) Input {
 	t.Helper()
 	return newInput(t, func(in *Input) {
 		in.Platform = oidcPlatform()
+		in.Platform.Auth.OIDC.UsernameClaim = "preferred_username"
+		in.Platform.Auth.OIDC.ClientIDClaim = "client_id"
 		in.Cluster.Spec.ExternalURL = "https://my-cluster.camunda.example.com"
 		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{
 			ClientID: "my-cluster-client",
@@ -196,6 +199,13 @@ func fixtureOIDC(t *testing.T) Input {
 				Name:      "my-cluster-oidc-secret",
 				Namespace: "my-cluster-ns",
 				Key:       "client-secret",
+			},
+			Admin: &v1.ClusterAdminSpec{
+				Users:   []string{"ada@example.com"},
+				Clients: []string{"my-cluster-client"},
+				MappingRules: []v1.AdminMappingRule{
+					{ID: "platform-admins", ClaimName: "groups", ClaimValue: "camunda-admins"},
+				},
 			},
 		}
 		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
