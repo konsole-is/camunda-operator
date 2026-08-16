@@ -36,6 +36,8 @@ The two sub-issues are strictly sequential. #61 cannot go green until #73 has me
 
 ## Bubble-up log
 
+- **The OIDC login spec needs `Accept: text/html` (2026-08-17).** The first run of the flow failed on the login redirect: curl stayed on `/operate/` instead of reaching Keycloak. The gateway serves the web applications and the API on one Spring Security filter chain with both `oauth2Login` and `oauth2ResourceServer`, so the entry point is chosen by media type — HTML gets the login redirect, everything else gets the bearer 401 that the anonymous spec already asserts. The spec now sends the header and is named "redirects a browser login", which is what it actually proves. No operator change; this is Camunda behavior.
+
 - **Copilot review effort level is the repository default (2026-08-17).** #75 is a substantive change — new CRD surface plus a render path — and a balanced review would suit it better than the lite default. No API sets the level, so the autonomous fan-out cannot raise it. Raise it in **Settings → Copilot → Code review** if later sub-PRs deserve deeper analysis.
 - **Keycloak realm verified ahead of Phase 2 (2026-08-17).** The realm in the plan's Task 9 was probed against the kind cluster before any Go was written, because the two protocol mappers were the highest-risk part. A client-credentials token carries `aud: ["camunda", "account"]`, `client_id: "camunda"`, and `iss` equal to the Service URL, so `clientIdClaim: client_id` resolves it to a client. The realm also emits `preferred_username: service-account-camunda`, so the token holds both claims and the client id claim wins, which is the documented order. Manifest is parked at the session scratchpad until the Phase 2 worktree exists.
 
