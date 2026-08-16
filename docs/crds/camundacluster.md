@@ -310,6 +310,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - `spec.connectors.version` must be a full three-segment version (`8.9.7`, not `8.9`). The effective value (inline or inherited from the preset) must be present when `spec.connectors.enabled` is true.
 - `spec.connectors.replicas` and connectors sizing fields are only meaningful when `spec.connectors.enabled` is true.
 - Existence of referenced CRs and Secrets is checked at reconcile time and surfaced as `InvalidReference` / `MissingSecret` conditions, not at admission, because references may be created in any order.
+- The `scheduling` blocks (top-level and per component) are not schema-validated at admission. The API server stores them without a schema, because the affinity and toleration schema is large and repeats in every component block, and with it the CRD outgrows the chart size budget. Kubernetes validates the affinity and tolerations when the operator applies the workload. An invalid block surfaces on the condition of that process (for example `ZeebeReady`), not as an admission error.
 
 ## Relationships
 

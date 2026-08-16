@@ -96,7 +96,13 @@ type WorkloadSpec struct {
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling constraints of the pods of this process. When set, it
 	// replaces the top-level scheduling block and the scheduling block of a
-	// preset for this process entirely (no merge).
+	// preset for this process entirely (no merge). The API server stores
+	// this block without a schema, to keep the CRD small; Kubernetes
+	// validates the affinity and tolerations when the operator applies the
+	// workload, and an invalid block surfaces on the process condition.
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 }
@@ -281,7 +287,13 @@ type CamundaClusterSpec struct {
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling constraints of every workload, unless a component sets its
 	// own. When set, it replaces the scheduling block of a preset entirely
-	// (no merge).
+	// (no merge). The API server stores this block without a schema, to
+	// keep the CRD small; Kubernetes validates the affinity and tolerations
+	// when the operator applies the workload, and an invalid block surfaces
+	// on the process condition.
+	// +kubebuilder:validation:Schemaless
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// StorageRef names the SecondaryStorageConfig, in the namespace of this

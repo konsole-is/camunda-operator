@@ -141,6 +141,7 @@ Reference errors surface on the consumer instead — a [CamundaCluster](camundac
 - `spec.cluster` must be present and must conform to the preset-legal subset of the CamundaCluster spec schema.
 - Instance-bound CamundaCluster fields are rejected at admission inside `spec.cluster`: `platformConfigRef`, `presetRef` (no preset chaining), `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`.
 - Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `identity`, `connectors`), and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`.
+- The `scheduling` blocks are not schema-validated at admission, like on the CamundaCluster: an invalid block surfaces on the process condition of a consuming cluster.
 - There is no cross-resource validation: preset resolution problems are reported by the consuming controller.
 
 ## Relationships
