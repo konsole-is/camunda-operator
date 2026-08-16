@@ -97,6 +97,89 @@ const (
 	// (MyBatisConfiguration.java).
 	KeyRDBMSDatabaseVendorID Key = "camunda.data.secondary-storage.rdbms.database-vendor-id"
 
+	// KeyBackupRepositoryName is camunda.data.backup.repository-name, the
+	// snapshot repository that the web applications write their backups to
+	// (docs "Core settings > Concepts > Backups").
+	KeyBackupRepositoryName Key = "camunda.data.backup.repository-name"
+
+	// KeyPrimaryBackupStore is camunda.data.primary-storage.backup.store, one
+	// of NONE, S3, GCS, AZURE, FILESYSTEM (BackupStoreCfg.java).
+	KeyPrimaryBackupStore Key = "camunda.data.primary-storage.backup.store"
+	// KeyPrimaryBackupContinuous is camunda.data.primary-storage.backup.continuous.
+	// It holds every log segment until it is backed up, so a restore finds an
+	// unbroken range (BackupCfg.java).
+	KeyPrimaryBackupContinuous Key = "camunda.data.primary-storage.backup.continuous"
+	// KeyPrimaryBackupSchedule is camunda.data.primary-storage.backup.schedule:
+	// an ISO 8601 duration, a CRON expression, or none (BackupCfg.java).
+	KeyPrimaryBackupSchedule Key = "camunda.data.primary-storage.backup.schedule"
+	// KeyPrimaryBackupCheckpointInterval is
+	// camunda.data.primary-storage.backup.checkpoint-interval, an ISO 8601
+	// duration (BackupCfg.java).
+	KeyPrimaryBackupCheckpointInterval Key = "camunda.data.primary-storage.backup.checkpoint-interval"
+	// KeyPrimaryBackupRetentionWindow is
+	// camunda.data.primary-storage.backup.retention.window, an ISO 8601
+	// duration (BackupRetentionCfg.java).
+	KeyPrimaryBackupRetentionWindow Key = "camunda.data.primary-storage.backup.retention.window"
+	// KeyPrimaryBackupRetentionCleanupSchedule is
+	// camunda.data.primary-storage.backup.retention.cleanup-schedule: an ISO
+	// 8601 duration, a CRON expression, or none (BackupRetentionCfg.java).
+	KeyPrimaryBackupRetentionCleanupSchedule Key = "camunda.data.primary-storage.backup.retention.cleanup-schedule"
+
+	// KeyPrimaryBackupS3BucketName is camunda.data.primary-storage.backup.s3.bucket-name
+	// (S3BackupStoreConfig.java).
+	KeyPrimaryBackupS3BucketName Key = "camunda.data.primary-storage.backup.s3.bucket-name"
+	// KeyPrimaryBackupS3BasePath is camunda.data.primary-storage.backup.s3.base-path,
+	// the key prefix of every object (S3BackupStoreConfig.java).
+	KeyPrimaryBackupS3BasePath Key = "camunda.data.primary-storage.backup.s3.base-path"
+	// KeyPrimaryBackupS3Region is camunda.data.primary-storage.backup.s3.region
+	// (S3BackupStoreConfig.java).
+	KeyPrimaryBackupS3Region Key = "camunda.data.primary-storage.backup.s3.region"
+	// KeyPrimaryBackupS3Endpoint is camunda.data.primary-storage.backup.s3.endpoint.
+	// Without it the client derives the endpoint from the region
+	// (S3BackupStoreConfig.java).
+	KeyPrimaryBackupS3Endpoint Key = "camunda.data.primary-storage.backup.s3.endpoint"
+	// KeyPrimaryBackupS3ForcePathStyleAccess is
+	// camunda.data.primary-storage.backup.s3.force-path-style-access, for a
+	// store that serves no virtual-hosted-style requests (S3BackupStoreConfig.java).
+	KeyPrimaryBackupS3ForcePathStyleAccess Key = "camunda.data.primary-storage.backup.s3.force-path-style-access"
+	// KeyPrimaryBackupS3AccessKey is camunda.data.primary-storage.backup.s3.access-key.
+	// Without both keys the AWS credential chain resolves the identity
+	// (S3BackupStoreConfig.java).
+	KeyPrimaryBackupS3AccessKey Key = "camunda.data.primary-storage.backup.s3.access-key"
+	// KeyPrimaryBackupS3SecretKey is camunda.data.primary-storage.backup.s3.secret-key
+	// (S3BackupStoreConfig.java).
+	KeyPrimaryBackupS3SecretKey Key = "camunda.data.primary-storage.backup.s3.secret-key"
+
+	// KeyPrimaryBackupGCSBucketName is camunda.data.primary-storage.backup.gcs.bucket-name
+	// (GcsBackupStoreConfig.java).
+	KeyPrimaryBackupGCSBucketName Key = "camunda.data.primary-storage.backup.gcs.bucket-name"
+	// KeyPrimaryBackupGCSBasePath is camunda.data.primary-storage.backup.gcs.base-path,
+	// the blob prefix of every object (GcsBackupStoreConfig.java).
+	KeyPrimaryBackupGCSBasePath Key = "camunda.data.primary-storage.backup.gcs.base-path"
+	// KeyPrimaryBackupGCSAuth is camunda.data.primary-storage.backup.gcs.auth,
+	// either auto or none. It takes no key: auto resolves the application
+	// default credentials of the runtime, so a static key is mounted as a
+	// file that GOOGLE_APPLICATION_CREDENTIALS names (GcsConnectionConfig.java).
+	KeyPrimaryBackupGCSAuth Key = "camunda.data.primary-storage.backup.gcs.auth"
+
+	// KeyPrimaryBackupAzureEndpoint is camunda.data.primary-storage.backup.azure.endpoint,
+	// the blob service endpoint. It is required without a connection string
+	// (AzureBackupStoreConfig.java).
+	KeyPrimaryBackupAzureEndpoint Key = "camunda.data.primary-storage.backup.azure.endpoint"
+	// KeyPrimaryBackupAzureAccountName is
+	// camunda.data.primary-storage.backup.azure.account-name (AzureBackupStoreConfig.java).
+	KeyPrimaryBackupAzureAccountName Key = "camunda.data.primary-storage.backup.azure.account-name"
+	// KeyPrimaryBackupAzureAccountKey is
+	// camunda.data.primary-storage.backup.azure.account-key. Without it and
+	// the account name, the Azure credential chain of the runtime resolves
+	// the identity (AzureBackupStoreConfig.java).
+	KeyPrimaryBackupAzureAccountKey Key = "camunda.data.primary-storage.backup.azure.account-key"
+	// KeyPrimaryBackupAzureBasePath is camunda.data.primary-storage.backup.azure.base-path.
+	// The azure block carries no container field: this key IS the container
+	// name, so the key prefix of the contract never goes here
+	// (AzureBackupConfig.containerName maps to basePath).
+	KeyPrimaryBackupAzureBasePath Key = "camunda.data.primary-storage.backup.azure.base-path"
+
 	// KeyAuthenticationMethod is camunda.security.authentication.method
 	// (AuthenticationConfiguration.java).
 	KeyAuthenticationMethod Key = "camunda.security.authentication.method"
@@ -183,6 +266,24 @@ const (
 	// runtime (Helm chart templates/connectors/deployment.yaml).
 	EnvLicenseKeyConnectors = "CAMUNDA_LICENSE_KEY"
 
+	// EnvAWSRequestChecksumCalculation and EnvAWSResponseChecksumCalculation
+	// turn off the chunked encoding and the checksums that AWS SDK 2.30
+	// added. Several S3-compatible stores write the chunk framing into the
+	// object, which corrupts the backup manifest. Camunda documents the two
+	// variables as the fix (docs "Operational guides > Troubleshooting >
+	// Zeebe backup with S3").
+	EnvAWSRequestChecksumCalculation  = "AWS_REQUEST_CHECKSUM_CALCULATION"
+	EnvAWSResponseChecksumCalculation = "AWS_RESPONSE_CHECKSUM_CALCULATION"
+	// ChecksumCalculationWhenRequired is the value of both checksum
+	// variables that leaves the checksum off unless the API call needs one.
+	ChecksumCalculationWhenRequired = "WHEN_REQUIRED"
+
+	// EnvGoogleApplicationCredentials names the file that holds a Google
+	// service-account key. The GCS backup store takes no key as a property:
+	// its auth is auto or none, and auto reads the application default
+	// credentials, which this variable points at.
+	EnvGoogleApplicationCredentials = "GOOGLE_APPLICATION_CREDENTIALS"
+
 	// ProfileBroker runs the Zeebe broker (Profile.java).
 	ProfileBroker = "broker"
 	// ProfileGateway runs the gateway, which also hosts the web applications
@@ -227,6 +328,27 @@ var declared = []Key{
 	KeyRDBMSUsername,
 	KeyRDBMSPassword,
 	KeyRDBMSDatabaseVendorID,
+	KeyBackupRepositoryName,
+	KeyPrimaryBackupStore,
+	KeyPrimaryBackupContinuous,
+	KeyPrimaryBackupSchedule,
+	KeyPrimaryBackupCheckpointInterval,
+	KeyPrimaryBackupRetentionWindow,
+	KeyPrimaryBackupRetentionCleanupSchedule,
+	KeyPrimaryBackupS3BucketName,
+	KeyPrimaryBackupS3BasePath,
+	KeyPrimaryBackupS3Region,
+	KeyPrimaryBackupS3Endpoint,
+	KeyPrimaryBackupS3ForcePathStyleAccess,
+	KeyPrimaryBackupS3AccessKey,
+	KeyPrimaryBackupS3SecretKey,
+	KeyPrimaryBackupGCSBucketName,
+	KeyPrimaryBackupGCSBasePath,
+	KeyPrimaryBackupGCSAuth,
+	KeyPrimaryBackupAzureEndpoint,
+	KeyPrimaryBackupAzureAccountName,
+	KeyPrimaryBackupAzureAccountKey,
+	KeyPrimaryBackupAzureBasePath,
 	KeyAuthenticationMethod,
 	KeyOIDCIssuerURI,
 	KeyOIDCClientID,
@@ -258,7 +380,14 @@ var declared = []Key{
 
 // plainEnv lists the plain environment variables that IsDeclared accepts
 // next to the declared keys.
-var plainEnv = []string{EnvSpringProfilesActive, EnvJavaToolOptions, EnvLicenseKeyConnectors}
+var plainEnv = []string{
+	EnvSpringProfilesActive,
+	EnvJavaToolOptions,
+	EnvLicenseKeyConnectors,
+	EnvAWSRequestChecksumCalculation,
+	EnvAWSResponseChecksumCalculation,
+	EnvGoogleApplicationCredentials,
+}
 
 // Declared returns every key the operator may set, sorted.
 func Declared() []Key {
