@@ -30,7 +30,8 @@ status: review
 | #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | #54 → feat/camunda-cluster-controller | self-merged |
 | #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | #55 → feat/camunda-cluster-controller | self-merged |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | #56 → feat/camunda-cluster-controller | self-merged |
-| follow-up (#47) | batch-c/crd-size | .claude/worktrees/camunda-cluster-controller--crd-size | — → feat/camunda-cluster-controller | in-progress |
+| follow-up (#47) | batch-c/crd-size | .claude/worktrees/camunda-cluster-controller--crd-size | #59 → feat/camunda-cluster-controller | draft (parked alternative) |
+| follow-up (#47) | batch-c/chart-size-guard | .claude/worktrees/camunda-cluster-controller--chart-size-guard | — → feat/camunda-cluster-controller | in-progress |
 | #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | #57 → feat/camunda-cluster-controller | self-merged |
 
 ## Contracts
@@ -44,6 +45,7 @@ The interfaces between the sequential PRs (B → C → D) are the **Interfaces**
 
 ## Bubble-up log
 
+- 2026-08-16 — Chart budget decision REVISED: Copilot on #59 named the cost of schemaless `scheduling` (wrongly typed values break the typed decode → the cluster silently stops reconciling; typos ignored). Measured the real bound: worst-case chart gzips to 113,472 B against etcd's ~1 MiB (9× headroom); the Makefile guard says it is a proxy/tripwire. Decision: keep typed schemas; make `helm-verify` measure gzipped bytes with a 512 KiB limit (sub-PR `batch-c/chart-size-guard`); #59 parked as a draft alternative for the user. USER DECISION POINT: pick one; the CRD-split into its own chart remains the durable fix before Batch D.
 - 2026-08-16 — Integration PR #58: CI is live again (billing fixed); the `Chart` workflow fails: rendered chart 1,170,321 B (worst 1,205,659) > the 1,048,576 B proxy limit, because the CamundaCluster/preset CRDs carry the `scheduling` schema (~22 KB) in 8 places each. Decision: schemaless `scheduling` on the CamundaCluster types (typed Go, validated at workload apply); follow-up sub-PR `batch-c/crd-size`. Copilot cannot review #58 (diff > 20k lines); each sub-PR was reviewed. Recommendation for Batch D: split the CRDs into a separate chart before the set grows again.
 - 2026-08-16 — PR E (#57): `make test-e2e` green locally on a fresh kind cluster (23/23 specs, 809 s; ES flow ~3 min to Ready, RDBMS ~2 min); no operator fix was needed. Docs reconciled (endpoints, env layering, ServiceMonitor paths, mirrored Secrets, imageRegistry example, JAVA_TOOL_OPTIONS); spec 'Watches and indexes' and the PVC-patch sentence amended to what shipped. CI could not be observed (konsole-is Actions billing).
 - 2026-08-16 — PR D (#56) merged after 2 Copilot rounds + spec/quality passes. Quality pass fixed: apply skipped while the orphan-deleted StatefulSet terminates (sentinel, no backoff); cross-namespace binding/DatabaseConfig credential Secrets now watched (Batch B index constants exported); clamp folds applied template + requests; PVC RBAC trimmed. Round-2 suppressed 'grow Pending PVCs' declined (API rejects requests changes on unbound claims).
