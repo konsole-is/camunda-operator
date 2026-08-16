@@ -43,13 +43,21 @@ import (
 	"time"
 )
 
-// ErrUnreachable and ErrRejected classify every failure of the client.
-// ErrUnreachable means the endpoint did not answer (connection, timeout);
-// the caller maps it to ConnectionFailed and retries. ErrRejected means the
-// endpoint answered with an error; the message carries the response body.
+// ErrUnreachable, ErrRejected, and ErrConflict classify every failure of the
+// client. ErrUnreachable means the endpoint did not answer (connection,
+// timeout); the caller maps it to ConnectionFailed and retries. ErrRejected
+// means the endpoint answered with an error; the message carries the response
+// body.
+//
+// ErrConflict is the one failure a caller must interpret itself: a runtime
+// backup with the same or a higher id already exists. Only the caller knows
+// whether that id is its own. A backup re-entering on the id in its status
+// may poll that backup, while one that just allocated an id must fail rather
+// than adopt the artifacts of another backup.
 var (
 	ErrUnreachable = errors.New("management API unreachable")
 	ErrRejected    = errors.New("management API rejected the call")
+	ErrConflict    = errors.New("a backup with the same or a higher id already exists")
 )
 
 // State is the aggregated state of a backup as the management API reports
@@ -272,10 +280,19 @@ func (c *Client) HistoryBackupStatus(ctx context.Context, id int64) (BackupStatu
 }
 
 // StartRuntimeBackup starts the backup of the Zeebe partitions and returns
-// the backup ID. With a nil id the cluster generates one, which is the RDBMS
-// path with continuous backups enabled. With an explicit id, a backup that
-// already exists under the same id is success, so a re-entrant caller never
-// double-starts.
+// the id the backup is keyed by.
+//
+// Which id that is depends on who chose it. With an explicit id, that id is
+// authoritative: the partition backups and every later status query key on
+// it, and the cluster echoes an id of its own that the caller must ignore.
+// With a nil id the cluster generates one and the returned id is the only
+// one there is; that is the RDBMS path, where continuous backups require the
+// parameter to be omitted.
+//
+// An id that the cluster already holds, or that is lower than one it holds,
+// returns ErrConflict. The client does not resolve it, because a conflict on
+// an id the caller did not choose is indistinguishable here from re-entry on
+// its own; see ErrConflict.
 func (c *Client) StartRuntimeBackup(ctx context.Context, id *int64) (int64, error) {
 	var request []byte
 	if id != nil {
@@ -288,18 +305,15 @@ func (c *Client) StartRuntimeBackup(ctx context.Context, id *int64) (int64, erro
 
 	body, status, err := c.do(ctx, http.MethodPost, "/actuator/backupRuntime", request, http.StatusAccepted)
 	if err != nil {
-		// The endpoint answers 409 when a backup with the same or a higher
-		// id exists. Re-entry with the same id is not a failure.
-		if id != nil && status == http.StatusConflict {
-			if existing, statusErr := c.RuntimeBackupStatus(
-				ctx,
-				*id,
-			); statusErr == nil &&
-				existing.State != StateDoesNotExist {
-				return *id, nil
-			}
+		if status == http.StatusConflict {
+			return 0, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
+
 		return 0, err
+	}
+
+	if id != nil {
+		return *id, nil
 	}
 
 	var response struct {

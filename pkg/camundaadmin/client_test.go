@@ -159,21 +159,36 @@ func TestHistoryBackupStatus(t *testing.T) {
 	assert.Equal(t, "COMPLETED", status.Details[0].State)
 }
 
+// The supplied id is what the snapshots and the status key on, so it is the
+// id the client reports — even though the cluster echoes an id of its own.
 func TestStartRuntimeBackupWithExplicitID(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
 	id := int64(1700000000)
 	got, err := client.StartRuntimeBackup(ctx, &id)
-	require.NoError(t, err)
-	assert.Equal(t, id, got)
 
-	// Re-entry: the endpoint answers 409, the client resolves it through
-	// the status and reports the same id.
-	got, err = client.StartRuntimeBackup(ctx, &id)
 	require.NoError(t, err)
 	assert.Equal(t, id, got)
 	assert.Equal(t, 1, server.RuntimeStarts(id))
+}
+
+// A conflict is never resolved by the client. An id "with the same or a
+// higher id" already exists, and only the caller knows whether that id is its
+// own — a backup re-entering on its recorded id may poll it, while one that
+// just allocated a fresh id must fail instead of adopting another backup's
+// artifacts.
+func TestStartRuntimeBackupSurfacesConflict(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	id := int64(1700000000)
+	_, err := client.StartRuntimeBackup(ctx, &id)
+	require.NoError(t, err)
+
+	_, err = client.StartRuntimeBackup(ctx, &id)
+	require.ErrorIs(t, err, camundaadmin.ErrConflict)
+	assert.Equal(t, 1, server.RuntimeStarts(id), "the conflicting call started nothing")
 }
 
 func TestStartRuntimeBackupConflictWithHigherIDFails(t *testing.T) {
@@ -186,7 +201,7 @@ func TestStartRuntimeBackupConflictWithHigherIDFails(t *testing.T) {
 
 	low := int64(1000)
 	_, err = client.StartRuntimeBackup(ctx, &low)
-	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	require.ErrorIs(t, err, camundaadmin.ErrConflict)
 }
 
 func TestStartRuntimeBackupGeneratesID(t *testing.T) {

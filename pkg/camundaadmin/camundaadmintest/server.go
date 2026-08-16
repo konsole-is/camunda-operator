@@ -260,8 +260,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		s.runtime[id] = &Backup{ID: id, State: "IN_PROGRESS"}
 		s.runtimeStarts[id]++
+
+		// The cluster echoes an id of its own when one was supplied: the
+		// documented example answers a request for 100 with 1772011199310.
+		// The backup keys on the supplied id, so a client that trusts the
+		// echo loses track of its own snapshots.
+		echoed := id
+		if r.ContentLength != 0 {
+			echoed = s.nextGeneratedID
+			s.nextGeneratedID++
+		}
 		writeJSON(w, http.StatusAccepted, map[string]any{
-			"backupId": id,
+			"backupId": echoed,
 			"message":  "A backup has been scheduled",
 		})
 

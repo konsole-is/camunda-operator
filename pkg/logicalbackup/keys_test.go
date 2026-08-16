@@ -29,19 +29,19 @@ import (
 func TestAllocateBackupID(t *testing.T) {
 	at := metav1.NewTime(time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC))
 
-	assert.Equal(t, at.Unix(), logicalbackup.AllocateBackupID(at))
+	assert.Equal(t, at.UnixMilli(), logicalbackup.AllocateBackupID(at))
 }
 
-// The ID is the second, not the nanosecond: two backups within one second of
-// each other are prevented by the serialization pre-check, not by the clock.
-func TestAllocateBackupIDIgnoresSubSecond(t *testing.T) {
+// Camunda rejects an id that is not greater than every id the cluster already
+// holds, and the pre-checks do not prevent two backups from starting within
+// the same second. At second resolution those two would collide.
+func TestAllocateBackupIDSeparatesBackupsWithinOneSecond(t *testing.T) {
 	base := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 
-	assert.Equal(
-		t,
-		logicalbackup.AllocateBackupID(metav1.NewTime(base)),
-		logicalbackup.AllocateBackupID(metav1.NewTime(base.Add(500*time.Millisecond))),
-	)
+	first := logicalbackup.AllocateBackupID(metav1.NewTime(base))
+	second := logicalbackup.AllocateBackupID(metav1.NewTime(base.Add(500 * time.Millisecond)))
+
+	assert.Greater(t, second, first)
 }
 
 func TestObjectKeyPrefix(t *testing.T) {
