@@ -43,6 +43,10 @@ const (
 	// ConditionConnectorsReady reports whether every connectors replica is
 	// ready. It is present only when connectors are enabled.
 	ConditionConnectorsReady = "ConnectorsReady"
+	// ConditionAdminSecretReady reports whether the admin credentials Secret
+	// of a basic-auth cluster is applied. It is present only under basic
+	// authentication and takes part in Ready.
+	ConditionAdminSecretReady = "AdminSecretReady"
 )
 
 // ComponentMode says where a process of the unified binary runs.
@@ -133,6 +137,9 @@ type ZeebeSpec struct {
 type GatewaySpec struct {
 	// Mode selects a Deployment of the unified binary (Standalone) or the
 	// embedded gateway of the brokers (Embedded). Defaults to Standalone.
+	// The workload fields have an effect only when the mode is Standalone,
+	// except extraEnv and extraEnvFrom, which apply to the brokers when the
+	// mode is Embedded.
 	// +optional
 	Mode         ComponentMode `json:"mode,omitempty"`
 	WorkloadSpec `              json:",inline"`
