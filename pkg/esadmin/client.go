@@ -42,8 +42,8 @@ import (
 // ErrUnreachable means Elasticsearch did not answer; ErrRejected means it
 // answered with an error, and the message carries the response body.
 var (
-	ErrUnreachable = errors.New("Elasticsearch unreachable")
-	ErrRejected    = errors.New("Elasticsearch rejected the call")
+	ErrUnreachable = errors.New("cannot reach Elasticsearch")
+	ErrRejected    = errors.New("call rejected by Elasticsearch")
 )
 
 // SnapshotState is the state of one snapshot.

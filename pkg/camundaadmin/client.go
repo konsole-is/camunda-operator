@@ -180,7 +180,11 @@ func (c *Client) StartHistoryBackup(ctx context.Context, id int64) error {
 	// The endpoint rejects a repeated id. Re-entry is not a failure: when
 	// the backup exists, the start already happened.
 	if status == http.StatusBadRequest || status == http.StatusConflict {
-		if existing, statusErr := c.HistoryBackupStatus(ctx, id); statusErr == nil && existing.State != StateDoesNotExist {
+		if existing, statusErr := c.HistoryBackupStatus(
+			ctx,
+			id,
+		); statusErr == nil &&
+			existing.State != StateDoesNotExist {
 			return nil
 		}
 	}
@@ -247,7 +251,11 @@ func (c *Client) StartRuntimeBackup(ctx context.Context, id *int64) (int64, erro
 		// The endpoint answers 409 when a backup with the same or a higher
 		// id exists. Re-entry with the same id is not a failure.
 		if id != nil && status == http.StatusConflict {
-			if existing, statusErr := c.RuntimeBackupStatus(ctx, *id); statusErr == nil && existing.State != StateDoesNotExist {
+			if existing, statusErr := c.RuntimeBackupStatus(
+				ctx,
+				*id,
+			); statusErr == nil &&
+				existing.State != StateDoesNotExist {
 				return *id, nil
 			}
 		}

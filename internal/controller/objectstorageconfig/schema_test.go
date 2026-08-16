@@ -25,6 +25,10 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+// minioEndpoint is the S3-compatible endpoint the tests use to mark a bucket
+// as anything other than AWS S3.
+const minioEndpoint = "http://minio.minio.svc:9000"
+
 // validObjectStorageConfig returns the minimal S3 example of the CRD doc with
 // a unique name: a cloud bucket accessed through workload identity.
 func validObjectStorageConfig() *v1.ObjectStorageConfig {
@@ -82,7 +86,7 @@ var _ = Describe("ObjectStorageConfig schema", func() {
 		Entry(
 			"accepts S3-compatible storage with endpoint and credentials", func(o *v1.ObjectStorageConfig) {
 				o.Spec.S3.Region = ""
-				o.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
+				o.Spec.S3.Endpoint = minioEndpoint
 				o.Spec.S3.ForcePathStyle = true
 				o.Spec.S3.Auth = v1.S3StorageAuth{
 					Type:        v1.ObjectStorageAuthTypeCredentials,
@@ -161,7 +165,7 @@ var _ = Describe("ObjectStorageConfig schema", func() {
 		),
 		Entry(
 			"rejects a workloadIdentity block under auth.type credentials", func(o *v1.ObjectStorageConfig) {
-				o.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
+				o.Spec.S3.Endpoint = minioEndpoint
 				o.Spec.S3.Auth = v1.S3StorageAuth{
 					Type:        v1.ObjectStorageAuthTypeCredentials,
 					Credentials: s3Credentials(),

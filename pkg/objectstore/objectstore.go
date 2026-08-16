@@ -184,7 +184,16 @@ func openGCS(ctx context.Context, spec *v1.GCSStorage, creds *Credentials) (*Buc
 		if creds == nil || len(creds.ServiceAccountJSON) == 0 {
 			return nil, errors.New("gcs auth type is credentials, but no resolved credentials were passed")
 		}
-		googleCreds, err := google.CredentialsFromJSON(ctx, creds.ServiceAccountJSON, "https://www.googleapis.com/auth/devstorage.read_write")
+		// The type is asserted, not inferred: the key arrives from a Secret
+		// that the contract names, and an unvalidated credential
+		// configuration from outside the operator must never reach the
+		// Google libraries.
+		googleCreds, err := google.CredentialsFromJSONWithType(
+			ctx,
+			creds.ServiceAccountJSON,
+			google.ServiceAccount,
+			"https://www.googleapis.com/auth/devstorage.read_write",
+		)
 		if err != nil {
 			return nil, fmt.Errorf("parsing GCS service-account key: %w", err)
 		}

@@ -27,6 +27,9 @@ import (
 	"sync"
 )
 
+// snapshotPath is the first path segment of every snapshot API call.
+const snapshotPath = "_snapshot"
+
 // Repository is the fake's record of one snapshot repository.
 type Repository struct {
 	// Type of the repository, s3 for everything this operator registers.
@@ -193,7 +196,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
 
-	case len(parts) == 2 && parts[0] == "_snapshot" && r.Method == http.MethodPut:
+	case len(parts) == 2 && parts[0] == snapshotPath && r.Method == http.MethodPut:
 		if s.failing("repository") {
 			errorBody(w, http.StatusInternalServerError, "injected repository failure")
 			return
@@ -206,7 +209,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.repos[parts[1]] = &Repository{Type: body.Type, Settings: body.Settings}
 		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
-	case len(parts) == 3 && parts[0] == "_snapshot" && r.Method == http.MethodPut:
+	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodPut:
 		if s.failing("snapshotCreate") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
 			return
@@ -227,7 +230,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.snapshotCreates[key]++
 		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
-	case len(parts) == 3 && parts[0] == "_snapshot" && r.Method == http.MethodGet:
+	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodGet:
 		if s.failing("snapshotStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
@@ -241,7 +244,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			"snapshots": []map[string]any{{"snapshot": snapshot.Name, "state": snapshot.State}},
 		})
 
-	case len(parts) == 3 && parts[0] == "_snapshot" && r.Method == http.MethodDelete:
+	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodDelete:
 		if s.failing("snapshotDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return

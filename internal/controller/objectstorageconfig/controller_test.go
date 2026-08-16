@@ -98,7 +98,7 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 			}
 
 			storageConfig = validObjectStorageConfig()
-			storageConfig.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
+			storageConfig.Spec.S3.Endpoint = minioEndpoint
 			storageConfig.Spec.S3.Auth = v1.S3StorageAuth{
 				Type: v1.ObjectStorageAuthTypeCredentials,
 				Credentials: &v1.S3Credentials{
