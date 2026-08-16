@@ -200,6 +200,60 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 
 	itRunsTheOrchestrationCluster(cluster)
 
+	It("runs Operate standalone and folds it back into the gateway", func() {
+		operate := components.WorkloadName(cluster, components.ComponentOperate)
+
+		By("setting spec.operate.mode to Standalone")
+		_, err := utils.Kubectl(
+			"patch", ccResource, ccName, "-n", ccNamespace,
+			"--type=merge", "-p", `{"spec":{"operate":{"mode":"Standalone"}}}`,
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting for the Operate Deployment and OperateReady Healthy")
+		Eventually(func(g Gomega) {
+			exists, err := utils.Exists("deployment", operate, ccNamespace)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(exists).To(BeTrue(), "deployment %q does not exist yet", operate)
+			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionOperateReady, v1.ReasonHealthy)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+
+		By("serving Operate on its own Service with the admin credentials")
+		Eventually(func(g Gomega) {
+			status, body, err := camundaRESTOn(
+				cluster,
+				components.ComponentOperate,
+				"operate",
+				http.MethodGet,
+				"/operate/",
+				nil,
+			)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(status).To(Equal(http.StatusOK), body)
+		}, ccAPITimeout).Should(Succeed())
+
+		By("setting spec.operate.mode back to Embedded")
+		_, err = utils.Kubectl(
+			"patch", ccResource, ccName, "-n", ccNamespace,
+			"--type=merge", "-p", `{"spec":{"operate":{"mode":"Embedded"}}}`,
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting for the Operate Deployment and Service to be gone and OperateReady Disabled")
+		Eventually(func(g Gomega) {
+			expectGone(g, "deployment", operate, ccNamespace)
+			expectGone(g, "service", operate, ccNamespace)
+			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionOperateReady, "Disabled")
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("serving Operate on the gateway again")
+		Eventually(func(g Gomega) {
+			status, body, err := camundaREST(cluster, "webapp", http.MethodGet, "/operate/", nil)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(status).To(Equal(http.StatusOK), body)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+	})
+
 	It("runs the connectors runtime against the gateway", func() {
 		Eventually(func(g Gomega) {
 			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionConnectorsReady, v1.ReasonHealthy)
@@ -474,13 +528,24 @@ func camundaREST(
 	files map[string]string,
 	args ...string,
 ) (int, string, error) {
+	return camundaRESTOn(cluster, components.ComponentGateway, name, method, path, files, args...)
+}
+
+// camundaRESTOn is camundaREST against the HTTP port of the Service of the
+// named component.
+func camundaRESTOn(
+	cluster *v1.CamundaCluster,
+	component, name, method, path string,
+	files map[string]string,
+	args ...string,
+) (int, string, error) {
 	return utils.CamundaREST(utils.CamundaRequest{
 		Namespace: cluster.Namespace,
 		Name:      name,
 		Method:    method,
 		URL: fmt.Sprintf(
 			"http://%s.%s.svc:%d%s",
-			components.WorkloadName(cluster, components.ComponentGateway), cluster.Namespace, components.PortHTTP, path,
+			components.WorkloadName(cluster, component), cluster.Namespace, components.PortHTTP, path,
 		),
 		CredentialsSecret: components.AdminSecretName(cluster),
 		UsernameKey:       components.AdminUsernameKey,

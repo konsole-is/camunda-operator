@@ -358,7 +358,9 @@ PersistentVolumeClaim events the cluster that labels them.
   `GET /v2/topology` on the gateway (REST port 8080, `TopologyController.java`) reports the
   broker and partitions; Operate, Tasklist, and Admin answer on the gateway; a process is
   deployed and an instance started through the REST API with the admin credentials and shows
-  up in Operate's API (export to secondary storage works); connectors ready; suspend to zero and
+  up in Operate's API (export to secondary storage works); Operate switched to `Standalone`
+  answers on its own Service and, switched back to `Embedded`, its Deployment and Service are
+  gone and `OperateReady` reads `Disabled`; connectors ready; suspend to zero and
   resume with the deployed process still present; deletion garbage-collects the workloads and
   the broker PVC follows the default retention. A second flow runs the same cluster on the Batch
   B `Database` (RDBMS). If the runner cannot host both backends and Camunda, the RDBMS flow
