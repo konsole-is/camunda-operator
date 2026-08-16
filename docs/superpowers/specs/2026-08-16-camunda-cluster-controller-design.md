@@ -1,8 +1,9 @@
 # CamundaCluster controller (Batch C)
 
-**Status:** draft
+**Status:** approved (2026-08-16), amended after source verification
 **Date:** 2026-08-16
-**Scope:** CamundaCluster, CamundaClusterPreset (types only), consumption of CamundaPlatformConfig
+**Scope:** CamundaCluster, CamundaClusterPreset (types only), CamundaPlatformConfig (types and
+validation controller), consumption of CamundaPlatformConfig
 
 ## Summary
 
@@ -13,7 +14,10 @@ gateway, web applications, connectors), configured through the unified configura
 `camunda/camunda` binary, with secondary storage from a `SecondaryStorageConfig`, shared
 settings from a `CamundaPlatformConfig`, and a baseline from an optional
 `CamundaClusterPreset`. `CamundaClusterPreset` ships as a passive data CRD (types and schema
-validation, no controller), like `ElasticsearchClusterPreset` in Batch B.
+validation, no controller), like `ElasticsearchClusterPreset` in Batch B. `CamundaPlatformConfig`
+is still a kubebuilder scaffold on `main`; this batch gives it its real types and its validation
+controller (`Ready: Healthy | MissingSecret`, the Batch A shape), because the cluster controller
+consumes it.
 
 The batch is built the Batch B way: ocf components, `pkg/components/<crd>` pure builders,
 `conditions.Aggregate` for `Ready`, `pkg/labels`, envtest through `internal/testenv`, and the
@@ -42,6 +46,10 @@ endpoint that the operator renders is verified against the Camunda source before
   (`camunda.api.grpc.host` does not exist, the property is `address`; `camunda.identity.*`
   has no binding in the orchestration cluster). Nothing is copied from it without the source
   check above.
+- **The Camunda Helm chart for 8.9** (`camunda/camunda-platform` 14.8.3, `helm pull` from
+  `helm.camunda.io`; the local `helm-charts-mirror` does not carry it) is the source for what
+  the monorepo cannot show: the connectors image and its `camunda.client.*` values, the
+  node-id shell wrapper, `JAVA_TOOL_OPTIONS`, and the probe shape.
 - **The CRD docs are not a source.** The `camundacluster.md` env examples are corrected to the
   verified names.
 
@@ -50,14 +58,18 @@ with a comment that names the source file (and line at the time of writing). The
 emits only declared keys, and a unit test asserts that. A key without a source pointer does
 not exist.
 
-The keys verified for this spec are listed under "Verified configuration". Anything marked
-*verify in implementation* is a known open point with the two possible answers, and the
-implementer settles it against the source before the golden that uses it is committed.
+The keys verified for this spec are listed under "Verified configuration". The open points of
+the first draft (identity profile, node id, JDBC driver, redirect path, connectors image) were
+settled against the source and the Helm chart before planning; the answers are in the text.
+The connectors env var names are the one item still confirmed during implementation (docs
+MCP), because the runtime lives outside the monorepo.
 
 ## Goals
 
-- Real `api/v1` types for `CamundaCluster` and `CamundaClusterPreset`, faithful to the docs
-  except where "Doc deviations" says otherwise, with schema and CEL validation.
+- Real `api/v1` types for `CamundaCluster`, `CamundaClusterPreset`, and
+  `CamundaPlatformConfig`, faithful to the docs except where "Doc deviations" says otherwise,
+  with schema and CEL validation; the `CamundaPlatformConfig` validation controller
+  (`Ready: Healthy | MissingSecret`) in `internal/controller/camundaplatformconfig/`.
 - A `CamundaCluster` controller that renders and converges the full documented topology
   surface: Zeebe StatefulSet, gateway `Standalone | Embedded`, operate/tasklist/identity
   `Standalone | Embedded`, connectors, Services, optional ServiceMonitors.
@@ -103,6 +115,10 @@ The controller follows the Batch B layout:
   `DatabaseConfig`, `DatabaseServerConfig`, `ObjectStorageConfig`, and every referenced Secret.
   `SetupWithManager` nil-guards `Recorder` and the component client; the recorder is named
   `camundacluster`.
+- `internal/controller/camundaplatformconfig/controller.go` — the validation controller of the
+  platform config: `secretref.CheckKeys` on `auth.oidc.clientSecretRef` and `licenseSecretRef`,
+  `Ready` staged through `conditions`, one `FlushStatus`; watches the referenced Secrets
+  (metadata only) through `refindex`.
 - `pkg/components/camundacluster/` — pure: `MergePreset`, `ValidateMerged`, the topology
   resolver, the configuration renderer, one component builder per process, goldens.
 - `pkg/camundaconfig/` — the declared vocabulary of unified-configuration keys with source
@@ -120,39 +136,43 @@ The controller follows the Batch B layout:
 
 `Resolve(merged) → []Process`. A process is one workload: name, kind (StatefulSet for
 `zeebe`, Deployment otherwise), replicas, and the applications it hosts. The unified binary
-selects its role through `camunda.mode` (`all-in-one | broker | gateway`,
-`ModesAndProfilesProcessor.java:27`) and the web applications it serves through
-`camunda.webapps.<app>.enabled` (`Webapps.java`, `defaults.yaml:1415-1435`).
-`camunda.webapps.enabled` is derived by the binary and is never set by the operator
-(`WebappsConfigurationInitializer.java:54-55`, `ModesAndProfilesProcessor.java:74`).
+selects its role through Spring profiles (`SPRING_PROFILES_ACTIVE`, `Profile.java`) and the
+embedded gateway through `zeebe.broker.gateway.enable` (`ModesAndProfilesProcessor.java:28`,
+`HealthConfigurationInitializer.java:194`; default `true`). The web applications are gated by
+their profiles (`WebappsConfigurationInitializer.java:38-39`); the operator does not set
+`camunda.webapps.*` and never sets `camunda.mode`.
 
-| Spec shape | Processes and roles |
+| Spec shape | Processes and profiles |
 | --- | --- |
-| gateway `Embedded`, all web apps `Embedded` | `zeebe`: `camunda.mode=all-in-one`, all `webapps.<app>.enabled=true` |
-| gateway `Standalone`, all web apps `Embedded` (8.9 default) | `zeebe`: `camunda.mode=broker`; `gateway`: `camunda.mode=gateway`, all web apps enabled |
-| a web app `Standalone` | plus a process named after the app: `camunda.mode=gateway`, only that app enabled; the host process (gateway, or zeebe when the gateway is embedded) sets that app's `webapps.<app>.enabled=false` |
+| gateway `Embedded`, all web apps `Embedded` | `zeebe`: `broker,operate,tasklist,admin,consolidated-auth`, `ZEEBE_BROKER_GATEWAY_ENABLE=true` |
+| gateway `Standalone`, all web apps `Embedded` (8.9 default) | `zeebe`: `broker,consolidated-auth`, `ZEEBE_BROKER_GATEWAY_ENABLE=false`; `gateway`: `gateway,operate,tasklist,admin,consolidated-auth` |
+| a web app `Standalone` | plus a process named after the app: `gateway,<app>,consolidated-auth`; the host process (gateway, or zeebe when the gateway is embedded) drops that app's profile |
 | `connectors.enabled` | plus `connectors`: the connectors runtime pointed at the cluster's gRPC and REST Services |
 
-A standalone web application is therefore a gateway process that serves one application
-(`ModesAndProfilesProcessor.java:142-164`, `WebappsConfigurationInitializer.java:74-78`); it
-runs the gateway code path but is not a member of the gateway Service and gets no gRPC Service
-of its own. `camunda.mode=broker` sets `zeebe.broker.gateway.enable=false` and `all-in-one`
-sets it `true` inside the binary (`ModesAndProfilesProcessor.java:73,81`); the operator does
-not set that legacy key.
+The Identity application uses the `admin` profile (`Profile.java:24-25`: `identity` is the
+legacy name; `WebappsConfigurationInitializer.java:112-118` serves the UI for either).
+`consolidated-auth` is on every process: it gates the only `SecurityFilterChain`
+(`WebSecurityConfig.java:148`), Spring's default security is excluded
+(`application.properties:89-91`), and it is what `StandaloneCamunda.java:44-52` and the Camunda
+Helm chart run with.
 
-*Identity/admin profile.* `camunda.mode` derives the profile `identity` for the Identity
-application, and the binary treats `identity` and `admin` alike for serving the UI
-(`WebappsConfigurationInitializer.java:112-118`). The operator relies on `camunda.mode` and
-does not set `spring.profiles.active`. **Verify in implementation** (e2e: the Identity UI
-answers on the gateway); if it does not, the fallback is `SPRING_PROFILES_ACTIVE` per process
-with the profile list the resolver computes, and the spec is amended.
+A standalone web application is therefore a gateway process that serves one application; it
+runs the gateway code path but is not a member of the gateway Service and gets no gRPC Service
+of its own.
+
+*Why profiles and not `camunda.mode`.* `camunda.mode=gateway` activates `gateway` plus the web
+app profiles only (`ModesAndProfilesProcessor.java:165-169`). `consolidated-auth` is added later
+by `DefaultAuthenticationInitializer.java:31-36`, and only when
+`camunda.security.authentication.method` is unset. The operator sets that property, so a
+standalone gateway under `camunda.mode` would start without any security filter chain. Profiles
+carry no such trap, and the topology needs nothing else from the mode switch.
 
 *Broker node id.* Each broker needs `camunda.cluster.node-id` equal to its ordinal
-(`defaults.yaml:186`). **Verify in implementation**: either `camunda.cluster.node-id-provider.type`
-(`defaults.yaml:187-190`, default `fixed`) offers a StatefulSet-ordinal provider in 8.9, or the
-container command wraps the entrypoint (`sh -c 'export CAMUNDA_CLUSTER_NODEID=${HOSTNAME##*-};
-exec /usr/local/camunda/bin/camunda'`), the way the Camunda Helm chart does. The renderer
-isolates this in one place.
+(`defaults.yaml:186`). `camunda.cluster.node-id-provider.type` has only `FIXED` and `S3`
+(`NodeIdProvider.java:274-277`), so the container command wraps the entrypoint:
+`["bash", "-c", "export CAMUNDA_CLUSTER_NODEID=${HOSTNAME##*-}; exec /usr/local/camunda/bin/camunda"]`
+(the Camunda Helm chart derives the ordinal from the pod name the same way, `bash` is in the
+image). The renderer isolates this in one place.
 
 ### Configuration rendering
 
@@ -180,9 +200,8 @@ The renderer produces environment variables in layers; a later layer wins by nam
      (`secretKeyRef` into the `DatabaseConfig` credentials Secret),
      `...rdbms.database-vendor-id=postgresql` (`MyBatisConfiguration.java:119-122`,
      `RdbmsDatabaseIdProvider.java:18-25`). The rdbms `url` default in the binary is the
-     Elasticsearch URL, so the operator always sets it. **Verify in implementation**: the
-     PostgreSQL JDBC driver ships in the image (`dist/src/main/resources/application-rdbmsPostgres.yaml`
-     suggests it) or must be provided through the `/driver-lib` volume.
+     Elasticsearch URL, so the operator always sets it. The PostgreSQL JDBC driver ships in
+     the image (`dist/pom.xml:356-359`, compile scope); no `/driver-lib` volume is needed.
 3. **Authentication and platform settings** from the effective source (platform config →
    preset `auth` → cluster `auth`):
    - `camunda.security.authentication.method=basic|oidc`
@@ -190,12 +209,13 @@ The renderer produces environment variables in layers; a later layer wins by nam
    - OIDC: `camunda.security.authentication.oidc.issuer-uri`, `client-id`, `client-secret`
      (`secretKeyRef`), `audiences` (the `audience`, default the client id), `jwk-set-uri`,
      `token-uri`, `authorization-uri` when the platform config overrides discovery, and
-     `redirect-uri` computed from `spec.externalUrl` (`OidcAuthenticationConfiguration.java`).
-     The redirect path is **verified in implementation** against the 8.9 login flow (the
-     Camunda docs and `authentication/`), and the platform config's `issuerBackendUrl` maps
-     onto the property that the source uses for backend token validation, if one exists in
-     8.9 — otherwise the doc drops the field. There is no unified "external base URL"
-     property; `externalUrl` is used for the redirect URI only.
+     `redirect-uri=<externalUrl>/sso-callback` when `spec.externalUrl` is set
+     (`ClientRegistrationFactory.java:26,51-56` defaults it to `{baseUrl}/sso-callback`,
+     `WebSecurityConfig.java:154`; the Helm chart renders the same). Without `externalUrl`
+     the property stays unset and the binary derives it from the request. There is no
+     property for the platform config's `issuerBackendUrl` in 8.9 (no `issuer-backend`,
+     `base-url`, or `external-url` under `camunda.security.*`), so the field is dropped
+     from the type and the doc.
    - Basic: the binary seeds no user (`InitializationConfiguration.java:23`; the `demo/demo`
      constants are used by test code only), so the operator creates the initial admin:
      `camunda.security.initialization.users[0].{username,password,name,email}` and
@@ -208,14 +228,14 @@ The renderer produces environment variables in layers; a later layer wins by nam
      `licenseSecretRef` (`ManagementServicesConfiguration.java:39-40`).
    - Image registry: the platform config registry prefixes `camunda/camunda` and the
      connectors image.
-4. **Process role** from the topology (`camunda.mode`, `camunda.webapps.<app>.enabled`).
+4. **Process role** from the topology (`SPRING_PROFILES_ACTIVE`, and
+   `ZEEBE_BROKER_GATEWAY_ENABLE` on the brokers).
 5. **User overrides**: global `extraEnv`/`extraEnvFrom`, then per-component; a component entry
    wins over a global one by name; preset entries were merged in step "Preset merge" already.
 
-*JVM.* Every unified process gets `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=… -XX:+ExitOnOutOfMemoryError`
-derived from the memory limit when one is set (`JAVA_TOOL_OPTIONS` is read by the JVM itself;
-the launcher's handling of `JAVA_OPTS` is not verifiable in the source). Users override through
-`extraEnv`.
+*JVM.* Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError` (the Camunda
+Helm chart sets `JAVA_TOOL_OPTIONS`, never `JAVA_OPTS`; the JVM reads it itself). Heap sizing is
+left to the JVM's container-aware defaults. Users override through `extraEnv`.
 
 *Rollout on configuration change.* The pod template carries `camunda.io/config-hash`: a hash of
 the rendered environment (references, not secret values) plus the resource versions of the
@@ -225,24 +245,30 @@ the pods through the ordinary rolling update.
 *Images.* `camunda/camunda:<version>` (`camunda.Dockerfile`, build invocations in the repo's
 workflows) for every unified process, entrypoint `/usr/local/camunda/bin/camunda`, user
 `1001:1001`, data volume `/usr/local/camunda/data`, ports 8080, 26500, 26501, 26502, 9600. The
-connectors image is **verified in implementation** against the 8.9 Helm chart
-(`~/Documents/camunda/helm-charts-mirror`): the repo shows both `camunda/connectors-bundle`
-and `camunda/connectors`; the operator pins the chart's default and exposes it through the
-platform config registry prefix.
+connectors image is `camunda/connectors-bundle` (Camunda Helm chart 14.8.3 for 8.9,
+`values.yaml`: `repository: camunda/connectors-bundle`, `tag: 8.9.7`). The connectors bundle
+has its own patch line (8.9.7 while `camunda/camunda` is at 8.9.16), so the cluster carries
+`spec.connectors.version`, required when connectors are enabled and preset-legal; the platform
+config registry prefixes both images.
 
 *Connectors.* The runtime is a separate repository (`camunda/connectors`); its properties are
-the Camunda Spring Boot starter's `camunda.client.*` (`CamundaClientProperties.java`):
-`camunda.client.mode=self-managed`, `grpc-address=http://<gateway>:26500`,
-`rest-address=http://<gateway>:8080`, and `camunda.client.auth.method` with `username`/`password`
-(basic, the operator's admin user) or `client-id`/`client-secret`/`issuer-url`/`audience`
-(OIDC). The gateway address is the gateway Service, or the zeebe Service in all-in-one.
+the Camunda Spring Boot starter's `camunda.client.*`, rendered by the Helm chart
+(`templates/connectors/files/_application.yaml:43-71`) as: `camunda.client.mode=selfManaged`,
+`grpc-address=http://<gateway>:26500`, `rest-address=http://<gateway>:8080`, and
+`camunda.client.auth.method` with `username`/`password` (basic, the operator's admin user) or
+`client-id`/`client-secret`/`issuer-url`/`audience` (OIDC). The license reaches connectors as
+`CAMUNDA_LICENSE_KEY` (chart `deployment.yaml:48-51`). The gateway address is the gateway
+Service, or the zeebe Service in all-in-one. The exact env var names are confirmed with the
+`camunda-docs` MCP (connectors runtime configuration) before the goldens are committed; the
+chart is the source for the values.
 
 ### Health, conditions, suspend, pause
 
 Probes on the management port 9600 (`application.properties`,
 `HealthConfigurationInitializer.java`): liveness `/actuator/health/liveness`, readiness
-`/actuator/health/readiness`, startup `/actuator/health/startup`; connectors use the
-runtime's own actuator health (verified with the image). ocf's workload primitives turn pod
+`/actuator/health/readiness`, startup `/actuator/health/startup`; connectors: readiness
+`/actuator/health/readiness` and liveness `/actuator/health/liveness` on port 8080 (Helm chart
+`templates/connectors/deployment.yaml:108-119`). ocf's workload primitives turn pod
 readiness into the component condition: `ZeebeReady`, `GatewayReady`, `OperateReady`,
 `TasklistReady`, `IdentityReady` (only for standalone processes), `ConnectorsReady`.
 `Ready` is `conditions.Aggregate` over every process component; connectors is part of it (a
@@ -328,9 +354,12 @@ DatabaseConfig credentials). Metadata-only Secret watches, as in Batch A and B.
 - **Configuration drift.** The main risk is a key that 8.9 does not read. Mitigation is the
   source-of-truth rule, `pkg/camundaconfig` with pointers, the declared-keys test, and e2e
   that proves effect (topology, export) rather than shape.
-- **Open verification points** (identity profile, node id, JDBC driver, redirect path,
-  connectors image): each has a fallback stated above; the implementer resolves them against
-  the source before the goldens are committed and records the answer in the doc.
+- **Profile drift.** The profile names (`broker`, `gateway`, `operate`, `tasklist`, `admin`,
+  `consolidated-auth`) are the control surface; a rename upstream breaks a process. Mitigation:
+  `pkg/camundaconfig` declares them with source pointers like every key, and e2e proves the
+  8.9 default topology serves all three web applications behind auth.
+- **Connectors env names** are verified with the docs MCP, not the monorepo (the runtime is a
+  separate repository); the e2e "connectors ready" check is the proof.
 - **StatefulSet recreate-with-orphan** is the delicate mechanic; envtest covers it, e2e once.
 - **e2e resources** on the runner (ES + Camunda + Postgres); fallback is a split job.
 
@@ -342,10 +371,13 @@ DatabaseConfig credentials). Metadata-only Secret watches, as in Batch A and B.
   `status.storageSize` added; storage-shrink handling described as above.
 - Field manager is ocf's `CamundaCluster/<process>`, not `camunda-operator/camundacluster`.
 - Basic auth: the operator-created admin credentials Secret `<name>-camunda-admin` documented.
-- Env examples corrected to verified names; `camunda.webapps.enabled` removed from the doc.
+- Env examples corrected to verified names; the topology note now names the Spring profiles
+  (`SPRING_PROFILES_ACTIVE`, `ZEEBE_BROKER_GATEWAY_ENABLE`) instead of `camunda.mode` and
+  `camunda.webapps.enabled`, with the reason above.
+- `spec.connectors.version` added (required when connectors are enabled; the connectors
+  bundle has its own patch line); the connectors image is `camunda/connectors-bundle`.
 - Steps 8-9 (backup wiring) marked "lands with Batch D".
-- Platform config: `issuerBackendUrl` kept only if 8.9 has a property for it (verified in
-  implementation), otherwise removed with a note.
+- Platform config: `issuerBackendUrl` removed (no 8.9 property), with a note.
 
 ## Verified configuration (8.9.9)
 
@@ -354,9 +386,9 @@ these pointers in code.
 
 | Key | Source |
 | --- | --- |
-| `camunda.mode` (`all-in-one`, `broker`, `gateway`) | `Camunda.java:35-42`, `ModesAndProfilesProcessor.java:27` |
-| `camunda.webapps.{operate,tasklist,identity}.enabled` | `Webapps.java`, `defaults.yaml:1415-1435` |
-| `camunda.cluster.{name,size,partition-count,replication-factor,node-id,initial-contact-points,gateway-id}` | `Cluster.java`, `defaults.yaml:73-290` |
+| `spring.profiles.active` (`broker`, `gateway`, `operate`, `tasklist`, `admin`, `consolidated-auth`) | `Profile.java:20-34`, `StandaloneCamunda.java:44-52`, `WebappsConfigurationInitializer.java:38-39`, `WebSecurityConfig.java:148` |
+| `zeebe.broker.gateway.enable` (embedded gateway, default `true`) | `ModesAndProfilesProcessor.java:28`, `HealthConfigurationInitializer.java:194`, `EmbeddedGatewayCfg.java:16` |
+| `camunda.cluster.{name,size,partition-count,replication-factor,node-id,initial-contact-points,gateway-id}` | `Cluster.java`, `defaults.yaml:73-290`; `node-id` from the pod ordinal (`NodeIdProvider.java:274-277` has no ordinal provider) |
 | `camunda.api.grpc.{address,port}` | `Grpc.java:39-42`, `defaults.yaml:14-25` |
 | `server.port` (8080), `management.server.port` (9600) | `dist/src/main/resources/application.properties` |
 | `camunda.data.secondary-storage.type` (`elasticsearch`, `rdbms`) | `SecondaryStorage.java:118-123` |
@@ -365,17 +397,19 @@ these pointers in code.
 | `camunda.data.secondary-storage.rdbms.{url,username,password}` | `defaults.yaml:797-819` |
 | `camunda.data.secondary-storage.rdbms.database-vendor-id` | `MyBatisConfiguration.java:119-122` |
 | `camunda.security.authentication.method` | `AuthenticationProperties.java:14`, `AuthenticationMethod.java` |
-| `camunda.security.authentication.oidc.{issuer-uri,client-id,client-secret,audiences,jwk-set-uri,token-uri,authorization-uri,redirect-uri}` | `OidcAuthenticationConfiguration.java:33-61` |
+| `camunda.security.authentication.oidc.{issuer-uri,client-id,client-secret,audiences,jwk-set-uri,token-uri,authorization-uri,redirect-uri}` | `OidcAuthenticationConfiguration.java:33-61`; redirect path `/sso-callback` from `ClientRegistrationFactory.java:26`, `WebSecurityConfig.java:154` |
 | `camunda.security.initialization.users[N].{username,password,name,email}`, `default-roles.admin.users[N]` | `InitializationConfiguration.java`, `ConfiguredUser.java`, `PlatformDefaultEntities.java` |
 | `camunda.license.key` | `ManagementServicesConfiguration.java:39-40` |
 | `camunda.data.primary-storage.directory` (default `data` → `/usr/local/camunda/data`) | `PrimaryStorage.java:24`, `camunda.Dockerfile:122-131` |
 | Health: `/actuator/health/{liveness,readiness,startup}` on 9600 | `HealthConfigurationInitializer.java:59-61` |
 | Topology: `GET /v2/topology` on 8080 | `TopologyController.java:19-29` |
-| Connectors: `camunda.client.{mode,grpc-address,rest-address,auth.*}` | `CamundaClientProperties.java`, `CamundaClientAuthProperties.java` |
+| Connectors: `camunda.client.{mode,grpc-address,rest-address,auth.*}`, `CAMUNDA_LICENSE_KEY`, health on 8080 | Helm chart 14.8.3 `templates/connectors/files/_application.yaml:43-71`, `deployment.yaml:48-51,108-119`; env names confirmed with the docs MCP |
+| JDBC driver for PostgreSQL bundled | `dist/pom.xml:356-359` |
+| `JAVA_TOOL_OPTIONS` | Helm chart 14.8.3 `templates/orchestration/statefulset.yaml:84-91` |
 
-Not set by the operator, by decision: `camunda.webapps.enabled` (derived),
-`zeebe.broker.gateway.enable` (set by `camunda.mode`), `zeebe.broker.exporters.*`
-(auto-configured), `spring.profiles.active` (unless the identity-profile verification fails).
+Not set by the operator, by decision: `camunda.mode` (see "Topology model"),
+`camunda.webapps.*` (the profiles gate the applications), `zeebe.broker.exporters.*`
+(auto-configured).
 
 ## Alternatives considered
 
@@ -384,9 +418,10 @@ Not set by the operator, by decision: `camunda.webapps.enabled` (derived),
 - **`application.yaml` ConfigMap instead of env vars** (the upstream operator's gateway shape)
   — rejected for this operator: env keeps CamundaOptimize's SSA env injection trivial and
   matches the doc; the config-hash annotation gives the same rollout behaviour.
-- **`spring.profiles.active` instead of `camunda.mode`** — the upstream operator's choice;
-  kept as the fallback only, because `camunda.mode` is the documented 8.9 control surface and
-  derives the profiles itself.
+- **`camunda.mode` instead of `spring.profiles.active`** — the documented 8.9 launch-mode
+  switch, and the first draft of this spec chose it. Rejected after reading the source: in
+  gateway mode the `consolidated-auth` profile depends on the authentication method being
+  unset, which the operator cannot promise (see "Topology model").
 - **Wholesale preset merge like Batch B** — rejected: the component blocks are large and a
   cluster that sets one field must not lose the rest of the baseline.
 - **Backup wiring in this batch** — rejected: nothing exercises it before the `Backup` kinds.
