@@ -63,6 +63,8 @@ Optimize always stores its data in Elasticsearch or OpenSearch and is backed up 
 - `CamundaCluster` renders the backup wiring: the Zeebe backup store on both paths, the snapshot
   repository and its registration on the Elasticsearch path, and continuous primary-storage
   backup on the RDBMS path. `CamundaClusterPreset` carries the same `spec.backup` block.
+- `CamundaCluster` publishes a management binding in `status.management` that every extension
+  consumes instead of the cluster internals.
 - `ObjectStorageConfig` describes S3-compatible storage (endpoint, region, path style, static
   credentials) in addition to the three cloud providers, so MinIO works in production and in
   kind.
@@ -162,6 +164,25 @@ Primary-storage backups belong to the continuous range that Zeebe manages under
 use them. Deleting one because a `LogicalBackupRDBMS` CR was pruned tears a hole in that range. The
 finalizer removes the dump object and nothing else.
 
+### Extensions consume a published management binding, not cluster internals
+
+The backup controllers talk to the management API of the cluster. They must not rebuild the
+Service name, the port, the admin Secret name, or the auth mode from the internals of the
+`CamundaCluster` controller. That is the pattern the repository already uses between batches:
+`ElasticsearchCluster` publishes a `SecondaryStorageConfig`, `Database` publishes bindings, and
+consumers read the contract. `CamundaCluster` publishes a management binding in
+`status.management` (see API). `pkg/camundaadmin` takes only that binding. Elasticsearch access
+goes through the `SecondaryStorageConfig`, which is already the published contract for it. The
+same binding serves `CamundaOptimize` and `CamundaManagementCluster` later, so it is foundation
+work in the cluster-wiring PR.
+
+The operations themselves (pause exporting, resume, backup requests) are not spec knobs on the
+`CamundaCluster`. Spec is user-owned. A controller that writes another CR's spec fights GitOps
+(a `softPaused` value gets reverted mid-backup) and makes two writers of one field. It also moves
+the crash-safety rule of the backup into the cluster controller, which then has to know that a
+backup runs. That is the coupling `architecture.md` forbids. The transient pause and resume stay
+in the backup controller, called against the published endpoint.
+
 ## API
 
 ### ObjectStorageConfig
@@ -252,6 +273,27 @@ Preset merge rules for `backup`: `primaryStorage` merges per field, the cluster 
 `dump.resources` uses `mergeResources`. `dump.extraEnv` uses `mergeEnv`. `dump.extraEnvFrom`
 concatenates. `dump.podLabels` and `dump.podAnnotations` use `mergeMap`. `dump.scheduling`
 replaces as a whole block. `dump.scratchVolume` replaces as a whole block.
+
+The cluster publishes its management binding in status. It is written on every reconcile and
+cleared while the cluster is suspended:
+
+```yaml
+status:
+  management:
+    endpoint: http://my-cluster-camunda-management.my-cluster-ns.svc:9600
+    auth:
+      method: basic                       # basic | oidc | none
+      secretRef:                          # the admin Secret (basic) or the mirrored client secret (oidc)
+        name: my-cluster-camunda-admin
+        namespace: my-cluster-ns
+    version: 8.9.9
+    partitions: 3
+    backupRepository: my-cluster          # Elasticsearch path only, empty otherwise
+```
+
+Whether the 8.9 management port requires authentication, and with which credentials, is not
+verified yet. The cluster-wiring PR verifies it against the 8.9 source and the docs MCP. The
+`auth` block takes the result. `none` is allowed so that the binding is complete either way.
 
 ### LogicalBackupElasticsearch
 
@@ -374,7 +416,8 @@ pkg/
   components/logicalbackuprdbms/    Job builder (pure), scratch volume, ServiceAccount, env.
 internal/controller/
   logicalbackupelasticsearch/, logicalbackuprdbms/, backupschedule/
-  camundacluster/            (+ repository registration, storage-type gated wiring)
+  camundacluster/            (+ repository registration, storage-type gated wiring,
+                             status.management binding)
 cmd/                         subcommand `upload` used by the dump Job's main container
 test/utils/minio.go, test/e2e/testdata/minio.yaml, test/e2e/backup_test.go
 ```
@@ -432,11 +475,11 @@ Per-part status: `history`, `records`, `runtime`, each `{state, failureReason}`,
 `Pending`, `InProgress`, `Completed`, `Failed`. `status.partitionsCount` is read from the
 cluster at start.
 
-The management API is reached through the cluster's management Service on port 9600. Whether
-the 8.9 management port requires authentication, and with which credentials, is not verified
-yet. The first PR verifies it against the 8.9 source and the docs MCP, and `pkg/camundaadmin`
-takes the result as a client option. The Elasticsearch endpoint, CA, and `camunda` user come from
-`storageRef`.
+The management API is reached through `status.management` of the cluster: endpoint and auth.
+`pkg/camundaadmin` takes that binding and nothing else. An empty binding (cluster not ready yet,
+or suspended) keeps the backup in `Pending`. The Elasticsearch endpoint, CA, and `camunda` user
+come from the `SecondaryStorageConfig` behind `storageRef`, which is the published contract for
+Elasticsearch access. `status.partitionsCount` comes from the binding.
 
 Finalizer: delete the `backupHistory` snapshots and the records snapshot in Elasticsearch, and
 delete the partition backup with `DELETE /actuator/backupRuntime/{backupId}`.
@@ -511,9 +554,14 @@ snapshots need.
 **RDBMS path.** `continuous`, `schedule`, `checkpoint-interval`, and `retention` from
 `spec.backup.primaryStorage`.
 
+**Management binding.** The controller writes `status.management` on every reconcile from the
+values it already renders: the management Service, the auth mode and its Secret, the version,
+the partition count, and the repository name. It clears the binding while the cluster is
+suspended, so a consumer sees "not reachable" instead of a stale endpoint.
+
 ### Watches and indexes
 
-- Both backup controllers watch `CamundaCluster` (suspend flips), the bucket
+- Both backup controllers watch `CamundaCluster` (suspend flips and binding changes), the bucket
   `ObjectStorageConfig`, and the referenced Secrets, through `pkg/refindex`.
 - The RDBMS controller owns its Job.
 - The schedule watches both backup kinds by the schedule label.
@@ -577,8 +625,9 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
   exceeds the window of the cluster.
 - **Dump size** exceeds the scratch volume. Mitigation: `sizeLimit` and the PVC option, and a
   clear Job failure that surfaces in the `Failed` message.
-- **Operator reach to port 9600.** The operator process must reach the management Service.
-  Network policies can block it. Mitigation: `ConnectionFailed` with the endpoint in the message.
+- **Operator reach to the management endpoint.** The operator process must reach the endpoint
+  in `status.management`. Network policies can block it. Mitigation: `ConnectionFailed` with the
+  endpoint in the message.
 - **e2e resources** on the runner (ES, Camunda, Postgres, MinIO). Fallback is a split job.
 
 ## Deferred
@@ -589,6 +638,10 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
   covers `nodeSelector`. Preemption is not covered.
 - A "never prune" sentinel on `retained`.
 - Warning-only validation of a `spec.backup` block on an Elasticsearch-backed cluster.
+- A user-facing `spec.exporting` knob on `CamundaCluster` (Camunda documents pausing exporting
+  for maintenance). It needs a coordination rule with in-flight backups first: a cluster
+  controller that enforces `running` on every reconcile resumes exporting in the middle of a
+  backup. Not in this epic.
 
 ## Doc deviations (applied in this epic)
 
@@ -599,8 +652,9 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
 - `objectstorageconfig.md`: S3-compatible fields, `accountId` optional, the either-or rule, the
   new `MissingSecret` reason.
 - `elasticsearchcluster.md`: `secureSettings`, the narrowed role.
-- `camundacluster.md`: `spec.backup`, steps 8 and 9 no longer "lands with Batch D",
-  `BackupRepositoryReady`, the `WHEN_REQUIRED` env, the pairing note on retention.
+- `camundacluster.md`: `spec.backup`, `status.management`, steps 8 and 9 no longer "lands with
+  Batch D", `BackupRepositoryReady`, the `WHEN_REQUIRED` env, the pairing note on retention.
+- `architecture.md`: the management binding as the contract that extensions consume.
 - `camundaclusterpreset.md`: merge rules for `backup`.
 - `index.md`: the Batch D list and the graph (two backup kinds, no retention).
 - RDBMS path: an `LogicalBackupRDBMS` requests one primary-storage backup after the dump. The old
