@@ -30,7 +30,7 @@ graph LR
 ## API reference
 
 `spec.cluster` reuses the `ElasticsearchCluster` spec type directly, so the two never drift apart.
-The instance-bound fields of that type — `presetRef`, `secondaryStorageConfig`, and `suspend` — must be left unset inside a preset. `monitoring` is a baseline like any other field: a preset can enable scraping and pin the exporter image and resources for every cluster that references it, and a cluster that sets its own `monitoring` block replaces the preset's wholesale.
+The instance-bound fields of that type — `presetRef`, `secondaryStorageConfig`, and `suspend` — must be left unset inside a preset. Every other field is inheritable, `serviceAccount` and `monitoring` included: a preset alone can make the operator create the `<name>-es` ServiceAccount. `monitoring` is a baseline like any other field: a preset can enable scraping and pin the exporter image and resources for every cluster that references it, and a cluster that sets its own `monitoring` block replaces the preset's wholesale.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -68,6 +68,16 @@ spec:
       podAffinity: {}
       # list (corev1.Toleration). Optional. Tolerations for the pods.
       tolerations: []
+    # object. Optional. Dedicated ServiceAccount for the nodes; see ElasticsearchCluster.
+    serviceAccount:
+      annotations: {}
+    # object. Optional. Metrics baseline; a cluster that sets its own monitoring block replaces it wholesale.
+    monitoring:
+      serviceMonitor:
+        enabled: false
+      exporter:
+        image: ""
+        resources: {}
 ```
 
 ## Status

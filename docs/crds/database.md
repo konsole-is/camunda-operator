@@ -17,9 +17,9 @@ You create this CR directly, or a composition layer above may create it after pr
 ## How it works
 
 1. The operator resolves `spec.serverRef` to a `DatabaseServerConfig` and reads the server's connection details and admin credentials Secret.
-2. It connects to the server and creates the logical database named `spec.databaseName` if it does not exist; all SQL is idempotent, so re-runs are safe.
+2. It connects to the server and creates the logical database named `spec.databaseName` if it does not exist; all SQL is idempotent, so re-runs are safe. It also revokes the default `CONNECT` privilege of `PUBLIC` on that database, so only granted roles can connect.
 3. It creates the application user with a generated password. This user is a SQL role with the name of `spec.databaseName`. The operator grants it full privileges on the logical database and makes it the owner, so schema migrations work. It writes the credentials to the Secret that `spec.applicationCredentials` names (keys `username` and `password`).
-4. Unless `spec.backupCredentials.disabled` is `true`, it creates a separate backup user. This user is a SQL role named `<databaseName>_backup`. If that name is longer than the 63-character identifier limit of PostgreSQL, the role is named `<first 47 characters of databaseName>_<first 8 hex characters of the SHA-256 of databaseName>_backup`. Two long names that share a prefix then never share a backup role. The operator grants the backup user read access on all tables in the database for dumps, including tables created later (through `ALTER DEFAULT PRIVILEGES`). It also grants the DDL and write rights that a restore needs. In effect the backup user is a role like the application role plus SELECT on all tables. The operator writes its credentials to the Secret that `spec.backupCredentials.secretName` names.
+4. Unless `spec.backupCredentials.disabled` is `true`, it creates a separate backup user. This user is a SQL role named `<databaseName>_backup`. If that name is longer than the 63-character identifier limit of PostgreSQL, the role is named `<first 47 characters of databaseName>_<first 8 hex characters of the SHA-256 of databaseName>_backup`. Two long names that share a prefix then never share a backup role. The operator grants the backup user read access on all tables in the database for dumps, including tables created later (through `ALTER DEFAULT PRIVILEGES`). It also grants the DDL and write rights that a restore needs. The backup role gets `CONNECT`, `USAGE` and `CREATE` on schema `public`, read and write on the existing tables and sequences, and `SELECT` on the tables that the application role creates later. It is never the database owner. The operator writes its credentials to the Secret that `spec.backupCredentials.secretName` names.
 5. It creates and keeps current a `DatabaseConfig` named `spec.databaseConfig` in `spec.targetNamespace`, wiring in the `serverRef`, the `databaseName`, the application credentials Secret, and the backup credentials Secret when one exists.
 6. If `spec.secondaryStorageConfig` is set, it creates a `SecondaryStorageConfig` with `type: rdbms` in `spec.targetNamespace`. This contract references that `DatabaseConfig`, and an orchestration cluster can then use the database as secondary storage. Omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler). If you clear the field later, the operator stops managing the contract. An existing contract stays in place until the `Database` is deleted. The bindings land in `targetNamespace` because consumers resolve them by name in their own namespace. Set it to the namespace of the consuming cluster.
 7. It reports status conditions and `status.observedGeneration`.
@@ -67,7 +67,7 @@ spec:
     secretNamespace: "my-cluster-ns"
   # string. Optional, default: the CR name. Name of the DatabaseConfig the operator creates in spec.targetNamespace.
   databaseConfig: "my-camunda-db"
-  # string. Optional. If set, the operator also creates a SecondaryStorageConfig of type rdbms with this name in spec.targetNamespace, wired to the DatabaseConfig and backup credentials; omit for databases not used as Camunda secondary storage.
+  # string. Optional. If set, the operator also creates a SecondaryStorageConfig of type rdbms with this name in spec.targetNamespace, wired to the DatabaseConfig; omit for databases not used as Camunda secondary storage.
   secondaryStorageConfig: "my-storage-config"
 ```
 
@@ -79,9 +79,9 @@ spec:
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
-| `Ready` | `InvalidReference` | `spec.serverRef` does not resolve to an existing `DatabaseServerConfig`. Or another `Database`, named in the message, already claims the same `serverRef` and `databaseName` (first creation wins). |
+| `Ready` | `InvalidReference` | `spec.serverRef` does not resolve to an existing `DatabaseServerConfig`. Or another `Database`, named in the message, already claims the same `serverRef` and `databaseName`. The oldest `Database` wins; on an equal creation timestamp the lexicographically smaller name wins. The loser runs no SQL and publishes no bindings. |
 | `Ready` | `MissingSecret` | The server's admin credentials Secret is missing or lacks the expected keys. |
-| `Ready` | `ConnectionFailed` | The server is unreachable or the admin credentials are rejected. |
+| `Ready` | `ConnectionFailed` | The server is unreachable or the admin credentials are rejected. The controller retries every 30 seconds, because it cannot watch the server. |
 | `Ready` | any component status | The pre-checks passed. `Ready` mirrors the `BindingsReady` component condition: same status, same reason, and the message names the component. The reason is a component framework status, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. |
 | `BindingsReady` | component status | The operational detail of the component framework for the published bindings. |
 
@@ -89,8 +89,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Validation
 
-- A `Database` is rejected when another `Database` referencing the same `serverRef` already uses the same `databaseName`; this prevents accidental collisions on shared servers.
-- `spec.databaseName` must be a valid PostgreSQL identifier.
+- Uniqueness of `serverRef` plus `databaseName` is enforced by the controller, not by admission: see the `InvalidReference` reason above.
+- `spec.databaseName` must match `^[a-z_][a-z0-9_]{0,62}$`: a lowercase PostgreSQL identifier of at most 63 characters.
 - `spec.targetNamespace` must be a valid namespace name (an RFC 1123 label, at most 63 characters).
 - `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
 
