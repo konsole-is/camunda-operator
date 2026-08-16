@@ -4,8 +4,10 @@
 **Date:** 2026-08-16
 **Scope:** `LogicalBackupElasticsearch` and `LogicalBackupRDBMS` (new, replace `Backup`), `BackupSchedule`
 (with retention), removal of `BackupRetention`, `ObjectStorageConfig` (keyed shape, auth choice),
-`ElasticsearchCluster` (keystore passthrough, narrowed user role), `CamundaCluster` and
-`CamundaClusterPreset` (`spec.backup`, backup wiring), MinIO in the kind e2e suite
+`ElasticsearchCluster` (`snapshotStorageRef`, repository registration, keystore, narrowed user
+role), `SecondaryStorageConfig` (`snapshotRepository`), `CamundaCluster` and
+`CamundaClusterPreset` (`spec.backup`, backup wiring, management binding), ServiceAccount
+`name`/`create` on both workload CRs, MinIO in the kind e2e suite
 
 ## Summary
 
@@ -60,16 +62,20 @@ Optimize always stores its data in Elasticsearch or OpenSearch and is backed up 
   `spec.retained.completed` and `spec.retained.failed`.
 - Both backup kinds delete their own artifacts through a finalizer, keyed strictly on their
   backup ID.
-- `CamundaCluster` renders the backup wiring: the Zeebe backup store on both paths, the snapshot
-  repository and its registration on the Elasticsearch path, and continuous primary-storage
+- `CamundaCluster` renders the backup wiring: the Zeebe backup store on both paths, the
+  repository name from the contract on the Elasticsearch path, and continuous primary-storage
   backup on the RDBMS path. `CamundaClusterPreset` carries the same `spec.backup` block.
+- `ElasticsearchCluster` references the bucket through `snapshotStorageRef`, derives its identity
+  or keystore entries from it, registers the snapshot repository, and publishes the repository
+  name in the `SecondaryStorageConfig` it produces.
 - `CamundaCluster` publishes a management binding in `status.management` that every extension
   consumes instead of the cluster internals.
 - `ObjectStorageConfig` becomes a discriminated union keyed by storage type, with an explicit
   `auth` choice (workload identity or credentials) per type. S3-compatible storage (endpoint,
   region, path style) is first-class, so MinIO works in production and in kind. The operator
   derives the workload-identity annotation onto the cluster ServiceAccount from the contract.
-- `ElasticsearchCluster` accepts keystore secure settings and drops the `superuser` role.
+- `ElasticsearchCluster` accepts keystore secure settings and drops the `superuser` role. Both
+  workload CRs get an overridable ServiceAccount (`name`, `create`).
 - e2e in kind proves both paths against MinIO.
 
 ## Non-goals
@@ -161,29 +167,56 @@ ServiceAccount with `eks.amazonaws.com/role-arn`, GKE Workload Identity with
 the flat contract the identity field was inert. The user stated the identity a second time in
 `CamundaCluster.spec.serviceAccount.annotations`, and only that copy did anything.
 
-The operator applies the annotation itself. When a `CamundaCluster` references a bucket whose
-`auth.type` is `workloadIdentity` with an identity set, the operator renders the ServiceAccount
-`<cluster-name>-camunda` even when `spec.serviceAccount` is unset, and adds the annotation of
-the storage type. Every workload pod and the dump Job run under that ServiceAccount. User
-annotations from `spec.serviceAccount.annotations` merge in, and an explicit user value on the
-same key wins over the derived one. Two referenced buckets (`backupStorageRef`,
-`documentStorageRef`) with different identities of the same storage type are rejected with
-`InvalidReference`: a pod has one ServiceAccount.
+The operator applies the annotation itself, on both workload CRs that write to the bucket. When
+a `CamundaCluster` (through `backupStorageRef` or `documentStorageRef`) or an
+`ElasticsearchCluster` (through `snapshotStorageRef`, see below) references a bucket whose
+`auth.type` is `workloadIdentity` with an identity set, its controller renders the ServiceAccount
+of its pods even when `spec.serviceAccount` is unset, and adds the annotation of the storage
+type. On a `CamundaCluster` every workload pod and the dump Job run under that ServiceAccount.
+User annotations from `spec.serviceAccount.annotations` merge in, and an explicit user value on
+the same key wins over the derived one. Two referenced buckets on one `CamundaCluster` with
+different identities of the same storage type are rejected with `InvalidReference`: a pod has one
+ServiceAccount.
+
+The ServiceAccount is overridable. `ServiceAccountSpec`, shared by both CRs, gains `name`
+(default `<cluster-name>-camunda` on a `CamundaCluster`, the current name on an
+`ElasticsearchCluster`) and `create` (default true). With `create: false` the ServiceAccount is
+pre-existing and foreign: the operator neither creates, annotates, nor owns it (an owned
+ServiceAccount carries an owner reference and would be garbage-collected with the cluster).
+Identity is then entirely the user's. A missing pre-existing ServiceAccount is `InvalidReference`
+at pre-check, with a clear message, instead of a pod stuck in admission.
 
 The identity fields are optional on purpose. EKS Pod Identity and GKE Workload Identity
 Federation for GKE (the direct form) need no annotation. The binding lives on the cloud side and
 names the ServiceAccount by namespace and name. For those, `auth.type: workloadIdentity` with
 an empty block means "trust the ServiceAccount chain, add nothing". The ServiceAccount name is
-therefore part of the contract, and the CRD doc states it: the principal to bind is
-`system:serviceaccount:<cluster-namespace>:<cluster-name>-camunda`.
+therefore part of the contract, and each CRD doc states its principal:
+`system:serviceaccount:<namespace>:<serviceAccount.name>`, with the default name given.
 
-Elasticsearch reads S3 credentials from the node keystore only, never from the repository
-settings. ECK fills the keystore from `spec.secureSettings`. `ElasticsearchCluster` gains the
-same field as a passthrough. The keystore belongs to the ECK object that the
-`ElasticsearchCluster` controller owns, so the `CamundaCluster` controller does not write it.
-`ElasticsearchCluster` has no bucket reference, so its identity annotation stays user-supplied in
-its `serviceAccount.annotations`, and its Pod Identity principal is its own ServiceAccount. Both
-CRD docs state that.
+### ElasticsearchCluster owns the Elasticsearch side of the bucket and publishes the repository
+
+Elasticsearch writes to the same bucket, and it reads S3 credentials from the node keystore
+only, never from the repository settings. ECK fills the keystore from `spec.secureSettings`, on
+the ECK object that the `ElasticsearchCluster` controller owns. The `CamundaCluster` controller
+therefore does not write the keystore, and it does not register the snapshot repository either:
+that is a resource inside an object another controller owns, the same reach-behind that the
+management binding removes.
+
+`ElasticsearchCluster` gains `spec.snapshotStorageRef`, an `ObjectStorageConfig`. When set, its
+controller derives the ServiceAccount annotation (workload identity) or the keystore entries
+`s3.client.default.access_key` and `s3.client.default.secret_key` (credentials) from the
+contract, registers the snapshot repository with the `elastic` user of ECK, reports
+`SnapshotRepositoryReady`, and publishes the repository name in the `SecondaryStorageConfig` it
+produces: `elasticsearch.snapshotRepository`. `spec.secureSettings` stays as a generic
+passthrough for anything else the keystore needs. For a hand-written contract against external
+Elasticsearch, the user registers the repository and fills `snapshotRepository` in.
+
+`CamundaCluster` reads `snapshotRepository` from the contract, sets
+`camunda.data.backup.repository-name`, and does no Elasticsearch administration at all. Both CRs
+must reference the same `ObjectStorageConfig`. A mismatch shows as the repository failing on the
+Elasticsearch side, and both docs say so. The `camunda` user never needed cluster-manage rights:
+the backup controller needs snapshot create, get, and delete on that one repository for the
+records snapshot, and `superuser` goes away.
 
 ### Backup policy on the cluster and in the preset, the bucket on the cluster only
 
@@ -287,24 +320,42 @@ settings are verified against the docs in the foundation PR before the types are
 
 ```yaml
 spec:
-  secureSettings:                # new, optional. Mirrors ECK SecretSource.
-    - secretName: minio-es-credentials
-      entries:                   # optional key remap
-        - key: accessKeyId
-          path: s3.client.default.access_key
-        - key: secretAccessKey
-          path: s3.client.default.secret_key
+  snapshotStorageRef: my-backup-config   # new, optional. ObjectStorageConfig for the snapshot repository.
+  serviceAccount:                        # ServiceAccountSpec, shared with CamundaCluster
+    name: es-prod                        # new, optional. Default: the current rendered name.
+    create: true                         # new, optional *bool, default true. false = pre-existing, unmanaged.
+    annotations: {}                      # unchanged; ignored when create is false
+  secureSettings:                        # new, optional. Mirrors ECK SecretSource. Generic passthrough.
+    - secretName: extra-keystore-entries
+      entries:
+        - key: someKey
+          path: some.secure.setting
 ```
 
-The wrapper maps the field onto `esv1.ElasticsearchSpec.SecureSettings`. The `camunda` user drops
-from `superuser` to an explicit role. The exact privilege set is determined against a real ECK
-cluster during implementation. The commitment of this spec is that `superuser` goes away.
+The wrapper maps `secureSettings` onto `esv1.ElasticsearchSpec.SecureSettings`. With
+`snapshotStorageRef` and `auth.type: credentials`, the controller renders its own keystore Secret
+(`s3.client.default.access_key`, `s3.client.default.secret_key`) and prepends it to the list. The
+repository name is `<elasticsearchcluster-name>`, registered as type `s3` with bucket, base path
+`<basePath>/<namespace>/<name>`, endpoint, and path style, converged with an idempotent PUT on
+every reconcile. `SnapshotRepositoryReady` joins `Ready`. The produced `SecondaryStorageConfig`
+carries `elasticsearch.snapshotRepository: <name>`. The `camunda` user drops from `superuser` to
+an explicit role. The exact privilege set is determined against a real ECK cluster during
+implementation. The commitment of this spec is that `superuser` goes away.
+
+### SecondaryStorageConfig
+
+`elasticsearch.snapshotRepository` (string, optional) is added to the contract. The
+`ElasticsearchCluster` controller fills it. A user with external Elasticsearch fills it by hand.
 
 ### CamundaCluster and CamundaClusterPreset
 
 ```yaml
 spec:
   backupStorageRef: my-backup-config      # unchanged, instance-bound
+  serviceAccount:                         # instance-bound, ServiceAccountSpec (see ElasticsearchCluster)
+    name: camunda-prod                    # new, optional. Default <cluster-name>-camunda.
+    create: true                          # new, optional *bool, default true.
+    annotations: {}
   backup:                                 # new, allowed in a preset
     primaryStorage:                       # Zeebe's own backups
       continuous: true                    # *bool. rdbms only. Default true on rdbms.
@@ -479,8 +530,10 @@ pkg/
   components/logicalbackuprdbms/    Job builder (pure), scratch volume, ServiceAccount, env.
 internal/controller/
   logicalbackupelasticsearch/, logicalbackuprdbms/, backupschedule/
-  camundacluster/            (+ repository registration, storage-type gated wiring,
-                             status.management binding, derived SA annotation)
+  camundacluster/            (+ storage-type gated wiring, status.management binding,
+                             derived SA annotation, SA name/create)
+  elasticsearchcluster/      (+ snapshotStorageRef: SA annotation or keystore Secret,
+                             repository registration, snapshotRepository in the contract)
   objectstorageconfig/       (+ MissingSecret for credentials.secretRef)
 cmd/                         subcommand `upload` used by the dump Job's main container
 test/utils/minio.go, test/e2e/testdata/minio.yaml, test/e2e/backup_test.go
@@ -607,22 +660,22 @@ get `AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED` and
 `AWS_RESPONSE_CHECKSUM_CALCULATION=WHEN_REQUIRED`, the documented workaround for AWS SDK 2.30+
 chunked encoding on S3-compatible stores.
 
-**Elasticsearch path.** `camunda.data.backup.repository-name` on the components. Repository name:
-`<cluster-name>`. A gated ocf component registers the repository in Elasticsearch through
-`pkg/esadmin`: `PUT _snapshot/<name>` with type `s3`, bucket, base path
-`<basePath>/<namespace>/<name>/es`, endpoint, and path style. It converges on every reconcile
-with an idempotent PUT and contributes `BackupRepositoryReady` to `Ready`. Without
-`backupStorageRef` it reports `Disabled`. Elasticsearch credentials for the bucket come from the
-keystore, so the CamundaCluster doc points the user at `ElasticsearchCluster.spec.secureSettings`
-or `serviceAccount.annotations`. The `camunda` user role narrows to what registration and
-snapshots need.
+**Elasticsearch path.** `camunda.data.backup.repository-name` on the components, read from
+`elasticsearch.snapshotRepository` of the `SecondaryStorageConfig`. An Elasticsearch-backed
+cluster with `backupStorageRef` and a contract without `snapshotRepository` is
+`InvalidReference` with a message that names the field. No Elasticsearch administration happens
+here; the `ElasticsearchCluster` controller owns the repository (see design decisions).
+
+**ServiceAccount.** Rendered whenever `spec.serviceAccount` is set or a referenced bucket uses
+workload identity with an identity, under `serviceAccount.name`, with the derived annotation and
+the user annotations merged. Skipped when `create` is false; then its existence is a pre-check.
 
 **RDBMS path.** `continuous`, `schedule`, `checkpoint-interval`, and `retention` from
 `spec.backup.primaryStorage`.
 
 **Management binding.** The controller writes `status.management` on every reconcile from the
 values it already renders: the management Service, the auth mode and its Secret, the version,
-the partition count, and the repository name. It clears the binding while the cluster is
+the partition count, and the repository name from the contract. It clears the binding while the cluster is
 suspended, so a consumer sees "not reachable" instead of a stale endpoint.
 
 ### Watches and indexes
@@ -633,6 +686,8 @@ suspended, so a consumer sees "not reachable" instead of a stale endpoint.
 - The schedule watches both backup kinds by the schedule label.
 - The CamundaCluster controller already watches `ObjectStorageConfig`. It also watches the
   credentials Secret of the bucket.
+- The ElasticsearchCluster controller watches its `ObjectStorageConfig` and the credentials
+  Secret of the bucket.
 
 ### RBAC
 
@@ -663,8 +718,9 @@ creates the kind that matches the storage type, skips on suspend and on overlap,
 
 **e2e (kind).** MinIO from `test/utils/minio.go` and `testdata/minio.yaml`, with a bucket and a
 credentials Secret. Then the production path on both backends: an `ObjectStorageConfig` with
-`s3.endpoint` and `auth.type: credentials`, an `ElasticsearchCluster` with `secureSettings`, a
-`CamundaCluster` with `backupStorageRef`. Assertions: the snapshots exist in Elasticsearch, the
+`s3.endpoint` and `auth.type: credentials`, an `ElasticsearchCluster` with `snapshotStorageRef`
+(the repository registered and published), a `CamundaCluster` with `backupStorageRef`.
+Assertions: `SnapshotRepositoryReady` is true, the snapshots exist in Elasticsearch, the
 objects exist in MinIO, the dump is non-empty, `primaryBackupId` is set, and exporting runs again
 afterwards, queried from the actuator, not trusted from status. A `BackupSchedule` with a
 one-minute cron produces one backup and skips the overlap.
@@ -718,14 +774,17 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
 - `objectstorageconfig.md`: rewritten for the keyed shape (`type` + `s3`/`gcs`/`azureBlob`,
   `auth.type`), `provider`, `bucketId`, and `accountId` removed, the derived annotations, the
   ServiceAccount principal for annotation-less identity, the new `MissingSecret` reason.
-- `elasticsearchcluster.md`: `secureSettings`, the narrowed role.
-- `camundacluster.md`: `spec.backup`, `status.management`, steps 8 and 9 no longer "lands with
-  Batch D", `BackupRepositoryReady`, the `WHEN_REQUIRED` env, the pairing note on retention, the
-  derived ServiceAccount annotation and the `<name>-camunda` principal for annotation-less
-  identity, the two-identities rejection.
-- `elasticsearchcluster.md`: its own ServiceAccount as the principal for annotation-less
-  identity, next to `serviceAccount.annotations` and `secureSettings`.
-- `architecture.md`: the management binding as the contract that extensions consume.
+- `elasticsearchcluster.md`: `snapshotStorageRef`, repository registration and
+  `SnapshotRepositoryReady`, the derived annotation or keystore Secret, `secureSettings` as
+  passthrough, `serviceAccount.name`/`create` and the principal for annotation-less identity,
+  the narrowed role.
+- `secondarystorageconfig.md`: `elasticsearch.snapshotRepository`.
+- `camundacluster.md`: `spec.backup`, `status.management`, steps 8 and 9 rewritten (the
+  repository name comes from the contract, no registration here), the `WHEN_REQUIRED` env, the
+  pairing note on retention, the derived ServiceAccount annotation, `serviceAccount.name`/`create`
+  and the principal for annotation-less identity, the two-identities rejection.
+- `architecture.md`: the management binding and `snapshotRepository` as contracts that
+  consumers read; the ownership rule that a controller administers only what it renders.
 - `camundaclusterpreset.md`: merge rules for `backup`.
 - `index.md`: the Batch D list and the graph (two backup kinds, no retention).
 - RDBMS path: an `LogicalBackupRDBMS` requests one primary-storage backup after the dump. The old
