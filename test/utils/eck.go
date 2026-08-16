@@ -43,15 +43,24 @@ func ECKVersion() string {
 }
 
 // IsECKInstalled reports whether the cluster serves the ECK Elasticsearch
-// CRD.
+// CRD and runs the ECK operator StatefulSet. A cluster with the CRDs but
+// without the operator, for example after a partial uninstall, is not
+// installed: the suite then installs ECK again.
 func IsECKInstalled() bool {
-	cmd := exec.Command("kubectl", "get", "crds")
-	output, err := Run(cmd)
+	crds, err := Run(exec.Command("kubectl", "get", "crds"))
+	if err != nil || !strings.Contains(crds, "elasticsearches.elasticsearch.k8s.elastic.co") {
+		return false
+	}
+
+	operator, err := Run(exec.Command(
+		"kubectl", "get", "statefulset", "elastic-operator",
+		"-n", eckNamespace, "--ignore-not-found", "-o", "name",
+	))
 	if err != nil {
 		return false
 	}
 
-	return strings.Contains(output, "elasticsearches.elasticsearch.k8s.elastic.co")
+	return strings.TrimSpace(operator) != ""
 }
 
 // InstallECK installs the ECK CRDs and operator of ECKVersion and waits until
