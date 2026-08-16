@@ -30,7 +30,7 @@ status: consumer-wave
 | #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | #54 → feat/camunda-cluster-controller | self-merged |
 | #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | #55 → feat/camunda-cluster-controller | self-merged |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | #56 → feat/camunda-cluster-controller | self-merged |
-| #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | — → feat/camunda-cluster-controller | in-progress |
+| #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | #57 → feat/camunda-cluster-controller | ready |
 
 ## Contracts
 
@@ -43,6 +43,7 @@ The interfaces between the sequential PRs (B → C → D) are the **Interfaces**
 
 ## Bubble-up log
 
+- 2026-08-16 — PR E (#57): `make test-e2e` green locally on a fresh kind cluster (23/23 specs, 809 s; ES flow ~3 min to Ready, RDBMS ~2 min); no operator fix was needed. Docs reconciled (endpoints, env layering, ServiceMonitor paths, mirrored Secrets, imageRegistry example, JAVA_TOOL_OPTIONS); spec 'Watches and indexes' and the PVC-patch sentence amended to what shipped. CI could not be observed (konsole-is Actions billing).
 - 2026-08-16 — PR D (#56) merged after 2 Copilot rounds + spec/quality passes. Quality pass fixed: apply skipped while the orphan-deleted StatefulSet terminates (sentinel, no backoff); cross-namespace binding/DatabaseConfig credential Secrets now watched (Batch B index constants exported); clamp folds applied template + requests; PVC RBAC trimmed. Round-2 suppressed 'grow Pending PVCs' declined (API rejects requests changes on unbound claims).
 - 2026-08-16 — From PR D (#56): (1) ocf records an `Updated <Kind>` event on every reconcile (DeepEqual against a defaulted live object), which trips client-go's event spam filter and drops the operator's own events (`Paused`, `StorageShrinkIgnored`, `StatefulSetRecreated`) in real clusters; `internal/testenv` raises the burst for suites only. Follow-up for the user: fix in ocf (sourcehawk/operator-component-framework) or set a manager-level EventBroadcaster. (2) After resume, ocf keeps `Ready=True` with reason `Updating` until healthy (documented in the test). (3) `MirroredSecretComponent(cluster, map[purpose]data)` — one component for all mirrored Secrets; plan text differs, code wins. (4) A preset's `auth.clientSecretRef` is indexed and watched too. (5) envtest has no GC: the orphan-delete test removes the finalizer itself; growth needs a StorageClass with `allowVolumeExpansion`.
 - 2026-08-16 — PR C (#55) merged after 3 Copilot rounds (round 1: 3 false 'won't compile' comments on Go 1.26 `new(expr)`, declined; 2 comment fixes applied) and the quality pass (per-process `ConfigHash(in, p)` — contract updated in the plan; embedded-gateway env layered onto zeebe; ServiceMonitor path `/actuator/prometheus`). Round-3 suppressed 'validate in Build' declined by design (pre-check owns validation, D1).
