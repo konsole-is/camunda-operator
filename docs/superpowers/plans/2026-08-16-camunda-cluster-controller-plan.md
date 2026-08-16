@@ -741,9 +741,10 @@ type rendered struct {
 }
 func render(in Input, p Process) rendered
 
-// ConfigHash hashes the rendered env of every process (names, values, secretKeyRef names and keys — never
-// secret data) together with in.HashInputs. Stable across reconciles for the same input.
-func ConfigHash(in Input) string
+// ConfigHash hashes the rendered env of one process (names, values, secretKeyRef names and keys — never
+// secret data) together with in.HashInputs. Per process, so a change to one component's env rolls only
+// that workload. Stable across reconciles for the same input.
+func ConfigHash(in Input, p Process) string
 
 // AdminSecretReferences returns the Secrets a basic-auth cluster reads its admin credentials from.
 func Image(in Input, p Process) string // registry prefix + camunda/camunda:<version> or connectors-bundle:<connectors.version>
@@ -777,7 +778,7 @@ func TestRenderExtraEnvWinsByName(t *testing.T) { global extraEnv sets FOO=globa
 func TestRenderJavaToolOptions(t *testing.T) { JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError on zeebe and gateway; absent on connectors }
 func TestRenderConnectors(t *testing.T) { CAMUNDA_CLIENT_MODE=selfManaged; GRPCADDRESS=http://my-cluster-gateway.my-cluster-ns.svc:26500; RESTADDRESS=http://my-cluster-gateway.my-cluster-ns.svc:8080; AUTH_METHOD=basic; AUTH_USERNAME=admin; AUTH_PASSWORD secretKeyRef admin secret; CAMUNDA_LICENSE_KEY when license set; oidc variant: AUTH_METHOD=oidc, CLIENTID, CLIENTSECRET, ISSUERURL, AUDIENCE }
 func TestRenderOnlyDeclaredKeys(t *testing.T) { for every fixture in goldens and every process: each env whose name starts with CAMUNDA_, ZEEBE_, SPRING_ satisfies camundaconfig.IsDeclared }
-func TestConfigHashStableAndSensitive(t *testing.T) { same input twice -> equal; changing a HashInputs entry, or the ES URL, or a Secret name -> different; the hash is 16 hex chars (sha256 truncated) }
+func TestConfigHashStableAndSensitive(t *testing.T) { same input twice -> equal; changing a HashInputs entry, or the ES URL, or a Secret name -> different; changing connectors.extraEnv leaves the zeebe hash unchanged; the hash is 16 hex chars (sha256 truncated) }
 ```
 
 - [ ] **Step 2: Implement `render`** in layers as the spec's "Configuration rendering" lists them (identity, storage, auth and platform, role, user overrides), each layer a small function returning `[]corev1.EnvVar` and appended in order; `dedupeEnv` keeps the last occurrence per name while preserving first-seen order. `ResolveAuth` picks `Method` from `in.Platform.Method()`; for OIDC copies the platform `OIDCSpec` and overlays preset auth (already merged into `in.Effective.Auth`) then cluster auth — since `MergePreset` already merged the preset into the effective spec, `ResolveAuth` overlays only `in.Effective.Auth`. Basic auth adds no OIDC keys. `Image` prefixes `in.Platform.ImageRegistry` (trim trailing `/`) when set.
