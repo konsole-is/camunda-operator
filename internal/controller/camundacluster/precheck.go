@@ -243,14 +243,14 @@ func (res *resolver) get(ctx context.Context, key client.ObjectKey, obj client.O
 }
 
 // exists reads the referenced object without the cache. A missing object maps
-// to InvalidReference, naming the kind and the reference. Any other error is
-// a transient API failure.
+// to InvalidReference, naming the kind and the reference (with its namespace
+// for a namespaced kind). Any other error is a transient API failure.
 func (res *resolver) exists(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 	if err := res.reader.Get(ctx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			return &conditions.PreCheckFailure{
 				Reason:  v1.ReasonInvalidReference,
-				Message: fmt.Sprintf("%s %q not found", res.kindOf(obj), key.Name),
+				Message: fmt.Sprintf("%s %q not found", res.kindOf(obj), objectPath(key)),
 			}
 		}
 		return fmt.Errorf("reading %s %q: %w", res.kindOf(obj), key, err)

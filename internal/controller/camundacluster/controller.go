@@ -105,7 +105,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if cluster.Spec.Pause {
-		r.Recorder.Event(&cluster, corev1.EventTypeNormal, eventReasonPaused, "reconcile paused by spec.pause")
+		r.Recorder.Event(&cluster, corev1.EventTypeNormal, eventReasonPaused, "Reconcile paused by spec.pause")
 		return ctrl.Result{}, nil
 	}
 
