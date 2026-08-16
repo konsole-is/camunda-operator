@@ -25,11 +25,62 @@ import (
 // ServiceAccountSpec configures the ServiceAccount of the pods a controller
 // manages.
 type ServiceAccountSpec struct {
+	// Name of the ServiceAccount. Empty means the name that the controller
+	// derives from the name of the resource, which each CRD doc states. The
+	// name is part of the contract with the cloud provider: a workload
+	// identity that needs no annotation, such as EKS Pod Identity, binds the
+	// principal system:serviceaccount:<namespace>:<name>.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	Name string `json:"name,omitempty"`
+	// Create renders and owns the ServiceAccount. Defaults to true. False
+	// names one that already exists: the operator neither creates, annotates,
+	// nor owns it, and a ServiceAccount that is absent then fails the
+	// pre-check instead of leaving the pods unschedulable. The operator never
+	// adopts a foreign ServiceAccount, because an owned one is deleted with
+	// the resource.
+	// +optional
+	Create *bool `json:"create,omitempty"`
 	// Annotations to set on the ServiceAccount, typically workload-identity
 	// annotations (IRSA, GCP Workload Identity, ...) granting the pods access
-	// to cloud resources such as the snapshot bucket used for backups.
+	// to cloud resources such as the snapshot bucket used for backups. A
+	// controller that resolves a bucket contract derives the annotation of
+	// that contract's identity as well; an annotation set here wins over the
+	// derived one on the same key.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// Creates reports whether the operator renders and owns the ServiceAccount.
+// An absent spec and an unset create both mean true.
+func (in *ServiceAccountSpec) Creates() bool {
+	return in == nil || in.Create == nil || *in.Create
+}
+
+// SecureSettingEntry projects one key of a Secret to a named entry of the
+// Elasticsearch keystore.
+type SecureSettingEntry struct {
+	// Key in the Secret.
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
+	// Path is the keystore entry that the key becomes, for example
+	// s3.client.default.access_key.
+	// +kubebuilder:validation:MinLength=1
+	Path string `json:"path"`
+}
+
+// SecureSettingsSource references a Secret whose contents ECK loads into the
+// keystore of every Elasticsearch node. Elasticsearch reads credentials from
+// the keystore only, never from the settings of a snapshot repository.
+type SecureSettingsSource struct {
+	// SecretName is the Secret, in the namespace of the ElasticsearchCluster.
+	// +kubebuilder:validation:MinLength=1
+	SecretName string `json:"secretName"`
+	// Entries projects single keys to keystore entries. An empty list loads
+	// every key of the Secret under its own name.
+	// +optional
+	Entries []SecureSettingEntry `json:"entries,omitempty"`
 }
 
 // SchedulingSpec groups the scheduling constraints applied to the pods a
@@ -154,6 +205,23 @@ type ElasticsearchClusterSpec struct {
 	// the preset's scheduling block entirely (no merge).
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
+	// SnapshotStorageRef names a cluster-scoped ObjectStorageConfig that holds
+	// the bucket of the snapshot repository of this cluster. When it is set,
+	// the operator owns the whole Elasticsearch side of that bucket: it gives
+	// the nodes their credentials, registers the repository, and publishes the
+	// repository name in the SecondaryStorageConfig it produces. Backups of a
+	// CamundaCluster on this storage need it. The bucket must be the one that
+	// the CamundaCluster references as well.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	SnapshotStorageRef string `json:"snapshotStorageRef,omitempty"`
+	// SecureSettings are Secrets that ECK loads into the keystore of every
+	// node. The operator adds the credentials of snapshotStorageRef to the
+	// keystore on its own, so this field is for everything else a keystore
+	// holds.
+	// +optional
+	SecureSettings []SecureSettingsSource `json:"secureSettings,omitempty"`
 	// SecondaryStorageConfig names the SecondaryStorageConfig the operator
 	// creates in this CR's own namespace with the connection details and
 	// generated credentials. Required on an ElasticsearchCluster, forbidden in

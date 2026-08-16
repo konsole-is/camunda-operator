@@ -322,6 +322,47 @@ func (in *ObjectStorageConfig) SetObservedGeneration(generation int64) {
 	in.Status.ObservedGeneration = generation
 }
 
+// Workload-identity annotation keys. Each cloud provider binds its principal
+// to a ServiceAccount through the annotation of its own mechanism: IRSA on
+// AWS, Workload Identity on GKE, Workload Identity on Azure.
+const (
+	// IRSARoleARNAnnotation carries the IAM role that the pods assume.
+	IRSARoleARNAnnotation = "eks.amazonaws.com/role-arn"
+	// GKEServiceAccountAnnotation carries the Google service account that the
+	// pods impersonate.
+	GKEServiceAccountAnnotation = "iam.gke.io/gcp-service-account"
+	// AzureClientIDAnnotation carries the managed identity that the pods use.
+	AzureClientIDAnnotation = "azure.workload.identity/client-id"
+)
+
+// WorkloadIdentityAnnotations returns the ServiceAccount annotations that bind
+// the identity of the active storage block, or nil when the contract holds
+// static credentials or names no identity. A contract that names none is a
+// deliberate choice, not an omission: EKS Pod Identity and Workload Identity
+// Federation bind the ServiceAccount on the cloud side and need no annotation.
+// Consumers apply the result to the ServiceAccount of their pods and never
+// repeat the switch over the storage types.
+func (in *ObjectStorageConfig) WorkloadIdentityAnnotations() map[string]string {
+	annotation := func(key, value string) map[string]string {
+		if value == "" {
+			return nil
+		}
+
+		return map[string]string{key: value}
+	}
+
+	switch {
+	case in.Spec.S3 != nil && in.Spec.S3.Auth.WorkloadIdentity != nil:
+		return annotation(IRSARoleARNAnnotation, in.Spec.S3.Auth.WorkloadIdentity.RoleARN)
+	case in.Spec.GCS != nil && in.Spec.GCS.Auth.WorkloadIdentity != nil:
+		return annotation(GKEServiceAccountAnnotation, in.Spec.GCS.Auth.WorkloadIdentity.ServiceAccountEmail)
+	case in.Spec.AzureBlob != nil && in.Spec.AzureBlob.Auth.WorkloadIdentity != nil:
+		return annotation(AzureClientIDAnnotation, in.Spec.AzureBlob.Auth.WorkloadIdentity.ClientID)
+	}
+
+	return nil
+}
+
 // BasePath returns the key prefix of the active storage block, or the empty
 // string for the root of the bucket. Consumers build their object keys under
 // it and never repeat the switch over the storage types.
