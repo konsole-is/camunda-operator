@@ -17,7 +17,7 @@ The CamundaCluster controller resolves `presetRef` on each reconcile, so editing
 
 1. Start from the preset's `spec.cluster` as the baseline.
 2. Instance-bound fields are cluster-only and rejected in a preset (see Validation): the baseline carries only configuration that is meaningful for any number of clusters.
-3. Scalar and pointer fields override individually: a value set on the CamundaCluster replaces the preset's value, and an absent field inherits it. This covers `version`, the `auth` client-credential fields, per-component `mode`, `replicas`, `partitions`, `replicationFactor`, `storageClassName`, `storageSize`, and `connectors.enabled`.
+3. Scalar and pointer fields override individually: a value set on the CamundaCluster replaces the preset's value, and an absent field inherits it. This covers `version`, the `auth` client-credential fields, per-component `mode`, `replicas`, `partitions`, `replicationFactor`, `storageClassName`, `storageSize`, `persistentVolumeClaimRetentionPolicy`, `connectors.enabled`, and `connectors.version`.
 4. `resources` merges per entry: a request or limit value set on the CamundaCluster replaces the preset's matching entry, and unset entries inherit.
 5. `extraEnv` lists merge by variable name: preset entries come first, and a CamundaCluster entry with the same name replaces the preset's entry.
 6. `extraEnvFrom` lists concatenate: preset entries first, then CamundaCluster entries.
@@ -118,6 +118,8 @@ spec:
     connectors:
       # boolean. Optional. Whether referencing clusters run the connectors runtime.
       enabled: true
+      # string. Optional. Connectors bundle version applied to clusters that do not set their own.
+      version: "8.9.7"
       # integer. Optional. Connectors replica baseline.
       replicas: 1
       # object. Optional. Compute resources baseline.
@@ -203,6 +205,7 @@ spec:
       mode: Embedded
     connectors:
       enabled: true
+      version: "8.9.7"
       replicas: 1
       resources:
         requests: { cpu: "250m", memory: "512Mi" }

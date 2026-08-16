@@ -87,7 +87,7 @@ spec:
     clientSecretRef:
       # string. Required. Name of the Secret.
       name: "my-cluster-oidc-secret"
-      # string. Optional, default: this CR's namespace. Namespace of the Secret.
+      # string. Required. Namespace of the Secret (always explicit; it never defaults to this CR's namespace).
       namespace: "my-cluster-ns"
       # string. Required. Key inside the Secret.
       key: "client-secret"
@@ -95,7 +95,7 @@ spec:
   zeebe:
     # integer. Optional, default: 1. Number of brokers.
     replicas: 3
-    # integer. Optional, default: 1. Number of partitions; cannot be decreased.
+    # integer. Optional, default: 1. Number of partitions; cannot be decreased, and once set it cannot be removed.
     partitions: 3
     # integer. Optional, default: 1. Replication factor; must not exceed replicas.
     replicationFactor: 3
@@ -104,8 +104,12 @@ spec:
       requests: { cpu: "1", memory: "2Gi" }
     # string. Optional, default: the cluster default StorageClass. StorageClass for broker volumes.
     storageClassName: "ssd"
-    # quantity. Optional, default: 10Gi. Persistent volume size per broker.
+    # quantity. Optional, default: 10Gi. Persistent volume size per broker; can only grow.
     storageSize: "32Gi"
+    # object. Optional. What happens to the broker volumes when the CamundaCluster is deleted. A scale-down and a suspension always keep them.
+    persistentVolumeClaimRetentionPolicy:
+      # string (Retain | Delete). Optional, default: Delete. Delete removes the broker volumes with the cluster. Retain keeps them, and a later cluster with the same name reattaches them.
+      whenDeleted: Delete
     # list. Optional. Individual env vars appended to the component's containers.
     extraEnv:
       - name: JAVA_OPTS
@@ -174,6 +178,8 @@ spec:
   connectors:
     # boolean. Optional, default: false. Whether to run the connectors runtime.
     enabled: true
+    # string. Required when enabled, unless the resolved preset provides it. Version of the connectors bundle image (e.g. "8.9.7"); the bundle has its own patch line and does not follow spec.version.
+    version: "8.9.7"
     # integer. Optional, default: 1. Connectors replicas.
     replicas: 2
     # object. Optional. Compute resources.
@@ -239,16 +245,19 @@ Embedded applications do not get their own condition; they are covered by their 
 | `Suspended` | `Suspended` | `spec.suspend` is true and workloads are scaled to zero. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
+`status.storageSize` reports the data volume size that the brokers have: the smallest capacity that the bound broker PersistentVolumeClaims report, so a resize outside the spec (for example by [PVCAutoResize](pvcautoresize.md)) shows here.
 
 ## Validation
 
 - `spec.storageRef` is required: a CamundaCluster without secondary storage is not a functional Camunda cluster.
 - `spec.platformConfigRef` is required.
 - The effective version (inline or inherited from the preset) must be present and 8.9 or later.
-- `spec.zeebe.partitions` cannot be decreased after creation.
+- `spec.zeebe.partitions` cannot be decreased, and once set inline it cannot be removed (removal would fall back to the preset or the default, an effective decrease).
 - `spec.zeebe.storageClassName` is immutable after creation: StatefulSet PVC templates cannot change their storage class.
 - `spec.zeebe.storageSize` may only grow; updates that shrink it are rejected, like [ElasticsearchCluster](elasticsearchcluster.md)'s `storageSize`. On growth the operator expands the existing PVCs in place — the storage class must support volume expansion — and applies the new size for future replicas.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
+- `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
+- `spec.connectors.version` must be a full three-segment version (`8.9.7`, not `8.9`). The effective value (inline or inherited from the preset) must be present when `spec.connectors.enabled` is true.
 - `spec.connectors.replicas` and connectors sizing fields are only meaningful when `spec.connectors.enabled` is true.
 - Existence of referenced CRs and Secrets is checked at reconcile time and surfaced as `InvalidReference` / `MissingSecret` conditions, not at admission, because references may be created in any order.
 
