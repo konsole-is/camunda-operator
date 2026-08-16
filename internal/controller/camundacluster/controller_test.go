@@ -25,6 +25,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -271,6 +272,104 @@ func secretKeyRef(container corev1.Container, name string) *corev1.SecretKeySele
 		}
 	}
 	return nil
+}
+
+// createExpandableStorageClass creates a StorageClass that allows volume
+// expansion and registers its deletion. The resize admission of the API
+// server accepts a claim growth only for such a class.
+func createExpandableStorageClass() *storagev1.StorageClass {
+	GinkgoHelper()
+	sc := &storagev1.StorageClass{
+		ObjectMeta:           metav1.ObjectMeta{Name: "sc-" + utilrand.String(8)},
+		Provisioner:          "test.camunda.io/none",
+		AllowVolumeExpansion: new(true),
+	}
+	Expect(k8sClient.Create(ctx, sc)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, sc) })
+	return sc
+}
+
+// createBoundBrokerClaim creates a broker claim of cluster with the given
+// size, bound with the same capacity, as the StatefulSet controller and a
+// provisioner would have left it. envtest runs neither.
+func createBoundBrokerClaim(
+	cluster *v1.CamundaCluster,
+	ordinal, storageClass, size string,
+) *corev1.PersistentVolumeClaim {
+	GinkgoHelper()
+	claim := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      components.DataVolumeName + "-" + cluster.Name + "-zeebe-" + ordinal,
+			Namespace: cluster.Namespace,
+			Labels:    components.BrokerClaimSelector(cluster),
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			StorageClassName: new(storageClass),
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(size)},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, claim) })
+	stampClaimCapacity(claim, size)
+	return claim
+}
+
+// stampClaimCapacity marks claim bound with the given capacity.
+func stampClaimCapacity(claim *corev1.PersistentVolumeClaim, capacity string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest corev1.PersistentVolumeClaim
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), &latest)).To(Succeed())
+		latest.Status.Phase = corev1.ClaimBound
+		latest.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(capacity)}
+		g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// finishOrphanDeletion removes the orphan finalizer of a StatefulSet that is
+// being deleted, as the garbage collector would after it released the
+// dependents. envtest runs no garbage collector.
+func finishOrphanDeletion(key client.ObjectKey) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var sts appsv1.StatefulSet
+		g.Expect(k8sClient.Get(ctx, key, &sts)).To(Succeed())
+		g.Expect(sts.DeletionTimestamp).NotTo(BeNil())
+		g.Expect(sts.Finalizers).To(ContainElement(metav1.FinalizerOrphanDependents))
+		sts.Finalizers = nil
+		g.Expect(k8sClient.Update(ctx, &sts)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectStorageSize polls until status.storageSize of cluster equals want.
+func expectStorageSize(cluster *v1.CamundaCluster, want string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		g.Expect(latest.Status.StorageSize).NotTo(BeNil())
+		g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse(want))).To(BeZero())
+	}, timeout, interval).Should(Succeed())
+}
+
+// claimTemplateSize returns the storage request of the data volume claim
+// template of sts.
+func claimTemplateSize(sts *appsv1.StatefulSet) resource.Quantity {
+	return sts.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]
+}
+
+// updatePresetStorageSize sets the zeebe storageSize of preset.
+func updatePresetStorageSize(preset *v1.CamundaClusterPreset, size string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaClusterPreset
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+		latest.Spec.Cluster.Zeebe.StorageSize = new(resource.MustParse(size))
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // envValue returns the plain value of the named variable of container.
@@ -608,4 +707,66 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(mirror.Data["key"]).To(Equal([]byte("license-v2")))
 		}, timeout, interval).Should(Succeed())
 	})
+
+	It(
+		"grows the broker claims, recreates the StatefulSet, reports the smallest bound claim, and clamps a shrink",
+		func() {
+			ns := newNamespace()
+			sc := createExpandableStorageClass()
+			preset := minimalPreset()
+			Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.PresetRef = preset.Name
+			cluster.Spec.Zeebe = &v1.ZeebeSpec{StorageClassName: new(sc.Name)}
+			createCluster(cluster)
+			zeebeKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+
+			sts := fetchStatefulSet(zeebeKey)
+			Expect(claimTemplateSize(sts)).To(Equal(resource.MustParse("10Gi")))
+			claim0 := createBoundBrokerClaim(cluster, "0", sc.Name, "10Gi")
+			claim1 := createBoundBrokerClaim(cluster, "1", sc.Name, "10Gi")
+			expectStorageSize(cluster, "10Gi")
+
+			By("growing the storage size")
+			updatePresetStorageSize(preset, "20Gi")
+			for _, claim := range []*corev1.PersistentVolumeClaim{claim0, claim1} {
+				Eventually(func(g Gomega) {
+					var latest corev1.PersistentVolumeClaim
+					g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), &latest)).To(Succeed())
+					g.Expect(latest.Spec.Resources.Requests[corev1.ResourceStorage]).
+						To(Equal(resource.MustParse("20Gi")))
+				}, timeout, interval).Should(Succeed())
+			}
+			expectEvent(cluster, "StatefulSetRecreated", corev1.EventTypeNormal)
+			finishOrphanDeletion(zeebeKey)
+			Eventually(func(g Gomega) {
+				var latest appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+				g.Expect(latest.UID).NotTo(Equal(sts.UID))
+				g.Expect(claimTemplateSize(&latest)).To(Equal(resource.MustParse("20Gi")))
+			}, timeout, interval).Should(Succeed())
+
+			By("reporting the smallest bound claim")
+			expectStorageSize(cluster, "10Gi")
+			stampClaimCapacity(claim0, "20Gi")
+			Consistently(func(g Gomega) {
+				var latest v1.CamundaCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+				g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse("10Gi"))).To(BeZero())
+			}, 2*time.Second, interval).Should(Succeed())
+			stampClaimCapacity(claim1, "20Gi")
+			expectStorageSize(cluster, "20Gi")
+
+			By("clamping a preset shrink")
+			updatePresetStorageSize(preset, "5Gi")
+			expectEvent(cluster, "StorageShrinkIgnored", corev1.EventTypeWarning)
+			Consistently(func(g Gomega) {
+				var latest appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+				g.Expect(latest.DeletionTimestamp).To(BeNil())
+				g.Expect(claimTemplateSize(&latest)).To(Equal(resource.MustParse("20Gi")))
+			}, 2*time.Second, interval).Should(Succeed())
+		},
+	)
 })
