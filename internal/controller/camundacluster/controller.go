@@ -100,8 +100,10 @@ type CamundaClusterReconciler struct {
 // ignored shrink; the claim template keeps its applied size, so the
 // StatefulSet is never recreated. Then the components are reconciled in
 // order: the admin Secret, the mirrored Secrets, then every process, each
-// gated on whether the cluster needs it. Ready mirrors the highest-priority
-// condition of the components the cluster needs.
+// gated on whether the cluster needs it. Ready is True only when every
+// component the cluster needs is True. Its reason and message come from the
+// governing component, which is the highest-priority component that is not
+// True, or the highest-priority of all of them when they all are.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -190,7 +192,7 @@ type clusterComponents struct {
 // needed through its gate. Only the admin Secret of a basic-auth cluster, the
 // mirrored Secrets when a referenced Secret lives outside the cluster
 // namespace, and the enabled processes take part in Ready, so Ready never
-// mirrors Disabled. The admin password is read from the existing admin
+// reports Disabled. The admin password is read from the existing admin
 // Secret without the cache, so it stays stable after creation; to rotate it,
 // delete the Secret.
 func (r *CamundaClusterReconciler) buildComponents(

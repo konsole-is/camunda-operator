@@ -36,10 +36,11 @@ type staged struct {
 	message  string
 }
 
-// componentName is the name of the component that reports condType, in the
-// form that the components of this operator use: the condition type without
-// the Ready suffix, in lower case. The aggregate message names the component,
-// so the name and the condition type must differ in these tests.
+// componentName derives a component name from condType for these tests only.
+// The real components pick their own names, and this rule does not reproduce
+// every one of them: storage-contract reports StorageContractReady. It exists
+// so that the name always differs from the condition type, because the
+// aggregate message names the component and never the condition type.
 func componentName(condType string) string {
 	return strings.ToLower(strings.TrimSuffix(condType, "Ready"))
 }

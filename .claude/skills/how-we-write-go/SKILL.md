@@ -548,10 +548,10 @@ type componentReconciler interface {
 }
 ```
 
-**Do not wrap existing controller-runtime interfaces.** This guideline is about creating new interfaces where none exists. When controller-runtime or client-go already provides an interface that covers what you need — `client.Object`, `client.Client`, `events.EventRecorder` — use it directly. Do not re-declare methods from it into a new interface. Re-declaring `GetName() string` and `GetNamespace() string` manually produces an interface that satisfies your contract but not the framework's, causing type errors when the value is passed to any controller-runtime API (`recorder.Event`, `client.Get`, etc.) that takes `client.Object` or `runtime.Object`.
+**Do not wrap existing controller-runtime interfaces.** This guideline is about creating new interfaces where none exists. When controller-runtime or client-go already provides an interface that covers what you need — `client.Object`, `client.Client`, `events.EventRecorder` — use it directly. Do not re-declare methods from it into a new interface. Re-declaring `GetName() string` and `GetNamespace() string` manually produces an interface that satisfies your contract but not the framework's, causing type errors when the value is passed to any controller-runtime API (`recorder.Eventf`, `client.Get`, etc.) that takes `client.Object` or `runtime.Object`.
 
 ```go
-// BAD — re-declares methods already on client.Object; won't satisfy recorder.Event
+// BAD — re-declares methods already on client.Object; won't satisfy recorder.Eventf
 type Owner interface {
     GetName() string
     GetNamespace() string
