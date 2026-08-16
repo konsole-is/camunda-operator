@@ -73,16 +73,95 @@ func newBucket(bucket *blob.Bucket) *Bucket { return &Bucket{bucket: bucket} }
 // nil and the provider default chain authenticates. The caller must Close the
 // bucket.
 func Open(ctx context.Context, cfg *v1.ObjectStorageConfig, creds *Credentials) (*Bucket, error) {
-	switch {
-	case cfg.Spec.S3 != nil:
+	// The declared type decides, not whichever block happens to be set. A
+	// contract whose type and block disagree is a configuration error, and
+	// naming the missing block is what makes it fixable.
+	switch cfg.Spec.Type {
+	case v1.ObjectStorageTypeS3:
+		if cfg.Spec.S3 == nil {
+			return nil, missingBlock(cfg, "s3")
+		}
 		return openS3(ctx, cfg.Spec.S3, creds)
-	case cfg.Spec.GCS != nil:
+	case v1.ObjectStorageTypeGCS:
+		if cfg.Spec.GCS == nil {
+			return nil, missingBlock(cfg, "gcs")
+		}
 		return openGCS(ctx, cfg.Spec.GCS, creds)
-	case cfg.Spec.AzureBlob != nil:
+	case v1.ObjectStorageTypeAzureBlob:
+		if cfg.Spec.AzureBlob == nil {
+			return nil, missingBlock(cfg, "azureBlob")
+		}
 		return openAzureBlob(ctx, cfg.Spec.AzureBlob, creds)
 	}
 
-	return nil, fmt.Errorf("object storage config %q has no storage block", cfg.Name)
+	return nil, fmt.Errorf("object storage config %q has unknown spec.type %q", cfg.Name, cfg.Spec.Type)
+}
+
+// missingBlock reports a contract whose declared type has no matching block.
+func missingBlock(cfg *v1.ObjectStorageConfig, block string) error {
+	return fmt.Errorf(
+		"object storage config %q declares spec.type %q but has no spec.%s",
+		cfg.Name, cfg.Spec.Type, block,
+	)
+}
+
+// CredentialsFrom maps the data of the Secret that CredentialsSecret names
+// onto the credentials of the contract's storage type. It returns nil when
+// the contract uses workload identity, and an error when a configured key is
+// absent from the Secret.
+//
+// The mapping lives here rather than in api/v1: api/v1 says which keys must
+// exist, and this package knows what each one means to a storage client.
+func CredentialsFrom(cfg *v1.ObjectStorageConfig, data map[string][]byte) (*Credentials, error) {
+	secret := cfg.CredentialsSecret()
+	if secret == nil {
+		return nil, nil
+	}
+
+	value := func(key string) ([]byte, error) {
+		v, ok := data[key]
+		if !ok {
+			return nil, fmt.Errorf(
+				"object storage config %q names key %q, which Secret %s/%s does not hold",
+				cfg.Name, key, secret.Namespace, secret.Name,
+			)
+		}
+
+		return v, nil
+	}
+
+	switch {
+	case cfg.Spec.S3 != nil && cfg.Spec.S3.Auth.Credentials != nil:
+		ref := cfg.Spec.S3.Auth.Credentials.SecretRef
+		id, err := value(ref.AccessKeyIDKey)
+		if err != nil {
+			return nil, err
+		}
+		key, err := value(ref.SecretAccessKeyKey)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Credentials{AccessKeyID: string(id), SecretAccessKey: string(key)}, nil
+
+	case cfg.Spec.GCS != nil && cfg.Spec.GCS.Auth.Credentials != nil:
+		json, err := value(cfg.Spec.GCS.Auth.Credentials.SecretRef.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Credentials{ServiceAccountJSON: json}, nil
+
+	case cfg.Spec.AzureBlob != nil && cfg.Spec.AzureBlob.Auth.Credentials != nil:
+		accountKey, err := value(cfg.Spec.AzureBlob.Auth.Credentials.SecretRef.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Credentials{AccountKey: string(accountKey)}, nil
+	}
+
+	return nil, nil
 }
 
 // Upload writes the content of r to key, replacing any existing object. The
@@ -126,20 +205,28 @@ func (b *Bucket) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// List returns the keys under prefix, in lexical order.
-func (b *Bucket) List(ctx context.Context, prefix string) ([]string, error) {
-	var keys []string
-
+// Walk calls fn for every key under prefix, in lexical order, and stops at
+// the first error fn returns, which it returns unchanged.
+//
+// It streams rather than returning a slice on purpose. The same contract
+// describes document-storage buckets, where the object count is unbounded and
+// is the user's, not ours; collecting every key first would let one listing
+// exhaust the memory of the manager and take every other controller down with
+// it. A caller that needs a slice bounds it itself.
+func (b *Bucket) Walk(ctx context.Context, prefix string, fn func(key string) error) error {
 	iter := b.bucket.List(&blob.ListOptions{Prefix: prefix})
 	for {
 		obj, err := iter.Next(ctx)
 		if errors.Is(err, io.EOF) {
-			return keys, nil
+			return nil
 		}
 		if err != nil {
-			return nil, fmt.Errorf("listing %q: %w", prefix, err)
+			return fmt.Errorf("listing %q: %w", prefix, err)
 		}
-		keys = append(keys, obj.Key)
+
+		if err := fn(obj.Key); err != nil {
+			return err
+		}
 	}
 }
 

@@ -164,3 +164,22 @@ func TestRecordStorageSizesLeavesUncomputedUnset(t *testing.T) {
 	assert.Nil(t, sizes.Zeebe)
 	assert.Nil(t, sizes.Elasticsearch)
 }
+
+// The recorded sizes are the ones captured when the backup started. A
+// quantity the caller reuses and mutates must not rewrite them.
+func TestRecordStorageSizesCopiesTheQuantities(t *testing.T) {
+	shared := resource.MustParse("10Gi")
+
+	var sizes v1.LogicalBackupStorageSizes
+	logicalbackup.RecordStorageSizes(&sizes, v1.LogicalBackupStorageSizes{
+		Zeebe:         &shared,
+		Elasticsearch: &shared,
+	})
+
+	shared.Set(999 << 30)
+
+	require.NotNil(t, sizes.Zeebe)
+	assert.Equal(t, "10Gi", sizes.Zeebe.String())
+	require.NotNil(t, sizes.Elasticsearch)
+	assert.Equal(t, "10Gi", sizes.Elasticsearch.String())
+}

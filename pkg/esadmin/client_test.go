@@ -34,7 +34,10 @@ func newClient(t *testing.T) (*esadmin.Client, *esadmintest.Server) {
 	server := esadmintest.New()
 	t.Cleanup(server.Close)
 
-	return esadmin.New(server.URL(), "camunda", "secret", nil), server
+	client, err := esadmin.New(server.URL(), "camunda", "secret", nil)
+	require.NoError(t, err)
+
+	return client, server
 }
 
 func TestEnsureSnapshotRepositoryConverges(t *testing.T) {
@@ -153,7 +156,30 @@ func TestErrorClasses(t *testing.T) {
 	require.ErrorIs(t, err, esadmin.ErrRejected)
 	assert.Contains(t, err.Error(), "injected repository failure")
 
-	unreachable := esadmin.New("http://127.0.0.1:1", "", "", nil)
+	unreachable, err := esadmin.New("http://127.0.0.1:1", "", "", nil)
+	require.NoError(t, err)
 	err = unreachable.ReloadSecureSettings(ctx)
 	require.ErrorIs(t, err, esadmin.ErrUnreachable)
+}
+
+// An unusable CA must fail where the mistake is, not as an opaque TLS error
+// on every later call: an empty pool trusts nothing.
+func TestNewRejectsAnUnusableCABundle(t *testing.T) {
+	_, err := esadmin.New("https://elasticsearch:9200", "camunda", "secret", []byte("not a certificate"))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PEM certificate")
+}
+
+// An empty index list is an empty pattern, which selects nothing. A snapshot
+// that holds no data must never report success.
+func TestCreateSnapshotRejectsAnEmptyIndexList(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	err := client.CreateSnapshot(ctx, "repo", "records-42", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "names no index")
+	assert.False(t, server.SnapshotExists("repo", "records-42"))
 }

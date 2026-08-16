@@ -74,11 +74,23 @@ func ElasticsearchSize(totalBytes, usedBytes int64) *resource.Quantity {
 // started never move, and a field that computed leaves nil stays unset.
 func RecordStorageSizes(sizes *v1.LogicalBackupStorageSizes, computed v1.LogicalBackupStorageSizes) {
 	if sizes.Elasticsearch == nil {
-		sizes.Elasticsearch = computed.Elasticsearch
+		sizes.Elasticsearch = copyQuantity(computed.Elasticsearch)
 	}
 	if sizes.Zeebe == nil {
-		sizes.Zeebe = computed.Zeebe
+		sizes.Zeebe = copyQuantity(computed.Zeebe)
 	}
+}
+
+// copyQuantity returns a copy of q, or nil for nil. A recorded size must not
+// change because the caller went on to mutate the quantity it passed in.
+func copyQuantity(q *resource.Quantity) *resource.Quantity {
+	if q == nil {
+		return nil
+	}
+
+	copied := q.DeepCopy()
+
+	return &copied
 }
 
 // roundUpToStep rounds bytes up to the next whole size step. A non-positive

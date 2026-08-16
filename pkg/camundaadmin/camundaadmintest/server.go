@@ -171,14 +171,11 @@ func (s *Server) failing(op string) bool {
 	return false
 }
 
-func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	path := strings.TrimPrefix(r.URL.Path, "/actuator")
-
-	switch {
-	case r.Method == http.MethodPost && path == "/exporting/pause":
+// handleExporting serves the pause and resume operations. Both answer the
+// envelope that Camunda 8.9 answers: HTTP 200 with the outcome inside.
+func (s *Server) handleExporting(w http.ResponseWriter, r *http.Request, operation string) {
+	switch operation {
+	case "pause":
 		if s.failing("pause") {
 			exportingEnvelope(w, http.StatusInternalServerError, "injected pause failure")
 			return
@@ -191,7 +188,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		exportingEnvelope(w, http.StatusNoContent, "")
 
-	case r.Method == http.MethodPost && path == "/exporting/resume":
+	case "resume":
 		if s.failing("resume") {
 			exportingEnvelope(w, http.StatusInternalServerError, "injected resume failure")
 			return
@@ -200,6 +197,23 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.exporting = "running"
 		exportingEnvelope(w, http.StatusNoContent, "")
 
+	default:
+		errorBody(w, http.StatusNotFound, "unknown exporting operation "+operation)
+	}
+}
+
+func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path := strings.TrimPrefix(r.URL.Path, "/actuator")
+
+	if strings.HasPrefix(path, "/exporting/") && r.Method == http.MethodPost {
+		s.handleExporting(w, r, strings.TrimPrefix(path, "/exporting/"))
+		return
+	}
+
+	switch {
 	case r.Method == http.MethodPost && path == "/backupHistory":
 		if s.failing("historyStart") {
 			errorBody(w, http.StatusInternalServerError, "injected history start failure")

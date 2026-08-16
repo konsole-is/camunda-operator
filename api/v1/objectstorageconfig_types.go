@@ -322,6 +322,22 @@ func (in *ObjectStorageConfig) SetObservedGeneration(generation int64) {
 	in.Status.ObservedGeneration = generation
 }
 
+// BasePath returns the key prefix of the active storage block, or the empty
+// string for the root of the bucket. Consumers build their object keys under
+// it and never repeat the switch over the storage types.
+func (in *ObjectStorageConfig) BasePath() string {
+	switch {
+	case in.Spec.S3 != nil:
+		return in.Spec.S3.BasePath
+	case in.Spec.GCS != nil:
+		return in.Spec.GCS.BasePath
+	case in.Spec.AzureBlob != nil:
+		return in.Spec.AzureBlob.BasePath
+	}
+
+	return ""
+}
+
 // CredentialsSecret returns the name, namespace, and keys of the static
 // credentials Secret of the active storage block, or nil when the contract
 // uses workload identity. The returned keys are the Secret keys that must

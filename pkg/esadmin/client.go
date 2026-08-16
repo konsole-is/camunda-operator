@@ -83,13 +83,20 @@ type Client struct {
 }
 
 // New builds a client for the cluster at endpoint, authenticated with basic
-// auth. ca verifies the TLS certificate of the endpoint; nil means the
-// system pool.
-func New(endpoint, user, pass string, ca []byte) *Client {
+// auth. ca verifies the TLS certificate of the endpoint; nil means the system
+// pool.
+//
+// A ca that holds no certificate is an error, not an empty pool. An empty
+// pool rejects every certificate, so the mistake would otherwise surface as
+// an unexplained TLS failure on every call instead of at the reference that
+// named the wrong Secret key.
+func New(endpoint, user, pass string, ca []byte) (*Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if len(ca) > 0 {
 		pool := x509.NewCertPool()
-		pool.AppendCertsFromPEM(ca)
+		if !pool.AppendCertsFromPEM(ca) {
+			return nil, errors.New("the CA bundle holds no PEM certificate")
+		}
 		transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
 
@@ -98,7 +105,7 @@ func New(endpoint, user, pass string, ca []byte) *Client {
 		user: user,
 		pass: pass,
 		http: &http.Client{Timeout: 30 * time.Second, Transport: transport},
-	}
+	}, nil
 }
 
 // EnsureSnapshotRepository registers the s3 repository name with cfg,
@@ -131,7 +138,15 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 // CreateSnapshot starts the snapshot name of indices in repo. A snapshot
 // that already exists under the same name is success, so a re-entrant caller
 // never double-starts.
+//
+// indices must name at least one index. An empty list would send an empty
+// pattern, which selects nothing rather than everything: the snapshot would
+// succeed and hold no data.
 func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices []string) error {
+	if len(indices) == 0 {
+		return fmt.Errorf("snapshot %q of repository %q names no index", name, repo)
+	}
+
 	body, err := json.Marshal(map[string]any{
 		"indices":              strings.Join(indices, ","),
 		"include_global_state": false,
