@@ -136,7 +136,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	in.ServiceMonitorSupported = r.serviceMonitorSupported()
 
-	claims, sizes, err := r.keepAppliedStorageSize(ctx, &cluster, &in)
+	claims, err := r.keepAppliedStorageSize(ctx, &cluster, &in)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -161,7 +161,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	reconcileErr := reconcileComponents(ctx, rec, comps)
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps...))
-	cluster.Status.StorageSize = sizes.smallest()
+	cluster.Status.Volumes = volumeStatus(claims)
 
 	return ctrl.Result{}, reconcileErr
 }

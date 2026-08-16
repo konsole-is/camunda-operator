@@ -6557,17 +6557,36 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
-              storageSize:
-                anyOf:
-                - type: integer
-                - type: string
+              volumes:
                 description: |-
-                  StorageSize is the data volume size that the brokers have. It is the
-                  smallest capacity that the bound broker PersistentVolumeClaims report,
-                  so a resize outside the spec, for example by an auto-resize
-                  controller, shows here.
-                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                x-kubernetes-int-or-string: true
+                  Volumes lists the bound broker PersistentVolumeClaims and the capacity
+                  that each one reports, sorted by name.
+                items:
+                  description: |-
+                    VolumeStatus is the observed size of one data PersistentVolumeClaim of a
+                    cluster. A status lists one entry per bound claim, sorted by name, so a
+                    resize of a single claim outside the spec, for example by an auto-resize
+                    controller, shows here.
+                  properties:
+                    capacity:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Capacity is the storage capacity that the bound
+                        claim reports.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    name:
+                      description: Name is the name of the PersistentVolumeClaim.
+                      type: string
+                  required:
+                  - capacity
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

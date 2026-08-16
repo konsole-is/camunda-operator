@@ -16,6 +16,8 @@ limitations under the License.
 
 package v1
 
+import "k8s.io/apimachinery/pkg/api/resource"
+
 // CredentialsSecretRef references a username/password pair stored in a Secret.
 // Namespace is required so that references stay uniform and explicit across
 // all contract kinds, cluster-scoped and namespaced alike. The reference may
@@ -51,4 +53,15 @@ type SecretKeyRef struct {
 	// Key in the Secret holding the value.
 	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key"`
+}
+
+// VolumeStatus is the observed size of one data PersistentVolumeClaim of a
+// cluster. A status lists one entry per bound claim, sorted by name, so a
+// resize of a single claim outside the spec, for example by an auto-resize
+// controller, shows here.
+type VolumeStatus struct {
+	// Name is the name of the PersistentVolumeClaim.
+	Name string `json:"name"`
+	// Capacity is the storage capacity that the bound claim reports.
+	Capacity resource.Quantity `json:"capacity"`
 }

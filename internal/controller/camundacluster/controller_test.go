@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"maps"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -344,14 +346,18 @@ func finishOrphanDeletion(key client.ObjectKey) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectStorageSize polls until status.storageSize of cluster equals want.
-func expectStorageSize(cluster *v1.CamundaCluster, want string) {
+// expectVolumes polls until status.volumes of cluster lists exactly the
+// given claim names with the given capacities, in name order.
+func expectVolumes(cluster *v1.CamundaCluster, want map[string]string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var latest v1.CamundaCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-		g.Expect(latest.Status.StorageSize).NotTo(BeNil())
-		g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse(want))).To(BeZero())
+		g.Expect(latest.Status.Volumes).To(HaveLen(len(want)))
+		for i, volume := range latest.Status.Volumes {
+			g.Expect(volume.Name).To(Equal(slices.Sorted(maps.Keys(want))[i]))
+			g.Expect(volume.Capacity.Cmp(resource.MustParse(want[volume.Name]))).To(BeZero(), volume.Name)
+		}
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -709,7 +715,7 @@ var _ = Describe("CamundaCluster controller", func() {
 	})
 
 	It(
-		"grows the broker claims, recreates the StatefulSet, reports the smallest bound claim, and clamps a shrink",
+		"grows the broker claims, recreates the StatefulSet, reports every bound claim, and clamps a shrink",
 		func() {
 			ns := newNamespace()
 			sc := createExpandableStorageClass()
@@ -726,7 +732,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			Expect(claimTemplateSize(sts)).To(Equal(resource.MustParse("10Gi")))
 			claim0 := createBoundBrokerClaim(cluster, "0", sc.Name, "10Gi")
 			claim1 := createBoundBrokerClaim(cluster, "1", sc.Name, "10Gi")
-			expectStorageSize(cluster, "10Gi")
+			expectVolumes(cluster, map[string]string{claim0.Name: "10Gi", claim1.Name: "10Gi"})
 
 			By("growing the storage size")
 			updatePresetStorageSize(preset, "20Gi")
@@ -756,16 +762,11 @@ var _ = Describe("CamundaCluster controller", func() {
 				g.Expect(claimTemplateSize(&latest)).To(Equal(resource.MustParse("20Gi")))
 			}, timeout, interval).Should(Succeed())
 
-			By("reporting the smallest bound claim")
-			expectStorageSize(cluster, "10Gi")
+			By("reporting every bound claim with its own capacity")
 			stampClaimCapacity(claim0, "20Gi")
-			Consistently(func(g Gomega) {
-				var latest v1.CamundaCluster
-				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-				g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse("10Gi"))).To(BeZero())
-			}, 2*time.Second, interval).Should(Succeed())
+			expectVolumes(cluster, map[string]string{claim0.Name: "20Gi", claim1.Name: "10Gi"})
 			stampClaimCapacity(claim1, "20Gi")
-			expectStorageSize(cluster, "20Gi")
+			expectVolumes(cluster, map[string]string{claim0.Name: "20Gi", claim1.Name: "20Gi"})
 
 			By("clamping a preset shrink")
 			updatePresetStorageSize(preset, "5Gi")

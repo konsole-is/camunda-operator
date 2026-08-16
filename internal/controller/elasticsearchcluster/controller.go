@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
@@ -151,11 +152,11 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	reconcileErr := reconcileComponents(ctx, recCtx, append(core, metrics))
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, core...))
 
-	sizes, err := r.dataVolumeSizes(ctx, &cluster)
+	volumes, err := r.dataVolumes(ctx, &cluster)
 	if err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
 	}
-	cluster.Status.StorageSize = sizes.smallest()
+	cluster.Status.Volumes = volumes.volumes
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -209,12 +210,12 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	cluster *v1.ElasticsearchCluster,
 	merged *v1.ElasticsearchClusterSpec,
 ) error {
-	sizes, err := r.dataVolumeSizes(ctx, cluster)
+	volumes, err := r.dataVolumes(ctx, cluster)
 	if err != nil {
 		return err
 	}
 
-	largest := sizes.largest()
+	largest := volumes.largest()
 	if largest == nil || merged.StorageSize == nil || merged.StorageSize.Cmp(*largest) >= 0 {
 		return nil
 	}
@@ -233,87 +234,69 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 	return nil
 }
 
-// dataVolumeSizes are the data volume sizes that the cluster has: the
-// capacities that its data PersistentVolumeClaims report, and the claim size
-// of the applied ECK CR when that CR exists.
-type dataVolumeSizes struct {
-	claims  []resource.Quantity
+// dataVolumes are the data volumes that the cluster has: one entry per data
+// PersistentVolumeClaim that reports a capacity, sorted by name, and the
+// claim size of the applied ECK CR when that CR exists.
+type dataVolumes struct {
+	volumes []v1.VolumeStatus
 	applied *resource.Quantity
-}
-
-// smallest returns the smallest claim capacity, or the applied claim size when
-// no claim reports a capacity, or nil before the first apply. It is the size
-// that every node has, so status reports it.
-func (s dataVolumeSizes) smallest() *resource.Quantity {
-	if len(s.claims) == 0 {
-		return s.applied
-	}
-	smallest := s.claims[0]
-	for _, size := range s.claims[1:] {
-		if size.Cmp(smallest) < 0 {
-			smallest = size
-		}
-	}
-	return &smallest
 }
 
 // largest returns the largest of the claim capacities and the applied claim
 // size, or nil when neither exists. It is the size that a rendered claim must
 // not go below.
-func (s dataVolumeSizes) largest() *resource.Quantity {
-	var largest *resource.Quantity
-	if s.applied != nil {
-		largest = s.applied
-	}
-	for i := range s.claims {
-		if largest == nil || s.claims[i].Cmp(*largest) > 0 {
-			largest = &s.claims[i]
+func (d dataVolumes) largest() *resource.Quantity {
+	largest := d.applied
+	for i := range d.volumes {
+		if largest == nil || d.volumes[i].Capacity.Cmp(*largest) > 0 {
+			largest = &d.volumes[i].Capacity
 		}
 	}
 	return largest
 }
 
-// dataVolumeSizes lists the sizes of the data volumes of cluster. ECK labels
-// the claims with the cluster name, and the data claims carry the data volume
-// claim name as prefix.
-func (r *ElasticsearchClusterReconciler) dataVolumeSizes(
+// dataVolumes lists the data volumes of cluster. ECK labels the claims with
+// the cluster name, and the data claims carry the data volume claim name as
+// prefix.
+func (r *ElasticsearchClusterReconciler) dataVolumes(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
-) (dataVolumeSizes, error) {
+) (dataVolumes, error) {
 	var claims corev1.PersistentVolumeClaimList
 	if err := r.List(
 		ctx, &claims,
 		client.InNamespace(cluster.Namespace),
 		client.MatchingLabels{components.ECKClusterNameLabel: cluster.Name},
 	); err != nil {
-		return dataVolumeSizes{}, fmt.Errorf("listing data volume claims of %q: %w", cluster.Name, err)
+		return dataVolumes{}, fmt.Errorf("listing data volume claims of %q: %w", cluster.Name, err)
 	}
 
-	var sizes dataVolumeSizes
+	var volumes dataVolumes
 	for i := range claims.Items {
 		claim := &claims.Items[i]
 		if !strings.HasPrefix(claim.Name, components.DataVolumeClaimName+"-") {
 			continue
 		}
 		if capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]; ok {
-			sizes.claims = append(sizes.claims, capacity)
+			volumes.volumes = append(volumes.volumes, v1.VolumeStatus{Name: claim.Name, Capacity: capacity})
 		}
 	}
+	slices.SortFunc(volumes.volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 
 	var es esv1.Elasticsearch
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &es); err != nil {
 		if apierrors.IsNotFound(err) {
-			return sizes, nil
+			return volumes, nil
 		}
-		return dataVolumeSizes{}, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
+		return dataVolumes{}, fmt.Errorf("reading applied Elasticsearch %q: %w", cluster.Name, err)
 	}
-	sizes.applied = appliedDataClaimSize(&es)
+	volumes.applied = appliedDataClaimSize(&es)
 
-	return sizes, nil
+	return volumes, nil
 }
 
 // enqueueForDataClaim maps a PersistentVolumeClaim event to the cluster that
-// ECK labels it with, so a resize outside the spec updates status.storageSize.
+// ECK labels it with, so a resize outside the spec updates status.volumes.
 func enqueueForDataClaim() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
 		name, ok := o.GetLabels()[components.ECKClusterNameLabel]

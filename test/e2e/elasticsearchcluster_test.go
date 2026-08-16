@@ -106,7 +106,7 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 		dumpDiagnostics(esNamespace)
 	})
 
-	It("reaches Ready Healthy and reports the data volume size", func() {
+	It("reaches Ready Healthy and reports the data volume", func() {
 		By("creating the ElasticsearchCluster")
 		Expect(apply(cluster)).To(Succeed())
 
@@ -115,11 +115,13 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 			expectReady(g, esResource, esName, esNamespace, v1.ReasonHealthy)
 		}, esReadyTimeout, 5*time.Second).Should(Succeed())
 
-		By("reading status.storageSize")
-		var got v1.ElasticsearchCluster
-		Expect(utils.Get(esResource, esName, esNamespace, &got)).To(Succeed())
-		Expect(got.Status.StorageSize).NotTo(BeNil())
-		Expect(got.Status.StorageSize.String()).To(Equal(esStorageSize))
+		By("reading status.volumes")
+		Eventually(func(g Gomega) {
+			var got v1.ElasticsearchCluster
+			g.Expect(utils.Get(esResource, esName, esNamespace, &got)).To(Succeed())
+			g.Expect(got.Status.Volumes).To(HaveLen(1))
+			g.Expect(got.Status.Volumes[0].Capacity.String()).To(Equal(esStorageSize))
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 	})
 
 	It("publishes a SecondaryStorageConfig whose credentials authenticate over HTTPS", func() {

@@ -292,7 +292,7 @@ broker PVCs stay). `spec.pause`: reconcile returns before the pre-checks and rec
   new size; the storage class must allow expansion, and a rejected patch is returned as a reconcile
   error (retried with backoff). Shrink: CEL rejects an inline decrease; a decrease
   through the preset is clamped to the largest bound claim with a `StorageShrinkIgnored`
-  Warning event (Batch B rule). `status.storageSize` reports the smallest bound broker claim.
+  Warning event (Batch B rule). `status.volumes` lists every bound broker claim with its capacity.
 - The volume claim template of the StatefulSet is immutable. When the rendered template
   differs from the applied one (size growth for future replicas), the operator deletes the
   StatefulSet with `orphan` propagation and re-applies it; pods and claims stay and the new
@@ -374,7 +374,7 @@ PersistentVolumeClaim events the cluster that labels them.
 - Status table: no `Progressing`, no separate `Suspended` condition; `Ready` mirrors the
   highest-priority process condition; `Suspended` is `Ready=True`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy` added (`whenDeleted: Delete` default);
-  `status.storageSize` added; storage-shrink handling described as above.
+  `status.volumes` added; storage-shrink handling described as above.
 - Field manager is ocf's `CamundaCluster/<process>`, not `camunda-operator/camundacluster`.
 - Basic auth: the operator-created admin credentials Secret `<name>-camunda-admin` documented.
 - Env examples corrected to verified names; the topology note now names the Spring profiles

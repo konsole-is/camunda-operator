@@ -315,12 +315,12 @@ type CamundaClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// StorageSize is the data volume size that the brokers have. It is the
-	// smallest capacity that the bound broker PersistentVolumeClaims report,
-	// so a resize outside the spec, for example by an auto-resize
-	// controller, shows here.
+	// Volumes lists the bound broker PersistentVolumeClaims and the capacity
+	// that each one reports, sorted by name.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
-	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
+	Volumes []VolumeStatus `json:"volumes,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason or mirrors the representative process condition. The
 	// per-process conditions (ZeebeReady, GatewayReady, OperateReady,

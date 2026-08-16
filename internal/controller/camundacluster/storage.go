@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -59,18 +61,6 @@ type claimSizes struct {
 	applied    *resource.Quantity
 }
 
-// smallest returns the smallest capacity, or nil without a bound claim. It is
-// the size that every broker has, so status reports it.
-func (s claimSizes) smallest() *resource.Quantity {
-	var smallest *resource.Quantity
-	for i := range s.capacities {
-		if smallest == nil || s.capacities[i].Cmp(*smallest) < 0 {
-			smallest = &s.capacities[i]
-		}
-	}
-	return smallest
-}
-
 // largest returns the largest of the capacities, the requests, and the
 // applied template size, or nil when none exists. It is the size that a
 // rendered claim must not go below: a claim that is still expanding requests
@@ -94,16 +84,15 @@ func (s claimSizes) largest() *resource.Quantity {
 // below the largest broker volume size (a bound claim's capacity or request,
 // or the applied claim template), it keeps that size in the effective spec
 // and records a Warning event, because volumes cannot be reduced in place. It
-// returns the bound broker claims and their sizes, so the caller lists them
-// once.
+// returns the bound broker claims, so the caller lists them once.
 func (r *CamundaClusterReconciler) keepAppliedStorageSize(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	in *components.Input,
-) ([]corev1.PersistentVolumeClaim, claimSizes, error) {
+) ([]corev1.PersistentVolumeClaim, error) {
 	claims, err := r.brokerClaims(ctx, cluster)
 	if err != nil {
-		return nil, claimSizes{}, err
+		return nil, err
 	}
 
 	var sizes claimSizes
@@ -118,7 +107,7 @@ func (r *CamundaClusterReconciler) keepAppliedStorageSize(
 
 	sts, err := r.brokerStatefulSet(ctx, cluster)
 	if err != nil {
-		return nil, claimSizes{}, err
+		return nil, err
 	}
 	if sts != nil {
 		sizes.applied = appliedClaimSize(sts)
@@ -127,7 +116,7 @@ func (r *CamundaClusterReconciler) keepAppliedStorageSize(
 	largest := sizes.largest()
 	rendered := in.Effective.StorageSize()
 	if largest == nil || rendered.Cmp(*largest) >= 0 {
-		return claims, sizes, nil
+		return claims, nil
 	}
 
 	r.Recorder.Eventf(
@@ -144,7 +133,7 @@ func (r *CamundaClusterReconciler) keepAppliedStorageSize(
 	}
 	in.Effective.Zeebe.StorageSize = largest
 
-	return claims, sizes, nil
+	return claims, nil
 }
 
 // growBrokerClaims patches every claim of claims that requests less than size
@@ -250,6 +239,19 @@ func appliedClaimSize(sts *appsv1.StatefulSet) *resource.Quantity {
 	}
 
 	return nil
+}
+
+// volumeStatus returns one status entry per claim, sorted by name.
+func volumeStatus(claims []corev1.PersistentVolumeClaim) []v1.VolumeStatus {
+	volumes := make([]v1.VolumeStatus, 0, len(claims))
+	for _, claim := range claims {
+		volumes = append(volumes, v1.VolumeStatus{
+			Name:     claim.Name,
+			Capacity: claim.Status.Capacity[corev1.ResourceStorage],
+		})
+	}
+	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
+	return volumes
 }
 
 // brokerClaims lists the bound broker claims of cluster.

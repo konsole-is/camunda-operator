@@ -80,7 +80,7 @@ The brokers keep their data on one PersistentVolumeClaim per pod, from the `data
 When the effective `spec.zeebe.storageSize` grows, the operator patches every bound broker claim up to the new size. The storage class must allow volume expansion; the API server rejects the patch otherwise, and the reconcile stops with that error and is retried with backoff.
 The volume claim template of a StatefulSet is immutable. When the applied template differs from the rendered one, the operator deletes the StatefulSet with `orphan` propagation and applies it again; the pods and claims stay, the new StatefulSet adopts them, and the operator records the event `StatefulSetRecreated`.
 A decrease of the effective size (through the preset, since admission rejects an inline decrease) is clamped to the largest broker volume size that exists (a bound claim's capacity or request, or the applied claim template), with the Warning event `StorageShrinkIgnored`.
-The retention policy of the StatefulSet maps `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (`Delete` by default); a scale-down always retains the claims. `status.storageSize` reports the smallest capacity of the bound broker claims.
+The retention policy of the StatefulSet maps `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (`Delete` by default); a scale-down always retains the claims. `status.volumes` lists every bound broker claim with its capacity.
 
 ### JVM options
 
@@ -295,7 +295,7 @@ Embedded applications do not get their own condition; they are covered by their 
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is scaled to zero. `Ready` is `True`: the cluster is in its desired state. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
-`status.storageSize` reports the data volume size that the brokers have: the smallest capacity that the bound broker PersistentVolumeClaims report, so a resize outside the spec (for example by [PVCAutoResize](pvcautoresize.md)) shows here.
+`status.volumes` lists the bound broker PersistentVolumeClaims, sorted by name, each with the capacity that it reports (`name`, `capacity`). The claims can differ in size, so a resize of one claim outside the spec (for example by [PVCAutoResize](pvcautoresize.md)) shows here.
 
 ## Validation
 
