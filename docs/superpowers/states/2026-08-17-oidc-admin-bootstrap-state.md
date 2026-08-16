@@ -6,8 +6,10 @@ tracking_issue: #72
 feature_branch: feat/oidc-admin-bootstrap
 feature_worktree: .claude/worktrees/oidc-admin-bootstrap
 sub_pr_approval: autonomous
+sub_pr_review_loop: on
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # OIDC admin bootstrap — orchestration state
@@ -23,7 +25,7 @@ The two sub-issues are strictly sequential. #61 cannot go green until #73 has me
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #73 | feat/oidc-admin-bootstrap--admin-config | .claude/worktrees/oidc-admin-bootstrap--admin-config | → feat/oidc-admin-bootstrap | not-started |
+| #73 | feat/oidc-admin-bootstrap--admin-config | .claude/worktrees/oidc-admin-bootstrap--admin-config | #75 → feat/oidc-admin-bootstrap | ready |
 | #61 | feat/oidc-admin-bootstrap--keycloak-e2e | .claude/worktrees/oidc-admin-bootstrap--keycloak-e2e | → feat/oidc-admin-bootstrap | not-started |
 
 ## Contracts
@@ -34,7 +36,8 @@ The two sub-issues are strictly sequential. #61 cannot go green until #73 has me
 
 ## Bubble-up log
 
-- _No concerns yet._
+- **Copilot review effort level is the repository default (2026-08-17).** #75 is a substantive change — new CRD surface plus a render path — and a balanced review would suit it better than the lite default. No API sets the level, so the autonomous fan-out cannot raise it. Raise it in **Settings → Copilot → Code review** if later sub-PRs deserve deeper analysis.
+- **Keycloak realm verified ahead of Phase 2 (2026-08-17).** The realm in the plan's Task 9 was probed against the kind cluster before any Go was written, because the two protocol mappers were the highest-risk part. A client-credentials token carries `aud: ["camunda", "account"]`, `client_id: "camunda"`, and `iss` equal to the Service URL, so `clientIdClaim: client_id` resolves it to a client. The realm also emits `preferred_username: service-account-camunda`, so the token holds both claims and the client id claim wins, which is the documented order. Manifest is parked at the session scratchpad until the Phase 2 worktree exists.
 
 ## Pending snapshot
 
