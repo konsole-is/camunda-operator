@@ -97,9 +97,11 @@ type WorkloadSpec struct {
 	// Scheduling constraints of the pods of this process. When set, it
 	// replaces the top-level scheduling block and the scheduling block of a
 	// preset for this process entirely (no merge). The API server stores
-	// this block without a schema, to keep the CRD small; Kubernetes
-	// validates the affinity and tolerations when the operator applies the
-	// workload, and an invalid block surfaces on the process condition.
+	// this block without a schema, to keep the CRD small. Keys outside
+	// nodeAffinity, podAffinity, and tolerations are ignored. Kubernetes
+	// validates the values when the operator applies the workload, and an
+	// invalid value surfaces on the process condition, not as an admission
+	// error.
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
@@ -288,9 +290,10 @@ type CamundaClusterSpec struct {
 	// Scheduling constraints of every workload, unless a component sets its
 	// own. When set, it replaces the scheduling block of a preset entirely
 	// (no merge). The API server stores this block without a schema, to
-	// keep the CRD small; Kubernetes validates the affinity and tolerations
-	// when the operator applies the workload, and an invalid block surfaces
-	// on the process condition.
+	// keep the CRD small. Keys outside nodeAffinity, podAffinity, and
+	// tolerations are ignored. Kubernetes validates the values when the
+	// operator applies the workload, and an invalid value surfaces on the
+	// process condition, not as an admission error.
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
