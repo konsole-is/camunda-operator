@@ -33,8 +33,12 @@ import (
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
-// podTimeout bounds one in-cluster helper pod, image pull included.
-const podTimeout = 3 * time.Minute
+const (
+	// podTimeout bounds one in-cluster helper pod, image pull included.
+	podTimeout = 3 * time.Minute
+	// curlImage is the pinned curl image of the in-cluster helper pods.
+	curlImage = "curlimages/curl:8.17.0"
+)
 
 // apply applies obj through kubectl. obj must carry its apiVersion and kind.
 func apply(obj client.Object) error {

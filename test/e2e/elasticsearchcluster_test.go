@@ -172,7 +172,7 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
 						Name:  "curl",
-						Image: "curlimages/curl:latest",
+						Image: curlImage,
 						Args: []string{
 							"-fsS", fmt.Sprintf("http://%s-es-metrics.%s.svc:9114/metrics", esName, esNamespace),
 						},
@@ -284,7 +284,7 @@ func curlElasticsearch(contract *v1.SecondaryStorageConfig, name, path string, e
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
 				Name:    "curl",
-				Image:   "curlimages/curl:latest",
+				Image:   curlImage,
 				Command: []string{"sh"},
 				Args:    args,
 				Env:     env,

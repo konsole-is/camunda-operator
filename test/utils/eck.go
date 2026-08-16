@@ -70,9 +70,10 @@ func InstallECK() error {
 		fmt.Sprintf(eckCRDsURLTmpl, ECKVersion()),
 		fmt.Sprintf(eckOperatorURLTmpl, ECKVersion()),
 	} {
-		// create, not apply: the CRD manifest exceeds the annotation size that
-		// client-side apply records.
-		cmd := exec.Command("kubectl", "create", "-f", url)
+		// Server-side apply: the CRD manifest exceeds the annotation size
+		// that client-side apply records, and apply also completes a partial
+		// install where create would stop with AlreadyExists.
+		cmd := exec.Command("kubectl", "apply", "--server-side", "-f", url)
 		if _, err := Run(cmd); err != nil {
 			return err
 		}
