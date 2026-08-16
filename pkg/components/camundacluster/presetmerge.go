@@ -37,7 +37,7 @@ const (
 	// msgVersionBelowFloor rejects a Camunda version below 8.9.0.
 	msgVersionBelowFloor = "version %s is below the supported floor %s"
 	// msgVersionNotThreeSegments rejects a version that is not x.y.z.
-	msgVersionNotThreeSegments = "version %s is not a three-segment version"
+	msgVersionNotThreeSegments = "version %s is not of the form x.y.z"
 	// msgReplicationFactorExceedsReplicas rejects more copies of a partition
 	// than there are brokers.
 	msgReplicationFactorExceedsReplicas = "zeebe.replicationFactor %d exceeds zeebe.replicas %d"
@@ -65,8 +65,8 @@ const versionFloor = "8.9.0"
 // component) entirely. The instance-bound fields (platformConfigRef,
 // presetRef, externalUrl, serviceAccount, storageRef, backupStorageRef,
 // documentStorageRef, monitoring, suspend, pause) always come from spec. A
-// nil preset returns spec unchanged. The result shares no memory with
-// preset, so callers can mutate it freely.
+// nil preset returns spec unchanged. The result shares no memory with spec
+// or preset, so callers can mutate it freely.
 func MergePreset(spec v1.CamundaClusterSpec, preset *v1.CamundaClusterPresetSpec) v1.CamundaClusterSpec {
 	if preset == nil {
 		return spec
@@ -77,6 +77,7 @@ func MergePreset(spec v1.CamundaClusterSpec, preset *v1.CamundaClusterPresetSpec
 	if spec.Version != "" {
 		merged.Version = spec.Version
 	}
+
 	merged.Auth = mergeAuth(merged.Auth, spec.Auth)
 
 	merged.ExtraEnv = mergeEnv(merged.ExtraEnv, spec.ExtraEnv)
@@ -105,7 +106,7 @@ func MergePreset(spec v1.CamundaClusterSpec, preset *v1.CamundaClusterPresetSpec
 	merged.Suspend = spec.Suspend
 	merged.Pause = spec.Pause
 
-	return merged
+	return *merged.DeepCopy()
 }
 
 func mergeAuth(base, over *v1.ClusterAuthSpec) *v1.ClusterAuthSpec {
@@ -244,8 +245,10 @@ func mergeResources(base, over *corev1.ResourceRequirements) *corev1.ResourceReq
 	return base
 }
 
-// mergeEnv keeps the order of base, replaces an entry of base by name, and
-// appends the entries of over that base does not have, in their order.
+// mergeEnv keeps the order of base, replaces an entry by name, and appends
+// the entries of over that base does not have, in their order. A later entry
+// of over with the same name replaces the earlier one, so the result carries
+// each name once.
 func mergeEnv(base, over []corev1.EnvVar) []corev1.EnvVar {
 	if len(over) == 0 {
 		return base
@@ -263,6 +266,7 @@ func mergeEnv(base, over []corev1.EnvVar) []corev1.EnvVar {
 			continue
 		}
 		merged = append(merged, env)
+		index[env.Name] = len(merged) - 1
 	}
 
 	return merged

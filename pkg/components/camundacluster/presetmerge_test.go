@@ -171,6 +171,21 @@ func TestMergePreset(t *testing.T) {
 			},
 		},
 		{
+			"extraEnv duplicate names in the cluster: the last one wins",
+			v1.CamundaClusterSpec{
+				ExtraEnv: []corev1.EnvVar{{Name: "NEW", Value: "first"}, {Name: "NEW", Value: "last"}},
+			},
+			func(t *testing.T, got v1.CamundaClusterSpec) {
+				assert.Equal(
+					t, []corev1.EnvVar{
+						{Name: "TZ", Value: "UTC"},
+						{Name: "KEEP", Value: "preset"},
+						{Name: "NEW", Value: "last"},
+					}, got.ExtraEnv,
+				)
+			},
+		},
+		{
 			"component extraEnv by name",
 			v1.CamundaClusterSpec{Zeebe: &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{
 				ExtraEnv: []corev1.EnvVar{{Name: "JAVA_OPTS", Value: "-Xmx6g"}},
@@ -317,17 +332,26 @@ func TestMergePresetNilPresetReturnsSpecUnchanged(t *testing.T) {
 	assert.Equal(t, spec, MergePreset(spec, nil))
 }
 
-func TestMergePresetSharesNoMemoryWithPreset(t *testing.T) {
+func TestMergePresetSharesNoMemoryWithSpecOrPreset(t *testing.T) {
 	t.Parallel()
 
 	preset := fullPreset()
-	merged := MergePreset(v1.CamundaClusterSpec{}, preset)
+	spec := v1.CamundaClusterSpec{
+		Tasklist:       &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{PodLabels: map[string]string{"own": "cluster"}}},
+		ServiceAccount: &v1.ServiceAccountSpec{Annotations: map[string]string{"a": "b"}},
+	}
+	merged := MergePreset(spec, preset)
 
-	merged.PodLabels["team"] = "changed"
-	merged.Zeebe.ExtraEnv[0].Value = "changed"
+	const changed = "changed"
+	merged.PodLabels["team"] = changed
+	merged.Zeebe.ExtraEnv[0].Value = changed
+	merged.Tasklist.PodLabels["own"] = changed
+	merged.ServiceAccount.Annotations["a"] = changed
 
 	assert.Equal(t, "preset", preset.Cluster.PodLabels["team"])
 	assert.Equal(t, "-Xmx4g", preset.Cluster.Zeebe.ExtraEnv[0].Value)
+	assert.Equal(t, "cluster", spec.Tasklist.PodLabels["own"])
+	assert.Equal(t, "b", spec.ServiceAccount.Annotations["a"])
 }
 
 func TestValidateMerged(t *testing.T) {
@@ -354,6 +378,7 @@ func TestValidateMerged(t *testing.T) {
 			v1.CamundaClusterSpec{Version: "8.8.0"},
 			"version 8.8.0 is below the supported floor 8.9.0",
 		},
+		{"malformed version", v1.CamundaClusterSpec{Version: "8.x.0"}, "version 8.x.0 is not of the form x.y.z"},
 		{"later minor passes", v1.CamundaClusterSpec{Version: "8.10.0"}, ""},
 		{"later major passes", v1.CamundaClusterSpec{Version: "9.0.0"}, ""},
 		{

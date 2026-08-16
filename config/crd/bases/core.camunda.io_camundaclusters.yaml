@@ -6467,14 +6467,14 @@ spec:
               rule: has(self.storageRef) && self.storageRef != ''
             - message: spec.platformConfigRef is required
               rule: has(self.platformConfigRef) && self.platformConfigRef != ''
-            - message: zeebe.partitions may not be decreased
+            - message: zeebe.partitions cannot be decreased or removed once set
               rule: '!has(oldSelf.zeebe) || !has(oldSelf.zeebe.partitions) || (has(self.zeebe)
                 && has(self.zeebe.partitions) && self.zeebe.partitions >= oldSelf.zeebe.partitions)'
             - message: zeebe.storageClassName is immutable
               rule: '!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageClassName) ||
                 (has(self.zeebe) && has(self.zeebe.storageClassName) && self.zeebe.storageClassName
                 == oldSelf.zeebe.storageClassName)'
-            - message: zeebe.storageSize may not be shrunk
+            - message: zeebe.storageSize cannot be shrunk
               rule: '!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageSize) || !has(self.zeebe)
                 || !has(self.zeebe.storageSize) || !quantity(string(self.zeebe.storageSize)).isLessThan(quantity(string(oldSelf.zeebe.storageSize)))'
             - message: zeebe.replicationFactor must not exceed zeebe.replicas

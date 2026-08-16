@@ -238,7 +238,9 @@ var _ = Describe("CamundaCluster schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 
 		obj.Spec.Zeebe.Partitions = new(int32(2))
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.partitions may not be decreased")))
+		Expect(
+			k8sClient.Update(ctx, obj),
+		).To(MatchError(ContainSubstring("zeebe.partitions cannot be decreased or removed once set")))
 
 		obj.Spec.Zeebe.Partitions = new(int32(4))
 		Expect(k8sClient.Update(ctx, obj)).To(Succeed())
@@ -251,7 +253,9 @@ var _ = Describe("CamundaCluster schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 
 		obj.Spec.Zeebe.Partitions = nil
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.partitions may not be decreased")))
+		Expect(
+			k8sClient.Update(ctx, obj),
+		).To(MatchError(ContainSubstring("zeebe.partitions cannot be decreased or removed once set")))
 	})
 
 	It("rejects a storageClassName change on update", func() {
@@ -274,7 +278,7 @@ var _ = Describe("CamundaCluster schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
 
 		obj.Spec.Zeebe.StorageSize = new(resource.MustParse("16Gi"))
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.storageSize may not be shrunk")))
+		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("zeebe.storageSize cannot be shrunk")))
 
 		obj.Spec.Zeebe.StorageSize = new(resource.MustParse("64Gi"))
 		Expect(k8sClient.Update(ctx, obj)).To(Succeed())
