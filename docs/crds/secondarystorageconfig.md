@@ -143,7 +143,7 @@ spec:
   elasticsearch:
     endpoint: "https://my-cluster-es-http.my-cluster-ns.svc:9200"
     credentialsSecretRef:
-      name: my-cluster-es-credentials
+      name: my-cluster-es-user
       namespace: my-cluster-ns
       usernameKey: username
       passwordKey: password
