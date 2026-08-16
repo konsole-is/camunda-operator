@@ -12,7 +12,7 @@ graph LR
     CC[CamundaCluster] -->|creates| WL["Workloads (external)"]
     F1[CamundaOptimize] -.->|attaches to| CC
     F2[PVCAutoResize] -.->|attaches to| CC
-    F3[Backup] -.->|attaches to| CC
+    F3[LogicalBackupElasticsearch] -.->|attaches to| CC
 ```
 
 `CamundaCluster` describes the orchestration cluster — the Camunda workload set — and nothing else.
@@ -104,9 +104,9 @@ graph TD
     MAC[ManagementAuthConfig]
     CC[CamundaCluster]
     WL["Workloads (external)"]
-    BK[Backup]
+    LBE[LogicalBackupElasticsearch]
+    LBR[LogicalBackupRDBMS]
     BKS[BackupSchedule]
-    BKR[BackupRetention]
     PITR[PointInTimeRestore]
     LR[LogicalRestore]
     OPT[CamundaOptimize]
@@ -127,13 +127,14 @@ graph TD
     CC -.->|"backupStorageRef / documentStorageRef"| OSC
     CC -->|creates| WL
 
-    BK -.->|clusterRef| CC
-    BKS -->|creates| BK
+    LBE -.->|clusterRef| CC
+    LBR -.->|clusterRef| CC
+    BKS -->|"creates the kind matching the storage type"| LBE
+    BKS -->|"creates the kind matching the storage type"| LBR
     BKS -.->|clusterRef| CC
-    BKR -.->|clusterRef| CC
     PITR -.->|clusterRef| CC
     LR -.->|targetClusterRef| CC
-    LR -.->|backupRef| BK
+    LR -.->|backupRef| LBE
 
     OPT -.->|clusterRef| CC
     OPT -.->|managementAuthRef| MAC
