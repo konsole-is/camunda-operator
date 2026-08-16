@@ -599,9 +599,9 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(Equal(int32(1)))
 			g.Expect(*fetchDeployment(gatewayKey).Spec.Replicas).To(Equal(int32(1)))
 		}, timeout, interval).Should(Succeed())
-		// ocf keeps the status of a resumed condition until the workload is
-		// healthy again, so only the reason is asserted before stamping.
-		expectCondition(cluster, v1.ConditionReady, Not(Equal(string(component.Suspended))))
+		// ocf keeps the True status of a resumed condition and reports
+		// Updating until the workload is healthy again.
+		expectReady(cluster, metav1.ConditionTrue, Equal(string(component.AliveUpdating)), Not(BeEmpty()))
 		stampStatefulSetReady(zeebeKey)
 		stampDeploymentReady(gatewayKey)
 		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))

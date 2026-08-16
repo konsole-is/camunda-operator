@@ -50,11 +50,17 @@ func apply(obj client.Object) error {
 // expectReady asserts that resource name reports Ready=True with reason. It
 // is written for Eventually.
 func expectReady(g Gomega, resource, name, namespace, reason string) {
-	cond, err := utils.Condition(resource, name, namespace, v1.ConditionReady)
+	expectCondition(g, resource, name, namespace, v1.ConditionReady, reason)
+}
+
+// expectCondition asserts that resource name reports condition condType as
+// True with reason. It is written for Eventually.
+func expectCondition(g Gomega, resource, name, namespace, condType, reason string) {
+	cond, err := utils.Condition(resource, name, namespace, condType)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(cond).NotTo(BeNil(), "%s %q has no Ready condition yet", resource, name)
-	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "%s %q Ready: %s", resource, name, cond.Message)
-	g.Expect(cond.Reason).To(Equal(reason), "%s %q Ready: %s", resource, name, cond.Message)
+	g.Expect(cond).NotTo(BeNil(), "%s %q has no %s condition yet", resource, name, condType)
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "%s %q %s: %s", resource, name, condType, cond.Message)
+	g.Expect(cond.Reason).To(Equal(reason), "%s %q %s: %s", resource, name, condType, cond.Message)
 }
 
 // expectGone asserts that resource name no longer exists. It is written for

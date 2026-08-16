@@ -19,6 +19,7 @@ package utils
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,25 +27,35 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 // CurlImage is the pinned curl image of the in-cluster helper pods.
 const CurlImage = "curlimages/curl:8.17.0"
 
+// fileNamePattern is what a file of CamundaRequest.Files can be called: a
+// plain file name that is safe inside the shell script of the helper pod.
+var fileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
 // CamundaRequest is one call from a helper pod against the Orchestration
 // Cluster REST API of a CamundaCluster, authenticated with basic auth.
 type CamundaRequest struct {
-	// Namespace is where the helper pod runs. Name distinguishes the pod.
+	// Namespace is where the helper pod runs. Name distinguishes the pod;
+	// a random suffix makes every pod unique.
 	Namespace string
 	Name      string
 	// Method and URL are the HTTP method and the full URL of the call.
 	Method string
 	URL    string
-	// User and Password are the basic-auth credentials.
-	User     string
-	Password string
+	// CredentialsSecret is the Secret in Namespace that holds the basic-auth
+	// user under UsernameKey and PasswordKey. The pod reads it through
+	// secretKeyRef, so the password never appears in the pod spec.
+	CredentialsSecret string
+	UsernameKey       string
+	PasswordKey       string
 	// Files are written into /tmp of the pod before the call, by file name,
-	// so a form part can upload them (-F resources=@/tmp/<name>).
+	// so a form part can upload them (-F resources=@/tmp/<name>). A name is
+	// letters, digits, dots, dashes, and underscores only.
 	Files map[string]string
 	// Args are extra curl arguments: headers, a JSON body, form parts.
 	Args []string
@@ -59,15 +70,18 @@ func CamundaREST(req CamundaRequest) (int, string, error) {
 	env := make([]corev1.EnvVar, 0, 2+len(req.Files))
 	env = append(
 		env,
-		corev1.EnvVar{Name: "CAMUNDA_USER", Value: req.User},
-		corev1.EnvVar{Name: "CAMUNDA_PASSWORD", Value: req.Password},
+		SecretEnv("CAMUNDA_USER", req.CredentialsSecret, req.UsernameKey),
+		SecretEnv("CAMUNDA_PASSWORD", req.CredentialsSecret, req.PasswordKey),
 	)
 
 	var script strings.Builder
 	for i, name := range slices.Sorted(maps.Keys(req.Files)) {
+		if !fileNamePattern.MatchString(name) {
+			return 0, "", fmt.Errorf("file name %q is not a plain file name", name)
+		}
 		envName := "CAMUNDA_FILE_" + strconv.Itoa(i)
 		env = append(env, corev1.EnvVar{Name: envName, Value: req.Files[name]})
-		fmt.Fprintf(&script, "printf '%%s' \"$%s\" > /tmp/%s && ", envName, name)
+		fmt.Fprintf(&script, "printf '%%s' \"$%s\" > '/tmp/%s' && ", envName, name)
 	}
 	// $0 is "curl", the remaining arguments are the curl arguments. The
 	// status code goes first, the body after a newline.
@@ -80,7 +94,10 @@ func CamundaREST(req CamundaRequest) (int, string, error) {
 	args = append(args, req.URL)
 
 	out, err := RunPod(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "curl-" + req.Name, Namespace: req.Namespace},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "curl-" + req.Name + "-" + utilrand.String(5),
+			Namespace: req.Namespace,
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
 				Name:    "curl",
@@ -102,4 +119,18 @@ func CamundaREST(req CamundaRequest) (int, string, error) {
 	}
 
 	return status, body, nil
+}
+
+// SecretEnv returns an environment variable that reads key of the Secret
+// name in the namespace of the pod.
+func SecretEnv(envName, name, key string) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: envName,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: name},
+				Key:                  key,
+			},
+		},
+	}
 }

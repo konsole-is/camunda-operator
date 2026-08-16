@@ -269,9 +269,9 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 func curlElasticsearch(contract *v1.SecondaryStorageConfig, name, path string, extra ...string) (string, error) {
 	es := contract.Spec.Elasticsearch
 	env := []corev1.EnvVar{
-		secretEnv("ES_USERNAME", es.CredentialsSecretRef.Name, es.CredentialsSecretRef.UsernameKey),
-		secretEnv("ES_PASSWORD", es.CredentialsSecretRef.Name, es.CredentialsSecretRef.PasswordKey),
-		secretEnv("ES_CA", es.CASecretRef.Name, es.CASecretRef.Key),
+		utils.SecretEnv("ES_USERNAME", es.CredentialsSecretRef.Name, es.CredentialsSecretRef.UsernameKey),
+		utils.SecretEnv("ES_PASSWORD", es.CredentialsSecretRef.Name, es.CredentialsSecretRef.PasswordKey),
+		utils.SecretEnv("ES_CA", es.CASecretRef.Name, es.CASecretRef.Key),
 	}
 
 	// $0 is "curl", the remaining arguments are the curl arguments.
@@ -291,18 +291,4 @@ func curlElasticsearch(contract *v1.SecondaryStorageConfig, name, path string, e
 			}},
 		},
 	}, podTimeout)
-}
-
-// secretEnv returns an environment variable that reads key of the Secret
-// name in the namespace of the pod.
-func secretEnv(envName, name, key string) corev1.EnvVar {
-	return corev1.EnvVar{
-		Name: envName,
-		ValueFrom: &corev1.EnvVarSource{
-			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: name},
-				Key:                  key,
-			},
-		},
-	}
 }

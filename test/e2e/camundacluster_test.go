@@ -188,7 +188,8 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		By("removing the platform config and the test namespace")
+		By("removing the cluster, the platform config, and the test namespace")
+		_, _ = utils.Kubectl("delete", ccResource, ccName, "-n", ccNamespace, "--ignore-not-found", "--wait=false")
 		_, _ = utils.Kubectl("delete", ccPlatformResource, ccPlatform, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", ccNamespace, "--wait=false")
 	})
@@ -462,23 +463,16 @@ func expectInstanceSearchable(cluster *v1.CamundaCluster) {
 	}, ccAPITimeout).Should(Succeed())
 }
 
-// camundaREST calls path on the gateway Service of cluster with the admin
-// credentials from the admin Secret and returns the final status code and
-// the body. files are uploaded into /tmp of the helper pod; args are extra
-// curl arguments.
+// camundaREST calls path on the gateway Service of cluster with the
+// credentials of the admin Secret and returns the final status code and the
+// body. files are uploaded into /tmp of the helper pod; args are extra curl
+// arguments.
 func camundaREST(
 	cluster *v1.CamundaCluster,
 	name, method, path string,
 	files map[string]string,
 	args ...string,
 ) (int, string, error) {
-	password, err := utils.SecretValue(
-		cluster.Namespace, components.AdminSecretName(cluster), components.AdminPasswordKey,
-	)
-	if err != nil {
-		return 0, "", err
-	}
-
 	return utils.CamundaREST(utils.CamundaRequest{
 		Namespace: cluster.Namespace,
 		Name:      name,
@@ -487,11 +481,12 @@ func camundaREST(
 			"http://%s.%s.svc:%d%s",
 			components.WorkloadName(cluster, components.ComponentGateway), cluster.Namespace, components.PortHTTP, path,
 		),
-		User:     components.AdminUsername,
-		Password: password,
-		Files:    files,
-		Args:     args,
-		Timeout:  podTimeout,
+		CredentialsSecret: components.AdminSecretName(cluster),
+		UsernameKey:       components.AdminUsernameKey,
+		PasswordKey:       components.AdminPasswordKey,
+		Files:             files,
+		Args:              args,
+		Timeout:           podTimeout,
 	})
 }
 
@@ -499,16 +494,6 @@ func camundaREST(
 // cluster, as kubectl takes it.
 func brokerClaimSelector(cluster *v1.CamundaCluster) string {
 	return k8slabels.SelectorFromSet(components.BrokerClaimSelector(cluster)).String()
-}
-
-// expectCondition asserts that resource name reports condition condType as
-// True with reason. It is written for Eventually.
-func expectCondition(g Gomega, resource, name, namespace, condType, reason string) {
-	cond, err := utils.Condition(resource, name, namespace, condType)
-	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(cond).NotTo(BeNil(), "%s %q has no %s condition yet", resource, name, condType)
-	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "%s %q %s: %s", resource, name, condType, cond.Message)
-	g.Expect(cond.Reason).To(Equal(reason), "%s %q %s: %s", resource, name, condType, cond.Message)
 }
 
 // expectScaledToZero asserts that the workload asks for zero replicas and
