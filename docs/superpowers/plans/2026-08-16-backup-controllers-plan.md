@@ -45,22 +45,23 @@ PR2 and PR3 fan out after PR1. PR4 and PR5 fan out after PR2+PR3. PR6 needs the 
 | `camundaadmin-api` | #65 | #68, #69 | `camundaadmin.New(binding Binding) (*Client, error)` where `Binding{Endpoint, Version string; Auth Auth}`; methods exactly as spec §pkg/camundaadmin (seven methods, idempotent semantics, `ErrUnreachable` vs `ErrRejected`) | merged in PR1 |
 | `management-binding` | #67 | #68, #69 | `v1.ManagementBinding{Endpoint string; Auth ManagementAuth{Method string; SecretRef *SecretRef}; Version string; Partitions int32; BackupRepository string}` at `CamundaCluster.status.management`; empty/nil while suspended or not ready | merged in PR3 |
 | `snapshot-repository-field` | #66 | #67 | `SecondaryStorageConfig.spec.elasticsearch.snapshotRepository string` (optional) | merged in PR2 |
-| `logicalbackup-skeleton` | #65 | #68, #69, #70 | `pkg/logicalbackup`: `Phase` (`Pending/Running/Completed/Failed`), reasons (`Progressing, Completed, Failed, ClusterSuspended, BackupInProgress, StorageTypeMismatch, MissingCredentials, ResumeFailed`), `PreCheck(ctx, c client.Client, ref v1.ClusterRef, kind v1.SecondaryStorageType) (*PreCheckResult, error)`, `AllocateBackupID(now metav1.Time) int64`, `ObjectKeyPrefix(basePath, ns, cluster string, id int64) string`, `Finalizer = "core.camunda.io/backup-artifacts"`, `ScheduleLabel = "camunda.io/backup-schedule"`, `RecordStorageSizes(...)` | pre-merge stub: PR1 ships the package with types + signatures and `panic("not implemented")` bodies is NOT allowed — PR1 ships it complete (it is pure logic, testable without controllers) |
+| `logicalbackup-skeleton` | #65 | #68, #69, #70 | **AS SHIPPED in #74** — status vocabulary in `api/v1`: `v1.LogicalBackupPhase` (`LogicalBackupPending/Running/Completed/Failed`), shared `v1.Reason*` constants, `v1.ClusterRef`, `v1.LogicalBackupStorageSizes{Elasticsearch, Zeebe *resource.Quantity}`. Logic in `pkg/logicalbackup`: `PreCheck(ctx, PreCheckRequest{Reader client.Reader, Ref v1.ClusterRef, Namespace string, StorageType v1.SecondaryStorageType, InProgress func(ctx) (string, error)}) (*PreCheckResult, error)` returning `*conditions.PreCheckFailure`, `Waiting(err) bool`, `AllocateBackupID`, `ObjectKeyPrefix`, `Finalizer`, `ZeebeSize`/`ElasticsearchSize`/`RecordStorageSizes`. Schedule label is `labels.BackupScheduleKey` (NOT `logicalbackup.ScheduleLabel` — removed). Per-kind reasons are NOT here: PR4 declares `ResumeFailed`, PR5 declares `MissingCredentials`. | merged in PR1 |
 | `backup-kind-types` | #68, #69 | #70 | `v1.LogicalBackupElasticsearch` / `v1.LogicalBackupRDBMS` full types incl. `Status.Phase`, `Status.CompletionTime`; plurals `logicalbackupelasticsearches`/`logicalbackuprdbmses`, short names `lbes`/`lbrdbms` | PR6 branches after PR4+PR5 merge |
 
-The `logicalbackup-skeleton` row overrides the sketch in #65's issue text only in that the skeleton ships **complete in PR1** (pure functions, table-tested), so PR4/PR5 both import a merged real package and no stub choreography is needed.
+The `logicalbackup-skeleton` row overrides the sketch in #65's issue text: the skeleton ships **complete in PR1** (pure functions, table-tested), so PR4/PR5 import a merged real package and no stub choreography is needed. Its row above records the shape as actually shipped and reviewed in PR #74 — three deviations from the original sketch were accepted (status vocabulary belongs in `api/v1` because it is CRD status surface needing deepcopy and enum markers; `PreCheck` takes a request struct with an injected `InProgress` because the backup kinds do not exist until PR4/PR5, so only a kind can list itself; per-kind reasons live next to their kind). **`InProgress` must list BOTH backup kinds** — spec §Shared skeleton serializes on "another backup of either kind", and that half is the caller's responsibility, so PR4 and PR5 each implement and test it.
 
 ## Conventions
 
 - **Naming firewall:** PR numbers and "PR N" labels never appear in code, fixtures, or test names.
 - **Kinds:** `LogicalBackupElasticsearch`, `LogicalBackupRDBMS` everywhere — never `ESBackup`, `RDBMSBackup`, `Backup`.
 - **Packages:** `pkg/camundaadmin`, `pkg/esadmin`, `pkg/objectstore`, `pkg/logicalbackup`, `pkg/components/logicalbackuprdbms` (Job builder), controllers under `internal/controller/{logicalbackupelasticsearch,logicalbackuprdbms,backupschedule}` — one directory per CRD, matching Batch B/C layout.
-- **Labels:** owner keys via `pkg/labels` — add `labels.LogicalBackupElasticsearchKey/LogicalBackupRDBMSKey/BackupScheduleKey` in PR1 alongside the existing keys; schedule linkage via `logicalbackup.ScheduleLabel`.
+- **Labels:** owner keys via `pkg/labels` — `labels.LogicalBackupElasticsearchKey/LogicalBackupRDBMSKey/BackupScheduleKey`, shipped in PR1. Schedule linkage uses `labels.BackupScheduleKey`; `pkg/labels` is the single owner of label strings, so no package declares its own copy.
 - **Field managers:** ocf defaults for components; `camunda-operator/backup` for the dump Job SSA.
 - **Conditions:** `conditions.Aggregate` derives `Ready`; per-kind reasons live next to the kind's types; shared reasons come from `api/v1/conditions.go` — never redeclare.
 - **Errors:** clients return wrapped sentinel errors (`camundaadmin.ErrUnreachable`, `ErrRejected`); controllers map them to `ConnectionFailed` / `Failed`. Message prefixes follow the ocf 0.19 Aggregate conventions.
 - **Tests:** golden snapshots under `pkg/components/<pkg>/testdata/golden/<case>`; envtest suites per controller dir via `internal/testenv`; fake HTTP servers live in the client packages as exported test helpers (`camundaadmin/camundaadmintest`, `esadmin/esadmintest`) so controller tests reuse them.
-- **Docs:** each PR updates the CRD docs it touches (spec §Doc deviations maps them); PR7 owns the split/removal of the backup doc pages and `mkdocs.yml`.
+- **Docs:** the PR that changes a CRD's schema owns that CRD's `docs/crds/` page and rewrites it in the same PR (CLAUDE.md rule). PR7 owns only the backup-page split/removal, the cross-page prose sweep, and `mkdocs.yml` nav. A page must never contradict its own shipped CRD on the feature branch.
+- **CEL and gofmt:** `make fmt` normalizes `''` into typographic quotes inside **declaration** doc comments, silently corrupting `+kubebuilder:validation:XValidation` rules (committed CRD YAML keeps the old rule, so tests stay green). Prefer `size() > 0` and quote-free CEL on declaration comments; after adding CEL, run `make manifests` and confirm the regenerated YAML still holds the rule you wrote. Field-level markers are unaffected.
 - **YAML in docs/goldens:** field names exactly as in the spec API sections; no invented synonyms.
 
 ---
@@ -122,7 +123,7 @@ Implements spec §CamundaCluster and CamundaClusterPreset (API), §Backup policy
 - [ ] TDD presetmerge for `backup` (incl. `continuous` `*bool` three-state)
 - [ ] TDD render goldens: ES-path and RDBMS-path backup variants (backup store env, repository name, `WHEN_REQUIRED`, static keys vs none)
 - [ ] TDD binding publication + clear-on-suspend (envtest), precheck rejections
-- [ ] Update `docs/crds/{camundacluster,camundaclusterpreset,objectstorageconfig}.md`
+- [ ] Update `docs/crds/{camundacluster,camundaclusterpreset}.md` (`objectstorageconfig.md` is owned by PR1, which changed its schema)
 - [ ] Open PR (`Towards #67`), review-loop to clean, self-merge, close #67
 
 ### PR4 — LogicalBackupElasticsearch (#68, branch `feat/backup-controllers--lbes-controller`) — **user reviews before merge**
@@ -135,7 +136,8 @@ Implements spec §LogicalBackupElasticsearch (API + state machine + finalizer + 
 - Modify: `cmd/main.go`, RBAC markers, `config/samples/`
 
 **Steps:**
-- [ ] TDD types + schema (immutable `clusterRef`, phase/step enums, per-part status, `storageSizes`)
+- [ ] TDD types + schema (immutable `clusterRef`, step enum, per-part status; reuse `v1.LogicalBackupPhase` and `v1.LogicalBackupStorageSizes` from PR1 — do not redeclare). Declare `ResumeFailed` here, next to this kind
+- [ ] Implement `PreCheckRequest.InProgress` listing **both** backup kinds (spec serializes on "another backup of either kind") and test the cross-kind case
 - [ ] TDD the state machine against `camundaadmintest`/`esadmintest`: happy path; crash re-entry per step (no duplicate POST); failure-in-each-step → `ResumeExporting` → terminal; resume deadline → `ResumeFailed`; `BackupInProgress` serialization; pre-check reasons; empty binding holds `Pending`
 - [ ] TDD `RecordStorageSizes` wiring (cluster volumes + fake `_nodes/stats`)
 - [ ] TDD finalizer (delete by exact backupId; release when cluster gone)
@@ -154,7 +156,8 @@ Implements spec §LogicalBackupRDBMS (API + state machine + Job + upload subcomm
 - Modify: `cmd/main.go` (controller + subcommand dispatch), RBAC (Jobs), samples
 
 **Steps:**
-- [ ] TDD types + schema (immutable `clusterRef`, `dump` whole-block override)
+- [ ] TDD types + schema (immutable `clusterRef`, `dump` whole-block override; reuse `v1.LogicalBackupPhase` / `v1.LogicalBackupStorageSizes`). Declare `MissingCredentials` here, next to this kind
+- [ ] Implement `PreCheckRequest.InProgress` listing **both** backup kinds and test the cross-kind case
 - [ ] TDD the Job builder goldens: initContainer `postgres:<major>` w/ `pg_dump -Fc`, upload main container, both auth shapes, scratch `emptyDir`/PVC, effective dump block (scheduling/resources/annotations), cluster SA
 - [ ] TDD `upload` subcommand against `fileblob`
 - [ ] TDD controller: Job SSA + tracking, `PrimaryBackup` via binding (records generated ID), `MissingSecret`/`MissingCredentials` pre-checks, `storageSizes.zeebe`
