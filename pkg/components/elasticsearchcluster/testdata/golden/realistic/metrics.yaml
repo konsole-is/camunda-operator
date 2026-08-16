@@ -51,6 +51,7 @@ spec:
             - ALL
           readOnlyRootFilesystem: true
           runAsNonRoot: true
+          runAsUser: 65534
         volumeMounts:
         - mountPath: /etc/elasticsearch/ca
           name: ca
