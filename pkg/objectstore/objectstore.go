@@ -85,16 +85,26 @@ func Open(ctx context.Context, cfg *v1.ObjectStorageConfig, creds *Credentials) 
 	return nil, fmt.Errorf("object storage config %q has no storage block", cfg.Name)
 }
 
-// Upload writes the content of r to key, replacing any existing object.
+// Upload writes the content of r to key, replacing any existing object. The
+// object appears only when the whole of r was written: a read that fails
+// partway leaves no object at all, so a truncated dump can never be mistaken
+// for a whole one at restore time.
 func (b *Bucket) Upload(ctx context.Context, key string, r io.Reader) error {
-	w, err := b.bucket.NewWriter(ctx, key, nil)
+	// Cancelling this context is the only way to abandon a write. Closing the
+	// writer commits whatever reached it, however little that is.
+	writeCtx, abandon := context.WithCancel(ctx)
+	defer abandon()
+
+	w, err := b.bucket.NewWriter(writeCtx, key, nil)
 	if err != nil {
 		return fmt.Errorf("opening writer for %q: %w", key, err)
 	}
 
 	if _, err := io.Copy(w, r); err != nil {
-		// Abort the write; the close error only masks the copy error.
+		abandon()
+		// The close error only reports the cancellation that was asked for.
 		_ = w.Close()
+
 		return fmt.Errorf("uploading %q: %w", key, err)
 	}
 

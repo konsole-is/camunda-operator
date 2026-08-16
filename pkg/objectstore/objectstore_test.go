@@ -18,6 +18,7 @@ package objectstore
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -68,6 +69,43 @@ func TestBucketDeleteIsIdempotent(t *testing.T) {
 	bucket := fileBucket(t)
 
 	assert.NoError(t, bucket.Delete(ctx, "absent-key"))
+}
+
+// failingReader yields some bytes and then fails, the shape of a pg_dump pipe
+// that breaks partway or a pod that is evicted mid-upload.
+type failingReader struct {
+	remaining int
+}
+
+func (r *failingReader) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		return 0, errors.New("dump stream broke")
+	}
+
+	n := min(len(p), r.remaining)
+	r.remaining -= n
+	for i := range n {
+		p[i] = 'x'
+	}
+
+	return n, nil
+}
+
+// A failed upload must leave no object behind. Closing the writer commits
+// whatever was written, so a truncated dump would stay in the bucket and a
+// later restore would read it as a whole one.
+func TestUploadLeavesNoObjectWhenTheReaderFails(t *testing.T) {
+	ctx := context.Background()
+	bucket := fileBucket(t)
+
+	err := bucket.Upload(ctx, "clusters/ns/name/1/camunda.dump", &failingReader{remaining: 4096})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dump stream broke")
+
+	keys, listErr := bucket.List(ctx, "clusters/ns/name/1/")
+	require.NoError(t, listErr)
+	assert.Empty(t, keys, "a partial upload must not be committed")
 }
 
 func TestOpenRejectsIncompleteContracts(t *testing.T) {
