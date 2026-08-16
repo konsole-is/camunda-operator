@@ -32,6 +32,8 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
@@ -102,11 +104,12 @@ func nonEmpty(values ...string) []string {
 }
 
 // enqueueForSecret maps a Secret event to every cluster that can reference
-// it: every cluster of the Secret namespace (the binding, its DatabaseConfig,
-// and a same-namespace auth Secret live there), every cluster whose own auth
-// reference names it, and every cluster whose platform config or preset
-// references it. The reads go through the cached client; the Secret watch is
-// metadata-only.
+// it: every cluster of the Secret namespace (a same-namespace binding,
+// DatabaseConfig, or auth Secret lives there), every cluster whose own auth
+// reference names it, every cluster whose platform config or preset
+// references it, every cluster whose binding references it, and every
+// cluster in the namespace of a DatabaseConfig that references it. The reads
+// go through the cached client; the Secret watch is metadata-only.
 func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		key := refindex.ObjectNamespacedName(o)
@@ -115,24 +118,45 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
 		set.addList(ctx, r.Client, client.MatchingFields{secretRefsField: key})
 
-		var cfgs v1.CamundaPlatformConfigList
-		if err := r.List(ctx, &cfgs, client.MatchingFields{camundaplatformconfig.SecretRefsField: key}); err != nil {
-			logf.FromContext(ctx).Error(err, "listing platform configs for Secret enqueue", "secret", key)
-		}
-		for _, cfg := range cfgs.Items {
+		for _, cfg := range listByIndex[v1.CamundaPlatformConfigList](
+			ctx, r.Client, camundaplatformconfig.SecretRefsField, key,
+		).Items {
 			set.addList(ctx, r.Client, client.MatchingFields{platformConfigRefField: cfg.Name})
 		}
 
-		var presets v1.CamundaClusterPresetList
-		if err := r.List(ctx, &presets, client.MatchingFields{presetSecretRefsField: key}); err != nil {
-			logf.FromContext(ctx).Error(err, "listing presets for Secret enqueue", "secret", key)
-		}
-		for _, preset := range presets.Items {
+		for _, preset := range listByIndex[v1.CamundaClusterPresetList](ctx, r.Client, presetSecretRefsField, key).Items {
 			set.addList(ctx, r.Client, client.MatchingFields{presetRefField: preset.Name})
+		}
+
+		for _, binding := range listByIndex[v1.SecondaryStorageConfigList](
+			ctx, r.Client, secondarystorageconfig.SecretRefsField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.MatchingFields{
+				storageRefField: refindex.NamespacedKey(binding.Namespace, binding.Name),
+			})
+		}
+
+		for _, dbConfig := range listByIndex[v1.DatabaseConfigList](
+			ctx, r.Client, databaseconfig.SecretRefsField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.InNamespace(dbConfig.Namespace))
 		}
 
 		return set.requests()
 	})
+}
+
+// listByIndex lists the objects of L whose index field matches key. A list
+// failure is logged and yields an empty list.
+func listByIndex[L any, PL interface {
+	*L
+	client.ObjectList
+}](ctx context.Context, c client.Client, field, key string) *L {
+	list := PL(new(L))
+	if err := c.List(ctx, list, client.MatchingFields{field: key}); err != nil {
+		logf.FromContext(ctx).Error(err, "listing referrers for Secret enqueue", "field", field, "secret", key)
+	}
+	return list
 }
 
 // enqueueInNamespace maps an event to every cluster of the namespace of the
@@ -199,7 +223,8 @@ func (s requestSet) requests() []reconcile.Request {
 // Every reference is watched: platform configs, presets, bindings, and object
 // storage configs through the indexes, DatabaseConfigs by namespace,
 // DatabaseServerConfigs for every cluster, and Secrets (metadata only)
-// through enqueueForSecret. The pre-checks put the
+// through enqueueForSecret, which also follows the Secret indexes of the
+// platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
 // resource versions of the Secrets and the generations of the CRs they read
 // into the config hash, so any of these events rolls the pods whose rendered
 // configuration changed. It also sets Recorder to the recorder of the manager

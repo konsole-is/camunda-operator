@@ -23,6 +23,7 @@ package camundacluster
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
@@ -81,7 +82,7 @@ type CamundaClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -91,9 +92,11 @@ type CamundaClusterReconciler struct {
 // event and returns before anything is read or written, status included.
 // Otherwise the pre-checks resolve every reference into the render input; a
 // failed pre-check reports its Ready reason and stops. The broker storage
-// lifecycle then clamps and grows the volumes, and the components are
-// reconciled in order: the admin Secret, the mirrored Secrets, then every
-// process. Ready mirrors the highest-priority component condition.
+// lifecycle then clamps and grows the volumes and, when the claim template
+// changed, deletes the StatefulSet and stops until it is gone. Otherwise the
+// components are reconciled in order: the admin Secret, the mirrored Secrets,
+// then every process. Ready mirrors the highest-priority component
+// condition.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -130,16 +133,24 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
 	in.ServiceMonitorSupported = r.serviceMonitorSupported()
 
-	sizes, err := r.keepAppliedStorageSize(ctx, &cluster, &in)
+	claims, sizes, err := r.keepAppliedStorageSize(ctx, &cluster, &in)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.growBrokerClaims(ctx, &cluster, in.Effective.StorageSize()); err != nil {
+
+	if err := r.growBrokerClaims(ctx, claims, in.Effective.StorageSize()); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.recreateStatefulSetOnClaimChange(ctx, &cluster, in); err != nil {
+
+	// The delete event of the owned StatefulSet triggers the next reconcile.
+	err = r.recreateStatefulSetOnClaimChange(ctx, &cluster, in)
+	if errors.Is(err, errStatefulSetTerminating) {
+		return ctrl.Result{}, nil
+	}
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -165,7 +176,7 @@ func (r *CamundaClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	in components.Input,
-	mirrors map[string]map[string][]byte,
+	mirrors mirroredSecrets,
 ) ([]*component.Component, error) {
 	var comps []*component.Component
 
@@ -176,12 +187,12 @@ func (r *CamundaClusterReconciler) buildComponents(
 			components.AdminPasswordKey,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("looking up admin password: %w", err)
 		}
 
 		admin, err := components.AdminSecretComponent(cluster, password)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("building admin secret component: %w", err)
 		}
 		comps = append(comps, admin)
 	}
@@ -189,14 +200,14 @@ func (r *CamundaClusterReconciler) buildComponents(
 	if len(mirrors) > 0 {
 		mirrored, err := components.MirroredSecretComponent(cluster, mirrors)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("building mirrored secrets component: %w", err)
 		}
 		comps = append(comps, mirrored)
 	}
 
 	processes, err := components.Build(in)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("building process components: %w", err)
 	}
 
 	return append(comps, processes...), nil

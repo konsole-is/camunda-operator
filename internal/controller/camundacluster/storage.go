@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -43,66 +44,90 @@ const (
 	eventReasonStatefulSetRecreated = "StatefulSetRecreated"
 )
 
-// claimSizes are the capacities that the bound broker claims report.
-type claimSizes struct{ claims []resource.Quantity }
+// errStatefulSetTerminating reports that the broker StatefulSet is being
+// deleted for recreation. The reconcile stops without applying, because the
+// apply of the new claim template onto the terminating object would fail; the
+// owned-object delete event triggers the next reconcile.
+var errStatefulSetTerminating = errors.New("broker StatefulSet is terminating")
+
+// claimSizes are the sizes of the broker volumes: the capacities that the
+// bound claims report, the storage they request, and the claim template size
+// of the applied StatefulSet.
+type claimSizes struct {
+	capacities []resource.Quantity
+	requests   []resource.Quantity
+	applied    *resource.Quantity
+}
 
 // smallest returns the smallest capacity, or nil without a bound claim. It is
 // the size that every broker has, so status reports it.
 func (s claimSizes) smallest() *resource.Quantity {
-	if len(s.claims) == 0 {
-		return nil
-	}
-	smallest := s.claims[0]
-	for _, size := range s.claims[1:] {
-		if size.Cmp(smallest) < 0 {
-			smallest = size
+	var smallest *resource.Quantity
+	for i := range s.capacities {
+		if smallest == nil || s.capacities[i].Cmp(*smallest) < 0 {
+			smallest = &s.capacities[i]
 		}
 	}
-	return &smallest
+	return smallest
 }
 
-// largest returns the largest capacity, or nil without a bound claim. It is
-// the size that a rendered claim must not go below.
+// largest returns the largest of the capacities, the requests, and the
+// applied template size, or nil when none exists. It is the size that a
+// rendered claim must not go below: a claim that is still expanding requests
+// more than it reports, and the applied template must not move backwards
+// while no claim exists.
 func (s claimSizes) largest() *resource.Quantity {
-	if len(s.claims) == 0 {
-		return nil
-	}
-	largest := s.claims[0]
-	for _, size := range s.claims[1:] {
-		if size.Cmp(largest) > 0 {
-			largest = size
+	largest := s.applied
+	for _, sizes := range [][]resource.Quantity{s.capacities, s.requests} {
+		for i := range sizes {
+			if largest == nil || sizes[i].Cmp(*largest) > 0 {
+				largest = &sizes[i]
+			}
 		}
 	}
-	return &largest
+	return largest
 }
 
 // keepAppliedStorageSize guards against the shrinks that admission cannot see:
 // a preset baseline lowered under a cluster, or an inline storageSize set
 // below a size that a preset provided before. When the effective size is
-// below the largest bound broker claim, it keeps that claim size in the
-// effective spec and records a Warning event, because volumes cannot be
-// reduced in place. It returns the sizes of the bound claims.
+// below the largest broker volume size (a bound claim's capacity or request,
+// or the applied claim template), it keeps that size in the effective spec
+// and records a Warning event, because volumes cannot be reduced in place. It
+// returns the bound broker claims and their sizes, so the caller lists them
+// once.
 func (r *CamundaClusterReconciler) keepAppliedStorageSize(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	in *components.Input,
-) (claimSizes, error) {
+) ([]corev1.PersistentVolumeClaim, claimSizes, error) {
 	claims, err := r.brokerClaims(ctx, cluster)
 	if err != nil {
-		return claimSizes{}, err
+		return nil, claimSizes{}, err
 	}
 
 	var sizes claimSizes
 	for _, claim := range claims {
 		if capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]; ok {
-			sizes.claims = append(sizes.claims, capacity)
+			sizes.capacities = append(sizes.capacities, capacity)
 		}
+		if request, ok := claim.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+			sizes.requests = append(sizes.requests, request)
+		}
+	}
+
+	sts, err := r.brokerStatefulSet(ctx, cluster)
+	if err != nil {
+		return nil, claimSizes{}, err
+	}
+	if sts != nil {
+		sizes.applied = appliedClaimSize(sts)
 	}
 
 	largest := sizes.largest()
 	rendered := in.Effective.StorageSize()
 	if largest == nil || rendered.Cmp(*largest) >= 0 {
-		return sizes, nil
+		return claims, sizes, nil
 	}
 
 	r.Recorder.Eventf(
@@ -119,22 +144,17 @@ func (r *CamundaClusterReconciler) keepAppliedStorageSize(
 	}
 	in.Effective.Zeebe.StorageSize = largest
 
-	return sizes, nil
+	return claims, sizes, nil
 }
 
-// growBrokerClaims patches every bound broker claim that requests less than
-// size up to it. The storage class must allow expansion; the API server
-// rejects the patch otherwise.
+// growBrokerClaims patches every claim of claims that requests less than size
+// up to it. The storage class must allow expansion; the API server rejects
+// the patch otherwise.
 func (r *CamundaClusterReconciler) growBrokerClaims(
 	ctx context.Context,
-	cluster *v1.CamundaCluster,
+	claims []corev1.PersistentVolumeClaim,
 	size resource.Quantity,
 ) error {
-	claims, err := r.brokerClaims(ctx, cluster)
-	if err != nil {
-		return err
-	}
-
 	for i := range claims {
 		claim := &claims[i]
 		requested, ok := claim.Spec.Resources.Requests[corev1.ResourceStorage]
@@ -156,34 +176,31 @@ func (r *CamundaClusterReconciler) growBrokerClaims(
 // propagation when the size of its applied volume claim template differs
 // from the rendered one, so the component re-applies it and the new
 // StatefulSet adopts the pods and claims. The template is immutable, so an
-// update cannot change it. It records StatefulSetRecreated. A StatefulSet
-// that is already being deleted is left alone.
+// update cannot change it. It records StatefulSetRecreated on the reconcile
+// that issues the delete, and returns errStatefulSetTerminating from then on
+// until the StatefulSet is gone.
 func (r *CamundaClusterReconciler) recreateStatefulSetOnClaimChange(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	in components.Input,
 ) error {
-	var sts appsv1.StatefulSet
-	key := client.ObjectKey{
-		Namespace: cluster.Namespace,
-		Name:      components.WorkloadName(cluster, components.ComponentZeebe),
+	sts, err := r.brokerStatefulSet(ctx, cluster)
+	if err != nil || sts == nil {
+		return err
 	}
-	if err := r.Get(ctx, key, &sts); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("reading StatefulSet %q: %w", key, err)
+	if sts.DeletionTimestamp != nil {
+		return errStatefulSetTerminating
 	}
 
-	applied := appliedClaimSize(&sts)
+	applied := appliedClaimSize(sts)
 	rendered := in.Effective.StorageSize()
-	if sts.DeletionTimestamp != nil || applied == nil || applied.Cmp(rendered) == 0 {
+	if applied == nil || applied.Cmp(rendered) == 0 {
 		return nil
 	}
 
-	err := r.Delete(ctx, &sts, client.PropagationPolicy(metav1.DeletePropagationOrphan))
+	err = r.Delete(ctx, sts, client.PropagationPolicy(metav1.DeletePropagationOrphan))
 	if err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("deleting StatefulSet %q for recreation: %w", key, err)
+		return fmt.Errorf("deleting StatefulSet %q for recreation: %w", sts.Name, err)
 	}
 
 	r.Recorder.Eventf(
@@ -196,7 +213,28 @@ func (r *CamundaClusterReconciler) recreateStatefulSetOnClaimChange(
 		&rendered,
 	)
 
-	return nil
+	return errStatefulSetTerminating
+}
+
+// brokerStatefulSet reads the applied broker StatefulSet, or nil when it does
+// not exist.
+func (r *CamundaClusterReconciler) brokerStatefulSet(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (*appsv1.StatefulSet, error) {
+	var sts appsv1.StatefulSet
+	key := client.ObjectKey{
+		Namespace: cluster.Namespace,
+		Name:      components.WorkloadName(cluster, components.ComponentZeebe),
+	}
+	if err := r.Get(ctx, key, &sts); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading StatefulSet %q: %w", key, err)
+	}
+
+	return &sts, nil
 }
 
 // appliedClaimSize returns the storage request of the data volume claim

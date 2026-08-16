@@ -38,10 +38,12 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-const (
-	secondaryStorageConfigSecretRefsField        = "secondarystorageconfig.spec.secretRefs"
-	secondaryStorageConfigDatabaseConfigRefField = "secondarystorageconfig.spec.rdbms.databaseConfigRef"
-)
+// SecretRefsField is the index field that lists bindings by the Secrets they
+// reference, keyed with refindex.NamespacedKey. Other controllers look
+// bindings up by it when a Secret changes.
+const SecretRefsField = "secondarystorageconfig.spec.secretRefs"
+
+const secondaryStorageConfigDatabaseConfigRefField = "secondarystorageconfig.spec.rdbms.databaseConfigRef"
 
 // SecondaryStorageConfigReconciler validates SecondaryStorageConfig contracts
 // and maintains their Ready condition.
@@ -140,7 +142,7 @@ func (r *SecondaryStorageConfigReconciler) validate(
 func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.SecondaryStorageConfig{},
-		secondaryStorageConfigSecretRefsField, func(o client.Object) []string {
+		SecretRefsField, func(o client.Object) []string {
 			es := o.(*v1.SecondaryStorageConfig).Spec.Elasticsearch
 			if es == nil {
 				return nil
@@ -174,7 +176,7 @@ func (r *SecondaryStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) er
 			&corev1.Secret{},
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.SecondaryStorageConfigList{},
-				secondaryStorageConfigSecretRefsField, refindex.ObjectNamespacedName,
+				SecretRefsField, refindex.ObjectNamespacedName,
 			),
 			builder.OnlyMetadata,
 		).

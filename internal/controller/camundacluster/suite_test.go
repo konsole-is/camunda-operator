@@ -30,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 )
 
@@ -54,10 +56,25 @@ func TestCamundaClusterController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	// The platform config controller is registered too: the Secret watch of
-	// the cluster controller lists platform configs through its index.
+	// The contract controllers are registered too: the Secret watch of the
+	// cluster controller lists platform configs, bindings, and DatabaseConfigs
+	// through their indexes.
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		if err := (&camundaplatformconfig.CamundaPlatformConfigReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			return err
+		}
+		if err := (&secondarystorageconfig.SecondaryStorageConfigReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			return err
+		}
+		if err := (&databaseconfig.DatabaseConfigReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),

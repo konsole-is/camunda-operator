@@ -739,6 +739,15 @@ var _ = Describe("CamundaCluster controller", func() {
 				}, timeout, interval).Should(Succeed())
 			}
 			expectEvent(cluster, "StatefulSetRecreated", corev1.EventTypeNormal)
+			// While the StatefulSet terminates, the reconcile applies nothing,
+			// so the zeebe component never reports an apply error.
+			Consistently(func(g Gomega) {
+				var latest v1.CamundaCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+				zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
+				g.Expect(zeebe).NotTo(BeNil())
+				g.Expect(zeebe.Reason).NotTo(Equal(string(component.Error)))
+			}, 2*time.Second, interval).Should(Succeed())
 			finishOrphanDeletion(zeebeKey)
 			Eventually(func(g Gomega) {
 				var latest appsv1.StatefulSet
@@ -825,6 +834,43 @@ var _ = Describe("CamundaCluster controller", func() {
 			var mirror corev1.Secret
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref.Name}, &mirror)).To(Succeed())
 			g.Expect(mirror.Data["client-secret"]).To(Equal([]byte("preset-v2")))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("mirrors the credentials Secret of a binding from another namespace and follows its changes", func() {
+		ns := newNamespace()
+		sourceNamespace := newNamespace()
+		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
+		binding.Spec.Elasticsearch.CredentialsSecretRef.Namespace = sourceNamespace
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		source := createSecret(sourceNamespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+			"username": "camunda", "password": "v1",
+		})
+		cluster := newCluster(ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+
+		mirrorKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda-es-credentials"}
+		Eventually(func(g Gomega) {
+			var mirror corev1.Secret
+			g.Expect(k8sClient.Get(ctx, mirrorKey, &mirror)).To(Succeed())
+			g.Expect(mirror.Data["password"]).To(Equal([]byte("v1")))
+		}, timeout, interval).Should(Succeed())
+		ref := secretKeyRef(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD")
+		Expect(ref).NotTo(BeNil())
+		Expect(ref.Name).To(Equal(mirrorKey.Name))
+		hash := configHash(cluster, "")
+
+		Eventually(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(source), &latest)).To(Succeed())
+			latest.StringData = map[string]string{"password": "v2"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		configHash(cluster, hash)
+		Eventually(func(g Gomega) {
+			var mirror corev1.Secret
+			g.Expect(k8sClient.Get(ctx, mirrorKey, &mirror)).To(Succeed())
+			g.Expect(mirror.Data["password"]).To(Equal([]byte("v2")))
 		}, timeout, interval).Should(Succeed())
 	})
 })
