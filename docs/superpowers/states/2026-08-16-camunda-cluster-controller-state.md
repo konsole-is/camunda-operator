@@ -31,7 +31,7 @@ status: review
 | #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | #55 → feat/camunda-cluster-controller | self-merged |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | #56 → feat/camunda-cluster-controller | self-merged |
 | follow-up (#47) | batch-c/crd-size | .claude/worktrees/camunda-cluster-controller--crd-size | #59 → feat/camunda-cluster-controller | draft (parked alternative) |
-| follow-up (#47) | batch-c/chart-size-guard | .claude/worktrees/camunda-cluster-controller--chart-size-guard | — → feat/camunda-cluster-controller | in-progress |
+| follow-up (#47) | batch-c/chart-size-guard | .claude/worktrees/camunda-cluster-controller--chart-size-guard | #60 → feat/camunda-cluster-controller | self-merged |
 | #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | #57 → feat/camunda-cluster-controller | self-merged |
 
 ## Contracts
@@ -59,9 +59,9 @@ The interfaces between the sequential PRs (B → C → D) are the **Interfaces**
 
 ## Pending snapshot
 
-1. All five sub-PRs (#53–#57) self-merged; #48–#52 closed. Run `feature-dev-workflow:reviewing-feature-progress` on the feature worktree (full `make test`, `make lint`; e2e already green on #57's head).
-2. Open the integration PR `feat/camunda-cluster-controller` → `main` with `Closes #47`; Copilot loop; stop at ready-to-merge for the user's review (the merge to main is the user's).
-3. After the user merges: tear down plan + state file, keep the spec, delete worktrees/branches, update memory.
+1. Integration PR #58 open (`Closes #47`); #60 (gzip chart guard) merged into the feature branch; #59 (schemaless scheduling) parked as a draft alternative — USER DECISION: keep the guard change (recommended) and close #59, or merge #59 instead and revert the Makefile change.
+2. Wait for CI on #58 to be green (Chart should pass now); then the teardown commit (delete plan + this state file; the spec stays — the repo has no docs/adrs). Copilot cannot review #58 (diff > 20k lines).
+3. Report ready-to-merge to the user; the merge to main is the user's. After the merge: delete the remaining worktrees/branches, update memory.
 
 ## Resume checklist
 
