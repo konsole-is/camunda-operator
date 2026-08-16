@@ -78,7 +78,15 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 			Expect(k8sClient.Update(ctx, storageConfig)).To(Succeed())
 			Expect(storageConfig.Generation).To(BeNumerically(">", 1))
 
-			expectReady(metav1.ConditionTrue, v1.ReasonHealthy)
+			// The name of this test is the assertion: Ready must be
+			// re-stamped at the new generation, not left at the old one.
+			Eventually(func(g Gomega) {
+				cond := readyCondition(g)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Reason).To(Equal(v1.ReasonHealthy))
+				g.Expect(cond.ObservedGeneration).To(Equal(storageConfig.Generation))
+			}, timeout, interval).Should(Succeed())
 		})
 	})
 
@@ -130,6 +138,15 @@ var _ = Describe("ObjectStorageConfig controller", func() {
 			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, secret)).To(Succeed()) })
 
 			expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret)
+
+			// A wholly missing Secret reports the same reason, so the reason
+			// alone does not prove the key check ran. The message must name
+			// the key that is absent.
+			Eventually(func(g Gomega) {
+				cond := readyCondition(g)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Message).To(ContainSubstring("secretAccessKey"))
+			}, timeout, interval).Should(Succeed())
 		})
 	})
 })

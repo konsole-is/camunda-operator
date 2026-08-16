@@ -33,11 +33,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
+// clusterNamespace is where the fixtures put the cluster and its secondary
+// storage.
+const clusterNamespace = "my-ns"
+
 // cluster builds a CamundaCluster that passes every pre-check, so each test
 // can break exactly one thing.
 func cluster() *v1.CamundaCluster {
 	return &v1.CamundaCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "my-ns"},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: clusterNamespace},
 		Spec: v1.CamundaClusterSpec{
 			StorageRef:       "my-storage",
 			BackupStorageRef: "my-bucket",
@@ -47,7 +51,7 @@ func cluster() *v1.CamundaCluster {
 
 func storage(storageType v1.SecondaryStorageType) *v1.SecondaryStorageConfig {
 	return &v1.SecondaryStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-storage", Namespace: "my-ns"},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-storage", Namespace: clusterNamespace},
 		Spec:       v1.SecondaryStorageConfigSpec{Type: storageType},
 	}
 }
@@ -71,7 +75,7 @@ func request(reader client.Reader) logicalbackup.PreCheckRequest {
 	return logicalbackup.PreCheckRequest{
 		Reader:      reader,
 		Ref:         v1.ClusterRef{Name: "my-cluster"},
-		Namespace:   "my-ns",
+		Namespace:   clusterNamespace,
 		StorageType: v1.SecondaryStorageTypeElasticsearch,
 		InProgress: func(context.Context) (string, error) {
 			return "", nil
@@ -97,11 +101,46 @@ func TestPreCheckDefaultsTheNamespaceToTheBackup(t *testing.T) {
 	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
 
 	req := request(reader)
+	req.Namespace = clusterNamespace
 	req.Ref.Namespace = ""
 	result, err := logicalbackup.PreCheck(context.Background(), req)
 
 	require.NoError(t, err)
-	assert.Equal(t, "my-ns", result.Cluster.Namespace)
+	assert.Equal(t, clusterNamespace, result.Cluster.Namespace)
+}
+
+// A backup can name a cluster in another namespace. The cluster and its
+// secondary storage are then read from the namespace of the reference, not
+// from the namespace of the backup.
+func TestPreCheckResolvesAClusterInAnotherNamespace(t *testing.T) {
+	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
+
+	req := request(reader)
+	req.Namespace = "backups-ns"
+	req.Ref.Namespace = clusterNamespace
+
+	result, err := logicalbackup.PreCheck(context.Background(), req)
+
+	require.NoError(t, err)
+	assert.Equal(t, clusterNamespace, result.Cluster.Namespace)
+	assert.Equal(t, clusterNamespace, result.Storage.Namespace)
+}
+
+// A reference that names another namespace never falls back to the namespace
+// of the backup, which would silently back up the wrong cluster.
+func TestPreCheckDoesNotFallBackToTheBackupNamespace(t *testing.T) {
+	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
+
+	req := request(reader)
+	req.Namespace = clusterNamespace
+	req.Ref.Namespace = "elsewhere"
+
+	_, err := logicalbackup.PreCheck(context.Background(), req)
+
+	var failure *conditions.PreCheckFailure
+	require.ErrorAs(t, err, &failure)
+	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
+	assert.Contains(t, failure.Message, "elsewhere/my-cluster")
 }
 
 func TestPreCheckFailures(t *testing.T) {
