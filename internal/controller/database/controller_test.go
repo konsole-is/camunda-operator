@@ -186,7 +186,7 @@ var _ = Describe("Database controller", func() {
 		db.Spec.SecondaryStorageConfig = "storage-config"
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "BindingsReady: Component is healthy.")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
 		By("creating the SQL objects")
 		Expect(sqlDatabaseExists(db.Spec.DatabaseName)).To(BeTrue())
@@ -247,7 +247,7 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "BindingsReady: Component is healthy.")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
 		appKey := types.NamespacedName{Namespace: namespace, Name: db.Name + "-credentials"}
 		var original corev1.Secret
@@ -276,7 +276,7 @@ var _ = Describe("Database controller", func() {
 		db.Spec.BackupCredentials = &v1.BackupCredentialsSpec{Disabled: true}
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "BindingsReady: Component is healthy.")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
 		var secret corev1.Secret
 		backupKey := types.NamespacedName{Namespace: namespace, Name: db.Name + "-backup-credentials"}
@@ -370,8 +370,8 @@ var _ = Describe("Database controller", func() {
 		createDatabase(first)
 		createDatabase(second)
 
-		expectDatabaseReady(first, metav1.ConditionTrue, v1.ReasonHealthy, "BindingsReady: Component is healthy.")
-		expectDatabaseReady(second, metav1.ConditionTrue, v1.ReasonHealthy, "BindingsReady: Component is healthy.")
+		expectDatabaseReady(first, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+		expectDatabaseReady(second, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
 		By("creating one backup role per database")
 		firstRole := components.BackupUserName(first.Spec.DatabaseName)
@@ -403,7 +403,7 @@ var _ = Describe("Database controller", func() {
 		winner := databaseFor(server, namespace)
 		winner.Name = "colla-" + utilrand.String(8)
 		createDatabase(winner)
-		expectDatabaseReady(winner, metav1.ConditionTrue, v1.ReasonHealthy, "BindingsReady: Component is healthy.")
+		expectDatabaseReady(winner, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
 		loser := databaseFor(server, namespace)
 		loser.Name = "collb-" + utilrand.String(8)
@@ -422,7 +422,7 @@ var _ = Describe("Database controller", func() {
 		db := databaseFor(server, namespace)
 		createDatabase(db)
 
-		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "BindingsReady: Component is healthy.")
+		expectDatabaseReady(db, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 
 		Expect(k8sClient.Delete(ctx, db)).To(Succeed())
 		Eventually(func() error {

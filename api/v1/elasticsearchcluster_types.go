@@ -226,8 +226,8 @@ type ElasticsearchClusterStatus struct {
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
 	// Conditions represent the current state. Ready carries the pre-check
-	// reason InvalidReference or mirrors the representative component
-	// condition. The per-component conditions (CredentialsReady,
+	// reason InvalidReference, or it is derived from the component
+	// conditions. The per-component conditions (CredentialsReady,
 	// ElasticsearchReady, StorageContractReady) also appear here.
 	// +listType=map
 	// +listMapKey=type

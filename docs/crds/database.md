@@ -82,7 +82,7 @@ spec:
 | `Ready` | `InvalidReference` | `spec.serverRef` does not resolve to an existing `DatabaseServerConfig`. Or another `Database`, named in the message, already claims the same `serverRef` and `databaseName`. The oldest `Database` wins; on an equal creation timestamp the lexicographically smaller name wins. The loser runs no SQL and publishes no bindings. |
 | `Ready` | `MissingSecret` | The server's admin credentials Secret is missing or lacks the expected keys. |
 | `Ready` | `ConnectionFailed` | The server is unreachable or the admin credentials are rejected. The controller retries every 30 seconds, because it cannot watch the server. |
-| `Ready` | any component status | The pre-checks passed. `Ready` mirrors the `BindingsReady` component condition: same status, same reason, and the message names the component. The reason is a component framework status, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. |
+| `Ready` | any component status | The pre-checks passed. `Ready` takes the status and the reason of the `BindingsReady` component condition, and its message names the component. The reason is a component framework status, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. |
 | `BindingsReady` | component status | The operational detail of the component framework for the published bindings. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.

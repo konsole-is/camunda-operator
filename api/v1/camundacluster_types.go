@@ -327,9 +327,10 @@ type CamundaClusterStatus struct {
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
-	// reason or mirrors the representative process condition. The
-	// per-process conditions (ZeebeReady, GatewayReady, OperateReady,
-	// TasklistReady, AdminReady, ConnectorsReady) also appear here.
+	// reason, or it is derived from the conditions of the components that the
+	// cluster needs. The per-process conditions (ZeebeReady, GatewayReady,
+	// OperateReady, TasklistReady, AdminReady, ConnectorsReady) also appear
+	// here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

@@ -96,8 +96,9 @@ type DatabaseStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
-	// reason (InvalidReference, MissingSecret, ConnectionFailed) or mirrors
-	// the BindingsReady component condition, which also appears here.
+	// reason (InvalidReference, MissingSecret, ConnectionFailed), or it takes
+	// the status and the reason of the BindingsReady component condition,
+	// which also appears here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

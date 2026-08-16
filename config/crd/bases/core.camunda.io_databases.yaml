@@ -135,8 +135,9 @@ spec:
               conditions:
                 description: |-
                   Conditions represent the current state. Ready carries a pre-check
-                  reason (InvalidReference, MissingSecret, ConnectionFailed) or mirrors
-                  the BindingsReady component condition, which also appears here.
+                  reason (InvalidReference, MissingSecret, ConnectionFailed), or it takes
+                  the status and the reason of the BindingsReady component condition,
+                  which also appears here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

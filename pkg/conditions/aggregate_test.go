@@ -17,6 +17,7 @@ limitations under the License.
 package conditions
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -35,6 +36,15 @@ type staged struct {
 	message  string
 }
 
+// componentName derives a component name from condType for these tests only.
+// The real components pick their own names, and this rule does not reproduce
+// every one of them: storage-contract reports StorageContractReady. It exists
+// so that the name always differs from the condition type, because the
+// aggregate message names the component and never the condition type.
+func componentName(condType string) string {
+	return strings.ToLower(strings.TrimSuffix(condType, "Ready"))
+}
+
 // ownerWith returns an owner that carries the given staged component
 // conditions, and the matching components in the same order.
 func ownerWith(t *testing.T, stagedConds ...staged) (component.OperatorCRD, []*component.Component) {
@@ -45,7 +55,7 @@ func ownerWith(t *testing.T, stagedConds ...staged) (component.OperatorCRD, []*c
 	comps := make([]*component.Component, 0, len(stagedConds))
 	for _, sc := range stagedConds {
 		comp, err := component.NewComponentBuilder().
-			WithName(sc.condType).
+			WithName(componentName(sc.condType)).
 			WithConditionType(component.ConditionType(sc.condType)).
 			Build()
 		require.NoError(t, err)
@@ -72,34 +82,34 @@ func TestAggregate(t *testing.T) {
 			name:        "no components is Unknown",
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Unknown),
-			wantMessage: "No component has reported yet",
+			wantMessage: "No components were aggregated.",
 		},
 		{
 			name:        "a component that has not reported is Unknown",
 			staged:      []staged{{condType: "BindingsReady"}},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Unknown),
-			wantMessage: "BindingsReady: Component has not been reconciled yet.",
+			wantMessage: "bindings: Component has not been reconciled yet.",
 		},
 		{
-			name: "all healthy mirrors a healthy component",
+			name: "every component True is Ready True",
 			staged: []staged{
 				{"CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
 				{"ElasticsearchReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
 			},
 			wantStatus:  metav1.ConditionTrue,
 			wantReason:  v1.ReasonHealthy,
-			wantMessage: "CredentialsReady: Component is healthy.",
+			wantMessage: "credentials: Component is healthy.",
 		},
 		{
-			name: "a converging component outranks a healthy one",
+			name: "a converging component gives the reason and makes Ready False",
 			staged: []staged{
 				{"CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
 				{"ElasticsearchReady", metav1.ConditionFalse, component.AliveCreating, "yellow while converging"},
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.AliveCreating),
-			wantMessage: "ElasticsearchReady: yellow while converging",
+			wantMessage: "elasticsearch: yellow while converging",
 		},
 		{
 			name: "down outranks degraded outranks creating",
@@ -110,17 +120,35 @@ func TestAggregate(t *testing.T) {
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Down),
-			wantMessage: "B: red",
+			wantMessage: "b: red",
 		},
 		{
-			name: "a suspended component is mirrored as True",
+			name: "a suspended component next to a healthy one is True",
 			staged: []staged{
 				{"CredentialsReady", metav1.ConditionTrue, component.Healthy, "Component is healthy."},
 				{"ElasticsearchReady", metav1.ConditionTrue, component.Suspended, "node set scaled to zero"},
 			},
 			wantStatus:  metav1.ConditionTrue,
 			wantReason:  string(component.Suspended),
-			wantMessage: "ElasticsearchReady: node set scaled to zero",
+			wantMessage: "elasticsearch: node set scaled to zero",
+		},
+		{
+			// Suspended has a higher framework priority than a failing
+			// component, so a status taken from the highest priority alone
+			// would report the cluster ready here.
+			name: "a suspended component never hides a failing one",
+			staged: []staged{
+				{"CredentialsReady", metav1.ConditionTrue, component.Suspended, "node set scaled to zero"},
+				{
+					"ElasticsearchReady",
+					metav1.ConditionFalse,
+					component.AliveFailing,
+					"red for longer than the grace period",
+				},
+			},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  string(component.AliveFailing),
+			wantMessage: "elasticsearch: red for longer than the grace period",
 		},
 		{
 			name: "suspending is not yet suspended",
@@ -129,7 +157,7 @@ func TestAggregate(t *testing.T) {
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Suspending),
-			wantMessage: "ElasticsearchReady: scaling down",
+			wantMessage: "elasticsearch: scaling down",
 		},
 		{
 			name: "an error outranks everything",
@@ -139,7 +167,7 @@ func TestAggregate(t *testing.T) {
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.Error),
-			wantMessage: "B: apply failed",
+			wantMessage: "b: apply failed",
 		},
 		{
 			name: "the first component wins a tie",
@@ -149,7 +177,7 @@ func TestAggregate(t *testing.T) {
 			},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  string(component.AliveCreating),
-			wantMessage: "A: first",
+			wantMessage: "a: first",
 		},
 	}
 	for _, tt := range tests {

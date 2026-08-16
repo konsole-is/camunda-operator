@@ -31,7 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,9 +73,9 @@ type DatabaseReconciler struct {
 	// credential Secrets must be read live.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
-	// Recorder publishes the resource events of the component framework.
+	// EventRecorder publishes the resource events of the component framework.
 	// SetupWithManager sets it to the recorder of the manager when it is nil.
-	Recorder record.EventRecorder
+	EventRecorder events.EventRecorder
 
 	// componentClient is the uncached client that the bindings component
 	// reconciles with. It keeps the published credential Secrets out of the
@@ -111,13 +111,17 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	}
 
 	rec := component.ReconcileContext{
-		Client:   r.componentClient,
-		Scheme:   r.Scheme,
-		Recorder: r.Recorder,
-		Owner:    &database,
+		Client:        r.componentClient,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
+		APIReader:     r.APIReader,
+		Owner:         &database,
 	}
+	// Declared before the deferred flush, so the closure sees the component
+	// that the reconcile builds below and FlushStatus owns its condition.
+	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec); flushErr != nil {
+		if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
@@ -149,6 +153,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	comps = []*component.Component{comp}
 
 	reconcileErr := comp.Reconcile(ctx, rec)
 	conditions.Stage(&database, conditions.Aggregate(&database, comp))
@@ -365,13 +370,11 @@ func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 // indexes, and the watches that trigger a reconcile. The watches cover the
 // owned bindings, the referenced DatabaseServerConfig, its admin credentials
 // Secret (metadata-only), and sibling Databases that contest the same claim.
-// It also sets Recorder to the recorder of the manager and builds the uncached
-// client for the bindings component.
+// It also sets EventRecorder to the recorder of the manager and builds the
+// uncached client for the bindings component.
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Recorder == nil {
-		// The ReconcileContext of the component framework takes the legacy
-		// record.EventRecorder, so the deprecated accessor is required here.
-		r.Recorder = mgr.GetEventRecorderFor("database") //nolint:staticcheck
+	if r.EventRecorder == nil {
+		r.EventRecorder = mgr.GetEventRecorder("database")
 	}
 
 	if r.componentClient == nil {

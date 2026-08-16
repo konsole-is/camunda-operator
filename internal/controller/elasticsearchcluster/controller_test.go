@@ -292,7 +292,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			// any later reconcile sees Failing (health unreported past the
 			// first apply). envtest runs no ECK, so both are valid here.
 			SatisfyAny(Equal(string(component.AliveCreating)), Equal(string(component.AliveFailing))),
-			HavePrefix("ElasticsearchReady: "),
+			HavePrefix("elasticsearch: "),
 		)
 	})
 
@@ -317,7 +317,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		})
 		expectElasticsearchClusterReady(
 			cluster, metav1.ConditionFalse,
-			Equal(string(component.AliveFailing)), Equal("ElasticsearchReady: Elasticsearch reports red health"),
+			Equal(string(component.AliveFailing)), Equal("elasticsearch: Elasticsearch reports red health"),
 		)
 	})
 
@@ -395,7 +395,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		// Suspended is Ready=True: the cluster is in its desired state.
 		expectElasticsearchClusterReady(
 			cluster, metav1.ConditionTrue,
-			Equal(string(component.Suspended)), HavePrefix("ElasticsearchReady: "),
+			Equal(string(component.Suspended)), HavePrefix("elasticsearch: "),
 		)
 
 		Eventually(func(g Gomega) {

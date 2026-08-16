@@ -71,7 +71,13 @@ func (r *CamundaPlatformConfigReconciler) Reconcile(ctx context.Context, req ctr
 
 	conditions.Stage(&cfg, cond)
 
-	return ctrl.Result{}, component.FlushStatus(ctx, component.ReconcileContext{Client: r.Client, Owner: &cfg})
+	// The contract owns no components, so its Ready condition follows the
+	// server on a conflict and is staged again on the next reconcile.
+	return ctrl.Result{}, component.FlushStatus(
+		ctx,
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		nil,
+	)
 }
 
 // validate checks every Secret reference of the platform config: the OIDC

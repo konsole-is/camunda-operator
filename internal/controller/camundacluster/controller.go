@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -44,6 +44,10 @@ import (
 // spec.pause set. Nothing else happens on such a reconcile.
 const eventReasonPaused = "Paused"
 
+// eventActionReconcile is the action of the events that the controller records
+// about the reconcile of the cluster itself.
+const eventActionReconcile = "Reconcile"
+
 // CamundaClusterReconciler turns a CamundaCluster into the workloads of a
 // Camunda orchestration cluster: the broker StatefulSet, one Deployment per
 // standalone process, their Services, the admin Secret of a basic-auth
@@ -54,10 +58,10 @@ type CamundaClusterReconciler struct {
 	// so their data and every referenced CR are read live.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
-	// Recorder publishes the component lifecycle events and the events of
+	// EventRecorder publishes the component lifecycle events and the events of
 	// this controller. SetupWithManager sets it from the manager when it is
 	// nil.
-	Recorder record.EventRecorder
+	EventRecorder events.EventRecorder
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -96,8 +100,10 @@ type CamundaClusterReconciler struct {
 // ignored shrink; the claim template keeps its applied size, so the
 // StatefulSet is never recreated. Then the components are reconciled in
 // order: the admin Secret, the mirrored Secrets, then every process, each
-// gated on whether the cluster needs it. Ready mirrors the highest-priority
-// condition of the components the cluster needs.
+// gated on whether the cluster needs it. Ready is True only when every
+// component the cluster needs is True. Its reason and message come from the
+// governing component, which is the highest-priority component that is not
+// True, or the highest-priority of all of them when they all are.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -109,18 +115,29 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if cluster.Spec.Pause {
-		r.Recorder.Event(&cluster, corev1.EventTypeNormal, eventReasonPaused, "Reconcile paused by spec.pause")
+		r.EventRecorder.Eventf(
+			&cluster,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonPaused,
+			eventActionReconcile,
+			"Reconcile paused by spec.pause",
+		)
 		return ctrl.Result{}, nil
 	}
 
 	rec := component.ReconcileContext{
-		Client:   r.componentClient,
-		Scheme:   r.Scheme,
-		Recorder: r.Recorder,
-		Owner:    &cluster,
+		Client:        r.componentClient,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
+		APIReader:     r.APIReader,
+		Owner:         &cluster,
 	}
+	// Declared before the deferred flush, so the closure sees every component
+	// that the reconcile builds below and FlushStatus owns their conditions.
+	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec); flushErr != nil {
+		if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
@@ -148,13 +165,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	r.recordIgnoredShrink(&cluster, storage, in.Effective.StorageSize())
 
-	comps, err := r.buildComponents(ctx, &cluster, in, mirrors)
+	built, err := r.buildComponents(ctx, &cluster, in, mirrors)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	comps = built.all
 
-	reconcileErr := reconcileComponents(ctx, rec, comps.all)
-	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps.ready...))
+	reconcileErr := reconcileComponents(ctx, rec, built.all)
+	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()
 
 	return ctrl.Result{}, reconcileErr
@@ -174,7 +192,7 @@ type clusterComponents struct {
 // needed through its gate. Only the admin Secret of a basic-auth cluster, the
 // mirrored Secrets when a referenced Secret lives outside the cluster
 // namespace, and the enabled processes take part in Ready, so Ready never
-// mirrors Disabled. The admin password is read from the existing admin
+// reports Disabled. The admin password is read from the existing admin
 // Secret without the cache, so it stays stable after creation; to rotate it,
 // delete the Secret.
 func (r *CamundaClusterReconciler) buildComponents(

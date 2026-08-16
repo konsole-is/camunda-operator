@@ -8,7 +8,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
-	github.com/sourcehawk/operator-component-framework v0.18.1
+	github.com/sourcehawk/operator-component-framework v0.19.1
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
