@@ -7,7 +7,7 @@ description: Use when configuring or changing Camunda application config (env va
 
 ## Why this exists
 
-Camunda apps (Operate, Tasklist, Zeebe gateway, ...) are Spring Boot apps. They read config via Spring **relaxed binding**, and the operator emits that config as **environment variables**. A wrong key is not an error: Spring silently ignores an env var it does not recognize, the operator reports success, and the feature does nothing. **You cannot tell a correct key from a typo by looking at the operator alone.** Every config key and value semantics MUST be cross-checked against an upstream source of truth, never guessed from the relaxed-binding pattern. Refs camunda-operator #5531, #5477.
+Camunda apps (Operate, Tasklist, Zeebe gateway, ...) are Spring Boot apps. They read config via Spring **relaxed binding**, and the operator emits that config as **environment variables**. A wrong key is not an error: Spring silently ignores an env var it does not recognize, the operator reports success, and the feature does nothing. **You cannot tell a correct key from a typo by looking at the operator alone.** Every config key and value semantics MUST be cross-checked against an upstream source of truth, never guessed from the relaxed-binding pattern..
 
 ## Headline: no source reachable = STOP, do not guess
 
