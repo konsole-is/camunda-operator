@@ -92,11 +92,11 @@ type CamundaClusterReconciler struct {
 // event and returns before anything is read or written, status included.
 // Otherwise the pre-checks resolve every reference into the render input; a
 // failed pre-check reports its Ready reason and stops. The broker storage
-// lifecycle then clamps and grows the volumes and, when the claim template
-// changed, deletes the StatefulSet and stops until it is gone. Otherwise the
-// components are reconciled in order: the admin Secret, the mirrored Secrets,
-// then every process. Ready mirrors the highest-priority component
-// condition.
+// lifecycle then grows the bound broker claims in place and records an
+// ignored shrink; the claim template keeps its applied size, so the
+// StatefulSet is never recreated. Then the components are reconciled in
+// order: the admin Secret, the mirrored Secrets, then every process. Ready
+// mirrors the highest-priority component condition.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -136,23 +136,16 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	in.ServiceMonitorSupported = r.serviceMonitorSupported()
 
-	claims, err := r.keepAppliedStorageSize(ctx, &cluster, &in)
+	storage, err := r.readBrokerStorage(ctx, &cluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	in.VolumeClaimSize = storage.volumeClaimSize()
 
-	if err := r.growBrokerClaims(ctx, claims, in.Effective.StorageSize()); err != nil {
+	if err := r.growBrokerClaims(ctx, storage, in.Effective.StorageSize()); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	// The delete event of the owned StatefulSet triggers the next reconcile.
-	err = r.recreateStatefulSetOnClaimChange(ctx, &cluster, in)
-	if errors.Is(err, errStatefulSetTerminating) {
-		return ctrl.Result{}, nil
-	}
-	if err != nil {
-		return ctrl.Result{}, err
-	}
+	r.recordIgnoredShrink(&cluster, storage, in.Effective.StorageSize())
 
 	comps, err := r.buildComponents(ctx, &cluster, in, mirrors)
 	if err != nil {
@@ -161,7 +154,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	reconcileErr := reconcileComponents(ctx, rec, comps)
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps...))
-	cluster.Status.Volumes = volumeStatus(claims)
+	cluster.Status.Volumes = storage.volumes()
 
 	return ctrl.Result{}, reconcileErr
 }

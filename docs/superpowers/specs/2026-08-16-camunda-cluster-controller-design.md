@@ -287,16 +287,18 @@ broker PVCs stay). `spec.pause`: reconcile returns before the pre-checks and rec
 
 ### Zeebe storage and StatefulSet lifecycle
 
-- `spec.zeebe.storageSize` grows in place: the operator patches the broker
+- `spec.zeebe.storageSize` grows in place: the operator patches the bound broker
   PersistentVolumeClaims (`camunda.io/cluster` + `camunda.io/component=zeebe` selector) to the
-  new size; the storage class must allow expansion, and a rejected patch is returned as a reconcile
-  error (retried with backoff). Shrink: CEL rejects an inline decrease; a decrease
-  through the preset is clamped to the largest bound claim with a `StorageShrinkIgnored`
-  Warning event (Batch B rule). `status.volumes` lists every bound broker claim with its capacity.
-- The volume claim template of the StatefulSet is immutable. When the rendered template
-  differs from the applied one (size growth for future replicas), the operator deletes the
-  StatefulSet with `orphan` propagation and re-applies it; pods and claims stay and the new
-  StatefulSet adopts them (event `StatefulSetRecreated`).
+  new size, and the claim of a new replica once it binds (the claim watch fires); the storage
+  class must allow expansion, and a rejected patch is returned as a reconcile error (retried with
+  backoff). `status.volumes` lists every bound broker claim with its capacity.
+- The volume claim template of the StatefulSet is immutable and the operator never recreates
+  the StatefulSet: the renderer keeps the applied template size (`Input.VolumeClaimSize`, read
+  from the applied StatefulSet) and writes the effective size into the annotation
+  `camunda.io/requested-storage-size`.
+- Shrink: CEL rejects an inline decrease; the claims are never reduced. A decrease through the
+  preset below the largest bound claim records a `StorageShrinkIgnored` Warning event once per
+  requested size (the event fires until the annotation carries the requested size).
 - `spec.zeebe.storageClassName` and a `partitions` decrease are rejected by CEL.
 - `podManagementPolicy: Parallel` and `updateStrategy: RollingUpdate` (the shape the Camunda
   Helm chart and the upstream operator use); the StatefulSet's own
@@ -342,8 +344,8 @@ PersistentVolumeClaim events the cluster that labels them.
   ServiceMonitor): wiring and owner refs, labels, per-process conditions and `Ready` mirroring
   (workload status stamped by the specs), each pre-check reason with the reference named,
   watch-driven rollout (config hash changes on platform config, preset, binding, Secret
-  edits), suspend and resume, pause writes nothing, storage growth patches PVCs and recreates
-  the StatefulSet with orphaned pods, CEL rejections, schema specs for both kinds.
+  edits), suspend and resume, pause writes nothing, storage growth patches PVCs and keeps the
+  StatefulSet, an ignored shrink fires once, CEL rejections, schema specs for both kinds.
 - **e2e (kind, extends the Batch B suite):** an 8.9 default-topology cluster (1 broker,
   1 gateway, connectors) with basic auth on the Batch B `ElasticsearchCluster`: `Ready: Healthy`;
   `GET /v2/topology` on the gateway (REST port 8080, `TopologyController.java`) reports the
@@ -366,7 +368,6 @@ PersistentVolumeClaim events the cluster that labels them.
   8.9 default topology serves all three web applications behind auth.
 - **Connectors env names** are verified with the docs MCP, not the monorepo (the runtime is a
   separate repository); the e2e "connectors ready" check is the proof.
-- **StatefulSet recreate-with-orphan** is the delicate mechanic; envtest covers it, e2e once.
 - **e2e resources** on the runner (ES + Camunda + Postgres); fallback is a split job.
 
 ## Doc deviations (applied in this batch)

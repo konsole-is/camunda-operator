@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  annotations:
+    camunda.io/requested-storage-size: 10Gi
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: my-cluster

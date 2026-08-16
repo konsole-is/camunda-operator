@@ -212,12 +212,17 @@ func serviceAccountFor(in Input) *corev1.ServiceAccount {
 }
 
 // zeebeStatefulSet renders the broker StatefulSet: parallel pod management,
-// a rolling update, the data volume claim template, and the retention policy
-// of spec.zeebe.persistentVolumeClaimRetentionPolicy for deletion (a
-// scale-down always retains).
+// a rolling update, the data volume claim template with in.VolumeClaimSize
+// (the effective size when unset), the requested storage size annotation,
+// and the retention policy of spec.zeebe.persistentVolumeClaimRetentionPolicy
+// for deletion (a scale-down always retains).
 func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 	e := in.Effective
 	storageSize := e.StorageSize()
+	claimSize := storageSize
+	if in.VolumeClaimSize != nil {
+		claimSize = *in.VolumeClaimSize
+	}
 
 	var storageClassName *string
 	if e.Zeebe != nil {
@@ -232,9 +237,10 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      WorkloadName(in.Cluster, p.Component),
-			Namespace: in.Cluster.Namespace,
-			Labels:    managedLabels(in.Cluster, p.Component),
+			Name:        WorkloadName(in.Cluster, p.Component),
+			Namespace:   in.Cluster.Namespace,
+			Labels:      managedLabels(in.Cluster, p.Component),
+			Annotations: map[string]string{RequestedStorageSizeAnnotation: storageSize.String()},
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:            new(p.Replicas),
@@ -258,7 +264,7 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 					StorageClassName: storageClassName,
 					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{corev1.ResourceStorage: storageSize},
+						Requests: corev1.ResourceList{corev1.ResourceStorage: claimSize},
 					},
 				},
 			}},
