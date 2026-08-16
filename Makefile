@@ -334,9 +334,11 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		"--set rbacHelpers.enable=true --set prometheus.enable=true --set certManager.enable=true" \
 	; do \
 		label="$${opts:-<defaults>}"; \
-		rendered="$$( $(HELM) template verify "$(HELM_CHART_DIR)" $$opts )"; \
-		bytes="$$( printf '%s' "$$rendered" | wc -c )"; \
-		gz="$$( printf '%s' "$$rendered" | gzip -9 | wc -c )"; \
+		tmp="$$(mktemp)"; \
+		$(HELM) template verify "$(HELM_CHART_DIR)" $$opts > "$$tmp"; \
+		bytes="$$(wc -c < "$$tmp")"; \
+		gz="$$(gzip -9 -c "$$tmp" | wc -c)"; \
+		rm -f "$$tmp"; \
 		printf '  %9s bytes (%7s gzipped)  helm template %s\n' "$$bytes" "$$gz" "$$label"; \
 		if [ "$$gz" -gt "$$max" ]; then max=$$gz; worst="$$label"; fi; \
 	done; \
