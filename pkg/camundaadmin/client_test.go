@@ -86,6 +86,9 @@ func TestExportingPauseAndResume(t *testing.T) {
 	assert.Equal(t, "running", server.Exporting())
 }
 
+// The exporting endpoints always answer HTTP 200. The outcome is the status
+// field of the body: 204 succeeded, 500 failed. A client that reads the HTTP
+// status alone reports every call as a success.
 func TestExportingErrorsAreRejected(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
@@ -94,6 +97,23 @@ func TestExportingErrorsAreRejected(t *testing.T) {
 	err := client.ResumeExporting(ctx)
 	require.ErrorIs(t, err, camundaadmin.ErrRejected)
 	assert.Contains(t, err.Error(), "injected resume failure")
+}
+
+// A pause that fails may still have paused some partitions, so the caller
+// must see the failure and resume. The cluster reports it as HTTP 200 with an
+// envelope status of 500.
+func TestExportingPartialPauseIsAFailure(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	server.FailNext("pause", 1)
+	err := client.PauseExporting(ctx, true)
+
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.Contains(t, err.Error(), "injected pause failure")
+	// The cluster kept exporting. A caller that read the failure as success
+	// would take a backup that log compaction can invalidate.
+	assert.Equal(t, "running", server.Exporting())
 }
 
 func TestUnreachableEndpoint(t *testing.T) {

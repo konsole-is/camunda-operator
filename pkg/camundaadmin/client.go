@@ -146,21 +146,58 @@ func New(binding Binding) (*Client, error) {
 // PauseExporting pauses exporting on every partition. With soft, records
 // keep exporting but log compaction stops, which makes a hot backup
 // possible. Pausing an already paused cluster is success.
+//
+// A failure can be partial: some partitions may have paused. The caller must
+// read the error as "exporting is in an unknown state" and resume, which is
+// what a backup does before it writes a terminal phase.
 func (c *Client) PauseExporting(ctx context.Context, soft bool) error {
 	path := "/actuator/exporting/pause"
 	if soft {
 		path += "?soft=true"
 	}
 
-	_, _, err := c.do(ctx, http.MethodPost, path, nil, http.StatusNoContent)
-	return err
+	return c.exporting(ctx, path)
 }
 
 // ResumeExporting resumes exporting on every partition. Resuming a cluster
-// that already exports is success.
+// that already exports is success. A failure can be partial here too, and the
+// caller retries until it succeeds: a cluster left paused cannot compact its
+// log and eventually fills its disks.
 func (c *Client) ResumeExporting(ctx context.Context) error {
-	_, _, err := c.do(ctx, http.MethodPost, "/actuator/exporting/resume", nil, http.StatusNoContent)
-	return err
+	return c.exporting(ctx, "/actuator/exporting/resume")
+}
+
+// exporting posts to an exporting endpoint and reads the outcome from the
+// body. These endpoints always answer HTTP 200 and carry the real status in
+// an envelope: 204 succeeded, and 500 failed with the reason under
+// body.message. Reading the HTTP status alone would report every call, and
+// every partial pause, as a success.
+func (c *Client) exporting(ctx context.Context, path string) error {
+	payload, _, err := c.do(ctx, http.MethodPost, path, nil, http.StatusOK)
+	if err != nil {
+		return err
+	}
+
+	var envelope struct {
+		Status int `json:"status"`
+		Body   struct {
+			Message string `json:"message"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return fmt.Errorf("decoding exporting response of %s: %w", path, err)
+	}
+
+	if envelope.Status == http.StatusNoContent {
+		return nil
+	}
+
+	message := envelope.Body.Message
+	if message == "" {
+		message = strings.TrimSpace(string(payload))
+	}
+
+	return fmt.Errorf("%w: POST %s reported status %d: %s", ErrRejected, path, envelope.Status, message)
 }
 
 // StartHistoryBackup starts the backup of the web-application indices under
@@ -172,13 +209,16 @@ func (c *Client) StartHistoryBackup(ctx context.Context, id int64) error {
 		return fmt.Errorf("encoding request: %w", err)
 	}
 
-	_, status, err := c.do(ctx, http.MethodPost, "/actuator/backupHistory", body, http.StatusAccepted)
+	// The endpoint answers 200 and creates the snapshots asynchronously; the
+	// caller polls HistoryBackupStatus for the outcome.
+	_, status, err := c.do(ctx, http.MethodPost, "/actuator/backupHistory", body, http.StatusOK)
 	if err == nil {
 		return nil
 	}
 
-	// The endpoint rejects a repeated id. Re-entry is not a failure: when
-	// the backup exists, the start already happened.
+	// The endpoint answers 400 when the id already exists. Re-entry is not a
+	// failure: when the backup exists, the start already happened. 409 is
+	// tolerated because it is the conventional code for the same condition.
 	if status == http.StatusBadRequest || status == http.StatusConflict {
 		if existing, statusErr := c.HistoryBackupStatus(
 			ctx,

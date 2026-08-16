@@ -180,7 +180,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && path == "/exporting/pause":
 		if s.failing("pause") {
-			errorBody(w, http.StatusInternalServerError, "injected pause failure")
+			exportingEnvelope(w, http.StatusInternalServerError, "injected pause failure")
 			return
 		}
 		s.pauseCalls++
@@ -189,16 +189,16 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		} else {
 			s.exporting = "paused"
 		}
-		w.WriteHeader(http.StatusNoContent)
+		exportingEnvelope(w, http.StatusNoContent, "")
 
 	case r.Method == http.MethodPost && path == "/exporting/resume":
 		if s.failing("resume") {
-			errorBody(w, http.StatusInternalServerError, "injected resume failure")
+			exportingEnvelope(w, http.StatusInternalServerError, "injected resume failure")
 			return
 		}
 		s.resumeCalls++
 		s.exporting = "running"
-		w.WriteHeader(http.StatusNoContent)
+		exportingEnvelope(w, http.StatusNoContent, "")
 
 	case r.Method == http.MethodPost && path == "/backupHistory":
 		if s.failing("historyStart") {
@@ -212,7 +212,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		s.history[id] = &Backup{ID: id, State: "IN_PROGRESS"}
 		s.historyStarts[id]++
-		writeJSON(w, http.StatusAccepted, map[string]any{"scheduledSnapshots": []string{
+		writeJSON(w, http.StatusOK, map[string]any{"scheduledSnapshots": []string{
 			"camunda_webapps_" + strconv.FormatInt(id, 10) + "_8.9_part_1_of_1",
 		}})
 
@@ -322,4 +322,16 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func errorBody(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"message": message})
+}
+
+// exportingEnvelope answers an exporting call the way Camunda 8.9 does: the
+// HTTP status is always 200, and the outcome is the status field of the body.
+// A message produces the failure shape, which nests it under body.
+func exportingEnvelope(w http.ResponseWriter, status int, message string) {
+	envelope := map[string]any{"status": status, "contentType": nil, "body": nil}
+	if message != "" {
+		envelope["body"] = map[string]string{"message": message}
+	}
+
+	writeJSON(w, http.StatusOK, envelope)
 }
