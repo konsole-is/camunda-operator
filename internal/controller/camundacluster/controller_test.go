@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -236,6 +237,42 @@ func expectEvent(cluster *v1.CamundaCluster, reason, eventType string) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// configHash polls until the zeebe StatefulSet of cluster carries a config
+// hash that differs from previous, and returns it.
+func configHash(cluster *v1.CamundaCluster, previous string) string {
+	GinkgoHelper()
+	var hash string
+	Eventually(func(g Gomega) {
+		var sts appsv1.StatefulSet
+		g.Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}, &sts,
+		)).To(Succeed())
+		hash = sts.Spec.Template.Annotations[components.ConfigHashAnnotation]
+		g.Expect(hash).NotTo(BeEmpty())
+		g.Expect(hash).NotTo(Equal(previous))
+	}, timeout, interval).Should(Succeed())
+	return hash
+}
+
+// zeebeContainer returns the camunda container of the zeebe StatefulSet.
+func zeebeContainer(cluster *v1.CamundaCluster) corev1.Container {
+	GinkgoHelper()
+	return fetchStatefulSet(
+		client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"},
+	).Spec.Template.Spec.Containers[0]
+}
+
+// secretKeyRef returns the Secret reference of the named variable of
+// container, or nil.
+func secretKeyRef(container corev1.Container, name string) *corev1.SecretKeySelector {
+	for _, e := range container.Env {
+		if e.Name == name && e.ValueFrom != nil {
+			return e.ValueFrom.SecretKeyRef
+		}
+	}
+	return nil
+}
+
 // envValue returns the plain value of the named variable of container.
 func envValue(container corev1.Container, name string) string {
 	for _, e := range container.Env {
@@ -373,7 +410,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		)
 	})
 
-	It("reports MissingSecret for a missing storage credentials Secret", func() {
+	It("reports MissingSecret for a missing storage credentials Secret and recovers when it appears", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, false)
 		cluster := newCluster(ns, createPlatformConfig(), binding)
@@ -384,6 +421,12 @@ var _ = Describe("CamundaCluster controller", func() {
 			Equal(v1.ReasonMissingSecret),
 			ContainSubstring(binding.Spec.Elasticsearch.CredentialsSecretRef.Name),
 		)
+
+		createSecret(ns, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+			"username": "camunda", "password": "es-password",
+		})
+		fetchStatefulSet(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"})
+		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonMissingSecret)), Not(BeEmpty()))
 	})
 
 	It("keeps the admin password stable across reconciles and regenerates it when the Secret is deleted", func() {
@@ -463,5 +506,106 @@ var _ = Describe("CamundaCluster controller", func() {
 		stampStatefulSetReady(zeebeKey)
 		stampDeploymentReady(gatewayKey)
 		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+	})
+
+	It("rolls the workloads when the platform config, the preset, the binding, or a referenced Secret changes", func() {
+		ns := newNamespace()
+		cfg := createPlatformConfig()
+		binding := createBinding(ns, true)
+		preset := minimalPreset()
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+		cluster := newCluster(ns, cfg, binding)
+		cluster.Spec.PresetRef = preset.Name
+		createCluster(cluster)
+		hash := configHash(cluster, "")
+
+		By("editing the platform config")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaPlatformConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cfg), &latest)).To(Succeed())
+			latest.Spec.ImageRegistry = "registry.example.com"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		hash = configHash(cluster, hash)
+		Expect(zeebeContainer(cluster).Image).To(Equal("registry.example.com/camunda/camunda:8.9.9"))
+
+		By("editing the preset")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.Zeebe.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")},
+			}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		hash = configHash(cluster, hash)
+		Expect(zeebeContainer(cluster).Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("2Gi")))
+
+		By("editing the binding")
+		Eventually(func(g Gomega) {
+			var latest v1.SecondaryStorageConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
+			latest.Spec.Elasticsearch.Endpoint = "https://other-es." + ns + ".svc:9200"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		hash = configHash(cluster, hash)
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_URL")).
+			To(Equal("https://other-es." + ns + ".svc:9200"))
+
+		By("editing the credentials Secret of the binding")
+		Eventually(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(
+				ctx,
+				client.ObjectKey{Namespace: ns, Name: binding.Spec.Elasticsearch.CredentialsSecretRef.Name},
+				&latest,
+			)).To(Succeed())
+			latest.StringData = map[string]string{"password": "rotated"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		configHash(cluster, hash)
+	})
+
+	It("mirrors a referenced Secret from another namespace and follows its changes", func() {
+		ns := newNamespace()
+		sourceNamespace := newNamespace()
+		source := createSecret(sourceNamespace, "license", map[string]string{"key": "license-v1", "other": "x"})
+		cfg := createPlatformConfig()
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaPlatformConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cfg), &latest)).To(Succeed())
+			latest.Spec.LicenseSecretRef = &v1.SecretKeyRef{Name: source.Name, Namespace: sourceNamespace, Key: "key"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		cluster := newCluster(ns, cfg, createBinding(ns, true))
+		createCluster(cluster)
+
+		mirrorKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda-license"}
+		var mirror corev1.Secret
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, mirrorKey, &mirror)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectControlledBy(&mirror, cluster)
+		Expect(mirror.Data).To(Equal(map[string][]byte{"key": []byte("license-v1")}))
+		expectCondition(cluster, v1.ConditionMirroredSecretsReady, Not(BeEmpty()))
+
+		ref := secretKeyRef(zeebeContainer(cluster), "CAMUNDA_LICENSE_KEY")
+		Expect(ref).NotTo(BeNil())
+		Expect(ref.Name).To(Equal(mirrorKey.Name))
+		Expect(ref.Key).To(Equal("key"))
+		hash := configHash(cluster, "")
+
+		Eventually(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(source), &latest)).To(Succeed())
+			latest.StringData = map[string]string{"key": "license-v2"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		configHash(cluster, hash)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, mirrorKey, &mirror)).To(Succeed())
+			g.Expect(mirror.Data["key"]).To(Equal([]byte("license-v2")))
+		}, timeout, interval).Should(Succeed())
 	})
 })
