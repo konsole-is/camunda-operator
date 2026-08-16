@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: e2e-wave
+status: review
 ---
 
 # Storage backend controllers (Batch B) — orchestration state
@@ -30,7 +30,7 @@ status: e2e-wave
 | #36 | batch-b/foundations (deleted) | (removed) | #41 → feat/storage-backend-controllers | self-merged |
 | #37 | batch-b/elasticsearchcluster (deleted) | (removed) | #43 → feat/storage-backend-controllers | merged (user, f29bc78, 2026-08-15) |
 | #38 | batch-b/database (deleted) | (removed) | #42 → feat/storage-backend-controllers | merged (user, b9fb40b, 2026-08-15) |
-| #39 | batch-b/e2e | .claude/worktrees/storage-backend-controllers--e2e | — | in-progress (dispatched 2026-08-16) |
+| #39 | batch-b/e2e (deleted) | (removed) | #44 → feat/storage-backend-controllers | self-merged (0aadd0e, 2026-08-16) |
 
 ## Contracts
 
@@ -70,10 +70,9 @@ status: e2e-wave
 
 ## Pending snapshot
 
-1. ~~Consumer wave~~ done: #42 and #43 merged by the user on 2026-08-15 after three Copilot rounds each and an interactive review session (see the 2026-08-15/16 bubble-ups). Sub-branches and worktrees removed 2026-08-16.
-2. ~~Wave checkpoint~~ done 2026-08-16 (`bba7140`, bubble-up 2026-08-16): coherence fixes applied, secret oracle accepted and documented, #34/#37/#39 bodies reconciled, suite green.
-3. **Next:** Phase 4: #39 (Task 16, e2e) on `batch-b/e2e` — create the worktree from the main repo root with an absolute path (`git worktree add <abs>/.claude/worktrees/storage-backend-controllers--e2e -b batch-b/e2e feat/storage-backend-controllers`), dispatch per `feature-dev-workflow:fanning-out-with-worktrees` with the e2e-relevant bubble-ups listed in the 2026-08-16 entry, review loop on, self-merge to the feature branch.
-4. Phase 5: integration checkpoint (Task 17), integration PR to `main` (`Closes #34`) left ready for the user — never self-merged; after merge, delete the plan and this state file in the orchestrator's final commit.
+1. ~~Consumer wave~~ done (#42, #43 merged 2026-08-15). ~~Wave checkpoint~~ done 2026-08-16 (`bba7140`). ~~Phase 4 e2e~~ done: #44 merged `0aadd0e` 2026-08-16 after two Copilot rounds (two `new(expr)` comments pushed back, ECK detection + server-side apply + pinned curl applied); #39 closed; worktree and branch removed.
+2. Task 17 Step 1 done on the feature branch: README/installation prerequisites (ECK external, Docker for `make test`), docs drift fixes from the read-only audit (12 items across the ES, preset, Database, SSC docs).
+3. **Next:** Task 17 Step 2 — `make all` + full suite on the feature worktree, then open the integration PR `feat/storage-backend-controllers` → `main` with `Closes #34` (`feature-dev-workflow:opening-a-pull-request`), run the Copilot loop on it, and leave it ready for the user. The user merges. In the last commit before hand-back, remove the plan and this state file (user: "I'd throw it away anyway on the final pr"); the spec stays.
 
 Notes for resumers: user directives for this feature — proceed autonomously, review loop on for all sub-PRs, sub-PR self-merge autonomous, integration PR to main is user-merged. ocf skills (`ocf:building-components`, `ocf:custom-resource-wrappers`, `ocf:using-primitives`, `ocf:testing-operators`) and `how-we-write-go` are expected reading for implementers; `go doc` is ground truth over plan snippets. ECK CRDs for envtest come from the module cache, never vendored. The permission sandbox misfires on `cd <worktree> && git ...` compounds — use `git -C <path>`.
 
