@@ -27,7 +27,7 @@ const (
 	ComponentGateway    = "gateway"
 	ComponentOperate    = "operate"
 	ComponentTasklist   = "tasklist"
-	ComponentIdentity   = "identity"
+	ComponentAdmin      = "admin"
 	ComponentConnectors = "connectors"
 )
 

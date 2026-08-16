@@ -511,8 +511,8 @@ func (in *CamundaClusterSpec) DeepCopyInto(out *CamundaClusterSpec) {
 		*out = new(WebAppSpec)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.Identity != nil {
-		in, out := &in.Identity, &out.Identity
+	if in.Admin != nil {
+		in, out := &in.Admin, &out.Admin
 		*out = new(WebAppSpec)
 		(*in).DeepCopyInto(*out)
 	}

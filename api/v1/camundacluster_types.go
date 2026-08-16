@@ -37,9 +37,9 @@ const (
 	// ConditionTasklistReady reports whether every standalone Tasklist replica
 	// is ready.
 	ConditionTasklistReady = "TasklistReady"
-	// ConditionIdentityReady reports whether every standalone Identity replica
+	// ConditionAdminReady reports whether every standalone Admin replica
 	// is ready.
-	ConditionIdentityReady = "IdentityReady"
+	ConditionAdminReady = "AdminReady"
 	// ConditionConnectorsReady reports whether every connectors replica is
 	// ready. It is present only when connectors are enabled.
 	ConditionConnectorsReady = "ConnectorsReady"
@@ -150,7 +150,7 @@ type GatewaySpec struct {
 }
 
 // WebAppSpec configures one of the web applications Operate, Tasklist, and
-// Identity.
+// Admin.
 type WebAppSpec struct {
 	// Mode selects a Deployment of the unified binary that serves only this
 	// application (Standalone) or the nearest standalone host up the chain
@@ -258,10 +258,10 @@ type CamundaClusterSpec struct {
 	// Tasklist configures the Tasklist web application.
 	// +optional
 	Tasklist *WebAppSpec `json:"tasklist,omitempty"`
-	// Identity configures the Identity (Orchestration Cluster Admin) web
-	// application.
+	// Admin configures the Admin web application (Orchestration Cluster
+	// Identity before Camunda 8.9). Its Spring profile is admin.
 	// +optional
-	Identity *WebAppSpec `json:"identity,omitempty"`
+	Admin *WebAppSpec `json:"admin,omitempty"`
 	// Connectors configures the connectors runtime.
 	// +optional
 	Connectors *ConnectorsSpec `json:"connectors,omitempty"`
@@ -324,7 +324,7 @@ type CamundaClusterStatus struct {
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason or mirrors the representative process condition. The
 	// per-process conditions (ZeebeReady, GatewayReady, OperateReady,
-	// TasklistReady, IdentityReady, ConnectorsReady) also appear here.
+	// TasklistReady, AdminReady, ConnectorsReady) also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

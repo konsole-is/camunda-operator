@@ -137,7 +137,7 @@ const (
 	ProfileOperate = "operate" // Profile.java:22, WebappsConfigurationInitializer.java:39
 	// ProfileTasklist serves the Tasklist web application.
 	ProfileTasklist = "tasklist" // Profile.java:23, WebappsConfigurationInitializer.java:39
-	// ProfileAdmin serves the Identity web application. "identity" is the
+	// ProfileAdmin serves the Admin web application. "identity" is the
 	// legacy name of the same profile.
 	ProfileAdmin = "admin" // Profile.java:24-25, WebappsConfigurationInitializer.java:39,112
 	// ProfileConsolidatedAuth activates the security filter chain of every

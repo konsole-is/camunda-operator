@@ -134,11 +134,11 @@ func TestBuildOrderAndConditions(t *testing.T) {
 		names = append(names, comp.GetName())
 		conditions = append(conditions, comp.GetCondition(in.Cluster).ConditionType())
 	}
-	assert.Equal(t, []string{"zeebe", "gateway", "operate", "tasklist", "identity", "connectors"}, names)
+	assert.Equal(t, []string{"zeebe", "gateway", "operate", "tasklist", "admin", "connectors"}, names)
 	assert.Equal(
 		t, []component.ConditionType{
 			v1.ConditionZeebeReady, v1.ConditionGatewayReady, v1.ConditionOperateReady,
-			v1.ConditionTasklistReady, v1.ConditionIdentityReady, v1.ConditionConnectorsReady,
+			v1.ConditionTasklistReady, v1.ConditionAdminReady, v1.ConditionConnectorsReady,
 		}, conditions,
 	)
 }

@@ -72,11 +72,11 @@ type webApp struct {
 var webApps = []webApp{
 	{ComponentOperate, camundaconfig.ProfileOperate, v1.ConditionOperateReady, Effective.OperateMode},
 	{ComponentTasklist, camundaconfig.ProfileTasklist, v1.ConditionTasklistReady, Effective.TasklistMode},
-	{ComponentIdentity, camundaconfig.ProfileAdmin, v1.ConditionIdentityReady, Effective.IdentityMode},
+	{ComponentAdmin, camundaconfig.ProfileAdmin, v1.ConditionAdminReady, Effective.AdminMode},
 }
 
 // Resolve maps the effective spec to its processes in a stable order: zeebe,
-// gateway, operate, tasklist, identity, connectors. An embedded web
+// gateway, operate, tasklist, admin, connectors. An embedded web
 // application rides on the gateway when the gateway is standalone, otherwise
 // on zeebe; the host carries the application's profile.
 func Resolve(e Effective) []Process {

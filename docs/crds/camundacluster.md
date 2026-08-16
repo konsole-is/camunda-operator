@@ -13,12 +13,12 @@ Features such as backups, Optimize, and PVC auto-resizing attach to the cluster 
 
 ### Component topology
 
-Camunda 8.9 ships the orchestration cluster as a single unified binary: Zeebe, the gateway, and the Operate, Tasklist, and Identity web applications are one Spring Boot artifact, and which parts run in a given process is activated by configuration, not by different images.
+Camunda 8.9 ships the orchestration cluster as a single unified binary: Zeebe, the gateway, and the Operate, Tasklist, and Admin web applications are one Spring Boot artifact, and which parts run in a given process is activated by configuration, not by different images.
 The topology is therefore a configuration choice on this CR:
 
 - `zeebe` is always required and always standalone: a StatefulSet of brokers with `replicas`, `partitions`, `replicationFactor`, and persistent volumes.
 - `gateway` runs `Standalone` (its own Deployment of the unified binary) or `Embedded` (the brokers enable their embedded gateway).
-- `operate`, `tasklist`, and `identity` each run `Standalone` or `Embedded`. Embedded applications run inside the nearest standalone application up the chain: inside the gateway if it is standalone, otherwise inside zeebe.
+- `operate`, `tasklist`, and `admin` each run `Standalone` or `Embedded`. Embedded applications run inside the nearest standalone application up the chain: inside the gateway if it is standalone, otherwise inside zeebe. Identity was renamed to Admin in Camunda 8.9; the profile is `admin`.
 - `connectors` is a separate runtime application, never part of the unified binary; when enabled it is always its own standalone Deployment that connects to the cluster's REST and gRPC APIs.
 
 !!! note "Profiles select the role of a process"
@@ -34,7 +34,7 @@ This supports every deployment model from all-in-one (everything embedded in zee
 1. The operator resolves `presetRef` (if set) and computes the effective spec under the merge rules documented in [CamundaClusterPreset](camundaclusterpreset.md).
 2. The operator resolves `platformConfigRef`, the required `storageRef`, and the optional `backupStorageRef` / `documentStorageRef`; a missing target sets `Ready` to `False` with reason `InvalidReference`.
 3. The operator renders the workloads for the effective topology: the zeebe StatefulSet, a Deployment per standalone component, Services, and the configuration wiring — all expressed as unified-configuration environment variables on the single Camunda image (Spring Boot relaxed binding, for example `SPRING_PROFILES_ACTIVE`, `ZEEBE_BROKER_GATEWAY_ENABLE`, `CAMUNDA_SECURITY_AUTHENTICATION_METHOD`, `CAMUNDA_DATA_SECONDARYSTORAGE_*`) — with auth from the platform config, secondary storage from the resolved `SecondaryStorageConfig`, and `externalUrl` as the base URL for OIDC redirects and web application links. The operator creates no Ingress resources; you (or a composition layer above) route traffic to `externalUrl`.
-4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources. The operator uses the component values `zeebe`, `gateway`, `operate`, `tasklist`, `identity`, and `connectors`.
+4. Every workload carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, which is how extension controllers discover the cluster's resources. The operator uses the component values `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
 5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `CamundaCluster/<process>` (for example `CamundaCluster/zeebe`), leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
 6. The operator watches workload health into per-component conditions and the aggregate `Ready` condition.
 7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md), the preset, the storage binding and its `DatabaseConfig` / `DatabaseServerConfig` chain, and every referenced Secret. A change to any of them changes the configuration hash on the pod templates (`camunda.io/config-hash`). The change rolls out to the cluster without a change to this CR.
@@ -57,7 +57,7 @@ graph LR
 
 ### Services and endpoints
 
-Every process gets a Service with the name of its workload: `<name>-zeebe` (headless), `<name>-gateway`, `<name>-operate`, `<name>-tasklist`, `<name>-identity`, and `<name>-connectors`.
+Every process gets a Service with the name of its workload: `<name>-zeebe` (headless), `<name>-gateway`, `<name>-operate`, `<name>-tasklist`, `<name>-admin`, and `<name>-connectors`.
 The gateway Service (the zeebe Service, when the gateway is `Embedded`) exposes the gRPC API on port `26500` and the HTTP API on port `8080`.
 The HTTP port serves the Orchestration Cluster REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`.
 A standalone web application gets a Service of its own that exposes port `8080`. Every unified process exposes the health and metrics endpoints on the management port `9600`. Connectors expose them on their HTTP port `8080`.
@@ -219,8 +219,8 @@ spec:
   tasklist:
     # string. Optional, default: Embedded. One of: Standalone | Embedded.
     mode: Embedded
-  # object. Optional. Identity (Orchestration Cluster Admin) web application; same fields and semantics as operate.
-  identity:
+  # object. Optional. Admin web application (Identity before Camunda 8.9); same fields and semantics as operate.
+  admin:
     # string. Optional, default: Embedded. One of: Standalone | Embedded.
     mode: Embedded
   # object. Optional. Connectors runtime; a separate application, standalone-only.
@@ -278,14 +278,14 @@ spec:
 ## Status
 
 Status uses conditions exclusively: one condition per standalone process, the internal Secret conditions, and the aggregate `Ready` — no health enums, no URL fields.
-Embedded applications do not get their own condition; they are covered by their host's condition (for example `GatewayReady` covers embedded operate/tasklist/identity).
+Embedded applications do not get their own condition; they are covered by their host's condition (for example `GatewayReady` covers embedded operate/tasklist/admin).
 `Ready` mirrors the highest-priority component condition: its status and reason are those of that component, and its message names the component. The reasons of the component conditions come from the component framework (`Healthy`, `Creating`, `Updating`, `Degraded`, `Down`, `Suspended`, and more).
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
 | `ZeebeReady` | `Healthy` | All broker replicas are ready. |
 | `GatewayReady` | `Healthy` | All gateway replicas are ready (only present when the gateway is standalone). |
-| `OperateReady` / `TasklistReady` / `IdentityReady` | `Healthy` | The standalone web application's replicas are ready (only present for standalone modes). |
+| `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` | The standalone web application's replicas are ready (only present for standalone modes). |
 | `ConnectorsReady` | `Healthy` | All connectors replicas are ready (only present when connectors are enabled). |
 | `AdminSecretReady` | `Healthy` | The admin Secret `<name>-camunda-admin` is applied (only present under basic authentication). |
 | `MirroredSecretsReady` | `Healthy` | Every copy of a referenced Secret from another namespace is applied (only present when such a Secret is referenced). |

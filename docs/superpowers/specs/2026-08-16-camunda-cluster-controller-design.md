@@ -71,7 +71,7 @@ MCP), because the runtime lives outside the monorepo.
   with schema and CEL validation; the `CamundaPlatformConfig` validation controller
   (`Ready: Healthy | MissingSecret`) in `internal/controller/camundaplatformconfig/`.
 - A `CamundaCluster` controller that renders and converges the full documented topology
-  surface: Zeebe StatefulSet, gateway `Standalone | Embedded`, operate/tasklist/identity
+  surface: Zeebe StatefulSet, gateway `Standalone | Embedded`, operate/tasklist/admin
   `Standalone | Embedded`, connectors, Services, optional ServiceMonitors.
 - Configuration through unified-configuration environment variables on the single
   `camunda/camunda` image (Spring relaxed binding), layered from cluster identity, secondary
@@ -129,7 +129,7 @@ The controller follows the Batch B layout:
   existing `pkg/wrappers/servicemonitor` behind `IncludeWhen` (CRD served) and `GatedBy`
   (`monitoring.serviceMonitor.enabled`). Labels come from `pkg/labels`: `camunda.io/cluster`
   (the owner key reserved for this kind), `camunda.io/component`, `app.kubernetes.io/managed-by`.
-  Component values: `zeebe`, `gateway`, `operate`, `tasklist`, `identity`, `connectors`.
+  Component values: `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`.
 - Managed resources are applied with SSA under ocf's field manager `CamundaCluster/<process>`.
 
 ### Topology model
@@ -149,7 +149,7 @@ their profiles (`WebappsConfigurationInitializer.java:38-39`); the operator does
 | a web app `Standalone` | plus a process named after the app: `gateway,<app>,consolidated-auth`; the host process (gateway, or zeebe when the gateway is embedded) drops that app's profile |
 | `connectors.enabled` | plus `connectors`: the connectors runtime pointed at the cluster's gRPC and REST Services |
 
-The Identity application uses the `admin` profile (`Profile.java:24-25`: `identity` is the
+The Admin application (Identity before 8.9) uses the `admin` profile (`Profile.java:24-25`: `identity` is the
 legacy name; `WebappsConfigurationInitializer.java:112-118` serves the UI for either).
 `consolidated-auth` is on every process: it gates the only `SecurityFilterChain`
 (`WebSecurityConfig.java:148`), Spring's default security is excluded
@@ -270,7 +270,7 @@ Probes on the management port 9600 (`application.properties`,
 `/actuator/health/readiness` and liveness `/actuator/health/liveness` on port 8080 (Helm chart
 `templates/connectors/deployment.yaml:108-119`). ocf's workload primitives turn pod
 readiness into the component condition: `ZeebeReady`, `GatewayReady`, `OperateReady`,
-`TasklistReady`, `IdentityReady` (only for standalone processes), `ConnectorsReady`.
+`TasklistReady`, `AdminReady` (only for standalone processes), `ConnectorsReady`.
 `Ready` is `conditions.Aggregate` over every process component; connectors is part of it (a
 user-enabled workload, unlike the ES metrics exporter). Pre-check failures use
 `InvalidReference` (preset, platform config, storageRef binding and its DatabaseConfig and
@@ -347,7 +347,7 @@ PersistentVolumeClaim events the cluster that labels them.
 - **e2e (kind, extends the Batch B suite):** an 8.9 default-topology cluster (1 broker,
   1 gateway, connectors) with basic auth on the Batch B `ElasticsearchCluster`: `Ready: Healthy`;
   `GET /v2/topology` on the gateway (REST port 8080, `TopologyController.java`) reports the
-  broker and partitions; Operate, Tasklist, and Identity answer on the gateway; a process is
+  broker and partitions; Operate, Tasklist, and Admin answer on the gateway; a process is
   deployed and an instance started through the REST API with the admin credentials and shows
   up in Operate's API (export to secondary storage works); connectors ready; suspend to zero and
   resume with the deployed process still present; deletion garbage-collects the workloads and

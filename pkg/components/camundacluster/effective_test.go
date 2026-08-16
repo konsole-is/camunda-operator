@@ -37,10 +37,10 @@ func TestEffectiveDefaultsWhenNothingIsSet(t *testing.T) {
 	assert.Equal(t, v1.ComponentModeStandalone, e.GatewayMode())
 	assert.Equal(t, v1.ComponentModeEmbedded, e.OperateMode())
 	assert.Equal(t, v1.ComponentModeEmbedded, e.TasklistMode())
-	assert.Equal(t, v1.ComponentModeEmbedded, e.IdentityMode())
+	assert.Equal(t, v1.ComponentModeEmbedded, e.AdminMode())
 	assert.False(t, e.ConnectorsEnabled())
 	assert.Equal(t, v1.DeletePersistentVolumeClaimRetentionPolicyType, e.VolumeRetention())
-	for _, component := range []string{"zeebe", "gateway", "operate", "tasklist", "identity", "connectors"} {
+	for _, component := range []string{"zeebe", "gateway", "operate", "tasklist", "admin", "connectors"} {
 		assert.Equal(t, int32(1), e.Replicas(component), component)
 		assert.Equal(t, v1.WorkloadSpec{}, e.Workload(component), component)
 	}
@@ -68,7 +68,7 @@ func TestEffectiveReadsTheSpec(t *testing.T) {
 			WorkloadSpec: v1.WorkloadSpec{Replicas: new(int32(4))},
 		},
 		Tasklist:   &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
-		Identity:   &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{Replicas: new(int32(0))}},
+		Admin:      &v1.WebAppSpec{WorkloadSpec: v1.WorkloadSpec{Replicas: new(int32(0))}},
 		Connectors: &v1.ConnectorsSpec{Enabled: new(true), WorkloadSpec: v1.WorkloadSpec{Replicas: new(int32(5))}},
 	})
 
@@ -81,12 +81,12 @@ func TestEffectiveReadsTheSpec(t *testing.T) {
 	assert.Equal(t, v1.ComponentModeEmbedded, e.GatewayMode())
 	assert.Equal(t, v1.ComponentModeStandalone, e.OperateMode())
 	assert.Equal(t, v1.ComponentModeStandalone, e.TasklistMode())
-	assert.Equal(t, v1.ComponentModeEmbedded, e.IdentityMode())
+	assert.Equal(t, v1.ComponentModeEmbedded, e.AdminMode())
 	assert.True(t, e.ConnectorsEnabled())
 	assert.Equal(t, int32(2), e.Replicas("gateway"))
 	assert.Equal(t, int32(4), e.Replicas("operate"))
 	assert.Equal(t, int32(1), e.Replicas("tasklist"))
-	assert.Equal(t, int32(0), e.Replicas("identity"), "an explicit zero is not a default")
+	assert.Equal(t, int32(0), e.Replicas("admin"), "an explicit zero is not a default")
 	assert.Equal(t, int32(5), e.Replicas("connectors"))
 	assert.Equal(t, map[string]string{"tier": "broker"}, e.Workload("zeebe").PodLabels)
 	assert.Equal(t, int32(5), *e.Workload("connectors").Replicas)

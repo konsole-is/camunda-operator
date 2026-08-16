@@ -98,15 +98,15 @@ func TestResolveStandaloneWebAppWithEmbeddedGateway(t *testing.T) {
 	t.Parallel()
 
 	got := Resolve(NewEffective(v1.CamundaClusterSpec{
-		Gateway:  &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded},
-		Identity: &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
+		Gateway: &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded},
+		Admin:   &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
 	}))
 	require.Len(t, got, 2)
 
 	assert.Equal(t, []string{"broker", "consolidated-auth", "operate", "tasklist"}, got[0].Profiles)
-	assert.Equal(t, ComponentIdentity, got[1].Component)
+	assert.Equal(t, ComponentAdmin, got[1].Component)
 	assert.Equal(t, []string{"admin", "consolidated-auth", "gateway"}, got[1].Profiles)
-	assert.Equal(t, v1.ConditionIdentityReady, got[1].ConditionType)
+	assert.Equal(t, v1.ConditionAdminReady, got[1].ConditionType)
 }
 
 // Every web application standalone: five processes in a stable order.
@@ -116,7 +116,7 @@ func TestResolveSeparated(t *testing.T) {
 	got := Resolve(NewEffective(v1.CamundaClusterSpec{
 		Operate:  &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
 		Tasklist: &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
-		Identity: &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
+		Admin:    &v1.WebAppSpec{Mode: v1.ComponentModeStandalone},
 	}))
 	require.Len(t, got, 5)
 
@@ -126,7 +126,7 @@ func TestResolveSeparated(t *testing.T) {
 	}
 	assert.Equal(
 		t,
-		[]string{ComponentZeebe, ComponentGateway, ComponentOperate, ComponentTasklist, ComponentIdentity},
+		[]string{ComponentZeebe, ComponentGateway, ComponentOperate, ComponentTasklist, ComponentAdmin},
 		names,
 	)
 	assert.Equal(t, []string{"consolidated-auth", "gateway"}, got[1].Profiles)

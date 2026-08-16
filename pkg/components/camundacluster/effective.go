@@ -95,8 +95,8 @@ func (e Effective) OperateMode() v1.ComponentMode { return webAppMode(e.Operate)
 // TasklistMode returns where Tasklist runs. Defaults to Embedded.
 func (e Effective) TasklistMode() v1.ComponentMode { return webAppMode(e.Tasklist) }
 
-// IdentityMode returns where Identity runs. Defaults to Embedded.
-func (e Effective) IdentityMode() v1.ComponentMode { return webAppMode(e.Identity) }
+// AdminMode returns where Admin runs. Defaults to Embedded.
+func (e Effective) AdminMode() v1.ComponentMode { return webAppMode(e.Admin) }
 
 func webAppMode(app *v1.WebAppSpec) v1.ComponentMode {
 	if app == nil || app.Mode == "" {
@@ -154,9 +154,9 @@ func (e Effective) workload(component string) (v1.WorkloadSpec, bool) {
 		if e.Tasklist != nil {
 			return e.Tasklist.WorkloadSpec, true
 		}
-	case ComponentIdentity:
-		if e.Identity != nil {
-			return e.Identity.WorkloadSpec, true
+	case ComponentAdmin:
+		if e.Admin != nil {
+			return e.Admin.WorkloadSpec, true
 		}
 	case ComponentConnectors:
 		if e.Connectors != nil {
