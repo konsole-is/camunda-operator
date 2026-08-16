@@ -95,7 +95,7 @@ spec:
   zeebe:
     # integer. Optional, default: 1. Number of brokers.
     replicas: 3
-    # integer. Optional, default: 1. Number of partitions; cannot be decreased.
+    # integer. Optional, default: 1. Number of partitions; cannot be decreased, and once set it cannot be removed.
     partitions: 3
     # integer. Optional, default: 1. Replication factor; must not exceed replicas.
     replicationFactor: 3
@@ -252,7 +252,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - `spec.storageRef` is required: a CamundaCluster without secondary storage is not a functional Camunda cluster.
 - `spec.platformConfigRef` is required.
 - The effective version (inline or inherited from the preset) must be present and 8.9 or later.
-- `spec.zeebe.partitions` cannot be decreased after creation.
+- `spec.zeebe.partitions` cannot be decreased, and once set inline it cannot be removed (removal would fall back to the preset or the default, an effective decrease).
 - `spec.zeebe.storageClassName` is immutable after creation: StatefulSet PVC templates cannot change their storage class.
 - `spec.zeebe.storageSize` may only grow; updates that shrink it are rejected, like [ElasticsearchCluster](elasticsearchcluster.md)'s `storageSize`. On growth the operator expands the existing PVCs in place — the storage class must support volume expansion — and applies the new size for future replicas.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
