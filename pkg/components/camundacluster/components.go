@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"fmt"
+	"maps"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -93,8 +94,9 @@ type ProcessComponent struct {
 // of enabled processes take part in Ready. The admin Secret and the mirrored
 // Secrets are separate components, see AdminSecretComponent and
 // MirroredSecretComponent. The zeebe component also carries the
-// ServiceAccount when spec.serviceAccount is set, so it exists before any pod
-// references it.
+// ServiceAccount, so it exists before any pod references it: it is rendered
+// when spec.serviceAccount is set or a referenced bucket derives a
+// workload-identity annotation.
 func Build(in Input) ([]ProcessComponent, error) {
 	processes := Resolve(in.Effective)
 	comps := make([]ProcessComponent, 0, len(processes))
@@ -163,7 +165,7 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		WithResource(account, component.GatedBy(feature.NewBooleanGate(in.Effective.ServiceAccount != nil))).
+		WithResource(account, component.GatedBy(feature.NewBooleanGate(serviceAccountRendered(in)))).
 		WithResource(sts).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
@@ -211,12 +213,24 @@ func monitoringGate(in Input) component.ResourceOption {
 	return component.GatedBy(feature.NewBooleanGate(enabled))
 }
 
-// serviceAccountFor renders the ServiceAccount of every workload pod with the
-// annotations of spec.serviceAccount.
+// serviceAccountRendered reports whether the cluster needs a ServiceAccount
+// of its own: the user asked for one, or a referenced bucket derives a
+// workload-identity annotation that has to live somewhere.
+func serviceAccountRendered(in Input) bool {
+	return in.Effective.ServiceAccount != nil || len(in.ServiceAccountAnnotations) > 0
+}
+
+// serviceAccountFor renders the ServiceAccount of every workload pod: the
+// workload-identity annotations that the referenced buckets derive, with the
+// annotations of spec.serviceAccount merged over them, so an explicit user
+// value on the same key wins.
 func serviceAccountFor(in Input) *corev1.ServiceAccount {
-	var annotations map[string]string
-	if in.Effective.ServiceAccount != nil {
-		annotations = in.Effective.ServiceAccount.Annotations
+	annotations := maps.Clone(in.ServiceAccountAnnotations)
+	if in.Effective.ServiceAccount != nil && len(in.Effective.ServiceAccount.Annotations) > 0 {
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		maps.Copy(annotations, in.Effective.ServiceAccount.Annotations)
 	}
 
 	return &corev1.ServiceAccount{
@@ -319,7 +333,7 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:      discoveryLabels(in.Cluster, p.Component),
+			Labels:      labels.Merge(derivedPodLabels(in), discoveryLabels(in.Cluster, p.Component)),
 			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
 		},
 		Spec: corev1.PodSpec{
