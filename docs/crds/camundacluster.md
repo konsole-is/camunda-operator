@@ -279,7 +279,8 @@ spec:
 
 Status uses conditions exclusively: one condition per process, the internal Secret conditions, and the aggregate `Ready` — no health enums, no URL fields.
 Every process reports a condition. The condition of an embedded gateway, an embedded web application, or disabled connectors reads `True` with reason `Disabled`: the operator keeps a component for it and deletes what an earlier topology created. An embedded application is covered by the condition of its host (for example `GatewayReady` covers embedded operate/tasklist/admin).
-`Ready` mirrors the highest-priority condition of the components the cluster needs; a `Disabled` component never takes part. Its status and reason are those of that component, and its message names the component. The reasons of the component conditions come from the component framework (`Healthy`, `Creating`, `Updating`, `Degraded`, `Down`, `Suspended`, `Disabled`, and more).
+`Ready` is derived from the conditions of the components that the cluster needs. A component that the cluster does not need stays out of that set, so a `Disabled` condition never takes part. `Ready` is `True` only when every condition in the set is `True`.
+Its reason and message come from the governing component. That is the component with the highest component framework priority among the components that are not `True`. When every one of them is `True`, it is the one with the highest priority of all. The message names that component. The reasons of the component conditions come from the component framework (`Healthy`, `Creating`, `Updating`, `Degraded`, `Down`, `Suspended`, `Disabled`, and more).
 
 | Type | Reason | Meaning |
 | --- | --- | --- |

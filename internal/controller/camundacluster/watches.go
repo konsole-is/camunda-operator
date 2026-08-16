@@ -227,13 +227,11 @@ func (s requestSet) requests() []reconcile.Request {
 // platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
 // resource versions of the Secrets and the generations of the CRs they read
 // into the config hash, so any of these events rolls the pods whose rendered
-// configuration changed. It also sets Recorder to the recorder of the manager
-// and builds the uncached component client when they are nil.
+// configuration changed. It also sets EventRecorder to the recorder of the
+// manager and builds the uncached component client when they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Recorder == nil {
-		// The ReconcileContext of the component framework takes the legacy
-		// record.EventRecorder, so the deprecated accessor is required here.
-		r.Recorder = mgr.GetEventRecorderFor("camundacluster") //nolint:staticcheck
+	if r.EventRecorder == nil {
+		r.EventRecorder = mgr.GetEventRecorder("camundacluster")
 	}
 	r.restMapper = mgr.GetRESTMapper()
 

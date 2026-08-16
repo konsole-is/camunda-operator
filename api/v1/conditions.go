@@ -20,16 +20,17 @@ package v1
 // one CRD reports is declared next to that CRD, in its types file. The CRD doc
 // under docs/crds is the contract for both.
 //
-// A CRD that runs ocf components mirrors the representative component
-// condition onto Ready once its pre-checks pass. Its Ready reason is then an
-// ocf component status (Healthy, Creating, Updating, Failing, Degraded, Down,
-// Suspended, Error, and more), not a constant from this file.
+// A CRD that runs ocf components derives Ready from its component conditions
+// once its pre-checks pass. Ready is True only when every one of those
+// conditions is True. Its reason is then the ocf status (Healthy, Creating,
+// Updating, Failing, Degraded, Down, Suspended, Error, and more) of the
+// governing component, not a constant from this file.
 const (
 	// ConditionReady is the aggregate condition that every CRD reports.
 	ConditionReady = "Ready"
 
 	// ReasonHealthy means that all checks passed. It is also the ocf status
-	// of a healthy component, so a mirrored Ready reports the same reason.
+	// of a healthy component, so a derived Ready reports the same reason.
 	ReasonHealthy = "Healthy"
 	// ReasonInvalidReference means that a referenced custom resource does not
 	// exist, or that a reference is otherwise not usable.

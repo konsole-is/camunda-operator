@@ -37,7 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,6 +62,10 @@ const elasticsearchClusterPresetRefField = "elasticsearchcluster.spec.presetRef"
 // reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
+// eventActionResize is the action of the events that the controller records
+// about the size of the data volumes.
+const eventActionResize = "Resize"
+
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
 // the external ECK operator. It renders an ECK Elasticsearch CR, generates the
 // file-realm credentials, and publishes a SecondaryStorageConfig binding in
@@ -72,9 +76,9 @@ type ElasticsearchClusterReconciler struct {
 	// live.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
-	// Recorder publishes the component lifecycle events. SetupWithManager
+	// EventRecorder publishes the component lifecycle events. SetupWithManager
 	// sets it from the manager.
-	Recorder record.EventRecorder
+	EventRecorder events.EventRecorder
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through, wrapped for ECK apply sanitization. SetupWithManager
@@ -116,13 +120,17 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	recCtx := component.ReconcileContext{
-		Client:   r.componentClient,
-		Scheme:   r.Scheme,
-		Recorder: r.Recorder,
-		Owner:    &cluster,
+		Client:        r.componentClient,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
+		APIReader:     r.APIReader,
+		Owner:         &cluster,
 	}
+	// Declared before the deferred flush, so the closure sees every component
+	// that the reconcile builds below and FlushStatus owns their conditions.
+	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, recCtx); flushErr != nil {
+		if flushErr := component.FlushStatus(ctx, recCtx, comps); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
@@ -145,11 +153,12 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	comps = append(core, metrics)
 
 	// The metrics exporter is auxiliary: it keeps its own MetricsReady
 	// condition and stays out of Ready, so a broken exporter never marks the
 	// cluster not ready and a disabled one never shows up on it.
-	reconcileErr := reconcileComponents(ctx, recCtx, append(core, metrics))
+	reconcileErr := reconcileComponents(ctx, recCtx, comps)
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, core...))
 
 	volumes, err := r.dataVolumes(ctx, &cluster)
@@ -220,10 +229,12 @@ func (r *ElasticsearchClusterReconciler) keepAppliedStorageSize(
 		return nil
 	}
 
-	r.Recorder.Eventf(
+	r.EventRecorder.Eventf(
 		cluster,
+		nil,
 		corev1.EventTypeWarning,
 		eventReasonStorageShrinkIgnored,
+		eventActionResize,
 		"storageSize %s is below the existing data volume size %s; keeping %s, Elasticsearch data volumes cannot be reduced",
 		merged.StorageSize,
 		largest,
@@ -400,10 +411,8 @@ func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 // field index on spec.presetRef, and a watch on the data volume claims that
 // ECK labels with the cluster name.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.Recorder == nil {
-		// The ReconcileContext of the component framework takes the legacy
-		// record.EventRecorder, so the deprecated accessor is required here.
-		r.Recorder = mgr.GetEventRecorderFor("elasticsearchcluster") //nolint:staticcheck
+	if r.EventRecorder == nil {
+		r.EventRecorder = mgr.GetEventRecorder("elasticsearchcluster")
 	}
 	r.restMapper = mgr.GetRESTMapper()
 

@@ -38,6 +38,10 @@ import (
 // reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
+// eventActionResize is the action of the events that the controller records
+// about the size of the broker claims.
+const eventActionResize = "Resize"
+
 // brokerStorage is what the storage lifecycle reads before the components are
 // built: the applied broker StatefulSet, or nil, and the bound broker claims.
 type brokerStorage struct {
@@ -192,10 +196,12 @@ func (r *CamundaClusterReconciler) recordIgnoredShrink(
 		return
 	}
 
-	r.Recorder.Eventf(
+	r.EventRecorder.Eventf(
 		cluster,
+		nil,
 		corev1.EventTypeWarning,
 		eventReasonStorageShrinkIgnored,
+		eventActionResize,
 		"requested storageSize %s is below the bound broker claim size %s; the claims keep %s, volumes cannot be reduced",
 		&size,
 		largest,

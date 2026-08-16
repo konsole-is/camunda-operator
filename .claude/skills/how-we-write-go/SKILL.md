@@ -118,18 +118,21 @@ When arguments are many or individually long, put each on its own line with a tr
 
 ```go
 // BAD — crammed onto one line
-recorder.Event(obj, corev1.EventTypeNormal, EventReasonReconciled, fmt.Sprintf("deployment %q reconciled", deploymentName))
+recorder.Eventf(obj, nil, corev1.EventTypeNormal, EventReasonReconciled, EventActionReconcile, "deployment %q reconciled", name)
 
 // BAD — inconsistent split (some args together, some not)
-recorder.Event(obj, corev1.EventTypeNormal,
-    EventReasonReconciled, fmt.Sprintf("deployment %q reconciled", deploymentName))
+recorder.Eventf(obj, nil, corev1.EventTypeNormal,
+    EventReasonReconciled, EventActionReconcile, "deployment %q reconciled", name)
 
 // GOOD — one argument per line
-recorder.Event(
+recorder.Eventf(
     obj,
+    nil,
     corev1.EventTypeNormal,
     EventReasonReconciled,
-    fmt.Sprintf("deployment %q reconciled", deploymentName),
+    EventActionReconcile,
+    "deployment %q reconciled",
+    name,
 )
 ```
 
@@ -137,13 +140,13 @@ The same rule applies to function signatures and struct literals:
 
 ```go
 // BAD
-func ReconcileDeployment(ctx context.Context, deploymentName string, recorder record.EventRecorder, logger logr.Logger) error {
+func ReconcileDeployment(ctx context.Context, deploymentName string, recorder events.EventRecorder, logger logr.Logger) error {
 
 // GOOD
 func ReconcileDeployment(
     ctx context.Context,
     deploymentName string,
-    recorder record.EventRecorder,
+    recorder events.EventRecorder,
     logger logr.Logger,
 ) error {
 
@@ -304,20 +307,19 @@ Two kinds of key: a standard `app.kubernetes.io/*` key for a generic fact that n
 
 ## Typed string constants
 
-Event reasons, condition types, label keys, annotation keys, and any string that crosses a package boundary must be declared as constants, not written inline.
+Event reasons, event actions, condition types, label keys, annotation keys, and any string that crosses a package boundary must be declared as constants, not written inline.
 
-For the event type argument to `recorder.Event`, always use the framework constants `corev1.EventTypeNormal` and `corev1.EventTypeWarning` — never the raw strings `"Normal"` or `"Warning"`.
+Events go through the client-go `events.EventRecorder` that `mgr.GetEventRecorder(name)` returns. Its `Eventf` takes the object the event is about, a related object or `nil`, the event type, the reason, the action verb, and a format string. For the event type argument, always use the framework constants `corev1.EventTypeNormal` and `corev1.EventTypeWarning` — never the raw strings `"Normal"` or `"Warning"`.
 
 ```go
 // BAD
-recorder.Event(obj, "Normal", "SuccessfulReconcile", "...")
-recorder.Event(obj, "Warning", "ProvisionFailed", "...")
+recorder.Eventf(obj, nil, "Normal", "SuccessfulReconcile", "Reconcile", "...")
 
 // GOOD
-const EventReasonReconciled = "Reconciled"
+const eventReasonReconciled = "Reconciled"
+const eventActionReconcile = "Reconcile"
 
-recorder.Event(obj, corev1.EventTypeNormal, EventReasonReconciled, "deployment reconciled")
-recorder.Event(obj, corev1.EventTypeWarning, EventReasonProvisionFailed, "failed to provision deployment")
+recorder.Eventf(obj, nil, corev1.EventTypeNormal, eventReasonReconciled, eventActionReconcile, "deployment reconciled")
 ```
 
 Prefer a custom `type Reason string` in packages that own many event reasons, so the compiler catches misuse.
@@ -326,7 +328,7 @@ Prefer a custom `type Reason string` in packages that own many event reasons, so
 
 | Signal | Use for | Tool |
 |--------|---------|------|
-| **Event** | User-visible state transitions on a specific object (provisioning started, health check failed, config applied) | `recorder.Event(obj, type, reason, msg)` |
+| **Event** | User-visible state transitions on a specific object (provisioning started, health check failed, config applied) | `recorder.Eventf(obj, related, type, reason, action, note)` |
 | **Log** | Operator-internal tracing, debugging, diagnostic detail | `logger.Info(...)` / `logger.Error(...)` |
 
 Rules:
@@ -341,8 +343,8 @@ Rules:
 // BAD — log masquerading as an event, event reason is freeform
 logger.V(1).Info("recording event", "reason", "SuccessfulReconcile")
 
-// GOOD — real event, named constant reason
-recorder.Event(obj, corev1.EventTypeNormal, EventReasonReconciled, "deployment reconciled")
+// GOOD — real event, named constant reason and action
+recorder.Eventf(obj, nil, corev1.EventTypeNormal, eventReasonReconciled, eventActionReconcile, "deployment reconciled")
 ```
 
 ## Error wrapping
@@ -546,7 +548,7 @@ type componentReconciler interface {
 }
 ```
 
-**Do not wrap existing controller-runtime interfaces.** This guideline is about creating new interfaces where none exists. When controller-runtime already provides an interface that covers what you need — `client.Object`, `client.Client`, `record.EventRecorder` — use it directly. Do not re-declare methods from it into a new interface. Re-declaring `GetName() string` and `GetNamespace() string` manually produces an interface that satisfies your contract but not the framework's, causing type errors when the value is passed to any controller-runtime API (`recorder.Event`, `client.Get`, etc.) that takes `client.Object` or `runtime.Object`.
+**Do not wrap existing controller-runtime interfaces.** This guideline is about creating new interfaces where none exists. When controller-runtime or client-go already provides an interface that covers what you need — `client.Object`, `client.Client`, `events.EventRecorder` — use it directly. Do not re-declare methods from it into a new interface. Re-declaring `GetName() string` and `GetNamespace() string` manually produces an interface that satisfies your contract but not the framework's, causing type errors when the value is passed to any controller-runtime API (`recorder.Event`, `client.Get`, etc.) that takes `client.Object` or `runtime.Object`.
 
 ```go
 // BAD — re-declares methods already on client.Object; won't satisfy recorder.Event
@@ -563,7 +565,7 @@ func NewBackupReconciler(owner client.Object, ...) *BackupReconciler
 
 Use `meta.SetStatusCondition` to write conditions — never append or assign directly to the slice. It handles deduplication and sets `LastTransitionTime` only when the status changes.
 
-**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Every controller persists status through the ocf `component.FlushStatus`, once per reconcile, deferred at the top of the reconcile loop. That holds for a controller with no components too: stage the condition, set `observedGeneration`, flush. There is no second write path — no SSA of the status subresource, no `Status().Update()` at early returns.
+**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Every controller persists status through the ocf `component.FlushStatus`, once per reconcile, deferred at the top of the reconcile loop. That holds for a controller with no components too: stage the condition, set `observedGeneration`, flush with `nil` components. There is no second write path — no SSA of the status subresource, no `Status().Update()` at early returns.
 
 ```go
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
@@ -572,9 +574,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
-    rec := component.ReconcileContext{Client: r.componentClient, Scheme: r.Scheme, Recorder: r.Recorder, Owner: &obj}
+    rec := component.ReconcileContext{
+        Client:        r.componentClient,
+        Scheme:        r.Scheme,
+        EventRecorder: r.EventRecorder,
+        APIReader:     r.APIReader,
+        Owner:         &obj,
+    }
+    // Declared before the defer, so the closure sees the components built below.
+    var comps []*component.Component
     defer func() {
-        if flushErr := component.FlushStatus(ctx, rec); flushErr != nil {
+        if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
             err = errors.Join(err, flushErr)
         }
     }()
@@ -584,11 +594,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 }
 ```
 
-The named return `(_ ctrl.Result, err error)` lets the deferred flush join its error onto `err`, even when the reconcile itself succeeded. `FlushStatus` retries on 409 and re-merges the staged conditions by type.
+The named return `(_ ctrl.Result, err error)` lets the deferred flush join its error onto `err`, even when the reconcile itself succeeded. `FlushStatus` owns exactly the condition types of the components passed to it, so pass every component the reconcile built. On a 409 it keeps the staged owner, takes the `resourceVersion` of the server copy, and restores from it every condition type it does not own. `APIReader` comes from `mgr.GetAPIReader()` and makes that refetch read the live object rather than the cache. An unowned condition, such as the aggregate `Ready`, follows the server on a conflict and is staged again on the next reconcile.
 
 **Condition vocabulary is API surface and lives in `api/v1`.** Users match it with `kubectl wait`, and the operators above import `api/v1` to gate on it. `api/v1/conditions.go` holds the vocabulary that more than one CRD reports (`ConditionReady`, `ReasonHealthy`, `ReasonInvalidReference`, `ReasonMissingSecret`, `ReasonConnectionFailed`). A reason or condition type that one CRD reports is declared in that CRD's types file, next to its spec. The CRD doc under `docs/crds` is the contract for both. `pkg/conditions` builds the aggregate `Ready`; it declares no vocabulary.
 
-**Do not reimplement the ocf status model.** ocf already classifies every component: alive, operational, completable, suspendable, graceful (`Degraded`, `Down`), and it ranks them with `component.Status.Priority()`. A controller that runs components sets `Ready` in two steps only. A failed pre-check (a dangling reference, a missing Secret, an unreachable server) becomes `conditions.Failed(owner, failure)`. Otherwise `conditions.Aggregate(owner, comps...)` mirrors the highest-priority component condition onto `Ready`: same status, same reason, message names the component. Either way the condition goes through `conditions.Stage(owner, cond)`, which also records the observed generation. Never set `status.observedGeneration` or call `meta.SetStatusCondition` for `Ready` by hand; every CRD implements `conditions.Owner` for this. `Suspended` is a `Ready=True` per ocf: the resource is in its desired state. Never map component statuses onto a second vocabulary such as `Progressing`.
+**Do not reimplement the ocf status model.** ocf already classifies every component: alive, operational, completable, suspendable, graceful (`Degraded`, `Down`), and it ranks them with `component.Status.Priority()`. A controller that runs components sets `Ready` in two steps only. A failed pre-check (a dangling reference, a missing Secret, an unreachable server) becomes `conditions.Failed(owner, failure)`. Otherwise `conditions.Aggregate(owner, comps...)` derives `Ready` from the component conditions: `True` only when every one of them is `True`, with the reason of the governing component and a message that names it. Either way the condition goes through `conditions.Stage(owner, cond)`, which also records the observed generation. Never set `status.observedGeneration` or call `meta.SetStatusCondition` for `Ready` by hand; every CRD implements `conditions.Owner` for this. `Suspended` is a `Ready=True` per ocf: the resource is in its desired state. Never map component statuses onto a second vocabulary such as `Progressing`.
 
 ```go
 // api/v1/elasticsearchcluster_types.go

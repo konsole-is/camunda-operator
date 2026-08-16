@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -44,6 +44,10 @@ import (
 // spec.pause set. Nothing else happens on such a reconcile.
 const eventReasonPaused = "Paused"
 
+// eventActionReconcile is the action of the events that the controller records
+// about the reconcile of the cluster itself.
+const eventActionReconcile = "Reconcile"
+
 // CamundaClusterReconciler turns a CamundaCluster into the workloads of a
 // Camunda orchestration cluster: the broker StatefulSet, one Deployment per
 // standalone process, their Services, the admin Secret of a basic-auth
@@ -54,10 +58,10 @@ type CamundaClusterReconciler struct {
 	// so their data and every referenced CR are read live.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
-	// Recorder publishes the component lifecycle events and the events of
+	// EventRecorder publishes the component lifecycle events and the events of
 	// this controller. SetupWithManager sets it from the manager when it is
 	// nil.
-	Recorder record.EventRecorder
+	EventRecorder events.EventRecorder
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -109,18 +113,29 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if cluster.Spec.Pause {
-		r.Recorder.Event(&cluster, corev1.EventTypeNormal, eventReasonPaused, "Reconcile paused by spec.pause")
+		r.EventRecorder.Eventf(
+			&cluster,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonPaused,
+			eventActionReconcile,
+			"Reconcile paused by spec.pause",
+		)
 		return ctrl.Result{}, nil
 	}
 
 	rec := component.ReconcileContext{
-		Client:   r.componentClient,
-		Scheme:   r.Scheme,
-		Recorder: r.Recorder,
-		Owner:    &cluster,
+		Client:        r.componentClient,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
+		APIReader:     r.APIReader,
+		Owner:         &cluster,
 	}
+	// Declared before the deferred flush, so the closure sees every component
+	// that the reconcile builds below and FlushStatus owns their conditions.
+	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec); flushErr != nil {
+		if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
@@ -148,13 +163,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	r.recordIgnoredShrink(&cluster, storage, in.Effective.StorageSize())
 
-	comps, err := r.buildComponents(ctx, &cluster, in, mirrors)
+	built, err := r.buildComponents(ctx, &cluster, in, mirrors)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	comps = built.all
 
-	reconcileErr := reconcileComponents(ctx, rec, comps.all)
-	conditions.Stage(&cluster, conditions.Aggregate(&cluster, comps.ready...))
+	reconcileErr := reconcileComponents(ctx, rec, built.all)
+	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()
 
 	return ctrl.Result{}, reconcileErr

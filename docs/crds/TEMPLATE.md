@@ -74,7 +74,7 @@ spec:
 Conditions table first: columns Type | Reason | Meaning (one row per type/reason pair worth documenting).
 Conditions are the primary status mechanism; every active CRD has an aggregate `Ready` condition.
 Per-component conditions are PascalCase `<Component>Ready` (e.g. `ZeebeReady`). A suspendable CRD reports suspension on `Ready` with reason `Suspended`, never as a separate condition.
-Reasons are PascalCase single words: the pre-check reasons `InvalidReference`, `MissingSecret`, `ConnectionFailed`, the validators' `Healthy`, and, on a CRD that runs components, the component framework statuses that `Ready` mirrors (`Healthy`, `Creating`, `Degraded`, `Down`, `Suspended`, `Error`, and more).
+Reasons are PascalCase single words: the pre-check reasons `InvalidReference`, `MissingSecret`, `ConnectionFailed`, the validators' `Healthy`, and, on a CRD that runs components, the component framework statuses that `Ready` takes from the governing component (`Healthy`, `Creating`, `Degraded`, `Down`, `Suspended`, `Error`, and more).
 Long-running operations (Backup, restores) additionally document `status.phase` with its enum values.
 Every status documents `observedGeneration`.
 -->

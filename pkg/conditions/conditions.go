@@ -20,8 +20,6 @@ limitations under the License.
 package conditions
 
 import (
-	"fmt"
-
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,32 +74,14 @@ func Failed(owner Owner, failure *PreCheckFailure) metav1.Condition {
 }
 
 // Aggregate builds the Ready condition of owner from the given ocf
-// components. It mirrors the representative component: the one whose
-// condition reason has the highest component.Status priority, with the first
-// one winning a tie. Ready takes the status and reason of that component, and
-// its message names the component. A component that has not reported yet
-// counts as Unknown, which component.GetCondition supplies. With no components
-// the result is Unknown. The caller decides which components make up Ready: an
-// auxiliary component, for example a metrics exporter, keeps its own condition
-// and stays out of the list.
+// components. It is component.Aggregate under the Ready condition type: Ready
+// is True only when every component condition is True, and the reason and the
+// message come from the governing component, which is the one with the highest
+// component.Status priority among the components that are not True, or the
+// highest of all of them when they all are. A component that has not reported
+// yet counts as Unknown. With no components the result is False. The caller
+// decides which components make up Ready: an auxiliary component, for example
+// a metrics exporter, keeps its own condition and stays out of the list.
 func Aggregate(owner component.OperatorCRD, comps ...*component.Component) metav1.Condition {
-	generation := owner.GetGeneration()
-	if len(comps) == 0 {
-		return Ready(metav1.ConditionFalse, string(component.Unknown), "No component has reported yet", generation)
-	}
-
-	representative := comps[0].GetCondition(owner)
-	for _, comp := range comps[1:] {
-		cond := comp.GetCondition(owner)
-		if cond.ComponentStatus().Priority() > representative.ComponentStatus().Priority() {
-			representative = cond
-		}
-	}
-
-	return Ready(
-		representative.Status,
-		representative.Reason,
-		fmt.Sprintf("%s: %s", representative.Type, representative.Message),
-		generation,
-	)
+	return metav1.Condition(component.Aggregate(v1.ConditionReady, owner, comps...))
 }

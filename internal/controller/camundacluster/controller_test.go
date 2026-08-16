@@ -439,7 +439,7 @@ var _ = Describe("CamundaCluster controller", func() {
 
 		stampStatefulSetReady(zeebeKey)
 		expectCondition(cluster, v1.ConditionZeebeReady, Equal(v1.ReasonHealthy))
-		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonHealthy)), HavePrefix("GatewayReady: "))
+		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonHealthy)), HavePrefix("gateway: "))
 
 		stampDeploymentReady(gatewayKey)
 		expectCondition(cluster, v1.ConditionGatewayReady, Equal(v1.ReasonHealthy))
