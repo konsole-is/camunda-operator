@@ -55,6 +55,9 @@ const (
 	// serves /metrics on.
 	metricsPortName = "metrics"
 	metricsPort     = 9114
+	// exporterUID is the UID that the exporter runs as: nobody, the user of
+	// the exporter image.
+	exporterUID int64 = 65534
 	// caMountPath is where the exporter reads the CA that ECK publishes.
 	caMountPath = "/etc/elasticsearch/ca"
 	// exporterUsernameEnv and exporterPasswordEnv are the environment
@@ -193,7 +196,11 @@ func exporterDeployment(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearc
 							AllowPrivilegeEscalation: new(false),
 							ReadOnlyRootFilesystem:   new(true),
 							RunAsNonRoot:             new(true),
-							Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+							// The exporter image declares its user by name
+							// (nobody). The kubelet refuses runAsNonRoot for a
+							// non-numeric image user, so the UID is explicit.
+							RunAsUser:    new(exporterUID),
+							Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 						},
 					}},
 					Volumes: []corev1.Volume{{
