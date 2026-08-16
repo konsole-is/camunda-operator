@@ -39,6 +39,11 @@ type Process struct {
 	Component string
 	// Kind is the workload kind.
 	Kind ProcessKind
+	// Enabled reports whether the process runs in this topology. A disabled
+	// process (an embedded gateway or web application, disabled connectors)
+	// keeps its names and kind, so its component can delete what an earlier
+	// topology created.
+	Enabled bool
 	// Replicas is the number of pods.
 	Replicas int32
 	// Profiles is SPRING_PROFILES_ACTIVE, sorted. It always contains
@@ -72,36 +77,39 @@ type webApp struct {
 var webApps = []webApp{
 	{ComponentOperate, camundaconfig.ProfileOperate, v1.ConditionOperateReady, Effective.OperateMode},
 	{ComponentTasklist, camundaconfig.ProfileTasklist, v1.ConditionTasklistReady, Effective.TasklistMode},
-	{ComponentIdentity, camundaconfig.ProfileAdmin, v1.ConditionIdentityReady, Effective.IdentityMode},
+	{ComponentAdmin, camundaconfig.ProfileAdmin, v1.ConditionAdminReady, Effective.AdminMode},
 }
 
-// Resolve maps the effective spec to its processes in a stable order: zeebe,
-// gateway, operate, tasklist, identity, connectors. An embedded web
-// application rides on the gateway when the gateway is standalone, otherwise
-// on zeebe; the host carries the application's profile.
+// Resolve maps the effective spec to its six processes in a stable order:
+// zeebe, gateway, operate, tasklist, admin, connectors. Every process is
+// returned; Enabled says whether it runs. An embedded web application rides
+// on the gateway when the gateway is standalone, otherwise on zeebe; the host
+// carries the application's profile.
 func Resolve(e Effective) []Process {
 	gatewayEmbedded := e.GatewayMode() == v1.ComponentModeEmbedded
 
 	hostProfiles := []string{}
-	standalone := []Process{}
+	apps := make([]Process, 0, len(webApps))
 	for _, app := range webApps {
-		if app.mode(e) == v1.ComponentModeStandalone {
-			standalone = append(standalone, Process{
-				Component:     app.component,
-				Kind:          ProcessDeployment,
-				Replicas:      e.Replicas(app.component),
-				Profiles:      profiles(camundaconfig.ProfileGateway, app.profile),
-				ServesHTTP:    true,
-				ConditionType: app.condition,
-			})
-			continue
+		standalone := app.mode(e) == v1.ComponentModeStandalone
+		apps = append(apps, Process{
+			Component:     app.component,
+			Kind:          ProcessDeployment,
+			Enabled:       standalone,
+			Replicas:      e.Replicas(app.component),
+			Profiles:      profiles(camundaconfig.ProfileGateway, app.profile),
+			ServesHTTP:    true,
+			ConditionType: app.condition,
+		})
+		if !standalone {
+			hostProfiles = append(hostProfiles, app.profile)
 		}
-		hostProfiles = append(hostProfiles, app.profile)
 	}
 
 	zeebe := Process{
 		Component:       ComponentZeebe,
 		Kind:            ProcessStatefulSet,
+		Enabled:         true,
 		Replicas:        e.ZeebeReplicas(),
 		Profiles:        profiles(camundaconfig.ProfileBroker),
 		EmbeddedGateway: gatewayEmbedded,
@@ -109,36 +117,32 @@ func Resolve(e Effective) []Process {
 		ServesGRPC:      gatewayEmbedded,
 		ConditionType:   v1.ConditionZeebeReady,
 	}
+	gateway := Process{
+		Component:     ComponentGateway,
+		Kind:          ProcessDeployment,
+		Enabled:       !gatewayEmbedded,
+		Replicas:      e.Replicas(ComponentGateway),
+		Profiles:      profiles(camundaconfig.ProfileGateway),
+		ServesHTTP:    true,
+		ServesGRPC:    true,
+		ConditionType: v1.ConditionGatewayReady,
+	}
 	if gatewayEmbedded {
 		zeebe.Profiles = profiles(append(hostProfiles, camundaconfig.ProfileBroker)...)
-	}
-	processes := []Process{zeebe}
-
-	if !gatewayEmbedded {
-		processes = append(processes, Process{
-			Component:     ComponentGateway,
-			Kind:          ProcessDeployment,
-			Replicas:      e.Replicas(ComponentGateway),
-			Profiles:      profiles(append(hostProfiles, camundaconfig.ProfileGateway)...),
-			ServesHTTP:    true,
-			ServesGRPC:    true,
-			ConditionType: v1.ConditionGatewayReady,
-		})
+	} else {
+		gateway.Profiles = profiles(append(hostProfiles, camundaconfig.ProfileGateway)...)
 	}
 
-	processes = append(processes, standalone...)
-
-	if e.ConnectorsEnabled() {
-		processes = append(processes, Process{
-			Component:     ComponentConnectors,
-			Kind:          ProcessDeployment,
-			Replicas:      e.Replicas(ComponentConnectors),
-			ServesHTTP:    true,
-			ConditionType: v1.ConditionConnectorsReady,
-		})
+	connectors := Process{
+		Component:     ComponentConnectors,
+		Kind:          ProcessDeployment,
+		Enabled:       e.ConnectorsEnabled(),
+		Replicas:      e.Replicas(ComponentConnectors),
+		ServesHTTP:    true,
+		ConditionType: v1.ConditionConnectorsReady,
 	}
 
-	return processes
+	return append(append([]Process{zeebe, gateway}, apps...), connectors)
 }
 
 // profiles returns the given profiles plus consolidated-auth, sorted.

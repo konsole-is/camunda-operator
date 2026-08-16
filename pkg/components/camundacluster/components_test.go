@@ -56,9 +56,11 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
-// assertGoldens renders every component of the fixture and pins each one
-// against testdata/golden/<dir>/<component>.yaml. The admin Secret is pinned
-// only for a basic-auth fixture, because it exists only then.
+// assertGoldens renders every enabled component of the fixture and pins each
+// one against testdata/golden/<dir>/<component>.yaml. A disabled process
+// still previews its resources (ocf's Preview does not evaluate the gate),
+// but its reconcile only deletes, so it is left out. The admin Secret is
+// pinned only for a basic-auth fixture, because it exists only then.
 func assertGoldens(t *testing.T, dir string, in Input) {
 	t.Helper()
 
@@ -67,7 +69,7 @@ func assertGoldens(t *testing.T, dir string, in Input) {
 
 	comps, err := Build(in)
 	require.NoError(t, err)
-	for _, comp := range comps {
+	for _, comp := range enabledComponents(comps) {
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, comp.GetName()+".yaml"), comp,
 			golden.WithScheme(scheme), golden.Update(*updateGolden),
@@ -75,13 +77,24 @@ func assertGoldens(t *testing.T, dir string, in Input) {
 	}
 
 	if ResolveAuth(in).Method == v1.AuthenticationMethodBasic {
-		admin, err := AdminSecretComponent(in.Cluster, goldenPassword)
+		admin, err := AdminSecretComponent(in.Cluster, true, goldenPassword)
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "admin-secret.yaml"), admin,
 			golden.WithScheme(scheme), golden.Update(*updateGolden),
 		)
 	}
+}
+
+// enabledComponents returns the components of the enabled processes.
+func enabledComponents(comps []ProcessComponent) []*component.Component {
+	var enabled []*component.Component
+	for _, pc := range comps {
+		if pc.Process.Enabled {
+			enabled = append(enabled, pc.Component)
+		}
+	}
+	return enabled
 }
 
 func TestCamundaClusterGoldens(t *testing.T) {
@@ -121,25 +134,52 @@ func previewedPodTemplate(t *testing.T, objects []client.Object) corev1.PodTempl
 	return corev1.PodTemplateSpec{}
 }
 
+// Every fixture builds all six components in Resolve order, so a component
+// of a process that an earlier topology enabled always exists to delete it.
 func TestBuildOrderAndConditions(t *testing.T) {
 	t.Parallel()
 
-	in := fixtureSeparated(t)
-	comps, err := Build(in)
-	require.NoError(t, err)
+	for name, in := range goldenFixtures(t) {
+		comps, err := Build(in)
+		require.NoError(t, err, name)
 
-	names := make([]string, 0, len(comps))
-	conditions := make([]component.ConditionType, 0, len(comps))
-	for _, comp := range comps {
-		names = append(names, comp.GetName())
-		conditions = append(conditions, comp.GetCondition(in.Cluster).ConditionType())
+		names := make([]string, 0, len(comps))
+		conditions := make([]component.ConditionType, 0, len(comps))
+		for _, pc := range comps {
+			names = append(names, pc.Component.GetName())
+			conditions = append(conditions, pc.Component.GetCondition(in.Cluster).ConditionType())
+			assert.Equal(t, pc.Process.Component, pc.Component.GetName(), name)
+		}
+		assert.Equal(t, []string{"zeebe", "gateway", "operate", "tasklist", "admin", "connectors"}, names, name)
+		assert.Equal(
+			t, []component.ConditionType{
+				v1.ConditionZeebeReady, v1.ConditionGatewayReady, v1.ConditionOperateReady,
+				v1.ConditionTasklistReady, v1.ConditionAdminReady, v1.ConditionConnectorsReady,
+			}, conditions, name,
+		)
 	}
-	assert.Equal(t, []string{"zeebe", "gateway", "operate", "tasklist", "identity", "connectors"}, names)
+}
+
+// The enabled set follows the topology; the default fixture runs zeebe, the
+// gateway, and connectors, the separated fixture everything.
+func TestBuildEnabledProcesses(t *testing.T) {
+	t.Parallel()
+
+	enabled := func(in Input) []string {
+		comps, err := Build(in)
+		require.NoError(t, err)
+		names := make([]string, 0, len(comps))
+		for _, comp := range enabledComponents(comps) {
+			names = append(names, comp.GetName())
+		}
+		return names
+	}
+	assert.Equal(t, []string{"zeebe", "gateway", "connectors"}, enabled(fixtureDefault(t)))
+	assert.Equal(t, []string{"zeebe"}, enabled(fixtureAllInOne(t)))
 	assert.Equal(
-		t, []component.ConditionType{
-			v1.ConditionZeebeReady, v1.ConditionGatewayReady, v1.ConditionOperateReady,
-			v1.ConditionTasklistReady, v1.ConditionIdentityReady, v1.ConditionConnectorsReady,
-		}, conditions,
+		t,
+		[]string{"zeebe", "gateway", "operate", "tasklist", "admin", "connectors"},
+		enabled(fixtureSeparated(t)),
 	)
 }
 
@@ -158,7 +198,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 
 	comps, err := Build(in)
 	require.NoError(t, err)
-	for _, comp := range comps {
+	for _, comp := range enabledComponents(comps) {
 		template := previewedPodTemplate(t, previewObjects(t, comp))
 		assert.Equal(t, "my-cluster", template.Labels["camunda.io/cluster"], comp.GetName())
 		assert.Equal(t, comp.GetName(), template.Labels["camunda.io/component"], comp.GetName())
@@ -172,14 +212,13 @@ func TestConfigHashAnnotationOnEveryPodTemplate(t *testing.T) {
 	in := fixtureDefault(t)
 	comps, err := Build(in)
 	require.NoError(t, err)
-	require.Len(t, comps, 3)
+	require.Len(t, comps, 6)
 
 	hashes := map[string]string{}
-	for i, comp := range comps {
-		template := previewedPodTemplate(t, previewObjects(t, comp))
-		p := Resolve(in.Effective)[i]
-		hashes[p.Component] = template.Annotations[ConfigHashAnnotation]
-		assert.Equal(t, ConfigHash(in, p), hashes[p.Component], comp.GetName())
+	for _, pc := range comps {
+		template := previewedPodTemplate(t, previewObjects(t, pc.Component))
+		hashes[pc.Process.Component] = template.Annotations[ConfigHashAnnotation]
+		assert.Equal(t, ConfigHash(in, pc.Process), hashes[pc.Process.Component], pc.Process.Component)
 	}
 
 	// A change to one process rolls that process only.
@@ -188,13 +227,12 @@ func TestConfigHashAnnotationOnEveryPodTemplate(t *testing.T) {
 	changed.Effective = NewEffective(MergePreset(changed.Cluster.Spec, mediumPreset()))
 	comps, err = Build(changed)
 	require.NoError(t, err)
-	for i, comp := range comps {
-		template := previewedPodTemplate(t, previewObjects(t, comp))
-		p := Resolve(changed.Effective)[i]
-		if p.Component == ComponentConnectors {
-			assert.NotEqual(t, hashes[p.Component], template.Annotations[ConfigHashAnnotation], comp.GetName())
+	for _, pc := range comps {
+		template := previewedPodTemplate(t, previewObjects(t, pc.Component))
+		if pc.Process.Component == ComponentConnectors {
+			assert.NotEqual(t, hashes[pc.Process.Component], template.Annotations[ConfigHashAnnotation])
 		} else {
-			assert.Equal(t, hashes[p.Component], template.Annotations[ConfigHashAnnotation], comp.GetName())
+			assert.Equal(t, hashes[pc.Process.Component], template.Annotations[ConfigHashAnnotation])
 		}
 	}
 }
@@ -209,10 +247,10 @@ func TestServiceMonitorOmittedWhenUnsupported(t *testing.T) {
 
 	comps, err := Build(in)
 	require.NoError(t, err)
-	for _, comp := range comps {
-		for _, obj := range previewObjects(t, comp) {
+	for _, pc := range comps {
+		for _, obj := range previewObjects(t, pc.Component) {
 			_, isMonitor := obj.(*monitoringv1.ServiceMonitor)
-			assert.False(t, isMonitor, comp.GetName())
+			assert.False(t, isMonitor, pc.Process.Component)
 		}
 	}
 }
@@ -226,7 +264,7 @@ func TestServiceMonitorScrapesPrometheusEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	seen := 0
-	for _, comp := range comps {
+	for _, comp := range enabledComponents(comps) {
 		for _, obj := range previewObjects(t, comp) {
 			monitor, ok := obj.(*monitoringv1.ServiceMonitor)
 			if !ok {
@@ -254,24 +292,26 @@ func TestServiceAccount(t *testing.T) {
 	require.NoError(t, err)
 
 	hasAccount := false
-	for _, obj := range previewObjects(t, comps[0]) {
+	for _, obj := range previewObjects(t, comps[0].Component) {
 		if _, ok := obj.(*corev1.ServiceAccount); ok {
 			hasAccount = true
 		}
 	}
 	assert.True(t, hasAccount)
-	for _, comp := range comps {
-		assert.Equal(t, "my-cluster-camunda", previewedPodTemplate(t, previewObjects(t, comp)).Spec.ServiceAccountName)
+	for _, pc := range comps {
+		assert.Equal(
+			t, "my-cluster-camunda", previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+		)
 	}
 
 	minimal, err := Build(fixtureMinimal(t))
 	require.NoError(t, err)
-	for _, comp := range minimal {
-		for _, obj := range previewObjects(t, comp) {
+	for _, pc := range minimal {
+		for _, obj := range previewObjects(t, pc.Component) {
 			_, isAccount := obj.(*corev1.ServiceAccount)
-			assert.False(t, isAccount, comp.GetName())
+			assert.False(t, isAccount, pc.Process.Component)
 		}
-		assert.Empty(t, previewedPodTemplate(t, previewObjects(t, comp)).Spec.ServiceAccountName)
+		assert.Empty(t, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName)
 	}
 }
 
@@ -281,7 +321,7 @@ func TestAdminSecretComponentCarriesThePassword(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureMinimal(t)
-	comp, err := AdminSecretComponent(in.Cluster, "s3cret")
+	comp, err := AdminSecretComponent(in.Cluster, true, "s3cret")
 	require.NoError(t, err)
 	assert.Equal(
 		t,

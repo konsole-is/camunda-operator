@@ -19,6 +19,8 @@ package camundacluster
 import (
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
@@ -57,6 +59,11 @@ type Input struct {
 	Platform v1.CamundaPlatformConfigSpec
 	// Storage is the resolved secondary storage binding.
 	Storage Storage
+	// VolumeClaimSize is the storage request of the broker volume claim
+	// template. A StatefulSet cannot change its claim template, so the
+	// controller sets it to the size of the applied template. When nil, the
+	// template requests the effective storage size.
+	VolumeClaimSize *resource.Quantity
 	// HashInputs are the resource versions and generations of the referenced
 	// Secrets and custom resources, as "kind/namespace/name=version" strings.
 	// ConfigHash sorts them, so the order does not matter.

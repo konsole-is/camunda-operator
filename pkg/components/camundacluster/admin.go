@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,9 +34,17 @@ const adminComponentName = "admin-secret"
 
 // AdminSecretComponent renders the admin credentials Secret of a basic-auth
 // cluster: <name>-camunda-admin with the keys username (admin) and password.
-// The controller reads or generates the password with pkg/credentials and
-// keeps it stable across reconciles. The component takes part in Ready.
-func AdminSecretComponent(cluster *v1.CamundaCluster, password string) (*component.Component, error) {
+// The component is gated on enabled (basic authentication): when disabled it
+// deletes the Secret and reports Disabled, so a switch to OIDC removes the
+// credentials. The controller reads or generates the password with
+// pkg/credentials and keeps it stable across reconciles; it passes an empty
+// password when disabled. The component takes part in Ready only when
+// enabled.
+func AdminSecretComponent(
+	cluster *v1.CamundaCluster,
+	enabled bool,
+	password string,
+) (*component.Component, error) {
 	admin, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      AdminSecretName(cluster),
@@ -55,6 +64,7 @@ func AdminSecretComponent(cluster *v1.CamundaCluster, password string) (*compone
 	return component.NewComponentBuilder().
 		WithName(adminComponentName).
 		WithConditionType(component.ConditionType(v1.ConditionAdminSecretReady)).
+		WithFeatureGate(feature.NewBooleanGate(enabled)).
 		WithResource(admin).
 		Build()
 }

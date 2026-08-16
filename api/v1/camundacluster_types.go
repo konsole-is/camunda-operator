@@ -22,34 +22,36 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// The per-process conditions of a CamundaCluster. Each standalone process
-// reports one. An embedded web application has no condition of its own: the
-// condition of its host process covers it.
+// The per-process conditions of a CamundaCluster. Every process reports one.
+// The condition of an embedded gateway, an embedded web application, or
+// disabled connectors reads True with reason Disabled and stays out of Ready;
+// the condition of the host process covers an embedded web application.
 const (
 	// ConditionZeebeReady reports whether every broker replica is ready.
 	ConditionZeebeReady = "ZeebeReady"
 	// ConditionGatewayReady reports whether every gateway replica is ready.
-	// It is present only when the gateway is standalone.
+	// It reads Disabled when the gateway is embedded.
 	ConditionGatewayReady = "GatewayReady"
 	// ConditionOperateReady reports whether every standalone Operate replica
-	// is ready.
+	// is ready. It reads Disabled when Operate is embedded.
 	ConditionOperateReady = "OperateReady"
 	// ConditionTasklistReady reports whether every standalone Tasklist replica
-	// is ready.
+	// is ready. It reads Disabled when Tasklist is embedded.
 	ConditionTasklistReady = "TasklistReady"
-	// ConditionIdentityReady reports whether every standalone Identity replica
-	// is ready.
-	ConditionIdentityReady = "IdentityReady"
+	// ConditionAdminReady reports whether every standalone Admin replica is
+	// ready. It reads Disabled when Admin is embedded.
+	ConditionAdminReady = "AdminReady"
 	// ConditionConnectorsReady reports whether every connectors replica is
-	// ready. It is present only when connectors are enabled.
+	// ready. It reads Disabled when connectors are not enabled.
 	ConditionConnectorsReady = "ConnectorsReady"
 	// ConditionAdminSecretReady reports whether the admin credentials Secret
-	// of a basic-auth cluster is applied. It is present only under basic
-	// authentication and takes part in Ready.
+	// of a basic-auth cluster is applied. It takes part in Ready under basic
+	// authentication and reads Disabled under OIDC.
 	ConditionAdminSecretReady = "AdminSecretReady"
 	// ConditionMirroredSecretsReady reports whether every referenced Secret
-	// that lives outside the cluster namespace is copied into it. It is
-	// present only when such a Secret is referenced and takes part in Ready.
+	// that lives outside the cluster namespace is copied into it. It takes
+	// part in Ready only when such a Secret is referenced and reads Disabled
+	// when none is.
 	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 )
 
@@ -118,7 +120,10 @@ type ZeebeSpec struct {
 	// StorageClassName is the StorageClass of the broker volumes. Defaults to
 	// the default StorageClass of the Kubernetes cluster. It is immutable
 	// after creation, because a StatefulSet volume claim template cannot
-	// change its storage class.
+	// change its storage class. The CEL transition rule that rejects a change
+	// sits on the spec field of CamundaCluster ("zeebe.storageClassName is
+	// immutable"), not here: this type is shared with CamundaClusterPreset,
+	// and a preset baseline stays free to change.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// StorageSize is the size of the data volume of each broker. Defaults to
@@ -150,7 +155,7 @@ type GatewaySpec struct {
 }
 
 // WebAppSpec configures one of the web applications Operate, Tasklist, and
-// Identity.
+// Admin.
 type WebAppSpec struct {
 	// Mode selects a Deployment of the unified binary that serves only this
 	// application (Standalone) or the nearest standalone host up the chain
@@ -258,10 +263,10 @@ type CamundaClusterSpec struct {
 	// Tasklist configures the Tasklist web application.
 	// +optional
 	Tasklist *WebAppSpec `json:"tasklist,omitempty"`
-	// Identity configures the Identity (Orchestration Cluster Admin) web
-	// application.
+	// Admin configures the Admin web application (Orchestration Cluster
+	// Identity before Camunda 8.9). Its Spring profile is admin.
 	// +optional
-	Identity *WebAppSpec `json:"identity,omitempty"`
+	Admin *WebAppSpec `json:"admin,omitempty"`
 	// Connectors configures the connectors runtime.
 	// +optional
 	Connectors *ConnectorsSpec `json:"connectors,omitempty"`
@@ -315,16 +320,16 @@ type CamundaClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// StorageSize is the data volume size that the brokers have. It is the
-	// smallest capacity that the bound broker PersistentVolumeClaims report,
-	// so a resize outside the spec, for example by an auto-resize
-	// controller, shows here.
+	// Volumes lists the bound broker PersistentVolumeClaims and the capacity
+	// that each one reports, sorted by name.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
-	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
+	Volumes []VolumeStatus `json:"volumes,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason or mirrors the representative process condition. The
 	// per-process conditions (ZeebeReady, GatewayReady, OperateReady,
-	// TasklistReady, IdentityReady, ConnectorsReady) also appear here.
+	// TasklistReady, AdminReady, ConnectorsReady) also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

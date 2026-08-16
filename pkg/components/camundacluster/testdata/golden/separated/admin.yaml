@@ -4,24 +4,24 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: my-cluster
-    camunda.io/component: identity
-  name: my-cluster-identity
+    camunda.io/component: admin
+  name: my-cluster-admin
   namespace: my-cluster-ns
 spec:
   replicas: 1
   selector:
     matchLabels:
       camunda.io/cluster: my-cluster
-      camunda.io/component: identity
+      camunda.io/component: admin
   strategy:
     type: RollingUpdate
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: d4c763cd07ab6c46
+        camunda.io/config-hash: f6aaee6ea54f0d88
       labels:
         camunda.io/cluster: my-cluster
-        camunda.io/component: identity
+        camunda.io/component: admin
     spec:
       containers:
       - env:
@@ -112,8 +112,8 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: my-cluster
-    camunda.io/component: identity
-  name: my-cluster-identity
+    camunda.io/component: admin
+  name: my-cluster-admin
   namespace: my-cluster-ns
 spec:
   ports:
@@ -127,6 +127,6 @@ spec:
     targetPort: management
   selector:
     camunda.io/cluster: my-cluster
-    camunda.io/component: identity
+    camunda.io/component: admin
 status:
   loadBalancer: {}

@@ -54,9 +54,11 @@ endpoint that the operator renders is verified against the Camunda source before
   verified names.
 
 The rule is enforced in code: `pkg/camundaconfig` declares every key the operator sets, each
-with a comment that names the source file (and line at the time of writing). The renderer
-emits only declared keys, and a unit test asserts that. A key without a source pointer does
-not exist.
+with a comment that names the configuration class or file that declares it. The renderer
+emits only declared keys, and a unit test asserts that. A second test scans a local checkout
+of camunda/camunda (`CAMUNDA_SOURCE_DIR`) for every declared key in `defaults.yaml`; the keys
+that the generated file does not carry are listed in the test with a reason. A key without a
+source does not exist.
 
 The keys verified for this spec are listed under "Verified configuration". The open points of
 the first draft (identity profile, node id, JDBC driver, redirect path, connectors image) were
@@ -71,7 +73,7 @@ MCP), because the runtime lives outside the monorepo.
   with schema and CEL validation; the `CamundaPlatformConfig` validation controller
   (`Ready: Healthy | MissingSecret`) in `internal/controller/camundaplatformconfig/`.
 - A `CamundaCluster` controller that renders and converges the full documented topology
-  surface: Zeebe StatefulSet, gateway `Standalone | Embedded`, operate/tasklist/identity
+  surface: Zeebe StatefulSet, gateway `Standalone | Embedded`, operate/tasklist/admin
   `Standalone | Embedded`, connectors, Services, optional ServiceMonitors.
 - Configuration through unified-configuration environment variables on the single
   `camunda/camunda` image (Spring relaxed binding), layered from cluster identity, secondary
@@ -121,15 +123,20 @@ The controller follows the Batch B layout:
   (metadata only) through `refindex`.
 - `pkg/components/camundacluster/` — pure: `MergePreset`, `ValidateMerged`, the topology
   resolver, the configuration renderer, one component builder per process, goldens.
-- `pkg/camundaconfig/` — the declared vocabulary of unified-configuration keys with source
-  pointers, the Spring relaxed-binding conversion (`camunda.data.secondary-storage.type` →
+- `pkg/camundaconfig/` — the declared vocabulary of unified-configuration keys, each naming
+  its configuration class, the Spring relaxed-binding conversion (`camunda.data.secondary-storage.type` →
   `CAMUNDA_DATA_SECONDARYSTORAGE_TYPE`; a dash is dropped, a dot becomes an underscore, list
   indexes `[0]` become `_0_`), and typed helpers for the few list-valued keys.
-- Workloads use the ocf StatefulSet, Deployment, and Service primitives; ServiceMonitors the
+- Workloads use the ocf StatefulSet, Deployment, and Service primitives. The base object of a
+  process holds what the topology decides (container, image, command, ports, probes, the
+  rendered env, security context, selector, claim template); the override surfaces of the spec
+  are gated ocf mutations shared by the StatefulSet and Deployment builders (`Resources`,
+  `SchedulingConstraints`, `PodMetadata`, `ServiceAccount`, and `VolumeRetention` on the
+  brokers), like the ElasticsearchCluster component. ServiceMonitors use the
   existing `pkg/wrappers/servicemonitor` behind `IncludeWhen` (CRD served) and `GatedBy`
   (`monitoring.serviceMonitor.enabled`). Labels come from `pkg/labels`: `camunda.io/cluster`
   (the owner key reserved for this kind), `camunda.io/component`, `app.kubernetes.io/managed-by`.
-  Component values: `zeebe`, `gateway`, `operate`, `tasklist`, `identity`, `connectors`.
+  Component values: `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`.
 - Managed resources are applied with SSA under ocf's field manager `CamundaCluster/<process>`.
 
 ### Topology model
@@ -149,7 +156,7 @@ their profiles (`WebappsConfigurationInitializer.java:38-39`); the operator does
 | a web app `Standalone` | plus a process named after the app: `gateway,<app>,consolidated-auth`; the host process (gateway, or zeebe when the gateway is embedded) drops that app's profile |
 | `connectors.enabled` | plus `connectors`: the connectors runtime pointed at the cluster's gRPC and REST Services |
 
-The Identity application uses the `admin` profile (`Profile.java:24-25`: `identity` is the
+The Admin application (Identity before 8.9) uses the `admin` profile (`Profile.java:24-25`: `identity` is the
 legacy name; `WebappsConfigurationInitializer.java:112-118` serves the UI for either).
 `consolidated-auth` is on every process: it gates the only `SecurityFilterChain`
 (`WebSecurityConfig.java:148`), Spring's default security is excluded
@@ -270,9 +277,14 @@ Probes on the management port 9600 (`application.properties`,
 `/actuator/health/readiness` and liveness `/actuator/health/liveness` on port 8080 (Helm chart
 `templates/connectors/deployment.yaml:108-119`). ocf's workload primitives turn pod
 readiness into the component condition: `ZeebeReady`, `GatewayReady`, `OperateReady`,
-`TasklistReady`, `IdentityReady` (only for standalone processes), `ConnectorsReady`.
-`Ready` is `conditions.Aggregate` over every process component; connectors is part of it (a
-user-enabled workload, unlike the ES metrics exporter). Pre-check failures use
+`TasklistReady`, `AdminReady`, `ConnectorsReady`. Every process has a component on every
+reconcile, gated with `WithFeatureGate` on whether the topology enables it, so an embedded or
+disabled process deletes what an earlier topology created and reads `Disabled`; the admin Secret
+component is gated on basic auth and the mirrored Secrets are `GatedBy` presence per purpose.
+`Ready` is `conditions.Aggregate` over the components the cluster needs (enabled processes, the
+admin Secret under basic auth, the mirrored Secrets when any exists), so it never mirrors
+`Disabled`; connectors is part of it (a user-enabled workload, unlike the ES metrics exporter).
+Pre-check failures use
 `InvalidReference` (preset, platform config, storageRef binding and its DatabaseConfig and
 DatabaseServerConfig chain, backup/document ObjectStorageConfig, invalid merged spec with the
 fields named) and `MissingSecret` (auth client secret, license, storage credentials, CA,
@@ -287,16 +299,18 @@ broker PVCs stay). `spec.pause`: reconcile returns before the pre-checks and rec
 
 ### Zeebe storage and StatefulSet lifecycle
 
-- `spec.zeebe.storageSize` grows in place: the operator patches the broker
+- `spec.zeebe.storageSize` grows in place: the operator patches the bound broker
   PersistentVolumeClaims (`camunda.io/cluster` + `camunda.io/component=zeebe` selector) to the
-  new size; the storage class must allow expansion, and a rejected patch is returned as a reconcile
-  error (retried with backoff). Shrink: CEL rejects an inline decrease; a decrease
-  through the preset is clamped to the largest bound claim with a `StorageShrinkIgnored`
-  Warning event (Batch B rule). `status.storageSize` reports the smallest bound broker claim.
-- The volume claim template of the StatefulSet is immutable. When the rendered template
-  differs from the applied one (size growth for future replicas), the operator deletes the
-  StatefulSet with `orphan` propagation and re-applies it; pods and claims stay and the new
-  StatefulSet adopts them (event `StatefulSetRecreated`).
+  new size, and the claim of a new replica once it binds (the claim watch fires); the storage
+  class must allow expansion, and a rejected patch is returned as a reconcile error (retried with
+  backoff). `status.volumes` lists every bound broker claim with its capacity.
+- The volume claim template of the StatefulSet is immutable and the operator never recreates
+  the StatefulSet: the renderer keeps the applied template size (`Input.VolumeClaimSize`, read
+  from the applied StatefulSet) and writes the effective size into the annotation
+  `camunda.io/requested-storage-size`.
+- Shrink: CEL rejects an inline decrease; the claims are never reduced. A decrease through the
+  preset below the largest bound claim records a `StorageShrinkIgnored` Warning event once per
+  requested size (the event fires until the annotation carries the requested size).
 - `spec.zeebe.storageClassName` and a `partitions` decrease are rejected by CEL.
 - `podManagementPolicy: Parallel` and `updateStrategy: RollingUpdate` (the shape the Camunda
   Helm chart and the upstream operator use); the StatefulSet's own
@@ -342,14 +356,16 @@ PersistentVolumeClaim events the cluster that labels them.
   ServiceMonitor): wiring and owner refs, labels, per-process conditions and `Ready` mirroring
   (workload status stamped by the specs), each pre-check reason with the reference named,
   watch-driven rollout (config hash changes on platform config, preset, binding, Secret
-  edits), suspend and resume, pause writes nothing, storage growth patches PVCs and recreates
-  the StatefulSet with orphaned pods, CEL rejections, schema specs for both kinds.
+  edits), suspend and resume, pause writes nothing, storage growth patches PVCs and keeps the
+  StatefulSet, an ignored shrink fires once, CEL rejections, schema specs for both kinds.
 - **e2e (kind, extends the Batch B suite):** an 8.9 default-topology cluster (1 broker,
   1 gateway, connectors) with basic auth on the Batch B `ElasticsearchCluster`: `Ready: Healthy`;
   `GET /v2/topology` on the gateway (REST port 8080, `TopologyController.java`) reports the
-  broker and partitions; Operate, Tasklist, and Identity answer on the gateway; a process is
+  broker and partitions; Operate, Tasklist, and Admin answer on the gateway; a process is
   deployed and an instance started through the REST API with the admin credentials and shows
-  up in Operate's API (export to secondary storage works); connectors ready; suspend to zero and
+  up in Operate's API (export to secondary storage works); Operate switched to `Standalone`
+  answers on its own Service and, switched back to `Embedded`, its Deployment and Service are
+  gone and `OperateReady` reads `Disabled`; connectors ready; suspend to zero and
   resume with the deployed process still present; deletion garbage-collects the workloads and
   the broker PVC follows the default retention. A second flow runs the same cluster on the Batch
   B `Database` (RDBMS). If the runner cannot host both backends and Camunda, the RDBMS flow
@@ -358,15 +374,15 @@ PersistentVolumeClaim events the cluster that labels them.
 ## Risks
 
 - **Configuration drift.** The main risk is a key that 8.9 does not read. Mitigation is the
-  source-of-truth rule, `pkg/camundaconfig` with pointers, the declared-keys test, and e2e
+  source-of-truth rule, `pkg/camundaconfig` (every key names its configuration class), the
+  declared-keys test, the source scan against a local checkout (`CAMUNDA_SOURCE_DIR`), and e2e
   that proves effect (topology, export) rather than shape.
 - **Profile drift.** The profile names (`broker`, `gateway`, `operate`, `tasklist`, `admin`,
   `consolidated-auth`) are the control surface; a rename upstream breaks a process. Mitigation:
-  `pkg/camundaconfig` declares them with source pointers like every key, and e2e proves the
+  `pkg/camundaconfig` declares them next to the keys, and e2e proves the
   8.9 default topology serves all three web applications behind auth.
 - **Connectors env names** are verified with the docs MCP, not the monorepo (the runtime is a
   separate repository); the e2e "connectors ready" check is the proof.
-- **StatefulSet recreate-with-orphan** is the delicate mechanic; envtest covers it, e2e once.
 - **e2e resources** on the runner (ES + Camunda + Postgres); fallback is a split job.
 
 ## Doc deviations (applied in this batch)
@@ -374,7 +390,7 @@ PersistentVolumeClaim events the cluster that labels them.
 - Status table: no `Progressing`, no separate `Suspended` condition; `Ready` mirrors the
   highest-priority process condition; `Suspended` is `Ready=True`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy` added (`whenDeleted: Delete` default);
-  `status.storageSize` added; storage-shrink handling described as above.
+  `status.volumes` added; storage-shrink handling described as above.
 - Field manager is ocf's `CamundaCluster/<process>`, not `camunda-operator/camundacluster`.
 - Basic auth: the operator-created admin credentials Secret `<name>-camunda-admin` documented.
 - Env examples corrected to verified names; the topology note now names the Spring profiles
@@ -387,8 +403,8 @@ PersistentVolumeClaim events the cluster that labels them.
 
 ## Verified configuration (8.9.9)
 
-Keys the operator renders, with the source that declares them. `pkg/camundaconfig` carries
-these pointers in code.
+Keys the operator renders, with the source that declares them (lines as of 8.9.9).
+`pkg/camundaconfig` names the class of each key in code; this table keeps the line pointers.
 
 | Key | Source |
 | --- | --- |

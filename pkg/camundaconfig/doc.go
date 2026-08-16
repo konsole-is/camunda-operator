@@ -16,13 +16,14 @@ limitations under the License.
 
 // Package camundaconfig declares every unified-configuration key, Spring
 // profile, and plain environment variable that the operator sets on a
-// Camunda 8.9 container. Each declaration carries a comment that names the
-// source that declares it: a file and line of the camunda/camunda repository
-// at tag 8.9.9, or a path in the Camunda Helm chart 14.8.3. A key without a
-// source does not exist here, and the renderer in pkg/components/camundacluster
-// emits only keys from this package. Spring ignores an environment variable
-// that it does not recognize, so a wrong key fails silently at runtime. This
-// package is the place where a key is checked once, against its source.
+// Camunda 8.9 container. Each declaration names the configuration class or
+// file of the camunda/camunda repository that declares it, and
+// keys_source_test.go proves the declared keys against a local checkout of
+// that repository (set CAMUNDA_SOURCE_DIR to run it). The renderer in
+// pkg/components/camundacluster emits only keys from this package. Spring
+// ignores an environment variable that it does not recognize, so a wrong key
+// fails silently at runtime. This package is the place where a key is
+// checked once, against its source.
 //
 // The package also converts a dotted key to its environment variable name
 // under Spring relaxed binding: upper case, a dot becomes an underscore, a

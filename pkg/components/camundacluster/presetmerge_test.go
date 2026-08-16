@@ -274,7 +274,7 @@ func TestMergePreset(t *testing.T) {
 			func(t *testing.T, got v1.CamundaClusterSpec) {
 				require.NotNil(t, got.Tasklist)
 				assert.Equal(t, v1.ComponentModeStandalone, got.Tasklist.Mode)
-				assert.Nil(t, got.Identity)
+				assert.Nil(t, got.Admin)
 			},
 		},
 		{

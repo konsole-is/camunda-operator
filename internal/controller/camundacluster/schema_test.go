@@ -161,7 +161,7 @@ func realisticPreset() *v1.CamundaClusterPreset {
 		},
 		Operate:  &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
 		Tasklist: &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
-		Identity: &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
+		Admin:    &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
 		Connectors: &v1.ConnectorsSpec{
 			Enabled: new(true),
 			Version: "8.9.7",

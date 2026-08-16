@@ -92,7 +92,7 @@ func MergePreset(spec v1.CamundaClusterSpec, preset *v1.CamundaClusterPresetSpec
 	merged.Gateway = mergeGateway(merged.Gateway, spec.Gateway)
 	merged.Operate = mergeWebApp(merged.Operate, spec.Operate)
 	merged.Tasklist = mergeWebApp(merged.Tasklist, spec.Tasklist)
-	merged.Identity = mergeWebApp(merged.Identity, spec.Identity)
+	merged.Admin = mergeWebApp(merged.Admin, spec.Admin)
 	merged.Connectors = mergeConnectors(merged.Connectors, spec.Connectors)
 
 	merged.PlatformConfigRef = spec.PlatformConfigRef

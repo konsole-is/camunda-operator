@@ -33,7 +33,7 @@ spec:
       mode: Embedded
     tasklist:
       mode: Embedded
-    identity:
+    admin:
       mode: Embedded
     connectors:
       enabled: true

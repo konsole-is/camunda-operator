@@ -24,7 +24,7 @@ The operator reconciles a `CamundaManagementCluster` in the following steps:
 8. Update per-component conditions, the aggregate `Ready` condition, and `status.observedGeneration`.
 
 All workloads are labeled with `camunda.io/cluster` (this CR's name) and `camunda.io/component` (`keycloak`, `management-identity`, `console`, `web-modeler`).
-The Management Identity workloads use the component value `management-identity` rather than `identity`, because `identity` already names the orchestration cluster's embedded Identity application on [CamundaCluster](camundacluster.md) workloads.
+The Management Identity workloads use the component value `management-identity` rather than `identity`, so the two products stay apart: the orchestration cluster's Admin application (Identity before Camunda 8.9) uses the component value `admin` on [CamundaCluster](camundacluster.md) workloads.
 
 ```mermaid
 graph TD

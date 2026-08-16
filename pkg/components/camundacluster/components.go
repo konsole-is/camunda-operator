@@ -18,7 +18,6 @@ package camundacluster
 
 import (
 	"fmt"
-	"maps"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -80,14 +79,25 @@ const (
 // (helm chart 14.8.3 values.yaml:2438 fsGroup, :2455 runAsUser).
 const camundaUID int64 = 1001
 
-// Build returns one component per process, in Resolve order. Every one of
-// them takes part in Ready. The admin Secret component is returned separately
-// by AdminSecretComponent, because it exists only for basic auth and needs
-// the password. The first component (zeebe) also carries the ServiceAccount
-// when spec.serviceAccount is set, so it exists before any pod references it.
-func Build(in Input) ([]*component.Component, error) {
+// ProcessComponent is the ocf component of one process, together with the
+// process it renders.
+type ProcessComponent struct {
+	Process   Process
+	Component *component.Component
+}
+
+// Build returns one component per process, in Resolve order, for every
+// process of the cluster. The component of a disabled process is gated off:
+// its reconcile deletes the workload, the Service, and the ServiceMonitor
+// that an earlier topology created and reports Disabled. Only the components
+// of enabled processes take part in Ready. The admin Secret and the mirrored
+// Secrets are separate components, see AdminSecretComponent and
+// MirroredSecretComponent. The zeebe component also carries the
+// ServiceAccount when spec.serviceAccount is set, so it exists before any pod
+// references it.
+func Build(in Input) ([]ProcessComponent, error) {
 	processes := Resolve(in.Effective)
-	comps := make([]*component.Component, 0, len(processes))
+	comps := make([]ProcessComponent, 0, len(processes))
 
 	for _, p := range processes {
 		var comp *component.Component
@@ -100,7 +110,7 @@ func Build(in Input) ([]*component.Component, error) {
 		if err != nil {
 			return nil, fmt.Errorf("building %s component: %w", p.Component, err)
 		}
-		comps = append(comps, comp)
+		comps = append(comps, ProcessComponent{Process: p, Component: comp})
 	}
 
 	return comps, nil
@@ -124,14 +134,17 @@ func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string 
 }
 
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
-// StatefulSet, the headless Service, and the optional ServiceMonitor.
+// StatefulSet, the headless Service, and the optional ServiceMonitor. It is
+// gated on p.Enabled like every process component.
 func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccountFor(in)).Build()
 	if err != nil {
 		return nil, err
 	}
 
-	sts, err := statefulset.NewBuilder(zeebeStatefulSet(in, p)).Build()
+	sts, err := statefulset.NewBuilder(zeebeStatefulSet(in, p)).
+		WithMutation(statefulSetMutations(in, p)...).
+		Build()
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +162,7 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	return component.NewComponentBuilder().
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
+		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
 		WithResource(account, component.GatedBy(feature.NewBooleanGate(in.Effective.ServiceAccount != nil))).
 		WithResource(sts).
 		WithResource(svc).
@@ -159,9 +173,12 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 
 // deploymentComponent builds a Deployment-backed process (the gateway, a web
 // application, or connectors): the Deployment, its Service, and the optional
-// ServiceMonitor.
+// ServiceMonitor. It is gated on p.Enabled, so an embedded or disabled
+// process deletes its resources.
 func deploymentComponent(in Input, p Process) (*component.Component, error) {
-	workload, err := deployment.NewBuilder(deploymentFor(in, p)).Build()
+	workload, err := deployment.NewBuilder(deploymentFor(in, p)).
+		WithMutation(deploymentMutations(in, p)...).
+		Build()
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +196,7 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 	return component.NewComponentBuilder().
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
+		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
 		WithResource(workload).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
@@ -211,13 +229,19 @@ func serviceAccountFor(in Input) *corev1.ServiceAccount {
 	}
 }
 
-// zeebeStatefulSet renders the broker StatefulSet: parallel pod management,
-// a rolling update, the data volume claim template, and the retention policy
-// of spec.zeebe.persistentVolumeClaimRetentionPolicy for deletion (a
-// scale-down always retains).
+// zeebeStatefulSet renders the base broker StatefulSet: parallel pod
+// management, a rolling update, the data volume claim template with
+// in.VolumeClaimSize (the effective size when unset), the requested storage
+// size annotation, and the default retention policy (the volumes go with the
+// cluster; a scale-down always retains). statefulSetMutations layer the
+// overrides on top.
 func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 	e := in.Effective
 	storageSize := e.StorageSize()
+	claimSize := storageSize
+	if in.VolumeClaimSize != nil {
+		claimSize = *in.VolumeClaimSize
+	}
 
 	var storageClassName *string
 	if e.Zeebe != nil {
@@ -232,9 +256,10 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      WorkloadName(in.Cluster, p.Component),
-			Namespace: in.Cluster.Namespace,
-			Labels:    managedLabels(in.Cluster, p.Component),
+			Name:        WorkloadName(in.Cluster, p.Component),
+			Namespace:   in.Cluster.Namespace,
+			Labels:      managedLabels(in.Cluster, p.Component),
+			Annotations: map[string]string{RequestedStorageSizeAnnotation: storageSize.String()},
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:            new(p.Replicas),
@@ -245,7 +270,7 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 			},
 			PersistentVolumeClaimRetentionPolicy: &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
-				WhenDeleted: appsv1.PersistentVolumeClaimRetentionPolicyType(e.VolumeRetention()),
+				WhenDeleted: appsv1.DeletePersistentVolumeClaimRetentionPolicyType,
 				WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
 			},
 			Template: template,
@@ -258,7 +283,7 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 					StorageClassName: storageClassName,
 					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{corev1.ResourceStorage: storageSize},
+						Requests: corev1.ResourceList{corev1.ResourceStorage: claimSize},
 					},
 				},
 			}},
@@ -266,7 +291,8 @@ func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 	}
 }
 
-// deploymentFor renders the rolling-update Deployment of a process.
+// deploymentFor renders the base rolling-update Deployment of a process.
+// deploymentMutations layer the overrides on top.
 func deploymentFor(in Input, p Process) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -283,28 +309,18 @@ func deploymentFor(in Input, p Process) *appsv1.Deployment {
 	}
 }
 
-// podTemplate renders the pod template of a process: the discovery labels
-// over the user labels, the user annotations plus the config hash of the
-// process, the container, the volumes of the rendered configuration, the
-// security context of the image user, the scheduling of the component or the
-// cluster, and the ServiceAccount when spec.serviceAccount is set.
+// podTemplate renders the base pod template of a process: the discovery
+// labels, the config hash annotation of the process, the container, the
+// volumes of the rendered configuration, and the security context of the
+// image user. The override surfaces (user pod metadata, resources,
+// scheduling, the ServiceAccount) are mutations, see workloadMutations.
 func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
-	e := in.Effective
-	workload := e.Workload(p.Component)
 	r := render(in, p)
 
-	annotations := map[string]string{}
-	maps.Copy(annotations, e.PodAnnotations)
-	maps.Copy(annotations, workload.PodAnnotations)
-	annotations[ConfigHashAnnotation] = configHash(in, p, r)
-
-	template := corev1.PodTemplateSpec{
+	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: labels.Merge(
-				labels.Merge(e.PodLabels, workload.PodLabels),
-				discoveryLabels(in.Cluster, p.Component),
-			),
-			Annotations: annotations,
+			Labels:      discoveryLabels(in.Cluster, p.Component),
+			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
 		},
 		Spec: corev1.PodSpec{
 			Containers:      []corev1.Container{container(in, p, r)},
@@ -312,26 +328,6 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 			SecurityContext: podSecurityContext(),
 		},
 	}
-
-	if e.ServiceAccount != nil {
-		template.Spec.ServiceAccountName = ServiceAccountName(in.Cluster)
-	}
-
-	scheduling := e.Scheduling
-	if workload.Scheduling != nil {
-		scheduling = workload.Scheduling
-	}
-	if scheduling != nil {
-		if scheduling.NodeAffinity != nil || scheduling.PodAffinity != nil {
-			template.Spec.Affinity = &corev1.Affinity{
-				NodeAffinity: scheduling.NodeAffinity,
-				PodAffinity:  scheduling.PodAffinity,
-			}
-		}
-		template.Spec.Tolerations = scheduling.Tolerations
-	}
-
-	return template
 }
 
 // podSecurityContext runs the pods as the image user 1001:1001, with the
@@ -345,22 +341,25 @@ func podSecurityContext() *corev1.PodSecurityContext {
 	}
 }
 
-// container renders the container of a process from the rendered
-// configuration.
-func container(in Input, p Process, r rendered) corev1.Container {
-	var resources corev1.ResourceRequirements
-	if workload := in.Effective.Workload(p.Component); workload.Resources != nil {
-		resources = *workload.Resources
+// containerName returns the name of the container of a process: connectors
+// for the connectors runtime, camunda for every unified process.
+func containerName(p Process) string {
+	if p.Component == ComponentConnectors {
+		return connectorsContainer
 	}
+	return camundaContainer
+}
 
+// container renders the container of a process from the rendered
+// configuration. The resources are a mutation, see workloadMutations.
+func container(in Input, p Process, r rendered) corev1.Container {
 	c := corev1.Container{
-		Name:           camundaContainer,
+		Name:           containerName(p),
 		Image:          Image(in, p),
 		Command:        r.command,
 		Env:            r.env,
 		EnvFrom:        r.envFrom,
 		Ports:          containerPorts(p),
-		Resources:      resources,
 		VolumeMounts:   r.mounts,
 		StartupProbe:   probe(portNameManagement, healthStartupPath, startupPeriodSeconds, startupFailureThreshold),
 		ReadinessProbe: probe(portNameManagement, healthReadinessPath, readinessPeriodSeconds, 0),
@@ -368,7 +367,6 @@ func container(in Input, p Process, r rendered) corev1.Container {
 	}
 
 	if p.Component == ComponentConnectors {
-		c.Name = connectorsContainer
 		c.StartupProbe = nil
 		c.ReadinessProbe = probe(portNameHTTP, healthReadinessPath, readinessPeriodSeconds, 0)
 		c.LivenessProbe = probe(portNameHTTP, healthLivenessPath, livenessPeriodSeconds, 0)

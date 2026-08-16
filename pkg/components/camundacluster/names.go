@@ -27,7 +27,7 @@ const (
 	ComponentGateway    = "gateway"
 	ComponentOperate    = "operate"
 	ComponentTasklist   = "tasklist"
-	ComponentIdentity   = "identity"
+	ComponentAdmin      = "admin"
 	ComponentConnectors = "connectors"
 )
 
@@ -37,6 +37,12 @@ const (
 	// ConfigHashAnnotation is the pod template annotation that carries the
 	// hash of the rendered configuration. A change to it rolls the pods.
 	ConfigHashAnnotation = "camunda.io/config-hash"
+	// RequestedStorageSizeAnnotation is the annotation of the broker
+	// StatefulSet that carries the effective storageSize. The claim template
+	// keeps the size it was created with, so this is where the requested
+	// size is visible, and the controller records an ignored shrink only when
+	// it changes.
+	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
 	// AdminUsernameKey and AdminPasswordKey are the keys of the admin Secret.

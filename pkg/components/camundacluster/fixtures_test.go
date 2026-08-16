@@ -68,7 +68,7 @@ func mediumPreset() *v1.CamundaClusterPresetSpec {
 		},
 		Operate:    &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
 		Tasklist:   &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
-		Identity:   &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
+		Admin:      &v1.WebAppSpec{Mode: v1.ComponentModeEmbedded},
 		Connectors: &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"},
 	}}
 }
@@ -159,7 +159,7 @@ func fixtureSeparated(t *testing.T) Input {
 	return newInput(t, func(in *Input) {
 		in.Cluster.Spec.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
 		in.Cluster.Spec.Tasklist = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
-		in.Cluster.Spec.Identity = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+		in.Cluster.Spec.Admin = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
 		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
 		in.Effective = NewEffective(in.Cluster.Spec)
 	})

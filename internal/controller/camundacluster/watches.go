@@ -181,7 +181,7 @@ func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
 
 // enqueueForBrokerClaim maps a PersistentVolumeClaim event to the cluster
 // that labels it, so a resize or a binding outside the spec updates
-// status.storageSize.
+// status.volumes.
 func enqueueForBrokerClaim() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
 		name, ok := o.GetLabels()[labels.ClusterKey]

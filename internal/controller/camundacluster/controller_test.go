@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"maps"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -26,6 +28,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -238,6 +241,22 @@ func expectEvent(cluster *v1.CamundaCluster, reason, eventType string) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// countEvents returns the number of times an event with the given reason was
+// recorded for cluster: the sum of the counts of the matching Event objects,
+// because the recorder aggregates repeats of the same event into one object.
+func countEvents(g Gomega, cluster *v1.CamundaCluster, reason string) int32 {
+	GinkgoHelper()
+	var events corev1.EventList
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(cluster.Namespace))).To(Succeed())
+	var count int32
+	for _, event := range events.Items {
+		if event.Reason == reason && event.InvolvedObject.Name == cluster.Name {
+			count += max(event.Count, 1)
+		}
+	}
+	return count
+}
+
 // configHash polls until the zeebe StatefulSet of cluster carries a config
 // hash that differs from previous, and returns it.
 func configHash(cluster *v1.CamundaCluster, previous string) string {
@@ -329,29 +348,18 @@ func stampClaimCapacity(claim *corev1.PersistentVolumeClaim, capacity string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// finishOrphanDeletion removes the orphan finalizer of a StatefulSet that is
-// being deleted, as the garbage collector would after it released the
-// dependents. envtest runs no garbage collector.
-func finishOrphanDeletion(key client.ObjectKey) {
-	GinkgoHelper()
-	Eventually(func(g Gomega) {
-		var sts appsv1.StatefulSet
-		g.Expect(k8sClient.Get(ctx, key, &sts)).To(Succeed())
-		g.Expect(sts.DeletionTimestamp).NotTo(BeNil())
-		g.Expect(sts.Finalizers).To(ContainElement(metav1.FinalizerOrphanDependents))
-		sts.Finalizers = nil
-		g.Expect(k8sClient.Update(ctx, &sts)).To(Succeed())
-	}, timeout, interval).Should(Succeed())
-}
-
-// expectStorageSize polls until status.storageSize of cluster equals want.
-func expectStorageSize(cluster *v1.CamundaCluster, want string) {
+// expectVolumes polls until status.volumes of cluster lists exactly the
+// given claim names with the given capacities, in name order.
+func expectVolumes(cluster *v1.CamundaCluster, want map[string]string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var latest v1.CamundaCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-		g.Expect(latest.Status.StorageSize).NotTo(BeNil())
-		g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse(want))).To(BeZero())
+		g.Expect(latest.Status.Volumes).To(HaveLen(len(want)))
+		for i, volume := range latest.Status.Volumes {
+			g.Expect(volume.Name).To(Equal(slices.Sorted(maps.Keys(want))[i]))
+			g.Expect(volume.Capacity.Cmp(resource.MustParse(want[volume.Name]))).To(BeZero(), volume.Name)
+		}
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -424,6 +432,9 @@ var _ = Describe("CamundaCluster controller", func() {
 
 		expectCondition(cluster, v1.ConditionZeebeReady, Not(Equal(v1.ReasonHealthy)))
 		expectCondition(cluster, v1.ConditionGatewayReady, Not(Equal(v1.ReasonHealthy)))
+		// No referenced Secret lives outside the namespace, so the mirrored
+		// Secrets component is disabled and stays out of Ready.
+		expectCondition(cluster, v1.ConditionMirroredSecretsReady, Equal(string(component.Disabled)))
 		expectReady(cluster, metav1.ConditionFalse, Not(Equal(v1.ReasonHealthy)), Not(BeEmpty()))
 
 		stampStatefulSetReady(zeebeKey)
@@ -560,6 +571,68 @@ var _ = Describe("CamundaCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("deletes what a topology or auth change no longer needs and reports Disabled for it", func() {
+		cluster := createDefaultCluster()
+		operateKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-operate"}
+		connectorsKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-connectors"}
+		adminKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-camunda-admin"}
+		fetchStatefulSet(client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"})
+		expectCondition(cluster, v1.ConditionOperateReady, Equal(string(component.Disabled)))
+		expectCondition(cluster, v1.ConditionConnectorsReady, Equal(string(component.Disabled)))
+
+		By("running Operate standalone and connectors")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			c.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
+		})
+		fetchDeployment(operateKey)
+		fetchDeployment(connectorsKey)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, operateKey, &corev1.Service{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectCondition(cluster, v1.ConditionOperateReady, Not(Equal(string(component.Disabled))))
+		expectCondition(cluster, v1.ConditionConnectorsReady, Not(Equal(string(component.Disabled))))
+
+		By("embedding Operate again and disabling connectors")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Operate.Mode = v1.ComponentModeEmbedded
+			c.Spec.Connectors.Enabled = new(false)
+		})
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, operateKey, &appsv1.Deployment{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, operateKey, &corev1.Service{}))).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, connectorsKey, &appsv1.Deployment{}))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		expectCondition(cluster, v1.ConditionOperateReady, Equal(string(component.Disabled)))
+		expectCondition(cluster, v1.ConditionConnectorsReady, Equal(string(component.Disabled)))
+
+		By("switching the platform config from basic to oidc")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, adminKey, &corev1.Secret{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		oidcSecret := createSecret(cluster.Namespace, "oidc", map[string]string{"client-secret": "s"})
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaPlatformConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}, &latest)).To(Succeed())
+			latest.Spec.Auth = &v1.PlatformAuthSpec{
+				Method: v1.AuthenticationMethodOIDC,
+				OIDC: &v1.OIDCSpec{
+					IssuerURL: "https://idp.example.com/realms/camunda",
+					ClientID:  "platform-client",
+					ClientSecretRef: v1.SecretKeyRef{
+						Name: oidcSecret.Name, Namespace: cluster.Namespace, Key: "client-secret",
+					},
+				},
+			}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, adminKey, &corev1.Secret{}))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(string(component.Disabled)))
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_SECURITY_AUTHENTICATION_METHOD")).To(Equal("oidc"))
+	})
+
 	It("does nothing while paused, not even status", func() {
 		ns := newNamespace()
 		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
@@ -666,6 +739,57 @@ var _ = Describe("CamundaCluster controller", func() {
 		configHash(cluster, hash)
 	})
 
+	It("rolls an RDBMS cluster when its DatabaseServerConfig or DatabaseConfig changes", func() {
+		ns := newNamespace()
+		server := fixtures.DatabaseServerConfig()
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+		dbConfig := fixtures.DatabaseConfig()
+		dbConfig.Namespace = ns
+		dbConfig.Spec.ServerRef = server.Name
+		dbConfig.Spec.CredentialsSecretRef.Namespace = ns
+		Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+		createSecret(ns, dbConfig.Spec.CredentialsSecretRef.Name, map[string]string{
+			"username": "camunda", "password": "db-password",
+		})
+		binding := &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: ns},
+			Spec: v1.SecondaryStorageConfigSpec{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: dbConfig.Name},
+			},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		cluster := newCluster(ns, createPlatformConfig(), binding)
+		createCluster(cluster)
+
+		hash := configHash(cluster, "")
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_URL")).
+			To(Equal("jdbc:postgresql://" + server.Spec.Host + ":5432/camunda"))
+
+		By("editing the DatabaseServerConfig host")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.Host = "other-postgres." + ns + ".svc"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		hash = configHash(cluster, hash)
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_URL")).
+			To(Equal("jdbc:postgresql://other-postgres." + ns + ".svc:5432/camunda"))
+
+		By("editing the DatabaseConfig database name")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(dbConfig), &latest)).To(Succeed())
+			latest.Spec.DatabaseName = "camunda2"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		configHash(cluster, hash)
+		Expect(envValue(zeebeContainer(cluster), "CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_URL")).
+			To(Equal("jdbc:postgresql://other-postgres." + ns + ".svc:5432/camunda2"))
+	})
+
 	It("mirrors a referenced Secret from another namespace and follows its changes", func() {
 		ns := newNamespace()
 		sourceNamespace := newNamespace()
@@ -709,7 +833,7 @@ var _ = Describe("CamundaCluster controller", func() {
 	})
 
 	It(
-		"grows the broker claims, recreates the StatefulSet, reports the smallest bound claim, and clamps a shrink",
+		"grows the broker claims in place, keeps the StatefulSet, reports every bound claim, and ignores a shrink once",
 		func() {
 			ns := newNamespace()
 			sc := createExpandableStorageClass()
@@ -724,11 +848,12 @@ var _ = Describe("CamundaCluster controller", func() {
 
 			sts := fetchStatefulSet(zeebeKey)
 			Expect(claimTemplateSize(sts)).To(Equal(resource.MustParse("10Gi")))
+			Expect(sts.Annotations).To(HaveKeyWithValue(components.RequestedStorageSizeAnnotation, "10Gi"))
 			claim0 := createBoundBrokerClaim(cluster, "0", sc.Name, "10Gi")
 			claim1 := createBoundBrokerClaim(cluster, "1", sc.Name, "10Gi")
-			expectStorageSize(cluster, "10Gi")
+			expectVolumes(cluster, map[string]string{claim0.Name: "10Gi", claim1.Name: "10Gi"})
 
-			By("growing the storage size")
+			By("growing the storage size: the claims grow, the StatefulSet and its template stay")
 			updatePresetStorageSize(preset, "20Gi")
 			for _, claim := range []*corev1.PersistentVolumeClaim{claim0, claim1} {
 				Eventually(func(g Gomega) {
@@ -738,43 +863,58 @@ var _ = Describe("CamundaCluster controller", func() {
 						To(Equal(resource.MustParse("20Gi")))
 				}, timeout, interval).Should(Succeed())
 			}
-			expectEvent(cluster, "StatefulSetRecreated", corev1.EventTypeNormal)
-			// While the StatefulSet terminates, the reconcile applies nothing,
-			// so the zeebe component never reports an apply error.
-			Consistently(func(g Gomega) {
-				var latest v1.CamundaCluster
-				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-				zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
-				g.Expect(zeebe).NotTo(BeNil())
-				g.Expect(zeebe.Reason).NotTo(Equal(string(component.Error)))
-			}, 2*time.Second, interval).Should(Succeed())
-			finishOrphanDeletion(zeebeKey)
 			Eventually(func(g Gomega) {
 				var latest appsv1.StatefulSet
 				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
-				g.Expect(latest.UID).NotTo(Equal(sts.UID))
-				g.Expect(claimTemplateSize(&latest)).To(Equal(resource.MustParse("20Gi")))
+				g.Expect(latest.Annotations).To(HaveKeyWithValue(components.RequestedStorageSizeAnnotation, "20Gi"))
 			}, timeout, interval).Should(Succeed())
-
-			By("reporting the smallest bound claim")
-			expectStorageSize(cluster, "10Gi")
-			stampClaimCapacity(claim0, "20Gi")
-			Consistently(func(g Gomega) {
-				var latest v1.CamundaCluster
-				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-				g.Expect(latest.Status.StorageSize.Cmp(resource.MustParse("10Gi"))).To(BeZero())
-			}, 2*time.Second, interval).Should(Succeed())
-			stampClaimCapacity(claim1, "20Gi")
-			expectStorageSize(cluster, "20Gi")
-
-			By("clamping a preset shrink")
-			updatePresetStorageSize(preset, "5Gi")
-			expectEvent(cluster, "StorageShrinkIgnored", corev1.EventTypeWarning)
 			Consistently(func(g Gomega) {
 				var latest appsv1.StatefulSet
 				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+				g.Expect(latest.UID).To(Equal(sts.UID))
 				g.Expect(latest.DeletionTimestamp).To(BeNil())
-				g.Expect(claimTemplateSize(&latest)).To(Equal(resource.MustParse("20Gi")))
+				g.Expect(claimTemplateSize(&latest)).To(Equal(resource.MustParse("10Gi")))
+			}, 2*time.Second, interval).Should(Succeed())
+
+			By("growing a claim that binds later, as a new replica would")
+			claim2 := createBoundBrokerClaim(cluster, "2", sc.Name, "10Gi")
+			Eventually(func(g Gomega) {
+				var latest corev1.PersistentVolumeClaim
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim2), &latest)).To(Succeed())
+				g.Expect(latest.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("20Gi")))
+			}, timeout, interval).Should(Succeed())
+
+			By("reporting every bound claim with its own capacity")
+			stampClaimCapacity(claim0, "20Gi")
+			expectVolumes(cluster, map[string]string{claim0.Name: "20Gi", claim1.Name: "10Gi", claim2.Name: "10Gi"})
+			stampClaimCapacity(claim1, "20Gi")
+			stampClaimCapacity(claim2, "20Gi")
+			expectVolumes(cluster, map[string]string{claim0.Name: "20Gi", claim1.Name: "20Gi", claim2.Name: "20Gi"})
+
+			By("ignoring a preset shrink once: the claims and the template keep their size")
+			updatePresetStorageSize(preset, "5Gi")
+			expectEvent(cluster, "StorageShrinkIgnored", corev1.EventTypeWarning)
+			Eventually(func(g Gomega) {
+				var latest appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+				g.Expect(latest.Annotations).To(HaveKeyWithValue(components.RequestedStorageSizeAnnotation, "5Gi"))
+			}, timeout, interval).Should(Succeed())
+			// A second reconcile after the annotation is applied records nothing.
+			updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.PodLabels = map[string]string{"touch": "1"} })
+			Eventually(func(g Gomega) {
+				var latest appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+				g.Expect(latest.Spec.Template.Labels).To(HaveKeyWithValue("touch", "1"))
+			}, timeout, interval).Should(Succeed())
+			Consistently(func(g Gomega) {
+				g.Expect(countEvents(g, cluster, "StorageShrinkIgnored")).To(Equal(int32(1)))
+				var latest appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebeKey, &latest)).To(Succeed())
+				g.Expect(latest.UID).To(Equal(sts.UID))
+				g.Expect(claimTemplateSize(&latest)).To(Equal(resource.MustParse("10Gi")))
+				var claim corev1.PersistentVolumeClaim
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim0), &claim)).To(Succeed())
+				g.Expect(claim.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("20Gi")))
 			}, 2*time.Second, interval).Should(Succeed())
 		},
 	)

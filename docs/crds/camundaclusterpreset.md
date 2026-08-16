@@ -114,8 +114,8 @@ spec:
     tasklist:
       # string. Optional. Standalone | Embedded.
       mode: Embedded
-    # object. Optional. Identity baseline.
-    identity:
+    # object. Optional. Admin baseline. Identity was renamed to Admin in Camunda 8.9; the profile is `admin`.
+    admin:
       # string. Optional. Standalone | Embedded.
       mode: Embedded
     # object. Optional. Connectors baseline; connectors are standalone-only.
@@ -140,7 +140,7 @@ Reference errors surface on the consumer instead — a [CamundaCluster](camundac
 
 - `spec.cluster` must be present and must conform to the preset-legal subset of the CamundaCluster spec schema.
 - Instance-bound CamundaCluster fields are rejected at admission inside `spec.cluster`: `platformConfigRef`, `presetRef` (no preset chaining), `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`.
-- Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `identity`, `connectors`), and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`.
+- Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`), and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`.
 - There is no cross-resource validation: preset resolution problems are reported by the consuming controller.
 
 ## Relationships
@@ -205,7 +205,7 @@ spec:
       mode: Embedded
     tasklist:
       mode: Embedded
-    identity:
+    admin:
       mode: Embedded
     connectors:
       enabled: true
