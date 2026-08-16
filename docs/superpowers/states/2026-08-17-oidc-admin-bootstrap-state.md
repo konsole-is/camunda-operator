@@ -25,14 +25,14 @@ The two sub-issues are strictly sequential. #61 cannot go green until #73 has me
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #73 | feat/oidc-admin-bootstrap--admin-config | .claude/worktrees/oidc-admin-bootstrap--admin-config | #75 → feat/oidc-admin-bootstrap | ready |
-| #61 | feat/oidc-admin-bootstrap--keycloak-e2e | .claude/worktrees/oidc-admin-bootstrap--keycloak-e2e | → feat/oidc-admin-bootstrap | not-started |
+| #73 | feat/oidc-admin-bootstrap--admin-config | .claude/worktrees/oidc-admin-bootstrap--admin-config | #75 → feat/oidc-admin-bootstrap | self-merged |
+| #61 | feat/oidc-admin-bootstrap--keycloak-e2e | .claude/worktrees/oidc-admin-bootstrap--keycloak-e2e | → feat/oidc-admin-bootstrap | in-progress |
 
 ## Contracts
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| `oidc-admin-crd-surface` | sequential — #61 branches from the feature branch after #73 merges into it | n/a | pending |
+| `oidc-admin-crd-surface` | sequential — #61 branches from the feature branch after #73 merges into it | #75 (merged 2026-08-17) | locked |
 
 ## Bubble-up log
 
