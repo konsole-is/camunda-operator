@@ -127,7 +127,12 @@ The controller follows the Batch B layout:
   its configuration class, the Spring relaxed-binding conversion (`camunda.data.secondary-storage.type` →
   `CAMUNDA_DATA_SECONDARYSTORAGE_TYPE`; a dash is dropped, a dot becomes an underscore, list
   indexes `[0]` become `_0_`), and typed helpers for the few list-valued keys.
-- Workloads use the ocf StatefulSet, Deployment, and Service primitives; ServiceMonitors the
+- Workloads use the ocf StatefulSet, Deployment, and Service primitives. The base object of a
+  process holds what the topology decides (container, image, command, ports, probes, the
+  rendered env, security context, selector, claim template); the override surfaces of the spec
+  are gated ocf mutations shared by the StatefulSet and Deployment builders (`Resources`,
+  `SchedulingConstraints`, `PodMetadata`, `ServiceAccount`, and `VolumeRetention` on the
+  brokers), like the ElasticsearchCluster component. ServiceMonitors use the
   existing `pkg/wrappers/servicemonitor` behind `IncludeWhen` (CRD served) and `GatedBy`
   (`monitoring.serviceMonitor.enabled`). Labels come from `pkg/labels`: `camunda.io/cluster`
   (the owner key reserved for this kind), `camunda.io/component`, `app.kubernetes.io/managed-by`.
