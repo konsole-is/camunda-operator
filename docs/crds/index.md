@@ -88,7 +88,7 @@ graph TD
 
 Controller implementation is fanned out in batches derived from the graph above: a controller can only be implemented and tested end-to-end once the contracts it consumes exist.
 
-**Batch A (no dependencies): contract CRD validation controllers.**
+**Batch A (no dependencies): contract CRD validation controllers.** Shipped.
 
 - DatabaseServerConfig
 - DatabaseConfig
@@ -96,12 +96,12 @@ Controller implementation is fanned out in batches derived from the graph above:
 - ObjectStorageConfig
 - ManagementAuthConfig
 
-**Batch B (produce contracts): the storage backend controllers.**
+**Batch B (produce contracts): the storage backend controllers.** Shipped.
 
 - ElasticsearchCluster
 - Database
 
-**Batch C (consume contracts): the core cluster.**
+**Batch C (consume contracts): the core cluster.** Shipped.
 
 - CamundaCluster
 - CamundaPlatformConfig handling

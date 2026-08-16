@@ -208,8 +208,8 @@ func psql(name string, ref v1.CredentialsSecretRef, sql string) (string, error) 
 				Env: []corev1.EnvVar{
 					{Name: "PGHOST", Value: postgresService},
 					{Name: "PGDATABASE", Value: dbDatabaseName},
-					secretEnv("PGUSER", ref.Name, ref.UsernameKey),
-					secretEnv("PGPASSWORD", ref.Name, ref.PasswordKey),
+					utils.SecretEnv("PGUSER", ref.Name, ref.UsernameKey),
+					utils.SecretEnv("PGPASSWORD", ref.Name, ref.PasswordKey),
 				},
 			}},
 		},

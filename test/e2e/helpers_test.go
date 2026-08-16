@@ -33,12 +33,8 @@ import (
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
-const (
-	// podTimeout bounds one in-cluster helper pod, image pull included.
-	podTimeout = 3 * time.Minute
-	// curlImage is the pinned curl image of the in-cluster helper pods.
-	curlImage = "curlimages/curl:8.17.0"
-)
+// podTimeout bounds one in-cluster helper pod, image pull included.
+const podTimeout = 3 * time.Minute
 
 // apply applies obj through kubectl. obj must carry its apiVersion and kind.
 func apply(obj client.Object) error {
@@ -54,11 +50,17 @@ func apply(obj client.Object) error {
 // expectReady asserts that resource name reports Ready=True with reason. It
 // is written for Eventually.
 func expectReady(g Gomega, resource, name, namespace, reason string) {
-	cond, err := utils.Condition(resource, name, namespace, v1.ConditionReady)
+	expectCondition(g, resource, name, namespace, v1.ConditionReady, reason)
+}
+
+// expectCondition asserts that resource name reports condition condType as
+// True with reason. It is written for Eventually.
+func expectCondition(g Gomega, resource, name, namespace, condType, reason string) {
+	cond, err := utils.Condition(resource, name, namespace, condType)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(cond).NotTo(BeNil(), "%s %q has no Ready condition yet", resource, name)
-	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "%s %q Ready: %s", resource, name, cond.Message)
-	g.Expect(cond.Reason).To(Equal(reason), "%s %q Ready: %s", resource, name, cond.Message)
+	g.Expect(cond).NotTo(BeNil(), "%s %q has no %s condition yet", resource, name, condType)
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "%s %q %s: %s", resource, name, condType, cond.Message)
+	g.Expect(cond.Reason).To(Equal(reason), "%s %q %s: %s", resource, name, condType, cond.Message)
 }
 
 // expectGone asserts that resource name no longer exists. It is written for
@@ -69,9 +71,9 @@ func expectGone(g Gomega, resource, name, namespace string) {
 	g.Expect(exists).To(BeFalse(), "%s %q still exists", resource, name)
 }
 
-// dumpDiagnostics writes the controller-manager logs and the events and
-// resources of testNamespace to the Ginkgo writer when the current spec
-// failed.
+// dumpDiagnostics writes the controller-manager logs and the events,
+// resources, pod descriptions, and CamundaCluster workload logs of
+// testNamespace to the Ginkgo writer when the current spec failed.
 func dumpDiagnostics(testNamespace string) {
 	if !CurrentSpecReport().Failed() {
 		return
@@ -83,8 +85,13 @@ func dumpDiagnostics(testNamespace string) {
 		},
 		"events": {"get", "events", "-n", testNamespace, "--sort-by=.lastTimestamp"},
 		"resources": {
-			"get", "all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs",
+			"get",
+			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs,camundaclusters",
 			"-n", testNamespace,
+		},
+		"pods": {"describe", "pods", "-n", testNamespace},
+		"workload logs": {
+			"logs", "-l", "camunda.io/cluster", "-n", testNamespace, "--all-containers", "--prefix", "--tail=200",
 		},
 	} {
 		out, err := utils.Kubectl(args...)

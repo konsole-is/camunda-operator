@@ -22,8 +22,8 @@ spec:
       storageClassName: "ssd"
       storageSize: "32Gi"
       extraEnv:
-        - name: JAVA_OPTS
-          value: "-Xmx4g"
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
     gateway:
       mode: Standalone
       replicas: 2

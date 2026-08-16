@@ -336,8 +336,8 @@ spec:
                         type: object
                       enabled:
                         description: |-
-                          Enabled deploys the exporter and creates the ServiceMonitor when true.
-                          Defaults to false.
+                          Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+                          the exporter) when true. Defaults to false.
                         type: boolean
                       labels:
                         additionalProperties:
@@ -355,10 +355,10 @@ spec:
                   whenDeleted:
                     default: Delete
                     description: |-
-                      WhenDeleted is what happens to the data volumes when the
-                      ElasticsearchCluster is deleted. Delete removes them with the
-                      cluster. Retain keeps them, and a later cluster with the same name
-                      reattaches them. Defaults to Delete.
+                      WhenDeleted is what happens to the data volumes when the resource is
+                      deleted. Delete removes them with the resource. Retain keeps them, and
+                      a later resource with the same name reattaches them. Defaults to
+                      Delete.
                     enum:
                     - Retain
                     - Delete

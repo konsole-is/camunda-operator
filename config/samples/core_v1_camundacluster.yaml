@@ -19,8 +19,8 @@ spec:
       requests:
         memory: "8Gi"
     extraEnv:
-      - name: JAVA_OPTS
-        value: "-Xmx6g"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx6g"
   connectors:
     enabled: true
     version: "8.9.7"
