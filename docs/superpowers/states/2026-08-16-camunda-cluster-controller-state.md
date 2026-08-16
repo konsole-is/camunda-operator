@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: consumer-wave
 ---
 
 # CamundaCluster controller (Batch C) — orchestration state
@@ -28,7 +28,7 @@ status: foundational-wave
 | --- | --- | --- | --- | --- |
 | #48 | batch-c/platform-config | .claude/worktrees/camunda-cluster-controller--platform-config | #53 → feat/camunda-cluster-controller | self-merged |
 | #49 | batch-c/cluster-api-types | .claude/worktrees/camunda-cluster-controller--cluster-api-types | #54 → feat/camunda-cluster-controller | self-merged |
-| #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | — → feat/camunda-cluster-controller | not-started |
+| #50 | batch-c/cluster-components | .claude/worktrees/camunda-cluster-controller--cluster-components | — → feat/camunda-cluster-controller | in-progress |
 | #51 | batch-c/cluster-controller | .claude/worktrees/camunda-cluster-controller--cluster-controller | — → feat/camunda-cluster-controller | not-started |
 | #52 | batch-c/cluster-e2e | .claude/worktrees/camunda-cluster-controller--cluster-e2e | — → feat/camunda-cluster-controller | not-started |
 
