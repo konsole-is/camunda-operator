@@ -6,8 +6,10 @@ tracking_issue: #47
 feature_branch: feat/camunda-cluster-controller
 feature_worktree: .claude/worktrees/camunda-cluster-controller
 sub_pr_approval: autonomous
+sub_pr_review_loop: on
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # CamundaCluster controller (Batch C) — orchestration state
