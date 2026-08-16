@@ -1,0 +1,325 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package camundaadmintest fakes the Camunda 8.9 management API for tests.
+// It serves the endpoints that pkg/camundaadmin calls with the status codes
+// and body shapes of the real API, tracks every call, and lets a test drive
+// backup states and inject failures.
+package camundaadmintest
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync"
+)
+
+// Backup is the fake's record of one backup on either endpoint.
+type Backup struct {
+	// ID of the backup.
+	ID int64
+	// State in the vocabulary of the real API, for example IN_PROGRESS.
+	State string
+	// FailureReason reported when State is FAILED.
+	FailureReason string
+}
+
+// Server fakes the management API. Every exported method is safe for
+// concurrent use.
+type Server struct {
+	mu sync.Mutex
+
+	// Exporting is the exporting state: "running", "softPaused", or
+	// "paused". It starts as "running".
+	exporting string
+
+	pauseCalls  int
+	resumeCalls int
+
+	history map[int64]*Backup
+	runtime map[int64]*Backup
+
+	historyStarts map[int64]int
+	runtimeStarts map[int64]int
+
+	nextGeneratedID int64
+
+	failures map[string]int
+
+	server *httptest.Server
+}
+
+// New starts the fake. Close it with Close.
+func New() *Server {
+	s := &Server{
+		exporting:       "running",
+		history:         map[int64]*Backup{},
+		runtime:         map[int64]*Backup{},
+		historyStarts:   map[int64]int{},
+		runtimeStarts:   map[int64]int{},
+		nextGeneratedID: 1,
+		failures:        map[string]int{},
+	}
+	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+
+	return s
+}
+
+// URL is the base URL of the fake, used as the binding endpoint.
+func (s *Server) URL() string { return s.server.URL }
+
+// Close stops the fake.
+func (s *Server) Close() { s.server.Close() }
+
+// Exporting reports the exporting state: "running", "softPaused", or
+// "paused".
+func (s *Server) Exporting() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exporting
+}
+
+// PauseCalls and ResumeCalls report how often the exporting endpoints were
+// called, so a test can assert that a re-entrant caller does not repeat a
+// POST.
+func (s *Server) PauseCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pauseCalls
+}
+
+// ResumeCalls reports the number of resume calls.
+func (s *Server) ResumeCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resumeCalls
+}
+
+// HistoryStarts reports how often a history backup start was accepted for
+// id.
+func (s *Server) HistoryStarts(id int64) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.historyStarts[id]
+}
+
+// RuntimeStarts reports how often a runtime backup start was accepted for
+// id.
+func (s *Server) RuntimeStarts(id int64) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.runtimeStarts[id]
+}
+
+// SetHistoryState sets the state of the history backup id, creating it when
+// absent.
+func (s *Server) SetHistoryState(id int64, state, failureReason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.history[id] = &Backup{ID: id, State: state, FailureReason: failureReason}
+}
+
+// SetRuntimeState sets the state of the runtime backup id, creating it when
+// absent.
+func (s *Server) SetRuntimeState(id int64, state, failureReason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runtime[id] = &Backup{ID: id, State: state, FailureReason: failureReason}
+}
+
+// RuntimeBackup returns the runtime backup id, or nil.
+func (s *Server) RuntimeBackup(id int64) *Backup {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if b, ok := s.runtime[id]; ok {
+		copied := *b
+		return &copied
+	}
+	return nil
+}
+
+// FailNext makes the next n calls of op answer 500. op is one of "pause",
+// "resume", "historyStart", "historyStatus", "runtimeStart",
+// "runtimeStatus", "runtimeDelete".
+func (s *Server) FailNext(op string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failures[op] = n
+}
+
+// failing consumes one injected failure of op.
+func (s *Server) failing(op string) bool {
+	if s.failures[op] > 0 {
+		s.failures[op]--
+		return true
+	}
+	return false
+}
+
+func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path := strings.TrimPrefix(r.URL.Path, "/actuator")
+
+	switch {
+	case r.Method == http.MethodPost && path == "/exporting/pause":
+		if s.failing("pause") {
+			errorBody(w, http.StatusInternalServerError, "injected pause failure")
+			return
+		}
+		s.pauseCalls++
+		if r.URL.Query().Get("soft") == "true" {
+			s.exporting = "softPaused"
+		} else {
+			s.exporting = "paused"
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	case r.Method == http.MethodPost && path == "/exporting/resume":
+		if s.failing("resume") {
+			errorBody(w, http.StatusInternalServerError, "injected resume failure")
+			return
+		}
+		s.resumeCalls++
+		s.exporting = "running"
+		w.WriteHeader(http.StatusNoContent)
+
+	case r.Method == http.MethodPost && path == "/backupHistory":
+		if s.failing("historyStart") {
+			errorBody(w, http.StatusInternalServerError, "injected history start failure")
+			return
+		}
+		id := decodeBackupID(r)
+		if _, exists := s.history[id]; exists {
+			errorBody(w, http.StatusBadRequest, "a backup with ID "+strconv.FormatInt(id, 10)+" already exists")
+			return
+		}
+		s.history[id] = &Backup{ID: id, State: "IN_PROGRESS"}
+		s.historyStarts[id]++
+		writeJSON(w, http.StatusAccepted, map[string]any{"scheduledSnapshots": []string{
+			"camunda_webapps_" + strconv.FormatInt(id, 10) + "_8.9_part_1_of_1",
+		}})
+
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/backupHistory/"):
+		if s.failing("historyStatus") {
+			errorBody(w, http.StatusInternalServerError, "injected history status failure")
+			return
+		}
+		id, _ := strconv.ParseInt(strings.TrimPrefix(path, "/backupHistory/"), 10, 64)
+		backup, ok := s.history[id]
+		if !ok {
+			errorBody(w, http.StatusNotFound, "backup does not exist")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"backupId":      backup.ID,
+			"state":         backup.State,
+			"failureReason": backup.FailureReason,
+			"details": []map[string]any{{
+				"snapshotName": "camunda_webapps_" + strconv.FormatInt(id, 10) + "_8.9_part_1_of_1",
+				"state":        backup.State,
+			}},
+		})
+
+	case r.Method == http.MethodPost && path == "/backupRuntime":
+		if s.failing("runtimeStart") {
+			errorBody(w, http.StatusInternalServerError, "injected runtime start failure")
+			return
+		}
+		var id int64
+		if r.ContentLength != 0 {
+			id = decodeBackupID(r)
+			for existing := range s.runtime {
+				if existing >= id {
+					errorBody(
+						w, http.StatusConflict,
+						"a backup with the same or higher ID already exists",
+					)
+					return
+				}
+			}
+		} else {
+			id = s.nextGeneratedID
+			s.nextGeneratedID++
+		}
+		s.runtime[id] = &Backup{ID: id, State: "IN_PROGRESS"}
+		s.runtimeStarts[id]++
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"backupId": id,
+			"message":  "A backup has been scheduled",
+		})
+
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/backupRuntime/"):
+		if s.failing("runtimeStatus") {
+			errorBody(w, http.StatusInternalServerError, "injected runtime status failure")
+			return
+		}
+		id, _ := strconv.ParseInt(strings.TrimPrefix(path, "/backupRuntime/"), 10, 64)
+		backup, ok := s.runtime[id]
+		if !ok {
+			errorBody(w, http.StatusNotFound, "backup does not exist")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"backupId":      backup.ID,
+			"state":         backup.State,
+			"failureReason": backup.FailureReason,
+			"details": []map[string]any{{
+				"partitionId":   1,
+				"state":         backup.State,
+				"failureReason": backup.FailureReason,
+			}},
+		})
+
+	case r.Method == http.MethodDelete && strings.HasPrefix(path, "/backupRuntime/"):
+		if s.failing("runtimeDelete") {
+			errorBody(w, http.StatusInternalServerError, "injected runtime delete failure")
+			return
+		}
+		id, _ := strconv.ParseInt(strings.TrimPrefix(path, "/backupRuntime/"), 10, 64)
+		if _, ok := s.runtime[id]; !ok {
+			errorBody(w, http.StatusNotFound, "backup does not exist")
+			return
+		}
+		delete(s.runtime, id)
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+	}
+}
+
+// decodeBackupID reads {"backupId": N} from the request body.
+func decodeBackupID(r *http.Request) int64 {
+	var body struct {
+		BackupID int64 `json:"backupId"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	return body.BackupID
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func errorBody(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"message": message})
+}
