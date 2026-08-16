@@ -5,7 +5,7 @@ Manages topolvm pvc-autoresizer annotations on a cluster's PersistentVolumeClaim
 ## Purpose
 
 `PVCAutoResize` configures automatic volume expansion for the Zeebe and Elasticsearch PVCs belonging to one orchestration cluster.
-It discovers the PVCs by their `camunda.io/cluster` labels and patches `resize.topolvm.io/*` annotations onto them, which the external topolvm pvc-autoresizer acts on.
+It discovers the PVCs by their owner labels (`camunda.io/cluster` for Zeebe, `camunda.io/elasticsearch-cluster` for Elasticsearch) and patches `resize.topolvm.io/*` annotations onto them, which the external topolvm pvc-autoresizer acts on.
 You always create this CR explicitly — yourself or through a composition layer above; neither presets nor any other controller create it for you.
 
 This is the purest extension-pattern exemplar in the doc set (see the [architecture overview](../architecture.md)): the controller attaches to a cluster's PVCs entirely from the outside, without any change to the `CamundaCluster` or `ElasticsearchCluster` specs.
@@ -21,13 +21,13 @@ StatefulSet PVC templates are immutable after creation, so resize configuration 
 
 1. Resolve `clusterRef` to the target `CamundaCluster`.
 2. When the `zeebe` block is set, discover the Zeebe broker PVCs: PVCs in the cluster's namespace labeled `camunda.io/cluster: <CamundaCluster name>` and `camunda.io/component: zeebe`.
-3. When the `elasticsearch` block is set, resolve the cluster's `storageRef` to its `SecondaryStorageConfig`, then find the `ElasticsearchCluster` whose `secondaryStorageConfig` output names that contract (via a field indexer); the Elasticsearch data PVCs are the PVCs in that `ElasticsearchCluster`'s namespace labeled `camunda.io/cluster: <ElasticsearchCluster name>` and `camunda.io/component: elasticsearch`.
+3. When the `elasticsearch` block is set, resolve the cluster's `storageRef` to the `SecondaryStorageConfig` in the cluster's namespace, then find the `ElasticsearchCluster` in that same namespace whose `secondaryStorageConfig` output names that contract (via a field indexer — the producer creates the contract in its own namespace, so producer and contract are co-located); the Elasticsearch data PVCs are the PVCs in that `ElasticsearchCluster`'s namespace labeled `camunda.io/elasticsearch-cluster: <ElasticsearchCluster name>` and `camunda.io/component: elasticsearch`.
 4. Server-Side Apply (SSA)-patch the `resize.topolvm.io/storage_limit`, `resize.topolvm.io/threshold`, and `resize.topolvm.io/increase` annotations onto each matched PVC, using the field manager `camunda-operator/pvcautoresize` so the controller owns only these three annotations and nothing else on the PVC.
 5. Watch for PVC create events so PVCs added later — for example after scaling out brokers — are annotated as soon as they appear.
 6. Reconcile on spec changes, updating the annotations on all matched PVCs, and record the result in status conditions and `status.observedGeneration`.
 
 !!! note "Deviation from the original proposal"
-    The proposal said only that PVCs are "discovered by cluster labels", leaving open how Elasticsearch PVCs are found given that they carry the `ElasticsearchCluster`'s own name — not the `CamundaCluster`'s — in their `camunda.io/cluster` label.
+    The proposal said only that PVCs are "discovered by cluster labels", leaving open how Elasticsearch PVCs are found given that they carry the `ElasticsearchCluster`'s own name — not the `CamundaCluster`'s — under their own key, `camunda.io/elasticsearch-cluster`.
     This page pins the mechanism: Zeebe PVCs are matched through the `CamundaCluster` name directly, while Elasticsearch PVCs are located by following the cluster's `storageRef` back to the `ElasticsearchCluster` that produced it.
     When the cluster's secondary storage was not produced by an `ElasticsearchCluster` (for example a manually created contract pointing at an external Elasticsearch), the `elasticsearch` block cannot be applied and the operator reports `Ready=False` with reason `InvalidReference`.
 

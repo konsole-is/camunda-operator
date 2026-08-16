@@ -103,6 +103,8 @@ The anti-pattern to avoid is inserting blank lines *within* a logical unit — e
 
 ## Line breaking long calls
 
+Two tools enforce this section. `golines` (through `make fmt`) breaks any line over 120 characters. `hack/callsplit` (through `make fmt` to fix, `make lint` to check) rejects the mixed form: a call whose first argument sits on the paren line while a later argument starts on another line. Write the shapes below and both tools stay quiet.
+
 When a function call does not fit on one line, use judgment. If the function name alone is what makes the line long and the arguments are few or short, breaking after the opening parenthesis and keeping the arguments together is sufficient:
 
 ```go
@@ -293,6 +295,12 @@ if err := ensureDeployment(ctx, resource); errors.Is(err, ErrNotReady) {
     return ctrl.Result{}, err
 }
 ```
+
+## Labels
+
+Every rendered resource gets its labels from `pkg/labels`, never from a literal in a component. `labels.Managed(owner, component)` for objects the operator applies; `labels.Discovery(owner, component)` for pod templates and volume claims that another operator runs from our template, and for selectors; `labels.Merge(user, operator)` when a spec field lets users add labels, so an operator label always wins.
+
+Two kinds of key: a standard `app.kubernetes.io/*` key for a generic fact that nothing selects on (`managed-by`), and a `camunda.io/*` key for anything an extension selects on — the owner (one key per owning kind: `camunda.io/cluster`, `camunda.io/elasticsearch-cluster`, `camunda.io/database`) and `camunda.io/component`. Do not use `app.kubernetes.io/component` or `instance` for selection: other tools write those keys with their own values on adjacent objects, and one owner key for every kind would let two owners of different kinds with the same name collide.
 
 ## Typed string constants
 
@@ -555,40 +563,37 @@ func NewBackupReconciler(owner client.Object, ...) *BackupReconciler
 
 Use `meta.SetStatusCondition` to write conditions — never append or assign directly to the slice. It handles deduplication and sets `LastTransitionTime` only when the status changes.
 
-**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Prefer a single deferred flush at the top of the reconcile loop over scattering `Status().Update()` calls at each early-return point — deferred flushing ensures exactly one write per reconcile, skips the write when nothing changed, and makes it impossible to accidentally discard condition updates by forgetting a persist call.
+**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Every controller persists status through the ocf `component.FlushStatus`, once per reconcile, deferred at the top of the reconcile loop. That holds for a controller with no components too: stage the condition, set `observedGeneration`, flush. There is no second write path — no SSA of the status subresource, no `Status().Update()` at early returns.
 
 ```go
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-    obj := &v1alpha1.ZeebeCluster{}
-    if err := r.client.Get(ctx, req.NamespacedName, obj); err != nil {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+    var obj v1.Database
+    if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
-    original := obj.DeepCopy()
+    rec := component.ReconcileContext{Client: r.componentClient, Scheme: r.Scheme, Recorder: r.Recorder, Owner: &obj}
     defer func() {
-        if equality.Semantic.DeepEqual(original.Status, obj.Status) {
-            return
-        }
-        if updateErr := r.client.Status().Update(ctx, obj); updateErr != nil {
-            err = fmt.Errorf("updating status: %w", updateErr)
+        if flushErr := component.FlushStatus(ctx, rec); flushErr != nil {
+            err = errors.Join(err, flushErr)
         }
     }()
 
-    // Call meta.SetStatusCondition freely throughout; the defer handles the write.
+    // Stage conditions freely with meta.SetStatusCondition; the defer writes them.
     ...
 }
 ```
 
-The named return `(result ctrl.Result, err error)` lets the deferred update overwrite `err` when the status write fails, even if the reconcile itself succeeded.
+The named return `(_ ctrl.Result, err error)` lets the deferred flush join its error onto `err`, even when the reconcile itself succeeded. `FlushStatus` retries on 409 and re-merges the staged conditions by type.
 
-Condition types and reasons are typed string constants, not freeform strings:
+**Condition vocabulary is API surface and lives in `api/v1`.** Users match it with `kubectl wait`, and the operators above import `api/v1` to gate on it. `api/v1/conditions.go` holds the vocabulary that more than one CRD reports (`ConditionReady`, `ReasonHealthy`, `ReasonInvalidReference`, `ReasonMissingSecret`, `ReasonConnectionFailed`). A reason or condition type that one CRD reports is declared in that CRD's types file, next to its spec. The CRD doc under `docs/crds` is the contract for both. `pkg/conditions` builds the aggregate `Ready`; it declares no vocabulary.
+
+**Do not reimplement the ocf status model.** ocf already classifies every component: alive, operational, completable, suspendable, graceful (`Degraded`, `Down`), and it ranks them with `component.Status.Priority()`. A controller that runs components sets `Ready` in two steps only. A failed pre-check (a dangling reference, a missing Secret, an unreachable server) becomes `conditions.Failed(owner, failure)`. Otherwise `conditions.Aggregate(owner, comps...)` mirrors the highest-priority component condition onto `Ready`: same status, same reason, message names the component. Either way the condition goes through `conditions.Stage(owner, cond)`, which also records the observed generation. Never set `status.observedGeneration` or call `meta.SetStatusCondition` for `Ready` by hand; every CRD implements `conditions.Owner` for this. `Suspended` is a `Ready=True` per ocf: the resource is in its desired state. Never map component statuses onto a second vocabulary such as `Progressing`.
 
 ```go
-const (
-    ConditionTypeReady    = "Ready"
-    ReasonReconciled      = "Reconciled"
-    ReasonProvisionFailed = "ProvisionFailed"
-)
+// api/v1/elasticsearchcluster_types.go
+// ConditionSuspended reports whether the node set is scaled to zero by spec.suspend.
+const ConditionSuspended = "Suspended"
 ```
 
 Always set `ObservedGeneration` to `obj.Generation` — it lets consumers know whether the condition reflects the current spec revision.
@@ -646,24 +651,32 @@ File and package organization follows concern, not type. When a group of related
 Name the file after the concern it holds, not after the type it operates on. `backup_reconciler.go` is clearer than `zeebeclusterbackup_reconciler.go`. Enqueue and watch logic, for instance, naturally belongs in its own file rather than cluttering the main controller file, and any predicate or index registration that belongs to the same watch setup should live there too.
 
 ```
-internal/controller/cloud/zeebecluster/
-  zeebecluster_controller.go   ← Reconcile(), Setup(), manager wiring
-  backup_reconciler.go         ← sub-reconciler for backup lifecycle
-  network_policy_reconciler.go ← sub-reconciler for network policy
-  enqueuers.go                 ← watch handlers, predicates, index registrations
+internal/controller/database/
+  controller.go   ← Reconcile(), pre-checks and other I/O, watches, SetupWithManager
+  suite_test.go   ← the envtest suite of this package, through internal/testenv
 ```
 
-**Reusable construction and transformation logic belongs in `pkg/`**, not inline in a controller. Resource builders, label helpers, feature gates, and shared utility functions go in `pkg/` where they can be used and tested independently.
+**Controller packages hold I/O and wiring. Everything that maps a spec to resources belongs in `pkg/`.** A controller package under `internal/controller/<crd>/` contains `Reconcile`, the pre-checks and other calls against the API server or external systems, the watches, the indexes, and `SetupWithManager`. It does not contain builders.
+
+Put the following in `pkg/components/<crd>/`:
+
+- Resolution of the documented defaults (names, namespaces, derived identifiers)
+- Naming rules that a user or another operator can observe
+- ocf component assembly and resource builders
+- Pure rules that the reconcile applies, for example a collision rule or a preset merge
 
 ```
-pkg/apps/analytics/   ← resource builders for the analytics component
-pkg/features/         ← feature gate declarations
-pkg/cluster/          ← cluster composition logic
+pkg/components/database/             ← ResolveBindings, BackupUserName, BindingsComponent, collision rule
+pkg/components/elasticsearchcluster/ ← MergePreset, ValidateMerged, the three components
+pkg/pgbootstrap/                     ← SQL layer
+pkg/credentials/, pkg/conditions/    ← shared primitives
 ```
 
-Most `pkg/` code should stay API-free: use it for construction, transformation, and evaluation, and keep `Get`/`Update`/`Create`/`Patch` calls in controller packages. If `pkg/` must touch the API (e.g. small retrieval helpers), keep it narrowly scoped and explicit in naming.
+The package is pure: spec in, resources out, no API calls. Its golden tests live next to it and run without envtest. The controller imports it with the alias `components`, so `components.ResolveBindings(&database)` reads the same in every controller.
 
-As a rule of thumb: put code in `pkg/` only when it is genuinely reusable across multiple consumers. Don't extract into `pkg/` just because a function happens to be pure — extract it because it serves more than one place in the codebase. A pure helper that is only meaningful within one controller's context belongs in the controller package.
+A single consumer is not a reason to keep a builder in the controller. The next operator up the stack must be able to predict the names and shapes this operator publishes, and it cannot import `internal/`. Move a builder to `pkg/` when you write it, not when a second consumer appears.
+
+Most `pkg/` code stays API-free: use it for construction, transformation, and evaluation, and keep `Get`/`Update`/`Create`/`Patch` calls in controller packages. If a `pkg/` package must touch the API, for example a small retrieval helper, keep it narrow and name it for what it does.
 
 **Webhook logic stays in the webhook package.** Defaulting and validation logic belongs in `internal/webhook/`, not in the controller. The controller should not replicate webhook defaults, and the webhook should not perform reconcile-style API calls.
 

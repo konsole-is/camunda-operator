@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
@@ -37,6 +38,29 @@ const (
 
 func warnError(err error) {
 	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+}
+
+// ECKCRDPath returns the path of the ECK CRD manifest inside the resolved
+// cloud-on-k8s module, for envtest to install. It points at the module's
+// all-crds.yaml — the build with ECK's own schema patches applied, matching
+// what an ECK installation serves — and resolves the module through the Go
+// toolchain so the CRDs always match the compiled-in ECK types instead of a
+// vendored copy.
+func ECKCRDPath() (string, error) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/elastic/cloud-on-k8s/v3").Output()
+	if err != nil {
+		return "", fmt.Errorf("resolving cloud-on-k8s module directory: %w", err)
+	}
+
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return "", fmt.Errorf(
+			"go list resolved no directory for github.com/elastic/cloud-on-k8s/v3; " +
+				"run go mod download to populate the module cache",
+		)
+	}
+
+	return filepath.Join(dir, "config", "crds", "v1", "all-crds.yaml"), nil
 }
 
 // Run executes the provided command within this context
@@ -73,8 +97,10 @@ func UninstallCertManager() {
 		"cert-manager-controller",
 	}
 	for _, lease := range kubeSystemLeases {
-		cmd = exec.Command("kubectl", "delete", "lease", lease,
-			"-n", "kube-system", "--ignore-not-found", "--force", "--grace-period=0")
+		cmd = exec.Command(
+			"kubectl", "delete", "lease", lease,
+			"-n", "kube-system", "--ignore-not-found", "--force", "--grace-period=0",
+		)
 		if _, err := Run(cmd); err != nil {
 			warnError(err)
 		}
@@ -90,7 +116,8 @@ func InstallCertManager() error {
 	}
 	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
 	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
+	cmd = exec.Command(
+		"kubectl", "wait", "deployment.apps/cert-manager-webhook",
 		"--for", "condition=Available",
 		"--namespace", "cert-manager",
 		"--timeout", "5m",

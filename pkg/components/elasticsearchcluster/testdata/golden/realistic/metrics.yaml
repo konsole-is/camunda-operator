@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
+  name: my-cluster-es-es-exporter
+  namespace: my-cluster-ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/component: elasticsearch-exporter
+      camunda.io/elasticsearch-cluster: my-cluster-es
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: camunda-operator
+        camunda.io/component: elasticsearch-exporter
+        camunda.io/elasticsearch-cluster: my-cluster-es
+    spec:
+      containers:
+      - args:
+        - --es.uri=https://my-cluster-es-es-http.my-cluster-ns.svc:9200
+        - --es.ca=/etc/elasticsearch/ca/ca.crt
+        - --es.timeout=30s
+        env:
+        - name: ES_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: my-cluster-es-es-user
+        - name: ES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-es-es-user
+        image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.9.0
+        name: exporter
+        ports:
+        - containerPort: 9114
+          name: metrics
+          protocol: TCP
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+        volumeMounts:
+        - mountPath: /etc/elasticsearch/ca
+          name: ca
+          readOnly: true
+      volumes:
+      - name: ca
+        secret:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          secretName: my-cluster-es-es-http-certs-public
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
+  name: my-cluster-es-es-metrics
+  namespace: my-cluster-ns
+spec:
+  ports:
+  - name: metrics
+    port: 9114
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
+status:
+  loadBalancer: {}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: elasticsearch-exporter
+    camunda.io/elasticsearch-cluster: my-cluster-es
+    release: prometheus
+  name: my-cluster-es-es-metrics
+  namespace: my-cluster-ns
+spec:
+  endpoints:
+  - port: metrics
+  namespaceSelector: {}
+  selector:
+    matchLabels:
+      camunda.io/component: elasticsearch-exporter
+      camunda.io/elasticsearch-cluster: my-cluster-es

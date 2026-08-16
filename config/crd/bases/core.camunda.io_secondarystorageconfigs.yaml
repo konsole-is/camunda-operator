@@ -12,15 +12,16 @@ spec:
     listKind: SecondaryStorageConfigList
     plural: secondarystorageconfigs
     singular: secondarystorageconfig
-  scope: Cluster
+  scope: Namespaced
   versions:
   - name: v1
     schema:
       openAPIV3Schema:
         description: |-
-          SecondaryStorageConfig is the contract CRD that tells an orchestration
-          cluster where its secondary storage lives — an Elasticsearch cluster or a
-          relational database — and how to authenticate against it.
+          SecondaryStorageConfig is the namespaced contract CRD that tells an
+          orchestration cluster where its secondary storage lives — an Elasticsearch
+          cluster or a relational database — and how to authenticate against it.
+          Consumers resolve references to it by name in their own namespace.
         properties:
           apiVersion:
             description: |-
@@ -47,6 +48,31 @@ spec:
                   Elasticsearch connection details. Required when type is elasticsearch,
                   forbidden otherwise.
                 properties:
+                  caSecretRef:
+                    description: |-
+                      CASecretRef names the CA bundle consumers use to verify the endpoint's
+                      TLS certificate. Set it when the endpoint serves a certificate not
+                      signed by a well-known CA, such as the self-signed certificate of an
+                      ECK-managed cluster. Omit it for publicly trusted endpoints; it is only
+                      valid with an https endpoint.
+                    properties:
+                      key:
+                        description: Key in the Secret holding the value.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name of the Secret holding the value.
+                        minLength: 1
+                        type: string
+                      namespace:
+                        description: Namespace of the Secret.
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    - namespace
+                    type: object
                   credentialsSecretRef:
                     description: |-
                       CredentialsSecretRef names a basic-auth user with read/write access to
@@ -88,14 +114,18 @@ spec:
                 - credentialsSecretRef
                 - endpoint
                 type: object
+                x-kubernetes-validations:
+                - message: caSecretRef requires an https endpoint
+                  rule: '!has(self.caSecretRef) || url(self.endpoint).getScheme()
+                    == ''https'''
               rdbms:
                 description: RDBMS backend details. Required when type is rdbms, forbidden
                   otherwise.
                 properties:
                   databaseConfigRef:
                     description: |-
-                      DatabaseConfigRef names the DatabaseConfig describing the logical
-                      database to use.
+                      DatabaseConfigRef names the DatabaseConfig, in this contract's own
+                      namespace, describing the logical database to use.
                     minLength: 1
                     type: string
                 required:

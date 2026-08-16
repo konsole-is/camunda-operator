@@ -54,11 +54,11 @@ type DatabaseConfigStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
 
-// DatabaseConfig is the contract CRD that describes one logical database — its
-// server, name, and application credentials — for the controllers and
-// components that connect to it.
+// DatabaseConfig is the namespaced contract CRD that describes one logical
+// database — its server, name, and application credentials — for the
+// controllers and components that connect to it. Consumers resolve references
+// to it by name in their own namespace.
 type DatabaseConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -75,11 +75,18 @@ type DatabaseConfig struct {
 	Status DatabaseConfigStatus `json:"status,omitzero"`
 }
 
-// GetConditions returns the resource's status conditions.
-func (in *DatabaseConfig) GetConditions() []metav1.Condition { return in.Status.Conditions }
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *DatabaseConfig) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
 
-// GetObservedGeneration returns the last reconciled generation recorded in status.
-func (in *DatabaseConfig) GetObservedGeneration() int64 { return in.Status.ObservedGeneration }
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *DatabaseConfig) GetKind() string { return "DatabaseConfig" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *DatabaseConfig) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
 
 // +kubebuilder:object:root=true
 

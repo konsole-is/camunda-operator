@@ -14,8 +14,8 @@ Each CRD has its own reference page following a common structure: purpose, contr
 | ElasticsearchClusterPreset | [elasticsearchclusterpreset.md](elasticsearchclusterpreset.md) | Cluster | Passive | Standardized ES sizing |
 | Database | [database.md](database.md) | Cluster | Active | Logical database and user bootstrapping |
 | DatabaseServerConfig | [databaseserverconfig.md](databaseserverconfig.md) | Cluster | Active (validation) | Contract: database server connection |
-| DatabaseConfig | [databaseconfig.md](databaseconfig.md) | Cluster | Active (validation) | Contract: logical database connection |
-| SecondaryStorageConfig | [secondarystorageconfig.md](secondarystorageconfig.md) | Cluster | Active (validation) | Contract: secondary storage backend |
+| DatabaseConfig | [databaseconfig.md](databaseconfig.md) | Namespaced | Active (validation) | Contract: logical database connection |
+| SecondaryStorageConfig | [secondarystorageconfig.md](secondarystorageconfig.md) | Namespaced | Active (validation) | Contract: secondary storage backend |
 | ObjectStorageConfig | [objectstorageconfig.md](objectstorageconfig.md) | Cluster | Active (validation) | Contract: bucket storage |
 | ManagementAuthConfig | [managementauthconfig.md](managementauthconfig.md) | Cluster | Active (validation) | Contract: Management Identity OIDC |
 | Backup | [backup.md](backup.md) | Namespaced | Active | One backup operation |

@@ -18,9 +18,11 @@ helm install camunda-operator \
   --create-namespace
 ```
 
-Requires Kubernetes 1.30+. For plain-manifest installation, signature
-verification, out-of-band CRD installation, and upgrades, see the
-[installation guide](docs/installation.md).
+Requires Kubernetes 1.30+. `ElasticsearchCluster` resources also require the
+[Elastic Cloud on Kubernetes (ECK)](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html)
+operator, which this operator does not install. For plain-manifest
+installation, signature verification, out-of-band CRD installation, and
+upgrades, see the [installation guide](docs/installation.md).
 
 ## Documentation
 
@@ -37,7 +39,11 @@ make lint           # run golangci-lint
 make all            # generate manifests/deepcopy, fmt, vet, and build the manager binary
 make helm-generate  # regenerate dist/chart/ from config/
 make helm-verify    # lint and render the chart, no cluster needed
+make test-e2e       # kind cluster with the real ECK operator and PostgreSQL
 ```
+
+`make test` needs Docker: the Database specs start PostgreSQL in a
+testcontainer. `make test-e2e` needs Docker and `kind`.
 
 The Helm chart is generated, not checked in — only `dist/chart/Chart.yaml` and
 `dist/chart/README.md` are versioned. Never hand-edit `dist/chart/values.yaml`

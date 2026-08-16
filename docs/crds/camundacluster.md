@@ -198,7 +198,7 @@ spec:
   podAnnotations: {}
   # object. Optional. Scheduling constraints applied to all workloads unless a component sets its own.
   scheduling: {}
-  # string. Required. Name of the cluster-scoped SecondaryStorageConfig providing the secondary storage backend.
+  # string. Required. Name of the SecondaryStorageConfig, in this cluster's own namespace, providing the secondary storage backend.
   storageRef: "my-storage-config"
   # string. Optional. Name of a cluster-scoped ObjectStorageConfig for backups.
   backupStorageRef: "my-backup-config"
@@ -256,7 +256,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 - [CamundaPlatformConfig](camundaplatformconfig.md) — referenced via `platformConfigRef` for auth, license, and image registry defaults.
 - [CamundaClusterPreset](camundaclusterpreset.md) — referenced via `presetRef` for a standardized baseline spec.
-- [SecondaryStorageConfig](secondarystorageconfig.md) — referenced via `storageRef` (required); the contract CRD describing the secondary storage backend: Elasticsearch (8.19 or later for Camunda 8.9) or RDBMS (GA in Camunda 8.9).
+- [SecondaryStorageConfig](secondarystorageconfig.md) — referenced via `storageRef` (required), resolved in this cluster's own namespace; the contract CRD describing the secondary storage backend: Elasticsearch (8.19 or later for Camunda 8.9) or RDBMS (GA in Camunda 8.9).
 - [ObjectStorageConfig](objectstorageconfig.md) — referenced via `backupStorageRef` and `documentStorageRef` for bucket storage; it carries no credentials, and bucket access flows from the workload identity configured via `spec.serviceAccount.annotations`.
 - [Backup](backup.md), [BackupSchedule](backupschedule.md), [BackupRetention](backupretention.md) — reference this CR via `clusterRef` to back it up.
 - [LogicalRestore](logicalrestore.md) — references this CR via `targetClusterRef`; requires the cluster to be suspended.

@@ -20,38 +20,84 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// DatabaseSpec defines the desired state of Database
-type DatabaseSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of Database. Edit database_types.go to remove/update
+// CredentialsSpec names the Secret a controller writes generated credentials
+// to (keys username and password).
+type CredentialsSpec struct {
+	// SecretName is the name of the credentials Secret. Each controller
+	// documents its kind-specific default derived from the CR name.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	SecretName string `json:"secretName,omitempty"`
+	// SecretNamespace is the namespace for the credentials Secret. Defaults
+	// to the CR's target namespace.
+	// +optional
+	SecretNamespace string `json:"secretNamespace,omitempty"`
 }
 
-// DatabaseStatus defines the observed state of Database.
+// BackupCredentialsSpec configures the backup credentials Secret, which is
+// created unless disabled.
+type BackupCredentialsSpec struct {
+	// Disabled skips creating the backup user and Secret. Defaults to false.
+	// +optional
+	Disabled bool `json:"disabled,omitempty"`
+
+	CredentialsSpec `json:",inline"`
+}
+
+// DatabaseSpec defines the desired state of Database.
+type DatabaseSpec struct {
+	// ServerRef names the cluster-scoped DatabaseServerConfig describing the
+	// server to create the database in.
+	// +kubebuilder:validation:MinLength=1
+	ServerRef string `json:"serverRef"`
+	// DatabaseName is the name of the logical database to create, a valid
+	// PostgreSQL identifier. It must be unique per server: the controller
+	// rejects a Database whose serverRef and databaseName collide with an
+	// existing one.
+	// +kubebuilder:validation:Pattern=`^[a-z_][a-z0-9_]{0,62}$`
+	DatabaseName string `json:"databaseName"`
+	// TargetNamespace is the namespace where the created DatabaseConfig,
+	// SecondaryStorageConfig, and credential Secrets are placed (each
+	// Secret's namespace can be overridden per Secret). Set it to the
+	// consuming cluster's namespace, since consumers resolve the bindings by
+	// name in their own namespace; for that reason the field is required with
+	// no default.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:MinLength=1
+	TargetNamespace string `json:"targetNamespace"`
+	// ApplicationCredentials configures the application credentials Secret,
+	// always created. The Secret name defaults to <CR name>-credentials.
+	// +optional
+	ApplicationCredentials *CredentialsSpec `json:"applicationCredentials,omitempty"`
+	// BackupCredentials configures the backup credentials Secret, created
+	// unless disabled. The Secret name defaults to
+	// <CR name>-backup-credentials.
+	// +optional
+	BackupCredentials *BackupCredentialsSpec `json:"backupCredentials,omitempty"`
+	// DatabaseConfig names the DatabaseConfig the operator creates in
+	// targetNamespace. Defaults to the CR name.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	DatabaseConfig string `json:"databaseConfig,omitempty"`
+	// SecondaryStorageConfig, when set, makes the operator also create a
+	// SecondaryStorageConfig of type rdbms with this name in targetNamespace,
+	// wired to the DatabaseConfig. Omit it for databases not used as Camunda
+	// secondary storage (Keycloak, Identity, Web Modeler).
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	SecondaryStorageConfig string `json:"secondaryStorageConfig,omitempty"`
+}
+
+// DatabaseStatus is the observed state of a Database.
 type DatabaseStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the Database resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current state. Ready carries a pre-check
+	// reason (InvalidReference, MissingSecret, ConnectionFailed) or mirrors
+	// the BindingsReady component condition, which also appears here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -62,7 +108,12 @@ type DatabaseStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// Database is the Schema for the databases API
+// Database bootstraps a logical database and its users on an existing
+// PostgreSQL server over plain SQL and publishes the result as a
+// DatabaseConfig — and optionally a SecondaryStorageConfig — in its target
+// namespace. Deletion garbage-collects the published bindings and Secrets
+// through owner references but never drops the logical database or the SQL
+// users.
 type Database struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -77,6 +128,20 @@ type Database struct {
 	// status defines the observed state of Database
 	// +optional
 	Status DatabaseStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages per-component conditions on the resource through
+// it.
+func (in *Database) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
+
+// GetKind returns the CRD kind. The component framework derives its
+// per-component SSA field managers (Database/<component>) from it.
+func (in *Database) GetKind() string { return "Database" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *Database) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
 }
 
 // +kubebuilder:object:root=true

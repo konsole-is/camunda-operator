@@ -6,4 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: elasticsearchclusterpreset-sample
 spec:
-  # TODO(user): Add fields here
+  cluster:
+    version: "9.2.4"
+    replicas: 3
+    storageSize: "64Gi"

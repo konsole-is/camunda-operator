@@ -17,7 +17,13 @@ spec:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: Database is the Schema for the databases API
+        description: |-
+          Database bootstraps a logical database and its users on an existing
+          PostgreSQL server over plain SQL and publishes the result as a
+          DatabaseConfig — and optionally a SecondaryStorageConfig — in its target
+          namespace. Deletion garbage-collects the published bindings and Secrets
+          through owner references but never drops the logical database or the SQL
+          users.
         properties:
           apiVersion:
             description: |-
@@ -39,25 +45,98 @@ spec:
           spec:
             description: spec defines the desired state of Database
             properties:
-              foo:
-                description: foo is an example field of Database. Edit database_types.go
-                  to remove/update
+              applicationCredentials:
+                description: |-
+                  ApplicationCredentials configures the application credentials Secret,
+                  always created. The Secret name defaults to <CR name>-credentials.
+                properties:
+                  secretName:
+                    description: |-
+                      SecretName is the name of the credentials Secret. Each controller
+                      documents its kind-specific default derived from the CR name.
+                    type: string
+                  secretNamespace:
+                    description: |-
+                      SecretNamespace is the namespace for the credentials Secret. Defaults
+                      to the CR's target namespace.
+                    type: string
+                type: object
+              backupCredentials:
+                description: |-
+                  BackupCredentials configures the backup credentials Secret, created
+                  unless disabled. The Secret name defaults to
+                  <CR name>-backup-credentials.
+                properties:
+                  disabled:
+                    description: Disabled skips creating the backup user and Secret.
+                      Defaults to false.
+                    type: boolean
+                  secretName:
+                    description: |-
+                      SecretName is the name of the credentials Secret. Each controller
+                      documents its kind-specific default derived from the CR name.
+                    type: string
+                  secretNamespace:
+                    description: |-
+                      SecretNamespace is the namespace for the credentials Secret. Defaults
+                      to the CR's target namespace.
+                    type: string
+                type: object
+              databaseConfig:
+                description: |-
+                  DatabaseConfig names the DatabaseConfig the operator creates in
+                  targetNamespace. Defaults to the CR name.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
+              databaseName:
+                description: |-
+                  DatabaseName is the name of the logical database to create, a valid
+                  PostgreSQL identifier. It must be unique per server: the controller
+                  rejects a Database whose serverRef and databaseName collide with an
+                  existing one.
+                pattern: ^[a-z_][a-z0-9_]{0,62}$
+                type: string
+              secondaryStorageConfig:
+                description: |-
+                  SecondaryStorageConfig, when set, makes the operator also create a
+                  SecondaryStorageConfig of type rdbms with this name in targetNamespace,
+                  wired to the DatabaseConfig. Omit it for databases not used as Camunda
+                  secondary storage (Keycloak, Identity, Web Modeler).
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              serverRef:
+                description: |-
+                  ServerRef names the cluster-scoped DatabaseServerConfig describing the
+                  server to create the database in.
+                minLength: 1
+                type: string
+              targetNamespace:
+                description: |-
+                  TargetNamespace is the namespace where the created DatabaseConfig,
+                  SecondaryStorageConfig, and credential Secrets are placed (each
+                  Secret's namespace can be overridden per Secret). Set it to the
+                  consuming cluster's namespace, since consumers resolve the bindings by
+                  name in their own namespace; for that reason the field is required with
+                  no default.
+                maxLength: 63
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+            required:
+            - databaseName
+            - serverRef
+            - targetNamespace
             type: object
           status:
             description: status defines the observed state of Database
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the Database resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current state. Ready carries a pre-check
+                  reason (InvalidReference, MissingSecret, ConnectionFailed) or mirrors
+                  the BindingsReady component condition, which also appears here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +195,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

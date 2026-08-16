@@ -14,110 +14,94 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package conditions provides the Ready-condition vocabulary and SSA status
-// patching shared by the contract validation controllers.
+// Package conditions builds the aggregate Ready condition of a CRD that runs
+// ocf components. The condition vocabulary lives in api/v1, and every
+// controller persists status through the ocf FlushStatus.
 package conditions
 
 import (
-	"context"
 	"fmt"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-const (
-	// TypeReady is the condition type every contract CRD reports.
-	TypeReady = "Ready"
-	// ReasonHealthy indicates all validation checks passed.
-	ReasonHealthy = "Healthy"
-	// ReasonMissingSecret indicates a referenced Secret is missing or lacks a
-	// configured key.
-	ReasonMissingSecret = "MissingSecret"
-	// ReasonInvalidReference indicates a referenced custom resource does not
-	// exist.
-	ReasonInvalidReference = "InvalidReference"
-)
-
-// FieldOwner is the server-side-apply field manager for all camunda-operator
-// writes.
-const FieldOwner = client.FieldOwner("camunda-operator")
-
-// Object is implemented by contract CRs whose Ready condition the validation
-// controllers maintain.
-type Object interface {
-	client.Object
-	// GetConditions returns the resource's status conditions.
-	GetConditions() []metav1.Condition
-	// GetObservedGeneration returns the last reconciled generation recorded in
-	// status.
-	GetObservedGeneration() int64
+// PreCheckFailure is a failed reconciliation pre-check, for example an
+// unresolved reference, a missing Secret, or an unreachable server. It maps
+// the failure to its documented Ready reason and a condition-ready message. It
+// is an error, so pre-checks return it through the ordinary error path. The
+// reconciler picks it out with errors.As and reports it as a Ready condition,
+// not as a reconcile error.
+type PreCheckFailure struct {
+	// Reason is the documented Ready condition reason for the failure.
+	Reason string
+	// Message is the condition-ready failure message.
+	Message string
 }
 
-// Ready builds a Ready condition observed at the given generation. The caller
-// supplies LastTransitionTime handling via PatchReady.
+// Error returns the condition-ready message.
+func (f *PreCheckFailure) Error() string { return f.Message }
+
+// Ready builds a Ready condition observed at the given generation. It sets no
+// LastTransitionTime, because meta.SetStatusCondition supplies it.
 func Ready(status metav1.ConditionStatus, reason, message string, observedGeneration int64) metav1.Condition {
 	return metav1.Condition{
-		Type: TypeReady, Status: status, Reason: reason,
+		Type: v1.ConditionReady, Status: status, Reason: reason,
 		Message: message, ObservedGeneration: observedGeneration,
 	}
 }
 
-// needsPatch reports whether obj's persisted status differs from cond.
-func needsPatch(obj Object, cond metav1.Condition) bool {
-	current := meta.FindStatusCondition(obj.GetConditions(), TypeReady)
-	if current == nil || obj.GetObservedGeneration() != cond.ObservedGeneration {
-		return true
-	}
-
-	return current.Status != cond.Status || current.Reason != cond.Reason ||
-		current.Message != cond.Message || current.ObservedGeneration != cond.ObservedGeneration
+// Owner is a CRD that stages its Ready condition: the ocf owner plus the
+// observedGeneration setter that every CRD of this operator implements.
+type Owner interface {
+	component.OperatorCRD
+	// SetObservedGeneration records the last reconciled generation in status.
+	SetObservedGeneration(generation int64)
 }
 
-// PatchReady server-side-applies cond and status.observedGeneration
-// (cond.ObservedGeneration) to obj's status subresource under FieldOwner. It
-// preserves LastTransitionTime when the condition status is unchanged and
-// skips the API call entirely when the persisted status already matches.
-// obj must be the freshly fetched resource with its status unmodified: the
-// skip and preservation decisions compare against obj's in-memory status, so a
-// locally mutated status produces wrong skips or transition times.
-func PatchReady(ctx context.Context, c client.Client, obj Object, cond metav1.Condition) error {
-	if !needsPatch(obj, cond) {
-		return nil
+// Stage sets ready on owner and records the current generation as observed,
+// in memory. FlushStatus persists both. Every controller stages Ready through
+// Stage, so observedGeneration always moves with Ready.
+func Stage(owner Owner, ready metav1.Condition) {
+	meta.SetStatusCondition(owner.GetStatusConditions(), ready)
+	owner.SetObservedGeneration(owner.GetGeneration())
+}
+
+// Failed builds the Ready condition for a pre-check failure of owner.
+func Failed(owner Owner, failure *PreCheckFailure) metav1.Condition {
+	return Ready(metav1.ConditionFalse, failure.Reason, failure.Message, owner.GetGeneration())
+}
+
+// Aggregate builds the Ready condition of owner from the given ocf
+// components. It mirrors the representative component: the one whose
+// condition reason has the highest component.Status priority, with the first
+// one winning a tie. Ready takes the status and reason of that component, and
+// its message names the component. A component that has not reported yet
+// counts as Unknown, which component.GetCondition supplies. With no components
+// the result is Unknown. The caller decides which components make up Ready: an
+// auxiliary component, for example a metrics exporter, keeps its own condition
+// and stays out of the list.
+func Aggregate(owner component.OperatorCRD, comps ...*component.Component) metav1.Condition {
+	generation := owner.GetGeneration()
+	if len(comps) == 0 {
+		return Ready(metav1.ConditionFalse, string(component.Unknown), "No component has reported yet", generation)
 	}
 
-	current := meta.FindStatusCondition(obj.GetConditions(), TypeReady)
-	if current != nil && current.Status == cond.Status {
-		cond.LastTransitionTime = current.LastTransitionTime
-	}
-	if cond.LastTransitionTime.IsZero() {
-		cond.LastTransitionTime = metav1.Now()
-	}
-
-	gvk, err := apiutil.GVKForObject(obj, c.Scheme())
-	if err != nil {
-		return fmt.Errorf("resolving GVK: %w", err)
+	representative := comps[0].GetCondition(owner)
+	for _, comp := range comps[1:] {
+		cond := comp.GetCondition(owner)
+		if cond.ComponentStatus().Priority() > representative.ComponentStatus().Priority() {
+			representative = cond
+		}
 	}
 
-	condMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&cond)
-	if err != nil {
-		return fmt.Errorf("converting condition: %w", err)
-	}
-
-	u := &unstructured.Unstructured{}
-	u.SetGroupVersionKind(gvk)
-	u.SetName(obj.GetName())
-	u.SetNamespace(obj.GetNamespace())
-	if err := unstructured.SetNestedField(u.Object, map[string]any{
-		"observedGeneration": cond.ObservedGeneration,
-		"conditions":         []any{condMap},
-	}, "status"); err != nil {
-		return fmt.Errorf("building status patch: %w", err)
-	}
-
-	return c.Status().Apply(ctx, client.ApplyConfigurationFromUnstructured(u), FieldOwner, client.ForceOwnership)
+	return Ready(
+		representative.Status,
+		representative.Reason,
+		fmt.Sprintf("%s: %s", representative.Type, representative.Message),
+		generation,
+	)
 }

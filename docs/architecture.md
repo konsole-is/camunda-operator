@@ -24,7 +24,8 @@ This mirrors how the Kubernetes ecosystem itself works.
 cert-manager writes Secrets; the HorizontalPodAutoscaler patches replicas on a Deployment.
 Neither goes through a central coordinator: controllers attach themselves to resources and extend them in small, well-scoped ways.
 
-To make discovery possible, the operator labels every workload it creates with `camunda.io/cluster` (the owning cluster's name) and `camunda.io/component` (the workload's role).
+To make discovery possible, the operator labels every resource it creates with the name of its owner under a key per owning kind — `camunda.io/cluster` for a `CamundaCluster`, `camunda.io/elasticsearch-cluster` for an `ElasticsearchCluster`, `camunda.io/database` for a `Database` — with `camunda.io/component` (the resource's role) and `app.kubernetes.io/managed-by: camunda-operator`.
+One key per kind keeps two owners of different kinds with the same name apart. Pods and volumes that another operator runs from the operator's template (the Elasticsearch pods that ECK manages) carry the owner and component labels but not the manager label. `pkg/labels` is the one place that defines these keys.
 Extensions find workloads through these labels or reference the cluster directly via `clusterRef`.
 
 ## How features connect

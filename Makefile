@@ -57,8 +57,9 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
-fmt: ## Run go fmt against code.
-	go fmt ./...
+fmt: golangci-lint ## Format code: callsplit, then the formatters configured in .golangci.yml.
+	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
+	"$(GOLANGCI_LINT)" fmt
 
 .PHONY: vet
 vet: ## Run go vet against code.
@@ -70,9 +71,22 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager is installed by default; skip with:
+# CertManager and the ECK operator are installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
+# - ECK_INSTALL_SKIP=true
+# The suite runs an Elasticsearch node through ECK. The node needs
+# vm.max_map_count of at least 262144 on the kind host.
 KIND_CLUSTER ?= camunda-operator-test-e2e
+
+# ECK_VERSION pins the ECK operator release that the e2e suite installs. Keep
+# it on the same minor as the cloud-on-k8s module in go.mod: the operator
+# under test renders Elasticsearch resources with the types of that module.
+ECK_VERSION ?= 3.5.0
+
+# E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the
+# Elasticsearch image and bootstraps a node, which takes longer than the
+# default 10 minutes of go test.
+E2E_TIMEOUT ?= 60m
 
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
@@ -90,7 +104,8 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) ECK_VERSION=$(ECK_VERSION) \
+		go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT)
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
@@ -98,11 +113,14 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
+lint: golangci-lint ## Run callsplit in check mode, then golangci-lint.
+	go run ./hack/callsplit -check ./api ./cmd ./internal ./pkg ./test
 	"$(GOLANGCI_LINT)" run
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
+	"$(GOLANGCI_LINT)" fmt
 	"$(GOLANGCI_LINT)" run --fix
 
 .PHONY: lint-config

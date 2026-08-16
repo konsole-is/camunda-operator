@@ -36,18 +36,26 @@ var (
 	managerImage = "example.com/camunda-operator:v0.0.1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
+	// shouldCleanupECK tracks whether the ECK operator was installed by this suite.
+	shouldCleanupECK = false
 )
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
-// The default setup requires Kind and CertManager.
+// The default setup requires Kind, CertManager, and the ECK operator. The suite
+// installs CertManager and ECK when the cluster does not serve them.
 //
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
+// To skip ECK installation, set: ECK_INSTALL_SKIP=true
+// To install a different ECK release, set: ECK_VERSION=<version>
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting camunda-operator e2e test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
+// The suite deploys the manager once, after ECK. The ECK CRDs must be present
+// before the manager starts, because the ElasticsearchCluster controller
+// watches the ECK Elasticsearch kind.
 var _ = BeforeSuite(func() {
 	By("building the manager image")
 	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", managerImage))
@@ -61,11 +69,58 @@ var _ = BeforeSuite(func() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
 
 	setupCertManager()
+	setupECK()
+	deployManager()
 })
 
 var _ = AfterSuite(func() {
+	undeployManager()
+	teardownECK()
 	teardownCertManager()
 })
+
+// deployManager creates the manager namespace with the restricted security
+// policy, installs the CRDs, and deploys the controller-manager.
+func deployManager() {
+	By("creating manager namespace")
+	cmd := exec.Command("kubectl", "create", "ns", namespace)
+	_, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
+
+	By("labeling the namespace to enforce the restricted security policy")
+	cmd = exec.Command(
+		"kubectl", "label", "--overwrite", "ns", namespace,
+		"pod-security.kubernetes.io/enforce=restricted",
+	)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
+
+	By("installing CRDs")
+	cmd = exec.Command("make", "install")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
+
+	By("deploying the controller-manager")
+	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+}
+
+// undeployManager removes the controller-manager, the CRDs, and the manager
+// namespace.
+func undeployManager() {
+	By("undeploying the controller-manager")
+	cmd := exec.Command("make", "undeploy")
+	_, _ = utils.Run(cmd)
+
+	By("uninstalling CRDs")
+	cmd = exec.Command("make", "uninstall")
+	_, _ = utils.Run(cmd)
+
+	By("removing manager namespace")
+	cmd = exec.Command("kubectl", "delete", "ns", namespace)
+	_, _ = utils.Run(cmd)
+}
 
 // setupCertManager installs CertManager if needed for webhook tests.
 // Skips installation if CERT_MANAGER_INSTALL_SKIP=true or if already present.
@@ -98,4 +153,35 @@ func teardownCertManager() {
 
 	By("uninstalling CertManager")
 	utils.UninstallCertManager()
+}
+
+// setupECK installs the ECK operator that the ElasticsearchCluster flow
+// drives. Skips installation if ECK_INSTALL_SKIP=true or if already present.
+func setupECK() {
+	if os.Getenv("ECK_INSTALL_SKIP") == "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping ECK installation (ECK_INSTALL_SKIP=true)\n")
+		return
+	}
+
+	By("checking if ECK is already installed")
+	if utils.IsECKInstalled() {
+		_, _ = fmt.Fprintf(GinkgoWriter, "ECK is already installed. Skipping installation.\n")
+		return
+	}
+
+	shouldCleanupECK = true
+
+	By(fmt.Sprintf("installing ECK %s", utils.ECKVersion()))
+	Expect(utils.InstallECK()).To(Succeed(), "Failed to install ECK")
+}
+
+// teardownECK uninstalls ECK if it was installed by setupECK.
+func teardownECK() {
+	if !shouldCleanupECK {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping ECK cleanup (not installed by this suite)\n")
+		return
+	}
+
+	By("uninstalling ECK")
+	utils.UninstallECK()
 }

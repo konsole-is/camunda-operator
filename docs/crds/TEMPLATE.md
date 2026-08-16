@@ -47,7 +47,7 @@ One fenced YAML block containing the full spec with every field present.
 Each field gets a comment line directly above it: `# <type>. <Required|Optional>[, default: <value>]. <one-line meaning>`
 Reference-field shapes (api-vocabulary contract):
 - namespaced CR ref: object {name (required), namespace (optional, defaults to the referencing CR's namespace)}, field named <thing>Ref
-- cluster-scoped CR ref (contract CRDs, presets, platform config): plain string with the target's name, e.g. storageRef: "my-storage-config"
+- contract CR ref (shared-infra contracts, presets, platform config are cluster-scoped; binding contracts — SecondaryStorageConfig, DatabaseConfig — are namespaced and resolved in the consumer's own namespace): plain string with the target's name, e.g. storageRef: "my-storage-config"
 - single-value secret ref: {name, namespace, key}, field named <thing>SecretRef
 - credentials secret ref (username+password): {name, namespace, usernameKey, passwordKey}, field named credentialsSecretRef / adminCredentialsSecretRef / backupCredentialsSecretRef
 - output-name field (CR the controller creates): plain string named after the created kind, e.g. secondaryStorageConfig: "my-storage-config"
@@ -73,8 +73,8 @@ spec:
 <!--
 Conditions table first: columns Type | Reason | Meaning (one row per type/reason pair worth documenting).
 Conditions are the primary status mechanism; every active CRD has an aggregate `Ready` condition.
-Per-component conditions are PascalCase `<Component>Ready` (e.g. `ZeebeReady`); suspendable CRDs report `Suspended` when scaled down.
-Reasons are PascalCase single words or short phrases: `Healthy`, `Suspended`, `InvalidReference`, `MissingSecret`, `Progressing`.
+Per-component conditions are PascalCase `<Component>Ready` (e.g. `ZeebeReady`). A suspendable CRD reports suspension on `Ready` with reason `Suspended`, never as a separate condition.
+Reasons are PascalCase single words: the pre-check reasons `InvalidReference`, `MissingSecret`, `ConnectionFailed`, the validators' `Healthy`, and, on a CRD that runs components, the component framework statuses that `Ready` mirrors (`Healthy`, `Creating`, `Degraded`, `Down`, `Suspended`, `Error`, and more).
 Long-running operations (Backup, restores) additionally document `status.phase` with its enum values.
 Every status documents `observedGeneration`.
 -->
@@ -110,7 +110,7 @@ The bullets are real markdown links; shown here in a code fence only because the
 
 <!--
 Exactly two manifests: one minimal (only required fields) and one realistic (a plausible production shape).
-Naming conventions: cluster `my-cluster` in namespace `my-cluster-ns`; derived names prefixed with it (`my-cluster-es`, `my-cluster-backup-001`); cluster-scoped config CRs named for their role (`my-storage-config`, `my-db-server`).
+Naming conventions: cluster `my-cluster` in namespace `my-cluster-ns`; derived names prefixed with it (`my-cluster-es`, `my-cluster-backup-001`); config CRs named for their role (`my-storage-config`, `my-db-server`).
 -->
 
 A minimal manifest:
