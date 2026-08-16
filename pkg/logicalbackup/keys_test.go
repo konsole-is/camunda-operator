@@ -83,9 +83,8 @@ func TestObjectKeyPrefix(t *testing.T) {
 	}
 }
 
-// The finalizer and the schedule label are API surface: a restore, a
-// retention pass, and a user's kubectl selector all name them.
-func TestConstants(t *testing.T) {
+// The finalizer is API surface: a user who deletes a backup while its store
+// is unreachable finds this string on the object.
+func TestFinalizer(t *testing.T) {
 	assert.Equal(t, "core.camunda.io/backup-artifacts", logicalbackup.Finalizer)
-	assert.Equal(t, "camunda.io/backup-schedule", logicalbackup.ScheduleLabel)
 }

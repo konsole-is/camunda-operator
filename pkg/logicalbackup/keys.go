@@ -29,16 +29,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	// Finalizer guards the stored artifacts of a logical backup. While it is
-	// set, deleting the custom resource first deletes the snapshots or the
-	// dump that the backup produced.
-	Finalizer = "core.camunda.io/backup-artifacts"
-	// ScheduleLabel names the BackupSchedule that created a backup. Retention
-	// counts and prunes only the backups that carry it, so a backup created
-	// by hand is never pruned by a policy.
-	ScheduleLabel = "camunda.io/backup-schedule"
-)
+// Finalizer guards the stored artifacts of a logical backup. While it is set,
+// deleting the custom resource first deletes the snapshots or the dump that
+// the backup produced.
+//
+// The label that names the BackupSchedule which created a backup is
+// labels.BackupScheduleKey: pkg/labels is the one place that owns the label
+// keys of this operator.
+const Finalizer = "core.camunda.io/backup-artifacts"
 
 // AllocateBackupID returns the identifier of a backup that starts at the
 // given time: the Unix timestamp in seconds. It is monotonic per cluster
