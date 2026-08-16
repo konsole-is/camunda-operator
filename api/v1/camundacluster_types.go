@@ -198,6 +198,47 @@ type ClusterAuthSpec struct {
 	// this cluster.
 	// +optional
 	ClientSecretRef *SecretKeyRef `json:"clientSecretRef,omitempty"`
+	// Admin holds the identities that get the admin role of this cluster. It
+	// applies under OIDC only. Basic authentication seeds its own
+	// administrator and ignores this block.
+	// +optional
+	Admin *ClusterAdminSpec `json:"admin,omitempty"`
+}
+
+// ClusterAdminSpec holds the identities that get the admin role of one
+// cluster. The identity provider authenticates a caller, and this block is
+// the only thing that authorizes one, so a cluster without it has no
+// administrator.
+type ClusterAdminSpec struct {
+	// Users are the values of the username claim that get the admin role.
+	// +optional
+	Users []string `json:"users,omitempty"`
+	// Clients are the values of the client id claim that get the admin role.
+	// A client entry matches only when the platform config sets
+	// auth.oidc.clientIdClaim.
+	// +optional
+	Clients []string `json:"clients,omitempty"`
+	// MappingRules give the admin role to every token that holds a claim with
+	// a given value.
+	// +optional
+	MappingRules []AdminMappingRule `json:"mappingRules,omitempty"`
+}
+
+// AdminMappingRule gives the admin role to every token in which the claim
+// ClaimName holds the value ClaimValue.
+type AdminMappingRule struct {
+	// ID names the rule inside the cluster. The Admin web application lists it
+	// under Mapping Rules.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	ID string `json:"id"`
+	// ClaimName is the name of a claim, or a JSONPath expression that points
+	// at a claim.
+	// +kubebuilder:validation:MinLength=1
+	ClaimName string `json:"claimName"`
+	// ClaimValue is the value that the claim must hold for the rule to match.
+	// +kubebuilder:validation:MinLength=1
+	ClaimValue string `json:"claimValue"`
 }
 
 // ClusterMonitoringSpec groups the monitoring integrations of a

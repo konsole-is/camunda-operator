@@ -65,6 +65,16 @@ type OIDCSpec struct {
 	// Consumers default it to ClientID when empty.
 	// +optional
 	Audience string `json:"audience,omitempty"`
+	// UsernameClaim is the token claim that holds the username of a person.
+	// Empty means the default of the orchestration cluster, which is "sub".
+	// +optional
+	UsernameClaim string `json:"usernameClaim,omitempty"`
+	// ClientIDClaim is the token claim that holds the id of a machine client.
+	// Empty means that no claim identifies a client, and every token becomes a
+	// person. The claim must be absent from the tokens of persons, because a
+	// token that carries it always becomes a client.
+	// +optional
+	ClientIDClaim string `json:"clientIdClaim,omitempty"`
 	// ClientSecretRef names the Secret key that holds the default OIDC client
 	// secret.
 	ClientSecretRef SecretKeyRef `json:"clientSecretRef"`
