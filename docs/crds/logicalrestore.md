@@ -1,10 +1,10 @@
 # LogicalRestore
 
-A LogicalRestore restores a completed [Backup](backup.md) into a suspended target orchestration cluster.
+A LogicalRestore restores a completed Backup into a suspended target orchestration cluster.
 
 ## Purpose
 
-A LogicalRestore rebuilds a `CamundaCluster`'s secondary storage and Zeebe partitions from a [Backup](backup.md), either on the same cluster or on a different one — for example to recover from data loss or to clone an environment.
+A LogicalRestore rebuilds a `CamundaCluster`'s secondary storage and Zeebe partitions from a Backup, either on the same cluster or on a different one — for example to recover from data loss or to clone an environment.
 You create it, or a composition layer above creates it as part of a managed recovery flow.
 It works for both secondary storage types; for timestamp-precise in-place recovery of an RDBMS-backed cluster, use [PointInTimeRestore](pointintimerestore.md) instead.
 
@@ -83,7 +83,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- [Backup](backup.md) — referenced via `backupRef`; provides the artifacts and the backup ID.
+- Backup — referenced via `backupRef`; provides the artifacts and the backup ID.
 - [PointInTimeRestore](pointintimerestore.md) — the in-place, timestamp-precise alternative for PITR-enabled RDBMS clusters.
 - [CamundaCluster](camundacluster.md) — referenced via `targetClusterRef`; must be suspended by its owner for the duration of the restore.
 - [SecondaryStorageConfig](secondarystorageconfig.md) — resolved via the target's `storageRef` for storage type and credentials.

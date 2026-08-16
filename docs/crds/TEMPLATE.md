@@ -103,7 +103,7 @@ The bullets are real markdown links; shown here in a code fence only because the
 
 ```markdown
 - [CamundaCluster](camundacluster.md) — referenced via `clusterRef`.
-- [Backup](backup.md) — references this CR via `backupRef`.
+- Backup — references this CR via `backupRef`.
 ```
 
 ## Examples

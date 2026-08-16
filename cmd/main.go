@@ -277,25 +277,11 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "ObjectStorageConfig")
 		os.Exit(1)
 	}
-	if err := (&controller.BackupReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "Backup")
-		os.Exit(1)
-	}
 	if err := (&controller.BackupScheduleReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BackupSchedule")
-		os.Exit(1)
-	}
-	if err := (&controller.BackupRetentionReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "BackupRetention")
 		os.Exit(1)
 	}
 	if err := (&controller.PointInTimeRestoreReconciler{
