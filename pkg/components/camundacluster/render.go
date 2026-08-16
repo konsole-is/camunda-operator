@@ -104,8 +104,10 @@ func render(in Input, p Process) rendered {
 }
 
 // identityEnv is the cluster identity layer: name, size, partitions,
-// replication factor, the contact points of every broker, the gateway id of
-// a standalone gateway process, and the gRPC bind address.
+// replication factor, the contact points of every broker, the gRPC bind
+// address, and the gateway id of every Deployment-backed unified process
+// (the gateway and the standalone web applications, which run the gateway
+// code path).
 func identityEnv(in Input, p Process) []corev1.EnvVar {
 	e := in.Effective
 	env := []corev1.EnvVar{

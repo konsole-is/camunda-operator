@@ -41,7 +41,7 @@ type Process struct {
 	Kind ProcessKind
 	// Replicas is the number of pods.
 	Replicas int32
-	// Profiles is SPRING_PROFILES_ACTIVE, sorted. It always ends with
+	// Profiles is SPRING_PROFILES_ACTIVE, sorted. It always contains
 	// consolidated-auth for a unified process and is empty for connectors.
 	Profiles []string
 	// EmbeddedGateway is true on the brokers when they run the gateway

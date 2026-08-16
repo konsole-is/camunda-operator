@@ -60,6 +60,13 @@ const (
 	healthLivenessPath  = "/actuator/health/liveness"
 )
 
+// metricsPath is the Prometheus endpoint. The unified binary exposes every
+// actuator endpoint on the management port and enables the prometheus one
+// (dist/src/main/resources/application.properties:29,35-36); the connectors
+// runtime exposes it under the same context path on its HTTP port (helm
+// chart 14.8.3 templates/connectors/files/_application.yaml:12-17).
+const metricsPath = "/actuator/prometheus"
+
 // The probe timings of the unified processes.
 const (
 	startupFailureThreshold int32 = 60
@@ -463,9 +470,9 @@ func serviceFor(in Input, p Process) *corev1.Service {
 	return svc
 }
 
-// serviceMonitorFor renders the ServiceMonitor that scrapes the management
-// port of a unified process, or the HTTP port of connectors, through its
-// Service.
+// serviceMonitorFor renders the ServiceMonitor that scrapes
+// /actuator/prometheus on the management port of a unified process, or on
+// the HTTP port of connectors, through its Service.
 func serviceMonitorFor(in Input, p Process) *monitoringv1.ServiceMonitor {
 	var userLabels, annotations map[string]string
 	if m := in.Effective.Monitoring; m != nil && m.ServiceMonitor != nil {
@@ -487,7 +494,7 @@ func serviceMonitorFor(in Input, p Process) *monitoringv1.ServiceMonitor {
 		},
 		Spec: monitoringv1.ServiceMonitorSpec{
 			Selector:  metav1.LabelSelector{MatchLabels: discoveryLabels(in.Cluster, p.Component)},
-			Endpoints: []monitoringv1.Endpoint{{Port: port}},
+			Endpoints: []monitoringv1.Endpoint{{Port: port, Path: metricsPath}},
 		},
 	}
 }

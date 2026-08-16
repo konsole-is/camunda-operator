@@ -198,6 +198,34 @@ func TestServiceMonitorOmittedWhenUnsupported(t *testing.T) {
 	}
 }
 
+// Every ServiceMonitor scrapes /actuator/prometheus: on the management port
+// of a unified process and on the HTTP port of connectors.
+func TestServiceMonitorScrapesPrometheusEndpoint(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(fixtureDefault(t))
+	require.NoError(t, err)
+
+	seen := 0
+	for _, comp := range comps {
+		for _, obj := range previewObjects(t, comp) {
+			monitor, ok := obj.(*monitoringv1.ServiceMonitor)
+			if !ok {
+				continue
+			}
+			seen++
+			require.Len(t, monitor.Spec.Endpoints, 1, comp.GetName())
+			assert.Equal(t, "/actuator/prometheus", monitor.Spec.Endpoints[0].Path, comp.GetName())
+			want := "management"
+			if comp.GetName() == ComponentConnectors {
+				want = "http"
+			}
+			assert.Equal(t, want, monitor.Spec.Endpoints[0].Port, comp.GetName())
+		}
+	}
+	assert.Equal(t, 3, seen)
+}
+
 // The service account is rendered by the first component only when the spec
 // asks for it, and every pod template names it.
 func TestServiceAccount(t *testing.T) {

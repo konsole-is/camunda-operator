@@ -234,7 +234,8 @@ metadata:
   namespace: my-cluster-ns
 spec:
   endpoints:
-  - port: management
+  - path: /actuator/prometheus
+    port: management
   namespaceSelector: {}
   selector:
     matchLabels:

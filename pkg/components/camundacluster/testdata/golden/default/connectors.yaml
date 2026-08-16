@@ -110,7 +110,8 @@ metadata:
   namespace: my-cluster-ns
 spec:
   endpoints:
-  - port: http
+  - path: /actuator/prometheus
+    port: http
   namespaceSelector: {}
   selector:
     matchLabels:
