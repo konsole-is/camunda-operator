@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 1549028a5b02f4b2
+        camunda.io/config-hash: 2751ef9e76226d61
         company.com/cluster-preset: medium
       labels:
         camunda.io/cluster: my-cluster

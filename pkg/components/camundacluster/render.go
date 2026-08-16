@@ -76,8 +76,8 @@ type rendered struct {
 // render produces the environment of a process in layers; a later layer wins
 // by name: cluster identity, secondary storage, authentication and platform
 // settings, process role, then user overrides (global extraEnv, then the
-// extraEnv of the embedded web applications the process hosts, then the
-// extraEnv of the process's own component). Connectors get only the client
+// extraEnv of the embedded gateway and web applications the process hosts,
+// then the extraEnv of the process's own component). Connectors get only the client
 // layer, the license, and the user overrides.
 func render(in Input, p Process) rendered {
 	if p.Component == ComponentConnectors {
@@ -256,7 +256,7 @@ func oidcEnv(in Input, oidc *v1.OIDCSpec) []corev1.EnvVar {
 		}
 	}
 
-	if externalURL := strings.TrimSuffix(in.Cluster.Spec.ExternalURL, "/"); externalURL != "" {
+	if externalURL := strings.TrimRight(in.Cluster.Spec.ExternalURL, "/"); externalURL != "" {
 		env = append(env, camundaconfig.Var(camundaconfig.KeyOIDCRedirectURI, externalURL+ssoCallbackPath))
 	}
 
@@ -343,10 +343,14 @@ func connectorsEnv(in Input) []corev1.EnvVar {
 }
 
 // envSources returns the component names whose extraEnv and extraEnvFrom
-// apply to a process, in the order they are layered: the embedded web
-// applications the process hosts, then the process's own component.
+// apply to a process, in the order they are layered: the embedded gateway
+// (on the brokers), the embedded web applications the process hosts, then
+// the process's own component.
 func envSources(p Process) []string {
 	sources := []string{}
+	if p.EmbeddedGateway {
+		sources = append(sources, ComponentGateway)
+	}
 	for _, app := range webApps {
 		if app.component != p.Component && slices.Contains(p.Profiles, app.profile) {
 			sources = append(sources, app.component)

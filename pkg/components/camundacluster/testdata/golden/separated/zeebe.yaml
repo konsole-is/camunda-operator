@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: b9d95258f970f85f
+        camunda.io/config-hash: 0df431f4da4b1b02
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: zeebe

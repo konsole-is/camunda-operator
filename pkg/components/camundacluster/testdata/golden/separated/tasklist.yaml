@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: b9d95258f970f85f
+        camunda.io/config-hash: bea9cd0371c42098
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: tasklist

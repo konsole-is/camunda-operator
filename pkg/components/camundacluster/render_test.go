@@ -498,6 +498,39 @@ func TestRenderEmbeddedAppEnvAppliesToHost(t *testing.T) {
 	assertNoEnv(t, zeebe.env, "FROM_OPERATE")
 }
 
+// With the gateway embedded, the gateway's extraEnv and extraEnvFrom apply
+// to the brokers; the brokers' own entry wins over it.
+func TestRenderEmbeddedGatewayEnvAppliesToZeebe(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.Gateway = &v1.GatewaySpec{
+			Mode: v1.ComponentModeEmbedded,
+			WorkloadSpec: v1.WorkloadSpec{
+				ExtraEnv:     []corev1.EnvVar{{Name: "FROM_GATEWAY", Value: "yes"}, {Name: "SHARED", Value: "gateway"}},
+				ExtraEnvFrom: []corev1.EnvFromSource{{Prefix: "GATEWAY_"}},
+			},
+		}
+		in.Cluster.Spec.Zeebe = &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{
+			ExtraEnv: []corev1.EnvVar{{Name: "SHARED", Value: "zeebe"}},
+		}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+
+	zeebe := render(in, process(t, in, ComponentZeebe))
+	assertEnv(t, zeebe.env, "FROM_GATEWAY", "yes")
+	assertEnv(t, zeebe.env, "SHARED", "zeebe")
+	assert.Equal(t, []corev1.EnvFromSource{{Prefix: "GATEWAY_"}}, zeebe.envFrom)
+
+	standalone := newInput(t, func(in *Input) {
+		in.Cluster.Spec.Gateway = &v1.GatewaySpec{WorkloadSpec: v1.WorkloadSpec{
+			ExtraEnv: []corev1.EnvVar{{Name: "FROM_GATEWAY", Value: "yes"}},
+		}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+	assertNoEnv(t, render(standalone, process(t, standalone, ComponentZeebe)).env, "FROM_GATEWAY")
+}
+
 func TestRenderJavaToolOptions(t *testing.T) {
 	t.Parallel()
 

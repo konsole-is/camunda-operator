@@ -124,7 +124,7 @@ func Image(in Input, p Process) string {
 		image = ConnectorsImage + ":" + version
 	}
 
-	if registry := strings.TrimSuffix(in.Platform.ImageRegistry, "/"); registry != "" {
+	if registry := strings.TrimRight(in.Platform.ImageRegistry, "/"); registry != "" {
 		return registry + "/" + image
 	}
 	return image

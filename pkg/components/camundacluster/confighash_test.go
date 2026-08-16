@@ -26,30 +26,33 @@ import (
 func TestConfigHashStableAndSensitive(t *testing.T) {
 	t.Parallel()
 
-	base := ConfigHash(fixtureDefault(t))
+	zeebe := func(in Input) Process { return Resolve(in.Effective)[0] }
+	hash := func(in Input) string { return ConfigHash(in, zeebe(in)) }
+
+	base := hash(fixtureDefault(t))
 	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{16}$`), base)
-	assert.Equal(t, base, ConfigHash(fixtureDefault(t)), "same input, same hash")
+	assert.Equal(t, base, hash(fixtureDefault(t)), "same input, same hash")
 
 	// The order of the hash inputs does not matter; the controller may pass
 	// them in any order.
 	reordered := fixtureDefault(t)
 	reordered.HashInputs[0], reordered.HashInputs[1] = reordered.HashInputs[1], reordered.HashInputs[0]
-	assert.Equal(t, base, ConfigHash(reordered))
+	assert.Equal(t, base, hash(reordered))
 
 	bumped := fixtureDefault(t)
 	bumped.HashInputs[0] = "Secret/my-cluster-ns/es-user=13"
-	assert.NotEqual(t, base, ConfigHash(bumped), "a resource version change rolls the pods")
+	assert.NotEqual(t, base, hash(bumped), "a resource version change rolls the pods")
 
 	url := fixtureDefault(t)
 	url.Storage.Elasticsearch.Endpoint = "https://other:9200"
-	assert.NotEqual(t, base, ConfigHash(url), "an env value change rolls the pods")
+	assert.NotEqual(t, base, hash(url), "an env value change rolls the pods")
 
 	secretName := fixtureDefault(t)
 	secretName.Storage.Elasticsearch.CredentialsSecretRef.Name = "other-user"
-	assert.NotEqual(t, base, ConfigHash(secretName), "a Secret reference change rolls the pods")
+	assert.NotEqual(t, base, hash(secretName), "a Secret reference change rolls the pods")
 
 	envFrom := fixtureDefault(t)
 	envFrom.Cluster.Spec.ExtraEnvFrom = nil
 	envFrom.Effective = NewEffective(MergePreset(envFrom.Cluster.Spec, mediumPreset()))
-	assert.NotEqual(t, base, ConfigHash(envFrom), "an envFrom change rolls the pods")
+	assert.NotEqual(t, base, hash(envFrom), "an envFrom change rolls the pods")
 }

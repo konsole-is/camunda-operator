@@ -137,6 +137,9 @@ type ZeebeSpec struct {
 type GatewaySpec struct {
 	// Mode selects a Deployment of the unified binary (Standalone) or the
 	// embedded gateway of the brokers (Embedded). Defaults to Standalone.
+	// The workload fields have an effect only when the mode is Standalone,
+	// except extraEnv and extraEnvFrom, which apply to the brokers when the
+	// mode is Embedded.
 	// +optional
 	Mode         ComponentMode `json:"mode,omitempty"`
 	WorkloadSpec `              json:",inline"`

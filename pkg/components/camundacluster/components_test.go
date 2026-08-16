@@ -18,7 +18,6 @@ package camundacluster
 
 import (
 	"flag"
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -175,9 +174,28 @@ func TestConfigHashAnnotationOnEveryPodTemplate(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, comps, 3)
 
-	for _, comp := range comps {
+	hashes := map[string]string{}
+	for i, comp := range comps {
 		template := previewedPodTemplate(t, previewObjects(t, comp))
-		assert.Equal(t, ConfigHash(in), template.Annotations[ConfigHashAnnotation], comp.GetName())
+		p := Resolve(in.Effective)[i]
+		hashes[p.Component] = template.Annotations[ConfigHashAnnotation]
+		assert.Equal(t, ConfigHash(in, p), hashes[p.Component], comp.GetName())
+	}
+
+	// A change to one process rolls that process only.
+	changed := fixtureDefault(t)
+	changed.Cluster.Spec.Connectors.ExtraEnv = []corev1.EnvVar{{Name: "LOGGING_LEVEL_ROOT", Value: "debug"}}
+	changed.Effective = NewEffective(MergePreset(changed.Cluster.Spec, mediumPreset()))
+	comps, err = Build(changed)
+	require.NoError(t, err)
+	for i, comp := range comps {
+		template := previewedPodTemplate(t, previewObjects(t, comp))
+		p := Resolve(changed.Effective)[i]
+		if p.Component == ComponentConnectors {
+			assert.NotEqual(t, hashes[p.Component], template.Annotations[ConfigHashAnnotation], comp.GetName())
+		} else {
+			assert.Equal(t, hashes[p.Component], template.Annotations[ConfigHashAnnotation], comp.GetName())
+		}
 	}
 }
 
@@ -193,7 +211,8 @@ func TestServiceMonitorOmittedWhenUnsupported(t *testing.T) {
 	require.NoError(t, err)
 	for _, comp := range comps {
 		for _, obj := range previewObjects(t, comp) {
-			assert.NotEqual(t, "*v1.ServiceMonitor", fmt.Sprintf("%T", obj), comp.GetName())
+			_, isMonitor := obj.(*monitoringv1.ServiceMonitor)
+			assert.False(t, isMonitor, comp.GetName())
 		}
 	}
 }
@@ -234,12 +253,13 @@ func TestServiceAccount(t *testing.T) {
 	comps, err := Build(fixtureDefault(t))
 	require.NoError(t, err)
 
-	objects := previewObjects(t, comps[0])
-	types := make([]string, 0, len(objects))
-	for _, obj := range objects {
-		types = append(types, fmt.Sprintf("%T", obj))
+	hasAccount := false
+	for _, obj := range previewObjects(t, comps[0]) {
+		if _, ok := obj.(*corev1.ServiceAccount); ok {
+			hasAccount = true
+		}
 	}
-	assert.Contains(t, types, "*v1.ServiceAccount")
+	assert.True(t, hasAccount)
 	for _, comp := range comps {
 		assert.Equal(t, "my-cluster-camunda", previewedPodTemplate(t, previewObjects(t, comp)).Spec.ServiceAccountName)
 	}
@@ -248,7 +268,8 @@ func TestServiceAccount(t *testing.T) {
 	require.NoError(t, err)
 	for _, comp := range minimal {
 		for _, obj := range previewObjects(t, comp) {
-			assert.NotEqual(t, "*v1.ServiceAccount", fmt.Sprintf("%T", obj))
+			_, isAccount := obj.(*corev1.ServiceAccount)
+			assert.False(t, isAccount, comp.GetName())
 		}
 		assert.Empty(t, previewedPodTemplate(t, previewObjects(t, comp)).Spec.ServiceAccountName)
 	}

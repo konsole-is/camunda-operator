@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 0eb473084305d989
+        camunda.io/config-hash: 5a00142469caabc3
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: gateway

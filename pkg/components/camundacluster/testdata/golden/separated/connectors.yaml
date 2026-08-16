@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: b9d95258f970f85f
+        camunda.io/config-hash: 62626a4e579c081b
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: connectors

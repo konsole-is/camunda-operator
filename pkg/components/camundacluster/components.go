@@ -86,7 +86,6 @@ const camundaUID int64 = 1001
 // the password. The first component (zeebe) also carries the ServiceAccount
 // when spec.serviceAccount is set, so it exists before any pod references it.
 func Build(in Input) ([]*component.Component, error) {
-	hash := ConfigHash(in)
 	processes := Resolve(in.Effective)
 	comps := make([]*component.Component, 0, len(processes))
 
@@ -94,9 +93,9 @@ func Build(in Input) ([]*component.Component, error) {
 		var comp *component.Component
 		var err error
 		if p.Kind == ProcessStatefulSet {
-			comp, err = zeebeComponent(in, p, hash)
+			comp, err = zeebeComponent(in, p)
 		} else {
-			comp, err = deploymentComponent(in, p, hash)
+			comp, err = deploymentComponent(in, p)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("building %s component: %w", p.Component, err)
@@ -126,13 +125,13 @@ func discoveryLabels(cluster *v1.CamundaCluster, comp string) map[string]string 
 
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
 // StatefulSet, the headless Service, and the optional ServiceMonitor.
-func zeebeComponent(in Input, p Process, hash string) (*component.Component, error) {
+func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccountFor(in)).Build()
 	if err != nil {
 		return nil, err
 	}
 
-	sts, err := statefulset.NewBuilder(zeebeStatefulSet(in, p, hash)).Build()
+	sts, err := statefulset.NewBuilder(zeebeStatefulSet(in, p)).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -161,8 +160,8 @@ func zeebeComponent(in Input, p Process, hash string) (*component.Component, err
 // deploymentComponent builds a Deployment-backed process (the gateway, a web
 // application, or connectors): the Deployment, its Service, and the optional
 // ServiceMonitor.
-func deploymentComponent(in Input, p Process, hash string) (*component.Component, error) {
-	workload, err := deployment.NewBuilder(deploymentFor(in, p, hash)).Build()
+func deploymentComponent(in Input, p Process) (*component.Component, error) {
+	workload, err := deployment.NewBuilder(deploymentFor(in, p)).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +215,7 @@ func serviceAccountFor(in Input) *corev1.ServiceAccount {
 // a rolling update, the data volume claim template, and the retention policy
 // of spec.zeebe.persistentVolumeClaimRetentionPolicy for deletion (a
 // scale-down always retains).
-func zeebeStatefulSet(in Input, p Process, hash string) *appsv1.StatefulSet {
+func zeebeStatefulSet(in Input, p Process) *appsv1.StatefulSet {
 	e := in.Effective
 	storageSize := e.StorageSize()
 
@@ -225,7 +224,7 @@ func zeebeStatefulSet(in Input, p Process, hash string) *appsv1.StatefulSet {
 		storageClassName = e.Zeebe.StorageClassName
 	}
 
-	template := podTemplate(in, p, hash)
+	template := podTemplate(in, p)
 	template.Spec.Containers[0].VolumeMounts = append(
 		[]corev1.VolumeMount{{Name: DataVolumeName, MountPath: DataMountPath}},
 		template.Spec.Containers[0].VolumeMounts...,
@@ -268,7 +267,7 @@ func zeebeStatefulSet(in Input, p Process, hash string) *appsv1.StatefulSet {
 }
 
 // deploymentFor renders the rolling-update Deployment of a process.
-func deploymentFor(in Input, p Process, hash string) *appsv1.Deployment {
+func deploymentFor(in Input, p Process) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      WorkloadName(in.Cluster, p.Component),
@@ -279,17 +278,17 @@ func deploymentFor(in Input, p Process, hash string) *appsv1.Deployment {
 			Replicas: new(p.Replicas),
 			Selector: &metav1.LabelSelector{MatchLabels: discoveryLabels(in.Cluster, p.Component)},
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType},
-			Template: podTemplate(in, p, hash),
+			Template: podTemplate(in, p),
 		},
 	}
 }
 
 // podTemplate renders the pod template of a process: the discovery labels
-// over the user labels, the user annotations plus the config hash, the
-// container, the volumes of the rendered configuration, the security context
-// of the image user, the scheduling of the component or the cluster, and the
-// ServiceAccount when spec.serviceAccount is set.
-func podTemplate(in Input, p Process, hash string) corev1.PodTemplateSpec {
+// over the user labels, the user annotations plus the config hash of the
+// process, the container, the volumes of the rendered configuration, the
+// security context of the image user, the scheduling of the component or the
+// cluster, and the ServiceAccount when spec.serviceAccount is set.
+func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 	e := in.Effective
 	workload := e.Workload(p.Component)
 	r := render(in, p)
@@ -297,7 +296,7 @@ func podTemplate(in Input, p Process, hash string) corev1.PodTemplateSpec {
 	annotations := map[string]string{}
 	maps.Copy(annotations, e.PodAnnotations)
 	maps.Copy(annotations, workload.PodAnnotations)
-	annotations[ConfigHashAnnotation] = hash
+	annotations[ConfigHashAnnotation] = configHash(in, p, r)
 
 	template := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{

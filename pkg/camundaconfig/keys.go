@@ -116,9 +116,6 @@ const (
 	KeyClientAuthIssuerURL    Key = "camunda.client.auth.issuer-url"    // CamundaClientAuthProperties.java:70
 	KeyClientAuthAudience     Key = "camunda.client.auth.audience"      // CamundaClientAuthProperties.java:82
 
-	// Profiles as a key, so the declared-keys test recognizes
-	// SPRING_PROFILES_ACTIVE like every other variable.
-	KeySpringProfilesActive Key = "spring.profiles.active" // StandaloneCamunda.java:44
 )
 
 // The plain environment variables and the Spring profiles that the operator
@@ -216,8 +213,6 @@ var sources = map[Key]string{
 	KeyClientAuthClientSecret: "CamundaClientAuthProperties.java:56; " + chartConnectorsApplication + ":65",
 	KeyClientAuthIssuerURL:    "CamundaClientAuthProperties.java:70; " + chartConnectorsApplication + ":60",
 	KeyClientAuthAudience:     "CamundaClientAuthProperties.java:82; " + chartConnectorsApplication + ":66",
-
-	KeySpringProfilesActive: "StandaloneCamunda.java:44",
 }
 
 // plainSources is the source table of the plain variables and profiles.
@@ -233,9 +228,7 @@ var plainSources = map[string]string{
 	ProfileConsolidatedAuth: "Profile.java:34, WebSecurityConfig.java:148, StandaloneCamunda.java:52",
 }
 
-// Declared returns every key the operator may set, sorted. The renderer test
-// asserts that every CAMUNDA_, ZEEBE_, and SPRING_ variable it emits maps to
-// one of them.
+// Declared returns every key the operator may set, sorted.
 func Declared() []Key {
 	keys := make([]Key, 0, len(sources))
 	for k := range sources {

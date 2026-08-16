@@ -102,5 +102,4 @@ func TestDeclaredIsSortedAndComplete(t *testing.T) {
 	assert.IsIncreasing(t, declared)
 	assert.Contains(t, declared, KeyClusterName)
 	assert.Contains(t, declared, KeyClientMode)
-	assert.Contains(t, declared, KeySpringProfilesActive)
 }

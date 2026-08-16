@@ -29,22 +29,24 @@ import (
 // first 64 bits of the SHA-256 digest.
 const configHashLength = 16
 
-// ConfigHash hashes the rendered environment of every process (names,
-// values, Secret and field references, never Secret data) and the envFrom
-// sources, together with in.HashInputs. It is stable across reconciles for
-// the same input, so it changes only when a rendered value or a referenced
-// object changes.
-func ConfigHash(in Input) string {
+// ConfigHash hashes the rendered environment of one process (names, values,
+// Secret and field references, never Secret data) and its envFrom sources,
+// together with in.HashInputs. It is stable across reconciles for the same
+// input, so the pods of a process roll only when a value rendered for that
+// process or a referenced object changes.
+func ConfigHash(in Input, p Process) string {
+	return configHash(in, p, render(in, p))
+}
+
+// configHash is ConfigHash for an already rendered process.
+func configHash(in Input, p Process, r rendered) string {
 	var b strings.Builder
-	for _, p := range Resolve(in.Effective) {
-		r := render(in, p)
-		b.WriteString("component=" + p.Component + "\n")
-		for _, e := range r.env {
-			b.WriteString(e.Name + "=" + envValue(e) + "\n")
-		}
-		for _, source := range r.envFrom {
-			b.WriteString("envFrom=" + envFromValue(source) + "\n")
-		}
+	b.WriteString("component=" + p.Component + "\n")
+	for _, e := range r.env {
+		b.WriteString(e.Name + "=" + envValue(e) + "\n")
+	}
+	for _, source := range r.envFrom {
+		b.WriteString("envFrom=" + envFromValue(source) + "\n")
 	}
 
 	inputs := slices.Clone(in.HashInputs)
