@@ -65,7 +65,7 @@ The `logicalbackup-skeleton` row overrides the sketch in #65's issue text only i
 
 ---
 
-### PR1 — Foundation (#65, branch `backup/foundation`)
+### PR1 — Foundation (#65, branch `feat/backup-controllers--foundation`)
 
 Implements spec §ObjectStorageConfig (API + design decision), §pkg/camundaadmin, the client/package layer, the scaffold removals, and the label keys.
 
@@ -90,7 +90,7 @@ Implements spec §ObjectStorageConfig (API + design decision), §pkg/camundaadmi
 - [ ] Validation controller `MissingSecret` (envtest)
 - [ ] Open PR (`Towards #65`), review-loop to clean, self-merge, close #65
 
-### PR2 — ElasticsearchCluster side (#66, branch `backup/es-snapshot-repository`)
+### PR2 — ElasticsearchCluster side (#66, branch `feat/backup-controllers--es-snapshot-repository`)
 
 Implements spec §ElasticsearchCluster (API), §ElasticsearchCluster owns the Elasticsearch side, §SecondaryStorageConfig, and the SA `name`/`create` on the shared type.
 
@@ -108,7 +108,7 @@ Implements spec §ElasticsearchCluster (API), §ElasticsearchCluster owns the El
 - [ ] Update `docs/crds/{elasticsearchcluster,secondarystorageconfig}.md`
 - [ ] Open PR (`Towards #66`), review-loop to clean, self-merge, close #66
 
-### PR3 — CamundaCluster wiring (#67, branch `backup/cluster-wiring`)
+### PR3 — CamundaCluster wiring (#67, branch `feat/backup-controllers--cluster-backup-wiring`)
 
 Implements spec §CamundaCluster and CamundaClusterPreset (API), §Backup policy on the cluster, §CamundaCluster wiring, §management binding, and the derived annotations on the CC side.
 
@@ -125,7 +125,7 @@ Implements spec §CamundaCluster and CamundaClusterPreset (API), §Backup policy
 - [ ] Update `docs/crds/{camundacluster,camundaclusterpreset,objectstorageconfig}.md`
 - [ ] Open PR (`Towards #67`), review-loop to clean, self-merge, close #67
 
-### PR4 — LogicalBackupElasticsearch (#68, branch `backup/lbes-controller`) — **user reviews before merge**
+### PR4 — LogicalBackupElasticsearch (#68, branch `feat/backup-controllers--lbes-controller`) — **user reviews before merge**
 
 Implements spec §LogicalBackupElasticsearch (API + state machine + finalizer + storage sizes).
 
@@ -142,7 +142,7 @@ Implements spec §LogicalBackupElasticsearch (API + state machine + finalizer + 
 - [ ] Sample + CRD doc stub (full page in PR7)
 - [ ] Open PR (`Towards #68`), review-loop to clean, **stop: request user review**; after approval merge and close #68
 
-### PR5 — LogicalBackupRDBMS (#69, branch `backup/lbrdbms-controller`) — **user reviews before merge**
+### PR5 — LogicalBackupRDBMS (#69, branch `feat/backup-controllers--lbrdbms-controller`) — **user reviews before merge**
 
 Implements spec §LogicalBackupRDBMS (API + state machine + Job + upload subcommand + finalizer).
 
@@ -162,7 +162,7 @@ Implements spec §LogicalBackupRDBMS (API + state machine + Job + upload subcomm
 - [ ] Sample + CRD doc stub
 - [ ] Open PR (`Towards #69`), review-loop to clean, **stop: request user review**; after approval merge and close #69
 
-### PR6 — BackupSchedule (#70, branch `backup/schedule`)
+### PR6 — BackupSchedule (#70, branch `feat/backup-controllers--backup-schedule`)
 
 Implements spec §BackupSchedule (API + controller).
 
@@ -179,7 +179,7 @@ Implements spec §BackupSchedule (API + controller).
 - [ ] TDD the retention-window warning event (RDBMS path)
 - [ ] Open PR (`Towards #70`), review-loop to clean, self-merge, close #70
 
-### PR7 — e2e + docs (#71, branch `backup/e2e-docs`)
+### PR7 — e2e + docs (#71, branch `test/backup-controllers--e2e-minio`)
 
 Implements spec §Testing (e2e) and §Doc deviations in full.
 

@@ -5,9 +5,11 @@ plan: docs/superpowers/plans/2026-08-16-backup-controllers-plan.md
 tracking_issue: #64
 feature_branch: feat/backup-controllers
 feature_worktree: .claude/worktrees/backup-controllers
-sub_pr_approval: autonomous
+sub_pr_approval: autonomous   # EXCEPT #68, #69, integration PR: manual (user reviews; see Standing user directives)
+sub_pr_review_loop: on        # no round cap — loop until clean
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # Backup controllers — orchestration state
@@ -29,13 +31,13 @@ status: planning
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #65 | backup/foundation | .claude/worktrees/backup-controllers--foundation | → feat/backup-controllers | not-started |
-| #66 | backup/es-snapshot-repository | .claude/worktrees/backup-controllers--es-side | → feat/backup-controllers | not-started |
-| #67 | backup/cluster-wiring | .claude/worktrees/backup-controllers--cluster-wiring | → feat/backup-controllers | not-started |
-| #68 | backup/lbes-controller | .claude/worktrees/backup-controllers--lbes | → feat/backup-controllers | not-started |
-| #69 | backup/lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms | → feat/backup-controllers | not-started |
-| #70 | backup/schedule | .claude/worktrees/backup-controllers--schedule | → feat/backup-controllers | not-started |
-| #71 | backup/e2e-docs | .claude/worktrees/backup-controllers--e2e-docs | → feat/backup-controllers | not-started |
+| #65 | feat/backup-controllers--foundation | .claude/worktrees/backup-controllers--foundation | → feat/backup-controllers | not-started |
+| #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | → feat/backup-controllers | not-started |
+| #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | → feat/backup-controllers | not-started |
+| #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | → feat/backup-controllers | not-started |
+| #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | → feat/backup-controllers | not-started |
+| #70 | feat/backup-controllers--backup-schedule | .claude/worktrees/backup-controllers--backup-schedule | → feat/backup-controllers | not-started |
+| #71 | test/backup-controllers--e2e-minio | .claude/worktrees/backup-controllers--e2e-minio | → feat/backup-controllers | not-started |
 
 ## Contracts
 
