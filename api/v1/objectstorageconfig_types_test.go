@@ -53,8 +53,10 @@ func TestWorkloadIdentityAnnotations(t *testing.T) {
 				GCS: &v1.GCSStorage{
 					BucketName: "backups",
 					Auth: v1.GCSStorageAuth{
-						Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
-						WorkloadIdentity: &v1.GCSWorkloadIdentity{ServiceAccountEmail: "camunda@p.iam.gserviceaccount.com"},
+						Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
+						WorkloadIdentity: &v1.GCSWorkloadIdentity{
+							ServiceAccountEmail: "camunda@p.iam.gserviceaccount.com",
+						},
 					},
 				},
 			},
@@ -68,8 +70,10 @@ func TestWorkloadIdentityAnnotations(t *testing.T) {
 					AccountName: "camundabackups",
 					Container:   "backups",
 					Auth: v1.AzureBlobStorageAuth{
-						Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
-						WorkloadIdentity: &v1.AzureBlobWorkloadIdentity{ClientID: "11111111-2222-3333-4444-555555555555"},
+						Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
+						WorkloadIdentity: &v1.AzureBlobWorkloadIdentity{
+							ClientID: "11111111-2222-3333-4444-555555555555",
+						},
 					},
 				},
 			},

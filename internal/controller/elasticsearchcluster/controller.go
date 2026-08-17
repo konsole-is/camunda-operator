@@ -73,11 +73,17 @@ const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 // about the size of the data volumes.
 const eventActionResize = "Resize"
 
-// repositoryRetryInterval is how long the controller waits before it tries the
-// snapshot repository again. Registration needs a serving cluster and the
-// Secrets that ECK publishes with it, and neither is owned by this CR, so no
-// watch brings the controller back on its own.
-const repositoryRetryInterval = 30 * time.Second
+// retryInterval is how long the controller waits before it looks again at
+// something it is waiting to exist.
+//
+// It covers the snapshot repository, whose registration needs a serving
+// cluster and the Secrets that ECK publishes with it, and it covers every
+// pre-check failure. Neither the credentials Secret of a bucket nor a
+// ServiceAccount that the operator does not own carries an owner reference to
+// this CR, so no watch brings the controller back when one appears. A
+// pre-check also fails before any resource is applied, so on a new cluster
+// there is nothing whose events could bring it back either.
+const retryInterval = 30 * time.Second
 
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
 // the external ECK operator. It renders an ECK Elasticsearch CR, generates the
@@ -153,7 +159,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: retryInterval}, nil
 	}
 	if err != nil {
 		return ctrl.Result{}, err
@@ -187,7 +193,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	cluster.Status.Volumes = volumes.volumes
 
 	if retryRepository && reconcileErr == nil {
-		return ctrl.Result{RequeueAfter: repositoryRetryInterval}, nil
+		return ctrl.Result{RequeueAfter: retryInterval}, nil
 	}
 
 	return ctrl.Result{}, reconcileErr

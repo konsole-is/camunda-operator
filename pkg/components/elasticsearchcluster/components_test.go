@@ -357,14 +357,29 @@ func TestCredentialsComponentCarriesThePassword(t *testing.T) {
 
 	objects, err := comp.Preview()
 	require.NoError(t, err)
-	require.Len(t, objects, 1)
 
-	secret, ok := objects[0].(*corev1.Secret)
-	require.True(t, ok)
-	assert.Equal(t, "my-cluster-es-es-user", secret.Name)
-	assert.Equal(t, []byte("camunda"), secret.Data["username"])
-	assert.Equal(t, []byte("s3cret"), secret.Data["password"])
-	assert.Equal(t, []byte("superuser"), secret.Data["roles"])
+	secrets := map[string]*corev1.Secret{}
+	for _, obj := range objects {
+		secret, ok := obj.(*corev1.Secret)
+		require.True(t, ok)
+		secrets[secret.Name] = secret
+	}
+
+	user := secrets["my-cluster-es-es-user"]
+	require.NotNil(t, user)
+	assert.Equal(t, []byte("camunda"), user.Data["username"])
+	assert.Equal(t, []byte("s3cret"), user.Data["password"])
+	assert.Equal(t, []byte("camunda"), user.Data["roles"])
+
+	// The role the user holds must be defined, or Elasticsearch grants it
+	// nothing. superuser is deliberately gone.
+	roles := secrets["my-cluster-es-es-roles"]
+	require.NotNil(t, roles)
+	definition := string(roles.Data["roles.yml"])
+	assert.Contains(t, definition, "camunda:")
+	assert.Contains(t, definition, "create_snapshot")
+	assert.Contains(t, definition, "monitor")
+	assert.NotContains(t, definition, "superuser")
 }
 
 // User pod labels must not override the discovery labels that extensions
