@@ -227,11 +227,14 @@ func TestElasticsearchClusterGoldenSuspended(t *testing.T) {
 	assertElasticsearchClusterGoldens(t, "suspended", cluster, MergePreset(cluster.Spec, preset), nil)
 }
 
+// goldenBucketName is the bucket contract that the golden cases reference.
+const goldenBucketName = "my-backup-config"
+
 // snapshotBucket returns a bucket contract with the given auth, for the
 // golden cases that reference one.
 func snapshotBucket(auth v1.S3StorageAuth) *v1.ObjectStorageConfig {
 	return &v1.ObjectStorageConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+		ObjectMeta: metav1.ObjectMeta{Name: goldenBucketName},
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
@@ -252,7 +255,7 @@ func TestElasticsearchClusterGoldenSnapshotWorkloadIdentity(t *testing.T) {
 	t.Parallel()
 
 	cluster, preset := goldenMinimalElasticsearchCluster()
-	cluster.Spec.SnapshotStorageRef = "my-backup-config"
+	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	storage := &SnapshotStorage{
 		Config: snapshotBucket(v1.S3StorageAuth{
 			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
@@ -272,7 +275,7 @@ func TestElasticsearchClusterGoldenSnapshotCredentials(t *testing.T) {
 	t.Parallel()
 
 	cluster, preset := goldenMinimalElasticsearchCluster()
-	cluster.Spec.SnapshotStorageRef = "my-backup-config"
+	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	cluster.Spec.SecureSettings = []v1.SecureSettingsSource{{
 		SecretName: "extra-keystore-entries",
 		Entries:    []v1.SecureSettingEntry{{Key: "someKey", Path: "some.secure.setting"}},
@@ -357,7 +360,7 @@ func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
 	t.Parallel()
 
 	cluster, preset := goldenMinimalElasticsearchCluster()
-	cluster.Spec.SnapshotStorageRef = "my-backup-config"
+	cluster.Spec.SnapshotStorageRef = goldenBucketName
 	merged := MergePreset(cluster.Spec, preset)
 	storage := &SnapshotStorage{Config: snapshotBucket(v1.S3StorageAuth{
 		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,

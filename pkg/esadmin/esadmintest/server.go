@@ -260,7 +260,38 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.repositoryPuts[parts[1]]++
 		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
-	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodPut:
+	case len(parts) == 3 && parts[0] == snapshotPath:
+		s.handleSnapshot(w, r, parts)
+
+	default:
+		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func errorBody(w http.ResponseWriter, status int, message string) {
+	errorBodyTyped(w, status, "exception", message)
+}
+
+// errorBodyTyped writes the error shape of Elasticsearch:
+// {"error":{"type":...,"reason":...},"status":N}.
+func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string) {
+	writeJSON(w, status, map[string]any{
+		"error":  map[string]string{"type": errorType, "reason": reason},
+		"status": status,
+	})
+}
+
+// handleSnapshot routes the per-snapshot requests: create, status, delete.
+// The caller holds the lock.
+func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
+	switch {
+	case r.Method == http.MethodPut:
 		if s.failing("snapshotCreate") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
 			return
@@ -288,7 +319,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.snapshotCreates[key]++
 		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
-	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodGet:
+	case r.Method == http.MethodGet:
 		if s.failing("snapshotStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
@@ -312,7 +343,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			"snapshots": []map[string]any{{"snapshot": snapshot.Name, "state": snapshot.State}},
 		})
 
-	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodDelete:
+	case r.Method == http.MethodDelete:
 		if s.failing("snapshotDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return
@@ -336,25 +367,6 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
 	default:
-		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+		errorBody(w, http.StatusMethodNotAllowed, "unsupported method "+r.Method)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func errorBody(w http.ResponseWriter, status int, message string) {
-	errorBodyTyped(w, status, "exception", message)
-}
-
-// errorBodyTyped writes the error shape of Elasticsearch:
-// {"error":{"type":...,"reason":...},"status":N}.
-func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string) {
-	writeJSON(w, status, map[string]any{
-		"error":  map[string]string{"type": errorType, "reason": reason},
-		"status": status,
-	})
 }
