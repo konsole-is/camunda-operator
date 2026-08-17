@@ -50,6 +50,8 @@ spec:
   host: "my-db-server.abc123.us-east-1.rds.amazonaws.com"
   # integer. Required. Port the server listens on (1-65535).
   port: 5432
+  # string. Optional. Major version of the server engine, for example "17". A backup of a database on this server requires it: the dump runs client tools of at least the server's major version.
+  version: "17"
   # object. Required. Admin user with permission to create databases and roles; used by the Database controller to bootstrap.
   adminCredentialsSecretRef:
     # string. Required. Name of the Secret holding the admin credentials.

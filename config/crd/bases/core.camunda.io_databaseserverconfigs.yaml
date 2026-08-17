@@ -107,6 +107,13 @@ spec:
                 maximum: 65535
                 minimum: 1
                 type: integer
+              version:
+                description: |-
+                  Version is the major version of the server engine, for example "17".
+                  A dump of a database must run client tools of at least the server's
+                  major version, so a backup of a database on this server requires it.
+                pattern: ^[0-9]+$
+                type: string
             required:
             - adminCredentialsSecretRef
             - engine
