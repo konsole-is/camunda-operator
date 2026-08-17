@@ -18,7 +18,6 @@ package camundacluster
 
 import (
 	"fmt"
-	"maps"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -225,12 +224,13 @@ func serviceAccountRendered(in Input) bool {
 // annotations of spec.serviceAccount merged over them, so an explicit user
 // value on the same key wins.
 func serviceAccountFor(in Input) *corev1.ServiceAccount {
-	annotations := maps.Clone(in.ServiceAccountAnnotations)
-	if in.Effective.ServiceAccount != nil && len(in.Effective.ServiceAccount.Annotations) > 0 {
-		if annotations == nil {
-			annotations = map[string]string{}
-		}
-		maps.Copy(annotations, in.Effective.ServiceAccount.Annotations)
+	var user map[string]string
+	if in.Effective.ServiceAccount != nil {
+		user = in.Effective.ServiceAccount.Annotations
+	}
+	annotations := labels.Merge(in.ServiceAccountAnnotations, user)
+	if len(annotations) == 0 {
+		annotations = nil
 	}
 
 	return &corev1.ServiceAccount{
