@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -331,13 +332,26 @@ func (r *Reconciler) backupRuntime(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// failureReason returns the failure reason of a backup status, or its state
-// when the endpoint gave no reason.
+// failureReason returns the failure reason of a backup status. It joins the
+// aggregate reason with every per-part reason that names its part, so the
+// message says which snapshot or partition failed and why. When the endpoint
+// gave no reason at all, it returns the state.
 func failureReason(status camundaadmin.BackupStatus) string {
+	var reasons []string
 	if status.FailureReason != "" {
-		return status.FailureReason
+		reasons = append(reasons, status.FailureReason)
 	}
-	return string(status.State)
+	for _, detail := range status.Details {
+		if detail.Reason == "" {
+			continue
+		}
+		reasons = append(reasons, detail.Name+": "+detail.Reason)
+	}
+	if len(reasons) == 0 {
+		return string(status.State)
+	}
+
+	return strings.Join(reasons, "; ")
 }
 
 // stageProgress stages the Ready condition of a healthy running procedure.

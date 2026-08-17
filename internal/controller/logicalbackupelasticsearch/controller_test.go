@@ -782,6 +782,64 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
+	It("resumes exporting when a ResumeFailed backup is deleted after the cluster recovers", func() {
+		r := newRig()
+		r.management.FailNext("historyStart", 1)
+		r.management.FailNext("resume", 1000000)
+
+		backup := r.newBackup()
+		backupID(backup)
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		Expect(r.management.Exporting()).To(Equal("softPaused"))
+
+		By("deleting the backup once resume can succeed again")
+		r.management.FailNext("resume", 0)
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("holds the deletion while the history status query is rejected", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		expectPhase(backup, v1.LogicalBackupCompleted)
+
+		By("rejecting every history status query, then deleting")
+		r.management.FailNext("historyStatus", 1000000)
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+			g.Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
+		}, "1s", interval).Should(Succeed())
+
+		By("releasing and cleaning up once the query answers again")
+		r.management.FailNext("historyStatus", 0)
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeFalse())
+	})
+
 	It("re-stages the terminal condition when a conflict restored an older one", func() {
 		r := newRig()
 		backup := r.newBackup()

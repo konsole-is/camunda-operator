@@ -113,10 +113,12 @@ func (r *Reconciler) deleteArtifacts(
 		return true, nil
 	}
 
-	// A non-terminal backup can have left exporting paused. The cluster must
-	// run again before its artifacts go. Resume is idempotent, so a backup
-	// that never paused resumes to a no-op.
-	if !backup.Terminal() && backup.Status.Step != "" {
+	// A backup can have left exporting paused: one that is still running,
+	// and one that gave up on resume with ResumeFailed. The cluster must run
+	// again before the artifacts go, or the deletion removes the only thing
+	// that resumes it. Resume is idempotent, so a backup that never paused
+	// resumes to a no-op.
+	if mayHoldExportingPaused(backup) {
 		if err := mgmt.ResumeExporting(ctx); err != nil {
 			r.holdDeletion(backup, fmt.Sprintf("exporting is not resumed yet: %v", err))
 			return false, nil
@@ -130,12 +132,15 @@ func (r *Reconciler) deleteArtifacts(
 
 	// The status can miss snapshot names when the resource died between the
 	// start of the history backup and the poll that records them. The
-	// cluster's own report closes that window.
-	if status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID); err == nil {
-		recordHistorySnapshots(backup, status)
-	} else if errors.Is(err, camundaadmin.ErrUnreachable) {
-		return false, err
+	// cluster's own report closes that window. Every failure of that query
+	// holds the deletion: a release on an incomplete list leaks the
+	// snapshots that the list does not name. A backup that does not exist
+	// is a successful answer, so nothing legitimate is lost.
+	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
+	if err != nil {
+		return false, fmt.Errorf("querying the history backup %d: %w", backup.Status.BackupID, err)
 	}
+	recordHistorySnapshots(backup, status)
 
 	repository := backup.Status.Repository
 	if repository == "" {
@@ -199,6 +204,15 @@ func (r *Reconciler) finalizerElasticsearch(
 	}
 
 	return es, false, nil
+}
+
+// mayHoldExportingPaused reports whether the backup can have left exporting
+// paused: it started and is not terminal, or it ended as ResumeFailed.
+func mayHoldExportingPaused(backup *v1.LogicalBackupElasticsearch) bool {
+	if backup.Status.Step == "" {
+		return false
+	}
+	return !backup.Terminal() || backup.Status.TerminalReason == v1.ReasonResumeFailed
 }
 
 // holdDeletion records why the deletion waits. The user then sees the reason
