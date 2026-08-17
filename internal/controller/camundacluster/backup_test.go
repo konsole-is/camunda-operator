@@ -141,17 +141,19 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			})
 		})
 
+		// The distinct name proves that the value comes from this contract,
+		// not from the shared fixture name of the other tests.
 		It("carries the snapshot repository of the storage contract", func() {
 			ns := newNamespace()
 			binding := createBinding(ns, true)
-			setSnapshotRepository(binding, "my-repository")
+			setSnapshotRepository(binding, "repository-of-this-contract")
 			cluster := newCluster(ns, createPlatformConfig(), binding)
 			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
 			createCluster(cluster)
 
 			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
 				g.Expect(published).NotTo(BeNil())
-				g.Expect(published.BackupRepository).To(Equal("my-repository"))
+				g.Expect(published.BackupRepository).To(Equal("repository-of-this-contract"))
 			})
 		})
 	})
