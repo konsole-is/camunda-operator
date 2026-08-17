@@ -250,6 +250,30 @@ func TestMergePresetDoesNotAliasThePresetBaseline(t *testing.T) {
 	)
 }
 
+// A cluster that names its own bucket and keystore sources must keep them:
+// dropping either would silently disable backups for every cluster that uses
+// a preset.
+func TestMergePresetKeepsTheSnapshotBucketAndSecureSettings(t *testing.T) {
+	t.Parallel()
+
+	preset := &v1.ElasticsearchClusterPresetSpec{Cluster: v1.ElasticsearchClusterSpec{
+		SnapshotStorageRef: "fleet-bucket",
+		SecureSettings:     []v1.SecureSettingsSource{{SecretName: "fleet-keystore"}},
+	}}
+
+	inherited := MergePreset(v1.ElasticsearchClusterSpec{}, preset)
+	assert.Equal(t, "fleet-bucket", inherited.SnapshotStorageRef)
+	assert.Equal(t, "fleet-keystore", inherited.SecureSettings[0].SecretName)
+
+	overridden := MergePreset(v1.ElasticsearchClusterSpec{
+		SnapshotStorageRef: "team-bucket",
+		SecureSettings:     []v1.SecureSettingsSource{{SecretName: "team-keystore"}},
+	}, preset)
+	assert.Equal(t, "team-bucket", overridden.SnapshotStorageRef)
+	assert.Len(t, overridden.SecureSettings, 1)
+	assert.Equal(t, "team-keystore", overridden.SecureSettings[0].SecretName)
+}
+
 func TestValidateMerged(t *testing.T) {
 	t.Parallel()
 

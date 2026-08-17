@@ -35,9 +35,16 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
-// elasticUserKey is the key of the password of the elastic user inside the
-// Secret that ECK publishes for it.
-const elasticUserKey = "elastic"
+const (
+	// elasticUsername is the superuser that ECK provisions. The operator
+	// registers the snapshot repository as this user, because registering one
+	// needs cluster:admin/repository, which the Camunda user deliberately
+	// lacks.
+	elasticUsername = "elastic"
+	// elasticPasswordKey is the key of that user's password inside the Secret
+	// that ECK publishes for it. ECK names the key after the user.
+	elasticPasswordKey = "elastic"
+)
 
 // resolveSnapshotStorage resolves spec.snapshotStorageRef into the bucket
 // contract and, for a contract with static credentials, the keys of its
@@ -159,14 +166,14 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 		return metav1.Condition{}
 	}
 
-	name := components.RepositoryName(cluster)
-
+	// A suspended cluster is deleted, so there is nothing to register and
+	// nothing to assert. Reporting a failure here would drag Ready false,
+	// while suspension is a Ready=True state by design.
 	if merged.Suspend {
-		return r.repositoryCondition(
-			cluster, metav1.ConditionFalse, v1.ReasonConnectionFailed,
-			"the cluster is suspended, so the snapshot repository cannot be registered",
-		)
+		return metav1.Condition{}
 	}
+
+	name := components.RepositoryName(cluster)
 
 	admin, err := r.elasticsearchAdmin(ctx, cluster)
 	if err != nil {
@@ -225,7 +232,7 @@ func (r *ElasticsearchClusterReconciler) elasticsearchAdmin(
 	password, err := r.secretValue(
 		ctx,
 		types.NamespacedName{Namespace: cluster.Namespace, Name: esv1.ElasticUserSecret(cluster.Name)},
-		elasticUserKey,
+		elasticPasswordKey,
 	)
 	if err != nil {
 		return nil, err
@@ -240,7 +247,7 @@ func (r *ElasticsearchClusterReconciler) elasticsearchAdmin(
 		return nil, err
 	}
 
-	admin, err := esadmin.New(components.HTTPEndpoint(cluster), elasticUserKey, string(password), ca)
+	admin, err := esadmin.New(components.HTTPEndpoint(cluster), elasticUsername, string(password), ca)
 	if err != nil {
 		return nil, fmt.Errorf("building the Elasticsearch client of %q: %w", cluster.Name, err)
 	}

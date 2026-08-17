@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -71,6 +72,12 @@ const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 // eventActionResize is the action of the events that the controller records
 // about the size of the data volumes.
 const eventActionResize = "Resize"
+
+// repositoryRetryInterval is how long the controller waits before it tries the
+// snapshot repository again. Registration needs a serving cluster and the
+// Secrets that ECK publishes with it, and neither is owned by this CR, so no
+// watch brings the controller back on its own.
+const repositoryRetryInterval = 30 * time.Second
 
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
 // the external ECK operator. It renders an ECK Elasticsearch CR, generates the
@@ -171,12 +178,17 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	// that the elasticsearch component applies to be serving.
 	repository := r.registerSnapshotRepository(ctx, &cluster, merged, storage)
 	conditions.Stage(&cluster, readyWithRepository(&cluster, repository, core))
+	retryRepository := repository.Type != "" && repository.Status != metav1.ConditionTrue
 
 	volumes, err := r.dataVolumes(ctx, &cluster)
 	if err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
 	}
 	cluster.Status.Volumes = volumes.volumes
+
+	if retryRepository && reconcileErr == nil {
+		return ctrl.Result{RequeueAfter: repositoryRetryInterval}, nil
+	}
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -236,6 +248,10 @@ func readyWithRepository(
 ) metav1.Condition {
 	ready := conditions.Aggregate(cluster, core...)
 	if repository.Type == "" {
+		// The cluster has no repository, now or any more. Drop a condition
+		// left over from a bucket that the spec used to reference, so status
+		// never asserts something the spec no longer asks for.
+		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
 		return ready
 	}
 
