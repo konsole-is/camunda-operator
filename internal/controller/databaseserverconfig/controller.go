@@ -20,6 +20,8 @@ package databaseserverconfig
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
@@ -32,15 +34,28 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
 const databaseServerConfigSecretRefsField = "databaseserverconfig.spec.secretRefs"
 
+const (
+	// connectionRetryInterval is the wait before the controller retries a
+	// server it could not reach. It cannot watch the external server, so a
+	// timed requeue is the only trigger.
+	connectionRetryInterval = 30 * time.Second
+	// probeInterval is how often a reachable server is probed again, so a
+	// major upgrade behind the same endpoint reaches status without a spec
+	// change.
+	probeInterval = 10 * time.Minute
+)
+
 // DatabaseServerConfigReconciler validates DatabaseServerConfig contracts. It
-// checks the admin credentials Secret reference and maintains the Ready
-// condition. It never provisions anything.
+// checks the admin credentials Secret reference, reaches the server with those
+// credentials, and publishes the major version the server reports. It never
+// provisions anything.
 type DatabaseServerConfigReconciler struct {
 	client.Client
 	// APIReader reads directly from the API server and bypasses the cache.
@@ -53,8 +68,9 @@ type DatabaseServerConfigReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
-// Reconcile validates the references of the contract and maintains its Ready
-// condition. It never creates or mutates other resources.
+// Reconcile validates the contract against the live server and maintains its
+// Ready condition and the probed status fields. It never creates or mutates
+// other resources.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.DatabaseServerConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
@@ -70,22 +86,36 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// The contract owns no components, so its Ready condition follows the
 	// server on a conflict and is staged again on the next reconcile.
-	return ctrl.Result{}, component.FlushStatus(
+	if err := component.FlushStatus(
 		ctx,
 		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
 		nil,
-	)
+	); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if cond.Reason == v1.ReasonConnectionFailed {
+		return ctrl.Result{RequeueAfter: connectionRetryInterval}, nil
+	}
+	if cond.Status == metav1.ConditionTrue {
+		return ctrl.Result{RequeueAfter: probeInterval}, nil
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // validate runs the documented checks of the contract and returns the Ready
-// condition. It returns an error only for transient API failures.
+// condition: MissingSecret when the admin credentials do not resolve,
+// ConnectionFailed when the server does not answer them, Healthy once the
+// server reported its version — which validate records on cfg. It returns an
+// error only for transient API failures.
 func (r *DatabaseServerConfigReconciler) validate(
 	ctx context.Context,
 	cfg *v1.DatabaseServerConfig,
 ) (metav1.Condition, error) {
 	ref := cfg.Spec.AdminCredentialsSecretRef
 
-	msg, err := secretref.CheckKeys(
+	secret, msg, err := secretref.Get(
 		ctx, r.APIReader,
 		types.NamespacedName{
 			Namespace: ref.Namespace,
@@ -100,7 +130,46 @@ func (r *DatabaseServerConfigReconciler) validate(
 		return conditions.Ready(metav1.ConditionFalse, v1.ReasonMissingSecret, msg, cfg.Generation), nil
 	}
 
-	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
+	major, err := probe(
+		ctx, cfg, string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]),
+	)
+	if err != nil {
+		return conditions.Ready(
+			metav1.ConditionFalse,
+			v1.ReasonConnectionFailed,
+			fmt.Sprintf("Connecting to %s:%d: %v", cfg.Spec.Host, cfg.Spec.Port, err),
+			cfg.Generation,
+		), nil
+	}
+
+	now := metav1.Now()
+	cfg.Status.ServerVersion = major
+	cfg.Status.ProbedAt = &now
+
+	return conditions.Ready(
+		metav1.ConditionTrue,
+		v1.ReasonHealthy,
+		"Reached the server; it runs major version "+major,
+		cfg.Generation,
+	), nil
+}
+
+// probe opens the admin connection to the server that cfg describes and reads
+// the major version it reports. Any failure means the server, as declared,
+// is not usable with these credentials.
+func probe(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error) {
+	admin, err := pgbootstrap.Connect(ctx, pgbootstrap.Connection{
+		Host:          cfg.Spec.Host,
+		Port:          cfg.Spec.Port,
+		AdminUser:     user,
+		AdminPassword: password,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer admin.Close()
+
+	return admin.ServerVersion(ctx)
 }
 
 // SetupWithManager registers the controller, an index of CRs by referenced

@@ -141,6 +141,38 @@ func TestPing(t *testing.T) {
 	assert.NoError(t, b.Ping(t.Context()))
 }
 
+// TestServerVersionReportsTheMajor pins the shape consumers depend on: the
+// major alone ("17"), which is what selects matching client tools — never
+// the full server_version_num.
+func TestServerVersionReportsTheMajor(t *testing.T) {
+	b := connect(t)
+
+	major, err := b.ServerVersion(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "17", major)
+}
+
+func TestMajorVersionParsesServerVersionNum(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"170004": "17",
+		"160009": "16",
+		"90624":  "9",
+		"180000": "18",
+	}
+	for num, want := range cases {
+		got, err := majorVersion(num)
+		require.NoError(t, err, num)
+		assert.Equal(t, want, got, num)
+	}
+
+	_, err := majorVersion("")
+	require.Error(t, err)
+	_, err = majorVersion("17.4")
+	require.Error(t, err)
+}
+
 func TestEnsureDatabaseRejectsInvalidIdentifier(t *testing.T) {
 	b := connect(t)
 	ctx := t.Context()

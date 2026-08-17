@@ -118,9 +118,10 @@ type JobInput struct {
 	Database string
 	// ObjectKey is the full key of the dump in the bucket.
 	ObjectKey string
-	// OperatorImage runs the upload subcommand. It is the image of the
-	// operator itself.
-	OperatorImage string
+	// CLIImage is the camunda-operator-cli image, whose upload subcommand
+	// streams the dump to the bucket. It is shipped separately from the
+	// manager; the manager receives it as --camunda-operator-cli-image.
+	CLIImage string
 }
 
 // JobName returns the name of the Job of one backup. It derives from the
@@ -136,8 +137,8 @@ func JobName(backup *v1.LogicalBackupRDBMS) string {
 // the upload did. The two containers run in turn, and one resource block
 // sizes both: the pod's effective request is the maximum, not the sum.
 func BuildJob(in JobInput) (*batchv1.Job, error) {
-	if in.OperatorImage == "" {
-		return nil, fmt.Errorf("building the dump Job of %q: the operator image is empty", in.Backup.Name)
+	if in.CLIImage == "" {
+		return nil, fmt.Errorf("building the dump Job of %q: the camunda-operator-cli image is empty", in.Backup.Name)
 	}
 
 	dump := in.Dump
@@ -250,7 +251,7 @@ func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
 }
 
 // uploadContainer streams the archive to the bucket through the upload
-// subcommand of the operator image.
+// subcommand of camunda-operator-cli.
 func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.Container {
 	env := make([]corev1.EnvVar, 0, 6)
 	env = append(
@@ -267,7 +268,7 @@ func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.C
 
 	container := corev1.Container{
 		Name:            "upload",
-		Image:           in.OperatorImage,
+		Image:           in.CLIImage,
 		Args:            []string{"upload"},
 		Env:             append(env, dump.ExtraEnv...),
 		EnvFrom:         dump.ExtraEnvFrom,

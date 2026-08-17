@@ -31,7 +31,7 @@ spec:
           value: my-backup-config
         - name: UPLOAD_STORAGE_SPEC
           value: '{"type":"AzureBlob","azureBlob":{"accountName":"camundabackups","container":"backups","basePath":"clusters","auth":{"type":"workloadIdentity"}}}'
-        image: ghcr.io/konsole-is/camunda-operator:0.1.0
+        image: ghcr.io/konsole-is/camunda-operator-cli:0.1.0
         name: upload
         resources: {}
         securityContext:

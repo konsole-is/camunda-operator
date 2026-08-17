@@ -35,8 +35,11 @@ spec:
         description: |-
           LogicalBackupRDBMS is one backup of a relational orchestration cluster: a
           dump of the entire logical database, uploaded to the backup bucket, paired
-          with one cluster-generated primary-storage backup. A restore reads the
-          exporter position from the restored dump and picks the primary-storage
+          with one Zeebe backup. Camunda calls the Zeebe log and snapshots its
+          "primary storage" and the exported relational data its "secondary
+          storage"; a Zeebe backup is Camunda's own backup of that primary storage
+          to the backup bucket, requested through the management API. A restore
+          reads the exporter position from the restored dump and picks the Zeebe
           backups that match it, so the pair is a complete restore point.
         properties:
           apiVersion:
@@ -1129,27 +1132,13 @@ spec:
                 - Completed
                 - Failed
                 type: string
-              primaryBackupId:
-                description: |-
-                  PrimaryBackupID is the id of the primary-storage backup that the
-                  cluster generated after the dump. Unset until that backup is
-                  requested.
-                format: int64
-                type: integer
-              primaryBackupRequestedAt:
-                description: |-
-                  PrimaryBackupRequestedAt is when the primary-storage backup was
-                  requested. It bounds how long the poll tolerates a backup the cluster
-                  does not report yet.
-                format: date-time
-                type: string
               step:
                 description: |-
                   Step is where the procedure stands and where a crashed reconcile
                   resumes.
                 enum:
                 - Dumping
-                - PrimaryBackup
+                - ZeebeBackup
                 type: string
               storageSizes:
                 description: |-
@@ -1174,6 +1163,19 @@ spec:
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                 type: object
+              zeebeBackupId:
+                description: |-
+                  ZeebeBackupID is the id of the Zeebe backup that the cluster generated
+                  after the dump. Unset until that backup is requested.
+                format: int64
+                type: integer
+              zeebeBackupRequestedAt:
+                description: |-
+                  ZeebeBackupRequestedAt is when the Zeebe backup was requested. It
+                  bounds how long the poll tolerates a backup the cluster does not
+                  report yet.
+                format: date-time
+                type: string
             type: object
         required:
         - spec

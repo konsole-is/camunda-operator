@@ -20,6 +20,8 @@ Full installation guide, including verification and the large-CRD install path:
 | `manager.image.repository` | `controller` | Manager image repository. Set at release time. |
 | `manager.image.tag` | `latest` | Manager image tag. Set at release time. |
 | `manager.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
+| `manager.cliImage.repository` | `ghcr.io/konsole-is/camunda-operator-cli` | camunda-operator-cli image repository. The operator's Jobs run this image; passed to the manager as `--camunda-operator-cli-image`. Set at release time. |
+| `manager.cliImage.tag` | `latest` | camunda-operator-cli image tag. Set at release time. |
 | `manager.args` | `["--leader-elect"]` | Arguments passed to the manager. |
 | `manager.env` | `[]` | Environment variables. |
 | `manager.envOverrides` | `{}` | Per-variable overrides; wins over `manager.env`. |

@@ -19,6 +19,10 @@ jobs:
       # versions must be bare SemVer.
       TAG: ${{ github.ref_name }}
       IMG: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+      # The companion CLI image that the operator's Jobs run. The manager is
+      # told about it through --camunda-operator-cli-image, which the chart and
+      # install.yaml default to this exact tag.
+      CLI_IMG: ghcr.io/${{ github.repository }}-cli:${{ github.ref_name }}
       CHART_REGISTRY: oci://ghcr.io/konsole-is/charts
       CHART_REPO: ghcr.io/konsole-is/charts/camunda-operator
 
@@ -70,7 +74,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate the chart and installer manifests
-        run: make helm-generate IMG=${IMG}
+        run: make helm-generate IMG=${IMG} CLI_IMG=${CLI_IMG}
 
       - name: Stamp the release version into Chart.yaml
         run: |
@@ -91,6 +95,17 @@ jobs:
             --format '{{.Manifest.Digest}}')
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "image digest: ${digest}"
+
+      - name: Build and push the CLI image
+        run: make docker-buildx-cli CLI_IMG=${CLI_IMG}
+
+      - name: Resolve the CLI image digest
+        id: cli
+        run: |
+          digest=$(docker buildx imagetools inspect "${CLI_IMG}" \
+            --format '{{.Manifest.Digest}}')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "cli image digest: ${digest}"
 
       - name: Package and push the chart
         id: chart
@@ -119,6 +134,9 @@ jobs:
       # Sign by digest, never by tag — tags are mutable.
       - name: Sign the image
         run: cosign sign --yes "ghcr.io/${{ github.repository }}@${{ steps.image.outputs.digest }}"
+
+      - name: Sign the CLI image
+        run: cosign sign --yes "ghcr.io/${{ github.repository }}-cli@${{ steps.cli.outputs.digest }}"
 
       - name: Sign the chart
         run: cosign sign --yes "${CHART_REPO}@${{ steps.chart.outputs.digest }}"

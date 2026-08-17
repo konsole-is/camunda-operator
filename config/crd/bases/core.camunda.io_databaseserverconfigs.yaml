@@ -73,7 +73,9 @@ spec:
                 - usernameKey
                 type: object
               engine:
-                description: Engine is the database engine of the server.
+                description: |-
+                  Engine is the database engine of the server. See DatabaseEngine for
+                  the accepted values.
                 enum:
                 - postgres
                 type: string
@@ -107,13 +109,6 @@ spec:
                 maximum: 65535
                 minimum: 1
                 type: integer
-              version:
-                description: |-
-                  Version is the major version of the server engine, for example "17".
-                  A dump of a database must run client tools of at least the server's
-                  major version, so a backup of a database on this server requires it.
-                pattern: ^[0-9]+$
-                type: string
             required:
             - adminCredentialsSecretRef
             - engine
@@ -126,7 +121,7 @@ spec:
               conditions:
                 description: |-
                   Conditions represent the current validation state; the Ready condition
-                  carries reasons Healthy or MissingSecret.
+                  carries reasons Healthy, MissingSecret, or ConnectionFailed.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -190,6 +185,19 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              probedAt:
+                description: |-
+                  ProbedAt is when the operator last reached the server and read
+                  ServerVersion.
+                format: date-time
+                type: string
+              serverVersion:
+                description: |-
+                  ServerVersion is the major version the server reported the last time
+                  the operator reached it, for example "17". A dump of a database on this
+                  server runs client tools of this major, so a backup waits until it is
+                  published.
+                type: string
             type: object
         required:
         - spec

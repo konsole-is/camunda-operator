@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package upload is the subcommand of the operator image that the dump Job
-// runs as its main container: it streams one file to the backup bucket and
-// exits. The environment is its whole interface, rendered by
+// Package upload is the upload subcommand of camunda-operator-cli, which the
+// dump Job runs as its main container: it streams one file to the backup
+// bucket and exits. The environment is its whole interface, rendered by
 // pkg/components/logicalbackuprdbms and read here; the Job succeeds only when
 // the upload did.
 package upload

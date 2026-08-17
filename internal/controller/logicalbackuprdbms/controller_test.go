@@ -73,10 +73,9 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	server := &v1.DatabaseServerConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + suffix},
 		Spec: v1.DatabaseServerConfigSpec{
-			Engine:  v1.DatabaseEnginePostgres,
-			Host:    "postgres.databases.svc",
-			Port:    5432,
-			Version: "17",
+			Engine: v1.DatabaseEnginePostgres,
+			Host:   "postgres.databases.svc",
+			Port:   5432,
 			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
 				Name: "admin", Namespace: namespace,
 				UsernameKey: "username", PasswordKey: "password",
@@ -85,6 +84,13 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	}
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+
+	// The probed version that the DatabaseServerConfig controller would
+	// publish after reaching the server.
+	now := metav1.Now()
+	server.Status.ServerVersion = "17"
+	server.Status.ProbedAt = &now
+	Expect(k8sClient.Status().Update(ctx, server)).To(Succeed())
 
 	dbCredentials := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "backup-user", Namespace: namespace},
@@ -290,7 +296,7 @@ func markJob(backup *v1.LogicalBackupRDBMS, w *world, kind batchv1.JobConditionT
 }
 
 var _ = Describe("LogicalBackupRDBMS controller", func() {
-	It("dumps, requests the primary-storage backup, and completes", func() {
+	It("dumps, requests the Zeebe backup, and completes", func() {
 		w := createWorld()
 		backup := createBackup(w)
 
@@ -320,16 +326,16 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			Equal("minio-credentials"),
 		)
 
-		By("moving to the primary-storage backup once the Job completes")
+		By("moving to the Zeebe backup once the Job completes")
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.Step).To(Equal(v1.StepPrimaryBackup))
-			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.Step).To(Equal(v1.StepZeebeBackup))
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		By("recording the id the cluster generated and never re-requesting it")
-		id := *backup.Status.PrimaryBackupID
+		id := *backup.Status.ZeebeBackupID
 		Consistently(func(g Gomega) {
 			g.Expect(management.RuntimeStarts(id)).To(Equal(1))
 		}, "2s", interval).Should(Succeed())
@@ -426,10 +432,10 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		markJob(first, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
-			g.Expect(first.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(first.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 		management.SetRuntimeState(
-			*first.Status.PrimaryBackupID, string(camundaadmin.StateCompleted), "",
+			*first.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
 		)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
@@ -471,17 +477,18 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		expectPending(backup, v1.ReasonMissingSecret)
 	})
 
-	It("requires the server version", func() {
+	It("waits until the server has been probed for its version", func() {
 		w := createWorld()
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), w.server)).To(Succeed())
-			w.server.Spec.Version = ""
-			g.Expect(k8sClient.Update(ctx, w.server)).To(Succeed())
+			w.server.Status.ServerVersion = ""
+			w.server.Status.ProbedAt = nil
+			g.Expect(k8sClient.Status().Update(ctx, w.server)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
 		backup := createBackup(w)
 		expectPending(backup, v1.ReasonInvalidReference)
-		Expect(readyCondition(backup).Message).To(ContainSubstring("version"))
+		Expect(readyCondition(backup).Message).To(ContainSubstring("not been probed"))
 	})
 
 	It("reports MissingCredentials until the bucket credentials resolve", func() {
@@ -505,7 +512,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		// The binding is checked at admission, so a backup never dumps
-		// gigabytes it cannot pair with a primary-storage backup afterwards.
+		// gigabytes it cannot pair with a Zeebe backup afterwards.
 		backup := createBackup(w)
 		expectPending(backup, v1.ReasonProgressing)
 
@@ -529,16 +536,16 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("deletes the Job and the dump object on deletion, never the primary-storage backups", func() {
+	It("deletes the Job and the dump object on deletion, never the Zeebe backups", func() {
 		w := createWorld()
 		backup := createBackup(w)
 
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
-		id := *backup.Status.PrimaryBackupID
+		id := *backup.Status.ZeebeBackupID
 		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
@@ -558,7 +565,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("deleting the dump object by its exact key")
 		Expect(bucket.Deleted()).To(ContainElement(objectKey))
 
-		By("leaving the primary-storage backup alone")
+		By("leaving the Zeebe backup alone")
 		Expect(management.RuntimeBackup(id)).NotTo(BeNil())
 
 		// envtest runs no garbage collector, so a Job still present here
@@ -604,7 +611,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("retries a conflicted primary-storage request instead of failing", func() {
+	It("retries a conflicted Zeebe request instead of failing", func() {
 		w := createWorld()
 		management.ConflictNextRuntimeStart(1)
 		backup := createBackup(w)
@@ -615,11 +622,11 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
 		}, timeout, interval).Should(Succeed())
 
-		id := *backup.Status.PrimaryBackupID
+		id := *backup.Status.ZeebeBackupID
 		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
@@ -674,7 +681,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.Step).To(Equal(v1.StepPrimaryBackup))
+			g.Expect(backup.Status.Step).To(Equal(v1.StepZeebeBackup))
 		}, timeout, interval).Should(Succeed())
 
 		By("deleting the cluster mid-run")
@@ -694,7 +701,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		jobOf(backup, w)
 
 		// Once the Job is tracked, the dump step needs no resolution; the
-		// missing cluster bites when the primary-storage step starts.
+		// missing cluster bites when the Zeebe step starts.
 		By("deleting the cluster, then finishing the dump")
 		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
 		markJob(backup, w, batchv1.JobComplete)
@@ -723,11 +730,11 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("recovering: the failure clock clears and the backup completes")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 			g.Expect(backup.Status.FirstFailedAt).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 		management.SetRuntimeState(
-			*backup.Status.PrimaryBackupID, string(camundaadmin.StateCompleted), "",
+			*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
 		)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
@@ -767,17 +774,17 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		expectPending(backup, v1.ReasonMissingSecret)
 	})
 
-	It("tolerates a primary-storage backup that has not registered yet", func() {
+	It("tolerates a Zeebe backup that has not registered yet", func() {
 		w := createWorld()
 		backup := createBackup(w)
 
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
-			g.Expect(backup.Status.PrimaryBackupRequestedAt).NotTo(BeNil())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.ZeebeBackupRequestedAt).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
-		id := *backup.Status.PrimaryBackupID
+		id := *backup.Status.ZeebeBackupID
 
 		// The partitions register their parts asynchronously after the 202,
 		// so a backup the cluster does not report yet is normal at first.
@@ -794,18 +801,18 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("fails a primary-storage backup still unregistered past the grace", func() {
+	It("fails a Zeebe backup still unregistered past the grace", func() {
 		w := createWorld()
 		backup := createBackup(w)
 
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		management.SetRuntimeState(
-			*backup.Status.PrimaryBackupID, string(camundaadmin.StateDoesNotExist), "",
+			*backup.Status.ZeebeBackupID, string(camundaadmin.StateDoesNotExist), "",
 		)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
@@ -836,10 +843,10 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 		management.SetRuntimeState(
-			*backup.Status.PrimaryBackupID, string(camundaadmin.StateCompleted), "",
+			*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
 		)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())

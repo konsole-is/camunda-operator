@@ -47,7 +47,7 @@ spec:
               name: my-cluster-camunda-backup-credentials
         - name: PGSSLMODE
           value: require
-        image: ghcr.io/konsole-is/camunda-operator:0.1.0
+        image: ghcr.io/konsole-is/camunda-operator-cli:0.1.0
         name: upload
         resources:
           requests:

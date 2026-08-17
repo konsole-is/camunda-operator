@@ -110,10 +110,13 @@ var _ = BeforeSuite(func() {
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		reconciler = &LogicalBackupRDBMSReconciler{
-			Client:        mgr.GetClient(),
-			APIReader:     mgr.GetAPIReader(),
-			Scheme:        mgr.GetScheme(),
-			OperatorImage: "ghcr.io/konsole-is/camunda-operator:test",
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}
+
+		return reconciler.SetupWithManager(mgr, Options{
+			CLIImage:      "ghcr.io/konsole-is/camunda-operator-cli:test",
 			RetryInterval: time.Second,
 			// Small graces, so the specs that outwait them stay fast. The
 			// windows the specs assert within must stay well inside these.
@@ -134,9 +137,7 @@ var _ = BeforeSuite(func() {
 
 				return fn(ctx, cluster)
 			},
-		}
-
-		return reconciler.SetupWithManager(mgr)
+		})
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client

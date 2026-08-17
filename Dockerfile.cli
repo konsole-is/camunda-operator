@@ -1,0 +1,27 @@
+# Build the camunda-operator-cli binary
+FROM golang:1.26 AS builder
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /workspace
+# Copy the Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+# cache deps before building and copying source so that we don't need to re-download as much
+# and so that source changes don't invalidate our downloaded layer
+RUN go mod download
+
+# Copy the Go source (relies on .dockerignore to filter)
+COPY . .
+
+# Build. See Dockerfile for why GOARCH has no default.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o camunda-operator-cli ./cmd/camunda-operator-cli
+
+# Use distroless as minimal base image to package the CLI binary. The operator's
+# Jobs run this image as a container; the manager never does.
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=builder /workspace/camunda-operator-cli .
+USER 65532:65532
+
+ENTRYPOINT ["/camunda-operator-cli"]

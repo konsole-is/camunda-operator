@@ -19,6 +19,7 @@ package logicalbackuprdbms
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -72,6 +73,7 @@ func TestDumpTrustsTheLiveViewOverAStaleCache(t *testing.T) {
 		// The cache lost the race: no Job. The live view has it.
 		Client:    fake.NewClientBuilder().WithScheme(scheme).Build(),
 		APIReader: fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build(),
+		opts:      Options{RetryInterval: time.Second},
 	}
 
 	wait, err := r.dump(context.Background(), backup)
@@ -94,6 +96,7 @@ func TestDumpFailsWhenTheJobIsGoneFromTheLiveView(t *testing.T) {
 		Client:        fake.NewClientBuilder().WithScheme(scheme).Build(),
 		APIReader:     fake.NewClientBuilder().WithScheme(scheme).Build(),
 		EventRecorder: events.NewFakeRecorder(4),
+		opts:          Options{RetryInterval: time.Second},
 	}
 
 	wait, err := r.dump(context.Background(), backup)

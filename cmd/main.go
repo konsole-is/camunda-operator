@@ -19,9 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
-	"fmt"
 	"os"
-	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -44,7 +42,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/cmd/upload"
 	"github.com/konsole-is/camunda-operator/internal/controller"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundacluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
@@ -74,33 +71,13 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// runUpload runs the upload subcommand of the dump Job and exits non-zero on
-// failure, which fails the Job.
-func runUpload() {
-	ctx := ctrl.SetupSignalHandler()
-	if err := upload.Run(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
+// cliImageEnv is the environment variable that defaults
+// --camunda-operator-cli-image; the packaging sets it to the published image.
+const cliImageEnv = "CAMUNDA_OPERATOR_CLI_IMAGE"
 
 // nolint:gocyclo
 func main() {
-	// The image serves one subcommand: `upload` streams a file to the backup
-	// bucket and exits. Flags fall through to the manager; any other word in
-	// the subcommand position is a mistake worth failing loudly on, not a
-	// manager that silently starts under a typo.
-	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
-		if os.Args[1] != "upload" {
-			fmt.Fprintf(os.Stderr, "unknown subcommand %q; the only subcommand is upload\n", os.Args[1])
-			os.Exit(2)
-		}
-		runUpload()
-
-		return
-	}
-
-	var operatorImage string
+	var cliImage string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -135,9 +112,9 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers",
 	)
 	flag.StringVar(
-		&operatorImage, "operator-image", os.Getenv("OPERATOR_IMAGE"),
-		"The image of this operator, which the backup Jobs run for their upload container. "+
-			"Defaults to the OPERATOR_IMAGE environment variable.",
+		&cliImage, "camunda-operator-cli-image", os.Getenv(cliImageEnv),
+		"The camunda-operator-cli image that the backup Jobs run for their upload container. "+
+			"Required. Defaults to the "+cliImageEnv+" environment variable.",
 	)
 	opts := zap.Options{
 		Development: true,
@@ -146,6 +123,18 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// The LogicalBackupRDBMS controller renders Jobs that run the CLI image;
+	// without one it could only guess, so the manager refuses to start.
+	if cliImage == "" {
+		setupLog.Error(
+			nil,
+			"The camunda-operator-cli image is required: set --camunda-operator-cli-image "+
+				"or the "+cliImageEnv+" environment variable to the published image, "+
+				"for example ghcr.io/konsole-is/camunda-operator-cli:<version>",
+		)
+		os.Exit(1)
+	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -288,11 +277,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&logicalbackuprdbms.LogicalBackupRDBMSReconciler{
-		Client:        mgr.GetClient(),
-		APIReader:     mgr.GetAPIReader(),
-		Scheme:        mgr.GetScheme(),
-		OperatorImage: operatorImage,
-	}).SetupWithManager(mgr); err != nil {
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr, logicalbackuprdbms.Options{CLIImage: cliImage}); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupRDBMS")
 		os.Exit(1)
 	}

@@ -176,7 +176,7 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 		creds = parsed
 	}
 
-	store, err := r.OpenBucket(ctx, &bucket, creds)
+	store, err := r.opts.OpenBucket(ctx, &bucket, creds)
 	if err != nil {
 		return "", fmt.Errorf("opening the bucket: %w", err)
 	}

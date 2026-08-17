@@ -107,7 +107,7 @@ func input() JobInput {
 		Port:               5432,
 		Database:           "camunda",
 		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/camunda.dump",
-		OperatorImage:      "ghcr.io/konsole-is/camunda-operator:0.1.0",
+		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
 	}
 }
 
@@ -266,15 +266,15 @@ func TestJobNameDerivesFromTheBackupAlone(t *testing.T) {
 	assert.Equal(t, "my-cluster-1748937221000-dump", JobName(backup()))
 }
 
-func TestBuildJobRejectsAnEmptyOperatorImage(t *testing.T) {
+func TestBuildJobRejectsAnEmptyCLIImage(t *testing.T) {
 	t.Parallel()
 
 	in := input()
-	in.OperatorImage = ""
+	in.CLIImage = ""
 
 	_, err := BuildJob(in)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "operator image is empty")
+	assert.Contains(t, err.Error(), "camunda-operator-cli image is empty")
 }
 
 func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {

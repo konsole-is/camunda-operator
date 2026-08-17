@@ -45,7 +45,8 @@ type PITRCapability struct {
 // DatabaseServerConfigSpec describes a database server: engine, endpoint,
 // admin credentials, and point-in-time-recovery capability.
 type DatabaseServerConfigSpec struct {
-	// Engine is the database engine of the server.
+	// Engine is the database engine of the server. See DatabaseEngine for
+	// the accepted values.
 	Engine DatabaseEngine `json:"engine"`
 	// Host the server is reachable at.
 	// +kubebuilder:validation:MinLength=1
@@ -54,12 +55,6 @@ type DatabaseServerConfigSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port"`
-	// Version is the major version of the server engine, for example "17".
-	// A dump of a database must run client tools of at least the server's
-	// major version, so a backup of a database on this server requires it.
-	// +kubebuilder:validation:Pattern=`^[0-9]+$`
-	// +optional
-	Version string `json:"version,omitempty"`
 	// AdminCredentialsSecretRef names an admin user with permission to create
 	// databases and roles; used by the Database controller to bootstrap.
 	AdminCredentialsSecretRef CredentialsSecretRef `json:"adminCredentialsSecretRef"`
@@ -68,13 +63,24 @@ type DatabaseServerConfigSpec struct {
 	PITR *PITRCapability `json:"pitr,omitempty"`
 }
 
-// DatabaseServerConfigStatus is the observed validation state of the contract.
+// DatabaseServerConfigStatus is the observed validation state of the contract:
+// what the operator read from the server the last time it reached it.
 type DatabaseServerConfigStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// ServerVersion is the major version the server reported the last time
+	// the operator reached it, for example "17". A dump of a database on this
+	// server runs client tools of this major, so a backup waits until it is
+	// published.
+	// +optional
+	ServerVersion string `json:"serverVersion,omitempty"`
+	// ProbedAt is when the operator last reached the server and read
+	// ServerVersion.
+	// +optional
+	ProbedAt *metav1.Time `json:"probedAt,omitempty"`
 	// Conditions represent the current validation state; the Ready condition
-	// carries reasons Healthy or MissingSecret.
+	// carries reasons Healthy, MissingSecret, or ConnectionFailed.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

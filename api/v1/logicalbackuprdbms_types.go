@@ -28,7 +28,7 @@ const ReasonMissingCredentials = "MissingCredentials"
 // LogicalBackupRDBMSStep is the resume marker of the backup procedure. A
 // reconcile that re-enters after a crash continues at the recorded step
 // instead of repeating one that already ran.
-// +kubebuilder:validation:Enum=Dumping;PrimaryBackup
+// +kubebuilder:validation:Enum=Dumping;ZeebeBackup
 type LogicalBackupRDBMSStep string
 
 // The steps of a relational backup, in order.
@@ -36,9 +36,10 @@ const (
 	// StepDumping runs the Job that writes the logical database to the
 	// backup bucket.
 	StepDumping LogicalBackupRDBMSStep = "Dumping"
-	// StepPrimaryBackup requests one cluster-generated primary-storage
-	// backup, so the dump pairs with a Zeebe backup taken right after it.
-	StepPrimaryBackup LogicalBackupRDBMSStep = "PrimaryBackup"
+	// StepZeebeBackup requests one Zeebe backup — Camunda's own backup of
+	// its primary storage, the Zeebe log and snapshots — right after the
+	// dump, so the two pair into one restore point.
+	StepZeebeBackup LogicalBackupRDBMSStep = "ZeebeBackup"
 )
 
 // LogicalBackupRDBMSSpec identifies the cluster to back up. It is immutable:
@@ -75,16 +76,15 @@ type LogicalBackupRDBMSStatus struct {
 	// ObjectKey is the full key of the dump in the backup bucket.
 	// +optional
 	ObjectKey string `json:"objectKey,omitempty"`
-	// PrimaryBackupID is the id of the primary-storage backup that the
-	// cluster generated after the dump. Unset until that backup is
-	// requested.
+	// ZeebeBackupID is the id of the Zeebe backup that the cluster generated
+	// after the dump. Unset until that backup is requested.
 	// +optional
-	PrimaryBackupID *int64 `json:"primaryBackupId,omitempty"`
-	// PrimaryBackupRequestedAt is when the primary-storage backup was
-	// requested. It bounds how long the poll tolerates a backup the cluster
-	// does not report yet.
+	ZeebeBackupID *int64 `json:"zeebeBackupId,omitempty"`
+	// ZeebeBackupRequestedAt is when the Zeebe backup was requested. It
+	// bounds how long the poll tolerates a backup the cluster does not
+	// report yet.
 	// +optional
-	PrimaryBackupRequestedAt *metav1.Time `json:"primaryBackupRequestedAt,omitempty"`
+	ZeebeBackupRequestedAt *metav1.Time `json:"zeebeBackupRequestedAt,omitempty"`
 	// FirstFailedAt is when a dependency of the running backup first stopped
 	// resolving, or the management API first stopped answering. The mid-run
 	// grace is measured from it; it clears when the backup recovers.
@@ -133,8 +133,11 @@ type LogicalBackupRDBMSStatus struct {
 
 // LogicalBackupRDBMS is one backup of a relational orchestration cluster: a
 // dump of the entire logical database, uploaded to the backup bucket, paired
-// with one cluster-generated primary-storage backup. A restore reads the
-// exporter position from the restored dump and picks the primary-storage
+// with one Zeebe backup. Camunda calls the Zeebe log and snapshots its
+// "primary storage" and the exported relational data its "secondary
+// storage"; a Zeebe backup is Camunda's own backup of that primary storage
+// to the backup bucket, requested through the management API. A restore
+// reads the exporter position from the restored dump and picks the Zeebe
 // backups that match it, so the pair is a complete restore point.
 type LogicalBackupRDBMS struct {
 	metav1.TypeMeta `json:",inline"`
