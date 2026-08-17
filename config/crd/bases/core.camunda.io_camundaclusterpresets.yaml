@@ -1017,6 +1017,13 @@ spec:
                           Dump configures the Job that writes the logical database to the backup
                           bucket. A LogicalBackupRDBMS can replace this block as a whole.
                         properties:
+                          activeDeadlineSeconds:
+                            description: |-
+                              ActiveDeadlineSeconds bounds how long the dump Job may run before it
+                              is failed. Unset means no bound.
+                            format: int64
+                            minimum: 1
+                            type: integer
                           extraEnv:
                             description: ExtraEnv are extra environment variables
                               of the dump pod.
@@ -1240,6 +1247,13 @@ spec:
                               type: string
                             description: PodLabels are extra labels of the dump pod.
                             type: object
+                          postgresImage:
+                            description: |-
+                              PostgresImage is the full image reference of the dump container,
+                              replacing the default postgres:<major> of the upstream registry. Set
+                              it in an air-gapped installation, where the default reference cannot
+                              be pulled.
+                            type: string
                           resources:
                             description: Resources are the CPU and memory of the dump
                               pod.
@@ -1927,6 +1941,10 @@ spec:
                                   the ephemeral storage of a node.
                                 type: string
                             type: object
+                            x-kubernetes-validations:
+                            - message: a scratch volume with a storage class needs
+                                a sizeLimit to request
+                              rule: '!has(self.storageClassName) || has(self.sizeLimit)'
                         type: object
                       primaryStorage:
                         description: |-

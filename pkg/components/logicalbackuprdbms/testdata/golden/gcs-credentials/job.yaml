@@ -9,6 +9,7 @@ metadata:
   name: my-cluster-1748937221000-dump
   namespace: my-cluster-ns
 spec:
+  backoffLimit: 3
   template:
     metadata:
       labels:
@@ -29,17 +30,28 @@ spec:
           value: my-backup-config
         - name: UPLOAD_STORAGE_SPEC
           value: '{"type":"GCS","gcs":{"bucketName":"camunda-backups","basePath":"clusters","auth":{"type":"credentials","credentials":{"secretRef":{"name":"gcs-key","namespace":"camunda","key":"key.json"}}}}}'
-        - name: GOOGLE_APPLICATION_CREDENTIALS
-          value: /var/run/secrets/camunda.io/gcs/key.json
+        - name: UPLOAD_CREDENTIAL_KEYS
+          value: key.json
+        - name: UPLOAD_CREDENTIAL_0
+          valueFrom:
+            secretKeyRef:
+              key: key.json
+              name: my-cluster-camunda-backup-credentials
         image: ghcr.io/konsole-is/camunda-operator:0.1.0
         name: upload
         resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65532
+          runAsNonRoot: true
+          runAsUser: 65532
         volumeMounts:
         - mountPath: /scratch
           name: scratch
-        - mountPath: /var/run/secrets/camunda.io/gcs
-          name: gcs-key
-          readOnly: true
       initContainers:
       - command:
         - pg_dump
@@ -57,23 +69,32 @@ spec:
           valueFrom:
             secretKeyRef:
               key: username
-              name: my-cluster-1748937221000-dump-credentials
+              name: my-cluster-camunda-dump-credentials
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: my-cluster-1748937221000-dump-credentials
+              name: my-cluster-camunda-dump-credentials
         image: postgres:17
         name: dump
         resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
         volumeMounts:
         - mountPath: /scratch
           name: scratch
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: my-cluster-camunda
       volumes:
       - emptyDir: {}
         name: scratch
-      - name: gcs-key
-        secret:
-          secretName: my-cluster-camunda-backup-credentials

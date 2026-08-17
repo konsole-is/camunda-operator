@@ -16,7 +16,7 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - logicalbackuprdbms
+  - logicalbackuprdbmses
   verbs:
   - get
   - list
@@ -24,6 +24,6 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - logicalbackuprdbms/status
+  - logicalbackuprdbmses/status
   verbs:
   - get

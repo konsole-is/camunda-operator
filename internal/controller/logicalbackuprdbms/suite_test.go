@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -33,6 +34,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
@@ -51,19 +53,33 @@ var (
 	reconciler *LogicalBackupRDBMSReconciler
 )
 
+// sibling is the mutex-guarded seam behind reconciler.SiblingInProgress: the
+// manager goroutine reads it while specs swap it, so a bare field write would
+// race.
+var (
+	siblingMu sync.Mutex
+	sibling   logicalbackup.SiblingInProgress
+)
+
+// setSibling swaps the sibling seam for one spec; call it again with nil to
+// restore.
+func setSibling(fn logicalbackup.SiblingInProgress) {
+	siblingMu.Lock()
+	defer siblingMu.Unlock()
+	sibling = fn
+}
+
 // fakeBucket records the deletes of the finalizer, standing in for the
 // backup bucket.
 type fakeBucket struct {
 	mu      sync.Mutex
 	deleted []string
-	objects map[string]bool
 }
 
 func (b *fakeBucket) Delete(_ context.Context, key string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.deleted = append(b.deleted, key)
-	delete(b.objects, key)
 
 	return nil
 }
@@ -90,7 +106,7 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	management = camundaadmintest.New()
-	bucket = &fakeBucket{objects: map[string]bool{}}
+	bucket = &fakeBucket{}
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		reconciler = &LogicalBackupRDBMSReconciler{
@@ -99,10 +115,24 @@ var _ = BeforeSuite(func() {
 			Scheme:        mgr.GetScheme(),
 			OperatorImage: "ghcr.io/konsole-is/camunda-operator:test",
 			RetryInterval: time.Second,
+			// Small graces, so the specs that outwait them stay fast. The
+			// windows the specs assert within must stay well inside these.
+			MidRunGrace:       3 * time.Second,
+			RegistrationGrace: 4 * time.Second,
 			OpenBucket: func(
 				context.Context, *v1.ObjectStorageConfig, *objectstore.Credentials,
 			) (ArtifactBucket, error) {
 				return bucket, nil
+			},
+			SiblingInProgress: func(ctx context.Context, cluster types.NamespacedName) (string, error) {
+				siblingMu.Lock()
+				fn := sibling
+				siblingMu.Unlock()
+				if fn == nil {
+					return "", nil
+				}
+
+				return fn(ctx, cluster)
 			},
 		}
 

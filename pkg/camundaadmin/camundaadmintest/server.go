@@ -317,20 +317,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// decodeBackupID reads {"backupId": N} from the request body.
 // handleRuntimeStart answers POST /backupRuntime: an explicit id conflicts
 // with any same-or-higher (or deleted) id; a nil id gets a generated one.
 func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 	if s.failing("runtimeStart") {
 		errorBody(w, http.StatusInternalServerError, "injected runtime start failure")
-		return
-	}
-	if s.conflictRuntimeStarts > 0 {
-		s.conflictRuntimeStarts--
-		errorBody(
-			w, http.StatusConflict,
-			"a backup with the same or higher ID already exists",
-		)
 		return
 	}
 	var id int64
@@ -347,13 +338,18 @@ func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 			conflicted = conflicted || conflicts(deleted)
 		}
 		if conflicted {
-			errorBody(
-				w, http.StatusConflict,
-				"a backup with the same or higher ID already exists",
-			)
+			conflictBody(w)
 			return
 		}
 	} else {
+		// The injected conflict targets only cluster-generated ids: a higher
+		// id landing between the generation and the registration is the one
+		// conflict an id-less request can hit.
+		if s.conflictRuntimeStarts > 0 {
+			s.conflictRuntimeStarts--
+			conflictBody(w)
+			return
+		}
 		id = s.nextGeneratedID
 		s.nextGeneratedID++
 	}
@@ -375,6 +371,7 @@ func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// decodeBackupID reads {"backupId": N} from the request body.
 func decodeBackupID(r *http.Request) int64 {
 	var body struct {
 		BackupID int64 `json:"backupId"`
@@ -391,6 +388,11 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func errorBody(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"message": message})
+}
+
+// conflictBody answers the 409 a cluster answers when an id is not usable.
+func conflictBody(w http.ResponseWriter) {
+	errorBody(w, http.StatusConflict, "a backup with the same or higher ID already exists")
 }
 
 // exportingEnvelope answers an exporting call the way Camunda 8.9 does: the

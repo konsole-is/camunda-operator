@@ -45,9 +45,10 @@ func DatabaseServerConfig() *v1.DatabaseServerConfig {
 	return &v1.DatabaseServerConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8)},
 		Spec: v1.DatabaseServerConfigSpec{
-			Engine: v1.DatabaseEnginePostgres,
-			Host:   "postgres.camunda-system.svc.cluster.local",
-			Port:   5432,
+			Engine:  v1.DatabaseEnginePostgres,
+			Version: "17",
+			Host:    "postgres.camunda-system.svc.cluster.local",
+			Port:    5432,
 			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
 				Name: "admin-creds", Namespace: "camunda-system",
 				UsernameKey: "username", PasswordKey: "password",

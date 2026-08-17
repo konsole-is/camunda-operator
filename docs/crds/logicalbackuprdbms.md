@@ -11,11 +11,12 @@ A LogicalBackupRDBMS captures a complete restore point of a `CamundaCluster` tha
 
 ## How it works
 
-1. The operator resolves `clusterRef` and checks: the cluster exists, has a `backupStorageRef`, is not suspended, stores its data in a relational database, and no other backup of it runs. The `DatabaseConfig` must name a `backupCredentialsSecretRef`, and the `DatabaseServerConfig` must state its `version`, because the dump runs client tools of at least the server's major version.
-2. It allocates the backup id (a millisecond timestamp) and records the object key `<basePath>/<namespace>/<cluster>/<id>/camunda.dump`.
-3. It applies a Job in the cluster namespace: a `postgres:<major>` initContainer runs `pg_dump --format=custom` of the entire logical database into a scratch volume, then the operator image's `upload` subcommand streams the archive to the bucket. The pod runs under the cluster's ServiceAccount for workload identity, or with the bucket's static credentials copied by the cluster controller. The pod settings come from the cluster's `spec.backup.dump`, or from this CR's `spec.dump` replacing that block as a whole.
-4. When the Job succeeds, the operator requests one primary-storage backup through the cluster's management binding, without an id — the cluster generates it — and records it as `status.primaryBackupId`, polling until it completes.
-5. Deleting the CR deletes a still-running Job, the credentials copy, and the dump object — never the primary-storage backups, which belong to the continuous range that a point-in-time restore consumes.
+1. The operator resolves `clusterRef` and checks: the cluster exists, has a `backupStorageRef`, is not suspended, stores its data in a relational database, and no other backup of it runs — a running backup blocks all others, and among pending ones the oldest starts first. The `DatabaseConfig` must name a `backupCredentialsSecretRef`, and the `DatabaseServerConfig` must state its `version`, because the dump runs client tools of at least the server's major version. These checks run only until the backup starts; a backup that fails them parks in `Pending` with the reason on `Ready`.
+2. It allocates the backup id (a millisecond timestamp), pins the bucket it writes through (`status.bucketRef`), and records the object key `<basePath>/<namespace>/<cluster>/<id>/camunda.dump`.
+3. It applies a Job in the cluster namespace: a `postgres:<version>` initContainer runs `pg_dump --format=custom` of the entire logical database into a scratch volume, then the operator image's `upload` subcommand streams the archive to the bucket. The operator resolves its own image from its running pod; `--operator-image` overrides it. The pod runs under the cluster's ServiceAccount for workload identity, or with the bucket's static credentials — the source Secret when it lives in the cluster namespace, the local copy the cluster controller keeps otherwise. The pod settings come from the cluster's `spec.backup.dump`, or from this CR's `spec.dump` replacing that block as a whole.
+4. When the Job succeeds, the operator requests one primary-storage backup through the cluster's management binding, without an id — the cluster generates it — and records it as `status.primaryBackupId`, polling until it completes. Partitions register their parts asynchronously, so a backup the cluster does not report yet is polled for a short grace before it counts as failed.
+5. A dependency that stops resolving mid-run — a deleted reference, a broken binding — holds the backup for a bounded grace, then fails it. A `Running` backup either finishes or terminalizes; it never parks forever, because it would block every later backup of the cluster.
+6. Deleting the CR deletes a still-running Job and the dump object in the pinned bucket — never the primary-storage backups, which belong to the continuous range that a point-in-time restore consumes. When the cluster, the pinned bucket, or its credentials are genuinely gone, the finalizer releases and an event records what was left behind.
 
 ## API reference
 
@@ -41,7 +42,7 @@ The spec is immutable: a backup is one operation, and a retry is a new CR.
 
 ## Status
 
-`status.phase` tracks the one-shot operation (`Pending | Running | Completed | Failed`); `status.step` is the resume marker (`Dumping | PrimaryBackup`). `status.backupId` identifies the dump object, `status.objectKey` its full key, `status.jobName` the Job, and `status.primaryBackupId` the cluster-generated primary-storage backup. `status.storageSizes.zeebe` records the effective restore size of one broker volume, best effort.
+`status.phase` tracks the one-shot operation (`Pending | Running | Completed | Failed`); `status.step` is the resume marker (`Dumping | PrimaryBackup`). `status.backupId` identifies the dump object, `status.objectKey` its full key, `status.jobName` the Job, and `status.primaryBackupId` the cluster-generated primary-storage backup, requested at `status.primaryBackupRequestedAt`. `status.bucketRef` and `status.bucketGeneration` pin the `ObjectStorageConfig` the dump was written through, so a later retarget of the cluster cannot orphan the object. `status.failureMessage` states why a `Failed` backup failed. `status.storageSizes.zeebe` records the effective restore size of one broker volume, best effort.
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
@@ -53,7 +54,8 @@ The spec is immutable: a backup is one operation, and a retry is a new CR.
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in a relational database. |
 | `Ready` | `InvalidReference` | A referenced object does not exist, or the server states no version. |
 | `Ready` | `MissingSecret` | The database names no usable backup credentials. |
-| `Ready` | `MissingCredentials` | The bucket's static credentials copy does not resolve. |
+| `Ready` | `MissingCredentials` | The bucket's static credentials do not resolve. |
+| `Ready` | `ConnectionFailed` | The management API of the cluster is not reachable. |
 
 ## Relationships
 

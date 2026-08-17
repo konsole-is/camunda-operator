@@ -42,6 +42,8 @@ import (
 
 // world is the resolved fixture set of one spec: a relational cluster with a
 // published binding, its storage chain, and every Secret the backup needs.
+// Both credential Secrets live in the cluster namespace, so the backup reads
+// them directly; the cross-namespace spec stands in the copies itself.
 type world struct {
 	namespace string
 	cluster   *v1.CamundaCluster
@@ -170,19 +172,15 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	}
 	Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 
-	// The bucket credentials copy that the CamundaCluster controller mirrors.
-	mirror := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: camundacluster.MirroredSecretName(
-				cluster, camundacluster.MirrorPurposeBackupCredentials,
-			),
-			Namespace: namespace,
-		},
+	// The bucket credentials live in the cluster namespace, so the backup
+	// uses the source Secret directly — no copy is involved.
+	bucketCredentials := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "minio-credentials", Namespace: namespace},
 		Data: map[string][]byte{
 			"accessKeyId": []byte("minio-root"), "secretAccessKey": []byte("minio-secret"),
 		},
 	}
-	Expect(k8sClient.Create(ctx, mirror)).To(Succeed())
+	Expect(k8sClient.Create(ctx, bucketCredentials)).To(Succeed())
 
 	return &world{
 		namespace: namespace,
@@ -194,7 +192,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	}
 }
 
-func createBackup(w *world) *v1.LogicalBackupRDBMS {
+func createBackup(w *world, mutate ...func(*v1.LogicalBackupRDBMS)) *v1.LogicalBackupRDBMS {
 	backup := &v1.LogicalBackupRDBMS{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "backup-" + utilrand.String(6), Namespace: w.namespace,
@@ -203,23 +201,55 @@ func createBackup(w *world) *v1.LogicalBackupRDBMS {
 			ClusterRef: v1.ClusterRef{Name: w.cluster.Name},
 		},
 	}
+	for _, m := range mutate {
+		m(backup)
+	}
 	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 
 	return backup
+}
+
+// jobOf waits for the dump Job of backup in the cluster namespace and returns
+// it.
+func jobOf(backup *v1.LogicalBackupRDBMS, w *world) *batchv1.Job {
+	GinkgoHelper()
+	var job batchv1.Job
+	key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	return &job
 }
 
 func readyCondition(backup *v1.LogicalBackupRDBMS) *metav1.Condition {
 	return meta.FindStatusCondition(backup.Status.Conditions, v1.ConditionReady)
 }
 
-func expectReason(backup *v1.LogicalBackupRDBMS, reason string) {
+// expectPending asserts a backup parked at admission: the Pending phase, no
+// identity allocated, and the given Ready reason.
+func expectPending(backup *v1.LogicalBackupRDBMS, reason string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+		g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupPending))
+		g.Expect(backup.Status.BackupID).To(BeZero())
 		condition := readyCondition(backup)
 		g.Expect(condition).NotTo(BeNil())
 		g.Expect(condition.Reason).To(Equal(reason))
 	}, timeout, interval).Should(Succeed())
+}
+
+// secretNameOfEnv returns the Secret a container's env variable reads from,
+// or the empty string when the variable is absent or not a secretKeyRef.
+func secretNameOfEnv(container corev1.Container, name string) string {
+	for _, env := range container.Env {
+		if env.Name == name && env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+			return env.ValueFrom.SecretKeyRef.Name
+		}
+	}
+
+	return ""
 }
 
 // markJob flips the Job of backup to the given terminal condition, standing
@@ -276,14 +306,19 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(backup.Status.StorageSizes.Zeebe).NotTo(BeNil())
 		Expect(backup.Status.StorageSizes.Zeebe.String()).To(Equal("20Gi"))
 
+		By("pinning the bucket the backup writes through")
+		Expect(backup.Status.BucketRef).To(Equal(w.bucket.Name))
+
 		By("rendering the Job under the cluster ServiceAccount with the recorded key")
-		var job batchv1.Job
-		key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		job := jobOf(backup, w)
 		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal(w.cluster.Name + "-camunda"))
 		Expect(job.OwnerReferences).NotTo(BeEmpty())
+
+		By("projecting the same-namespace bucket credentials Secret directly")
+		upload := job.Spec.Template.Spec.Containers[0]
+		Expect(secretNameOfEnv(upload, components.EnvUploadCredentialPrefix+"0")).To(
+			Equal("minio-credentials"),
+		)
 
 		By("moving to the primary-storage backup once the Job completes")
 		markJob(backup, w, batchv1.JobComplete)
@@ -335,7 +370,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 
-		expectReason(backup, v1.ReasonInvalidReference)
+		expectPending(backup, v1.ReasonInvalidReference)
 	})
 
 	It("waits with ClusterSuspended while the cluster is suspended", func() {
@@ -349,7 +384,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		backup := createBackup(w)
-		expectReason(backup, v1.ReasonClusterSuspended)
+		expectPending(backup, v1.ReasonClusterSuspended)
 	})
 
 	It("rejects a cluster on the wrong storage type", func() {
@@ -372,10 +407,10 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		backup := createBackup(w)
-		expectReason(backup, v1.ReasonStorageTypeMismatch)
+		expectPending(backup, v1.ReasonStorageTypeMismatch)
 	})
 
-	It("serializes backups of one cluster", func() {
+	It("serializes backups of one cluster and lets the waiter start afterwards", func() {
 		w := createWorld()
 		first := createBackup(w)
 
@@ -385,20 +420,39 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		second := createBackup(w)
-		expectReason(second, v1.ReasonBackupInProgress)
+		expectPending(second, v1.ReasonBackupInProgress)
+
+		By("finishing the first backup")
+		markJob(first, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
+			g.Expect(first.Status.PrimaryBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		management.SetRuntimeState(
+			*first.Status.PrimaryBackupID, string(camundaadmin.StateCompleted), "",
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
+			g.Expect(first.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		By("letting the waiting backup start, so a done backup never deadlocks the queue")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), second)).To(Succeed())
+			g.Expect(second.Status.BackupID).NotTo(BeZero())
+			g.Expect(second.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("consults the sibling kind through the seam", func() {
 		w := createWorld()
-		reconciler.SiblingInProgress = func(
-			context.Context, types.NamespacedName,
-		) (string, error) {
+		setSibling(func(context.Context, types.NamespacedName) (string, error) {
 			return "an-elasticsearch-backup", nil
-		}
-		DeferCleanup(func() { reconciler.SiblingInProgress = nil })
+		})
+		DeferCleanup(func() { setSibling(nil) })
 
 		backup := createBackup(w)
-		expectReason(backup, v1.ReasonBackupInProgress)
+		expectPending(backup, v1.ReasonBackupInProgress)
 	})
 
 	It("reports MissingSecret when the database has no backup credentials", func() {
@@ -412,7 +466,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		backup := createBackup(w)
-		expectReason(backup, v1.ReasonMissingSecret)
+		expectPending(backup, v1.ReasonMissingSecret)
 	})
 
 	It("requires the server version", func() {
@@ -424,24 +478,21 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		backup := createBackup(w)
-		expectReason(backup, v1.ReasonInvalidReference)
+		expectPending(backup, v1.ReasonInvalidReference)
 		Expect(readyCondition(backup).Message).To(ContainSubstring("version"))
 	})
 
-	It("reports MissingCredentials until the bucket credentials copy exists", func() {
+	It("reports MissingCredentials until the bucket credentials resolve", func() {
 		w := createWorld()
-		mirror := camundacluster.MirroredSecretName(
-			w.cluster, camundacluster.MirrorPurposeBackupCredentials,
-		)
 		Expect(k8sClient.Delete(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: mirror, Namespace: w.namespace},
+			ObjectMeta: metav1.ObjectMeta{Name: "minio-credentials", Namespace: w.namespace},
 		})).To(Succeed())
 
 		backup := createBackup(w)
-		expectReason(backup, v1.ReasonMissingCredentials)
+		expectPending(backup, v1.ReasonMissingCredentials)
 	})
 
-	It("waits in Pending until the binding is published", func() {
+	It("parks in Pending until the binding is published, then starts", func() {
 		w := createWorld()
 		Eventually(func(g Gomega) {
 			g.Expect(
@@ -451,22 +502,29 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(k8sClient.Status().Update(ctx, w.cluster)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
+		// The binding is checked at admission, so a backup never dumps
+		// gigabytes it cannot pair with a primary-storage backup afterwards.
 		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+
+		By("starting once the binding is published")
+		Eventually(func(g Gomega) {
+			g.Expect(
+				k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster),
+			).To(Succeed())
+			w.cluster.Status.Management = &v1.ManagementBinding{
+				Endpoint:   management.URL(),
+				Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+				Version:    "8.9.9",
+				Partitions: 3,
+			}
+			g.Expect(k8sClient.Status().Update(ctx, w.cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.BackupID).NotTo(BeZero())
-			condition := readyCondition(backup)
-			g.Expect(condition).NotTo(BeNil())
-			g.Expect(condition.Reason).To(Equal(v1.ReasonProgressing))
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
 		}, timeout, interval).Should(Succeed())
-
-		// The dump can run without the binding; only the primary-storage
-		// step needs it, so the backup holds there.
-		markJob(backup, w, batchv1.JobComplete)
-		Consistently(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.PrimaryBackupID).To(BeNil())
-		}, "2s", interval).Should(Succeed())
 	})
 
 	It("deletes the Job and the dump object on deletion, never the primary-storage backups", func() {
@@ -501,14 +559,6 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("leaving the primary-storage backup alone")
 		Expect(management.RuntimeBackup(id)).NotTo(BeNil())
 
-		By("removing the credentials copy")
-		var secret corev1.Secret
-		err := k8sClient.Get(
-			ctx, types.NamespacedName{
-				Namespace: w.namespace, Name: dbSecretName(backup),
-			}, &secret,
-		)
-		Expect(err).To(HaveOccurred())
 		// envtest runs no garbage collector, so a Job still present here
 		// would mean the finalizer relied on the owner reference instead of
 		// deleting it.
@@ -519,7 +569,6 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 				Namespace: w.namespace, Name: components.JobName(backup),
 			}, &leftover,
 		)).To(HaveOccurred())
-
 	})
 
 	It("releases the finalizer when the cluster is already gone", func() {
@@ -532,14 +581,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 
-		By("deleting the cluster and its credential copy first")
+		By("deleting the cluster first")
 		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
-		mirror := camundacluster.MirroredSecretName(
-			w.cluster, camundacluster.MirrorPurposeBackupCredentials,
-		)
-		Expect(k8sClient.Delete(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: mirror, Namespace: w.namespace},
-		})).To(Succeed())
 
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
 
@@ -559,19 +602,26 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("fails hard on a conflict for the id the cluster generated", func() {
+	It("retries a conflicted primary-storage request instead of failing", func() {
 		w := createWorld()
 		management.ConflictNextRuntimeStart(1)
 		backup := createBackup(w)
 
+		// The dump already succeeded; one bad answer must not discard it. The
+		// conflict is retried with backoff and the retry generates a fresh
+		// id — the id that conflicted is never adopted.
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
-			g.Expect(backup.Status.PrimaryBackupID).To(BeNil())
-			condition := readyCondition(backup)
-			g.Expect(condition).NotTo(BeNil())
-			g.Expect(condition.Message).To(ContainSubstring("generated"))
+			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+		}, timeout, interval).Should(Succeed())
+
+		id := *backup.Status.PrimaryBackupID
+		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -585,11 +635,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		})
 		backup := createBackup(w)
 
-		var job batchv1.Job
-		key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		job := jobOf(backup, w)
 		Expect(job.Spec.Template.Annotations).To(
 			HaveKeyWithValue("linkerd.io/inject", "disabled"),
 		)
@@ -601,37 +647,215 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		})
 		backup := createBackup(w)
 
-		var job batchv1.Job
-		key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		job := jobOf(backup, w)
 		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("platform-sa"))
 	})
 
 	It("honors the backup's own dump block over the cluster's", func() {
 		w := createWorld()
+		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
+			backup.Spec.Dump = &v1.BackupDumpSpec{
+				PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
+			}
+		})
+
+		job := jobOf(backup, w)
+		Expect(job.Spec.Template.Annotations).To(
+			HaveKeyWithValue("sidecar.istio.io/inject", "false"),
+		)
+	})
+
+	It("fails a running backup whose dependency stays broken past the grace", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Step).To(Equal(v1.StepPrimaryBackup))
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting the cluster mid-run")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+
+		By("terminalizing after the grace, so the backup never parks forever")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("stopped resolving"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("tolerates a primary-storage backup that has not registered yet", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.PrimaryBackupRequestedAt).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		id := *backup.Status.PrimaryBackupID
+
+		// The partitions register their parts asynchronously after the 202,
+		// so a backup the cluster does not report yet is normal at first.
+		management.SetRuntimeState(id, string(camundaadmin.StateDoesNotExist), "")
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+		}, "1500ms", interval).Should(Succeed())
+
+		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("fails a primary-storage backup still unregistered past the grace", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		management.SetRuntimeState(
+			*backup.Status.PrimaryBackupID, string(camundaadmin.StateDoesNotExist), "",
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("DOES_NOT_EXIST"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("backs up a cluster in another namespace end to end", func() {
+		w := createWorld()
+		backupNamespace := newNamespace()
 		backup := &v1.LogicalBackupRDBMS{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "backup-" + utilrand.String(6), Namespace: w.namespace,
+				Name: "backup-" + utilrand.String(6), Namespace: backupNamespace,
 			},
 			Spec: v1.LogicalBackupRDBMSSpec{
-				ClusterRef: v1.ClusterRef{Name: w.cluster.Name},
-				Dump: &v1.BackupDumpSpec{
-					PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
-				},
+				ClusterRef: v1.ClusterRef{Name: w.cluster.Name, Namespace: w.namespace},
 			},
 		}
 		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 
-		var job batchv1.Job
-		key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
+		By("creating the Job in the cluster namespace, without a cross-namespace owner")
+		job := jobOf(backup, w)
+		Expect(job.Namespace).To(Equal(w.namespace))
+		Expect(job.OwnerReferences).To(BeEmpty())
+
+		By("completing across the namespace boundary")
+		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
-		Expect(job.Spec.Template.Annotations).To(
-			HaveKeyWithValue("sidecar.istio.io/inject", "false"),
+		management.SetRuntimeState(
+			*backup.Status.PrimaryBackupID, string(camundaadmin.StateCompleted), "",
 		)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		By("cleaning up the Job in the cluster namespace on deletion")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+
+			var leftover batchv1.Job
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: w.namespace, Name: components.JobName(backup),
+				}, &leftover,
+			)).To(HaveOccurred())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("reads cross-namespace credentials through the cluster controller's copies", func() {
+		w := createWorld()
+		remote := newNamespace()
+
+		By("moving both credential sources out of the cluster namespace")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
+			w.bucket.Spec.S3.Auth.Credentials.SecretRef.Namespace = remote
+			g.Expect(k8sClient.Update(ctx, w.bucket)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(
+				k8sClient.Get(ctx, client.ObjectKeyFromObject(w.dbConfig), w.dbConfig),
+			).To(Succeed())
+			w.dbConfig.Spec.BackupCredentialsSecretRef.Namespace = remote
+			g.Expect(k8sClient.Update(ctx, w.dbConfig)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("standing in for the CamundaCluster controller's local copies")
+		bucketMirror := camundacluster.MirroredSecretName(
+			w.cluster, camundacluster.MirrorPurposeBackupCredentials,
+		)
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: bucketMirror, Namespace: w.namespace},
+			Data: map[string][]byte{
+				"accessKeyId": []byte("minio-root"), "secretAccessKey": []byte("minio-secret"),
+			},
+		})).To(Succeed())
+		dumpMirror := camundacluster.MirroredSecretName(
+			w.cluster, camundacluster.MirrorPurposeDumpCredentials,
+		)
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: dumpMirror, Namespace: w.namespace},
+			Data:       map[string][]byte{"username": []byte("backup"), "password": []byte("s3cr3t")},
+		})).To(Succeed())
+
+		backup := createBackup(w)
+		job := jobOf(backup, w)
+
+		By("wiring the Job to the copies, not the unreachable sources")
+		dump := job.Spec.Template.Spec.InitContainers[0]
+		Expect(secretNameOfEnv(dump, "PGUSER")).To(Equal(dumpMirror))
+		upload := job.Spec.Template.Spec.Containers[0]
+		Expect(secretNameOfEnv(upload, components.EnvUploadCredentialPrefix+"0")).To(
+			Equal(bucketMirror),
+		)
+	})
+
+	It("releases the finalizer when the pinned bucket is gone", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting the pinned ObjectStorageConfig, then the backup")
+		Expect(k8sClient.Delete(ctx, w.bucket)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		By("recording what was left behind and releasing anyway")
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(w.namespace))).To(Succeed())
+			reasons := make([]string, 0, len(events.Items))
+			for _, event := range events.Items {
+				reasons = append(reasons, event.Reason)
+			}
+			g.Expect(reasons).To(ContainElement("ArtifactCleanupFailed"))
+		}, timeout, interval).Should(Succeed())
 	})
 })
 

@@ -291,6 +291,10 @@ spec:
     dump:
       # object. Optional. CPU and memory of the dump pod.
       resources: {}
+      # integer. Optional. Seconds the dump Job may run before it is failed. Unset means no deadline.
+      activeDeadlineSeconds: 7200
+      # string. Optional, default: postgres:<version of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag.
+      postgresImage: ""
       # []EnvVar. Optional. Extra environment variables of the dump pod.
       extraEnv: []
       # []EnvFromSource. Optional. Extra environment sources of the dump pod.
@@ -307,7 +311,7 @@ spec:
       scratchVolume:
         # Quantity. Optional. Size of the emptyDir that holds the dump.
         sizeLimit: 50Gi
-        # string. Optional. When set, the scratch volume is a PersistentVolumeClaim of this class instead of an emptyDir.
+        # string. Optional. When set, the scratch volume is a PersistentVolumeClaim of this class instead of an emptyDir. Requires sizeLimit: a PVC needs an explicit size.
         storageClassName: "fast"
   # object. Optional. Monitoring integrations.
   monitoring:

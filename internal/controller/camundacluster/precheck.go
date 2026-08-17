@@ -236,6 +236,16 @@ func (res *resolver) resolveRDBMSStorage(
 	if err := res.localizeCredentials(ctx, &creds, components.MirrorPurposeDBCredentials); err != nil {
 		return err
 	}
+
+	// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
+	// database, so its credentials get a local copy the same way: the
+	// backup controller consumes the copy and never writes one itself.
+	if dbConfig.Spec.BackupCredentialsSecretRef != nil {
+		dump := *dbConfig.Spec.BackupCredentialsSecretRef
+		if err := res.localizeCredentials(ctx, &dump, components.MirrorPurposeDumpCredentials); err != nil {
+			return err
+		}
+	}
 	in.Storage.RDBMS = &components.RDBMSStorage{
 		Host:        server.Spec.Host,
 		Port:        server.Spec.Port,

@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -28,10 +29,14 @@ import (
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -51,6 +56,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -81,8 +87,14 @@ func runUpload() {
 // nolint:gocyclo
 func main() {
 	// The image serves one subcommand: `upload` streams a file to the backup
-	// bucket and exits. Everything else is the manager.
-	if len(os.Args) > 1 && os.Args[1] == "upload" {
+	// bucket and exits. Flags fall through to the manager; any other word in
+	// the subcommand position is a mistake worth failing loudly on, not a
+	// manager that silently starts under a typo.
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		if os.Args[1] != "upload" {
+			fmt.Fprintf(os.Stderr, "unknown subcommand %q; the only subcommand is upload\n", os.Args[1])
+			os.Exit(2)
+		}
 		runUpload()
 
 		return
@@ -217,7 +229,18 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
+		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				// The operator only ever tracks its own Jobs; caching every
+				// Job in the cluster would waste memory on foreign workloads.
+				&batchv1.Job{}: {
+					Label: k8slabels.SelectorFromSet(k8slabels.Set{
+						labels.ManagedByKey: labels.ManagedBy,
+					}),
+				},
+			},
+		},
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,

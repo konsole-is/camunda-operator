@@ -44,6 +44,18 @@ type ClusterRef struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
+// EffectiveClusterNamespace returns the namespace the reference points into:
+// its own, or fallback — the namespace of the referencing object — when it
+// names none. Every consumer of a ClusterRef resolves it through this one
+// rule.
+func (in ClusterRef) EffectiveClusterNamespace(fallback string) string {
+	if in.Namespace != "" {
+		return in.Namespace
+	}
+
+	return fallback
+}
+
 // LogicalBackupPhase tracks a one-shot backup operation. Completed and Failed
 // are terminal; a retry is a new CR.
 // +kubebuilder:validation:Enum=Pending;Running;Completed;Failed

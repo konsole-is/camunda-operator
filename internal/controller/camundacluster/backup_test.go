@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
@@ -415,6 +416,63 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				g.Expect(k8sClient.Get(ctx, key, &copied)).To(Succeed())
 				g.Expect(copied.Data).To(HaveKeyWithValue("accessKeyId", []byte("minio")))
 				g.Expect(copied.Data).To(HaveKeyWithValue("secretAccessKey", []byte("minio123")))
+			}, timeout, interval).Should(Succeed())
+		})
+
+		// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
+		// database from the cluster namespace, so a Secret elsewhere needs the
+		// same local copy the other credentials get.
+		It("copies cross-namespace dump credentials into the cluster namespace", func() {
+			ns := newNamespace()
+			remote := newNamespace()
+
+			server := fixtures.DatabaseServerConfig()
+			Expect(k8sClient.Create(ctx, server)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+
+			createSecret(ns, "app-user", map[string]string{
+				"username": "camunda", "password": "app-secret",
+			})
+			createSecret(remote, "backup-user", map[string]string{
+				"username": "backup", "password": "dump-secret",
+			})
+
+			dbConfig := fixtures.DatabaseConfig()
+			dbConfig.Namespace = ns
+			dbConfig.Spec.ServerRef = server.Name
+			dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
+				Name: "app-user", Namespace: ns,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+				Name: "backup-user", Namespace: remote,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+
+			storage := &v1.SecondaryStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: ns},
+				Spec: v1.SecondaryStorageConfigSpec{
+					Type:  v1.SecondaryStorageTypeRDBMS,
+					RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: dbConfig.Name},
+				},
+			}
+			Expect(k8sClient.Create(ctx, storage)).To(Succeed())
+
+			cluster := newCluster(ns, createPlatformConfig(), storage)
+			createCluster(cluster)
+
+			Eventually(func(g Gomega) {
+				var copied corev1.Secret
+				key := client.ObjectKey{
+					Namespace: ns,
+					Name: components.MirroredSecretName(
+						cluster, components.MirrorPurposeDumpCredentials,
+					),
+				}
+				g.Expect(k8sClient.Get(ctx, key, &copied)).To(Succeed())
+				g.Expect(copied.Data).To(HaveKeyWithValue("username", []byte("backup")))
+				g.Expect(copied.Data).To(HaveKeyWithValue("password", []byte("dump-secret")))
 			}, timeout, interval).Should(Succeed())
 		})
 

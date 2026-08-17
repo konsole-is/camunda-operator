@@ -9,6 +9,7 @@ metadata:
   name: my-cluster-1748937221000-dump
   namespace: my-cluster-ns
 spec:
+  backoffLimit: 3
   template:
     metadata:
       labels:
@@ -32,6 +33,15 @@ spec:
         image: ghcr.io/konsole-is/camunda-operator:0.1.0
         name: upload
         resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65532
+          runAsNonRoot: true
+          runAsUser: 65532
         volumeMounts:
         - mountPath: /scratch
           name: scratch
@@ -52,19 +62,31 @@ spec:
           valueFrom:
             secretKeyRef:
               key: username
-              name: my-cluster-1748937221000-dump-credentials
+              name: my-cluster-camunda-dump-credentials
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: my-cluster-1748937221000-dump-credentials
+              name: my-cluster-camunda-dump-credentials
         image: postgres:17
         name: dump
         resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
         volumeMounts:
         - mountPath: /scratch
           name: scratch
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: my-cluster-camunda
       volumes:
       - emptyDir: {}

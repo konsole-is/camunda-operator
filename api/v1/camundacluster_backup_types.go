@@ -115,11 +115,23 @@ type BackupDumpSpec struct {
 	// set, it replaces the block of a preset entirely (no merge).
 	// +optional
 	ScratchVolume *ScratchVolumeSpec `json:"scratchVolume,omitempty"`
+	// ActiveDeadlineSeconds bounds how long the dump Job may run before it
+	// is failed. Unset means no bound.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	ActiveDeadlineSeconds *int64 `json:"activeDeadlineSeconds,omitempty"`
+	// PostgresImage is the full image reference of the dump container,
+	// replacing the default postgres:<major> of the upstream registry. Set
+	// it in an air-gapped installation, where the default reference cannot
+	// be pulled.
+	// +optional
+	PostgresImage string `json:"postgresImage,omitempty"`
 }
 
 // ScratchVolumeSpec sizes the volume that holds a database dump until it is
 // uploaded. An unset block is an emptyDir that the node bounds, which a large
 // database can exhaust.
+// +kubebuilder:validation:XValidation:rule="!has(self.storageClassName) || has(self.sizeLimit)",message="a scratch volume with a storage class needs a sizeLimit to request"
 type ScratchVolumeSpec struct {
 	// SizeLimit is the size of the emptyDir that holds the dump. Set it to
 	// the size the dump needs, with room to spare.

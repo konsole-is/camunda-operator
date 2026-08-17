@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -45,12 +46,14 @@ const (
 	// DumpFileName is the file the dump is written to and uploaded from, and
 	// the last segment of the object key in the bucket.
 	DumpFileName = "camunda.dump"
-	// gcsKeyVolumeName mounts the service-account key of a GCS bucket with
-	// static credentials. GCS accepts no key as configuration: the key is a
-	// file, named by GOOGLE_APPLICATION_CREDENTIALS, and the default
-	// credential chain reads it.
-	gcsKeyVolumeName = "gcs-key"
-	gcsKeyMountPath  = "/var/run/secrets/camunda.io/gcs"
+	// defaultBackoffLimit bounds the pod retries of the Job. A dump that
+	// fails three times needs a human, not a fourth pod.
+	defaultBackoffLimit = int32(3)
+	// postgresUID is the uid of the postgres user in the upstream image.
+	postgresUID = int64(999)
+	// operatorUID is the uid of the distroless nonroot user that the
+	// operator image runs as.
+	operatorUID = int64(65532)
 )
 
 // The environment contract of the upload subcommand. The Job renders these
@@ -68,15 +71,15 @@ const (
 	// of the contract is the wire format, so the Job and the subcommand can
 	// never disagree on a field.
 	EnvUploadStorageSpec = "UPLOAD_STORAGE_SPEC"
-	// EnvUploadS3AccessKeyID and EnvUploadS3SecretAccessKey carry the static
-	// keys of an S3 bucket.
-	EnvUploadS3AccessKeyID     = "UPLOAD_S3_ACCESS_KEY_ID"
-	EnvUploadS3SecretAccessKey = "UPLOAD_S3_SECRET_ACCESS_KEY"
-	// EnvUploadAzureAccountKey carries the account key of an Azure bucket.
-	EnvUploadAzureAccountKey = "UPLOAD_AZURE_ACCOUNT_KEY"
-	// EnvGoogleCredentials names the service-account key file of a GCS
-	// bucket, read by the default credential chain.
-	EnvGoogleCredentials = "GOOGLE_APPLICATION_CREDENTIALS"
+	// EnvUploadCredentialKeys names the Secret keys of the contract's static
+	// credentials, comma-separated in the contract's own order. Each listed
+	// key arrives as its own EnvUploadCredentialPrefix<index> variable, and
+	// the subcommand rebuilds the Secret data from the pair — so the one
+	// mapping in objectstore.CredentialsFrom serves the upload too. Unset
+	// for workload identity.
+	EnvUploadCredentialKeys = "UPLOAD_CREDENTIAL_KEYS"
+	// EnvUploadCredentialPrefix prefixes the indexed credential values.
+	EnvUploadCredentialPrefix = "UPLOAD_CREDENTIAL_"
 )
 
 // JobInput is everything the Job of one backup renders from. The controller
@@ -94,12 +97,12 @@ type JobInput struct {
 	Dump *v1.BackupDumpSpec
 	// Bucket is the backup bucket contract.
 	Bucket *v1.ObjectStorageConfig
-	// BucketSecretName is the local copy of the bucket's static credentials
-	// in the cluster namespace. Empty means workload identity: no keys are
-	// rendered and the provider chain authenticates as the ServiceAccount.
+	// BucketSecretName is the credentials Secret of the bucket as reachable
+	// from the cluster namespace: the source Secret itself when it lives
+	// there, or its local copy otherwise. Empty means workload identity.
 	BucketSecretName string
-	// DBSecretName is the local copy of the backup credentials of the
-	// database, with DBUsernameKey and DBPasswordKey naming its keys.
+	// DBSecretName is the backup user of the database, reachable the same
+	// way, with DBUsernameKey and DBPasswordKey naming its keys.
 	DBSecretName  string
 	DBUsernameKey string
 	DBPasswordKey string
@@ -137,20 +140,32 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		return nil, fmt.Errorf("building the dump Job of %q: the operator image is empty", in.Backup.Name)
 	}
 
-	spec, err := json.Marshal(in.Bucket.Spec)
-	if err != nil {
-		return nil, fmt.Errorf("encoding the bucket spec of %q: %w", in.Bucket.Name, err)
-	}
-
 	dump := in.Dump
 	if dump == nil {
 		dump = &v1.BackupDumpSpec{}
 	}
 
+	if dump.ScratchVolume != nil &&
+		dump.ScratchVolume.StorageClassName != nil &&
+		dump.ScratchVolume.SizeLimit == nil {
+		return nil, fmt.Errorf(
+			"building the dump Job of %q: a scratch volume with a storage class needs a sizeLimit",
+			in.Backup.Name,
+		)
+	}
+
+	spec, err := json.Marshal(in.Bucket.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("encoding the bucket spec of %q: %w", in.Bucket.Name, err)
+	}
+
 	managed := labels.Managed(labels.LogicalBackupRDBMS(in.Backup.Name), componentName)
 	managed[labels.ClusterKey] = in.ClusterName
 
-	podLabels := labels.Merge(dump.PodLabels, managed)
+	// The workload-identity pod label is operator-required: without it the
+	// Azure webhook injects no token, whatever the ServiceAccount carries.
+	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
+	podLabels := labels.Merge(dump.PodLabels, podManaged)
 
 	template := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
@@ -160,9 +175,13 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		Spec: corev1.PodSpec{
 			RestartPolicy:      corev1.RestartPolicyNever,
 			ServiceAccountName: in.ServiceAccountName,
-			InitContainers:     []corev1.Container{dumpContainer(in, dump)},
-			Containers:         []corev1.Container{uploadContainer(in, dump, string(spec))},
-			Volumes:            volumes(in, dump),
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot:   new(true),
+				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+			},
+			InitContainers: []corev1.Container{dumpContainer(in, dump)},
+			Containers:     []corev1.Container{uploadContainer(in, dump, string(spec))},
+			Volumes:        []corev1.Volume{scratchVolume(dump)},
 		},
 	}
 
@@ -185,7 +204,9 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 			Labels:    managed,
 		},
 		Spec: batchv1.JobSpec{
-			Template: template,
+			BackoffLimit:          new(defaultBackoffLimit),
+			ActiveDeadlineSeconds: dump.ActiveDeadlineSeconds,
+			Template:              template,
 		},
 	}, nil
 }
@@ -202,18 +223,24 @@ func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
 		secretEnv("PGPASSWORD", in.DBSecretName, in.DBPasswordKey),
 	}
 
+	image := dump.PostgresImage
+	if image == "" {
+		image = "postgres:" + in.ServerVersion
+	}
+
 	container := corev1.Container{
 		Name:  "dump",
-		Image: "postgres:" + in.ServerVersion,
+		Image: image,
 		Command: []string{
 			"pg_dump",
 			"--format=custom",
 			"--no-password",
 			"--file=" + scratchMountPath + "/" + DumpFileName,
 		},
-		Env:          append(env, dump.ExtraEnv...),
-		EnvFrom:      dump.ExtraEnvFrom,
-		VolumeMounts: []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
+		Env:             append(env, dump.ExtraEnv...),
+		EnvFrom:         dump.ExtraEnvFrom,
+		SecurityContext: containerSecurity(postgresUID),
+		VolumeMounts:    []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
 	}
 	if dump.Resources != nil {
 		container.Resources = *dump.Resources
@@ -235,20 +262,17 @@ func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.C
 	)
 	env = append(env, credentialEnv(in)...)
 
+	security := containerSecurity(operatorUID)
+	security.ReadOnlyRootFilesystem = new(true)
+
 	container := corev1.Container{
-		Name:         "upload",
-		Image:        in.OperatorImage,
-		Args:         []string{"upload"},
-		Env:          append(env, dump.ExtraEnv...),
-		EnvFrom:      dump.ExtraEnvFrom,
-		VolumeMounts: []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
-	}
-	if in.BucketSecretName != "" && in.Bucket.Spec.GCS != nil {
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-			Name:      gcsKeyVolumeName,
-			MountPath: gcsKeyMountPath,
-			ReadOnly:  true,
-		})
+		Name:            "upload",
+		Image:           in.OperatorImage,
+		Args:            []string{"upload"},
+		Env:             append(env, dump.ExtraEnv...),
+		EnvFrom:         dump.ExtraEnvFrom,
+		SecurityContext: security,
+		VolumeMounts:    []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
 	}
 	if dump.Resources != nil {
 		container.Resources = *dump.Resources
@@ -257,61 +281,50 @@ func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.C
 	return container
 }
 
-// credentialEnv renders the static credentials of the bucket, keyed the way
-// the contract names them in its own Secret; the local copy preserves those
-// keys. Workload identity renders nothing: the provider chain authenticates
-// as the ServiceAccount of the pod.
+// credentialEnv projects the static credentials of the bucket, key by key in
+// the contract's own order, so the subcommand rebuilds the Secret data and
+// hands it to the one mapping in objectstore.CredentialsFrom. Workload
+// identity projects nothing: the provider chain authenticates as the
+// ServiceAccount of the pod.
 func credentialEnv(in JobInput) []corev1.EnvVar {
-	if in.BucketSecretName == "" {
+	credentials := in.Bucket.CredentialsSecret()
+	if in.BucketSecretName == "" || credentials == nil {
 		return nil
 	}
 
-	switch {
-	case in.Bucket.Spec.S3 != nil && in.Bucket.Spec.S3.Auth.Credentials != nil:
-		ref := in.Bucket.Spec.S3.Auth.Credentials.SecretRef
-
-		return []corev1.EnvVar{
-			secretEnv(EnvUploadS3AccessKeyID, in.BucketSecretName, ref.AccessKeyIDKey),
-			secretEnv(EnvUploadS3SecretAccessKey, in.BucketSecretName, ref.SecretAccessKeyKey),
-		}
-
-	case in.Bucket.Spec.GCS != nil && in.Bucket.Spec.GCS.Auth.Credentials != nil:
-		key := in.Bucket.Spec.GCS.Auth.Credentials.SecretRef.Key
-
-		return []corev1.EnvVar{
-			{Name: EnvGoogleCredentials, Value: gcsKeyMountPath + "/" + key},
-		}
-
-	case in.Bucket.Spec.AzureBlob != nil && in.Bucket.Spec.AzureBlob.Auth.Credentials != nil:
-		key := in.Bucket.Spec.AzureBlob.Auth.Credentials.SecretRef.Key
-
-		return []corev1.EnvVar{
-			secretEnv(EnvUploadAzureAccountKey, in.BucketSecretName, key),
-		}
+	env := make([]corev1.EnvVar, 0, len(credentials.Keys)+1)
+	env = append(env, corev1.EnvVar{
+		Name:  EnvUploadCredentialKeys,
+		Value: strings.Join(credentials.Keys, ","),
+	})
+	for i, key := range credentials.Keys {
+		env = append(env, secretEnv(
+			EnvUploadCredentialPrefix+strconv.Itoa(i), in.BucketSecretName, key,
+		))
 	}
 
-	return nil
+	return env
 }
 
-// volumes returns the scratch volume of the dump — an emptyDir bounded by
-// sizeLimit, or a generic ephemeral PersistentVolumeClaim when a storage
+// scratchVolume returns the volume that holds the dump: an emptyDir bounded
+// by sizeLimit, or a generic ephemeral PersistentVolumeClaim when a storage
 // class is set, so a dump larger than the node's ephemeral storage still
-// fits — plus the key file of a GCS bucket with static credentials.
-func volumes(in JobInput, dump *v1.BackupDumpSpec) []corev1.Volume {
+// fits.
+func scratchVolume(dump *v1.BackupDumpSpec) corev1.Volume {
 	scratch := corev1.Volume{Name: scratchVolumeName}
 
 	switch {
 	case dump.ScratchVolume != nil && dump.ScratchVolume.StorageClassName != nil:
-		resources := corev1.VolumeResourceRequirements{}
-		if dump.ScratchVolume.SizeLimit != nil {
-			resources.Requests = corev1.ResourceList{corev1.ResourceStorage: *dump.ScratchVolume.SizeLimit}
-		}
 		scratch.Ephemeral = &corev1.EphemeralVolumeSource{
 			VolumeClaimTemplate: &corev1.PersistentVolumeClaimTemplate{
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 					StorageClassName: dump.ScratchVolume.StorageClassName,
-					Resources:        resources,
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: *dump.ScratchVolume.SizeLimit,
+						},
+					},
 				},
 			},
 		}
@@ -321,17 +334,19 @@ func volumes(in JobInput, dump *v1.BackupDumpSpec) []corev1.Volume {
 		scratch.EmptyDir = &corev1.EmptyDirVolumeSource{}
 	}
 
-	all := []corev1.Volume{scratch}
-	if in.BucketSecretName != "" && in.Bucket.Spec.GCS != nil {
-		all = append(all, corev1.Volume{
-			Name: gcsKeyVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: in.BucketSecretName},
-			},
-		})
-	}
+	return scratch
+}
 
-	return all
+// containerSecurity is the restricted-profile security context of one
+// container, running as the given non-root uid.
+func containerSecurity(uid int64) *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+		RunAsUser:                new(uid),
+		RunAsGroup:               new(uid),
+		RunAsNonRoot:             new(true),
+		AllowPrivilegeEscalation: new(false),
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
 }
 
 func secretEnv(name, secret, key string) corev1.EnvVar {

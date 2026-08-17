@@ -80,10 +80,30 @@ type LogicalBackupRDBMSStatus struct {
 	// requested.
 	// +optional
 	PrimaryBackupID *int64 `json:"primaryBackupId,omitempty"`
+	// PrimaryBackupRequestedAt is when the primary-storage backup was
+	// requested. It bounds how long the poll tolerates a backup the cluster
+	// does not report yet.
+	// +optional
+	PrimaryBackupRequestedAt *metav1.Time `json:"primaryBackupRequestedAt,omitempty"`
+	// BucketRef pins the ObjectStorageConfig the dump was written through,
+	// so deletion cleans up against the bucket that actually holds the
+	// object, even after the cluster's backupStorageRef moved elsewhere.
+	// +optional
+	BucketRef string `json:"bucketRef,omitempty"`
+	// BucketGeneration is the generation of the pinned config when the
+	// backup started. A different generation at deletion time means the
+	// bucket coordinates may have changed under the object.
+	// +optional
+	BucketGeneration int64 `json:"bucketGeneration,omitempty"`
 	// StorageSizes are the effective restore sizes recorded when the backup
 	// started. The RDBMS kind records the Zeebe size only.
 	// +optional
-	StorageSizes LogicalBackupStorageSizes `json:"storageSizes,omitempty,omitzero"`
+	StorageSizes LogicalBackupStorageSizes `json:"storageSizes,omitzero"`
+	// FailureMessage is why the backup failed, set with a Failed phase. The
+	// Ready condition carries the same message and is re-staged from this
+	// field, so a write conflict can never lose it.
+	// +optional
+	FailureMessage string `json:"failureMessage,omitempty"`
 	// CompletionTime is when the backup reached a terminal phase.
 	// +optional
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`

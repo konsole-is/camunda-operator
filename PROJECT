@@ -159,6 +159,7 @@ resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: camunda.io
   group: core
   kind: LogicalBackupRDBMS

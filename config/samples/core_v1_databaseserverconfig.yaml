@@ -7,6 +7,7 @@ metadata:
   name: databaseserverconfig-sample
 spec:
   engine: postgres
+  version: "17"
   host: "postgres.default.svc.cluster.local"
   port: 5432
   adminCredentialsSecretRef:

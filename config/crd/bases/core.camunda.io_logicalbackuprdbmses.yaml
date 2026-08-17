@@ -81,6 +81,13 @@ spec:
                   Dump replaces the cluster's spec.backup.dump block as a whole for this
                   backup. Unset means the block of the cluster. The two never merge.
                 properties:
+                  activeDeadlineSeconds:
+                    description: |-
+                      ActiveDeadlineSeconds bounds how long the dump Job may run before it
+                      is failed. Unset means no bound.
+                    format: int64
+                    minimum: 1
+                    type: integer
                   extraEnv:
                     description: ExtraEnv are extra environment variables of the dump
                       pod.
@@ -301,6 +308,13 @@ spec:
                       type: string
                     description: PodLabels are extra labels of the dump pod.
                     type: object
+                  postgresImage:
+                    description: |-
+                      PostgresImage is the full image reference of the dump container,
+                      replacing the default postgres:<major> of the upstream registry. Set
+                      it in an air-gapped installation, where the default reference cannot
+                      be pulled.
+                    type: string
                   resources:
                     description: Resources are the CPU and memory of the dump pod.
                     properties:
@@ -981,6 +995,10 @@ spec:
                           the ephemeral storage of a node.
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: a scratch volume with a storage class needs a sizeLimit
+                        to request
+                      rule: '!has(self.storageClassName) || has(self.sizeLimit)'
                 type: object
             required:
             - clusterRef
@@ -997,6 +1015,19 @@ spec:
                   once, when the backup leaves Pending.
                 format: int64
                 type: integer
+              bucketGeneration:
+                description: |-
+                  BucketGeneration is the generation of the pinned config when the
+                  backup started. A different generation at deletion time means the
+                  bucket coordinates may have changed under the object.
+                format: int64
+                type: integer
+              bucketRef:
+                description: |-
+                  BucketRef pins the ObjectStorageConfig the dump was written through,
+                  so deletion cleans up against the bucket that actually holds the
+                  object, even after the cluster's backupStorageRef moved elsewhere.
+                type: string
               completionTime:
                 description: CompletionTime is when the backup reached a terminal
                   phase.
@@ -1064,6 +1095,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              failureMessage:
+                description: |-
+                  FailureMessage is why the backup failed, set with a Failed phase. The
+                  Ready condition carries the same message and is re-staged from this
+                  field, so a write conflict can never lose it.
+                type: string
               jobName:
                 description: JobName is the Job that dumps and uploads the database.
                 type: string
@@ -1092,6 +1129,13 @@ spec:
                   requested.
                 format: int64
                 type: integer
+              primaryBackupRequestedAt:
+                description: |-
+                  PrimaryBackupRequestedAt is when the primary-storage backup was
+                  requested. It bounds how long the poll tolerates a backup the cluster
+                  does not report yet.
+                format: date-time
+                type: string
               step:
                 description: |-
                   Step is where the procedure stands and where a crashed reconcile

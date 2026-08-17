@@ -16,12 +16,12 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - logicalbackuprdbms
+  - logicalbackuprdbmses
   verbs:
   - '*'
 - apiGroups:
   - core.camunda.io
   resources:
-  - logicalbackuprdbms/status
+  - logicalbackuprdbmses/status
   verbs:
   - get

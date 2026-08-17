@@ -25,6 +25,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -35,13 +36,14 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
-// finalize removes the artifacts of a deleted backup: the Job, the copied
-// credentials, and the dump object — keyed strictly on this backup's own
-// object key. Primary-storage backups are never touched: they belong to the
-// continuous range that a point-in-time restore consumes. Cleanup is best
-// effort: when the cluster or the bucket is gone, an event records what was
-// left behind and the finalizer releases, so a backup never blocks deletion
-// forever.
+// finalize removes the artifacts of a deleted backup: the Job and the dump
+// object, keyed strictly on this backup's own object key. Primary-storage
+// backups are never touched: they belong to the continuous range that a
+// point-in-time restore consumes. Transient errors are returned, so the
+// deletion retries; only when the dependency chain is genuinely gone — the
+// cluster, the pinned bucket, or its credentials no longer exist — does the
+// finalizer release with an event that records what was left behind, so a
+// dead cluster never blocks deletion forever.
 func (r *LogicalBackupRDBMSReconciler) finalize(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -50,10 +52,7 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 		return nil
 	}
 
-	namespace := backup.Spec.ClusterRef.Namespace
-	if namespace == "" {
-		namespace = backup.Namespace
-	}
+	namespace := backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace)
 
 	// The Job goes first so it is never left running for a backup that is
 	// going away. The delete is not awaited, so an upload already in flight
@@ -73,88 +72,141 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 		return fmt.Errorf("deleting the dump Job: %w", err)
 	}
 
-	credentials := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Name:      dbSecretName(backup),
-		Namespace: namespace,
-	}}
-	if err := r.Delete(ctx, credentials); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("deleting the credentials copy: %w", err)
-	}
-
 	if backup.Status.ObjectKey != "" {
-		if err := r.deleteObject(ctx, backup, namespace); err != nil {
+		gone, err := r.deleteObject(ctx, backup, namespace)
+		if err != nil {
+			return err
+		}
+		if gone != "" {
 			r.EventRecorder.Eventf(
 				backup,
 				nil,
 				corev1.EventTypeWarning,
 				eventReasonCleanup,
 				eventActionFinalize,
-				"The dump object %q was not deleted: %v",
+				"The dump object %q was left behind: %s",
 				backup.Status.ObjectKey,
-				err,
+				gone,
 			)
 		}
 	}
 
-	controllerutil.RemoveFinalizer(backup, logicalbackup.Finalizer)
-
-	return r.Update(ctx, backup)
+	return r.releaseFinalizer(ctx, backup)
 }
 
-// deleteObject removes the dump from the backup bucket, resolving the bucket
-// through the cluster the way the backup itself did.
+// deleteObject removes the dump from the pinned bucket — the one the backup
+// wrote through, not whatever the cluster references today. It returns a
+// non-empty reason when the dependency chain is genuinely gone and the object
+// cannot be reached anymore, and an error when the failure is transient and
+// a retry can still clean up.
 func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 	namespace string,
-) error {
+) (string, error) {
 	var cluster v1.CamundaCluster
-	if err := r.APIReader.Get(
-		ctx,
-		types.NamespacedName{Namespace: namespace, Name: backup.Spec.ClusterRef.Name},
-		&cluster,
-	); err != nil {
-		return fmt.Errorf("reading the cluster: %w", err)
+	clusterKey := types.NamespacedName{Namespace: namespace, Name: backup.Spec.ClusterRef.Name}
+	if err := r.APIReader.Get(ctx, clusterKey, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Sprintf("CamundaCluster %s is gone", clusterKey), nil
+		}
+
+		return "", fmt.Errorf("reading the cluster: %w", err)
 	}
 
 	var bucket v1.ObjectStorageConfig
 	if err := r.APIReader.Get(
-		ctx, types.NamespacedName{Name: cluster.Spec.BackupStorageRef}, &bucket,
+		ctx, types.NamespacedName{Name: backup.Status.BucketRef}, &bucket,
 	); err != nil {
-		return fmt.Errorf("reading the bucket contract: %w", err)
+		if apierrors.IsNotFound(err) {
+			return fmt.Sprintf(
+				"the pinned ObjectStorageConfig %q is gone", backup.Status.BucketRef,
+			), nil
+		}
+
+		return "", fmt.Errorf("reading ObjectStorageConfig %q: %w", backup.Status.BucketRef, err)
+	}
+	if bucket.Generation != backup.Status.BucketGeneration {
+		// The contract changed under the object. The delete still runs against
+		// the current spec — the old one is not retrievable — but the change is
+		// worth a trace when the key then turns out not to be there.
+		r.EventRecorder.Eventf(
+			backup,
+			nil,
+			corev1.EventTypeWarning,
+			eventReasonCleanup,
+			eventActionFinalize,
+			"ObjectStorageConfig %q changed since the backup wrote through it "+
+				"(generation %d, was %d); the cleanup uses the current spec",
+			bucket.Name,
+			bucket.Generation,
+			backup.Status.BucketGeneration,
+		)
 	}
 
 	var creds *objectstore.Credentials
-	if bucket.CredentialsSecret() != nil {
-		// The local copy in the cluster namespace is what the Job consumed;
-		// the finalizer reads the same one, so it works with exactly the
+	if credentials := bucket.CredentialsSecret(); credentials != nil {
+		// The same rule the Job used: the source Secret when it lives in the
+		// cluster namespace, the local copy the CamundaCluster controller
+		// keeps otherwise. Either way the finalizer reads exactly the
 		// credentials the upload used.
-		var secret corev1.Secret
-		mirror := types.NamespacedName{
-			Namespace: namespace,
-			Name: camundacluster.MirroredSecretName(
-				&cluster, camundacluster.MirrorPurposeBackupCredentials,
+		local := types.NamespacedName{
+			Namespace: cluster.Namespace,
+			Name: localSecretName(
+				&cluster,
+				credentials.Namespace,
+				credentials.Name,
+				camundacluster.MirrorPurposeBackupCredentials,
 			),
 		}
-		if err := r.APIReader.Get(ctx, mirror, &secret); err != nil {
-			return fmt.Errorf("reading the bucket credentials copy %s: %w", mirror, err)
+		var secret corev1.Secret
+		if err := r.APIReader.Get(ctx, local, &secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				return fmt.Sprintf("the bucket credentials Secret %s is gone", local), nil
+			}
+
+			return "", fmt.Errorf("reading the bucket credentials %s: %w", local, err)
 		}
 		parsed, err := objectstore.CredentialsFrom(&bucket, secret.Data)
 		if err != nil {
-			return err
+			// Broken credential data does not heal on retry; holding the
+			// deletion on it would block forever.
+			return fmt.Sprintf("the bucket credentials no longer parse: %v", err), nil
 		}
 		creds = parsed
 	}
 
 	store, err := r.OpenBucket(ctx, &bucket, creds)
 	if err != nil {
-		return fmt.Errorf("opening the bucket: %w", err)
+		return "", fmt.Errorf("opening the bucket: %w", err)
 	}
 	defer store.Close()
 
 	if err := store.Delete(ctx, backup.Status.ObjectKey); err != nil {
-		return fmt.Errorf("deleting %q: %w", backup.Status.ObjectKey, err)
+		return "", fmt.Errorf("deleting %q: %w", backup.Status.ObjectKey, err)
 	}
 
-	return nil
+	return "", nil
+}
+
+// releaseFinalizer removes the finalizer against the live object, retrying a
+// write conflict: the deletion itself updates the object concurrently, and
+// cleanup must not re-run over a resolvable conflict.
+func (r *LogicalBackupRDBMSReconciler) releaseFinalizer(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) error {
+	key := client.ObjectKeyFromObject(backup)
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var current v1.LogicalBackupRDBMS
+		if err := r.Get(ctx, key, &current); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if !controllerutil.RemoveFinalizer(&current, logicalbackup.Finalizer) {
+			return nil
+		}
+
+		return r.Update(ctx, &current)
+	})
 }

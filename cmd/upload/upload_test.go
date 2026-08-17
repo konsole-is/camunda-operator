@@ -89,12 +89,13 @@ func TestRunRoundTripsTheFile(t *testing.T) {
 
 	err := run(
 		context.Background(), env(map[string]string{
-			components.EnvUploadFile:              source,
-			components.EnvUploadKey:               "clusters/ns/cluster/1/camunda.dump",
-			components.EnvUploadStorageName:       "my-backup-config",
-			components.EnvUploadStorageSpec:       spec,
-			components.EnvUploadS3AccessKeyID:     "id-value",
-			components.EnvUploadS3SecretAccessKey: "key-value",
+			components.EnvUploadFile:                   source,
+			components.EnvUploadKey:                    "clusters/ns/cluster/1/camunda.dump",
+			components.EnvUploadStorageName:            "my-backup-config",
+			components.EnvUploadStorageSpec:            spec,
+			components.EnvUploadCredentialKeys:         "id,key",
+			components.EnvUploadCredentialPrefix + "0": "id-value",
+			components.EnvUploadCredentialPrefix + "1": "key-value",
 		}), open,
 	)
 	require.NoError(t, err)
@@ -111,6 +112,67 @@ func TestRunRoundTripsTheFile(t *testing.T) {
 	assert.Equal(t, "my-backup-config", bucket.config.Name)
 	require.NotNil(t, bucket.config.Spec.S3)
 	assert.Equal(t, "b", bucket.config.Spec.S3.BucketName)
+}
+
+const gcsSpec = `{"type":"GCS","gcs":{"bucketName":"b",` +
+	`"auth":{"type":"credentials","credentials":{"secretRef":{"name":"s","namespace":"n",` +
+	`"key":"key.json"}}}}}`
+
+// TestRunResolvesGCSStaticKey proves the projection carries a whole service
+// account key file, not just flat string pairs: GCS is the storage type the
+// old per-type mapping could not serve.
+func TestRunResolvesGCSStaticKey(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "camunda.dump")
+	require.NoError(t, os.WriteFile(source, []byte("dump-bytes"), 0o600))
+
+	keyFile := `{"type":"service_account","project_id":"p"}`
+	bucket := &dirBucket{dir: dir}
+	open := func(
+		_ context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
+	) (uploader, error) {
+		bucket.config, bucket.creds = cfg, creds
+
+		return bucket, nil
+	}
+
+	err := run(
+		context.Background(), env(map[string]string{
+			components.EnvUploadFile:                   source,
+			components.EnvUploadKey:                    "k",
+			components.EnvUploadStorageName:            "my-backup-config",
+			components.EnvUploadStorageSpec:            gcsSpec,
+			components.EnvUploadCredentialKeys:         "key.json",
+			components.EnvUploadCredentialPrefix + "0": keyFile,
+		}), open,
+	)
+	require.NoError(t, err)
+
+	require.NotNil(t, bucket.creds)
+	assert.Equal(t, keyFile, string(bucket.creds.ServiceAccountJSON))
+}
+
+func TestRunRejectsAProjectedKeyWithoutAValue(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "camunda.dump")
+	require.NoError(t, os.WriteFile(source, []byte("dump-bytes"), 0o600))
+
+	err := run(
+		context.Background(), env(map[string]string{
+			components.EnvUploadFile:                   source,
+			components.EnvUploadKey:                    "k",
+			components.EnvUploadStorageSpec:            spec,
+			components.EnvUploadCredentialKeys:         "id,key",
+			components.EnvUploadCredentialPrefix + "0": "id-value",
+			// UPLOAD_CREDENTIAL_1 is deliberately absent.
+		}), nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "without a value")
 }
 
 func TestRunRejectsAMissingFileOrKey(t *testing.T) {

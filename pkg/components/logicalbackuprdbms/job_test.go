@@ -98,7 +98,7 @@ func input() JobInput {
 		ClusterNamespace:   "my-cluster-ns",
 		Bucket:             s3Bucket(s3Credentials()),
 		BucketSecretName:   "my-cluster-camunda-backup-credentials",
-		DBSecretName:       "my-cluster-1748937221000-dump-credentials",
+		DBSecretName:       "my-cluster-camunda-dump-credentials",
 		DBUsernameKey:      "username",
 		DBPasswordKey:      "password",
 		ServiceAccountName: "my-cluster-camunda",
@@ -125,7 +125,7 @@ func TestJobGoldenS3Credentials(t *testing.T) {
 		Scheduling: &v1.SchedulingSpec{
 			Tolerations: []corev1.Toleration{{Key: "backups", Operator: corev1.TolerationOpExists}},
 		},
-		ScratchVolume: &v1.ScratchVolumeSpec{SizeLimit: ptrQuantity("50Gi")},
+		ScratchVolume: &v1.ScratchVolumeSpec{SizeLimit: new(resource.MustParse("50Gi"))},
 	}
 
 	golden.AssertYAML(
@@ -210,13 +210,46 @@ func TestJobGoldenAzureCredentials(t *testing.T) {
 	)
 }
 
+// TestJobGoldenAzureWorkloadIdentity pins the pod label the Azure webhook
+// needs: without azure.workload.identity/use on the pod, no token is
+// injected, whatever the ServiceAccount carries.
+func TestJobGoldenAzureWorkloadIdentity(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Bucket = &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeAzureBlob,
+			AzureBlob: &v1.AzureBlobStorage{
+				AccountName: "camundabackups",
+				Container:   "backups",
+				BasePath:    "clusters",
+				Auth: v1.AzureBlobStorageAuth{
+					Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
+				},
+			},
+		},
+	}
+	in.BucketSecretName = ""
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+	assert.Equal(t, "true", job.Spec.Template.Labels["azure.workload.identity/use"])
+
+	golden.AssertYAML(
+		t, "testdata/golden/azure-workload-identity/job.yaml", jobPreview{in},
+		golden.WithScheme(goldenScheme(t)), golden.Update(*updateGolden),
+	)
+}
+
 func TestJobGoldenScratchPVC(t *testing.T) {
 	t.Parallel()
 
 	in := input()
 	in.Dump = &v1.BackupDumpSpec{
 		ScratchVolume: &v1.ScratchVolumeSpec{
-			SizeLimit:        ptrQuantity("200Gi"),
+			SizeLimit:        new(resource.MustParse("200Gi")),
 			StorageClassName: new("fast"),
 		},
 	}
@@ -255,10 +288,4 @@ func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {
 	require.Len(t, pod.InitContainers, 1)
 	require.Len(t, pod.Containers, 1)
 	assert.Equal(t, corev1.RestartPolicyNever, pod.RestartPolicy)
-}
-
-func ptrQuantity(s string) *resource.Quantity {
-	q := resource.MustParse(s)
-
-	return &q
 }

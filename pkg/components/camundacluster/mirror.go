@@ -43,6 +43,9 @@ const (
 	// bucket, for a contract that authenticates with keys instead of a
 	// workload identity.
 	MirrorPurposeBackupCredentials = "backup-credentials"
+	// MirrorPurposeDumpCredentials is the backup user of the logical
+	// database, which the dump Job of a LogicalBackupRDBMS mounts.
+	MirrorPurposeDumpCredentials = "dump-credentials"
 )
 
 // MirrorPurposes lists every purpose in the order the component renders its
@@ -55,6 +58,7 @@ var MirrorPurposes = []string{
 	MirrorPurposeESCA,
 	MirrorPurposeDBCredentials,
 	MirrorPurposeBackupCredentials,
+	MirrorPurposeDumpCredentials,
 }
 
 // mirroredComponentName is the ocf name of the mirrored Secrets component.

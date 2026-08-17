@@ -14,6 +14,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/managed-by: camunda-operator
+        azure.workload.identity/use: "true"
         camunda.io/cluster: my-cluster
         camunda.io/component: dump
         camunda.io/logical-backup-rdbms: my-cluster-1748937221000
@@ -29,14 +30,7 @@ spec:
         - name: UPLOAD_STORAGE_NAME
           value: my-backup-config
         - name: UPLOAD_STORAGE_SPEC
-          value: '{"type":"AzureBlob","azureBlob":{"accountName":"camundabackups","container":"backups","basePath":"clusters","auth":{"type":"credentials","credentials":{"secretRef":{"name":"azure-key","namespace":"camunda","key":"accountKey"}}}}}'
-        - name: UPLOAD_CREDENTIAL_KEYS
-          value: accountKey
-        - name: UPLOAD_CREDENTIAL_0
-          valueFrom:
-            secretKeyRef:
-              key: accountKey
-              name: my-cluster-camunda-backup-credentials
+          value: '{"type":"AzureBlob","azureBlob":{"accountName":"camundabackups","container":"backups","basePath":"clusters","auth":{"type":"workloadIdentity"}}}'
         image: ghcr.io/konsole-is/camunda-operator:0.1.0
         name: upload
         resources: {}
