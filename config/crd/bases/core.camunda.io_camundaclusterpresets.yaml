@@ -970,7 +970,9 @@ spec:
                         type: object
                     type: object
                   auth:
-                    description: Auth holds the OIDC client credentials of this cluster.
+                    description: |-
+                      Auth holds the OIDC client credentials of this cluster and the
+                      identities that get its admin role.
                     properties:
                       admin:
                         description: |-

@@ -194,8 +194,11 @@ The issuer is the in-cluster Service URL of Keycloak. Nothing needs external DNS
 suite never completes a browser login.
 
 `Describe("CamundaCluster with OIDC", Ordered)` runs in the namespace `camunda-oidc-e2e` on its
-own `ElasticsearchCluster`. The client secret is created in `camunda-system`, so the flow also
-exercises the cross-namespace mirror `<name>-camunda-oidc-client`. The platform config sets
+own `ElasticsearchCluster`. The client secret is applied into `camunda-operator-system`, the
+manager namespace, so the flow also exercises the cross-namespace mirror
+`<name>-camunda-oidc-client`. It is applied and not created, because that namespace outlives the
+namespace of the flow and a run that ends before its cleanup must not fail the next one on
+"already exists". The platform config sets
 `clientIdClaim: client_id`, and the cluster sets `admin.clients: ["camunda"]` and an
 `externalUrl`.
 

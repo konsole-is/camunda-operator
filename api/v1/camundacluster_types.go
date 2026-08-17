@@ -184,8 +184,9 @@ type ConnectorsSpec struct {
 	WorkloadSpec `       json:",inline"`
 }
 
-// ClusterAuthSpec holds the OIDC client credentials of one cluster. It
-// overrides the defaults of the platform config and of the preset.
+// ClusterAuthSpec holds the OIDC client credentials of one cluster, and the
+// identities that get its admin role. The credentials override the defaults
+// of the platform config and of the preset.
 type ClusterAuthSpec struct {
 	// ClientID is the OIDC client ID of this cluster.
 	// +optional
@@ -292,7 +293,8 @@ type CamundaClusterSpec struct {
 	// identity.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
-	// Auth holds the OIDC client credentials of this cluster.
+	// Auth holds the OIDC client credentials of this cluster and the
+	// identities that get its admin role.
 	// +optional
 	Auth *ClusterAuthSpec `json:"auth,omitempty"`
 	// Zeebe configures the brokers.
