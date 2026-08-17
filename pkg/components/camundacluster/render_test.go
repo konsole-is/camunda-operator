@@ -617,3 +617,112 @@ func TestRenderOnlyDeclaredKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAuthAdmin(t *testing.T) {
+	t.Parallel()
+
+	admin := &v1.ClusterAdminSpec{Clients: []string{"my-cluster-client"}}
+
+	basic := ResolveAuth(newInput(t, func(in *Input) {
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Admin: admin}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	assert.Nil(t, basic.Admin, "basic authentication seeds its own administrator")
+
+	oidc := ResolveAuth(newInput(t, func(in *Input) {
+		in.Platform = oidcPlatform()
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Admin: admin}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	require.NotNil(t, oidc.Admin)
+	assert.Equal(t, []string{"my-cluster-client"}, oidc.Admin.Clients)
+}
+
+func TestRenderOIDCClaims(t *testing.T) {
+	t.Parallel()
+
+	bare := newInput(t, func(in *Input) { in.Platform = oidcPlatform() })
+	r := render(bare, process(t, bare, ComponentGateway))
+	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_USERNAMECLAIM")
+	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTIDCLAIM")
+
+	set := newInput(t, func(in *Input) {
+		in.Platform = oidcPlatform()
+		in.Platform.Auth.OIDC.UsernameClaim = "preferred_username"
+		in.Platform.Auth.OIDC.ClientIDClaim = "client_id"
+	})
+	r = render(set, process(t, set, ComponentGateway))
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_USERNAMECLAIM", "preferred_username")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTIDCLAIM", "client_id")
+}
+
+func TestRenderOIDCAdminBootstrap(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Platform = oidcPlatform()
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{
+			Users:   []string{"ada@example.com", "grace@example.com"},
+			Clients: []string{"my-cluster-client"},
+			MappingRules: []v1.AdminMappingRule{
+				{ID: "platform-admins", ClaimName: "groups", ClaimValue: "camunda-admins"},
+			},
+		}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+	r := render(in, process(t, in, ComponentGateway))
+
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0", "ada@example.com")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_1", "grace@example.com")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_CLIENTS_0", "my-cluster-client")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_MAPPINGRULES_0", "platform-admins")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_MAPPINGRULES_0_MAPPINGRULEID", "platform-admins")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_MAPPINGRULES_0_CLAIMNAME", "groups")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_MAPPINGRULES_0_CLAIMVALUE", "camunda-admins")
+	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME")
+}
+
+// Basic authentication seeds its own administrator, so the block renders
+// nothing and the seeded admin user stays untouched.
+func TestRenderAdminBootstrapIgnoredUnderBasicAuth(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{
+			Clients: []string{"my-cluster-client"},
+		}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+	r := render(in, process(t, in, ComponentGateway))
+
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0", "admin")
+	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_CLIENTS_0")
+	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_MAPPINGRULES_0_MAPPINGRULEID")
+}
+
+func TestRenderConnectorsRoleGrant(t *testing.T) {
+	t.Parallel()
+
+	input := func(claim string, connectors bool) Input {
+		return newInput(t, func(in *Input) {
+			in.Platform = oidcPlatform()
+			in.Platform.Auth.OIDC.ClientIDClaim = claim
+			if connectors {
+				in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
+			}
+			in.Effective = NewEffective(in.Cluster.Spec)
+		})
+	}
+
+	in := input("client_id", true)
+	r := render(in, process(t, in, ComponentGateway))
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_CONNECTORS_CLIENTS_0", "platform-client")
+
+	in = input("", true)
+	r = render(in, process(t, in, ComponentGateway))
+	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_CONNECTORS_CLIENTS_0")
+
+	in = input("client_id", false)
+	r = render(in, process(t, in, ComponentGateway))
+	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_CONNECTORS_CLIENTS_0")
+}

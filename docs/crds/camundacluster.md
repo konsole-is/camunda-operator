@@ -69,6 +69,27 @@ The credentials live in the Secret `<name>-camunda-admin` in the namespace of th
 The operator generates the password once and keeps it stable across reconciles. The password reaches the containers as a `secretKeyRef`, and the user is a member of the `admin` role.
 The connectors runtime authenticates against the cluster with the same user. The Secret reports the condition `AdminSecretReady`, and it takes part in `Ready`.
 
+### OIDC authorization
+
+Under `method: oidc` the identity provider authenticates every caller, and the cluster stores no users. Nothing authorizes a caller until `spec.auth.admin` names one, so a cluster without that block has no administrator. This is the OIDC counterpart of the admin user that basic authentication seeds.
+
+The block takes three kinds of member, and all three end up in the `admin` role of the cluster:
+
+| Member kind | Matched against | Needs |
+| --- | --- | --- |
+| `users` | the value of the platform config's `usernameClaim` | nothing |
+| `clients` | the value of the platform config's `clientIdClaim` | `clientIdClaim` set on the platform config |
+| `mappingRules` | a claim name and value in the token | nothing |
+
+A mapping rule is the general form: it grants the role to every token whose claim `claimName` holds `claimValue`, so one rule can cover a whole group from the identity provider.
+
+The operator grants the `connectors` role to the OIDC client of the cluster on its own. It does this when the connectors runtime is enabled and the platform config sets `clientIdClaim`, because the runtime authenticates with that client. Without the claim name the runtime becomes a person and a client member never matches it, so the operator writes nothing.
+
+Under `method: basic` the block is ignored, not rejected. A CamundaCluster cannot read the method of its CamundaPlatformConfig when the API server admits it, so the choice is made when the workloads are rendered.
+
+!!! note "An administrator that is only a client still sees the setup page"
+    The web applications show the first-run page at `/admin/setup` while the `admin` role has no member of the `users` kind (`AdminUserCheckFilter.java`). A cluster whose only administrator is a client works over the API, and a browser still lands on that page. List a user as well when people sign in to this cluster.
+
 ### Referenced Secrets in other namespaces
 
 A pod can only read a Secret in its own namespace. When a referenced Secret (the license, the OIDC client secret, the storage credentials, the CA, or the DatabaseConfig credentials) lives in another namespace, the operator copies the referenced keys into the namespace of the CamundaCluster.
@@ -140,6 +161,19 @@ spec:
       namespace: "my-cluster-ns"
       # string. Required. Key inside the Secret.
       key: "client-secret"
+    # object. Optional. Identities that get the admin role of this cluster. Applies under OIDC only.
+    admin:
+      # []string. Optional. Values of the platform config's usernameClaim that get the admin role.
+      users:
+        - "ada@example.com"
+      # []string. Optional. Values of the platform config's clientIdClaim that get the admin role; needs clientIdClaim to be set.
+      clients:
+        - "my-cluster-client"
+      # []object. Optional. Claim rules whose matching tokens get the admin role. All three fields are required: id is the rule name that the Admin web application lists, claimName is a claim name or a JSONPath expression that points at one, and claimValue is the value the claim must hold.
+      mappingRules:
+        - id: "platform-admins"
+          claimName: "groups"
+          claimValue: "camunda-admins"
   # object. Optional. Zeebe brokers; always rendered as a standalone StatefulSet.
   zeebe:
     # integer. Optional, default: 1. Number of brokers.
