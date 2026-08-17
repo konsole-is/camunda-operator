@@ -109,30 +109,14 @@ func TestPreCheckPasses(t *testing.T) {
 	assert.Equal(t, "my-bucket", result.Bucket.Name)
 }
 
-// An empty ref namespace means the namespace of the backup itself, so the
-// common case needs no namespace in the manifest.
-func TestPreCheckDefaultsTheNamespaceToTheBackup(t *testing.T) {
+// The cluster and its secondary storage are read from the namespace of the
+// backup. A reference cannot name another namespace, so the pre-check needs
+// no second namespace to consider.
+func TestPreCheckResolvesInTheNamespaceOfTheBackup(t *testing.T) {
 	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
 
 	req := request(reader)
 	req.Namespace = clusterNamespace
-	req.Ref.Namespace = ""
-	result, err := logicalbackup.PreCheck(context.Background(), req)
-
-	require.NoError(t, err)
-	assert.Equal(t, clusterNamespace, result.Cluster.Namespace)
-}
-
-// A backup can name a cluster in another namespace. The cluster and its
-// secondary storage are then read from the namespace of the reference, not
-// from the namespace of the backup.
-func TestPreCheckResolvesAClusterInAnotherNamespace(t *testing.T) {
-	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
-
-	req := request(reader)
-	req.Namespace = "backups-ns"
-	req.Ref.Namespace = clusterNamespace
-
 	result, err := logicalbackup.PreCheck(context.Background(), req)
 
 	require.NoError(t, err)
@@ -140,14 +124,13 @@ func TestPreCheckResolvesAClusterInAnotherNamespace(t *testing.T) {
 	assert.Equal(t, clusterNamespace, result.Storage.Namespace)
 }
 
-// A reference that names another namespace never falls back to the namespace
-// of the backup, which would silently back up the wrong cluster.
-func TestPreCheckDoesNotFallBackToTheBackupNamespace(t *testing.T) {
+// A backup in another namespace than the cluster does not find it: the
+// reference stays inside the RBAC boundary of the backup.
+func TestPreCheckDoesNotCrossNamespaces(t *testing.T) {
 	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
 
 	req := request(reader)
-	req.Namespace = clusterNamespace
-	req.Ref.Namespace = "elsewhere"
+	req.Namespace = "elsewhere"
 
 	_, err := logicalbackup.PreCheck(context.Background(), req)
 

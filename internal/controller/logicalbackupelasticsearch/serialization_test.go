@@ -27,38 +27,33 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 )
 
-func pending(namespace, name string, created time.Time) *v1.LogicalBackupElasticsearch {
+func pending(name string, created time.Time) *v1.LogicalBackupElasticsearch {
 	return &v1.LogicalBackupElasticsearch{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:         namespace,
+			Namespace:         "ns",
 			Name:              name,
 			CreationTimestamp: metav1.NewTime(created),
 		},
 	}
 }
 
-func TestBlocksIsATotalOrderAcrossNamespaces(t *testing.T) {
+func TestBlocksIsATotalOrder(t *testing.T) {
 	at := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
-
-	// Two backups in different namespaces, same name, same second: exactly
-	// one of them must yield, or both start against one cluster.
-	a := pending("alpha", "backup", at)
-	b := pending("beta", "backup", at)
-	assert.True(t, blocks(a, b), "alpha sorts before beta")
-	assert.False(t, blocks(b, a))
+	a := pending("m-backup", at)
 
 	// The started sibling blocks regardless of order.
-	started := pending("zulu", "zzz", at.Add(time.Hour))
+	started := pending("zzz", at.Add(time.Hour))
 	started.Status.BackupID = 42
 	assert.True(t, blocks(started, a))
 
 	// The older creation time wins before any tie-break.
-	older := pending("zulu", "zzz", at.Add(-time.Second))
+	older := pending("zzz", at.Add(-time.Second))
 	assert.True(t, blocks(older, a))
 	assert.False(t, blocks(a, older))
 
-	// Same namespace and time: the smaller name goes first.
-	first := pending("alpha", "a-backup", at)
+	// Same time: the smaller name goes first, and only one of the two
+	// yields. Names are unique in the one namespace both backups share.
+	first := pending("a-backup", at)
 	assert.True(t, blocks(first, a))
 	assert.False(t, blocks(a, first))
 }

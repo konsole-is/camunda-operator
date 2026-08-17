@@ -64,17 +64,13 @@ spec:
             properties:
               clusterRef:
                 description: |-
-                  ClusterRef references the CamundaCluster to back up. Its secondary
-                  storage must be Elasticsearch.
+                  ClusterRef references the CamundaCluster to back up, in the namespace
+                  of this backup. Its secondary storage must be Elasticsearch.
                 properties:
                   name:
-                    description: Name of the CamundaCluster.
+                    description: Name of the CamundaCluster, in the namespace of this
+                      object.
                     minLength: 1
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the CamundaCluster. Empty means the namespace of the
-                      referencing object.
                     type: string
                 required:
                 - name

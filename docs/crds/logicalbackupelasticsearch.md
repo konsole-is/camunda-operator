@@ -17,14 +17,14 @@ metadata:
   name: my-cluster-backup
   namespace: my-cluster-ns
 spec:
-  # object. Required, immutable. The CamundaCluster to back up. Its secondary
-  # storage must be Elasticsearch.
+  # object. Required, immutable. The CamundaCluster to back up, in the
+  # namespace of this resource. Its secondary storage must be Elasticsearch.
   clusterRef:
     # string. Required. Name of the CamundaCluster.
     name: my-cluster
-    # string. Optional, default: this resource's namespace.
-    namespace: my-cluster-ns
 ```
+
+The reference cannot cross namespaces. The operator reads the Secrets of the cluster and calls its management API on behalf of the backup, so the backup must live in the namespace of the cluster.
 
 The whole spec is immutable. A backup is one-shot. To retry, create a new resource. `kubectl get lbes` lists the resources with their phase, step, and backup ID.
 

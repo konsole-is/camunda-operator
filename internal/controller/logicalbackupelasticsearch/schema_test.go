@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -60,11 +61,24 @@ var _ = Describe("LogicalBackupElasticsearch schema", func() {
 			g.Expect(err.Error()).To(ContainSubstring("immutable"))
 		}, timeout, interval).Should(Succeed())
 
-		Eventually(func(g Gomega) {
-			err := mutate(func(b *v1.LogicalBackupElasticsearch) { b.Spec.ClusterRef.Namespace = "elsewhere" })
-			g.Expect(err).To(HaveOccurred())
-			g.Expect(err.Error()).To(ContainSubstring("immutable"))
-		}, timeout, interval).Should(Succeed())
+		By("pruning a namespace on the reference: the schema has no such field")
+		crossNamespace := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "core.camunda.io/v1",
+			"kind":       "LogicalBackupElasticsearch",
+			"metadata":   map[string]any{"name": "cross-" + utilrand.String(6), "namespace": backup.Namespace},
+			"spec": map[string]any{
+				"clusterRef": map[string]any{"name": "some-cluster", "namespace": "elsewhere"},
+			},
+		}}
+		Expect(k8sClient.Create(ctx, crossNamespace)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, crossNamespace) })
+
+		var stored unstructured.Unstructured
+		stored.SetGroupVersionKind(crossNamespace.GroupVersionKind())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(crossNamespace), &stored)).To(Succeed())
+		_, found, err := unstructured.NestedString(stored.Object, "spec", "clusterRef", "namespace")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeFalse(), "the API server pruned the unknown namespace field")
 	})
 
 	It("serves the resource under its short name plural", func() {

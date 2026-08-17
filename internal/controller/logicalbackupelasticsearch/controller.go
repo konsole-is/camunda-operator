@@ -236,7 +236,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		clusterRefField,
 		func(o client.Object) []string {
 			backup := o.(*v1.LogicalBackupElasticsearch)
-			return []string{refindex.NamespacedKey(backup.EffectiveClusterNamespace(), backup.Spec.ClusterRef.Name)}
+			return []string{refindex.NamespacedKey(backup.Namespace, backup.Spec.ClusterRef.Name)}
 		},
 	); err != nil {
 		return fmt.Errorf("indexing LogicalBackupElasticsearch by clusterRef: %w", err)

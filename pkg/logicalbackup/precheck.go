@@ -43,7 +43,8 @@ type PreCheckRequest struct {
 	Reader client.Reader
 	// Ref is the clusterRef of the backup.
 	Ref v1.ClusterRef
-	// Namespace is the namespace of the backup, the default namespace of Ref.
+	// Namespace is the namespace of the backup. The referenced cluster lives
+	// in the same namespace.
 	Namespace string
 	// StorageType is the secondary storage type that the backup kind backs
 	// up. A cluster on any other type is not backed up by this kind.
@@ -76,10 +77,7 @@ type PreCheckResult struct {
 // cluster runs. Waiting reports which of those resolve on their own. Any
 // other error is a transient API failure and carries no reason.
 func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error) {
-	namespace := req.Ref.Namespace
-	if namespace == "" {
-		namespace = req.Namespace
-	}
+	namespace := req.Namespace
 
 	var cluster v1.CamundaCluster
 	if err := req.Reader.Get(

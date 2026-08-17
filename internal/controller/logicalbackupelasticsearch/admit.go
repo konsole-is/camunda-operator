@@ -275,8 +275,5 @@ func (r *Reconciler) resolveStorage(
 
 // clusterKey returns the key of the referenced cluster.
 func clusterKey(backup *v1.LogicalBackupElasticsearch) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: backup.EffectiveClusterNamespace(),
-		Name:      backup.Spec.ClusterRef.Name,
-	}
+	return types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name}
 }

@@ -62,20 +62,16 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 
 // blocks reports whether other must run before backup. A sibling that holds
 // an ID has begun work worth waiting for. Between two backups that have not
-// started, the older one goes first. A tie in the creation time falls to the
-// smaller namespace, then to the smaller name. Two backups in different
-// namespaces can reference one cluster, so the namespace is part of the
-// order. The order is total, so two waiting backups can never deadlock on
-// each other.
+// started, the older one goes first, and the smaller name breaks a tie in
+// the creation time. Both backups live in the namespace of the cluster, so
+// the name is unique among them. The order is total, so two waiting backups
+// can never deadlock on each other.
 func blocks(other, backup *v1.LogicalBackupElasticsearch) bool {
 	if other.Status.BackupID != 0 {
 		return true
 	}
 	if !other.CreationTimestamp.Equal(&backup.CreationTimestamp) {
 		return other.CreationTimestamp.Before(&backup.CreationTimestamp)
-	}
-	if other.Namespace != backup.Namespace {
-		return other.Namespace < backup.Namespace
 	}
 	return other.Name < backup.Name
 }

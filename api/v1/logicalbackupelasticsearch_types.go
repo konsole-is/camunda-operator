@@ -73,8 +73,8 @@ type BackupPart struct {
 // spec is immutable: a backup is a one-shot operation, retried by creating a
 // new resource.
 type LogicalBackupElasticsearchSpec struct {
-	// ClusterRef references the CamundaCluster to back up. Its secondary
-	// storage must be Elasticsearch.
+	// ClusterRef references the CamundaCluster to back up, in the namespace
+	// of this backup. Its secondary storage must be Elasticsearch.
 	// +required
 	ClusterRef ClusterRef `json:"clusterRef"`
 }
@@ -211,15 +211,6 @@ func (in *LogicalBackupElasticsearch) SetObservedGeneration(generation int64) {
 // Terminal reports whether the backup reached a phase it never leaves.
 func (in *LogicalBackupElasticsearch) Terminal() bool {
 	return in.Status.Phase == LogicalBackupCompleted || in.Status.Phase == LogicalBackupFailed
-}
-
-// EffectiveClusterNamespace returns the namespace of the referenced cluster:
-// the clusterRef namespace, or the backup's own when unset.
-func (in *LogicalBackupElasticsearch) EffectiveClusterNamespace() string {
-	if in.Spec.ClusterRef.Namespace != "" {
-		return in.Spec.ClusterRef.Namespace
-	}
-	return in.Namespace
 }
 
 // +kubebuilder:object:root=true
