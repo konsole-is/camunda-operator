@@ -395,12 +395,17 @@ cleared while the cluster is suspended:
 ```yaml
 status:
   management:
-    endpoint: http://my-cluster-camunda-management.my-cluster-ns.svc:9600
+    endpoint: http://my-cluster-zeebe.my-cluster-ns.svc:9600   # the gateway (or broker) workload Service
     auth:
-      method: basic                       # basic | oidc | none
-      secretRef:                          # the admin Secret (basic) or the mirrored client secret (oidc)
-        name: my-cluster-camunda-admin
+      method: none                        # none | basic. none is the 8.9 normal case: the
+                                          # management port is unauthenticated (/actuator/** has
+                                          # no auth filter). basic serves a user who fronts 9600
+                                          # themselves; there is no oidc mode on this port.
+      credentialsSecretRef:               # optional; username+password pair for the basic case
+        name: my-management-basic-auth
         namespace: my-cluster-ns
+        usernameKey: username
+        passwordKey: password
     version: 8.9.9
     partitions: 3
     backupRepository: my-cluster          # Elasticsearch path only, empty otherwise
@@ -596,7 +601,7 @@ Pre-checks, in order, mirror `camundacluster/precheck.go`:
 5. Another backup of either kind for this cluster is not terminal: `BackupInProgress`. Stay in
    `Pending`. Requeue.
 
-Backup ID: the Unix timestamp at which the backup left `Pending`, recorded once in
+Backup ID: the Unix timestamp in milliseconds (`UnixMilli` — one-second resolution collides across quick retries) at which the backup left `Pending`, recorded once in
 `status.backupId`. Object key layout in the bucket:
 `<basePath>/<cluster-namespace>/<cluster-name>/<backupId>/...`.
 
@@ -711,7 +716,7 @@ get `AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED` and
 `AWS_RESPONSE_CHECKSUM_CALCULATION=WHEN_REQUIRED`, the documented workaround for AWS SDK 2.30+
 chunked encoding on S3-compatible stores.
 
-**Elasticsearch path.** `camunda.data.backup.repository-name` on the components, read from
+**Elasticsearch path.** `camunda.data.secondary-storage.elasticsearch.backup.repository-name` (the canonical 8.9 key; the shorter form is a legacy alias) on the components, read from
 `elasticsearch.snapshotRepository` of the `SecondaryStorageConfig`. An Elasticsearch-backed
 cluster with `backupStorageRef` and a contract without `snapshotRepository` is
 `InvalidReference` with a message that names the field. No Elasticsearch administration happens
