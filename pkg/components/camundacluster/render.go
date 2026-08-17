@@ -88,7 +88,7 @@ func render(in Input, p Process) rendered {
 	}
 
 	r := storageEnv(in)
-	backup := backupEnv(in)
+	backup := backupEnv(in, p)
 	r.volumes = append(r.volumes, backup.volumes...)
 	r.mounts = append(r.mounts, backup.mounts...)
 

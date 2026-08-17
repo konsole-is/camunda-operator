@@ -35,6 +35,9 @@ const (
 	defaultBackupCheckpointInterval = "PT15M"
 	defaultBackupRetentionWindow    = "P7D"
 	defaultBackupCleanupSchedule    = "PT1H"
+	// scheduleNone is the schedule value that takes no backups. Continuous
+	// mode must not default on with it, and an explicit pairing is rejected.
+	scheduleNone = "none"
 )
 
 // The literal values of the backup store that come from Camunda, not from
@@ -150,16 +153,18 @@ func derivedPodLabels(in Input) map[string]string {
 	return map[string]string{AzureWorkloadIdentityPodLabel: "true"}
 }
 
-// backupEnv is the backup layer of the configuration: the snapshot
-// repository of the web applications on the Elasticsearch path, the Zeebe
-// backup store of the referenced bucket on both paths, and the primary
-// storage backup scheduler on the relational path. It returns the volume and
-// mount of a static Google service-account key, the one credential that the
-// backup store cannot take as a property.
+// backupEnv is the backup layer of the configuration. Every unified process
+// gets the snapshot repository name on the Elasticsearch path, because any of
+// them can host the web applications that take the history backups. Only the
+// brokers get the store of the referenced bucket, its credentials, and the
+// primary-storage scheduler: no other process takes primary-storage backups,
+// so no other pod carries the keys. The returned volume and mount hold a
+// static Google service-account key, the one credential that the store cannot
+// take as a property.
 //
 // Without a backupStorageRef nothing is rendered, so the store stays NONE and
 // the cluster takes no backups.
-func backupEnv(in Input) rendered {
+func backupEnv(in Input, p Process) rendered {
 	var r rendered
 	if in.Backup == nil {
 		return r
@@ -170,6 +175,10 @@ func backupEnv(in Input) rendered {
 			camundaconfig.KeyBackupRepositoryName,
 			in.Storage.Elasticsearch.SnapshotRepository,
 		))
+	}
+
+	if p.Component != ComponentZeebe {
+		return r
 	}
 
 	switch spec := in.Backup.Spec; {
@@ -280,10 +289,16 @@ func gcsEnv(in Input, gcs *v1.GCSStorage) rendered {
 // azureEnv renders the Azure backup store. Its base-path is the container
 // name, not a prefix: the azure block carries no container field of its own.
 // The contract's own prefix therefore cannot scope this store, so two
-// clusters that back up to Azure need two containers. The endpoint is
-// required without a connection string, which the contract does not carry, so
-// it is derived from the account when unset. Without an account key the Azure
-// credential chain of the runtime resolves the identity.
+// clusters that back up to Azure need two containers, and the pre-check
+// rejects a second cluster on one contract. The endpoint is required without
+// a connection string, which the contract does not carry, so it is derived
+// from the account when unset.
+//
+// The account name and the account key render together or not at all: Camunda
+// rejects a name without a key, and the credential chain of the runtime (the
+// workload identity) only takes over when name, key, connection string, and
+// SAS token are all absent. Under workload identity the account name of the
+// contract therefore only derives the endpoint.
 func azureEnv(azure *v1.AzureBlobStorage) []corev1.EnvVar {
 	endpoint := azure.Endpoint
 	if endpoint == "" {
@@ -293,15 +308,18 @@ func azureEnv(azure *v1.AzureBlobStorage) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupStore, backupStoreAzure),
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupAzureEndpoint, endpoint),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupAzureAccountName, azure.AccountName),
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupAzureBasePath, azure.Container),
 	}
 
 	if creds := azure.Auth.Credentials; creds != nil {
-		env = append(env, camundaconfig.VarFrom(
-			camundaconfig.KeyPrimaryBackupAzureAccountKey,
-			secretSource(creds.SecretRef.Name, creds.SecretRef.Key),
-		))
+		env = append(
+			env,
+			camundaconfig.Var(camundaconfig.KeyPrimaryBackupAzureAccountName, azure.AccountName),
+			camundaconfig.VarFrom(
+				camundaconfig.KeyPrimaryBackupAzureAccountKey,
+				secretSource(creds.SecretRef.Name, creds.SecretRef.Key),
+			),
+		)
 	}
 
 	return env
@@ -313,7 +331,7 @@ func azureEnv(azure *v1.AzureBlobStorage) []corev1.EnvVar {
 // position. Continuous mode holds the log until it is backed up, so the
 // schedule must always accompany it.
 func primaryStorageScheduleEnv(in Input) []corev1.EnvVar {
-	backup := in.Effective.PrimaryStorageBackup()
+	backup := in.Effective.primaryStorageBackup()
 
 	return []corev1.EnvVar{
 		camundaconfig.Var(
