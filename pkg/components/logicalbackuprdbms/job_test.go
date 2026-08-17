@@ -178,6 +178,38 @@ func TestJobGoldenGCSCredentials(t *testing.T) {
 	)
 }
 
+func TestJobGoldenAzureCredentials(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Bucket = &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeAzureBlob,
+			AzureBlob: &v1.AzureBlobStorage{
+				AccountName: "camundabackups",
+				Container:   "backups",
+				BasePath:    "clusters",
+				Auth: v1.AzureBlobStorageAuth{
+					Type: v1.ObjectStorageAuthTypeCredentials,
+					Credentials: &v1.AzureBlobCredentials{
+						SecretRef: v1.SecretKeyRef{
+							Name:      "azure-key",
+							Namespace: "camunda",
+							Key:       "accountKey",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	golden.AssertYAML(
+		t, "testdata/golden/azure-credentials/job.yaml", jobPreview{in},
+		golden.WithScheme(goldenScheme(t)), golden.Update(*updateGolden),
+	)
+}
+
 func TestJobGoldenScratchPVC(t *testing.T) {
 	t.Parallel()
 

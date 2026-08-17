@@ -26,31 +26,39 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob/fileblob"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
-// dirBucket writes uploads into a directory, standing in for the bucket.
+// dirBucket is a fileblob-backed bucket, so the round trip runs through the
+// same gocloud writer path the real stores use.
 type dirBucket struct {
 	dir    string
 	creds  *objectstore.Credentials
 	config *v1.ObjectStorageConfig
 }
 
-func (b *dirBucket) Upload(_ context.Context, key string, r io.Reader) error {
-	path := filepath.Join(b.dir, filepath.FromSlash(key))
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return err
-	}
-
-	data, err := io.ReadAll(r)
+func (b *dirBucket) Upload(ctx context.Context, key string, r io.Reader) error {
+	bucket, err := fileblob.OpenBucket(b.dir, &fileblob.Options{CreateDir: true})
 	if err != nil {
 		return err
 	}
+	defer func() { _ = bucket.Close() }()
 
-	return os.WriteFile(path, data, 0o600)
+	w, err := bucket.NewWriter(ctx, key, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(w, r); err != nil {
+		_ = w.Close()
+
+		return err
+	}
+
+	return w.Close()
 }
 
 func (b *dirBucket) Close() {}
@@ -91,7 +99,9 @@ func TestRunRoundTripsTheFile(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	uploaded, err := os.ReadFile(filepath.Join(dir, "clusters/ns/cluster/1/camunda.dump"))
+	uploaded, err := os.ReadFile(
+		filepath.Join(dir, filepath.FromSlash("clusters/ns/cluster/1/camunda.dump")),
+	)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("dump-bytes"), uploaded)
 

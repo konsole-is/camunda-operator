@@ -24,6 +24,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,8 +62,9 @@ func newNamespace() string {
 
 // createWorld builds a relational cluster whose management binding points at
 // the fake management API, with the credential copies the CamundaCluster
-// controller would have made.
-func createWorld() *world {
+// controller would have made. Mutators shape the cluster before it is
+// created.
+func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	namespace := newNamespace()
 	suffix := utilrand.String(6)
 
@@ -149,6 +151,9 @@ func createWorld() *world {
 			StorageRef:        storage.Name,
 			BackupStorageRef:  bucket.Name,
 		},
+	}
+	for _, m := range mutate {
+		m(cluster)
 	}
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
@@ -504,6 +509,104 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			}, &secret,
 		)
 		Expect(err).To(HaveOccurred())
+		// envtest runs no garbage collector, so a Job still present here
+		// would mean the finalizer relied on the owner reference instead of
+		// deleting it.
+		By("deleting the Job itself")
+		var leftover batchv1.Job
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{
+				Namespace: w.namespace, Name: components.JobName(backup),
+			}, &leftover,
+		)).To(HaveOccurred())
+
+	})
+
+	It("releases the finalizer when the cluster is already gone", func() {
+		w := createWorld()
+		backup := createBackup(w)
+
+		By("waiting for the identity, so an object key exists to clean up")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting the cluster and its credential copy first")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		mirror := camundacluster.MirroredSecretName(
+			w.cluster, camundacluster.MirrorPurposeBackupCredentials,
+		)
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: mirror, Namespace: w.namespace},
+		})).To(Succeed())
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		By("recording what was left behind and releasing anyway")
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(w.namespace))).To(Succeed())
+			reasons := make([]string, 0, len(events.Items))
+			for _, event := range events.Items {
+				reasons = append(reasons, event.Reason)
+			}
+			g.Expect(reasons).To(ContainElement("ArtifactCleanupFailed"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("fails hard on a conflict for the id the cluster generated", func() {
+		w := createWorld()
+		management.ConflictNextRuntimeStart(1)
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.PrimaryBackupID).To(BeNil())
+			condition := readyCondition(backup)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Message).To(ContainSubstring("generated"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("applies the cluster's own dump block when the backup sets none", func() {
+		w := createWorld(func(cluster *v1.CamundaCluster) {
+			cluster.Spec.Backup = &v1.ClusterBackupSpec{
+				Dump: &v1.BackupDumpSpec{
+					PodAnnotations: map[string]string{"linkerd.io/inject": "disabled"},
+				},
+			}
+		})
+		backup := createBackup(w)
+
+		var job batchv1.Job
+		key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Expect(job.Spec.Template.Annotations).To(
+			HaveKeyWithValue("linkerd.io/inject", "disabled"),
+		)
+	})
+
+	It("runs the Job under an overridden ServiceAccount name", func() {
+		w := createWorld(func(cluster *v1.CamundaCluster) {
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+		})
+		backup := createBackup(w)
+
+		var job batchv1.Job
+		key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("platform-sa"))
 	})
 
 	It("honors the backup's own dump block over the cluster's", func() {

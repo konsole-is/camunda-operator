@@ -55,9 +55,13 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 		namespace = backup.Namespace
 	}
 
-	// A still-running Job is deleted first, so no upload races the object
-	// deletion below. The name is deterministic, so a crash that never
-	// recorded status.jobName still finds it.
+	// The Job goes first so it is never left running for a backup that is
+	// going away. The delete is not awaited, so an upload already in flight
+	// can still finish after the object deletion below and leave the object
+	// behind; the window is small and the leftover is only ever this
+	// backup's own key, never another backup's data. The name is
+	// deterministic, so a crash that never recorded status.jobName still
+	// finds it.
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
 		Name:      components.JobName(backup),
 		Namespace: namespace,
