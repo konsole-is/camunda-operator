@@ -26,7 +26,7 @@ The two sub-issues are strictly sequential. #61 cannot go green until #73 has me
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #73 | feat/oidc-admin-bootstrap--admin-config | .claude/worktrees/oidc-admin-bootstrap--admin-config | #75 → feat/oidc-admin-bootstrap | self-merged |
-| #61 | feat/oidc-admin-bootstrap--keycloak-e2e | .claude/worktrees/oidc-admin-bootstrap--keycloak-e2e | → feat/oidc-admin-bootstrap | in-progress |
+| #61 | feat/oidc-admin-bootstrap--keycloak-e2e | .claude/worktrees/oidc-admin-bootstrap--keycloak-e2e | #76 → feat/oidc-admin-bootstrap | ready |
 
 ## Contracts
 
@@ -35,6 +35,9 @@ The two sub-issues are strictly sequential. #61 cannot go green until #73 has me
 | `oidc-admin-crd-surface` | sequential — #61 branches from the feature branch after #73 merges into it | #75 (merged 2026-08-17) | locked |
 
 ## Bubble-up log
+
+- **`make deploy` mutates a tracked file, and a blind `git add -A` commits it (2026-08-17).** Running the e2e suite locally calls `make deploy`, which runs `kustomize edit set image` and rewrites `config/manager/kustomization.yaml` in place. It reached #76 twice: committed by accident, reverted, then re-introduced by the next wholesale staging after another suite run. Copilot caught it both times. Stage by explicit path after any local e2e run, and check `gh pr diff --name-only` before declaring a PR ready.
+- **Long local e2e runs cannot finish in this environment (2026-08-17).** Background commands are killed at around four minutes and foreground commands at ten, while the full suite needs far longer. The flows were therefore run separately, and the full suite was verified by the `E2E Tests` workflow on the PR instead, which passed at `25bf66e`.
 
 - **The OIDC login spec needs `Accept: text/html` (2026-08-17).** The first run of the flow failed on the login redirect: curl stayed on `/operate/` instead of reaching Keycloak. The gateway serves the web applications and the API on one Spring Security filter chain with both `oauth2Login` and `oauth2ResourceServer`, so the entry point is chosen by media type — HTML gets the login redirect, everything else gets the bearer 401 that the anonymous spec already asserts. The spec now sends the header and is named "redirects a browser login", which is what it actually proves. No operator change; this is Camunda behavior.
 
