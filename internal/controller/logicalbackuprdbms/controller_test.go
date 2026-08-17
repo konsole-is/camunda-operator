@@ -168,7 +168,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	// The binding and the volume status that the CamundaCluster controller
 	// would publish.
 	cluster.Status.Management = &v1.ManagementBinding{
-		Endpoint:   management.URL(),
+		Endpoint:   managementAPI.URL(),
 		Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
 		Version:    "8.9.9",
 		Partitions: 3,
@@ -337,11 +337,11 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("recording the id the cluster generated and never re-requesting it")
 		id := *backup.Status.ZeebeBackupID
 		Consistently(func(g Gomega) {
-			g.Expect(management.RuntimeStarts(id)).To(Equal(1))
+			g.Expect(managementAPI.RuntimeStarts(id)).To(Equal(1))
 		}, "2s", interval).Should(Succeed())
 
 		By("completing once the cluster reports the backup done")
-		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
+		managementAPI.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
@@ -434,7 +434,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
 			g.Expect(first.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
-		management.SetRuntimeState(
+		managementAPI.SetRuntimeState(
 			*first.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
 		)
 		Eventually(func(g Gomega) {
@@ -522,7 +522,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 				k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster),
 			).To(Succeed())
 			w.cluster.Status.Management = &v1.ManagementBinding{
-				Endpoint:   management.URL(),
+				Endpoint:   managementAPI.URL(),
 				Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
 				Version:    "8.9.9",
 				Partitions: 3,
@@ -546,7 +546,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 		id := *backup.Status.ZeebeBackupID
-		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
+		managementAPI.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
@@ -566,7 +566,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(bucket.Deleted()).To(ContainElement(objectKey))
 
 		By("leaving the Zeebe backup alone")
-		Expect(management.RuntimeBackup(id)).NotTo(BeNil())
+		Expect(managementAPI.RuntimeBackup(id)).NotTo(BeNil())
 
 		// envtest runs no garbage collector, so a Job still present here
 		// would mean the finalizer relied on the owner reference instead of
@@ -613,7 +613,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 	It("retries a conflicted Zeebe request instead of failing", func() {
 		w := createWorld()
-		management.ConflictNextRuntimeStart(1)
+		managementAPI.ConflictNextRuntimeStart(1)
 		backup := createBackup(w)
 
 		// The dump already succeeded; one bad answer must not discard it. The
@@ -627,7 +627,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		id := *backup.Status.ZeebeBackupID
-		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
+		managementAPI.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
@@ -720,7 +720,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, revived)).To(Succeed())
 		revived.Status.Management = &v1.ManagementBinding{
-			Endpoint:   management.URL(),
+			Endpoint:   managementAPI.URL(),
 			Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
 			Version:    "8.9.9",
 			Partitions: 3,
@@ -733,7 +733,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 			g.Expect(backup.Status.FirstFailedAt).To(BeNil())
 		}, timeout, interval).Should(Succeed())
-		management.SetRuntimeState(
+		managementAPI.SetRuntimeState(
 			*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
 		)
 		Eventually(func(g Gomega) {
@@ -788,13 +788,13 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		// The partitions register their parts asynchronously after the 202,
 		// so a backup the cluster does not report yet is normal at first.
-		management.SetRuntimeState(id, string(camundaadmin.StateDoesNotExist), "")
+		managementAPI.SetRuntimeState(id, string(camundaadmin.StateDoesNotExist), "")
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
 		}, "1500ms", interval).Should(Succeed())
 
-		management.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
+		managementAPI.SetRuntimeState(id, string(camundaadmin.StateCompleted), "")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
@@ -811,7 +811,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
-		management.SetRuntimeState(
+		managementAPI.SetRuntimeState(
 			*backup.Status.ZeebeBackupID, string(camundaadmin.StateDoesNotExist), "",
 		)
 		Eventually(func(g Gomega) {
@@ -845,7 +845,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
-		management.SetRuntimeState(
+		managementAPI.SetRuntimeState(
 			*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
 		)
 		Eventually(func(g Gomega) {

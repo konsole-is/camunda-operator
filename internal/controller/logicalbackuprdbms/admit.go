@@ -31,6 +31,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -97,7 +98,7 @@ func (r *LogicalBackupRDBMSReconciler) checkManagement(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) *conditions.PreCheckFailure {
-	_, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, cluster)
+	_, failure, err := management.NewClient(ctx, r.APIReader, cluster)
 	if err != nil {
 		return &conditions.PreCheckFailure{Reason: v1.ReasonConnectionFailed, Message: err.Error()}
 	}

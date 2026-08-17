@@ -45,12 +45,12 @@ const (
 )
 
 var (
-	env        *testenv.Env
-	ctx        context.Context
-	k8sClient  client.Client
-	management *camundaadmintest.Server
-	bucket     *fakeBucket
-	reconciler *LogicalBackupRDBMSReconciler
+	env           *testenv.Env
+	ctx           context.Context
+	k8sClient     client.Client
+	managementAPI *camundaadmintest.Server
+	bucket        *fakeBucket
+	reconciler    *LogicalBackupRDBMSReconciler
 )
 
 // sibling is the mutex-guarded seam behind reconciler.SiblingInProgress: the
@@ -105,7 +105,7 @@ func TestLogicalBackupRDBMSController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	management = camundaadmintest.New()
+	managementAPI = camundaadmintest.New()
 	bucket = &fakeBucket{}
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
@@ -145,6 +145,6 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
-	management.Close()
+	managementAPI.Close()
 	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
 })

@@ -30,6 +30,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 )
 
 // requestZeebeBackup is the step after the dump: it asks the cluster, through
@@ -59,7 +60,7 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 		return settle, err
 	}
 
-	admin, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, &cluster)
+	admin, failure, err := management.NewClient(ctx, r.APIReader, &cluster)
 	if err != nil {
 		return settle, err
 	}
