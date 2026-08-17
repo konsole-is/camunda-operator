@@ -830,6 +830,51 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// A pre-existing ServiceAccount is the user's. In ocf a gated-off resource
+	// is a deletion target, so holding the account behind a false gate would
+	// delete the very object create: false promises never to touch.
+	It("never deletes a pre-existing ServiceAccount", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Namespace = newElasticsearchClusterNamespace()
+
+		foreign := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "platform-sa",
+				Namespace:   cluster.Namespace,
+				Annotations: map[string]string{"platform.example.com/owner": "someone-else"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, foreign) })
+
+		no := false
+		cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa", Create: &no}
+		createElasticsearchCluster(cluster)
+
+		// The cluster reconciles and its pods reference the account.
+		var es esv1.Elasticsearch
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+			g.Expect(es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName).To(Equal("platform-sa"))
+		}, timeout, interval).Should(Succeed())
+
+		// The account survives every reconcile: not deleted, not adopted, not
+		// annotated.
+		Consistently(func(g Gomega) {
+			var account corev1.ServiceAccount
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKeyFromObject(foreign), &account,
+			)).To(Succeed())
+			g.Expect(account.OwnerReferences).To(BeEmpty())
+			g.Expect(account.Annotations).To(Equal(map[string]string{
+				"platform.example.com/owner": "someone-else",
+			}))
+			g.Expect(account.Labels).NotTo(HaveKey("app.kubernetes.io/managed-by"))
+		}, "3s", interval).Should(Succeed())
+	})
+
 	// Pod Identity and Workload Identity Federation bind the ServiceAccount by
 	// name on the cloud side. The documented principal must exist and be
 	// referenced even though there is nothing to annotate onto it.

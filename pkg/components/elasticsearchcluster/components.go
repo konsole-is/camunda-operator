@@ -316,13 +316,6 @@ func usesServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotSto
 	return merged.ServiceAccount != nil || storage.workloadIdentity()
 }
 
-// rendersServiceAccount reports whether the operator renders the
-// ServiceAccount the pods use: it is used at all, and the spec does not name
-// a foreign one.
-func rendersServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) bool {
-	return merged.ServiceAccount.Creates() && usesServiceAccount(merged, storage)
-}
-
 // CredentialsComponent builds the credentials component: the basic-auth style
 // file-realm Secret with the Camunda user, the given password, and the Camunda
 // role, plus the Secret that defines that role. ECK consumes them through
@@ -426,9 +419,14 @@ func ElasticsearchComponent(
 	return component.NewComponentBuilder().
 		WithName("elasticsearch").
 		WithConditionType(ConditionElasticsearch).
-		WithResource(
-			account,
-			component.GatedBy(feature.NewBooleanGate(rendersServiceAccount(merged, storage))),
+		// A pre-existing ServiceAccount is excluded, not gated: a gated-off
+		// resource is a deletion target, and the operator must never delete
+		// an account it does not own. With create true the gate cleans up
+		// the owned account when nothing uses one anymore.
+		IncludeWhen(
+			merged.ServiceAccount.Creates(),
+			func() component.Resource { return account },
+			component.GatedBy(feature.NewBooleanGate(usesServiceAccount(merged, storage))),
 		).
 		WithResource(elasticsearch).
 		Suspend(merged.Suspend).
