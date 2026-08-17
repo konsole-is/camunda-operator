@@ -1,3 +1,15 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/camunda
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: elasticsearch
+    camunda.io/elasticsearch-cluster: my-cluster-es
+  name: my-cluster-es-es
+  namespace: my-cluster-ns
+---
 apiVersion: elasticsearch.k8s.elastic.co/v1
 kind: Elasticsearch
 metadata:
@@ -33,6 +45,7 @@ spec:
           camunda.io/elasticsearch-cluster: my-cluster-es
       spec:
         containers: null
+        serviceAccountName: my-cluster-es-es
     volumeClaimTemplates:
     - metadata:
         labels:

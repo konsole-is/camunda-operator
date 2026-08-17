@@ -111,6 +111,15 @@ func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error)
 	}
 
 	var storage v1.SecondaryStorageConfig
+	// A Get with an empty name is an invalid request, not a NotFound, so an
+	// unset reference would loop as a transient error instead of reporting
+	// itself.
+	if cluster.Spec.StorageRef == "" {
+		return nil, invalidReference(
+			"CamundaCluster %s/%s has no spec.storageRef", namespace, req.Ref.Name,
+		)
+	}
+
 	storageName := types.NamespacedName{Name: cluster.Spec.StorageRef, Namespace: namespace}
 	if err := req.Reader.Get(ctx, storageName, &storage); err != nil {
 		if apierrors.IsNotFound(err) {

@@ -853,7 +853,7 @@ surfaces. The plan holds the PR list, the order, and the contracts between them.
 - Continuous mode: `camunda.data.primary-storage.backup.continuous`, `schedule`,
   `checkpoint-interval`, `retention.window`, `retention.cleanup-schedule`. Recommended values
   `PT1H`, `PT15M`, `P7D`, `PT1H`.
-- Repository name: `camunda.data.backup.repository-name`.
+- Repository name: `camunda.data.secondary-storage.elasticsearch.backup.repository-name` (canonical in 8.9 per the property-changes table; `camunda.data.backup.repository-name` is a legacy alias marked as a breaking change — the concepts page that shows the alias is stale).
 - The database backup is the administrator's task with vendor tools. The entire database
   including `EXPORTER_POSITION` must be backed up.
 - Chunked-encoding workaround: `AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED` and

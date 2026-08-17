@@ -5610,8 +5610,30 @@ spec:
                         description: |-
                           Annotations to set on the ServiceAccount, typically workload-identity
                           annotations (IRSA, GCP Workload Identity, ...) granting the pods access
-                          to cloud resources such as the snapshot bucket used for backups.
+                          to cloud resources such as the snapshot bucket used for backups. A
+                          controller that resolves a bucket contract derives the annotation of
+                          that contract's identity as well; an annotation set here wins over the
+                          derived one on the same key.
                         type: object
+                      create:
+                        description: |-
+                          Create renders and owns the ServiceAccount. Defaults to true. False
+                          names one that already exists: the operator neither creates, annotates,
+                          nor owns it, and a ServiceAccount that is absent then fails the
+                          pre-check instead of leaving the pods unschedulable. The operator never
+                          adopts a foreign ServiceAccount, because an owned one is deleted with
+                          the resource.
+                        type: boolean
+                      name:
+                        description: |-
+                          Name of the ServiceAccount. Empty means the name that the controller
+                          derives from the name of the resource, which each CRD doc states. The
+                          name is part of the contract with the cloud provider: a workload
+                          identity that needs no annotation, such as EKS Pod Identity, binds the
+                          principal system:serviceaccount:<namespace>:<name>.
+                        maxLength: 253
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
                     type: object
                   storageRef:
                     description: |-

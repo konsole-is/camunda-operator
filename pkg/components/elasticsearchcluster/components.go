@@ -36,7 +36,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
@@ -71,17 +73,81 @@ const (
 	// username is the file-realm user that the operator provisions for
 	// Camunda.
 	username = "camunda"
-	// userRole is the role that the Camunda user holds. It is superuser for
-	// now, because snapshot-repository registration by the CamundaCluster
-	// controller needs cluster-manage rights. The role is narrowed when that
-	// flow lands (Batch C).
-	userRole = "superuser"
+	// userRole is the role that the Camunda user holds. It is the custom role
+	// that rolesSecretSuffix defines, not a built-in one: no built-in role
+	// covers the Camunda privileges and the snapshot privileges together, and
+	// superuser grants far more than either.
+	userRole = "camunda"
+	// rolesSecretSuffix appended to the CR name yields the name of the Secret
+	// that holds the definition of the Camunda role.
+	rolesSecretSuffix = "-es-roles"
+	// rolesFileKey is the key that ECK reads role definitions from.
+	rolesFileKey = "roles.yml"
+	// keystoreSecretSuffix appended to the CR name yields the name of the
+	// Secret that holds the bucket credentials of the node keystore.
+	keystoreSecretSuffix = "-es-snapshot-keystore"
+
 	// usernameKey is the key of the username in the user Secret.
 	usernameKey = "username"
 	// PasswordKey is the key of the password in the user Secret.
 	PasswordKey = "password"
 	// rolesKey is the key of the roles in the user Secret.
 	rolesKey = "roles"
+)
+
+// camundaRole is the definition of the role that the Camunda user holds, in
+// the file-based format that ECK loads through spec.auth.roles.
+//
+// Every privilege is one that Camunda documents as required, except manage:
+// see below. The cluster privileges: monitor for the cluster health check and
+// the node statistics that size a restore; manage_index_templates and
+// manage_ilm to create the index templates and lifecycle policies on first
+// start and on an upgrade; manage_pipeline for the data migration of an
+// upgrade; create_snapshot and monitor_snapshot for taking a backup and
+// reading its status.
+//
+// manage is here for one reason only: deleting a snapshot, which the backup
+// finalizer does. create_snapshot's own definition is "create snapshots for
+// existing repositories. Can also list and view details on existing
+// repositories and snapshots" — creation and viewing, not deletion. The
+// Delete Snapshot API documents its requirement as the manage cluster
+// privilege, and no narrower named privilege for delete exists. manage grants
+// more than deletion alone (it "builds on monitor and adds cluster operations
+// that change values in the cluster"), but it is the documented way to get
+// this one operation, so it stands as a deliberate, wider-than-ideal grant
+// rather than an unverified raw action name.
+//
+// Registering the repository is deliberately absent: it needs
+// cluster:admin/repository, and the operator does it with the elastic user of
+// ECK instead.
+const camundaRole = `camunda:
+  cluster:
+    - monitor
+    - manage_index_templates
+    - manage_ilm
+    - manage_pipeline
+    - create_snapshot
+    - monitor_snapshot
+    - manage
+  indices:
+    - names: [ "*" ]
+      privileges:
+        - create_index
+        - delete_index
+        - read
+        - write
+        - manage
+        - manage_ilm
+`
+
+// accessKeyKeystorePath and secretKeyKeystorePath are the keystore entries
+// that the s3 repository client reads its credentials from. Elasticsearch
+// accepts them nowhere else: the settings of a repository never carry
+// credentials. The client name is shared with the repository settings through
+// esadmin, so the two can never drift apart.
+var (
+	accessKeyKeystorePath = "s3.client." + esadmin.DefaultS3Client + ".access_key"
+	secretKeyKeystorePath = "s3.client." + esadmin.DefaultS3Client + ".secret_key"
 )
 
 const (
@@ -94,6 +160,13 @@ const (
 	// ConditionStorageContract is the condition type of the storage-contract
 	// component.
 	ConditionStorageContract = "StorageContractReady"
+	// ConditionKeystore is the condition type of the keystore component.
+	ConditionKeystore = "KeystoreReady"
+	// ConditionSnapshotRepository reports whether the snapshot repository of
+	// the cluster is registered in Elasticsearch. The controller sets it
+	// directly: registration is a call against Elasticsearch, not a Kubernetes
+	// resource, so no component owns it.
+	ConditionSnapshotRepository = "SnapshotRepositoryReady"
 )
 
 // managedLabels returns the labels of a resource that the operator applies
@@ -115,9 +188,145 @@ func UserSecretName(cluster *v1.ElasticsearchCluster) string {
 	return cluster.Name + userSecretSuffix
 }
 
+// HTTPEndpoint returns the in-cluster HTTPS endpoint of the cluster, the
+// address that both the published contract and the operator itself use.
+func HTTPEndpoint(cluster *v1.ElasticsearchCluster) string {
+	return "https://" + cluster.Name + httpServiceSuffix + "." + cluster.Namespace + ".svc:9200"
+}
+
+// CACertSecretName returns the name of the Secret in which ECK publishes the
+// CA certificate of the cluster. CACertKey is the key inside it.
+func CACertSecretName(cluster *v1.ElasticsearchCluster) string {
+	return cluster.Name + certsSecretSuffix
+}
+
+// CACertKey is the key of the CA certificate inside the Secret that
+// CACertSecretName names.
+const CACertKey = caCertKey
+
+// RolesSecretName returns the name of the Secret that defines the Camunda
+// role.
+func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
+	return cluster.Name + rolesSecretSuffix
+}
+
+// KeystoreSecretName returns the name of the Secret that carries the bucket
+// credentials into the keystore of every node.
+func KeystoreSecretName(cluster *v1.ElasticsearchCluster) string {
+	return cluster.Name + keystoreSecretSuffix
+}
+
+// RepositoryName returns the name of the snapshot repository that the operator
+// registers for the cluster. Consumers read it from the snapshotRepository
+// field of the published SecondaryStorageConfig rather than deriving it.
+func RepositoryName(cluster *v1.ElasticsearchCluster) string {
+	return cluster.Name
+}
+
+// publishedRepositoryName returns the repository name to publish in the
+// contract, or the empty string when the cluster references no bucket or its
+// repository was never registered. The GoDoc of the contract field promises a
+// registered repository; a name published before the registration converges
+// would send the first snapshot of a consumer into a repository that does not
+// exist.
+//
+// registered is the last observed convergence, not this reconcile's: it also
+// holds through a suspension, where the bucket is not resolved (storage is
+// nil) and the registration is skipped, but the repository persists in the
+// cluster state that the data volumes retain. Only a cluster that dropped its
+// bucket reference while running clears the field.
+func publishedRepositoryName(
+	cluster *v1.ElasticsearchCluster,
+	storage *SnapshotStorage,
+	registered, suspended bool,
+) string {
+	if !registered {
+		return ""
+	}
+	if !storage.repository() && !suspended {
+		return ""
+	}
+
+	return RepositoryName(cluster)
+}
+
+// ServiceAccountName returns the name of the ServiceAccount of the pods: the
+// name that the spec sets, or the name derived from the cluster otherwise. It
+// is the principal that a workload identity without an annotation binds, so it
+// is part of the contract with the cloud provider.
+func ServiceAccountName(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) string {
+	if merged.ServiceAccount != nil && merged.ServiceAccount.Name != "" {
+		return merged.ServiceAccount.Name
+	}
+
+	return cluster.Name + serviceAccountSuffix
+}
+
+// SnapshotStorage is the resolved snapshot bucket of a cluster: the contract
+// that spec.snapshotStorageRef names, and the keys read from its Secret when
+// it holds static credentials. A nil SnapshotStorage means the spec names no
+// bucket, so the cluster takes no part in backups.
+type SnapshotStorage struct {
+	// Config is the referenced contract.
+	Config *v1.ObjectStorageConfig
+	// Credentials are the static keys of the bucket, or nil when the contract
+	// uses workload identity.
+	Credentials *objectstore.Credentials
+}
+
+// identityAnnotations returns the ServiceAccount annotations that bind the
+// identity of the bucket, or nil when there is no bucket or no identity.
+func (s *SnapshotStorage) identityAnnotations() map[string]string {
+	if s == nil {
+		return nil
+	}
+
+	return s.Config.WorkloadIdentityAnnotations()
+}
+
+// keystore reports whether the nodes need a keystore Secret: the bucket holds
+// static credentials, which Elasticsearch reads from the keystore alone.
+func (s *SnapshotStorage) keystore() bool {
+	return s != nil && s.Credentials != nil
+}
+
+// workloadIdentity reports whether the nodes authenticate against the bucket
+// as their ServiceAccount. It is true for every workload-identity bucket,
+// annotation or not: EKS Pod Identity and Workload Identity Federation bind
+// the ServiceAccount by name on the cloud side, so the account must exist and
+// be referenced even when there is nothing to annotate onto it.
+func (s *SnapshotStorage) workloadIdentity() bool {
+	return s != nil && s.Config != nil && s.Credentials == nil
+}
+
+// repository reports whether the cluster has a snapshot repository to
+// register and to publish.
+func (s *SnapshotStorage) repository() bool {
+	return s != nil && s.Config != nil
+}
+
+// usesServiceAccount reports whether the pods run under a named
+// ServiceAccount, whether or not the operator renders it: the spec asks for
+// one, or the bucket authenticates through workload identity — with or
+// without an annotation, because an annotation-less identity still binds the
+// ServiceAccount by name on the cloud side. The name the pods use is the
+// documented principal, so it must exist and be referenced whenever a
+// workload-identity bucket is.
+func usesServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) bool {
+	return merged.ServiceAccount != nil || storage.workloadIdentity()
+}
+
+// rendersServiceAccount reports whether the operator renders the
+// ServiceAccount the pods use: it is used at all, and the spec does not name
+// a foreign one.
+func rendersServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) bool {
+	return merged.ServiceAccount.Creates() && usesServiceAccount(merged, storage)
+}
+
 // CredentialsComponent builds the credentials component: the basic-auth style
-// file-realm Secret with the Camunda user, the given password, and the
-// superuser role. ECK consumes it through spec.auth.fileRealm.
+// file-realm Secret with the Camunda user, the given password, and the Camunda
+// role, plus the Secret that defines that role. ECK consumes them through
+// spec.auth.fileRealm and spec.auth.roles.
 func CredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*component.Component, error) {
 	userSecret, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -136,10 +345,60 @@ func CredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*c
 		return nil, err
 	}
 
+	rolesSecret, err := secret.NewBuilder(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      RolesSecretName(cluster),
+			Namespace: cluster.Namespace,
+			Labels:    managedLabels(cluster),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{rolesFileKey: []byte(camundaRole)},
+	}).Build()
+	if err != nil {
+		return nil, err
+	}
+
 	return component.NewComponentBuilder().
 		WithName("credentials").
 		WithConditionType(ConditionCredentials).
 		WithResource(userSecret).
+		WithResource(rolesSecret).
+		Build()
+}
+
+// KeystoreComponent builds the keystore component: the Secret whose entries
+// ECK loads into the keystore of every node, holding the credentials of the
+// snapshot bucket. Elasticsearch reads the credentials of a repository from
+// the keystore alone, never from the settings of the repository. The component
+// is gated on a bucket with static credentials: with workload identity the
+// nodes authenticate through their ServiceAccount and the Secret is deleted.
+func KeystoreComponent(
+	cluster *v1.ElasticsearchCluster,
+	storage *SnapshotStorage,
+) (*component.Component, error) {
+	data := map[string][]byte{}
+	if storage.keystore() {
+		data[accessKeyKeystorePath] = []byte(storage.Credentials.AccessKeyID)
+		data[secretKeyKeystorePath] = []byte(storage.Credentials.SecretAccessKey)
+	}
+
+	keystoreSecret, err := secret.NewBuilder(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KeystoreSecretName(cluster),
+			Namespace: cluster.Namespace,
+			Labels:    managedLabels(cluster),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: data,
+	}).Build()
+	if err != nil {
+		return nil, err
+	}
+
+	return component.NewComponentBuilder().
+		WithName("keystore").
+		WithConditionType(ConditionKeystore).
+		WithResource(keystoreSecret, component.GatedBy(feature.NewBooleanGate(storage.keystore()))).
 		Build()
 }
 
@@ -150,14 +409,15 @@ func CredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*c
 func ElasticsearchComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	storage *SnapshotStorage,
 ) (*component.Component, error) {
-	account, err := serviceaccount.NewBuilder(serviceAccount(cluster, merged)).Build()
+	account, err := serviceaccount.NewBuilder(serviceAccount(cluster, merged, storage)).Build()
 	if err != nil {
 		return nil, err
 	}
 
 	elasticsearch, err := eckelasticsearch.NewBuilder(elasticsearch(cluster, merged)).
-		WithMutation(elasticsearchMutations(cluster, merged)...).
+		WithMutation(elasticsearchMutations(cluster, merged, storage)...).
 		Build()
 	if err != nil {
 		return nil, err
@@ -166,7 +426,10 @@ func ElasticsearchComponent(
 	return component.NewComponentBuilder().
 		WithName("elasticsearch").
 		WithConditionType(ConditionElasticsearch).
-		WithResource(account, component.GatedBy(feature.NewBooleanGate(merged.ServiceAccount != nil))).
+		WithResource(
+			account,
+			component.GatedBy(feature.NewBooleanGate(rendersServiceAccount(merged, storage))),
+		).
 		WithResource(elasticsearch).
 		Suspend(merged.Suspend).
 		Build()
@@ -181,7 +444,10 @@ func ElasticsearchComponent(
 func StorageContractComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	storage *SnapshotStorage,
+	registered bool,
 ) (*component.Component, error) {
+	suspended := merged.Suspend
 	userSecret, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      UserSecretName(cluster),
@@ -201,7 +467,7 @@ func StorageContractComponent(
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
-				Endpoint: "https://" + cluster.Name + httpServiceSuffix + "." + cluster.Namespace + ".svc:9200",
+				Endpoint: HTTPEndpoint(cluster),
 				CredentialsSecretRef: v1.CredentialsSecretRef{
 					Name:        UserSecretName(cluster),
 					Namespace:   cluster.Namespace,
@@ -209,10 +475,11 @@ func StorageContractComponent(
 					PasswordKey: PasswordKey,
 				},
 				CASecretRef: &v1.SecretKeyRef{
-					Name:      cluster.Name + certsSecretSuffix,
+					Name:      CACertSecretName(cluster),
 					Namespace: cluster.Namespace,
-					Key:       caCertKey,
+					Key:       CACertKey,
 				},
+				SnapshotRepository: publishedRepositoryName(cluster, storage, registered, suspended),
 			},
 		},
 	}).Build()
@@ -228,17 +495,33 @@ func StorageContractComponent(
 		Build()
 }
 
-// serviceAccount renders the ServiceAccount of the pods with the
-// workload-identity annotations from spec.serviceAccount.
-func serviceAccount(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClusterSpec) *corev1.ServiceAccount {
-	var annotations map[string]string
+// serviceAccount renders the ServiceAccount of the pods. Its annotations are
+// the identity of the snapshot bucket with the annotations of
+// spec.serviceAccount layered over it, so a value the user states wins over
+// the derived one on the same key.
+func serviceAccount(
+	cluster *v1.ElasticsearchCluster,
+	merged v1.ElasticsearchClusterSpec,
+	storage *SnapshotStorage,
+) *corev1.ServiceAccount {
+	var user map[string]string
 	if merged.ServiceAccount != nil {
-		annotations = merged.ServiceAccount.Annotations
+		user = merged.ServiceAccount.Annotations
+	}
+
+	// Not labels.Merge: that helper lets the operator win, because selectors
+	// depend on operator labels. Here the user wins, so an identity stated on
+	// the cluster overrides the one derived from the bucket.
+	var annotations map[string]string
+	if derived := storage.identityAnnotations(); len(derived) > 0 || len(user) > 0 {
+		annotations = make(map[string]string, len(derived)+len(user))
+		maps.Copy(annotations, derived)
+		maps.Copy(annotations, user)
 	}
 
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        cluster.Name + serviceAccountSuffix,
+			Name:        ServiceAccountName(cluster, merged),
 			Namespace:   cluster.Namespace,
 			Labels:      managedLabels(cluster),
 			Annotations: annotations,
@@ -267,6 +550,9 @@ func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClus
 			Auth: esv1.Auth{
 				FileRealm: []esv1.FileRealmSource{
 					{SecretRef: commonv1.SecretRef{SecretName: UserSecretName(cluster)}},
+				},
+				Roles: []esv1.RoleSource{
+					{SecretRef: commonv1.SecretRef{SecretName: RolesSecretName(cluster)}},
 				},
 			},
 			NodeSets: []esv1.NodeSet{{
@@ -298,8 +584,22 @@ func elasticsearch(cluster *v1.ElasticsearchCluster, merged v1.ElasticsearchClus
 func elasticsearchMutations(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	storage *SnapshotStorage,
 ) []eckelasticsearch.Mutation {
+	secureSettings := secureSettings(cluster, merged, storage)
+
 	return []eckelasticsearch.Mutation{
+		{
+			Name:    "SecureSettings",
+			Feature: feature.NewBooleanGate(len(secureSettings) > 0),
+			Mutate: func(m *eckelasticsearch.Mutator) error {
+				m.Edit(func(es *esv1.Elasticsearch) error {
+					es.Spec.SecureSettings = secureSettings
+					return nil
+				})
+				return nil
+			},
+		},
 		{
 			Name:    "NodeResources",
 			Feature: feature.NewBooleanGate(merged.Resources != nil),
@@ -372,16 +672,47 @@ func elasticsearchMutations(
 		},
 		{
 			Name:    "ServiceAccount",
-			Feature: feature.NewBooleanGate(merged.ServiceAccount != nil),
+			Feature: feature.NewBooleanGate(usesServiceAccount(merged, storage)),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
-					es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName = es.Name + serviceAccountSuffix
+					es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName = ServiceAccountName(cluster, merged)
 					return nil
 				})
 				return nil
 			},
 		},
 	}
+}
+
+// secureSettings returns the keystore sources of the cluster: the Secret with
+// the bucket credentials first, then the sources of the spec. ECK loads every
+// one of them into the keystore of every node.
+func secureSettings(
+	cluster *v1.ElasticsearchCluster,
+	merged v1.ElasticsearchClusterSpec,
+	storage *SnapshotStorage,
+) []commonv1.SecretSource {
+	var sources []commonv1.SecretSource
+	if storage.keystore() {
+		// No entries: the keys of the Secret are already the keystore entry
+		// names, so ECK projects each one under its own name.
+		sources = append(sources, commonv1.SecretSource{SecretName: KeystoreSecretName(cluster)})
+	}
+
+	for _, source := range merged.SecureSettings {
+		entries := make([]commonv1.KeyToPath, 0, len(source.Entries))
+		for _, entry := range source.Entries {
+			entries = append(entries, commonv1.KeyToPath{Key: entry.Key, Path: entry.Path})
+		}
+
+		mapped := commonv1.SecretSource{SecretName: source.SecretName}
+		if len(entries) > 0 {
+			mapped.Entries = entries
+		}
+		sources = append(sources, mapped)
+	}
+
+	return sources
 }
 
 // retainsVolumes reports whether the retention policy of the merged spec keeps

@@ -53,6 +53,9 @@ type Server struct {
 
 	history map[int64]*Backup
 	runtime map[int64]*Backup
+	// deletedRuntime holds the ids of deleted runtime backups. An id is never
+	// reusable, deleted or not, so the conflict check consults both.
+	deletedRuntime map[int64]bool
 
 	historyStarts map[int64]int
 	runtimeStarts map[int64]int
@@ -70,6 +73,7 @@ func New() *Server {
 		exporting:       "running",
 		history:         map[int64]*Backup{},
 		runtime:         map[int64]*Backup{},
+		deletedRuntime:  map[int64]bool{},
 		historyStarts:   map[int64]int{},
 		runtimeStarts:   map[int64]int{},
 		nextGeneratedID: 1,
@@ -259,14 +263,22 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		var id int64
 		if r.ContentLength != 0 {
 			id = decodeBackupID(r)
+			conflicts := func(existing int64) bool { return existing >= id }
+			conflicted := false
 			for existing := range s.runtime {
-				if existing >= id {
-					errorBody(
-						w, http.StatusConflict,
-						"a backup with the same or higher ID already exists",
-					)
-					return
-				}
+				conflicted = conflicted || conflicts(existing)
+			}
+			// A deleted id conflicts too: ids are never reusable, even after
+			// the backup they named is gone.
+			for deleted := range s.deletedRuntime {
+				conflicted = conflicted || conflicts(deleted)
+			}
+			if conflicted {
+				errorBody(
+					w, http.StatusConflict,
+					"a backup with the same or higher ID already exists",
+				)
+				return
 			}
 		} else {
 			id = s.nextGeneratedID
@@ -317,11 +329,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		id, _ := strconv.ParseInt(strings.TrimPrefix(path, "/backupRuntime/"), 10, 64)
-		if _, ok := s.runtime[id]; !ok {
-			errorBody(w, http.StatusNotFound, "backup does not exist")
+		backup, ok := s.runtime[id]
+		if !ok {
+			// The documented responses are 204, 400, 500, 502, and 504 —
+			// there is no 404. Deleting an absent backup answers 204.
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if backup.State == "IN_PROGRESS" {
+			errorBody(w, http.StatusBadRequest, "backup is in progress and cannot be deleted")
 			return
 		}
 		delete(s.runtime, id)
+		s.deletedRuntime[id] = true
 		w.WriteHeader(http.StatusNoContent)
 
 	default:

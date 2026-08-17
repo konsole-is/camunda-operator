@@ -83,6 +83,20 @@ func request(reader client.Reader) logicalbackup.PreCheckRequest {
 	}
 }
 
+// A Get with an empty name errors as an invalid request, not a NotFound, so
+// without its own guard an unset storageRef loops forever as transient.
+func TestPreCheckRejectsAnEmptyStorageRef(t *testing.T) {
+	broken := cluster()
+	broken.Spec.StorageRef = ""
+
+	_, err := logicalbackup.PreCheck(context.Background(), request(newReader(t, broken, bucket())))
+
+	var failure *conditions.PreCheckFailure
+	require.ErrorAs(t, err, &failure)
+	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
+	assert.Contains(t, failure.Message, "storageRef")
+}
+
 func TestPreCheckPasses(t *testing.T) {
 	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
 

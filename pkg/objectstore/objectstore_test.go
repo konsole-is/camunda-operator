@@ -136,6 +136,51 @@ func TestUploadLeavesNoObjectWhenTheReaderFails(t *testing.T) {
 	assert.Empty(t, keysUnder(t, bucket, "clusters/ns/name/1/"), "a partial upload must not be committed")
 }
 
+// A trailing slash on the endpoint must not double the URL separator: the
+// Azure request signature is computed over the canonical resource, and the
+// 403 that follows reads as bad credentials.
+func TestAzureContainerURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		spec v1.AzureBlobStorage
+		want string
+	}{
+		{
+			name: "default endpoint from the account",
+			spec: v1.AzureBlobStorage{AccountName: "camundabackups", Container: "backups"},
+			want: "https://camundabackups.blob.core.windows.net/backups",
+		},
+		{
+			name: "explicit endpoint",
+			spec: v1.AzureBlobStorage{
+				AccountName: "devstoreaccount1",
+				Container:   "backups",
+				Endpoint:    "http://127.0.0.1:10000/devstoreaccount1",
+			},
+			want: "http://127.0.0.1:10000/devstoreaccount1/backups",
+		},
+		{
+			name: "trailing slash trimmed",
+			spec: v1.AzureBlobStorage{
+				AccountName: "devstoreaccount1",
+				Container:   "backups",
+				Endpoint:    "http://127.0.0.1:10000/devstoreaccount1/",
+			},
+			want: "http://127.0.0.1:10000/devstoreaccount1/backups",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, test.want, azureContainerURL(&test.spec))
+		})
+	}
+}
+
 func TestOpenRejectsIncompleteContracts(t *testing.T) {
 	ctx := context.Background()
 

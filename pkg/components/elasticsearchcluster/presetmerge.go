@@ -31,8 +31,10 @@ import (
 // the API drops an empty value on the way in, so the merge cannot see it. To
 // drop a list that the preset provides, override it with the list you want,
 // or reference a preset without it. The scheduling block is replaced
-// entirely, never merged field by field, and so is the monitoring block. The
-// instance-bound fields (presetRef, secondaryStorageConfig, suspend) always
+// entirely, never merged field by field, and so is the monitoring block, and
+// so is the secureSettings list. A preset may carry snapshotStorageRef: one
+// bucket serves a fleet, because every cluster writes under its own base path.
+// The instance-bound fields (presetRef, secondaryStorageConfig, suspend) always
 // come from spec, and a preset cannot set them. A nil preset returns spec unchanged.
 // The result shares no memory with preset, so callers can mutate it freely.
 func MergePreset(
@@ -62,6 +64,12 @@ func MergePreset(
 	}
 	if spec.ServiceAccount != nil {
 		merged.ServiceAccount = spec.ServiceAccount
+	}
+	if spec.SnapshotStorageRef != "" {
+		merged.SnapshotStorageRef = spec.SnapshotStorageRef
+	}
+	if len(spec.SecureSettings) > 0 {
+		merged.SecureSettings = spec.SecureSettings
 	}
 	if len(spec.ExtraEnv) > 0 {
 		merged.ExtraEnv = spec.ExtraEnv
