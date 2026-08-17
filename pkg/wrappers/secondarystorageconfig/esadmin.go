@@ -36,10 +36,11 @@ import (
 // so one missing Secret reports the same reason on all of them.
 //
 // A state that the user must correct comes back as a
-// *conditions.PreCheckFailure: ReasonInvalidReference when the contract has
-// no elasticsearch block, ReasonMissingSecret when a Secret or key is absent.
-// An error is transient or a construction problem, for example a CA bundle
-// that holds no certificate.
+// *conditions.PreCheckFailure. ReasonInvalidReference means that the
+// contract has no elasticsearch block, or that the CA Secret holds no usable
+// certificate. ReasonMissingSecret means that a Secret or a key is absent.
+// An error is a transient read of a Secret. A caller retries an error and
+// reports a failure.
 func ElasticsearchAdmin(
 	ctx context.Context,
 	reader client.Reader,
@@ -95,10 +96,17 @@ func ElasticsearchAdmin(
 		ca,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"building the Elasticsearch client of SecondaryStorageConfig %s/%s: %w",
-			storage.Namespace, storage.Name, err,
-		)
+		// The constructor fails only on the CA bundle. The Secret exists and
+		// the key is present, so the data itself is unusable. That is a
+		// state the user corrects, not one a retry fixes.
+		return nil, &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"Secret %s/%s key %q of SecondaryStorageConfig %s/%s is not a usable CA bundle: %v",
+				es.CASecretRef.Namespace, es.CASecretRef.Name, es.CASecretRef.Key,
+				storage.Namespace, storage.Name, err,
+			),
+		}, nil
 	}
 
 	return admin, nil, nil
