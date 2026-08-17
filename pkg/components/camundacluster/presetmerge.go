@@ -66,7 +66,9 @@ const versionFloor = "8.9.0"
 // preset entries first. PodLabels and podAnnotations merge by key with the
 // cluster winning. Scheduling never merges: a block set on the cluster
 // replaces the block of the preset at that level (top-level, per component,
-// or under backup.dump) entirely. The backup block merges per field: the
+// or under backup.dump) entirely. Auth.admin never merges either, and it
+// exists at the top level only: a block set on the cluster replaces the
+// whole admin block of the preset. The backup block merges per field: the
 // primary-storage schedule, checkpoint interval, and retention each override
 // on their own, and backup.dump follows the component rules above, with its
 // scratch volume replaced as a whole block. The instance-bound fields (platformConfigRef,
@@ -134,6 +136,9 @@ func mergeAuth(base, over *v1.ClusterAuthSpec) *v1.ClusterAuthSpec {
 	}
 	if over.ClientSecretRef != nil {
 		base.ClientSecretRef = over.ClientSecretRef
+	}
+	if over.Admin != nil {
+		base.Admin = over.Admin
 	}
 
 	return base

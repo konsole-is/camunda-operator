@@ -58,6 +58,8 @@ var notInDefaultsYAML = map[Key]string{
 	KeyOIDCAuthorizationURI:       "security classes are not generated into defaults.yaml",
 	KeyOIDCTokenURI:               "security classes are not generated into defaults.yaml",
 	KeyOIDCAudiences:              "security classes are not generated into defaults.yaml",
+	KeyOIDCUsernameClaim:          "security classes are not generated into defaults.yaml",
+	KeyOIDCClientIDClaim:          "security classes are not generated into defaults.yaml",
 	KeyInitializationUsers:        "security classes are not generated into defaults.yaml",
 	KeyInitializationUserUsername: "security classes are not generated into defaults.yaml",
 	KeyInitializationUserPassword: "security classes are not generated into defaults.yaml",
@@ -66,6 +68,17 @@ var notInDefaultsYAML = map[Key]string{
 	KeyDefaultRolesAdminUsers:     "security classes are not generated into defaults.yaml",
 	KeyDefaultRolesAdminUserItem:  "security classes are not generated into defaults.yaml",
 	KeyLicenseKey:                 "license class is not generated into defaults.yaml",
+
+	KeyInitializationMappingRules:          "security classes are not generated into defaults.yaml",
+	KeyInitializationMappingRuleID:         "security classes are not generated into defaults.yaml",
+	KeyInitializationMappingRuleClaimName:  "security classes are not generated into defaults.yaml",
+	KeyInitializationMappingRuleClaimValue: "security classes are not generated into defaults.yaml",
+	KeyDefaultRolesAdminClients:            "security classes are not generated into defaults.yaml",
+	KeyDefaultRolesAdminClientItem:         "security classes are not generated into defaults.yaml",
+	KeyDefaultRolesAdminMappingRules:       "security classes are not generated into defaults.yaml",
+	KeyDefaultRolesAdminMappingRuleItem:    "security classes are not generated into defaults.yaml",
+	KeyDefaultRolesConnectorsClients:       "security classes are not generated into defaults.yaml",
+	KeyDefaultRolesConnectorsClientItem:    "security classes are not generated into defaults.yaml",
 
 	KeyClientMode:             "connectors runtime, separate repository",
 	KeyClientGRPCAddress:      "connectors runtime, separate repository",
@@ -79,15 +92,129 @@ var notInDefaultsYAML = map[Key]string{
 	KeyClientAuthAudience:     "connectors runtime, separate repository",
 }
 
+// The source files that sourceEvidence points at, relative to
+// CAMUNDA_SOURCE_DIR. A path named once here and read once by the scan, even
+// though several keys point at the same file.
+const (
+	oidcConfigFile = "security/security-core/src/main/java/io/camunda/security/" +
+		"configuration/OidcAuthenticationConfiguration.java"
+	authConfigFile = "security/security-core/src/main/java/io/camunda/security/" +
+		"configuration/AuthenticationConfiguration.java"
+	initConfigFile = "security/security-core/src/main/java/io/camunda/security/" +
+		"configuration/InitializationConfiguration.java"
+	configuredUserFile = "security/security-core/src/main/java/io/camunda/security/" +
+		"configuration/ConfiguredUser.java"
+	mappingRuleFile = "security/security-core/src/main/java/io/camunda/security/" +
+		"configuration/ConfiguredMappingRule.java"
+	platformEntitiesFile = "zeebe/engine/src/main/java/io/camunda/zeebe/engine/" +
+		"processing/identity/initialize/PlatformDefaultEntities.java"
+	managementServicesFile = "dist/src/main/java/io/camunda/application/commons/" +
+		"service/ManagementServicesConfiguration.java"
+	applicationPropsFile = "dist/src/main/resources/application.properties"
+	modesProcessorFile   = "dist/src/main/java/io/camunda/application/ModesAndProfilesProcessor.java"
+	myBatisConfigFile    = "dist/src/main/java/io/camunda/application/commons/rdbms/MyBatisConfiguration.java"
+	esSecurityFile       = "configuration/src/main/java/io/camunda/configuration/SecondaryStorageSecurity.java"
+	clientPropsFile      = "clients/camunda-spring-boot-starter/src/main/java/io/camunda/" +
+		"client/spring/properties/CamundaClientProperties.java"
+	clientAuthPropsFile = "clients/camunda-spring-boot-starter/src/main/java/io/camunda/" +
+		"client/spring/properties/CamundaClientAuthProperties.java"
+)
+
+// sourceRef is one piece of evidence that a key excused in notInDefaultsYAML
+// still exists in the camunda/camunda source: the file it lives in, relative
+// to CAMUNDA_SOURCE_DIR, and a pattern that file must match.
+type sourceRef struct {
+	file    string
+	pattern string
+}
+
+// fieldRef is a sourceRef for a Java field: it requires name inside one
+// field declaration statement (from "private" to the terminating
+// semicolon), so a getter or setter of the same name does not satisfy it,
+// and a rename or removal of the field breaks the match.
+func fieldRef(file, name string) sourceRef {
+	return sourceRef{file, `private[^;]*\b` + regexp.QuoteMeta(name) + `\b[^;]*;`}
+}
+
+// sourceEvidence gives one sourceRef per key in notInDefaultsYAML. The test
+// reads the referenced file and requires the pattern to match, so a renamed
+// or removed property fails it instead of resting on the human-written
+// reason string above. Several keys point at the same evidence: the
+// role-membership keys share the entity-type cases of PlatformDefaultEntities
+// because "admin"/"connectors"/"users"/"clients" are configuration map keys,
+// not Java identifiers, and the list-item keys (the "[N]" forms) describe
+// the same property as their non-indexed counterpart.
+var sourceEvidence = map[Key]sourceRef{
+	KeyServerPort:           {applicationPropsFile, `server\.port=8080`},
+	KeyManagementServerPort: {applicationPropsFile, `management\.server\.port=9600`},
+	KeyBrokerGatewayEnable:  {modesProcessorFile, `zeebe\.broker\.gateway\.enable`},
+
+	KeyElasticsearchSecurityEnabled:         fieldRef(esSecurityFile, "enabled"),
+	KeyElasticsearchSecurityCertificatePath: fieldRef(esSecurityFile, "certificatePath"),
+	KeyElasticsearchSecurityVerifyHostname:  fieldRef(esSecurityFile, "verifyHostname"),
+	KeyElasticsearchSecuritySelfSigned:      fieldRef(esSecurityFile, "selfSigned"),
+
+	KeyRDBMSDatabaseVendorID: {myBatisConfigFile, `database-vendor-id`},
+
+	KeyAuthenticationMethod: fieldRef(authConfigFile, "method"),
+
+	KeyOIDCIssuerURI:        fieldRef(oidcConfigFile, "issuerUri"),
+	KeyOIDCClientID:         fieldRef(oidcConfigFile, "clientId"),
+	KeyOIDCClientSecret:     fieldRef(oidcConfigFile, "clientSecret"),
+	KeyOIDCRedirectURI:      fieldRef(oidcConfigFile, "redirectUri"),
+	KeyOIDCJWKSetURI:        fieldRef(oidcConfigFile, "jwkSetUri"),
+	KeyOIDCAuthorizationURI: fieldRef(oidcConfigFile, "authorizationUri"),
+	KeyOIDCTokenURI:         fieldRef(oidcConfigFile, "tokenUri"),
+	KeyOIDCAudiences:        fieldRef(oidcConfigFile, "audiences"),
+	KeyOIDCUsernameClaim:    fieldRef(oidcConfigFile, "usernameClaim"),
+	KeyOIDCClientIDClaim:    fieldRef(oidcConfigFile, "clientIdClaim"),
+
+	KeyInitializationUsers:        fieldRef(initConfigFile, "users"),
+	KeyInitializationUserUsername: fieldRef(configuredUserFile, "username"),
+	KeyInitializationUserPassword: fieldRef(configuredUserFile, "password"),
+	KeyInitializationUserName:     fieldRef(configuredUserFile, "name"),
+	KeyInitializationUserEmail:    fieldRef(configuredUserFile, "email"),
+
+	KeyDefaultRolesAdminUsers:    {platformEntitiesFile, `case "users"`},
+	KeyDefaultRolesAdminUserItem: {platformEntitiesFile, `case "users"`},
+
+	KeyLicenseKey: {managementServicesFile, `@ConfigurationProperties\("camunda\.license"\)`},
+
+	KeyInitializationMappingRules:          fieldRef(initConfigFile, "mappingRules"),
+	KeyInitializationMappingRuleID:         fieldRef(mappingRuleFile, "mappingRuleId"),
+	KeyInitializationMappingRuleClaimName:  fieldRef(mappingRuleFile, "claimName"),
+	KeyInitializationMappingRuleClaimValue: fieldRef(mappingRuleFile, "claimValue"),
+
+	KeyDefaultRolesAdminClients:         {platformEntitiesFile, `case "clients"`},
+	KeyDefaultRolesAdminClientItem:      {platformEntitiesFile, `case "clients"`},
+	KeyDefaultRolesAdminMappingRules:    {platformEntitiesFile, `"mappingrules"`},
+	KeyDefaultRolesAdminMappingRuleItem: {platformEntitiesFile, `"mappingrules"`},
+	KeyDefaultRolesConnectorsClients:    {platformEntitiesFile, `case "clients"`},
+	KeyDefaultRolesConnectorsClientItem: {platformEntitiesFile, `case "clients"`},
+
+	KeyClientMode:        fieldRef(clientPropsFile, "mode"),
+	KeyClientGRPCAddress: fieldRef(clientPropsFile, "grpcAddress"),
+	KeyClientRESTAddress: fieldRef(clientPropsFile, "restAddress"),
+
+	KeyClientAuthMethod:       fieldRef(clientAuthPropsFile, "method"),
+	KeyClientAuthUsername:     fieldRef(clientAuthPropsFile, "username"),
+	KeyClientAuthPassword:     fieldRef(clientAuthPropsFile, "password"),
+	KeyClientAuthClientID:     fieldRef(clientAuthPropsFile, "clientId"),
+	KeyClientAuthClientSecret: fieldRef(clientAuthPropsFile, "clientSecret"),
+	KeyClientAuthIssuerURL:    fieldRef(clientAuthPropsFile, "issuerUrl"),
+	KeyClientAuthAudience:     fieldRef(clientAuthPropsFile, "audience"),
+}
+
 // envComment matches the environment variable name that the generator writes
 // next to every property of defaults.yaml.
 var envComment = regexp.MustCompile(`Env: ([A-Z0-9_]+)`)
 
-// Every declared key exists in the Camunda source: its environment variable
-// name is listed in defaults.yaml, or the key is in notInDefaultsYAML with a
-// reason. A key that is found and still in the table fails, so the table
-// cannot grow stale. Run with CAMUNDA_SOURCE_DIR pointing at a checkout of
-// camunda/camunda at the supported tag.
+// Every declared key exists in the Camunda source. A key listed in
+// defaults.yaml is verified by that listing; a key excused in
+// notInDefaultsYAML is verified against its sourceEvidence entry instead, so
+// the excuse table cannot silently outlive the property it excuses. Run with
+// CAMUNDA_SOURCE_DIR pointing at a checkout of camunda/camunda at the
+// supported tag.
 func TestDeclaredKeysExistInCamundaSource(t *testing.T) {
 	t.Parallel()
 
@@ -105,13 +232,32 @@ func TestDeclaredKeysExistInCamundaSource(t *testing.T) {
 	}
 	require.NotEmpty(t, listed, "%s lists no Env: names", defaultsYAML)
 
+	fileContent := map[string]string{}
 	for _, k := range Declared() {
 		reason, excused := notInDefaultsYAML[k]
 		if listed[k.Env()] {
 			assert.False(t, excused, "%s is listed in %s; remove it from notInDefaultsYAML", k, defaultsYAML)
 			continue
 		}
+
 		assert.True(t, excused, "%s (%s) is not listed in %s and has no reason", k, k.Env(), defaultsYAML)
 		assert.NotEmpty(t, reason, "%s has an empty reason", k)
+
+		ref, hasEvidence := sourceEvidence[k]
+		if !assert.True(t, hasEvidence, "%s has no sourceEvidence entry", k) {
+			continue
+		}
+
+		body, read := fileContent[ref.file]
+		if !read {
+			raw, err := os.ReadFile(filepath.Join(dir, ref.file))
+			if !assert.NoError(t, err, "%s: reading %s", k, ref.file) {
+				continue
+			}
+			body = string(raw)
+			fileContent[ref.file] = body
+		}
+
+		assert.Regexp(t, ref.pattern, body, "%s: %q not found in %s", k, ref.pattern, ref.file)
 	}
 }

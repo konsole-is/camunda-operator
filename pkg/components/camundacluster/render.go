@@ -218,7 +218,7 @@ func authEnv(in Input) []corev1.EnvVar {
 	env := []corev1.EnvVar{camundaconfig.Var(camundaconfig.KeyAuthenticationMethod, string(auth.Method))}
 
 	if auth.OIDC != nil {
-		env = append(env, oidcEnv(in, auth.OIDC)...)
+		env = append(env, oidcEnv(in, auth)...)
 	} else {
 		env = append(env, adminUserEnv(in)...)
 	}
@@ -233,10 +233,12 @@ func authEnv(in Input) []corev1.EnvVar {
 	return env
 }
 
-// oidcEnv renders the OIDC connection. The discovery endpoints are set only
-// when the platform config overrides them, and the redirect only when the
+// oidcEnv renders the OIDC connection and the role membership that
+// authorizes callers. The discovery endpoints and the claim names are set
+// only when the platform config carries them, and the redirect only when the
 // cluster has an externalUrl; otherwise the binary derives them.
-func oidcEnv(in Input, oidc *v1.OIDCSpec) []corev1.EnvVar {
+func oidcEnv(in Input, auth EffectiveAuth) []corev1.EnvVar {
+	oidc := auth.OIDC
 	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyOIDCIssuerURI, oidc.IssuerURL),
 		camundaconfig.Var(camundaconfig.KeyOIDCClientID, oidc.ClientID),
@@ -254,6 +256,8 @@ func oidcEnv(in Input, oidc *v1.OIDCSpec) []corev1.EnvVar {
 		{camundaconfig.KeyOIDCJWKSetURI, oidc.JWKSURL},
 		{camundaconfig.KeyOIDCTokenURI, oidc.TokenURL},
 		{camundaconfig.KeyOIDCAuthorizationURI, oidc.AuthURL},
+		{camundaconfig.KeyOIDCUsernameClaim, oidc.UsernameClaim},
+		{camundaconfig.KeyOIDCClientIDClaim, oidc.ClientIDClaim},
 	}
 	for _, o := range optional {
 		if o.value != "" {
@@ -265,7 +269,67 @@ func oidcEnv(in Input, oidc *v1.OIDCSpec) []corev1.EnvVar {
 		env = append(env, camundaconfig.Var(camundaconfig.KeyOIDCRedirectURI, externalURL+ssoCallbackPath))
 	}
 
+	env = append(env, adminRoleEnv(auth.Admin)...)
+
+	return append(env, connectorsRoleEnv(in, oidc)...)
+}
+
+// adminRoleEnv makes every member of admin a member of the admin role, and
+// declares the mapping rules that the block references. Camunda seeds no
+// administrator under OIDC, so an empty block leaves the cluster without one.
+func adminRoleEnv(admin *v1.ClusterAdminSpec) []corev1.EnvVar {
+	if admin == nil {
+		return nil
+	}
+
+	var env []corev1.EnvVar
+	for i, user := range admin.Users {
+		env = append(env, camundaconfig.Var(
+			camundaconfig.Index(camundaconfig.KeyDefaultRolesAdminUsers, i, ""), user,
+		))
+	}
+
+	for i, client := range admin.Clients {
+		env = append(env, camundaconfig.Var(
+			camundaconfig.Index(camundaconfig.KeyDefaultRolesAdminClients, i, ""), client,
+		))
+	}
+
+	// The rule definition and its membership carry the same index, so both
+	// come from one pass over the slice.
+	for i, rule := range admin.MappingRules {
+		env = append(
+			env,
+			camundaconfig.Var(
+				camundaconfig.Index(camundaconfig.KeyDefaultRolesAdminMappingRules, i, ""), rule.ID,
+			),
+			camundaconfig.Var(
+				camundaconfig.Index(camundaconfig.KeyInitializationMappingRules, i, "mapping-rule-id"), rule.ID,
+			),
+			camundaconfig.Var(
+				camundaconfig.Index(camundaconfig.KeyInitializationMappingRules, i, "claim-name"), rule.ClaimName,
+			),
+			camundaconfig.Var(
+				camundaconfig.Index(camundaconfig.KeyInitializationMappingRules, i, "claim-value"), rule.ClaimValue,
+			),
+		)
+	}
+
 	return env
+}
+
+// connectorsRoleEnv gives the connectors role to the OIDC client of the
+// cluster, which is the client the connectors runtime authenticates with.
+// Without a client id claim that runtime becomes a person, and a client member
+// would never match it, so the grant is left out.
+func connectorsRoleEnv(in Input, oidc *v1.OIDCSpec) []corev1.EnvVar {
+	if oidc.ClientIDClaim == "" || !in.Effective.ConnectorsEnabled() {
+		return nil
+	}
+
+	return []corev1.EnvVar{camundaconfig.Var(
+		camundaconfig.Index(camundaconfig.KeyDefaultRolesConnectorsClients, 0, ""), oidc.ClientID,
+	)}
 }
 
 // adminUserEnv seeds the initial admin user of a basic-auth cluster from

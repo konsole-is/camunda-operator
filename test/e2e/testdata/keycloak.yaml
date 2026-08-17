@@ -1,0 +1,143 @@
+# A single Keycloak realm for the OIDC flow of the CamundaCluster suite. It
+# serves one confidential client for both the browser login and the machine
+# callers, and one static user. The data lives in the development-mode
+# in-memory database: the server exists for one suite run.
+#
+# The realm export holds the client secret and the password of the user, so it
+# is a Secret and not a ConfigMap, as the PostgreSQL fixture of the suite
+# already does with its credentials.
+#
+# The client carries two protocol mappers, and the flow does not work without
+# either one. The audience mapper puts the client id in "aud", because
+# Keycloak otherwise issues "aud": "account" and the Camunda audiences check
+# refuses the token. The hardcoded-claim mapper puts "client_id" in the access
+# token, because a Keycloak token names its client in "azp", and "azp" is also
+# present in the tokens of persons.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-realm
+type: Opaque
+stringData:
+  realm.json: |
+    {
+      "realm": "camunda",
+      "enabled": true,
+      "sslRequired": "none",
+      "accessTokenLifespan": 1800,
+      "clients": [
+        {
+          "clientId": "camunda",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "camunda-e2e-secret",
+          "standardFlowEnabled": true,
+          "serviceAccountsEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"],
+          "protocolMappers": [
+            {
+              "name": "camunda-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.client.audience": "camunda",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            },
+            {
+              "name": "camunda-client-id",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-hardcoded-claim-mapper",
+              "config": {
+                "claim.name": "client_id",
+                "claim.value": "camunda",
+                "jsonType.label": "String",
+                "access.token.claim": "true",
+                "id.token.claim": "false",
+                "userinfo.token.claim": "false"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": "ada@example.com",
+          "email": "ada@example.com",
+          "emailVerified": true,
+          "enabled": true,
+          "credentials": [
+            {
+              "type": "password",
+              "value": "ada-e2e-password",
+              "temporary": false
+            }
+          ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.7.1
+          args: ["start-dev", "--import-realm"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: keycloak-e2e-password
+          # The discovery document of the realm proves that the import
+          # finished, which a liveness endpoint would not.
+          readinessProbe:
+            httpGet:
+              path: /realms/camunda/.well-known/openid-configuration
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm
+          secret:
+            secretName: keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - port: 8080
+      targetPort: http

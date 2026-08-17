@@ -82,6 +82,13 @@ spec:
                           preset or a cluster overrides it.
                         minLength: 1
                         type: string
+                      clientIdClaim:
+                        description: |-
+                          ClientIDClaim is the token claim that holds the id of a machine client.
+                          Empty means that no claim identifies a client, and every token becomes a
+                          person. The claim must be absent from the tokens of persons, because a
+                          token that carries it always becomes a client.
+                        type: string
                       clientSecretRef:
                         description: |-
                           ClientSecretRef names the Secret key that holds the default OIDC client
@@ -134,6 +141,11 @@ spec:
                             URL
                           rule: self == '' || (isURL(self) && (url(self).getScheme()
                             == 'http' || url(self).getScheme() == 'https'))
+                      usernameClaim:
+                        description: |-
+                          UsernameClaim is the token claim that holds the username of a person.
+                          Empty means the default of the orchestration cluster, which is "sub".
+                        type: string
                     required:
                     - clientId
                     - clientSecretRef
