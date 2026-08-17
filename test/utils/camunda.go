@@ -108,7 +108,8 @@ func (a ClientCredentials) script() string {
 		`--data-urlencode "client_id=$CAMUNDA_CLIENT_ID" ` +
 		`--data-urlencode "client_secret=$CAMUNDA_CLIENT_SECRET" ` +
 		`--data-urlencode "audience=$CAMUNDA_AUDIENCE" ` +
-		`"$CAMUNDA_TOKEN_URL" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+		`"$CAMUNDA_TOKEN_URL" | ` +
+		`sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 if [ -z "$CAMUNDA_TOKEN" ]; then echo "no access_token from $CAMUNDA_TOKEN_URL" >&2; exit 1; fi
 camunda_curl() { curl -sS -L -H "Authorization: Bearer $CAMUNDA_TOKEN" "$@"; }`
 }

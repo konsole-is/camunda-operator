@@ -11,7 +11,7 @@
 Today the operator renders authentication under `method: oidc` and nothing else. A cluster comes up
 where every token is authenticated and no token is authorized. The basic-auth path does not have
 this hole, because it seeds an admin user and gives that user the admin role
-(`render.go:269-281`).
+(`adminUserEnv` in `render.go`).
 
 This design closes the hole. `CamundaPlatformConfig` gains the two claim names that identify a
 principal in a token. `CamundaCluster` gains a `spec.auth.admin` block that lists which
@@ -179,8 +179,10 @@ covers the result.
 
 ## The end-to-end proof
 
-`test/e2e/testdata/keycloak.yaml` holds a Deployment, a Service, and a ConfigMap with a realm
-export. Keycloak runs `start-dev --import-realm`. The realm `camunda` holds one confidential
+`test/e2e/testdata/keycloak.yaml` holds a Deployment, a Service, and a Secret with a realm
+export. Keycloak runs `start-dev --import-realm`. The export is a Secret and not a ConfigMap
+because it carries the client secret and the password of the user, which is how the PostgreSQL
+fixture of the suite already holds its credentials. The realm `camunda` holds one confidential
 client `camunda` with the standard flow and service accounts turned on, and one static user.
 
 The client carries two protocol mappers. An audience mapper puts `camunda` in `aud`, because
