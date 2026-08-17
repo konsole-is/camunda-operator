@@ -37,8 +37,88 @@ const CurlImage = "curlimages/curl:8.17.0"
 // plain file name that is safe inside the shell script of the helper pod.
 var fileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// CamundaAuth is how one call authenticates. BasicAuth and ClientCredentials
+// implement it. Each contributes the variables the helper pod reads its
+// credentials from, and the shell that defines the function every call goes
+// through.
+//
+// The methods are unexported on purpose, so this package holds every
+// authentication mode. A caller outside it selects a mode, and cannot add
+// one.
+type CamundaAuth interface {
+	// env returns the variables of the helper pod.
+	env() []corev1.EnvVar
+	// script returns shell that defines the function camunda_curl, which
+	// takes curl arguments and adds the authentication of this mode.
+	script() string
+}
+
+// BasicAuth sends the user of a Secret with curl -u. The pod reads the Secret
+// through secretKeyRef, so the password never appears in the pod spec.
+type BasicAuth struct {
+	// Secret is the Secret in the namespace of the helper pod that holds the
+	// user under UsernameKey and PasswordKey.
+	Secret      string
+	UsernameKey string
+	PasswordKey string
+}
+
+func (a BasicAuth) env() []corev1.EnvVar {
+	return []corev1.EnvVar{
+		SecretEnv("CAMUNDA_USER", a.Secret, a.UsernameKey),
+		SecretEnv("CAMUNDA_PASSWORD", a.Secret, a.PasswordKey),
+	}
+}
+
+func (a BasicAuth) script() string {
+	return `camunda_curl() { curl -sS -L -u "$CAMUNDA_USER:$CAMUNDA_PASSWORD" "$@"; }`
+}
+
+// ClientCredentials reads an access token with the OAuth client-credentials
+// grant, then sends it as a bearer token. Both requests happen inside the one
+// helper pod, so the token never reaches the output of the suite.
+type ClientCredentials struct {
+	// TokenURL is the token endpoint of the identity provider.
+	TokenURL string
+	// ClientID and Audience are sent as form fields.
+	ClientID string
+	Audience string
+	// Secret is the Secret in the namespace of the helper pod that holds the
+	// client secret under SecretKey.
+	Secret    string
+	SecretKey string
+}
+
+func (a ClientCredentials) env() []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: "CAMUNDA_TOKEN_URL", Value: a.TokenURL},
+		{Name: "CAMUNDA_CLIENT_ID", Value: a.ClientID},
+		{Name: "CAMUNDA_AUDIENCE", Value: a.Audience},
+		SecretEnv("CAMUNDA_CLIENT_SECRET", a.Secret, a.SecretKey),
+	}
+}
+
+// The token endpoint answers JSON, and the curl image carries no jq, so the
+// token is cut out with sed. An empty result fails the pod, because a call
+// without a token would otherwise look like an authorization problem of the
+// cluster under test.
+func (a ClientCredentials) script() string {
+	return `CAMUNDA_TOKEN=$(curl -sS -X POST ` +
+		`-d grant_type=client_credentials ` +
+		`--data-urlencode "client_id=$CAMUNDA_CLIENT_ID" ` +
+		`--data-urlencode "client_secret=$CAMUNDA_CLIENT_SECRET" ` +
+		`--data-urlencode "audience=$CAMUNDA_AUDIENCE" ` +
+		`"$CAMUNDA_TOKEN_URL" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+if [ -z "$CAMUNDA_TOKEN" ]; then echo "no access_token from $CAMUNDA_TOKEN_URL" >&2; exit 1; fi
+camunda_curl() { curl -sS -L -H "Authorization: Bearer $CAMUNDA_TOKEN" "$@"; }`
+}
+
+// anonymousScript is the mode of a nil CamundaAuth: no credentials at all,
+// which is how the suite proves that an endpoint refuses an anonymous call.
+const anonymousScript = `camunda_curl() { curl -sS -L "$@"; }`
+
 // CamundaRequest is one call from a helper pod against the Orchestration
-// Cluster REST API of a CamundaCluster, authenticated with basic auth.
+// Cluster REST API of a CamundaCluster.
 type CamundaRequest struct {
 	// Namespace is where the helper pod runs. Name distinguishes the pod;
 	// a random suffix makes every pod unique.
@@ -47,12 +127,8 @@ type CamundaRequest struct {
 	// Method and URL are the HTTP method and the full URL of the call.
 	Method string
 	URL    string
-	// CredentialsSecret is the Secret in Namespace that holds the basic-auth
-	// user under UsernameKey and PasswordKey. The pod reads it through
-	// secretKeyRef, so the password never appears in the pod spec.
-	CredentialsSecret string
-	UsernameKey       string
-	PasswordKey       string
+	// Auth is how the call authenticates. A nil Auth sends no credentials.
+	Auth CamundaAuth
 	// Files are written into /tmp of the pod before the call, by file name,
 	// so a form part can upload them (-F resources=@/tmp/<name>). A name is
 	// letters, digits, dots, dashes, and underscores only.
@@ -63,31 +139,47 @@ type CamundaRequest struct {
 	Timeout time.Duration
 }
 
+// CamundaResponse is the result of one call, after curl followed every
+// redirect.
+type CamundaResponse struct {
+	// Status is the status code of the final response.
+	Status int
+	// URL is the URL the call ended at. It differs from the URL of the
+	// request when the server redirected, which is what proves an OIDC login
+	// redirect.
+	URL string
+	// Body is the body of the final response.
+	Body string
+}
+
 // CamundaREST performs req with curl, follows redirects, and returns the
-// final HTTP status code and the response body. A curl failure (for example
-// a connection refused) is an error.
-func CamundaREST(req CamundaRequest) (int, string, error) {
-	env := make([]corev1.EnvVar, 0, 2+len(req.Files))
-	env = append(
-		env,
-		SecretEnv("CAMUNDA_USER", req.CredentialsSecret, req.UsernameKey),
-		SecretEnv("CAMUNDA_PASSWORD", req.CredentialsSecret, req.PasswordKey),
-	)
+// final status code, the final URL, and the body. A curl failure (for example
+// a connection refused) is an error, and so is a token that the identity
+// provider does not give out.
+func CamundaREST(req CamundaRequest) (CamundaResponse, error) {
+	var env []corev1.EnvVar
+	auth := anonymousScript
+	if req.Auth != nil {
+		env = append(env, req.Auth.env()...)
+		auth = req.Auth.script()
+	}
 
 	var script strings.Builder
 	for i, name := range slices.Sorted(maps.Keys(req.Files)) {
 		if !fileNamePattern.MatchString(name) {
-			return 0, "", fmt.Errorf("file name %q is not a plain file name", name)
+			return CamundaResponse{}, fmt.Errorf("file name %q is not a plain file name", name)
 		}
 		envName := "CAMUNDA_FILE_" + strconv.Itoa(i)
 		env = append(env, corev1.EnvVar{Name: envName, Value: req.Files[name]})
-		fmt.Fprintf(&script, "printf '%%s' \"$%s\" > '/tmp/%s' && ", envName, name)
+		fmt.Fprintf(&script, "printf '%%s' \"$%s\" > '/tmp/%s'\n", envName, name)
 	}
+
+	script.WriteString(auth)
 	// $0 is "curl", the remaining arguments are the curl arguments. The
-	// status code goes first, the body after a newline.
+	// status code comes first, the final URL second, the body after them.
 	script.WriteString(
-		`curl -sS -L -u "$CAMUNDA_USER:$CAMUNDA_PASSWORD" -o /tmp/response -w '%{http_code}' "$@" && ` +
-			`echo && cat /tmp/response`,
+		"\ncamunda_curl -o /tmp/response -w '%{http_code}\\n%{url_effective}\\n' \"$@\"\n" +
+			"cat /tmp/response",
 	)
 
 	args := append([]string{"-ec", script.String(), "curl", "-X", req.Method}, req.Args...)
@@ -109,16 +201,19 @@ func CamundaREST(req CamundaRequest) (int, string, error) {
 		},
 	}, req.Timeout)
 	if err != nil {
-		return 0, out, err
+		return CamundaResponse{Body: out}, err
 	}
 
-	code, body, _ := strings.Cut(out, "\n")
+	code, rest, _ := strings.Cut(out, "\n")
+	url, body, _ := strings.Cut(rest, "\n")
 	status, err := strconv.Atoi(strings.TrimSpace(code))
 	if err != nil {
-		return 0, out, fmt.Errorf("parsing the status code of %s %s: %w", req.Method, req.URL, err)
+		return CamundaResponse{Body: out}, fmt.Errorf(
+			"parsing the status code of %s %s: %w", req.Method, req.URL, err,
+		)
 	}
 
-	return status, body, nil
+	return CamundaResponse{Status: status, URL: strings.TrimSpace(url), Body: body}, nil
 }
 
 // SecretEnv returns an environment variable that reads key of the Secret
