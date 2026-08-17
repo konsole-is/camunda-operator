@@ -267,7 +267,12 @@ func (r *Reconciler) run(
 			// Nothing is addressable anymore; the machine walks to its
 			// terminal phase through the resume deadline.
 			if backup.Status.Step != v1.StepResumeExporting {
-				r.failStep(backup, string(backup.Status.Step), nil, fmt.Errorf("CamundaCluster %s is gone", key))
+				r.failStep(
+					backup,
+					string(backup.Status.Step),
+					partOf(backup, backup.Status.Step),
+					fmt.Errorf("CamundaCluster %s is gone", key),
+				)
 			}
 			return r.runStep(ctx, backup, &cluster)
 		}
@@ -439,6 +444,21 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 		}
 
 		return r.SiblingInProgress(ctx, cluster)
+	}
+}
+
+// partOf returns the backup part that the step drives, or nil for the steps
+// that own no part.
+func partOf(backup *v1.LogicalBackupElasticsearch, step v1.LogicalBackupElasticsearchStep) *v1.BackupPart {
+	switch step {
+	case v1.StepBackupHistory:
+		return &backup.Status.History
+	case v1.StepSnapshotRecords:
+		return &backup.Status.Records
+	case v1.StepBackupRuntime:
+		return &backup.Status.Runtime
+	default:
+		return nil
 	}
 }
 

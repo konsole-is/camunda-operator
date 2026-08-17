@@ -4,7 +4,7 @@ A LogicalBackupElasticsearch is one backup of an Elasticsearch-backed [CamundaCl
 
 ## Purpose
 
-The backup captures the web-application indices, the exported Zeebe record indices, and the Zeebe partitions of one cluster, so a LogicalRestore can bring the cluster back to this point. You create one by hand for a one-off backup; a [BackupSchedule](backupschedule.md) creates them on a cron schedule. Deleting the resource deletes the stored artifacts through a finalizer — and, when the backup was still running, resumes exporting on the cluster first, so a deleted backup can never leave the cluster unable to compact its log.
+The backup captures the web-application indices, the exported Zeebe record indices, and the Zeebe partitions of one cluster, so a LogicalRestore can bring the cluster back to this point. You create one by hand for a one-off backup; a [BackupSchedule](backupschedule.md) creates them on a cron schedule. Deleting the resource deletes the stored artifacts through a finalizer — and, when the backup was still running, resumes exporting on the cluster first. Only when nothing is addressable anymore — the cluster is gone, or a client can no longer be built — does the deletion release without that resume.
 
 ## API reference
 

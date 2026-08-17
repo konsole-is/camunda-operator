@@ -95,6 +95,9 @@ func (r *Reconciler) deleteArtifacts(
 	if binding == nil || binding.Endpoint == "" {
 		// The cluster exists, so the artifacts are still deletable once it
 		// publishes its binding again (for example after a suspension).
+		r.holdDeletion(backup, fmt.Sprintf(
+			"CamundaCluster %s publishes no management binding (suspended?)", key,
+		))
 		return false, nil
 	}
 
@@ -165,8 +168,10 @@ func (r *Reconciler) deleteArtifacts(
 	}
 
 	if err := mgmt.DeleteRuntimeBackup(ctx, backup.Status.BackupID); err != nil {
-		// A runtime backup that is still in progress cannot be deleted yet;
-		// wait for it instead of hammering the endpoint on error backoff.
+		// Any rejected delete holds the deletion — a backup still in
+		// progress is the documented case, but every rejection means the
+		// cluster refuses for a reason worth waiting out rather than
+		// hammering the endpoint on error backoff.
 		if errors.Is(err, camundaadmin.ErrRejected) {
 			r.holdDeletion(backup, fmt.Sprintf(
 				"runtime backup %d cannot be deleted yet: %v", backup.Status.BackupID, err,
