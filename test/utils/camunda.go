@@ -41,6 +41,10 @@ var fileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // implement it. Each contributes the variables the helper pod reads its
 // credentials from, and the shell that defines the function every call goes
 // through.
+//
+// The methods are unexported on purpose, so this package holds every
+// authentication mode. A caller outside it selects a mode, and cannot add
+// one.
 type CamundaAuth interface {
 	// env returns the variables of the helper pod.
 	env() []corev1.EnvVar
@@ -101,9 +105,9 @@ func (a ClientCredentials) env() []corev1.EnvVar {
 func (a ClientCredentials) script() string {
 	return `CAMUNDA_TOKEN=$(curl -sS -X POST ` +
 		`-d grant_type=client_credentials ` +
-		`-d "client_id=$CAMUNDA_CLIENT_ID" ` +
-		`-d "client_secret=$CAMUNDA_CLIENT_SECRET" ` +
-		`-d "audience=$CAMUNDA_AUDIENCE" ` +
+		`--data-urlencode "client_id=$CAMUNDA_CLIENT_ID" ` +
+		`--data-urlencode "client_secret=$CAMUNDA_CLIENT_SECRET" ` +
+		`--data-urlencode "audience=$CAMUNDA_AUDIENCE" ` +
 		`"$CAMUNDA_TOKEN_URL" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
 if [ -z "$CAMUNDA_TOKEN" ]; then echo "no access_token from $CAMUNDA_TOKEN_URL" >&2; exit 1; fi
 camunda_curl() { curl -sS -L -H "Authorization: Bearer $CAMUNDA_TOKEN" "$@"; }`
