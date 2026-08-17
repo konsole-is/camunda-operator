@@ -254,6 +254,21 @@ type AzureBlobStorage struct {
 	Auth AzureBlobStorageAuth `json:"auth,omitempty"`
 }
 
+// ServiceEndpoint returns the URL of the blob service: the explicit endpoint
+// of the block without a trailing slash, or the public Azure endpoint of the
+// account when none is set. The azure backup store and every other consumer
+// need an endpoint, because the contract carries no connection string, and
+// one derivation keeps them from disagreeing. The slash matters: Azure signs
+// the canonical resource, and a doubled separator turns a bad URL into a 403
+// that reads as bad credentials.
+func (in *AzureBlobStorage) ServiceEndpoint() string {
+	if endpoint := strings.TrimRight(in.Endpoint, "/"); endpoint != "" {
+		return endpoint
+	}
+
+	return "https://" + in.AccountName + ".blob.core.windows.net"
+}
+
 // ObjectStorageConfigSpec describes a bucket and how consumers authenticate
 // against it. It is a discriminated union: type selects exactly one of the
 // s3, gcs, and azureBlob blocks.

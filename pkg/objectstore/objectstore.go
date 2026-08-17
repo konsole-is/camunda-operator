@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -322,12 +321,7 @@ func openGCS(ctx context.Context, spec *v1.GCSStorage, creds *Credentials) (*Buc
 // computed over the canonical resource — Azure then answers 403, which reads
 // as bad credentials instead of a bad URL.
 func azureContainerURL(spec *v1.AzureBlobStorage) string {
-	serviceURL := strings.TrimRight(spec.Endpoint, "/")
-	if serviceURL == "" {
-		serviceURL = fmt.Sprintf("https://%s.blob.core.windows.net", spec.AccountName)
-	}
-
-	return serviceURL + "/" + spec.Container
+	return spec.ServiceEndpoint() + "/" + spec.Container
 }
 
 // openAzureBlob opens an Azure Blob Storage container.
