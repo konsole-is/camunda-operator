@@ -130,7 +130,7 @@ func newRig() *rig {
 
 	r.repository = r.cluster.Name
 	// In production the ElasticsearchCluster controller registers the
-	// repository before any backup runs; the rig plays that part.
+	// repository before any backup runs. The rig plays that part.
 	admin, err := esadmin.New(r.search.URL(), "elastic", "elastic-password", r.search.CertificatePEM())
 	Expect(err).NotTo(HaveOccurred())
 	Expect(admin.EnsureSnapshotRepository(ctx, r.repository, esadmin.S3RepositoryConfig{
@@ -162,9 +162,9 @@ func (r *rig) publishBinding(partitions int32) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// newBackup creates a backup of the rig's cluster and registers a cleanup
-// that never blocks the suite: when the ordinary deletion cannot finish, the
-// finalizer is stripped.
+// newBackup creates a backup of the rig's cluster. It registers a cleanup
+// that never blocks the suite. When the ordinary deletion cannot finish, the
+// cleanup strips the finalizer.
 func (r *rig) newBackup() *v1.LogicalBackupElasticsearch {
 	GinkgoHelper()
 
@@ -349,7 +349,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 	It("gives up on resume at the deadline with ResumeFailed", func() {
 		r := newRig()
-		// Resume never succeeds; the deadline of the suite is two seconds.
+		// Resume never succeeds. The deadline of the suite is two seconds.
 		r.management.FailNext("resume", 100000)
 		r.management.FailNext("historyStart", 1)
 

@@ -278,11 +278,9 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "ObjectStorageConfig")
 		os.Exit(1)
 	}
-	if err := (&logicalbackupelasticsearch.Reconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err := logicalbackupelasticsearch.New(
+		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), logicalbackupelasticsearch.Options{},
+	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupElasticsearch")
 		os.Exit(1)
 	}

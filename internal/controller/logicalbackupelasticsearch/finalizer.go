@@ -23,25 +23,25 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
-// finalize deletes the stored artifacts of the backup, strictly by its own
-// backup id, and releases the finalizer. A non-terminal backup resumes
-// exporting first: deleting the resource must never leave the cluster
-// soft-paused with nothing left to resume it. When the cluster or its
-// contracts are gone — or a client can no longer be built by construction —
-// the artifacts are unreachable and the finalizer releases with an event
-// instead of blocking the deletion forever. A cluster that merely has not
-// published its binding yet keeps the deletion waiting: it still exists, so
-// its artifacts remain deletable.
+// finalize deletes the stored artifacts of the backup and releases the
+// finalizer. It deletes strictly by the backup's own ID. A non-terminal backup
+// resumes exporting first. A deleted resource must never leave the cluster
+// soft-paused with nothing left to resume it. When the artifacts are not
+// reachable anymore, the finalizer releases with an event instead of a
+// deletion that blocks forever. That is the case when the cluster or its
+// contracts are gone, or when a client can no longer be built by
+// construction. A cluster that only has not published its binding yet keeps
+// the deletion waiting. It still exists, so its artifacts remain deletable.
 func (r *Reconciler) finalize(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
@@ -50,7 +50,7 @@ func (r *Reconciler) finalize(
 		return ctrl.Result{}, nil
 	}
 
-	// A backup that never allocated an id wrote nothing anywhere.
+	// A backup that never allocated an ID wrote nothing anywhere.
 	if backup.Status.BackupID != 0 {
 		released, err := r.deleteArtifacts(ctx, backup)
 		if err != nil {
@@ -69,20 +69,18 @@ func (r *Reconciler) finalize(
 	return ctrl.Result{}, nil
 }
 
-// deleteArtifacts resumes exporting when the backup left it paused, then
+// deleteArtifacts resumes exporting when the backup left it paused. Then it
 // removes the snapshots and the partition backup. It reports released=false
-// when the cluster exists but is not addressable yet, or holds work that
-// cannot be deleted yet, so the caller requeues instead of leaking artifacts
-// that are still deletable — or leaving a cluster paused.
+// when the deletion must wait: the cluster exists but is not addressable yet,
+// or it holds work that cannot be deleted yet. The caller then requeues
+// instead of leaking artifacts that are still deletable, or leaving a cluster
+// paused.
 func (r *Reconciler) deleteArtifacts(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 ) (released bool, err error) {
 	var cluster v1.CamundaCluster
-	key := types.NamespacedName{
-		Namespace: backup.EffectiveClusterNamespace(),
-		Name:      backup.Spec.ClusterRef.Name,
-	}
+	key := clusterKey(backup)
 	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.releaseWithoutCleanup(backup, fmt.Sprintf("CamundaCluster %s is gone", key))
@@ -93,8 +91,8 @@ func (r *Reconciler) deleteArtifacts(
 
 	binding := cluster.Status.Management
 	if binding == nil || binding.Endpoint == "" {
-		// The cluster exists, so the artifacts are still deletable once it
-		// publishes its binding again (for example after a suspension).
+		// The cluster exists, so the artifacts are still deletable when it
+		// publishes its binding again, for example after a suspension.
 		r.holdDeletion(backup, fmt.Sprintf(
 			"CamundaCluster %s publishes no management binding (suspended?)", key,
 		))
@@ -106,14 +104,15 @@ func (r *Reconciler) deleteArtifacts(
 		return false, fmt.Errorf("building the management client: %w", err)
 	}
 	if failure != nil {
-		// A binding that is broken by construction — credentials gone, a
-		// version this operator no longer drives — stays broken; holding the
-		// deletion on it would pin the namespace forever.
+		// A binding that is broken by construction stays broken: the
+		// credentials are gone, or the version is one this operator no
+		// longer drives. A deletion that holds on it pins the namespace
+		// forever.
 		r.releaseWithoutCleanup(backup, failure.Message)
 		return true, nil
 	}
 
-	// A non-terminal backup may have left exporting paused; the cluster must
+	// A non-terminal backup can have left exporting paused. The cluster must
 	// run again before its artifacts go. Resume is idempotent, so a backup
 	// that never paused resumes to a no-op.
 	if !backup.Terminal() && backup.Status.Step != "" {
@@ -123,27 +122,13 @@ func (r *Reconciler) deleteArtifacts(
 		}
 	}
 
-	storage, err := r.resolveStorage(ctx, &cluster)
-	if err != nil {
-		if apierrors.IsNotFound(errors.Unwrap(err)) || cluster.Spec.StorageRef == "" {
-			r.releaseWithoutCleanup(backup, err.Error())
-			return true, nil
-		}
-		return false, err
+	es, released, err := r.finalizerElasticsearch(ctx, backup, &cluster)
+	if es == nil {
+		return released, err
 	}
 
-	es, err := r.elasticsearchAdmin(ctx, storage)
-	if err != nil {
-		var failure *conditions.PreCheckFailure
-		if errors.As(err, &failure) {
-			r.releaseWithoutCleanup(backup, failure.Message)
-			return true, nil
-		}
-		return false, fmt.Errorf("building the Elasticsearch client: %w", err)
-	}
-
-	// The status may miss snapshot names when the resource died between the
-	// start of the history backup and the poll that records them; the
+	// The status can miss snapshot names when the resource died between the
+	// start of the history backup and the poll that records them. The
 	// cluster's own report closes that window.
 	if status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID); err == nil {
 		recordHistorySnapshots(backup, status)
@@ -168,9 +153,9 @@ func (r *Reconciler) deleteArtifacts(
 	}
 
 	if err := mgmt.DeleteRuntimeBackup(ctx, backup.Status.BackupID); err != nil {
-		// Any rejected delete holds the deletion — a backup still in
-		// progress is the documented case, but every rejection means the
-		// cluster refuses for a reason worth waiting out rather than
+		// Any rejected delete holds the deletion. A backup that is still in
+		// progress is the documented case. Every rejection means that the
+		// cluster refuses for a reason worth waiting out, rather than
 		// hammering the endpoint on error backoff.
 		if errors.Is(err, camundaadmin.ErrRejected) {
 			r.holdDeletion(backup, fmt.Sprintf(
@@ -184,8 +169,39 @@ func (r *Reconciler) deleteArtifacts(
 	return true, nil
 }
 
-// holdDeletion records why the deletion waits, so the user sees the reason on
-// the resource instead of a silently terminating object.
+// finalizerElasticsearch builds the Elasticsearch client for the finalizer. A
+// storage contract or a Secret that is gone releases the finalizer with an
+// event, because the artifacts are not reachable by construction. Every
+// failure to build the client either releases or returns an error. A nil
+// client with released=false and no error does not occur.
+func (r *Reconciler) finalizerElasticsearch(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+) (es *esadmin.Client, released bool, err error) {
+	storage, err := r.resolveStorage(ctx, cluster)
+	if err != nil {
+		if apierrors.IsNotFound(errors.Unwrap(err)) || cluster.Spec.StorageRef == "" {
+			r.releaseWithoutCleanup(backup, err.Error())
+			return nil, true, nil
+		}
+		return nil, false, err
+	}
+
+	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
+	if err != nil {
+		return nil, false, fmt.Errorf("building the Elasticsearch client: %w", err)
+	}
+	if failure != nil {
+		r.releaseWithoutCleanup(backup, failure.Message)
+		return nil, true, nil
+	}
+
+	return es, false, nil
+}
+
+// holdDeletion records why the deletion waits. The user then sees the reason
+// on the resource instead of an object that terminates in silence.
 func (r *Reconciler) holdDeletion(backup *v1.LogicalBackupElasticsearch, reason string) {
 	r.EventRecorder.Eventf(
 		backup,
@@ -198,8 +214,8 @@ func (r *Reconciler) holdDeletion(backup *v1.LogicalBackupElasticsearch, reason 
 	)
 }
 
-// releaseWithoutCleanup records that the artifacts could not be reached and
-// the finalizer releases anyway: a deleted cluster must not pin its backups
+// releaseWithoutCleanup records that the artifacts are not reachable. The
+// finalizer releases anyway. A deleted cluster must not pin its backups
 // forever.
 func (r *Reconciler) releaseWithoutCleanup(backup *v1.LogicalBackupElasticsearch, reason string) {
 	r.EventRecorder.Eventf(

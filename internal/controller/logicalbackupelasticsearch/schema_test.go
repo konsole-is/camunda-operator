@@ -46,7 +46,7 @@ var _ = Describe("LogicalBackupElasticsearch schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 
 		// The controller adds its finalizer concurrently, so a plain update
-		// can lose to a conflict; only the CEL rejection ends the retry.
+		// can lose to a conflict. Only the CEL rejection ends the retry.
 		mutate := func(change func(*v1.LogicalBackupElasticsearch)) error {
 			var current v1.LogicalBackupElasticsearch
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &current)).To(Succeed())
@@ -68,8 +68,8 @@ var _ = Describe("LogicalBackupElasticsearch schema", func() {
 	})
 
 	It("serves the resource under its short name plural", func() {
-		// The RESTMapper of the client resolves the resource; a wrong plural
-		// or short name would fail every typed call, so listing is proof
+		// The RESTMapper of the client resolves the resource. A wrong plural
+		// or short name fails every typed call. A successful list is proof
 		// enough of the path marker.
 		var list v1.LogicalBackupElasticsearchList
 		Expect(k8sClient.List(ctx, &list)).To(Succeed())

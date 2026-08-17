@@ -23,7 +23,6 @@ import (
 	"slices"
 	"strconv"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -32,11 +31,12 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
 // zeebeRecordIndices is the index pattern of the exported Zeebe record
-// indices: the exporter's default prefix. The operator configures no other
-// prefix, so the default is the pattern.
+// indices. It is the default prefix of the exporter. The operator configures
+// no other prefix, so the default is the pattern.
 const zeebeRecordIndices = "zeebe-record*"
 
 // RecordsSnapshotName returns the name of the Elasticsearch snapshot that
@@ -46,12 +46,12 @@ func RecordsSnapshotName(id int64) string {
 	return "camunda_zeebe_records_backup_" + strconv.FormatInt(id, 10)
 }
 
-// runStep executes the step that status.step records and advances at most one
+// runStep executes the step that status.step records. It advances at most one
 // step, so every transition is persisted before the next side effect. Every
-// step queries the current state before it acts; a crash re-enters without
-// repeating a call. Each step builds only the clients it uses, and a
-// dependency that broke mid-run fails the step through resume — the machine
-// owns every exit.
+// step queries the current state before it acts. A crash re-enters without a
+// repeated call. Each step builds only the clients that it uses. A dependency
+// that broke mid-run fails the step through resume. The machine owns every
+// exit.
 func (r *Reconciler) runStep(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
@@ -74,9 +74,9 @@ func (r *Reconciler) runStep(
 }
 
 // management builds the management client of the cluster for one running
-// step. A binding that broke mid-run — the credentials Secret gone, an
-// unsupported version — fails the step through resume; only a transient read
-// error comes back as an error.
+// step. A binding that broke mid-run fails the step through resume: the
+// credentials Secret is gone, or the version is not supported. Only a
+// transient read error comes back as an error.
 func (r *Reconciler) management(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
@@ -96,7 +96,7 @@ func (r *Reconciler) management(
 	return mgmt, ctrl.Result{}, nil
 }
 
-// pauseExporting soft-pauses exporting: records keep flowing, log compaction
+// pauseExporting soft-pauses exporting. Records keep flowing, log compaction
 // stops, and the backup is hot. The call is idempotent on the cluster side,
 // so re-entry after a crash is safe.
 func (r *Reconciler) pauseExporting(
@@ -115,7 +115,7 @@ func (r *Reconciler) pauseExporting(
 		}
 
 		// A rejection can be a partial pause: some partitions paused, some
-		// not. Resume reverts it either way.
+		// did not. Resume reverts it either way.
 		r.failStep(backup, "PauseExporting", nil, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
@@ -126,10 +126,11 @@ func (r *Reconciler) pauseExporting(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// backupHistory drives the backup of the web-application indices: start it if
-// the cluster holds none under the id, then poll it to completion. The
-// snapshot names are recorded as soon as the cluster reports them, so the
-// finalizer and a restore can locate them after the cluster is gone.
+// backupHistory drives the backup of the web-application indices. It starts
+// the backup when the cluster holds none under the ID, then it polls the
+// backup to completion. The snapshot names are recorded as soon as the
+// cluster reports them. The finalizer and a restore can then locate the
+// snapshots after the cluster is gone.
 func (r *Reconciler) backupHistory(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
@@ -175,47 +176,33 @@ func (r *Reconciler) backupHistory(
 		r.stageProgress(backup, "Snapshotting the exported Zeebe record indices")
 
 	default:
-		reason := status.FailureReason
-		if reason == "" {
-			reason = string(status.State)
-		}
-		r.failStep(backup, "BackupHistory", &backup.Status.History, errors.New(reason))
+		r.failStep(backup, "BackupHistory", &backup.Status.History, errors.New(failureReason(status)))
 	}
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
 // snapshotRecords snapshots the exported Zeebe record indices directly in
-// Elasticsearch: Camunda exposes no management endpoint for them. The
-// snapshot goes to the repository pinned at start; a repository that was
-// repointed mid-run fails the step rather than splitting the set.
+// Elasticsearch. Camunda exposes no management endpoint for them. The snapshot
+// goes to the repository that start pinned. A repository that changed mid-run
+// fails the step, so the set is never split.
 func (r *Reconciler) snapshotRecords(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 	cluster *v1.CamundaCluster,
 ) (ctrl.Result, error) {
+	part := &backup.Status.Records
 	if repointed := cluster.Status.Management.BackupRepository; repointed != backup.Status.Repository {
-		r.failStep(backup, "SnapshotRecords", &backup.Status.Records, fmt.Errorf(
+		r.failStep(backup, "SnapshotRecords", part, fmt.Errorf(
 			"the cluster's snapshot repository changed from %q to %q mid-run; the set must stay in one repository",
 			backup.Status.Repository, repointed,
 		))
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
-	storage, err := r.resolveStorage(ctx, cluster)
-	if err != nil {
-		r.failStep(backup, "SnapshotRecords", &backup.Status.Records, err)
-		return ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	es, err := r.elasticsearchAdmin(ctx, storage)
-	if err != nil {
-		var failure *conditions.PreCheckFailure
-		if errors.As(err, &failure) {
-			r.failStep(backup, "SnapshotRecords", &backup.Status.Records, errors.New(failure.Message))
-			return ctrl.Result{RequeueAfter: r.poll()}, nil
-		}
-		return ctrl.Result{}, err
+	es, result, err := r.elasticsearch(ctx, backup, cluster, "SnapshotRecords", part)
+	if es == nil {
+		return result, err
 	}
 
 	name := RecordsSnapshotName(backup.Status.BackupID)
@@ -225,7 +212,7 @@ func (r *Reconciler) snapshotRecords(
 			return r.stageUnreachable(backup, err)
 		}
 
-		r.failStep(backup, "SnapshotRecords", &backup.Status.Records, err)
+		r.failStep(backup, "SnapshotRecords", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
@@ -238,41 +225,65 @@ func (r *Reconciler) snapshotRecords(
 				return r.stageUnreachable(backup, err)
 			}
 
-			r.failStep(backup, "SnapshotRecords", &backup.Status.Records, err)
+			r.failStep(backup, "SnapshotRecords", part, err)
 			return ctrl.Result{RequeueAfter: r.poll()}, nil
 		}
-		backup.Status.Records = v1.BackupPart{State: v1.BackupPartInProgress}
+		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The snapshot of the exported record indices started")
 
 	case esadmin.SnapshotInProgress:
-		backup.Status.Records = v1.BackupPart{State: v1.BackupPartInProgress}
+		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The snapshot of the exported record indices is in progress")
 
 	case esadmin.SnapshotSuccess:
-		backup.Status.Records = v1.BackupPart{State: v1.BackupPartCompleted}
+		*part = v1.BackupPart{State: v1.BackupPartCompleted}
 		backup.Status.Step = v1.StepBackupRuntime
 		r.stageProgress(backup, "Backing up the Zeebe partitions")
 
 	default:
-		r.failStep(
-			backup,
-			"SnapshotRecords",
-			&backup.Status.Records,
-			fmt.Errorf("snapshot %q ended in state %s", name, state),
-		)
+		r.failStep(backup, "SnapshotRecords", part, fmt.Errorf("snapshot %q ended in state %s", name, state))
 	}
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// backupRuntime drives the backup of the Zeebe partitions under the same id
+// elasticsearch builds the Elasticsearch client for one running step. A
+// storage contract or a Secret that is gone mid-run fails the step through
+// resume. Only a transient read error comes back as an error.
+func (r *Reconciler) elasticsearch(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+	step string,
+	part *v1.BackupPart,
+) (*esadmin.Client, ctrl.Result, error) {
+	storage, err := r.resolveStorage(ctx, cluster)
+	if err != nil {
+		r.failStep(backup, step, part, err)
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
+	if err != nil {
+		return nil, ctrl.Result{}, err
+	}
+	if failure != nil {
+		r.failStep(backup, step, part, errors.New(failure.Message))
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	return es, ctrl.Result{}, nil
+}
+
+// backupRuntime drives the backup of the Zeebe partitions under the same ID
 // as every other part of the set.
 func (r *Reconciler) backupRuntime(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 	cluster *v1.CamundaCluster,
 ) (ctrl.Result, error) {
-	mgmt, result, err := r.management(ctx, backup, cluster, "BackupRuntime", &backup.Status.Runtime)
+	part := &backup.Status.Runtime
+	mgmt, result, err := r.management(ctx, backup, cluster, "BackupRuntime", part)
 	if mgmt == nil {
 		return result, err
 	}
@@ -283,7 +294,7 @@ func (r *Reconciler) backupRuntime(
 			return r.stageUnreachable(backup, err)
 		}
 
-		r.failStep(backup, "BackupRuntime", &backup.Status.Runtime, err)
+		r.failStep(backup, "BackupRuntime", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
@@ -295,172 +306,38 @@ func (r *Reconciler) backupRuntime(
 				return r.stageUnreachable(backup, err)
 			}
 
-			// A conflict on an id the cluster does not hold means another
-			// actor took a same-or-higher id. Adopting that backup would
-			// point this resource at someone else's artifacts.
-			r.failStep(backup, "BackupRuntime", &backup.Status.Runtime, err)
+			// A conflict on an ID that the cluster does not hold means that
+			// another actor took a same-or-higher ID. To adopt that backup
+			// points this resource at the artifacts of someone else.
+			r.failStep(backup, "BackupRuntime", part, err)
 			return ctrl.Result{RequeueAfter: r.poll()}, nil
 		}
-		backup.Status.Runtime = v1.BackupPart{State: v1.BackupPartInProgress}
+		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")
 
 	case camundaadmin.StateInProgress:
-		backup.Status.Runtime = v1.BackupPart{State: v1.BackupPartInProgress}
+		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions is in progress")
 
 	case camundaadmin.StateCompleted:
-		backup.Status.Runtime = v1.BackupPart{State: v1.BackupPartCompleted}
+		*part = v1.BackupPart{State: v1.BackupPartCompleted}
 		backup.Status.Step = v1.StepResumeExporting
 		r.stageProgress(backup, "Resuming exporting")
 
 	default:
-		reason := status.FailureReason
-		if reason == "" {
-			reason = string(status.State)
-		}
-		r.failStep(backup, "BackupRuntime", &backup.Status.Runtime, errors.New(reason))
+		r.failStep(backup, "BackupRuntime", part, errors.New(failureReason(status)))
 	}
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// resumeExporting always runs, after success and after any failure: a cluster
-// left soft-paused cannot compact its log and fills its disks. The terminal
-// phase is written only here, once resume succeeded — or once the deadline
-// of accumulated active attempts passed and the cluster needs a human. Time
-// in which the procedure was parked elsewhere slides the deadline anchor
-// forward, so a long suspension cannot consume the budget of the attempts.
-func (r *Reconciler) resumeExporting(
-	ctx context.Context,
-	backup *v1.LogicalBackupElasticsearch,
-	cluster *v1.CamundaCluster,
-) (ctrl.Result, error) {
-	// The deadline bounds attempting, not wall-clock time: every gap between
-	// attempts counts as at most one poll interval, so a parked procedure —
-	// or a slow reconcile — slides the anchor forward instead of consuming
-	// the budget.
-	now := metav1.Now()
-	if backup.Status.ResumeStartedTime == nil {
-		backup.Status.ResumeStartedTime = &now
+// failureReason returns the failure reason of a backup status, or its state
+// when the endpoint gave no reason.
+func failureReason(status camundaadmin.BackupStatus) string {
+	if status.FailureReason != "" {
+		return status.FailureReason
 	}
-	if last := backup.Status.LastResumeAttemptTime; last != nil {
-		if gap := now.Sub(last.Time); gap > r.poll() {
-			slid := metav1.NewTime(backup.Status.ResumeStartedTime.Add(gap - r.poll()))
-			backup.Status.ResumeStartedTime = &slid
-		}
-	}
-	backup.Status.LastResumeAttemptTime = &now
-
-	attempt := func() error {
-		mgmt, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, cluster)
-		if err != nil {
-			return err
-		}
-		if failure != nil {
-			return errors.New(failure.Message)
-		}
-		return mgmt.ResumeExporting(ctx)
-	}
-
-	if err := attempt(); err != nil {
-		if now.Sub(backup.Status.ResumeStartedTime.Time) > r.resumeDeadline() {
-			backup.Status.Phase = v1.LogicalBackupFailed
-			backup.Status.TerminalReason = v1.ReasonResumeFailed
-			if backup.Status.FailureMessage == "" {
-				backup.Status.FailureMessage = fmt.Sprintf(
-					"Exporting could not be resumed before the deadline: %v", err,
-				)
-			}
-			backup.Status.CompletionTime = &now
-			conditions.Stage(backup, r.terminalReady(backup))
-			r.EventRecorder.Eventf(
-				backup,
-				nil,
-				corev1.EventTypeWarning,
-				eventReasonResumeFailed,
-				eventActionBackup,
-				"Exporting could not be resumed before the deadline; the cluster cannot compact its log: %v",
-				err,
-			)
-
-			return ctrl.Result{}, nil
-		}
-
-		reason := v1.ReasonFailed
-		if errors.Is(err, camundaadmin.ErrUnreachable) {
-			reason = v1.ReasonConnectionFailed
-		}
-		conditions.Stage(backup, conditions.Ready(
-			metav1.ConditionFalse,
-			reason,
-			fmt.Sprintf("Resuming exporting failed and is retried: %v", err),
-			backup.Generation,
-		))
-
-		return ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	backup.Status.CompletionTime = &now
-
-	if backup.Status.FailureMessage != "" {
-		backup.Status.Phase = v1.LogicalBackupFailed
-		backup.Status.TerminalReason = v1.ReasonFailed
-		conditions.Stage(backup, r.terminalReady(backup))
-
-		return ctrl.Result{}, nil
-	}
-
-	backup.Status.Phase = v1.LogicalBackupCompleted
-	backup.Status.TerminalReason = v1.ReasonCompleted
-	conditions.Stage(backup, r.terminalReady(backup))
-	r.EventRecorder.Eventf(
-		backup,
-		nil,
-		corev1.EventTypeNormal,
-		eventReasonCompleted,
-		eventActionBackup,
-		"Backup %d completed",
-		backup.Status.BackupID,
-	)
-
-	return ctrl.Result{}, nil
-}
-
-// failStep records the failing step, marks the affected part, and routes to
-// resume: the terminal phase waits until exporting runs again.
-func (r *Reconciler) failStep(
-	backup *v1.LogicalBackupElasticsearch,
-	step string,
-	part *v1.BackupPart,
-	err error,
-) {
-	if part != nil {
-		reason := err.Error()
-		if part.FailureReason != "" {
-			reason = part.FailureReason
-		}
-		*part = v1.BackupPart{State: v1.BackupPartFailed, FailureReason: reason}
-	}
-
-	backup.Status.FailureMessage = fmt.Sprintf("Step %s failed: %v", step, err)
-	backup.Status.Step = v1.StepResumeExporting
-	backup.Status.ResumeStartedTime = nil
-	backup.Status.LastResumeAttemptTime = nil
-	conditions.Stage(backup, conditions.Ready(
-		metav1.ConditionFalse,
-		v1.ReasonProgressing,
-		backup.Status.FailureMessage+"; resuming exporting",
-		backup.Generation,
-	))
-	r.EventRecorder.Eventf(
-		backup,
-		nil,
-		corev1.EventTypeWarning,
-		eventReasonStepFailed,
-		eventActionBackup,
-		"%s",
-		backup.Status.FailureMessage,
-	)
+	return string(status.State)
 }
 
 // stageProgress stages the Ready condition of a healthy running procedure.
@@ -470,8 +347,8 @@ func (r *Reconciler) stageProgress(backup *v1.LogicalBackupElasticsearch, messag
 	))
 }
 
-// stageUnreachable keeps the step and retries: an unreachable endpoint is
-// transient and nothing was started.
+// stageUnreachable keeps the step and retries. An unreachable endpoint is
+// transient, and nothing was started.
 func (r *Reconciler) stageUnreachable(
 	backup *v1.LogicalBackupElasticsearch,
 	err error,
@@ -486,8 +363,8 @@ func (r *Reconciler) stageUnreachable(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// recordHistorySnapshots merges the snapshot names the cluster reports into
-// status, so they survive the cluster.
+// recordHistorySnapshots merges the snapshot names that the cluster reports
+// into status, so they survive the cluster.
 func recordHistorySnapshots(backup *v1.LogicalBackupElasticsearch, status camundaadmin.BackupStatus) {
 	for _, detail := range status.Details {
 		if detail.Name == "" || slices.Contains(backup.Status.HistorySnapshots, detail.Name) {

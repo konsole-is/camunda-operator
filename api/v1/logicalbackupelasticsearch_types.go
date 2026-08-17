@@ -20,22 +20,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ReasonResumeFailed means exporting could not be resumed before the deadline
+// ReasonResumeFailed means that exporting did not resume before the deadline
 // after a backup. The cluster cannot compact its log while exporting is
-// paused, so it needs an operator's attention. Only LogicalBackupElasticsearch
-// reports it: pausing exporting is a step of the Elasticsearch procedure.
+// paused, so it needs the attention of an operator. Only
+// LogicalBackupElasticsearch reports it. To pause exporting is a step of the
+// Elasticsearch procedure alone.
 const ReasonResumeFailed = "ResumeFailed"
 
 // LogicalBackupElasticsearchStep is the resume marker of the backup
-// procedure. A crash or an operator restart re-enters at the recorded step,
-// and every step first queries the current state before it acts, so no call
-// is ever repeated.
+// procedure. A crash or an operator restart re-enters at the recorded step.
+// Every step queries the current state before it acts, so no call is
+// repeated.
 // +kubebuilder:validation:Enum=PauseExporting;BackupHistory;SnapshotRecords;BackupRuntime;ResumeExporting
 type LogicalBackupElasticsearchStep string
 
 // The steps of the Elasticsearch backup procedure, in order. A failure in any
-// step routes to StepResumeExporting: a cluster left with paused exporting
-// cannot compact its log, so resume always runs before a terminal phase.
+// step routes to StepResumeExporting. A cluster with paused exporting cannot
+// compact its log, so resume always runs before a terminal phase.
 const (
 	StepPauseExporting  LogicalBackupElasticsearchStep = "PauseExporting"
 	StepBackupHistory   LogicalBackupElasticsearchStep = "BackupHistory"
@@ -111,15 +112,15 @@ type LogicalBackupElasticsearchStatus struct {
 	Runtime BackupPart `json:"runtime,omitempty"`
 	// HistorySnapshots names the Elasticsearch snapshots of the
 	// web-application indices. The names are recorded as soon as the
-	// management API reports them, so the finalizer and a restore can locate
-	// the snapshots after the cluster is gone.
+	// management API reports them. The finalizer and a restore can then
+	// locate the snapshots after the cluster is gone.
 	// +optional
 	HistorySnapshots []string `json:"historySnapshots,omitempty"`
 	// Repository pins the snapshot repository that every part of the set is
-	// written to, recorded when the backup starts. Every later step and the
-	// finalizer use the pinned name, so a repository that is repointed on the
-	// storage contract mid-run cannot split the set or aim deletion at the
-	// wrong repository.
+	// written to. It is recorded when the backup starts. Every later step and
+	// the finalizer use the pinned name. A repository that changes on the
+	// storage contract mid-run can then neither split the set nor aim the
+	// deletion at the wrong repository.
 	// +optional
 	Repository string `json:"repository,omitempty"`
 	// FailureMessage names the failing step and its error. It is recorded
@@ -127,14 +128,14 @@ type LogicalBackupElasticsearchStatus struct {
 	// survives the resume and reaches the terminal condition.
 	// +optional
 	FailureMessage string `json:"failureMessage,omitempty"`
-	// ResumeStartedTime anchors the resume deadline: the accumulated time of
-	// active resume attempts counts against the deadline, while gaps in which
-	// the procedure was parked (a suspended cluster, an unpublished binding)
-	// slide the anchor forward and do not count. It survives an operator
-	// restart.
+	// ResumeStartedTime anchors the resume deadline. Only the accumulated
+	// time of active resume attempts counts against the deadline. A gap in
+	// which the procedure was parked slides the anchor forward and does not
+	// count, for example a suspended cluster or an unpublished binding. The
+	// anchor survives an operator restart.
 	// +optional
 	ResumeStartedTime *metav1.Time `json:"resumeStartedTime,omitempty"`
-	// LastResumeAttemptTime is when resume was last attempted; the gap to the
+	// LastResumeAttemptTime is when resume was last attempted. The gap to the
 	// next attempt decides whether the deadline anchor slides.
 	// +optional
 	LastResumeAttemptTime *metav1.Time `json:"lastResumeAttemptTime,omitempty"`
@@ -150,8 +151,8 @@ type LogicalBackupElasticsearchStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state; the Ready condition tracks the
-	// backup with reasons Progressing, Completed, Failed, ResumeFailed,
+	// Conditions represent the current state. The Ready condition tracks the
+	// backup with the reasons Progressing, Completed, Failed, ResumeFailed,
 	// ClusterSuspended, BackupInProgress, StorageTypeMismatch,
 	// InvalidReference, MissingSecret, and ConnectionFailed.
 	// +listType=map
@@ -169,11 +170,11 @@ type LogicalBackupElasticsearchStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // LogicalBackupElasticsearch is one backup of an Elasticsearch-backed
-// CamundaCluster: the web-application indices, the exported Zeebe record
-// indices, and the Zeebe partitions, as one coordinated set under one backup
-// ID, taken hot with exporting soft-paused. LogicalRestore consumes a
-// completed backup. Deleting the resource deletes the stored artifacts
-// through a finalizer.
+// CamundaCluster. The backup is one coordinated set under one backup ID: the
+// web-application indices, the exported Zeebe record indices, and the Zeebe
+// partitions. It is taken hot, with exporting soft-paused. LogicalRestore
+// consumes a completed backup. When you delete the resource, a finalizer
+// deletes the stored artifacts.
 type LogicalBackupElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 

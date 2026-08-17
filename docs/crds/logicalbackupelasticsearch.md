@@ -1,10 +1,12 @@
 # LogicalBackupElasticsearch
 
-A LogicalBackupElasticsearch is one backup of an Elasticsearch-backed [CamundaCluster](camundacluster.md): a coordinated set under one backup ID, taken hot. This page is a stub; the full page lands with the end-to-end suite of the backup epic.
+A LogicalBackupElasticsearch is one backup of an Elasticsearch-backed [CamundaCluster](camundacluster.md). The backup is a coordinated set under one backup ID, taken hot. This page is a stub. The full page lands with the end-to-end suite of the backup epic.
 
 ## Purpose
 
-The backup captures the web-application indices, the exported Zeebe record indices, and the Zeebe partitions of one cluster, so a LogicalRestore can bring the cluster back to this point. You create one by hand for a one-off backup; a [BackupSchedule](backupschedule.md) creates them on a cron schedule. Deleting the resource deletes the stored artifacts through a finalizer — and, when the backup was still running, resumes exporting on the cluster first. Only when nothing is addressable anymore — the cluster is gone, or a client can no longer be built — does the deletion release without that resume.
+The backup captures the web-application indices, the exported Zeebe record indices, and the Zeebe partitions of one cluster. A LogicalRestore can bring the cluster back to this point. You create one by hand for a one-off backup. A [BackupSchedule](backupschedule.md) creates them on a cron schedule.
+
+When you delete the resource, a finalizer deletes the stored artifacts. If the backup was still running, the finalizer resumes exporting on the cluster first. The deletion releases without that resume only when nothing is addressable anymore. That is the case when the cluster is gone, or when a client can no longer be built.
 
 ## API reference
 
@@ -15,7 +17,7 @@ metadata:
   name: my-cluster-backup
   namespace: my-cluster-ns
 spec:
-  # object. Required, immutable. The CamundaCluster to back up; its secondary
+  # object. Required, immutable. The CamundaCluster to back up. Its secondary
   # storage must be Elasticsearch.
   clusterRef:
     # string. Required. Name of the CamundaCluster.
@@ -24,8 +26,12 @@ spec:
     namespace: my-cluster-ns
 ```
 
-The whole spec is immutable: a backup is one-shot, retried by creating a new resource. `kubectl get lbes` lists the resources with their phase, step, and backup ID.
+The whole spec is immutable. A backup is one-shot. To retry, create a new resource. `kubectl get lbes` lists the resources with their phase, step, and backup ID.
 
 ## Status
 
-`status.phase` is `Pending`, `Running`, `Completed`, or `Failed`; the last two are terminal. `status.step` is the resume marker of the running procedure. `status.backupId` keys every stored artifact. `status.history`, `status.records`, and `status.runtime` track the three parts of the set. `status.historySnapshots` names the web-application snapshots, so a restore can locate them after the cluster is gone. `status.repository` pins the snapshot repository the set is written to; a repository that is repointed mid-run fails the backup instead of splitting the set. `status.storageSizes` records the effective restore sizes, best effort. The `Ready` condition carries the reasons `Progressing`, `Completed`, `Failed`, `ResumeFailed`, `ClusterSuspended`, `BackupInProgress`, `StorageTypeMismatch`, `InvalidReference`, `MissingSecret`, and `ConnectionFailed`.
+`status.phase` is `Pending`, `Running`, `Completed`, or `Failed`. The last two are terminal. `status.step` is the resume marker of the running procedure. `status.backupId` keys every stored artifact. `status.history`, `status.records`, and `status.runtime` track the three parts of the set.
+
+`status.historySnapshots` names the web-application snapshots, so a restore can locate them after the cluster is gone. `status.repository` pins the snapshot repository that the set is written to. A repository that changes mid-run fails the backup instead of splitting the set. `status.storageSizes` records the effective restore sizes, best effort.
+
+The `Ready` condition carries the reasons `Progressing`, `Completed`, `Failed`, `ResumeFailed`, `ClusterSuspended`, `BackupInProgress`, `StorageTypeMismatch`, `InvalidReference`, `MissingSecret`, and `ConnectionFailed`.

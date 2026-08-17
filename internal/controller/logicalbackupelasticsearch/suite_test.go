@@ -62,13 +62,10 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
-		return (&Reconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), Options{
 			// Short, so the polling of a running procedure and the resume
-			// deadline both fit inside the test timeout. The deadline only
-			// fires when resume keeps failing, which only the deadline test
+			// deadline both fit inside the test timeout. The deadline fires
+			// only when resume keeps failing, which only the deadline test
 			// arranges.
 			PollInterval:   100 * time.Millisecond,
 			ResumeDeadline: 2 * time.Second,
