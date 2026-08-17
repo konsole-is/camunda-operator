@@ -188,7 +188,7 @@ func (r *Reconciler) finalizerElasticsearch(
 ) (es *esadmin.Client, released bool, err error) {
 	storage, err := r.resolvePinnedStorage(ctx, backup, cluster)
 	if err != nil {
-		if apierrors.IsNotFound(errors.Unwrap(err)) || errors.Is(err, errNoStorage) {
+		if storageMissing(err) {
 			r.releaseWithoutCleanup(backup, err.Error())
 			return nil, true, nil
 		}

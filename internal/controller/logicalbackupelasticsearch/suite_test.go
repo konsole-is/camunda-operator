@@ -73,6 +73,11 @@ var _ = BeforeSuite(func() {
 			// Short for the same reason. Only the unreachable-Elasticsearch
 			// test arranges an endpoint that stays down.
 			ElasticsearchUnreachableBound: time.Second,
+			// Short, so a fresh-id conflict fails inside the test timeout.
+			// Wide enough that the registration-lag test, which polls
+			// through several hidden status answers, stays inside it under
+			// a loaded machine.
+			RuntimeRegistrationGrace: 3 * time.Second,
 			SiblingInProgress: func(_ context.Context, cluster types.NamespacedName) (string, error) {
 				if held, ok := siblings.Load(refindex.NamespacedKey(cluster.Namespace, cluster.Name)); ok {
 					return held.(string), nil

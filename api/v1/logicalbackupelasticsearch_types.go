@@ -140,10 +140,14 @@ type LogicalBackupElasticsearchStatus struct {
 	// never deletes against a different cluster.
 	// +optional
 	Storage *PinnedStorage `json:"storage,omitempty"`
-	// RuntimeRequestedTime is when the runtime backup was requested. The
-	// cluster registers the backup asynchronously and can report it absent
-	// for a moment after it accepted the request. Within a registration
-	// grace after this time, an absent backup is polled, not started again.
+	// RuntimeRequestedTime is when the controller decided to request the
+	// runtime backup. It is written before the request is sent, so the
+	// intent survives a lost response or a restart. A conflict on the
+	// backup ID after this time is checked against the cluster: the ID is
+	// held by this backup, or by another actor. The cluster registers the
+	// backup asynchronously and can report it absent for a moment. Within
+	// a registration grace after this time, an absent backup is polled,
+	// not failed.
 	// +optional
 	RuntimeRequestedTime *metav1.Time `json:"runtimeRequestedTime,omitempty"`
 	// ElasticsearchUnreachableSince is when a step first found the

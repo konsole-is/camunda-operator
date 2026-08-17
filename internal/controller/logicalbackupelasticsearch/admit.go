@@ -259,6 +259,13 @@ func (r *Reconciler) elasticsearchSize(
 // errNoStorage marks a cluster that names no storage contract.
 var errNoStorage = errors.New("no storage contract")
 
+// storageMissing reports whether a resolveStorage error means that the
+// storage contract is gone: the cluster names none, or the named one does
+// not exist. Every other error is a transient read.
+func storageMissing(err error) bool {
+	return errors.Is(err, errNoStorage) || apierrors.IsNotFound(err)
+}
+
 func (r *Reconciler) resolveStorage(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,

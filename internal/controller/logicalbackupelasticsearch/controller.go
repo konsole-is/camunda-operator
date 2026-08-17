@@ -66,11 +66,11 @@ const (
 	defaultPollInterval = 5 * time.Second
 	// retryInterval paces admission failures that no watch resolves.
 	retryInterval = 30 * time.Second
-	// runtimeRegistrationGrace bounds how long an absent runtime backup is
-	// polled after its request was accepted. The cluster registers the
-	// backup asynchronously and can report it absent for a moment. Within
-	// the grace the step polls; after it, the backup is missing.
-	runtimeRegistrationGrace = 2 * time.Minute
+	// defaultRuntimeRegistrationGrace bounds how long an absent runtime
+	// backup is polled after its request was recorded. The cluster registers
+	// the backup asynchronously and can report it absent for a moment.
+	// Within the grace the step polls; after it, the backup is missing.
+	defaultRuntimeRegistrationGrace = 2 * time.Minute
 	// elasticsearchUnreachableBound bounds the retry of an unreachable
 	// Elasticsearch endpoint at the steps that run with exporting paused.
 	// After it, the step fails and the procedure resumes exporting.
@@ -107,6 +107,9 @@ type Options struct {
 	// Elasticsearch endpoint while exporting is paused. Zero means ten
 	// minutes.
 	ElasticsearchUnreachableBound time.Duration
+	// RuntimeRegistrationGrace bounds how long an absent runtime backup is
+	// polled after its request was recorded. Zero means two minutes.
+	RuntimeRegistrationGrace time.Duration
 	// SiblingInProgress reports a non-terminal backup of the same cluster
 	// that the other backup kind holds. With it, backups of one cluster run
 	// one at a time across kinds. Nil means that no other kind is checked.
@@ -245,6 +248,13 @@ func (r *Reconciler) elasticsearchUnreachableBound() time.Duration {
 		return r.options.ElasticsearchUnreachableBound
 	}
 	return elasticsearchUnreachableBound
+}
+
+func (r *Reconciler) runtimeRegistrationGrace() time.Duration {
+	if r.options.RuntimeRegistrationGrace > 0 {
+		return r.options.RuntimeRegistrationGrace
+	}
+	return defaultRuntimeRegistrationGrace
 }
 
 // SetupWithManager registers the controller, the clusterRef index, and the

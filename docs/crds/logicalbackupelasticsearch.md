@@ -4,7 +4,7 @@ A LogicalBackupElasticsearch is one backup of an Elasticsearch-backed [CamundaCl
 
 ## Purpose
 
-The backup captures the web-application indices, the exported Zeebe record indices, and the Zeebe partitions of one cluster. A LogicalRestore can bring the cluster back to this point. You create one by hand for a one-off backup. A [BackupSchedule](backupschedule.md) creates them on a cron schedule.
+The backup captures the web-application indices, the exported Zeebe record indices, and the Zeebe partitions of one cluster. A completed backup is a restore point, keyed by its backup ID and its recorded snapshot names. You create one by hand for a one-off backup. A [BackupSchedule](backupschedule.md) creates them on a cron schedule.
 
 When you delete the resource, a finalizer deletes the stored artifacts. If the backup was still running, the finalizer resumes exporting on the cluster first. The deletion releases without that resume only when nothing is addressable anymore. That is the case when the cluster is gone, or when a client can no longer be built.
 
@@ -36,6 +36,8 @@ The whole spec is immutable. A backup is one-shot. To retry, create a new resour
 
 `status.failureMessage` names the step that failed. `status.resumeFailureMessage` stands beside it when the procedure also failed to resume exporting. Both survive, so a backup that ends as `ResumeFailed` still says which step failed first.
 
-The steps that call Elasticsearch run with exporting paused. An unreachable Elasticsearch endpoint is retried for ten minutes, then the step fails and the procedure resumes exporting. An unreachable management API is retried without a bound, because nothing else can resume the cluster.
+The steps that call Elasticsearch run with exporting paused. An unreachable Elasticsearch endpoint is retried for ten minutes, then the step fails and the procedure resumes exporting. An unreachable management API at a backup step is retried without a bound, because nothing else can resume the cluster. The resume itself is bounded: the procedure retries it until the accumulated time of active attempts reaches the resume deadline, 30 minutes by default. Time in which the procedure is parked, for example while the cluster is suspended, does not count. After the deadline the backup ends as `Failed` with reason `ResumeFailed`, `status.resumeFailureMessage` says why, and exporting stays paused. Deleting such a backup tries the resume again before the finalizer releases.
+
+The runtime backup is requested in two reconciles. `status.runtimeRequestedTime` records the intent first, then the request is sent. A lost response or a restart finds the intent and does not request a second backup under a fresh ID. A conflict on the backup ID is checked against the cluster: an ID the cluster holds continues, an ID it does not hold after a two-minute registration grace fails the step.
 
 The `Ready` condition carries the reasons `Progressing`, `Completed`, `Failed`, `ResumeFailed`, `ClusterSuspended`, `BackupInProgress`, `StorageTypeMismatch`, `InvalidReference`, `MissingSecret`, and `ConnectionFailed`.

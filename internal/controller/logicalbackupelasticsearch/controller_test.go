@@ -631,7 +631,91 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		final := currentBackup(backup)
 		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupRuntime"))
 		Expect(final.Status.FailureMessage).To(ContainSubstring("already exists"))
+		// The intent was recorded, the conflict was checked against the
+		// cluster, and the ID was not there: a genuine conflict.
+		Expect(final.Status.RuntimeRequestedTime).NotTo(BeNil())
 		Expect(r.management.RuntimeStarts(id)).To(BeZero())
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("records the runtime request before it posts it", func() {
+		r := newRig()
+		// The start is rejected for good. The intent must be in the status
+		// anyway, because it is written one reconcile before the request.
+		r.management.FailNext("runtimeStart", 1000000)
+
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.RuntimeRequestedTime).NotTo(BeNil())
+		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupRuntime"))
+		Expect(r.management.RuntimeStarts(id)).To(BeZero())
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("continues a runtime backup whose request landed but whose response was lost", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		// The cluster holds our ID already, as if an earlier request landed
+		// and its response was lost. It hides the backup for the two status
+		// queries that follow. The request that the controller sends then
+		// conflicts, and the check that follows finds the ID.
+		r.management.SetRuntimeState(id, "IN_PROGRESS", "")
+		r.management.HideRuntimeStatus(2)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+
+		Eventually(func() v1.BackupPartState {
+			return currentBackup(backup).Status.Runtime.State
+		}, timeout, interval).Should(Equal(v1.BackupPartInProgress))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupCompleted)
+		Expect(r.management.RuntimeStarts(id)).To(BeZero())
+		Expect(currentBackup(backup).Status.RuntimeRequestedTime).NotTo(BeNil())
+	})
+
+	It("fails the records step through resume when the CA bundle is unusable", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("replacing the CA bundle with data that is not a certificate")
+		Eventually(func(g Gomega) {
+			var ca corev1.Secret
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: "es-ca"}, &ca)).To(Succeed())
+			ca.Data["ca.crt"] = []byte("not a certificate")
+			g.Expect(k8sClient.Update(ctx, &ca)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("SnapshotRecords"),
+			ContainSubstring("CA bundle"),
+		))
+		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
