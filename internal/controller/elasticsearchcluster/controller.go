@@ -34,6 +34,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -55,6 +56,11 @@ import (
 // elasticsearchClusterPresetRefField indexes ElasticsearchClusters by
 // spec.presetRef, so a preset edit enqueues every cluster that references it.
 const elasticsearchClusterPresetRefField = "elasticsearchcluster.spec.presetRef"
+
+// elasticsearchClusterSnapshotStorageRefField indexes ElasticsearchClusters by
+// spec.snapshotStorageRef, so an edit of a bucket contract enqueues every
+// cluster that references it.
+const elasticsearchClusterSnapshotStorageRefField = "elasticsearchcluster.spec.snapshotStorageRef"
 
 // eventReasonStorageShrinkIgnored is the Warning event that the controller
 // records when the merged storageSize is below the applied data volume size.
@@ -96,6 +102,7 @@ type ElasticsearchClusterReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusterpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=elasticsearch.k8s.elastic.co,resources=elasticsearches,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
@@ -135,7 +142,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}()
 
-	merged, err := r.preCheck(ctx, &cluster)
+	merged, storage, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
@@ -149,7 +156,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	core, metrics, err := r.buildComponents(ctx, &cluster, merged)
+	core, metrics, err := r.buildComponents(ctx, &cluster, merged, storage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -159,7 +166,11 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	// condition and stays out of Ready, so a broken exporter never marks the
 	// cluster not ready and a disabled one never shows up on it.
 	reconcileErr := reconcileComponents(ctx, recCtx, comps)
-	conditions.Stage(&cluster, conditions.Aggregate(&cluster, core...))
+
+	// Registration runs after the components, because it needs the cluster
+	// that the elasticsearch component applies to be serving.
+	repository := r.registerSnapshotRepository(ctx, &cluster, merged, storage)
+	conditions.Stage(&cluster, readyWithRepository(&cluster, repository, core))
 
 	volumes, err := r.dataVolumes(ctx, &cluster)
 	if err != nil {
@@ -178,31 +189,62 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 func (r *ElasticsearchClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
-) (v1.ElasticsearchClusterSpec, error) {
+) (v1.ElasticsearchClusterSpec, *components.SnapshotStorage, error) {
 	merged := cluster.Spec
 
 	if cluster.Spec.PresetRef != "" {
 		var preset v1.ElasticsearchClusterPreset
 		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset); err != nil {
 			if apierrors.IsNotFound(err) {
-				return merged, &conditions.PreCheckFailure{
+				return merged, nil, &conditions.PreCheckFailure{
 					Reason:  v1.ReasonInvalidReference,
 					Message: fmt.Sprintf("ElasticsearchClusterPreset %q not found", cluster.Spec.PresetRef),
 				}
 			}
-			return merged, fmt.Errorf("resolving preset %q: %w", cluster.Spec.PresetRef, err)
+			return merged, nil, fmt.Errorf("resolving preset %q: %w", cluster.Spec.PresetRef, err)
 		}
 		merged = components.MergePreset(cluster.Spec, &preset.Spec)
 	}
 
 	if err := components.ValidateMerged(merged); err != nil {
-		return merged, &conditions.PreCheckFailure{
+		return merged, nil, &conditions.PreCheckFailure{
 			Reason:  v1.ReasonInvalidReference,
 			Message: err.Error(),
 		}
 	}
 
-	return merged, nil
+	if err := r.checkServiceAccount(ctx, cluster, merged); err != nil {
+		return merged, nil, err
+	}
+
+	storage, err := r.resolveSnapshotStorage(ctx, merged)
+	if err != nil {
+		return merged, nil, err
+	}
+
+	return merged, storage, nil
+}
+
+// readyWithRepository derives Ready from the components and lets a failed
+// snapshot-repository registration override a True result. The repository is
+// not a component, so conditions.Aggregate cannot see it, and a cluster whose
+// backups cannot be written is not ready.
+func readyWithRepository(
+	cluster *v1.ElasticsearchCluster,
+	repository metav1.Condition,
+	core []*component.Component,
+) metav1.Condition {
+	ready := conditions.Aggregate(cluster, core...)
+	if repository.Type == "" {
+		return ready
+	}
+
+	meta.SetStatusCondition(cluster.GetStatusConditions(), repository)
+	if repository.Status == metav1.ConditionTrue || ready.Status != metav1.ConditionTrue {
+		return ready
+	}
+
+	return conditions.Ready(metav1.ConditionFalse, repository.Reason, repository.Message, cluster.Generation)
 }
 
 // keepAppliedStorageSize guards against the shrinks that admission cannot
@@ -344,6 +386,7 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	storage *components.SnapshotStorage,
 ) (core []*component.Component, metrics *component.Component, err error) {
 	password, err := credentials.LookupOrNew(
 		ctx, r.APIReader, client.ObjectKey{
@@ -359,12 +402,17 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building credentials component: %w", err)
 	}
 
-	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged)
+	keystoreComp, err := components.KeystoreComponent(cluster, storage)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building keystore component: %w", err)
+	}
+
+	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, storage)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
-	storageContractComp, err := components.StorageContractComponent(cluster, merged)
+	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}
@@ -374,7 +422,9 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building metrics component: %w", err)
 	}
 
-	return []*component.Component{credentialsComp, elasticsearchComp, storageContractComp}, metricsComp, nil
+	return []*component.Component{
+		credentialsComp, keystoreComp, elasticsearchComp, storageContractComp,
+	}, metricsComp, nil
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -442,6 +492,18 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		return err
 	}
 
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &v1.ElasticsearchCluster{},
+		elasticsearchClusterSnapshotStorageRefField, func(o client.Object) []string {
+			if ref := o.(*v1.ElasticsearchCluster).Spec.SnapshotStorageRef; ref != "" {
+				return []string{ref}
+			}
+			return nil
+		},
+	); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ElasticsearchCluster{}).
 		Owns(&esv1.Elasticsearch{}).
@@ -454,6 +516,13 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.ElasticsearchClusterList{},
 				elasticsearchClusterPresetRefField, refindex.ObjectName,
+			),
+		).
+		Watches(
+			&v1.ObjectStorageConfig{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.ElasticsearchClusterList{},
+				elasticsearchClusterSnapshotStorageRefField, refindex.ObjectName,
 			),
 		).
 		Watches(&corev1.PersistentVolumeClaim{}, enqueueForDataClaim()).

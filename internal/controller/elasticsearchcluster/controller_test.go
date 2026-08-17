@@ -217,6 +217,42 @@ func createDataClaim(cluster *v1.ElasticsearchCluster, ordinal, capacity string)
 	return claim
 }
 
+// s3BucketSpec returns an S3 bucket contract: with workload identity when
+// credentials is nil, with the given static credentials otherwise.
+func s3BucketSpec(credentials *v1.S3Credentials) v1.ObjectStorageConfigSpec {
+	auth := v1.S3StorageAuth{
+		Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+		WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::123456789012:role/camunda"},
+	}
+	if credentials != nil {
+		auth = v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeCredentials, Credentials: credentials}
+	}
+
+	return v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeS3,
+		S3: &v1.S3Storage{
+			BucketName: "camunda-backups",
+			BasePath:   "clusters",
+			Region:     "eu-west-1",
+			Auth:       auth,
+		},
+	}
+}
+
+// createObjectStorageConfig creates a cluster-scoped bucket contract and
+// removes it after the test.
+func createObjectStorageConfig(spec v1.ObjectStorageConfigSpec) *v1.ObjectStorageConfig {
+	GinkgoHelper()
+	config := &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "bucket-" + utilrand.String(8)},
+		Spec:       spec,
+	}
+	Expect(k8sClient.Create(ctx, config)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, config) })
+
+	return config
+}
+
 // expectControlledBy asserts that obj carries a controller owner reference to
 // cluster. Deletion then garbage-collects it without a finalizer.
 func expectControlledBy(obj client.Object, cluster *v1.ElasticsearchCluster) {
@@ -333,6 +369,140 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		var es esv1.Elasticsearch
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).NotTo(Succeed())
+	})
+
+	It("reports InvalidReference for a dangling snapshotStorageRef", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = "no-such-bucket-" + utilrand.String(8)
+		createElasticsearchCluster(cluster)
+
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference), ContainSubstring(cluster.Spec.SnapshotStorageRef),
+		)
+	})
+
+	// The operator registers an s3 repository. A bucket of another type is a
+	// valid contract that this path cannot serve, and saying so is better than
+	// registering a repository that does not match the bucket.
+	It("reports InvalidReference for a snapshot bucket that is not S3", func() {
+		bucket := createObjectStorageConfig(v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeGCS,
+			GCS: &v1.GCSStorage{
+				BucketName: "camunda-backups",
+				Auth:       v1.GCSStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+			},
+		})
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		createElasticsearchCluster(cluster)
+
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference), ContainSubstring("needs type S3"),
+		)
+	})
+
+	It("reports MissingSecret when the snapshot bucket names a Secret that does not exist", func() {
+		bucket := createObjectStorageConfig(s3BucketSpec(&v1.S3Credentials{
+			SecretRef: v1.S3CredentialsSecretRef{
+				Name:               "absent-" + utilrand.String(8),
+				Namespace:          "default",
+				AccessKeyIDKey:     "accessKeyId",
+				SecretAccessKeyKey: "secretAccessKey",
+			},
+		}))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		createElasticsearchCluster(cluster)
+
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonMissingSecret), ContainSubstring("not found"),
+		)
+	})
+
+	// A ServiceAccount the operator does not own must exist before the pods
+	// reference it; otherwise every pod stays unschedulable, which is a much
+	// slower and less obvious failure than a reference that reports itself.
+	It("reports InvalidReference for a pre-existing ServiceAccount that is absent", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		no := false
+		cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
+			Name:   "platform-es-" + utilrand.String(8),
+			Create: &no,
+		}
+		createElasticsearchCluster(cluster)
+
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference),
+			And(ContainSubstring(cluster.Spec.ServiceAccount.Name), ContainSubstring("create is false")),
+		)
+	})
+
+	// The bucket identity reaches the pods without the user restating it in
+	// serviceAccount.annotations, and the ServiceAccount is rendered even
+	// though the spec asks for none.
+	It("derives the workload-identity annotation of the bucket onto the ServiceAccount", func() {
+		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		createElasticsearchCluster(cluster)
+
+		var account corev1.ServiceAccount
+		key := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-es"}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			g.Expect(account.Annotations).To(HaveKeyWithValue(
+				v1.IRSARoleARNAnnotation, "arn:aws:iam::123456789012:role/camunda",
+			))
+		}).Should(Succeed())
+	})
+
+	It("publishes the registered repository name in the storage contract", func() {
+		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		createElasticsearchCluster(cluster)
+
+		var contract v1.SecondaryStorageConfig
+		key := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.SecondaryStorageConfig}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, key, &contract)).To(Succeed())
+			g.Expect(contract.Spec.Elasticsearch).NotTo(BeNil())
+			g.Expect(contract.Spec.Elasticsearch.SnapshotRepository).To(Equal(cluster.Name))
+		}).Should(Succeed())
+	})
+
+	// Without a bucket there is no repository, so the condition must not
+	// appear at all rather than sit permanently unknown.
+	It("reports no SnapshotRepositoryReady condition without a snapshot bucket", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		createElasticsearchCluster(cluster)
+
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			g.Expect(fetched.Status.Conditions).NotTo(BeEmpty())
+			g.Expect(meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)).To(BeNil())
+		}).Should(Succeed())
 	})
 
 	It("names every missing field of an incomplete merge", func() {

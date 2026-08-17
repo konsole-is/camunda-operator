@@ -34,6 +34,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -139,6 +140,7 @@ func assertElasticsearchClusterGoldens(
 	dir string,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	storage *SnapshotStorage,
 ) {
 	t.Helper()
 
@@ -152,14 +154,21 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	elasticsearch, err := ElasticsearchComponent(cluster, merged)
+	keystore, err := KeystoreComponent(cluster, storage)
+	require.NoError(t, err)
+	golden.AssertComponentYAML(
+		t, filepath.Join(base, "keystore.yaml"), keystore,
+		golden.WithScheme(scheme), golden.Update(*updateGolden),
+	)
+
+	elasticsearch, err := ElasticsearchComponent(cluster, merged, storage)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "elasticsearch.yaml"), elasticsearch,
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	storageContract, err := StorageContractComponent(cluster, merged)
+	storageContract, err := StorageContractComponent(cluster, merged, storage)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "storage-contract.yaml"), storageContract,
@@ -181,7 +190,7 @@ func TestElasticsearchClusterGoldenMinimal(t *testing.T) {
 
 	cluster, preset := goldenMinimalElasticsearchCluster()
 
-	assertElasticsearchClusterGoldens(t, "minimal", cluster, MergePreset(cluster.Spec, preset))
+	assertElasticsearchClusterGoldens(t, "minimal", cluster, MergePreset(cluster.Spec, preset), nil)
 }
 
 // The 8.19 line is the other supported version family. Its rendering is
@@ -192,7 +201,7 @@ func TestElasticsearchClusterGoldenMinimalES8(t *testing.T) {
 	cluster, preset := goldenMinimalElasticsearchCluster()
 	preset.Cluster.Version = "8.19.0"
 
-	assertElasticsearchClusterGoldens(t, "minimal-es8", cluster, MergePreset(cluster.Spec, preset))
+	assertElasticsearchClusterGoldens(t, "minimal-es8", cluster, MergePreset(cluster.Spec, preset), nil)
 }
 
 func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
@@ -200,7 +209,7 @@ func TestElasticsearchClusterGoldenRealistic(t *testing.T) {
 
 	cluster := goldenRealisticElasticsearchCluster()
 
-	assertElasticsearchClusterGoldens(t, "realistic", cluster, MergePreset(cluster.Spec, nil))
+	assertElasticsearchClusterGoldens(t, "realistic", cluster, MergePreset(cluster.Spec, nil), nil)
 }
 
 // The suspended variant must render the same desired content as its
@@ -214,7 +223,106 @@ func TestElasticsearchClusterGoldenSuspended(t *testing.T) {
 	cluster, preset := goldenMinimalElasticsearchCluster()
 	cluster.Spec.Suspend = true
 
-	assertElasticsearchClusterGoldens(t, "suspended", cluster, MergePreset(cluster.Spec, preset))
+	assertElasticsearchClusterGoldens(t, "suspended", cluster, MergePreset(cluster.Spec, preset), nil)
+}
+
+// snapshotBucket returns a bucket contract with the given auth, for the
+// golden cases that reference one.
+func snapshotBucket(auth v1.S3StorageAuth) *v1.ObjectStorageConfig {
+	return &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3: &v1.S3Storage{
+				BucketName: "camunda-backups",
+				BasePath:   "clusters",
+				Region:     "eu-west-1",
+				Auth:       auth,
+			},
+		},
+	}
+}
+
+// A cluster whose bucket uses workload identity gets the identity annotation
+// on a ServiceAccount that the operator renders even though the spec asks for
+// none, and no keystore Secret: the nodes authenticate as their
+// ServiceAccount.
+func TestElasticsearchClusterGoldenSnapshotWorkloadIdentity(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster.Spec.SnapshotStorageRef = "my-backup-config"
+	storage := &SnapshotStorage{
+		Config: snapshotBucket(v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::123456789012:role/camunda"},
+		}),
+	}
+
+	assertElasticsearchClusterGoldens(
+		t, "snapshot-workload-identity", cluster, MergePreset(cluster.Spec, preset), storage,
+	)
+}
+
+// A cluster whose bucket holds static keys gets them in a keystore Secret,
+// referenced from spec.secureSettings ahead of the sources of the spec.
+// Elasticsearch reads repository credentials from the keystore alone.
+func TestElasticsearchClusterGoldenSnapshotCredentials(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster.Spec.SnapshotStorageRef = "my-backup-config"
+	cluster.Spec.SecureSettings = []v1.SecureSettingsSource{{
+		SecretName: "extra-keystore-entries",
+		Entries:    []v1.SecureSettingEntry{{Key: "someKey", Path: "some.secure.setting"}},
+	}}
+	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "es-prod"}
+	storage := &SnapshotStorage{
+		Config: snapshotBucket(v1.S3StorageAuth{
+			Type: v1.ObjectStorageAuthTypeCredentials,
+			Credentials: &v1.S3Credentials{
+				SecretRef: v1.S3CredentialsSecretRef{
+					Name:               "minio-credentials",
+					Namespace:          "camunda",
+					AccessKeyIDKey:     "accessKeyId",
+					SecretAccessKeyKey: "secretAccessKey",
+				},
+			},
+		}),
+		Credentials: &objectstore.Credentials{AccessKeyID: "minio-root", SecretAccessKey: "minio-secret"},
+	}
+
+	assertElasticsearchClusterGoldens(
+		t, "snapshot-credentials", cluster, MergePreset(cluster.Spec, preset), storage,
+	)
+}
+
+// A ServiceAccount the operator does not create is never rendered, but the
+// pods still run under its name.
+func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	no := false
+	cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
+	merged := MergePreset(cluster.Spec, preset)
+
+	comp, err := ElasticsearchComponent(cluster, merged, nil)
+	require.NoError(t, err)
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	var es *esv1.Elasticsearch
+	for _, obj := range objects {
+		_, isServiceAccount := obj.(*corev1.ServiceAccount)
+		assert.False(t, isServiceAccount, "a ServiceAccount with create false must not be rendered")
+		if typed, ok := obj.(*esv1.Elasticsearch); ok {
+			es = typed
+		}
+	}
+	require.NotNil(t, es)
+	assert.Equal(t, "platform-es", es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName)
 }
 
 // A cluster without the ServiceMonitor CRD must not render one, even when
@@ -270,7 +378,7 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 		"camunda.io/component":             "not-elasticsearch",
 		"team":                             "platform",
 	}
-	comp, err := ElasticsearchComponent(cluster, cluster.Spec)
+	comp, err := ElasticsearchComponent(cluster, cluster.Spec, nil)
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
