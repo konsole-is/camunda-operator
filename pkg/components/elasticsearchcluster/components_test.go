@@ -142,6 +142,7 @@ func assertElasticsearchClusterGoldens(
 	merged v1.ElasticsearchClusterSpec,
 	storage *SnapshotStorage,
 ) {
+	registered := storage != nil
 	t.Helper()
 
 	scheme := goldenScheme(t)
@@ -168,7 +169,7 @@ func assertElasticsearchClusterGoldens(
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
-	storageContract, err := StorageContractComponent(cluster, merged, storage)
+	storageContract, err := StorageContractComponent(cluster, merged, storage, registered)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "storage-contract.yaml"), storageContract,
@@ -323,6 +324,65 @@ func TestForeignServiceAccountIsNamedButNotRendered(t *testing.T) {
 	}
 	require.NotNil(t, es)
 	assert.Equal(t, "platform-es", es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName)
+}
+
+// The contract names a repository only once its registration converged: a
+// name published earlier sends a consumer's first snapshot into a repository
+// that does not exist. Suspension keeps the last converged name, because the
+// registration persists in the cluster state that the data volumes retain.
+func TestPublishedRepositoryName(t *testing.T) {
+	t.Parallel()
+
+	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "my-es"}}
+	storage := &SnapshotStorage{Config: snapshotBucket(v1.S3StorageAuth{
+		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
+	})}
+
+	assert.Empty(t, publishedRepositoryName(cluster, storage, false, false), "not yet registered")
+	assert.Equal(t, "my-es", publishedRepositoryName(cluster, storage, true, false))
+	assert.Equal(
+		t, "my-es", publishedRepositoryName(cluster, nil, true, true),
+		"suspension resolves no bucket but keeps the registered name",
+	)
+	assert.Empty(
+		t, publishedRepositoryName(cluster, nil, true, false),
+		"a dropped bucket reference clears the name",
+	)
+}
+
+// An annotation-less workload identity (Pod Identity, Workload Identity
+// Federation) still binds the ServiceAccount by name, so the account is
+// rendered and referenced with nothing on it.
+func TestPodIdentityRendersTheServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster.Spec.SnapshotStorageRef = "my-backup-config"
+	merged := MergePreset(cluster.Spec, preset)
+	storage := &SnapshotStorage{Config: snapshotBucket(v1.S3StorageAuth{
+		Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
+	})}
+
+	comp, err := ElasticsearchComponent(cluster, merged, storage)
+	require.NoError(t, err)
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	var account *corev1.ServiceAccount
+	var es *esv1.Elasticsearch
+	for _, obj := range objects {
+		switch typed := obj.(type) {
+		case *corev1.ServiceAccount:
+			account = typed
+		case *esv1.Elasticsearch:
+			es = typed
+		}
+	}
+	require.NotNil(t, account, "the documented principal must exist")
+	assert.Empty(t, account.Annotations)
+	require.NotNil(t, es)
+	assert.Equal(t, account.Name, es.Spec.NodeSets[0].PodTemplate.Spec.ServiceAccountName)
 }
 
 // A cluster without the ServiceMonitor CRD must not render one, even when

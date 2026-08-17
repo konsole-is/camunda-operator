@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -45,6 +46,13 @@ var (
 	ErrUnreachable = errors.New("cannot reach Elasticsearch")
 	ErrRejected    = errors.New("call rejected by Elasticsearch")
 )
+
+// DefaultS3Client is the name of the S3 client configuration that the
+// repositories of this operator use. The node keystore entries
+// (s3.client.<name>.access_key, s3.client.<name>.secret_key) and the
+// repository settings must name the same client, so both sides build on this
+// constant.
+const DefaultS3Client = "default"
 
 // SnapshotState is the state of one snapshot.
 type SnapshotState string
@@ -86,13 +94,16 @@ type Client struct {
 // auth. ca verifies the TLS certificate of the endpoint; nil means the system
 // pool.
 //
-// A ca that holds no certificate is an error, not an empty pool. An empty
-// pool rejects every certificate, so the mistake would otherwise surface as
-// an unexplained TLS failure on every call instead of at the reference that
-// named the wrong Secret key.
+// A ca that is present but holds no certificate is an error, not a fallback:
+// an empty or unparseable bundle means the caller read the wrong Secret key,
+// and the system pool would hide that as an unexplained TLS failure on every
+// call. Only a caller that deliberately passes nil gets the system pool.
 func New(endpoint, user, pass string, ca []byte) (*Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if len(ca) > 0 {
+	if ca != nil {
+		if len(ca) == 0 {
+			return nil, errors.New("the CA bundle is empty")
+		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(ca) {
 			return nil, errors.New("the CA bundle holds no PEM certificate")
@@ -114,7 +125,7 @@ func New(endpoint, user, pass string, ca []byte) (*Client, error) {
 func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg S3RepositoryConfig) error {
 	settings := map[string]any{
 		"bucket": cfg.Bucket,
-		"client": "default",
+		"client": DefaultS3Client,
 	}
 	if cfg.BasePath != "" {
 		settings["base_path"] = cfg.BasePath
@@ -131,7 +142,7 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 		return fmt.Errorf("encoding repository settings: %w", err)
 	}
 
-	_, _, err = c.do(ctx, http.MethodPut, "/_snapshot/"+name, body)
+	_, _, err = c.do(ctx, http.MethodPut, "/_snapshot/"+url.PathEscape(name), body)
 	return err
 }
 
@@ -155,7 +166,7 @@ func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices 
 		return fmt.Errorf("encoding snapshot request: %w", err)
 	}
 
-	_, status, err := c.do(ctx, http.MethodPut, "/_snapshot/"+repo+"/"+name, body)
+	_, status, err := c.do(ctx, http.MethodPut, snapshotPath(repo, name), body)
 	if err != nil {
 		// Elasticsearch rejects a duplicate name with
 		// invalid_snapshot_name_exception or snapshot_name_already_in_use.
@@ -175,9 +186,15 @@ func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices 
 // SnapshotStatus reports the state of the snapshot name in repo. A snapshot
 // that does not exist is SnapshotMissing, not an error.
 func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (SnapshotState, error) {
-	payload, status, err := c.do(ctx, http.MethodGet, "/_snapshot/"+repo+"/"+name, nil)
+	payload, status, err := c.do(ctx, http.MethodGet, snapshotPath(repo, name), nil)
 	if status == http.StatusNotFound {
-		return SnapshotMissing, nil
+		// A 404 is how Elasticsearch reports an absent snapshot, but also an
+		// absent repository. Only the first is a state; a dropped repository
+		// must never read as "the snapshot is gone".
+		if errorType(payload) == "snapshot_missing_exception" {
+			return SnapshotMissing, nil
+		}
+		return "", err
 	}
 	if err != nil {
 		return "", err
@@ -199,14 +216,39 @@ func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapsho
 }
 
 // DeleteSnapshot deletes the snapshot name from repo. A snapshot that does
-// not exist is success, so a re-entrant finalizer can call it again.
+// not exist is success, so a re-entrant finalizer can call it again. A
+// repository that does not exist is an error: the artifacts of the backup may
+// still sit in the bucket, and a finalizer that read that as success would
+// release without cleaning up.
 func (c *Client) DeleteSnapshot(ctx context.Context, repo, name string) error {
-	_, status, err := c.do(ctx, http.MethodDelete, "/_snapshot/"+repo+"/"+name, nil)
-	if status == http.StatusNotFound {
+	payload, status, err := c.do(ctx, http.MethodDelete, snapshotPath(repo, name), nil)
+	if status == http.StatusNotFound && errorType(payload) == "snapshot_missing_exception" {
 		return nil
 	}
 
 	return err
+}
+
+// snapshotPath returns the URL path of one snapshot, with each name escaped:
+// the repository name of a hand-written contract is user input, and a slash
+// in it must not retarget the request.
+func snapshotPath(repo, name string) string {
+	return "/_snapshot/" + url.PathEscape(repo) + "/" + url.PathEscape(name)
+}
+
+// errorType extracts error.type from an Elasticsearch error body, or empty
+// when the body has none.
+func errorType(payload []byte) string {
+	var body struct {
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return ""
+	}
+
+	return body.Error.Type
 }
 
 // ReloadSecureSettings reloads the reloadable secure settings (S3
@@ -274,13 +316,15 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %s %s: %v", ErrUnreachable, method, path, err)
+		return nil, 0, fmt.Errorf("%w: %s %s: %w", ErrUnreachable, method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("%w: reading response of %s %s: %v", ErrUnreachable, method, path, err)
+		return nil, resp.StatusCode, fmt.Errorf(
+			"%w: reading response of %s %s: %w", ErrUnreachable, method, path, err,
+		)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {

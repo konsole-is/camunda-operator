@@ -21,8 +21,10 @@ package esadmintest
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -77,9 +79,27 @@ type nodeFS struct {
 	used  int64
 }
 
-// New starts the fake. Close it with Close.
+// New starts the fake over plain HTTP. Close it with Close.
 func New() *Server {
-	s := &Server{
+	s := newServer()
+	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+
+	return s
+}
+
+// NewTLS starts the fake over HTTPS with a self-signed certificate, the way
+// ECK serves Elasticsearch. CertificatePEM returns the bundle that verifies
+// it, so a test exercises the same CA path as production. Close it with
+// Close.
+func NewTLS() *Server {
+	s := newServer()
+	s.server = httptest.NewTLSServer(http.HandlerFunc(s.handle))
+
+	return s
+}
+
+func newServer() *Server {
+	return &Server{
 		repos:           map[string]*Repository{},
 		repositoryPuts:  map[string]int{},
 		snapshots:       map[string]*Snapshot{},
@@ -87,9 +107,17 @@ func New() *Server {
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
 		failures:        map[string]int{},
 	}
-	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+}
 
-	return s
+// CertificatePEM returns the PEM encoding of the certificate a NewTLS server
+// serves, which is its own CA: the certificate is self-signed.
+func (s *Server) CertificatePEM() []byte {
+	cert := s.server.Certificate()
+	if cert == nil {
+		return nil
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
 }
 
 // URL is the base URL of the fake.
@@ -179,8 +207,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	path := strings.Trim(r.URL.Path, "/")
+	// Split the escaped form, then unescape each segment: an escaped slash
+	// inside a name must stay inside its segment, the way a real server
+	// routes.
+	path := strings.Trim(r.URL.EscapedPath(), "/")
 	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if unescaped, err := url.PathUnescape(part); err == nil {
+			parts[i] = unescaped
+		}
+	}
+	path, _ = url.PathUnescape(path)
 
 	switch {
 	case r.Method == http.MethodPost && path == "_nodes/reload_secure_settings":
@@ -228,6 +265,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
 			return
 		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
 		key := parts[1] + "/" + parts[2]
 		if _, exists := s.snapshots[key]; exists {
 			errorBody(
@@ -249,9 +293,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
 		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
 		snapshot, ok := s.snapshots[parts[1]+"/"+parts[2]]
 		if !ok {
-			errorBody(w, http.StatusNotFound, "snapshot_missing_exception")
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
+			)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -263,9 +317,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return
 		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
 		key := parts[1] + "/" + parts[2]
 		if _, ok := s.snapshots[key]; !ok {
-			errorBody(w, http.StatusNotFound, "snapshot_missing_exception")
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
+			)
 			return
 		}
 		delete(s.snapshots, key)
@@ -283,5 +347,14 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func errorBody(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"message": message})
+	errorBodyTyped(w, status, "exception", message)
+}
+
+// errorBodyTyped writes the error shape of Elasticsearch:
+// {"error":{"type":...,"reason":...},"status":N}.
+func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string) {
+	writeJSON(w, status, map[string]any{
+		"error":  map[string]string{"type": errorType, "reason": reason},
+		"status": status,
+	})
 }

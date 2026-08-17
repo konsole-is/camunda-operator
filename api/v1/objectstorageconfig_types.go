@@ -17,6 +17,8 @@ limitations under the License.
 package v1
 
 import (
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -110,8 +112,9 @@ type S3Storage struct {
 	// BucketName is the bucket name as used by storage client SDKs.
 	// +kubebuilder:validation:MinLength=1
 	BucketName string `json:"bucketName"`
-	// BasePath is the key prefix under which consumers write objects. Empty
-	// means the bucket root.
+	// BasePath is the key prefix under which consumers write objects,
+	// without leading or trailing slashes. Empty means the bucket root.
+	// +kubebuilder:validation:Pattern=`^[^/]+(/[^/]+)*$`
 	// +optional
 	BasePath string `json:"basePath,omitempty"`
 	// Region of the bucket. Required unless endpoint is set.
@@ -177,8 +180,9 @@ type GCSStorage struct {
 	// BucketName is the bucket name as used by storage client SDKs.
 	// +kubebuilder:validation:MinLength=1
 	BucketName string `json:"bucketName"`
-	// BasePath is the key prefix under which consumers write objects. Empty
-	// means the bucket root.
+	// BasePath is the key prefix under which consumers write objects,
+	// without leading or trailing slashes. Empty means the bucket root.
+	// +kubebuilder:validation:Pattern=`^[^/]+(/[^/]+)*$`
 	// +optional
 	BasePath string `json:"basePath,omitempty"`
 	// Auth selects how consumers authenticate. An absent block means
@@ -233,8 +237,9 @@ type AzureBlobStorage struct {
 	// Container is the blob container that consumers write to.
 	// +kubebuilder:validation:MinLength=1
 	Container string `json:"container"`
-	// BasePath is the blob prefix under which consumers write objects. Empty
-	// means the container root.
+	// BasePath is the blob prefix under which consumers write objects,
+	// without leading or trailing slashes. Empty means the container root.
+	// +kubebuilder:validation:Pattern=`^[^/]+(/[^/]+)*$`
 	// +optional
 	BasePath string `json:"basePath,omitempty"`
 	// Endpoint is the URL of the blob service. Empty means the public Azure
@@ -335,6 +340,93 @@ const (
 	AzureClientIDAnnotation = "azure.workload.identity/client-id"
 )
 
+// activeBlock is the storage block that Spec.Type declares, reduced to the
+// fields every helper reads. Dispatching on the declared type, never on which
+// pointer happens to be set, is the same rule objectstore.Open documents: a
+// contract whose type and block disagree yields nothing instead of the wrong
+// block.
+type activeBlock struct {
+	basePath            string
+	authType            ObjectStorageAuthType
+	identityAnnotations map[string]string
+	credentials         *ObjectStorageCredentialsSecret
+}
+
+// active resolves the block that Spec.Type declares, or nil when that block
+// is not set.
+func (in *ObjectStorageConfig) active() *activeBlock {
+	annotation := func(key, value string) map[string]string {
+		if value == "" {
+			return nil
+		}
+
+		return map[string]string{key: value}
+	}
+
+	switch in.Spec.Type {
+	case ObjectStorageTypeS3:
+		if in.Spec.S3 == nil {
+			return nil
+		}
+		block := &activeBlock{basePath: in.Spec.S3.BasePath, authType: in.Spec.S3.Auth.Type}
+		if identity := in.Spec.S3.Auth.WorkloadIdentity; identity != nil {
+			block.identityAnnotations = annotation(IRSARoleARNAnnotation, identity.RoleARN)
+		}
+		if credentials := in.Spec.S3.Auth.Credentials; credentials != nil {
+			ref := credentials.SecretRef
+			block.credentials = &ObjectStorageCredentialsSecret{
+				Name:      ref.Name,
+				Namespace: ref.Namespace,
+				Keys:      []string{ref.AccessKeyIDKey, ref.SecretAccessKeyKey},
+			}
+		}
+		return block
+
+	case ObjectStorageTypeGCS:
+		if in.Spec.GCS == nil {
+			return nil
+		}
+		block := &activeBlock{basePath: in.Spec.GCS.BasePath, authType: in.Spec.GCS.Auth.Type}
+		if identity := in.Spec.GCS.Auth.WorkloadIdentity; identity != nil {
+			block.identityAnnotations = annotation(GKEServiceAccountAnnotation, identity.ServiceAccountEmail)
+		}
+		if credentials := in.Spec.GCS.Auth.Credentials; credentials != nil {
+			ref := credentials.SecretRef
+			block.credentials = &ObjectStorageCredentialsSecret{
+				Name:      ref.Name,
+				Namespace: ref.Namespace,
+				Keys:      []string{ref.Key},
+			}
+		}
+		return block
+
+	case ObjectStorageTypeAzureBlob:
+		if in.Spec.AzureBlob == nil {
+			return nil
+		}
+		block := &activeBlock{basePath: in.Spec.AzureBlob.BasePath, authType: in.Spec.AzureBlob.Auth.Type}
+		if identity := in.Spec.AzureBlob.Auth.WorkloadIdentity; identity != nil {
+			block.identityAnnotations = annotation(AzureClientIDAnnotation, identity.ClientID)
+		}
+		if credentials := in.Spec.AzureBlob.Auth.Credentials; credentials != nil {
+			ref := credentials.SecretRef
+			block.credentials = &ObjectStorageCredentialsSecret{
+				Name:      ref.Name,
+				Namespace: ref.Namespace,
+				Keys:      []string{ref.Key},
+			}
+		}
+		return block
+	}
+
+	return nil
+}
+
+// AzureWorkloadIdentityUseLabel is the pod label without which Azure's
+// workload-identity webhook injects nothing, whatever the ServiceAccount
+// says.
+const AzureWorkloadIdentityUseLabel = "azure.workload.identity/use"
+
 // WorkloadIdentityAnnotations returns the ServiceAccount annotations that bind
 // the identity of the active storage block, or nil when the contract holds
 // static credentials or names no identity. A contract that names none is a
@@ -344,44 +436,49 @@ const (
 // repeat the switch over the storage types.
 //
 // The annotations are not the whole story for Azure: its workload identity
-// also needs the label azure.workload.identity/use: "true" on the pods
-// themselves, which no ServiceAccount annotation can express. A consumer that
-// accepts AzureBlob contracts must put that label on its pod template as well.
+// also needs a label on the pods themselves, which no ServiceAccount
+// annotation can express. WorkloadIdentityPodLabels is the other half.
 func (in *ObjectStorageConfig) WorkloadIdentityAnnotations() map[string]string {
-	annotation := func(key, value string) map[string]string {
-		if value == "" {
-			return nil
-		}
-
-		return map[string]string{key: value}
+	block := in.active()
+	if block == nil {
+		return nil
 	}
 
-	switch {
-	case in.Spec.S3 != nil && in.Spec.S3.Auth.WorkloadIdentity != nil:
-		return annotation(IRSARoleARNAnnotation, in.Spec.S3.Auth.WorkloadIdentity.RoleARN)
-	case in.Spec.GCS != nil && in.Spec.GCS.Auth.WorkloadIdentity != nil:
-		return annotation(GKEServiceAccountAnnotation, in.Spec.GCS.Auth.WorkloadIdentity.ServiceAccountEmail)
-	case in.Spec.AzureBlob != nil && in.Spec.AzureBlob.Auth.WorkloadIdentity != nil:
-		return annotation(AzureClientIDAnnotation, in.Spec.AzureBlob.Auth.WorkloadIdentity.ClientID)
+	return block.identityAnnotations
+}
+
+// WorkloadIdentityPodLabels returns the labels that the pods of a consumer
+// need for the identity of the active storage block, or nil when it needs
+// none. Only Azure has one: without azure.workload.identity/use on the pod,
+// the workload-identity webhook injects nothing, whatever the ServiceAccount
+// is annotated with. Consumers put the result on their pod templates, next to
+// where WorkloadIdentityAnnotations goes on their ServiceAccount.
+func (in *ObjectStorageConfig) WorkloadIdentityPodLabels() map[string]string {
+	if in.Spec.Type != ObjectStorageTypeAzureBlob {
+		return nil
 	}
 
-	return nil
+	block := in.active()
+	if block == nil || block.authType != ObjectStorageAuthTypeWorkloadIdentity {
+		return nil
+	}
+
+	return map[string]string{AzureWorkloadIdentityUseLabel: "true"}
 }
 
 // BasePath returns the key prefix of the active storage block, or the empty
-// string for the root of the bucket. Consumers build their object keys under
-// it and never repeat the switch over the storage types.
+// string for the root of the bucket. Leading and trailing slashes are
+// trimmed, so every consumer derives the same object keys: admission forbids
+// them on new contracts, and the trim keeps an object admitted before that
+// rule from splitting the layout in two. Consumers build their keys under the
+// result and never repeat the switch over the storage types.
 func (in *ObjectStorageConfig) BasePath() string {
-	switch {
-	case in.Spec.S3 != nil:
-		return in.Spec.S3.BasePath
-	case in.Spec.GCS != nil:
-		return in.Spec.GCS.BasePath
-	case in.Spec.AzureBlob != nil:
-		return in.Spec.AzureBlob.BasePath
+	block := in.active()
+	if block == nil {
+		return ""
 	}
 
-	return ""
+	return strings.Trim(block.basePath, "/")
 }
 
 // CredentialsSecret returns the name, namespace, and keys of the static
@@ -389,31 +486,12 @@ func (in *ObjectStorageConfig) BasePath() string {
 // uses workload identity. The returned keys are the Secret keys that must
 // exist, in a stable order.
 func (in *ObjectStorageConfig) CredentialsSecret() *ObjectStorageCredentialsSecret {
-	switch {
-	case in.Spec.S3 != nil && in.Spec.S3.Auth.Credentials != nil:
-		ref := in.Spec.S3.Auth.Credentials.SecretRef
-		return &ObjectStorageCredentialsSecret{
-			Name:      ref.Name,
-			Namespace: ref.Namespace,
-			Keys:      []string{ref.AccessKeyIDKey, ref.SecretAccessKeyKey},
-		}
-	case in.Spec.GCS != nil && in.Spec.GCS.Auth.Credentials != nil:
-		ref := in.Spec.GCS.Auth.Credentials.SecretRef
-		return &ObjectStorageCredentialsSecret{
-			Name:      ref.Name,
-			Namespace: ref.Namespace,
-			Keys:      []string{ref.Key},
-		}
-	case in.Spec.AzureBlob != nil && in.Spec.AzureBlob.Auth.Credentials != nil:
-		ref := in.Spec.AzureBlob.Auth.Credentials.SecretRef
-		return &ObjectStorageCredentialsSecret{
-			Name:      ref.Name,
-			Namespace: ref.Namespace,
-			Keys:      []string{ref.Key},
-		}
+	block := in.active()
+	if block == nil {
+		return nil
 	}
 
-	return nil
+	return block.credentials
 }
 
 // ObjectStorageCredentialsSecret is the resolved location of a contract's

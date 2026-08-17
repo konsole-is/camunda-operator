@@ -61,11 +61,21 @@ func AllocateBackupID(at metav1.Time) int64 {
 // root, and surrounding slashes of basePath are dropped so a key never
 // carries an empty segment.
 func ObjectKeyPrefix(basePath, namespace, cluster string, id int64) string {
-	segments := make([]string, 0, 4)
+	return ClusterPrefix(basePath, namespace, cluster) + "/" + strconv.FormatInt(id, 10)
+}
+
+// ClusterPrefix returns the layout prefix of one cluster inside the backup
+// bucket: <basePath>/<namespace>/<cluster>, without a leading slash. It is
+// the single definition of that layout: the Elasticsearch snapshot repository
+// registers with it as base_path, and every object key of the RDBMS path is
+// built under it, so the two can never disagree on where a cluster's backups
+// live.
+func ClusterPrefix(basePath, namespace, cluster string) string {
+	segments := make([]string, 0, 3)
 	if trimmed := strings.Trim(basePath, "/"); trimmed != "" {
 		segments = append(segments, trimmed)
 	}
-	segments = append(segments, namespace, cluster, strconv.FormatInt(id, 10))
+	segments = append(segments, namespace, cluster)
 
 	return strings.Join(segments, "/")
 }

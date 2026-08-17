@@ -408,13 +408,15 @@ func (c *Client) do(
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %s %s: %v", ErrUnreachable, method, path, err)
+		return nil, 0, fmt.Errorf("%w: %s %s: %w", ErrUnreachable, method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("%w: reading response of %s %s: %v", ErrUnreachable, method, path, err)
+		return nil, resp.StatusCode, fmt.Errorf(
+			"%w: reading response of %s %s: %w", ErrUnreachable, method, path, err,
+		)
 	}
 
 	if resp.StatusCode != want {

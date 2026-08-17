@@ -61,7 +61,10 @@ func TestElasticsearchClusterController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	elasticsearch = esadmintest.New()
+	// TLS with a self-signed certificate, the way ECK serves Elasticsearch;
+	// the tests hand its CA to the reconciler through the fake ECK Secret, so
+	// the CA path of the admin client runs exactly as in production.
+	elasticsearch = esadmintest.NewTLS()
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		return (&ElasticsearchClusterReconciler{
@@ -69,6 +72,9 @@ var _ = BeforeSuite(func() {
 			APIReader:   mgr.GetAPIReader(),
 			Scheme:      mgr.GetScheme(),
 			EndpointFor: func(*v1.ElasticsearchCluster) string { return elasticsearch.URL() },
+			// Short, so the tests exercise the unwatched-dependency requeue
+			// (ECK Secrets, foreign ServiceAccounts) inside their timeout.
+			RetryInterval: 500 * time.Millisecond,
 		}).SetupWithManager(mgr)
 	})
 

@@ -76,7 +76,7 @@ spec:
       namespace: my-cluster-ns
       # string. Required. Key in the Secret holding the CA bundle.
       key: ca.crt
-    # string. Optional. Name of the snapshot repository, registered in this Elasticsearch, that backups write to. An ElasticsearchCluster with a snapshotStorageRef registers the repository and fills this field. Fill it by hand for an Elasticsearch this operator does not manage, after registering the repository yourself. A cluster that takes backups needs it.
+    # string. Optional. Name of the snapshot repository, registered in this Elasticsearch, that backups write to. An ElasticsearchCluster with a snapshotStorageRef fills this field once it has registered the repository, never before. Fill it by hand for an Elasticsearch this operator does not manage, after registering the repository yourself. A cluster that takes backups needs it.
     snapshotRepository: my-cluster-es
   # object. Required when type is rdbms, forbidden otherwise. Relational database backend details.
   rdbms:

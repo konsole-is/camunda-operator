@@ -139,6 +139,83 @@ func TestWorkloadIdentityAnnotations(t *testing.T) {
 	}
 }
 
+// The helpers dispatch on the declared type. A contract whose type and block
+// disagree yields nothing, never the wrong block — the same rule
+// objectstore.Open documents.
+func TestHelpersDispatchOnTheDeclaredType(t *testing.T) {
+	t.Parallel()
+
+	mismatched := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeS3,
+		GCS: &v1.GCSStorage{
+			BucketName: "backups",
+			BasePath:   "clusters",
+			Auth: v1.GCSStorageAuth{
+				Type:        v1.ObjectStorageAuthTypeCredentials,
+				Credentials: &v1.GCSCredentials{SecretRef: v1.SecretKeyRef{Name: "k", Namespace: "n", Key: "key.json"}},
+			},
+		},
+	}}
+
+	assert.Empty(t, mismatched.BasePath())
+	assert.Nil(t, mismatched.CredentialsSecret())
+	assert.Nil(t, mismatched.WorkloadIdentityAnnotations())
+	assert.Nil(t, mismatched.WorkloadIdentityPodLabels())
+}
+
+// Leading and trailing slashes are trimmed, so the repository registration
+// and the object keys derive one layout from a contract admitted before the
+// pattern forbade them.
+func TestBasePathTrimsSlashes(t *testing.T) {
+	t.Parallel()
+
+	cfg := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeS3,
+		S3: &v1.S3Storage{
+			BucketName: "backups",
+			BasePath:   "/clusters/prod/",
+			Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+		},
+	}}
+
+	assert.Equal(t, "clusters/prod", cfg.BasePath())
+}
+
+// Azure workload identity needs a pod label on top of the ServiceAccount
+// annotation; no other provider does.
+func TestWorkloadIdentityPodLabels(t *testing.T) {
+	t.Parallel()
+
+	azure := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeAzureBlob,
+		AzureBlob: &v1.AzureBlobStorage{
+			AccountName: "camundabackups",
+			Container:   "backups",
+			Auth:        v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+		},
+	}}
+	assert.Equal(
+		t,
+		map[string]string{v1.AzureWorkloadIdentityUseLabel: "true"},
+		azure.WorkloadIdentityPodLabels(),
+	)
+
+	azure.Spec.AzureBlob.Auth = v1.AzureBlobStorageAuth{
+		Type:        v1.ObjectStorageAuthTypeCredentials,
+		Credentials: &v1.AzureBlobCredentials{SecretRef: v1.SecretKeyRef{Name: "k", Namespace: "n", Key: "accountKey"}},
+	}
+	assert.Nil(t, azure.WorkloadIdentityPodLabels(), "static credentials need no identity label")
+
+	s3 := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeS3,
+		S3: &v1.S3Storage{
+			BucketName: "backups",
+			Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+		},
+	}}
+	assert.Nil(t, s3.WorkloadIdentityPodLabels(), "only Azure needs a pod label")
+}
+
 func TestServiceAccountSpecCreates(t *testing.T) {
 	t.Parallel()
 

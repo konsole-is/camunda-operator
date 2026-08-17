@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
@@ -85,12 +86,7 @@ const (
 	// keystoreSecretSuffix appended to the CR name yields the name of the
 	// Secret that holds the bucket credentials of the node keystore.
 	keystoreSecretSuffix = "-es-snapshot-keystore"
-	// accessKeyKeystorePath and secretKeyKeystorePath are the keystore entries
-	// that the s3 repository client reads its credentials from. Elasticsearch
-	// accepts them nowhere else: the settings of a repository never carry
-	// credentials.
-	accessKeyKeystorePath = "s3.client.default.access_key"
-	secretKeyKeystorePath = "s3.client.default.secret_key"
+
 	// usernameKey is the key of the username in the user Secret.
 	usernameKey = "username"
 	// PasswordKey is the key of the password in the user Secret.
@@ -143,6 +139,16 @@ const camundaRole = `camunda:
         - manage
         - manage_ilm
 `
+
+// accessKeyKeystorePath and secretKeyKeystorePath are the keystore entries
+// that the s3 repository client reads its credentials from. Elasticsearch
+// accepts them nowhere else: the settings of a repository never carry
+// credentials. The client name is shared with the repository settings through
+// esadmin, so the two can never drift apart.
+var (
+	accessKeyKeystorePath = "s3.client." + esadmin.DefaultS3Client + ".access_key"
+	secretKeyKeystorePath = "s3.client." + esadmin.DefaultS3Client + ".secret_key"
+)
 
 const (
 	// ConditionCredentials is the condition type of the credentials
@@ -217,11 +223,27 @@ func RepositoryName(cluster *v1.ElasticsearchCluster) string {
 	return cluster.Name
 }
 
-// repositoryName returns the repository name to publish in the contract, or
-// the empty string when the cluster references no bucket and therefore takes
-// no part in backups.
-func repositoryName(cluster *v1.ElasticsearchCluster, storage *SnapshotStorage) string {
-	if !storage.repository() {
+// publishedRepositoryName returns the repository name to publish in the
+// contract, or the empty string when the cluster references no bucket or its
+// repository was never registered. The GoDoc of the contract field promises a
+// registered repository; a name published before the registration converges
+// would send the first snapshot of a consumer into a repository that does not
+// exist.
+//
+// registered is the last observed convergence, not this reconcile's: it also
+// holds through a suspension, where the bucket is not resolved (storage is
+// nil) and the registration is skipped, but the repository persists in the
+// cluster state that the data volumes retain. Only a cluster that dropped its
+// bucket reference while running clears the field.
+func publishedRepositoryName(
+	cluster *v1.ElasticsearchCluster,
+	storage *SnapshotStorage,
+	registered, suspended bool,
+) string {
+	if !registered {
+		return ""
+	}
+	if !storage.repository() && !suspended {
 		return ""
 	}
 
@@ -268,27 +290,37 @@ func (s *SnapshotStorage) keystore() bool {
 	return s != nil && s.Credentials != nil
 }
 
+// workloadIdentity reports whether the nodes authenticate against the bucket
+// as their ServiceAccount. It is true for every workload-identity bucket,
+// annotation or not: EKS Pod Identity and Workload Identity Federation bind
+// the ServiceAccount by name on the cloud side, so the account must exist and
+// be referenced even when there is nothing to annotate onto it.
+func (s *SnapshotStorage) workloadIdentity() bool {
+	return s != nil && s.Config != nil && s.Credentials == nil
+}
+
 // repository reports whether the cluster has a snapshot repository to
 // register and to publish.
 func (s *SnapshotStorage) repository() bool {
 	return s != nil && s.Config != nil
 }
 
-// rendersServiceAccount reports whether the operator renders the
-// ServiceAccount of the pods: the spec asks for one, or a bucket identity has
-// to be annotated onto it, and the spec does not name a foreign one.
-func rendersServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) bool {
-	if !merged.ServiceAccount.Creates() {
-		return false
-	}
-
-	return merged.ServiceAccount != nil || len(storage.identityAnnotations()) > 0
+// usesServiceAccount reports whether the pods run under a named
+// ServiceAccount, whether or not the operator renders it: the spec asks for
+// one, or the bucket authenticates through workload identity — with or
+// without an annotation, because an annotation-less identity still binds the
+// ServiceAccount by name on the cloud side. The name the pods use is the
+// documented principal, so it must exist and be referenced whenever a
+// workload-identity bucket is.
+func usesServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) bool {
+	return merged.ServiceAccount != nil || storage.workloadIdentity()
 }
 
-// usesServiceAccount reports whether the pods run under a named
-// ServiceAccount, whether or not the operator renders it.
-func usesServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) bool {
-	return merged.ServiceAccount != nil || len(storage.identityAnnotations()) > 0
+// rendersServiceAccount reports whether the operator renders the
+// ServiceAccount the pods use: it is used at all, and the spec does not name
+// a foreign one.
+func rendersServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotStorage) bool {
+	return merged.ServiceAccount.Creates() && usesServiceAccount(merged, storage)
 }
 
 // CredentialsComponent builds the credentials component: the basic-auth style
@@ -413,7 +445,9 @@ func StorageContractComponent(
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
 	storage *SnapshotStorage,
+	registered bool,
 ) (*component.Component, error) {
+	suspended := merged.Suspend
 	userSecret, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      UserSecretName(cluster),
@@ -445,7 +479,7 @@ func StorageContractComponent(
 					Namespace: cluster.Namespace,
 					Key:       CACertKey,
 				},
-				SnapshotRepository: repositoryName(cluster, storage),
+				SnapshotRepository: publishedRepositoryName(cluster, storage, registered, suspended),
 			},
 		},
 	}).Build()

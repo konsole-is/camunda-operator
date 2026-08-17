@@ -81,6 +81,20 @@ var _ = Describe("SecondaryStorageConfig schema", func() {
 			validSecondaryStorageConfigRDBMS, func(*v1.SecondaryStorageConfig) {}, "",
 		),
 		Entry(
+			"accepts a snapshot repository name",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch.SnapshotRepository = "my-cluster-es"
+			}, "",
+		),
+		Entry(
+			// The name is a URL path segment of the Elasticsearch API; a slash
+			// would retarget the request.
+			"rejects a snapshot repository name with a slash",
+			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
+				o.Spec.Elasticsearch.SnapshotRepository = "prod/main"
+			}, "snapshotRepository",
+		),
+		Entry(
 			"rejects type elasticsearch without elasticsearch block",
 			validSecondaryStorageConfigES, func(o *v1.SecondaryStorageConfig) {
 				o.Spec.Elasticsearch = nil

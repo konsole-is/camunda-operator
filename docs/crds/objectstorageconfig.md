@@ -75,7 +75,7 @@ spec:
   s3:
     # string. Required. Bucket name as used by storage client SDKs.
     bucketName: my-cluster-backup-bucket
-    # string. Optional, default: "" (bucket root). Key prefix under which consumers write objects.
+    # string. Optional, default: "" (bucket root). Key prefix under which consumers write objects, without leading or trailing slashes.
     basePath: backups
     # string. Required unless endpoint is set. Region of the bucket.
     region: eu-west-1
@@ -107,7 +107,7 @@ spec:
   gcs:
     # string. Required. Bucket name as used by storage client SDKs.
     bucketName: my-cluster-documents
-    # string. Optional, default: "" (bucket root). Key prefix under which consumers write objects.
+    # string. Optional, default: "" (bucket root). Key prefix under which consumers write objects, without leading or trailing slashes.
     basePath: documents
     # object. Optional, default: {type: workloadIdentity}.
     auth:
@@ -130,7 +130,7 @@ spec:
     accountName: camundabackups
     # string. Required. Blob container that consumers write to.
     container: backups
-    # string. Optional, default: "" (container root). Blob prefix under which consumers write objects.
+    # string. Optional, default: "" (container root). Blob prefix under which consumers write objects, without leading or trailing slashes.
     basePath: clusters
     # string. Optional. URL of the blob service. Empty means the public Azure endpoint of the account. Set it for Azurite and sovereign clouds.
     endpoint: "https://camundabackups.blob.core.windows.net"
@@ -166,6 +166,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - In every `auth` block, `workloadIdentity` is only valid when `auth.type` is `workloadIdentity`.
 - `s3.region` is required unless `s3.endpoint` is set.
 - `s3.endpoint` and `azureBlob.endpoint` must be valid `http` or `https` URLs.
+- Every `basePath` is a plain prefix without leading or trailing slashes. The prefix defines one bucket layout that the snapshot repository and every backup object key share, and a stray slash would split it in two.
 - The Secret of `auth.credentials` is checked at reconcile time, not at admission, because a Secret can be created after the contract.
 
 ## Relationships
