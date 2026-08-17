@@ -6,3 +6,17 @@ images:
 - name: controller
   newName: controller
   newTag: latest
+
+# Copies the (images-transformed) manager image into OPERATOR_IMAGE, so the
+# backup Jobs run the exact image that was deployed.
+replacements:
+- source:
+    kind: Deployment
+    name: controller-manager
+    fieldPath: spec.template.spec.containers.[name=manager].image
+  targets:
+  - select:
+      kind: Deployment
+      name: controller-manager
+    fieldPaths:
+    - spec.template.spec.containers.[name=manager].env.[name=OPERATOR_IMAGE].value

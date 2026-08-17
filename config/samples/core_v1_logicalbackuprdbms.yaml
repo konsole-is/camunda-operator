@@ -2,8 +2,9 @@ apiVersion: core.camunda.io/v1
 kind: LogicalBackupRDBMS
 metadata:
   labels:
-    app.kubernetes.io/name: camunda-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: logicalbackuprdbms-sample
+    camunda.io/cluster: my-cluster
+  name: my-cluster-backup
+  namespace: my-cluster-ns
 spec:
-  # TODO(user): Add fields here
+  clusterRef:
+    name: my-cluster
