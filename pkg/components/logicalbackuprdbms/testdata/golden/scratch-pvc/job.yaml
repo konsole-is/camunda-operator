@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: dump
+    camunda.io/logical-backup-rdbms: my-cluster-1748937221000
+  name: my-cluster-1748937221000-dump
+  namespace: my-cluster-ns
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: camunda-operator
+        camunda.io/cluster: my-cluster
+        camunda.io/component: dump
+        camunda.io/logical-backup-rdbms: my-cluster-1748937221000
+    spec:
+      containers:
+      - args:
+        - upload
+        env:
+        - name: UPLOAD_FILE
+          value: /scratch/camunda.dump
+        - name: UPLOAD_KEY
+          value: clusters/my-cluster-ns/my-cluster/1748937221000/camunda.dump
+        - name: UPLOAD_STORAGE_NAME
+          value: my-backup-config
+        - name: UPLOAD_STORAGE_SPEC
+          value: '{"type":"S3","s3":{"bucketName":"camunda-backups","basePath":"clusters","region":"eu-west-1","endpoint":"http://minio.minio.svc:9000","auth":{"type":"credentials","credentials":{"secretRef":{"name":"minio-credentials","namespace":"camunda","accessKeyIdKey":"accessKeyId","secretAccessKeyKey":"secretAccessKey"}}}}}'
+        - name: UPLOAD_S3_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              key: accessKeyId
+              name: my-cluster-camunda-backup-credentials
+        - name: UPLOAD_S3_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secretAccessKey
+              name: my-cluster-camunda-backup-credentials
+        image: ghcr.io/konsole-is/camunda-operator:0.1.0
+        name: upload
+        resources: {}
+        volumeMounts:
+        - mountPath: /scratch
+          name: scratch
+      initContainers:
+      - command:
+        - pg_dump
+        - --format=custom
+        - --no-password
+        - --file=/scratch/camunda.dump
+        env:
+        - name: PGHOST
+          value: postgres.databases.svc
+        - name: PGPORT
+          value: "5432"
+        - name: PGDATABASE
+          value: camunda
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: my-cluster-1748937221000-dump-credentials
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-1748937221000-dump-credentials
+        image: postgres:17
+        name: dump
+        resources: {}
+        volumeMounts:
+        - mountPath: /scratch
+          name: scratch
+      restartPolicy: Never
+      serviceAccountName: my-cluster-camunda
+      volumes:
+      - ephemeral:
+          volumeClaimTemplate:
+            metadata: {}
+            spec:
+              accessModes:
+              - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 200Gi
+              storageClassName: fast
+        name: scratch

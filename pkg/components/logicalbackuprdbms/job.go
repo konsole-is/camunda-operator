@@ -1,0 +1,345 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package logicalbackuprdbms renders the Job that backs up the logical
+// database of a relational orchestration cluster: a pg_dump into a scratch
+// volume, then an upload of the archive to the backup bucket. The package is
+// pure: spec in, resources out, no API calls.
+package logicalbackuprdbms
+
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+)
+
+const (
+	// componentName is the camunda.io/component of everything the backup
+	// renders.
+	componentName = "dump"
+	// scratchVolumeName is the volume that holds the dump between the two
+	// containers.
+	scratchVolumeName = "scratch"
+	// scratchMountPath is where both containers see the scratch volume.
+	scratchMountPath = "/scratch"
+	// DumpFileName is the file the dump is written to and uploaded from, and
+	// the last segment of the object key in the bucket.
+	DumpFileName = "camunda.dump"
+	// gcsKeyVolumeName mounts the service-account key of a GCS bucket with
+	// static credentials. GCS accepts no key as configuration: the key is a
+	// file, named by GOOGLE_APPLICATION_CREDENTIALS, and the default
+	// credential chain reads it.
+	gcsKeyVolumeName = "gcs-key"
+	gcsKeyMountPath  = "/var/run/secrets/camunda.io/gcs"
+)
+
+// The environment contract of the upload subcommand. The Job renders these
+// variables and cmd/upload reads them; they are the only interface between
+// the two.
+const (
+	// EnvUploadFile is the path of the file to upload.
+	EnvUploadFile = "UPLOAD_FILE"
+	// EnvUploadKey is the object key the file is uploaded to.
+	EnvUploadKey = "UPLOAD_KEY"
+	// EnvUploadStorageName is the name of the ObjectStorageConfig, used in
+	// error messages.
+	EnvUploadStorageName = "UPLOAD_STORAGE_NAME"
+	// EnvUploadStorageSpec is the ObjectStorageConfigSpec as JSON. The spec
+	// of the contract is the wire format, so the Job and the subcommand can
+	// never disagree on a field.
+	EnvUploadStorageSpec = "UPLOAD_STORAGE_SPEC"
+	// EnvUploadS3AccessKeyID and EnvUploadS3SecretAccessKey carry the static
+	// keys of an S3 bucket.
+	EnvUploadS3AccessKeyID     = "UPLOAD_S3_ACCESS_KEY_ID"
+	EnvUploadS3SecretAccessKey = "UPLOAD_S3_SECRET_ACCESS_KEY"
+	// EnvUploadAzureAccountKey carries the account key of an Azure bucket.
+	EnvUploadAzureAccountKey = "UPLOAD_AZURE_ACCOUNT_KEY"
+	// EnvGoogleCredentials names the service-account key file of a GCS
+	// bucket, read by the default credential chain.
+	EnvGoogleCredentials = "GOOGLE_APPLICATION_CREDENTIALS"
+)
+
+// JobInput is everything the Job of one backup renders from. The controller
+// resolves it; the builder only shapes it.
+type JobInput struct {
+	// Backup is the LogicalBackupRDBMS the Job works for.
+	Backup *v1.LogicalBackupRDBMS
+	// ClusterName and ClusterNamespace identify the backed-up cluster. The
+	// Job runs in the cluster namespace: the ServiceAccount and the
+	// credential copies live there.
+	ClusterName      string
+	ClusterNamespace string
+	// Dump is the effective dump block: the cluster's spec.backup.dump, or
+	// the backup's spec.dump replacing it as a whole. Nil means defaults.
+	Dump *v1.BackupDumpSpec
+	// Bucket is the backup bucket contract.
+	Bucket *v1.ObjectStorageConfig
+	// BucketSecretName is the local copy of the bucket's static credentials
+	// in the cluster namespace. Empty means workload identity: no keys are
+	// rendered and the provider chain authenticates as the ServiceAccount.
+	BucketSecretName string
+	// DBSecretName is the local copy of the backup credentials of the
+	// database, with DBUsernameKey and DBPasswordKey naming its keys.
+	DBSecretName  string
+	DBUsernameKey string
+	DBPasswordKey string
+	// ServiceAccountName is the ServiceAccount of the pod. Empty means the
+	// default account of the namespace.
+	ServiceAccountName string
+	// ServerVersion is the major version of the database server. The dump
+	// container runs client tools of that major.
+	ServerVersion string
+	// Host, Port, and Database locate the logical database to dump.
+	Host     string
+	Port     int32
+	Database string
+	// ObjectKey is the full key of the dump in the bucket.
+	ObjectKey string
+	// OperatorImage runs the upload subcommand. It is the image of the
+	// operator itself.
+	OperatorImage string
+}
+
+// JobName returns the name of the Job of one backup. It derives from the
+// backup name alone, so a reconcile that re-enters after a crash adopts the
+// Job it already created instead of creating a second one.
+func JobName(backup *v1.LogicalBackupRDBMS) string {
+	return backup.Name + "-dump"
+}
+
+// BuildJob renders the Job that dumps the logical database and uploads the
+// archive. An initContainer runs pg_dump into the scratch volume; the main
+// container streams the file to the bucket, so the Job succeeds only when
+// the upload did. The two containers run in turn, and one resource block
+// sizes both: the pod's effective request is the maximum, not the sum.
+func BuildJob(in JobInput) (*batchv1.Job, error) {
+	if in.OperatorImage == "" {
+		return nil, fmt.Errorf("building the dump Job of %q: the operator image is empty", in.Backup.Name)
+	}
+
+	spec, err := json.Marshal(in.Bucket.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("encoding the bucket spec of %q: %w", in.Bucket.Name, err)
+	}
+
+	dump := in.Dump
+	if dump == nil {
+		dump = &v1.BackupDumpSpec{}
+	}
+
+	managed := labels.Managed(labels.LogicalBackupRDBMS(in.Backup.Name), componentName)
+	managed[labels.ClusterKey] = in.ClusterName
+
+	podLabels := labels.Merge(dump.PodLabels, managed)
+
+	template := corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:      podLabels,
+			Annotations: dump.PodAnnotations,
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy:      corev1.RestartPolicyNever,
+			ServiceAccountName: in.ServiceAccountName,
+			InitContainers:     []corev1.Container{dumpContainer(in, dump)},
+			Containers:         []corev1.Container{uploadContainer(in, dump, string(spec))},
+			Volumes:            volumes(in, dump),
+		},
+	}
+
+	if dump.Scheduling != nil {
+		template.Spec.Tolerations = dump.Scheduling.Tolerations
+		if dump.Scheduling.NodeAffinity != nil || dump.Scheduling.PodAffinity != nil {
+			template.Spec.Affinity = &corev1.Affinity{
+				NodeAffinity: dump.Scheduling.NodeAffinity,
+				PodAffinity:  dump.Scheduling.PodAffinity,
+			}
+		}
+	}
+
+	return &batchv1.Job{
+		// Server-Side Apply requires the type to be stated on the patch.
+		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      JobName(in.Backup),
+			Namespace: in.ClusterNamespace,
+			Labels:    managed,
+		},
+		Spec: batchv1.JobSpec{
+			Template: template,
+		},
+	}, nil
+}
+
+// dumpContainer runs pg_dump of the entire logical database into the scratch
+// volume. The archive format (-Fc) restores with pg_restore and compresses
+// by default.
+func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
+	env := []corev1.EnvVar{
+		{Name: "PGHOST", Value: in.Host},
+		{Name: "PGPORT", Value: strconv.FormatInt(int64(in.Port), 10)},
+		{Name: "PGDATABASE", Value: in.Database},
+		secretEnv("PGUSER", in.DBSecretName, in.DBUsernameKey),
+		secretEnv("PGPASSWORD", in.DBSecretName, in.DBPasswordKey),
+	}
+
+	container := corev1.Container{
+		Name:  "dump",
+		Image: "postgres:" + in.ServerVersion,
+		Command: []string{
+			"pg_dump",
+			"--format=custom",
+			"--no-password",
+			"--file=" + scratchMountPath + "/" + DumpFileName,
+		},
+		Env:          append(env, dump.ExtraEnv...),
+		EnvFrom:      dump.ExtraEnvFrom,
+		VolumeMounts: []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
+	}
+	if dump.Resources != nil {
+		container.Resources = *dump.Resources
+	}
+
+	return container
+}
+
+// uploadContainer streams the archive to the bucket through the upload
+// subcommand of the operator image.
+func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.Container {
+	env := []corev1.EnvVar{
+		{Name: EnvUploadFile, Value: scratchMountPath + "/" + DumpFileName},
+		{Name: EnvUploadKey, Value: in.ObjectKey},
+		{Name: EnvUploadStorageName, Value: in.Bucket.Name},
+		{Name: EnvUploadStorageSpec, Value: spec},
+	}
+	env = append(env, credentialEnv(in)...)
+
+	container := corev1.Container{
+		Name:         "upload",
+		Image:        in.OperatorImage,
+		Args:         []string{"upload"},
+		Env:          append(env, dump.ExtraEnv...),
+		EnvFrom:      dump.ExtraEnvFrom,
+		VolumeMounts: []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
+	}
+	if in.BucketSecretName != "" && in.Bucket.Spec.GCS != nil {
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      gcsKeyVolumeName,
+			MountPath: gcsKeyMountPath,
+			ReadOnly:  true,
+		})
+	}
+	if dump.Resources != nil {
+		container.Resources = *dump.Resources
+	}
+
+	return container
+}
+
+// credentialEnv renders the static credentials of the bucket, keyed the way
+// the contract names them in its own Secret; the local copy preserves those
+// keys. Workload identity renders nothing: the provider chain authenticates
+// as the ServiceAccount of the pod.
+func credentialEnv(in JobInput) []corev1.EnvVar {
+	if in.BucketSecretName == "" {
+		return nil
+	}
+
+	switch {
+	case in.Bucket.Spec.S3 != nil && in.Bucket.Spec.S3.Auth.Credentials != nil:
+		ref := in.Bucket.Spec.S3.Auth.Credentials.SecretRef
+
+		return []corev1.EnvVar{
+			secretEnv(EnvUploadS3AccessKeyID, in.BucketSecretName, ref.AccessKeyIDKey),
+			secretEnv(EnvUploadS3SecretAccessKey, in.BucketSecretName, ref.SecretAccessKeyKey),
+		}
+
+	case in.Bucket.Spec.GCS != nil && in.Bucket.Spec.GCS.Auth.Credentials != nil:
+		key := in.Bucket.Spec.GCS.Auth.Credentials.SecretRef.Key
+
+		return []corev1.EnvVar{
+			{Name: EnvGoogleCredentials, Value: gcsKeyMountPath + "/" + key},
+		}
+
+	case in.Bucket.Spec.AzureBlob != nil && in.Bucket.Spec.AzureBlob.Auth.Credentials != nil:
+		key := in.Bucket.Spec.AzureBlob.Auth.Credentials.SecretRef.Key
+
+		return []corev1.EnvVar{
+			secretEnv(EnvUploadAzureAccountKey, in.BucketSecretName, key),
+		}
+	}
+
+	return nil
+}
+
+// volumes returns the scratch volume of the dump — an emptyDir bounded by
+// sizeLimit, or a generic ephemeral PersistentVolumeClaim when a storage
+// class is set, so a dump larger than the node's ephemeral storage still
+// fits — plus the key file of a GCS bucket with static credentials.
+func volumes(in JobInput, dump *v1.BackupDumpSpec) []corev1.Volume {
+	scratch := corev1.Volume{Name: scratchVolumeName}
+
+	switch {
+	case dump.ScratchVolume != nil && dump.ScratchVolume.StorageClassName != nil:
+		resources := corev1.VolumeResourceRequirements{}
+		if dump.ScratchVolume.SizeLimit != nil {
+			resources.Requests = corev1.ResourceList{corev1.ResourceStorage: *dump.ScratchVolume.SizeLimit}
+		}
+		scratch.Ephemeral = &corev1.EphemeralVolumeSource{
+			VolumeClaimTemplate: &corev1.PersistentVolumeClaimTemplate{
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					StorageClassName: dump.ScratchVolume.StorageClassName,
+					Resources:        resources,
+				},
+			},
+		}
+	case dump.ScratchVolume != nil && dump.ScratchVolume.SizeLimit != nil:
+		scratch.EmptyDir = &corev1.EmptyDirVolumeSource{SizeLimit: dump.ScratchVolume.SizeLimit}
+	default:
+		scratch.EmptyDir = &corev1.EmptyDirVolumeSource{}
+	}
+
+	all := []corev1.Volume{scratch}
+	if in.BucketSecretName != "" && in.Bucket.Spec.GCS != nil {
+		all = append(all, corev1.Volume{
+			Name: gcsKeyVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: in.BucketSecretName},
+			},
+		})
+	}
+
+	return all
+}
+
+func secretEnv(name, secret, key string) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: name,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: secret},
+				Key:                  key,
+			},
+		},
+	}
+}
