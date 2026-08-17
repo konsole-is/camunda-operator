@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package logicalbackup_test
+package management_test
 
 import (
 	"testing"
@@ -29,7 +29,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 )
 
 func managementScheme(t *testing.T) *runtime.Scheme {
@@ -49,11 +49,11 @@ func clusterWithBinding(binding *v1.ManagementBinding) *v1.CamundaCluster {
 	}
 }
 
-func TestManagementClientHoldsOnAnUnpublishedBinding(t *testing.T) {
+func TestNewClientHoldsOnAnUnpublishedBinding(t *testing.T) {
 	reader := fake.NewClientBuilder().WithScheme(managementScheme(t)).Build()
 
 	for _, binding := range []*v1.ManagementBinding{nil, {Endpoint: ""}} {
-		admin, failure, err := logicalbackup.ManagementClient(
+		admin, failure, err := management.NewClient(
 			t.Context(), reader, clusterWithBinding(binding),
 		)
 
@@ -65,10 +65,10 @@ func TestManagementClientHoldsOnAnUnpublishedBinding(t *testing.T) {
 	}
 }
 
-func TestManagementClientBuildsWithoutAuth(t *testing.T) {
+func TestNewClientBuildsWithoutAuth(t *testing.T) {
 	reader := fake.NewClientBuilder().WithScheme(managementScheme(t)).Build()
 
-	admin, failure, err := logicalbackup.ManagementClient(
+	admin, failure, err := management.NewClient(
 		t.Context(),
 		reader,
 		clusterWithBinding(&v1.ManagementBinding{
@@ -83,10 +83,10 @@ func TestManagementClientBuildsWithoutAuth(t *testing.T) {
 	assert.NotNil(t, admin)
 }
 
-func TestManagementClientRejectsBasicAuthWithoutARef(t *testing.T) {
+func TestNewClientRejectsBasicAuthWithoutARef(t *testing.T) {
 	reader := fake.NewClientBuilder().WithScheme(managementScheme(t)).Build()
 
-	admin, failure, err := logicalbackup.ManagementClient(
+	admin, failure, err := management.NewClient(
 		t.Context(),
 		reader,
 		clusterWithBinding(&v1.ManagementBinding{
@@ -103,10 +103,10 @@ func TestManagementClientRejectsBasicAuthWithoutARef(t *testing.T) {
 	assert.Contains(t, failure.Message, "names no credentials Secret")
 }
 
-func TestManagementClientReportsAMissingCredentialsSecret(t *testing.T) {
+func TestNewClientReportsAMissingCredentialsSecret(t *testing.T) {
 	reader := fake.NewClientBuilder().WithScheme(managementScheme(t)).Build()
 
-	admin, failure, err := logicalbackup.ManagementClient(
+	admin, failure, err := management.NewClient(
 		t.Context(),
 		reader,
 		clusterWithBinding(&v1.ManagementBinding{
@@ -131,7 +131,7 @@ func TestManagementClientReportsAMissingCredentialsSecret(t *testing.T) {
 	assert.Contains(t, failure.Message, "not found")
 }
 
-func TestManagementClientResolvesBasicAuth(t *testing.T) {
+func TestNewClientResolvesBasicAuth(t *testing.T) {
 	reader := fake.NewClientBuilder().WithScheme(managementScheme(t)).WithObjects(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "management-auth", Namespace: "my-ns"},
 		Data: map[string][]byte{
@@ -140,7 +140,7 @@ func TestManagementClientResolvesBasicAuth(t *testing.T) {
 		},
 	}).Build()
 
-	admin, failure, err := logicalbackup.ManagementClient(
+	admin, failure, err := management.NewClient(
 		t.Context(),
 		reader,
 		clusterWithBinding(&v1.ManagementBinding{
@@ -163,10 +163,10 @@ func TestManagementClientResolvesBasicAuth(t *testing.T) {
 	assert.NotNil(t, admin)
 }
 
-func TestManagementClientRejectsAnUnsupportedVersion(t *testing.T) {
+func TestNewClientRejectsAnUnsupportedVersion(t *testing.T) {
 	reader := fake.NewClientBuilder().WithScheme(managementScheme(t)).Build()
 
-	admin, failure, err := logicalbackup.ManagementClient(
+	admin, failure, err := management.NewClient(
 		t.Context(),
 		reader,
 		clusterWithBinding(&v1.ManagementBinding{
