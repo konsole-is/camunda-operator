@@ -168,3 +168,56 @@ func (e Effective) workload(component string) (v1.WorkloadSpec, bool) {
 
 	return v1.WorkloadSpec{}, true
 }
+
+// primaryStorageBackup is the resolved primary-storage backup policy: every
+// field with its documented default applied, so the renderer never repeats a
+// default.
+type primaryStorageBackup struct {
+	continuous         bool
+	schedule           string
+	checkpointInterval string
+	retentionWindow    string
+	cleanupSchedule    string
+}
+
+// primaryStorageBackup returns the primary-storage backup policy with the
+// documented defaults applied. Continuous defaults to true only when a
+// schedule takes backups: continuous mode holds every log segment until a
+// backup runs, so with a schedule of none it would fill the disks and back
+// up nothing. An explicit continuous with a schedule of none is rejected by
+// ValidateMerged.
+func (e Effective) primaryStorageBackup() primaryStorageBackup {
+	resolved := primaryStorageBackup{
+		schedule:           defaultBackupSchedule,
+		checkpointInterval: defaultBackupCheckpointInterval,
+		retentionWindow:    defaultBackupRetentionWindow,
+		cleanupSchedule:    defaultBackupCleanupSchedule,
+	}
+
+	ps := &v1.PrimaryStorageBackupSpec{}
+	if e.Backup != nil && e.Backup.PrimaryStorage != nil {
+		ps = e.Backup.PrimaryStorage
+	}
+
+	if ps.Schedule != "" {
+		resolved.schedule = ps.Schedule
+	}
+	resolved.continuous = resolved.schedule != scheduleNone
+	if ps.Continuous != nil {
+		resolved.continuous = *ps.Continuous
+	}
+	if ps.CheckpointInterval != "" {
+		resolved.checkpointInterval = ps.CheckpointInterval
+	}
+	if ps.Retention == nil {
+		return resolved
+	}
+	if ps.Retention.Window != "" {
+		resolved.retentionWindow = ps.Retention.Window
+	}
+	if ps.Retention.CleanupSchedule != "" {
+		resolved.cleanupSchedule = ps.Retention.CleanupSchedule
+	}
+
+	return resolved
+}

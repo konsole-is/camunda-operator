@@ -226,6 +226,50 @@ func fixtureSuspended(t *testing.T) Input {
 	})
 }
 
+// fixtureBackupElasticsearch is an Elasticsearch cluster that backs up to an
+// S3-compatible bucket with static keys: the shape the kind suite runs.
+func fixtureBackupElasticsearch(t *testing.T) Input {
+	t.Helper()
+	return newInput(t, func(in *Input) {
+		in.Cluster.Spec.BackupStorageRef = "my-backup-config"
+		in.Effective = NewEffective(in.Cluster.Spec)
+		in.Storage.Elasticsearch.SnapshotRepository = fixtureSnapshotRepository
+		in.Backup = minioBucket()
+	})
+}
+
+// fixtureBackupRDBMS is a relational cluster that backs up to a cloud bucket
+// through workload identity, with a backup policy that overrides the
+// documented defaults.
+func fixtureBackupRDBMS(t *testing.T) Input {
+	t.Helper()
+	return newInput(t, func(in *Input) {
+		in.Cluster.Spec.BackupStorageRef = "my-backup-config"
+		in.Cluster.Spec.Backup = &v1.ClusterBackupSpec{
+			PrimaryStorage: &v1.PrimaryStorageBackupSpec{
+				Schedule:  "PT30M",
+				Retention: &v1.PrimaryStorageRetentionSpec{Window: "P14D"},
+			},
+		}
+		in.Effective = NewEffective(in.Cluster.Spec)
+		in.Storage = Storage{
+			Type: v1.SecondaryStorageTypeRDBMS,
+			RDBMS: &RDBMSStorage{
+				Host:     "my-db-rw.my-cluster-ns.svc",
+				Port:     5432,
+				Database: "camunda",
+				Credentials: v1.CredentialsSecretRef{
+					Name: "camunda-db-user", Namespace: "my-cluster-ns", UsernameKey: "username", PasswordKey: "password",
+				},
+			},
+		}
+		in.Backup = s3Bucket()
+		in.ServiceAccountAnnotations = map[string]string{
+			v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda",
+		}
+	})
+}
+
 // goldenFixtures returns every fixture by name.
 func goldenFixtures(t *testing.T) map[string]Input {
 	t.Helper()
@@ -238,5 +282,8 @@ func goldenFixtures(t *testing.T) map[string]Input {
 		"oidc":       fixtureOIDC(t),
 		"preset":     fixturePreset(t),
 		"suspended":  fixtureSuspended(t),
+
+		"backup-elasticsearch": fixtureBackupElasticsearch(t),
+		"backup-rdbms":         fixtureBackupRDBMS(t),
 	}
 }

@@ -39,6 +39,10 @@ const (
 	MirrorPurposeESCredentials = "es-credentials"
 	MirrorPurposeESCA          = "es-ca"
 	MirrorPurposeDBCredentials = "db-credentials"
+	// MirrorPurposeBackupCredentials is the static credentials of the backup
+	// bucket, for a contract that authenticates with keys instead of a
+	// workload identity.
+	MirrorPurposeBackupCredentials = "backup-credentials"
 )
 
 // MirrorPurposes lists every purpose in the order the component renders its
@@ -50,6 +54,7 @@ var MirrorPurposes = []string{
 	MirrorPurposeESCredentials,
 	MirrorPurposeESCA,
 	MirrorPurposeDBCredentials,
+	MirrorPurposeBackupCredentials,
 }
 
 // mirroredComponentName is the ocf name of the mirrored Secrets component.

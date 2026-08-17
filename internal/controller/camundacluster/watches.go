@@ -142,6 +142,12 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 			set.addList(ctx, r.Client, client.InNamespace(dbConfig.Namespace))
 		}
 
+		for _, bucket := range listByIndex[v1.ObjectStorageConfigList](
+			ctx, r.Client, refindex.ObjectStorageConfigSecretField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.MatchingFields{objectStorageRefsField: bucket.Name})
+		}
+
 		return set.requests()
 	})
 }
@@ -244,6 +250,10 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return fmt.Errorf("building the component client: %w", err)
 		}
 		r.componentClient = componentClient
+	}
+
+	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
+		return fmt.Errorf("registering the bucket credentials index: %w", err)
 	}
 
 	for field, indexer := range indexers {

@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"slices"
+	"strconv"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
@@ -159,4 +160,14 @@ func GatewayHost(cluster *v1.CamundaCluster, e Effective) string {
 		return WorkloadName(cluster, ComponentZeebe)
 	}
 	return WorkloadName(cluster, ComponentGateway)
+}
+
+// ManagementEndpoint returns the base URL of the management API of a
+// cluster: the Service of the process that serves it, on the management
+// port. It is the endpoint that the cluster publishes in status.management,
+// so an extension calls the actuator endpoints without knowing which process
+// hosts them.
+func ManagementEndpoint(cluster *v1.CamundaCluster, e Effective) string {
+	host := GatewayHost(cluster, e) + "." + cluster.Namespace + ".svc"
+	return "http://" + host + ":" + strconv.Itoa(int(PortManagement))
 }

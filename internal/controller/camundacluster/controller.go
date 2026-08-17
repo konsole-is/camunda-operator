@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
@@ -72,6 +73,23 @@ type CamundaClusterReconciler struct {
 	// restMapper resolves whether the cluster serves the ServiceMonitor
 	// kind. SetupWithManager sets it from the manager.
 	restMapper meta.RESTMapper
+	// RetryInterval overrides how long the controller waits on something no
+	// watch reports. Zero means defaultRetryInterval; tests shorten it.
+	RetryInterval time.Duration
+}
+
+// defaultRetryInterval is how long the controller waits before it looks again
+// at an unwatched dependency, such as a pre-existing ServiceAccount.
+const defaultRetryInterval = 30 * time.Second
+
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *CamundaClusterReconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;create;update;patch;delete
@@ -100,7 +118,8 @@ type CamundaClusterReconciler struct {
 // ignored shrink; the claim template keeps its applied size, so the
 // StatefulSet is never recreated. Then the components are reconciled in
 // order: the admin Secret, the mirrored Secrets, then every process, each
-// gated on whether the cluster needs it. Ready is True only when every
+// gated on whether the cluster needs it. The management binding is published
+// with the status, and cleared while the cluster is suspended. Ready is True only when every
 // component the cluster needs is True. Its reason and message come from the
 // governing component, which is the highest-priority component that is not
 // True, or the highest-priority of all of them when they all are.
@@ -146,6 +165,13 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
+
+		// Only an unwatched failure needs a timer; everything else the
+		// pre-checks resolve re-enqueues through a watch.
+		var unwatched *unwatchedPreCheck
+		if errors.As(err, &unwatched) {
+			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
@@ -174,6 +200,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()
+	cluster.Status.Management = managementBinding(&cluster, in)
 
 	return ctrl.Result{}, reconcileErr
 }

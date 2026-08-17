@@ -23,6 +23,7 @@ The CamundaCluster controller resolves `presetRef` on each reconcile, so editing
 6. `extraEnvFrom` lists concatenate: preset entries first, then CamundaCluster entries.
 7. `podLabels` and `podAnnotations` maps merge by key, with the CamundaCluster winning on conflicts.
 8. `scheduling` is the exception and never merges: if the CamundaCluster sets `scheduling` at some level (top-level or per component), it replaces the preset's `scheduling` at that level entirely, because partial scheduling merges are error-prone.
+9. `backup` merges per field. `backup.primaryStorage` overrides field by field, so a cluster can change the schedule and keep the retention of the preset. `backup.dump` follows the component rules above (rules 4 to 8), and `backup.dump.scratchVolume` replaces as a whole block, like `scheduling`. `backup.primaryStorage.continuous` is a pointer, so a preset can turn continuous backups on for a fleet and one cluster can still set it to `false`.
 
 The override surface is deliberately small — sizing, env vars, and metadata that commonly vary per cluster.
 Clusters that fit no preset skip `presetRef` and configure everything inline.
@@ -74,6 +75,16 @@ spec:
       company.com/cluster-preset: "medium"
     # object. Optional. Scheduling baseline for all workloads; a cluster that sets its own scheduling replaces this entirely (no merge).
     scheduling: {}
+    # object. Optional. Backup policy baseline for all clusters that reference this preset.
+    # See the CamundaCluster doc for the full block. backupStorageRef is instance-bound and stays on the cluster.
+    backup:
+      primaryStorage:
+        continuous: true
+        schedule: "PT1H"
+        checkpointInterval: "PT15M"
+        retention:
+          window: "P7D"
+          cleanupSchedule: "PT1H"
     # object. Optional. Zeebe baseline; zeebe is always a standalone StatefulSet.
     zeebe:
       # integer. Optional. Broker replica baseline.
@@ -140,7 +151,7 @@ Reference errors surface on the consumer instead — a [CamundaCluster](camundac
 
 - `spec.cluster` must be present and must conform to the preset-legal subset of the CamundaCluster spec schema.
 - Instance-bound CamundaCluster fields are rejected at admission inside `spec.cluster`: `platformConfigRef`, `presetRef` (no preset chaining), `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`.
-- Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`), and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`.
+- Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`), `backup`, and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`. `backup` is policy and belongs in a preset; `backupStorageRef`, which says where backups go, is instance-bound.
 - There is no cross-resource validation: preset resolution problems are reported by the consuming controller.
 
 ## Relationships

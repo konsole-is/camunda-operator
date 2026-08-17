@@ -46,6 +46,10 @@ const (
 	// msgConnectorsVersionRequired rejects enabled connectors without a
 	// bundle version.
 	msgConnectorsVersionRequired = "connectors.version is required when connectors are enabled"
+	// msgContinuousWithoutSchedule quotes the pairing rule of the Camunda
+	// backup guide: continuous mode holds the log until a backup runs.
+	msgContinuousWithoutSchedule = "backup.primaryStorage.continuous is true but the schedule is none: " +
+		"continuous mode holds every log segment until a backup runs, so it always needs a schedule"
 )
 
 // versionFloor is the lowest Camunda version the operator supports.
@@ -61,8 +65,11 @@ const versionFloor = "8.9.0"
 // the same name replaces the entry of the preset. ExtraEnvFrom concatenates,
 // preset entries first. PodLabels and podAnnotations merge by key with the
 // cluster winning. Scheduling never merges: a block set on the cluster
-// replaces the block of the preset at that level (top-level or per
-// component) entirely. The instance-bound fields (platformConfigRef,
+// replaces the block of the preset at that level (top-level, per component,
+// or under backup.dump) entirely. The backup block merges per field: the
+// primary-storage schedule, checkpoint interval, and retention each override
+// on their own, and backup.dump follows the component rules above, with its
+// scratch volume replaced as a whole block. The instance-bound fields (platformConfigRef,
 // presetRef, externalUrl, serviceAccount, storageRef, backupStorageRef,
 // documentStorageRef, monitoring, suspend, pause) always come from spec. A
 // nil preset returns spec unchanged. The result shares no memory with spec
@@ -87,6 +94,8 @@ func MergePreset(spec v1.CamundaClusterSpec, preset *v1.CamundaClusterPresetSpec
 	if spec.Scheduling != nil {
 		merged.Scheduling = spec.Scheduling
 	}
+
+	merged.Backup = mergeBackup(merged.Backup, spec.Backup)
 
 	merged.Zeebe = mergeZeebe(merged.Zeebe, spec.Zeebe)
 	merged.Gateway = mergeGateway(merged.Gateway, spec.Gateway)
@@ -317,6 +326,12 @@ func ValidateMerged(spec v1.CamundaClusterSpec) error {
 		problems = append(problems, msgConnectorsVersionRequired)
 	}
 
+	if b := spec.Backup; b != nil && b.PrimaryStorage != nil &&
+		b.PrimaryStorage.Continuous != nil && *b.PrimaryStorage.Continuous &&
+		b.PrimaryStorage.Schedule == scheduleNone {
+		problems = append(problems, msgContinuousWithoutSchedule)
+	}
+
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
@@ -362,4 +377,86 @@ func parseVersion(version string) ([3]int, error) {
 	}
 
 	return parsed, nil
+}
+
+// mergeBackup merges the backup policy: the primary-storage fields merge one
+// by one so that a cluster can change the schedule and keep the retention of
+// the preset, and the dump block follows the workload rules. Scheduling and
+// the scratch volume replace as whole blocks, like every other scheduling
+// block of the spec.
+func mergeBackup(base, over *v1.ClusterBackupSpec) *v1.ClusterBackupSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	base.PrimaryStorage = mergePrimaryStorageBackup(base.PrimaryStorage, over.PrimaryStorage)
+	base.Dump = mergeBackupDump(base.Dump, over.Dump)
+
+	return base
+}
+
+func mergePrimaryStorageBackup(base, over *v1.PrimaryStorageBackupSpec) *v1.PrimaryStorageBackupSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	if over.Continuous != nil {
+		base.Continuous = over.Continuous
+	}
+	if over.Schedule != "" {
+		base.Schedule = over.Schedule
+	}
+	if over.CheckpointInterval != "" {
+		base.CheckpointInterval = over.CheckpointInterval
+	}
+	base.Retention = mergePrimaryStorageRetention(base.Retention, over.Retention)
+
+	return base
+}
+
+func mergePrimaryStorageRetention(base, over *v1.PrimaryStorageRetentionSpec) *v1.PrimaryStorageRetentionSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	if over.Window != "" {
+		base.Window = over.Window
+	}
+	if over.CleanupSchedule != "" {
+		base.CleanupSchedule = over.CleanupSchedule
+	}
+
+	return base
+}
+
+func mergeBackupDump(base, over *v1.BackupDumpSpec) *v1.BackupDumpSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	base.Resources = mergeResources(base.Resources, over.Resources)
+	base.ExtraEnv = mergeEnv(base.ExtraEnv, over.ExtraEnv)
+	base.ExtraEnvFrom = append(base.ExtraEnvFrom, over.ExtraEnvFrom...)
+	base.PodLabels = mergeMap(base.PodLabels, over.PodLabels)
+	base.PodAnnotations = mergeMap(base.PodAnnotations, over.PodAnnotations)
+	if over.Scheduling != nil {
+		base.Scheduling = over.Scheduling
+	}
+	if over.ScratchVolume != nil {
+		base.ScratchVolume = over.ScratchVolume
+	}
+
+	return base
 }

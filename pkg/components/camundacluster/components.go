@@ -93,8 +93,9 @@ type ProcessComponent struct {
 // of enabled processes take part in Ready. The admin Secret and the mirrored
 // Secrets are separate components, see AdminSecretComponent and
 // MirroredSecretComponent. The zeebe component also carries the
-// ServiceAccount when spec.serviceAccount is set, so it exists before any pod
-// references it.
+// ServiceAccount, so it exists before any pod references it: it is rendered
+// when spec.serviceAccount is set or a referenced bucket derives a
+// workload-identity annotation.
 func Build(in Input) ([]ProcessComponent, error) {
 	processes := Resolve(in.Effective)
 	comps := make([]ProcessComponent, 0, len(processes))
@@ -163,7 +164,15 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		WithResource(account, component.GatedBy(feature.NewBooleanGate(in.Effective.ServiceAccount != nil))).
+		// A pre-existing ServiceAccount is excluded, not gated: a gated-off
+		// resource is a deletion target, and the operator must never delete
+		// an account it does not own. With create true the gate cleans up
+		// the owned account when nothing uses one anymore.
+		IncludeWhen(
+			in.Effective.ServiceAccount.Creates(),
+			func() component.Resource { return account },
+			component.GatedBy(feature.NewBooleanGate(usesServiceAccount(in))),
+		).
 		WithResource(sts).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
@@ -211,17 +220,51 @@ func monitoringGate(in Input) component.ResourceOption {
 	return component.GatedBy(feature.NewBooleanGate(enabled))
 }
 
-// serviceAccountFor renders the ServiceAccount of every workload pod with the
-// annotations of spec.serviceAccount.
+// usesServiceAccount reports whether the pods run under a named
+// ServiceAccount, whether or not the operator renders it: the spec asks for
+// one, or a referenced bucket authenticates through workload identity — with
+// or without an annotation, because an annotation-less identity still binds
+// the ServiceAccount by name on the cloud side. The name the pods use is the
+// documented principal, so it must exist and be referenced whenever a
+// workload-identity bucket is.
+func usesServiceAccount(in Input) bool {
+	return in.Effective.ServiceAccount != nil ||
+		bucketUsesWorkloadIdentity(in.Backup) ||
+		bucketUsesWorkloadIdentity(in.Documents)
+}
+
+// bucketUsesWorkloadIdentity reports whether the pods authenticate against
+// bucket as their ServiceAccount: the contract exists and holds no static
+// credentials.
+func bucketUsesWorkloadIdentity(bucket *v1.ObjectStorageConfig) bool {
+	return bucket != nil && bucket.CredentialsSecret() == nil
+}
+
+// rendersServiceAccount reports whether the operator renders the
+// ServiceAccount the pods use: it is used at all, and the spec does not name
+// a foreign one. A foreign account is excluded from the component rather
+// than gated off, so it is never a deletion target.
+func rendersServiceAccount(in Input) bool {
+	return in.Effective.ServiceAccount.Creates() && usesServiceAccount(in)
+}
+
+// serviceAccountFor renders the ServiceAccount of every workload pod: the
+// workload-identity annotations that the referenced buckets derive, with the
+// annotations of spec.serviceAccount merged over them, so an explicit user
+// value on the same key wins.
 func serviceAccountFor(in Input) *corev1.ServiceAccount {
-	var annotations map[string]string
+	var user map[string]string
 	if in.Effective.ServiceAccount != nil {
-		annotations = in.Effective.ServiceAccount.Annotations
+		user = in.Effective.ServiceAccount.Annotations
+	}
+	annotations := labels.Merge(in.ServiceAccountAnnotations, user)
+	if len(annotations) == 0 {
+		annotations = nil
 	}
 
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        ServiceAccountName(in.Cluster),
+			Name:        ServiceAccountName(in.Cluster, in.Effective),
 			Namespace:   in.Cluster.Namespace,
 			Labels:      managedLabels(in.Cluster, ComponentZeebe),
 			Annotations: annotations,
@@ -319,7 +362,10 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:      discoveryLabels(in.Cluster, p.Component),
+			Labels: labels.Merge(
+				DerivedPodLabels(in.Backup, in.Documents),
+				discoveryLabels(in.Cluster, p.Component),
+			),
 			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
 		},
 		Spec: corev1.PodSpec{

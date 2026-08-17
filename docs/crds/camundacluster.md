@@ -38,13 +38,16 @@ This supports every deployment model from all-in-one (everything embedded in zee
 5. The operator applies all rendered objects with Server-Side Apply (SSA) under the field manager `CamundaCluster/<process>` (for example `CamundaCluster/zeebe`), leaving fields patched by other field managers (for example the `CamundaOptimize` controller's env injection under `camunda-operator/camundaoptimize`) untouched.
 6. The operator watches workload health into per-component conditions and the aggregate `Ready` condition.
 7. The operator watches the referenced [CamundaPlatformConfig](camundaplatformconfig.md), the preset, the storage binding and its `DatabaseConfig` / `DatabaseServerConfig` chain, and every referenced Secret. A change to any of them changes the configuration hash on the pod templates (`camunda.io/config-hash`). The change rolls out to the cluster without a change to this CR.
-8. *(lands with Batch D)* When `backupStorageRef` is set, the operator derives the cluster's backup wiring from the referenced `ObjectStorageConfig`: for Elasticsearch-backed clusters, the CamundaCluster controller itself registers the snapshot repository (derived from `backupStorageRef`) in the cluster's Elasticsearch via the Elasticsearch API and configures the same repository name on the Camunda components; in all cases it configures the Zeebe primary-storage backup store. The Elasticsearch nodes' access to the snapshot bucket comes from the [ElasticsearchCluster](elasticsearchcluster.md)'s own workload identity (`serviceAccount.annotations` on that CR), not from this cluster's. `Backup` CRs only trigger backup operations against this wiring; the cluster carries the configuration.
-9. *(lands with Batch D)* For RDBMS-backed clusters (`storageRef` resolves to `type: rdbms`), the operator additionally auto-enables continuous and scheduled backup of zeebe's primary storage (`camunda.data.primary-storage.backup`: continuous operation, schedule, and checkpoint interval), so database and primary storage stay restorable to matching positions — required both for `PointInTimeRestore` and for restoring RDBMS `Backup`s.
-10. `suspend: true` scales every workload to zero replicas and keeps the broker volumes; `Ready` is then `True` with reason `Suspended`. When `suspend` returns to false, `Ready` stays `True` with reason `Updating` while the workloads scale up, then `Healthy`. `pause: true` stops the reconciliation of this CR: the operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
+8. When `backupStorageRef` is set, the operator derives the backup wiring from the referenced `ObjectStorageConfig`. It configures the Zeebe primary-storage backup store (`camunda.data.primary-storage.backup`) on both storage paths. On S3 and GCS the objects live under a prefix of `<basePath>/<namespace>/<cluster>`, so two clusters never share one. Azure is the exception: its store writes into one container per contract and takes no prefix, so every cluster needs an `ObjectStorageConfig` with its own container, and the operator rejects a second cluster on one Azure contract with `InvalidReference` (the oldest cluster keeps it). On the Elasticsearch path it also sets the snapshot repository name (`camunda.data.backup.repository-name`) from `elasticsearch.snapshotRepository` of the storage contract. The operator registers no repository itself: the [ElasticsearchCluster](elasticsearchcluster.md) owns the Elasticsearch side of the bucket and publishes the name. A cluster with a `backupStorageRef` whose contract carries no repository name reports `Ready: InvalidReference`.
+9. For RDBMS-backed clusters the operator also configures the backup scheduler of Zeebe from `spec.backup.primaryStorage`: continuous mode, the schedule, the checkpoint interval, and the retention window. The defaults are `PT1H`, `PT15M`, and `P7D`. These backups of primary storage pair with the database dump that a `LogicalBackupRDBMS` writes, and a restore aligns the two through the exported position.
+10. The operator derives the workload identity of every referenced bucket onto the ServiceAccount that it renders: `eks.amazonaws.com/role-arn` for S3, `iam.gke.io/gcp-service-account` for GCS, and `azure.workload.identity/client-id` for Azure Blob, which also adds the pod label `azure.workload.identity/use: "true"`. The ServiceAccount is rendered whenever an identity needs it, even without `spec.serviceAccount`. An annotation that you set in `spec.serviceAccount.annotations` wins over the derived one. A bucket with an empty `workloadIdentity` block adds no annotation: the binding then lives on the cloud side and names the ServiceAccount `system:serviceaccount:<namespace>:<serviceAccount.name>` itself (default `<name>-camunda`), as EKS Pod Identity does — the pods still run under that account, so it is rendered and referenced even with nothing to annotate. With `serviceAccount.create: false` the account is pre-existing: the operator neither creates, annotates, nor owns it, and reports `InvalidReference` while it is absent. Two referenced buckets that name different identities of one cloud report `Ready: InvalidReference`, because a pod has one ServiceAccount.
+11. The operator publishes the address of the management API in `status.management`. Extensions such as the backup kinds read it instead of rebuilding the Service name, the port, and the authentication. The binding is empty while the cluster is suspended.
+12. `suspend: true` scales every workload to zero replicas and keeps the broker volumes; `Ready` is then `True` with reason `Suspended`. When `suspend` returns to false, `Ready` stays `True` with reason `Updating` while the workloads scale up, then `Healthy`. `pause: true` stops the reconciliation of this CR: the operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
 !!! note "Deviation from the original proposal"
     The proposal enabled continuous primary-storage backup only when the storage chain had point-in-time recovery enabled (`pitr.enabled: true` on the `DatabaseServerConfig`).
     Verified against Camunda 8.9 (`camunda.data.primary-storage.backup` supports continuous and scheduled operation), the operator enables it for every RDBMS-backed cluster with a `backupStorageRef`, because restorable RDBMS backups need primary-storage checkpoints regardless of PITR.
+    The proposal also had this controller register the Elasticsearch snapshot repository. That work moved to the [ElasticsearchCluster](elasticsearchcluster.md), which owns the Elasticsearch object and its keystore: a controller administers only what it renders. This cluster reads the repository name from the storage contract.
 
 ```mermaid
 graph LR
@@ -123,7 +126,13 @@ spec:
   externalUrl: "https://my-cluster.camunda.example.com"
   # object. Optional. ServiceAccount settings for the cluster's workloads.
   serviceAccount:
-    # map[string]string. Optional. Annotations for workload identity (IRSA, GCP Workload Identity, ...); bucket access for backupStorageRef/documentStorageRef flows from this identity.
+    # string. Optional, default: <name>-camunda. Name of the ServiceAccount of every workload pod.
+    # The name is part of the contract with the cloud provider: an annotation-less workload identity binds it as a principal.
+    name: "camunda-prod"
+    # boolean. Optional, default: true. When false, the ServiceAccount is pre-existing: the operator neither creates,
+    # annotates, nor owns it, and reports InvalidReference while it is absent instead of leaving the pods unschedulable.
+    create: true
+    # map[string]string. Optional. Annotations for workload identity (IRSA, GCP Workload Identity, ...). The operator derives these from the referenced buckets; a value you set here wins over the derived one. Ignored when create is false.
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
   # object. Optional. Per-cluster OIDC client credentials, overriding the platform config (and preset) defaults.
@@ -259,6 +268,47 @@ spec:
   backupStorageRef: "my-backup-config"
   # string. Optional. Name of a cluster-scoped ObjectStorageConfig for document storage.
   documentStorageRef: "my-document-config"
+  # object. Optional. How backups of this cluster behave. Allowed in a preset, unlike backupStorageRef.
+  # The block applies to a relational cluster: continuous and scheduled primary-storage backups and the dump Job exist only there.
+  backup:
+    # object. Optional. The backups that Zeebe takes of its own primary storage. They feed a point-in-time restore.
+    primaryStorage:
+      # boolean. Optional, default: true. Hold every log segment until it is backed up, so a restore finds an unbroken range.
+      # It is a pointer, so a preset can turn it on for a fleet and one cluster can still turn it off.
+      continuous: true
+      # string. Optional, default: PT1H. How often Zeebe takes a backup: an ISO 8601 duration, a CRON expression, or "none".
+      schedule: "PT1H"
+      # string. Optional, default: PT15M. How often Zeebe writes a marker checkpoint, as an ISO 8601 duration.
+      # It is the granularity of a point-in-time restore.
+      checkpointInterval: "PT15M"
+      # object. Optional. How long Zeebe keeps its primary-storage backups.
+      retention:
+        # string. Optional, default: P7D. The restore window, as an ISO 8601 duration.
+        window: "P7D"
+        # string. Optional, default: PT1H. How often Zeebe looks for backups outside the window.
+        cleanupSchedule: "PT1H"
+    # object. Optional. The pod of the Job that dumps the logical database. A LogicalBackupRDBMS can replace this block as a whole.
+    dump:
+      # object. Optional. CPU and memory of the dump pod.
+      resources: {}
+      # []EnvVar. Optional. Extra environment variables of the dump pod.
+      extraEnv: []
+      # []EnvFromSource. Optional. Extra environment sources of the dump pod.
+      extraEnvFrom: []
+      # map[string]string. Optional. Extra labels of the dump pod.
+      podLabels: {}
+      # map[string]string. Optional. Extra annotations of the dump pod.
+      # Turn a service-mesh sidecar off here: a sidecar that keeps running stops the Job from completing.
+      podAnnotations:
+        sidecar.istio.io/inject: "false"
+      # object. Optional. Scheduling constraints of the dump pod. Replaces the block of a preset entirely.
+      scheduling: {}
+      # object. Optional. Where the dump is written before it is uploaded. Replaces the block of a preset entirely.
+      scratchVolume:
+        # Quantity. Optional. Size of the emptyDir that holds the dump.
+        sizeLimit: 50Gi
+        # string. Optional. When set, the scratch volume is a PersistentVolumeClaim of this class instead of an emptyDir.
+        storageClassName: "fast"
   # object. Optional. Monitoring integrations.
   monitoring:
     # object. Optional. Prometheus ServiceMonitor creation.
@@ -295,6 +345,25 @@ Its reason and message come from the governing component. That is the component 
 | `Ready` | `MissingSecret` | A referenced Secret (auth client secret, license, storage credentials, CA, DatabaseConfig credentials) or one of its keys is missing. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is scaled to zero. `Ready` is `True`: the cluster is in its desired state. |
 
+`status.management` publishes the address of the management API, so an extension calls it without knowing which process hosts it:
+
+```yaml
+status:
+  management:
+    # The Service of the process that serves the API, on the management port.
+    endpoint: http://my-cluster-zeebe.my-cluster-ns.svc:9600
+    auth:
+      # none | basic. Camunda 8.9 serves the actuator endpoints without authentication, so the operator reports none.
+      # Protecting the port is a network policy, not a credential.
+      method: none
+    version: 8.9.9
+    partitions: 3
+    # Elasticsearch path only: the snapshot repository of the storage contract.
+    backupRepository: my-cluster
+```
+
+The binding is absent while the cluster is suspended. Every workload is then scaled to zero, so a consumer sees an unreachable cluster instead of a stale endpoint.
+
 The operator records the last reconciled generation in `status.observedGeneration`.
 `status.volumes` lists the bound broker PersistentVolumeClaims, sorted by name, each with the capacity that it reports (`name`, `capacity`). The claims can differ in size, so a resize of one claim outside the spec (for example by [PVCAutoResize](pvcautoresize.md)) shows here.
 
@@ -317,7 +386,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - [CamundaPlatformConfig](camundaplatformconfig.md) — referenced via `platformConfigRef` for auth, license, and image registry defaults.
 - [CamundaClusterPreset](camundaclusterpreset.md) — referenced via `presetRef` for a standardized baseline spec.
 - [SecondaryStorageConfig](secondarystorageconfig.md) — referenced via `storageRef` (required), resolved in this cluster's own namespace; the contract CRD describing the secondary storage backend: Elasticsearch (8.19 or later for Camunda 8.9) or RDBMS (GA in Camunda 8.9).
-- [ObjectStorageConfig](objectstorageconfig.md) — referenced via `backupStorageRef` and `documentStorageRef` for bucket storage; it carries no credentials, and bucket access flows from the workload identity configured via `spec.serviceAccount.annotations`.
+- [ObjectStorageConfig](objectstorageconfig.md) — referenced via `backupStorageRef` and `documentStorageRef` for bucket storage. Bucket access comes from the workload identity that the operator derives onto the ServiceAccount. Static credentials are wired for the backup bucket only, and its Secret is copied into the cluster namespace; the document store is not wired yet, so a document bucket with static credentials has no effect until that work lands.
 - Backup, [BackupSchedule](backupschedule.md), BackupRetention — reference this CR via `clusterRef` to back it up.
 - [LogicalRestore](logicalrestore.md) — references this CR via `targetClusterRef`; requires the cluster to be suspended.
 - [PointInTimeRestore](pointintimerestore.md) — references this CR via `clusterRef`; relies on the continuous primary-storage backup this controller enables for RDBMS-backed clusters.

@@ -88,8 +88,13 @@ func render(in Input, p Process) rendered {
 	}
 
 	r := storageEnv(in)
+	backup := backupEnv(in, p)
+	r.volumes = append(r.volumes, backup.volumes...)
+	r.mounts = append(r.mounts, backup.mounts...)
+
 	env := identityEnv(in, p)
 	env = append(env, r.env...)
+	env = append(env, backup.env...)
 	env = append(env, authEnv(in)...)
 	env = append(env, roleEnv(p)...)
 	env = append(env, userEnv(in, p)...)
