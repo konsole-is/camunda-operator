@@ -17,6 +17,8 @@ limitations under the License.
 package logicalbackupelasticsearch
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -245,7 +247,12 @@ func expectEvent(backup *v1.LogicalBackupElasticsearch, reason, eventType string
 var _ = Describe("LogicalBackupElasticsearch controller", func() {
 	It("takes a backup as one coordinated set and resumes exporting", func() {
 		r := newRig()
-		r.search.SetNodeFS("node-0", 100<<30, 40<<30)
+		// A partition count that only this test uses proves the recorded
+		// value flows from the binding rather than a fixture default.
+		r.publishBinding(5)
+		// The statistics stay unavailable through the start, so the recorded
+		// size must be backfilled by a later reconcile, not lost forever.
+		r.search.FailNext("stats", 1000000)
 		Eventually(func(g Gomega) {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
@@ -255,6 +262,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 		id := backupID(backup)
+
+		r.search.SetNodeFS("node-0", 100<<30, 40<<30)
+		r.search.FailNext("stats", 0)
 
 		By("pausing exporting softly and backing up the web-application indices")
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
@@ -275,10 +285,12 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		By("resuming exporting and completing")
 		expectPhase(backup, v1.LogicalBackupCompleted)
 		expectReady(backup, metav1.ConditionTrue, v1.ReasonCompleted)
+		expectEvent(backup, eventReasonCompleted, corev1.EventTypeNormal)
 		Expect(r.management.Exporting()).To(Equal("running"))
 
 		final := currentBackup(backup)
-		Expect(final.Status.PartitionsCount).To(Equal(int32(3)))
+		Expect(final.Status.PartitionsCount).To(Equal(int32(5)))
+		Expect(final.Status.Repository).To(Equal(r.repository))
 		Expect(final.Status.CompletionTime).NotTo(BeNil())
 		Expect(final.Status.HistorySnapshots).NotTo(BeEmpty())
 		Expect(final.Status.History.State).To(Equal(v1.BackupPartCompleted))
@@ -307,6 +319,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		final := currentBackup(backup)
 		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupHistory"))
+		Expect(final.Status.History.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
 		Expect(r.management.HistoryStarts(id)).To(BeZero())
 	})
@@ -588,5 +601,215 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			var gone v1.LogicalBackupElasticsearch
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
 		}, timeout, interval).Should(BeTrue())
+	})
+
+	It("parks a running procedure in place while the binding is gone", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("clearing the binding mid-run")
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Status.Management = nil
+			g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			current := currentBackup(backup)
+			g.Expect(current.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(current.Status.Step).To(Equal(v1.StepBackupHistory))
+			g.Expect(current.Status.BackupID).To(Equal(id))
+		}, "1s", interval).Should(Succeed())
+
+		By("continuing where it parked once the binding is back")
+		r.publishBinding(3)
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		expectPhase(backup, v1.LogicalBackupCompleted)
+
+		By("never having re-started")
+		Expect(r.management.HistoryStarts(id)).To(Equal(1))
+	})
+
+	It("routes a mid-run storage loss through resume to a terminal phase", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("deleting the storage contract before the records snapshot")
+		var storage v1.SecondaryStorageConfig
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: r.namespace, Name: "storage"}, &storage,
+		)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &storage)).To(Succeed())
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(ContainSubstring("SnapshotRecords"))
+		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("fails the step when the repository is repointed mid-run", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("repointing the published repository before the records snapshot")
+		r.repository = "another-repository"
+		r.publishBinding(3)
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(ContainSubstring("changed"))
+		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("resumes exporting before a mid-run deletion releases", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("deleting the backup while the partition backup is in progress")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		By("resuming exporting first, holding on the undeletable runtime backup")
+		Eventually(func() string { return r.management.Exporting() }, timeout, interval).Should(Equal("running"))
+		expectEvent(backup, eventReasonDeleteHeld, corev1.EventTypeWarning)
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+		}, "1s", interval).Should(Succeed())
+
+		By("releasing once the runtime backup is deletable")
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeFalse())
+	})
+
+	It("releases with an event when a client cannot be built anymore", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		expectPhase(backup, v1.LogicalBackupCompleted)
+
+		By("deleting the Elasticsearch credentials, then the backup")
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "es-credentials", Namespace: r.namespace},
+		})).To(Succeed())
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		expectEvent(backup, eventReasonReleased, corev1.EventTypeWarning)
+	})
+
+	It("does not count parked time against the resume deadline", func() {
+		r := newRig()
+		r.management.FailNext("historyStart", 1)
+		r.management.FailNext("resume", 1000000)
+
+		backup := r.newBackup()
+		backupID(backup)
+
+		By("reaching the failing resume attempts")
+		Eventually(func(g Gomega) {
+			g.Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepResumeExporting))
+			g.Expect(currentBackup(backup).Status.LastResumeAttemptTime).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("parking longer than the whole deadline")
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Status.Management = nil
+			g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		time.Sleep(2500 * time.Millisecond)
+
+		By("resuming successfully after the park: the step failure ends it, not the deadline")
+		r.management.FailNext("resume", 0)
+		r.publishBinding(3)
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.TerminalReason).To(Equal(v1.ReasonFailed))
+		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupHistory"))
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("re-stages the terminal condition when a conflict restored an older one", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		expectPhase(backup, v1.LogicalBackupCompleted)
+		expectReady(backup, metav1.ConditionTrue, v1.ReasonCompleted)
+
+		By("corrupting the terminal condition the way a lost write conflict would")
+		Eventually(func(g Gomega) {
+			current := currentBackup(backup)
+			meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{
+				Type:               v1.ConditionReady,
+				Status:             metav1.ConditionFalse,
+				Reason:             v1.ReasonProgressing,
+				Message:            "stale",
+				ObservedGeneration: current.Generation,
+			})
+			g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectReady(backup, metav1.ConditionTrue, v1.ReasonCompleted)
 	})
 })

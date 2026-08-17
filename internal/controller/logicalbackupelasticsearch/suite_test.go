@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -71,8 +72,8 @@ var _ = BeforeSuite(func() {
 			// arranges.
 			PollInterval:   100 * time.Millisecond,
 			ResumeDeadline: 2 * time.Second,
-			SiblingInProgress: func(_ context.Context, namespace, name string) (string, error) {
-				if held, ok := siblings.Load(refindex.NamespacedKey(namespace, name)); ok {
+			SiblingInProgress: func(_ context.Context, cluster types.NamespacedName) (string, error) {
+				if held, ok := siblings.Load(refindex.NamespacedKey(cluster.Namespace, cluster.Name)); ok {
 					return held.(string), nil
 				}
 				return "", nil

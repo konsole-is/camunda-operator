@@ -106,7 +106,7 @@ spec:
                   Conditions represent the current state; the Ready condition tracks the
                   backup with reasons Progressing, Completed, Failed, ResumeFailed,
                   ClusterSuspended, BackupInProgress, StorageTypeMismatch,
-                  InvalidReference, and ConnectionFailed.
+                  InvalidReference, MissingSecret, and ConnectionFailed.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -195,6 +195,12 @@ spec:
                 items:
                   type: string
                 type: array
+              lastResumeAttemptTime:
+                description: |-
+                  LastResumeAttemptTime is when resume was last attempted; the gap to the
+                  next attempt decides whether the deadline anchor slides.
+                format: date-time
+                type: string
               observedGeneration:
                 description: ObservedGeneration is the last generation reconciled
                   by the operator.
@@ -230,10 +236,20 @@ spec:
                     - Failed
                     type: string
                 type: object
+              repository:
+                description: |-
+                  Repository pins the snapshot repository that every part of the set is
+                  written to, recorded when the backup starts. Every later step and the
+                  finalizer use the pinned name, so a repository that is repointed on the
+                  storage contract mid-run cannot split the set or aim deletion at the
+                  wrong repository.
+                type: string
               resumeStartedTime:
                 description: |-
-                  ResumeStartedTime is when the procedure entered ResumeExporting. The
-                  resume deadline counts from it, so the deadline survives an operator
+                  ResumeStartedTime anchors the resume deadline: the accumulated time of
+                  active resume attempts counts against the deadline, while gaps in which
+                  the procedure was parked (a suspended cluster, an unpublished binding)
+                  slide the anchor forward and do not count. It survives an operator
                   restart.
                 format: date-time
                 type: string
@@ -284,6 +300,13 @@ spec:
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                 type: object
+              terminalReason:
+                description: |-
+                  TerminalReason is the Ready reason recorded at the terminal
+                  transition: Completed, Failed, or ResumeFailed. The controller
+                  re-stages the terminal condition from it when a write conflict
+                  restored an older one.
+                type: string
             type: object
         required:
         - spec

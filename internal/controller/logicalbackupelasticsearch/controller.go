@@ -20,6 +20,14 @@ limitations under the License.
 // controller talks to the cluster through the management binding it
 // publishes, and to Elasticsearch through the SecondaryStorageConfig — never
 // through the internals of another controller.
+//
+// Admission and runtime are split. The full pre-checks run only before the
+// backup starts; once it runs, a missing dependency routes through the state
+// machine to resume-exporting and a terminal phase, and a cluster that is
+// momentarily unaddressable parks the procedure in place. A running backup
+// never regresses to Pending and never re-starts: its identity — the backup
+// id, the pinned repository — is written before the first side effect and
+// only read afterwards.
 package logicalbackupelasticsearch
 
 import (
@@ -30,18 +38,19 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
@@ -54,14 +63,18 @@ const (
 	// their clusterRef, so a cluster event enqueues its backups.
 	clusterRefField = "logicalbackupelasticsearch.spec.clusterRef"
 
-	// defaultResumeDeadline bounds how long the controller retries resuming
-	// exporting before it gives the cluster to a human.
+	// defaultResumeDeadline bounds the accumulated time of active resume
+	// attempts before the controller gives the cluster to a human.
 	defaultResumeDeadline = 30 * time.Minute
 	// defaultPollInterval paces the polling of the running procedure and the
 	// waits on pre-checks that resolve on their own.
 	defaultPollInterval = 5 * time.Second
-	// retryInterval paces pre-check failures that no watch resolves.
+	// retryInterval paces admission failures that no watch resolves.
 	retryInterval = 30 * time.Second
+	// concurrentReconciles bounds the parallel reconciles. Every step is a
+	// synchronous HTTP call, so one black-holed endpoint must not head-of-line
+	// block the polling and the finalizers of every other backup.
+	concurrentReconciles = 4
 )
 
 const (
@@ -70,6 +83,7 @@ const (
 	eventReasonStepFailed   = "BackupStepFailed"
 	eventReasonResumeFailed = "ResumeFailed"
 	eventReasonReleased     = "ArtifactsUnreachable"
+	eventReasonDeleteHeld   = "DeletionWaiting"
 	eventActionBackup       = "Backup"
 	eventActionFinalize     = "Finalize"
 )
@@ -77,18 +91,18 @@ const (
 // Reconciler drives a LogicalBackupElasticsearch to a terminal phase.
 type Reconciler struct {
 	client.Client
-	// APIReader reads referenced resources without the cache: a pre-check
-	// that decides a backup may start must not act on a stale suspend flag
-	// or storage reference.
+	// APIReader reads referenced resources, and the backup itself, without
+	// the cache: a stale status would re-run a side effect, and a stale
+	// suspend flag or storage reference would admit a backup that must wait.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// EventRecorder publishes the lifecycle events of the backup.
 	// SetupWithManager sets it from the manager when it is nil.
 	EventRecorder events.EventRecorder
 
-	// ResumeDeadline bounds the retries of resume-exporting before the phase
-	// goes Failed with reason ResumeFailed. Zero means the default of 30
-	// minutes.
+	// ResumeDeadline bounds the accumulated time of active resume attempts
+	// before the phase goes Failed with reason ResumeFailed. Zero means the
+	// default of 30 minutes.
 	ResumeDeadline time.Duration
 	// PollInterval paces the polling of a running backup. Zero means the
 	// default of five seconds.
@@ -97,7 +111,7 @@ type Reconciler struct {
 	// held by the other backup kind, so backups of one cluster run one at a
 	// time across kinds. Nil means no other kind is checked; the manager
 	// wires it once both kinds are registered.
-	SiblingInProgress func(ctx context.Context, clusterNamespace, clusterName string) (string, error)
+	SiblingInProgress logicalbackup.SiblingInProgress
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches,verbs=get;list;watch;create;update;patch;delete
@@ -124,10 +138,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	if !backup.DeletionTimestamp.IsZero() {
 		return r.finalize(ctx, &backup)
-	}
-
-	if backup.Terminal() {
-		return ctrl.Result{}, nil
 	}
 
 	// The finalizer must exist before the first external side effect, or a
@@ -157,12 +167,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		}
 	}()
 
+	// A write conflict at the terminal transition can restore an older Ready
+	// from the server, so the terminal condition is re-staged from the
+	// recorded outcome; SetStatusCondition makes the repeat a no-op.
+	if backup.Terminal() {
+		conditions.Stage(&backup, r.terminalReady(&backup))
+		return ctrl.Result{}, nil
+	}
+
+	if backup.Status.BackupID == 0 {
+		return r.admit(ctx, &backup)
+	}
+
+	return r.run(ctx, &backup)
+}
+
+// admit runs the full pre-checks and starts the backup. Admission ends when
+// the backup id is allocated: from then on the backup never returns here, so
+// a dependency that breaks mid-run is the state machine's to handle, not a
+// reason to park.
+func (r *Reconciler) admit(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+) (ctrl.Result, error) {
 	res, err := logicalbackup.PreCheck(ctx, logicalbackup.PreCheckRequest{
 		Reader:      r.APIReader,
 		Ref:         backup.Spec.ClusterRef,
 		Namespace:   backup.Namespace,
 		StorageType: v1.SecondaryStorageTypeElasticsearch,
-		InProgress:  r.inProgress(&backup),
+		InProgress:  r.inProgress(backup),
 	})
 	if err != nil {
 		var failure *conditions.PreCheckFailure
@@ -170,10 +203,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		if backup.Status.Phase == "" {
-			backup.Status.Phase = v1.LogicalBackupPending
-		}
-		conditions.Stage(&backup, conditions.Failed(&backup, failure))
+		backup.Status.Phase = v1.LogicalBackupPending
+		conditions.Stage(backup, conditions.Failed(backup, failure))
 		if logicalbackup.Waiting(err) {
 			return ctrl.Result{RequeueAfter: r.poll()}, nil
 		}
@@ -183,25 +214,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{RequeueAfter: retryInterval}, nil
 	}
 
-	binding := res.Cluster.Status.Management
-	if binding == nil || binding.Endpoint == "" {
+	// The management client is built once here so a broken binding — no
+	// binding yet, basic auth without a Secret, an unsupported version —
+	// blocks admission with its own reason instead of failing the first step.
+	if _, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, res.Cluster); err != nil {
+		return ctrl.Result{}, err
+	} else if failure != nil {
 		backup.Status.Phase = v1.LogicalBackupPending
-		conditions.Stage(&backup, conditions.Ready(
-			metav1.ConditionFalse,
-			v1.ReasonProgressing,
-			fmt.Sprintf(
-				"CamundaCluster %s/%s has not published its management binding yet",
-				res.Cluster.Namespace, res.Cluster.Name,
-			),
-			backup.Generation,
-		))
-
-		return ctrl.Result{RequeueAfter: r.poll()}, nil
+		conditions.Stage(backup, conditions.Failed(backup, failure))
+		if failure.Reason == v1.ReasonProgressing {
+			return ctrl.Result{RequeueAfter: r.poll()}, nil
+		}
+		return ctrl.Result{RequeueAfter: retryInterval}, nil
 	}
 
+	binding := res.Cluster.Status.Management
 	if binding.BackupRepository == "" {
 		backup.Status.Phase = v1.LogicalBackupPending
-		conditions.Stage(&backup, conditions.Failed(&backup, &conditions.PreCheckFailure{
+		conditions.Stage(backup, conditions.Failed(backup, &conditions.PreCheckFailure{
 			Reason: v1.ReasonInvalidReference,
 			Message: fmt.Sprintf(
 				"CamundaCluster %s/%s publishes no backup repository; its storage contract carries no elasticsearch.snapshotRepository",
@@ -213,27 +243,69 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{RequeueAfter: retryInterval}, nil
 	}
 
-	if backup.Status.Phase == "" || backup.Status.Phase == v1.LogicalBackupPending {
-		r.start(ctx, &backup, res, binding)
+	r.start(ctx, backup, res, binding)
+
+	return ctrl.Result{RequeueAfter: r.poll()}, nil
+}
+
+// run advances a started backup. The cluster is the only dependency resolved
+// here: without its binding the procedure parks in place — same phase, same
+// step — because a suspended or momentarily unaddressed cluster is not a
+// failure. A cluster that is gone for good routes through the machine, so the
+// resume deadline still bounds the end.
+func (r *Reconciler) run(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+) (ctrl.Result, error) {
+	var cluster v1.CamundaCluster
+	key := types.NamespacedName{
+		Namespace: backup.EffectiveClusterNamespace(),
+		Name:      backup.Spec.ClusterRef.Name,
+	}
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Nothing is addressable anymore; the machine walks to its
+			// terminal phase through the resume deadline.
+			if backup.Status.Step != v1.StepResumeExporting {
+				r.failStep(backup, string(backup.Status.Step), nil, fmt.Errorf("CamundaCluster %s is gone", key))
+			}
+			return r.runStep(ctx, backup, &cluster)
+		}
+		return ctrl.Result{}, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
+	}
+
+	binding := cluster.Status.Management
+	if binding == nil || binding.Endpoint == "" {
+		conditions.Stage(backup, conditions.Ready(
+			metav1.ConditionFalse,
+			v1.ReasonProgressing,
+			fmt.Sprintf(
+				"The procedure is parked at step %s: CamundaCluster %s/%s publishes no management binding (suspended?)",
+				backup.Status.Step, cluster.Namespace, cluster.Name,
+			),
+			backup.Generation,
+		))
+
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
-	return r.runStep(ctx, &backup, res, binding)
+	r.backfillStorageSizes(ctx, backup, &cluster)
+
+	return r.runStep(ctx, backup, &cluster)
 }
 
-// start records everything the procedure is keyed by — the backup ID, the
-// partition count, the restore sizes — before the first management call, so a
-// crash never loses the identity of work already started.
+// start records everything the procedure is keyed by — the backup id, the
+// pinned repository, the partition count, the restore sizes — before the
+// first management call, so a crash never loses the identity of work already
+// started.
 func (r *Reconciler) start(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 	res *logicalbackup.PreCheckResult,
 	binding *v1.ManagementBinding,
 ) {
-	if backup.Status.BackupID == 0 {
-		backup.Status.BackupID = logicalbackup.AllocateBackupID(metav1.Now())
-	}
-
+	backup.Status.BackupID = logicalbackup.AllocateBackupID(metav1.Now())
+	backup.Status.Repository = binding.BackupRepository
 	backup.Status.Phase = v1.LogicalBackupRunning
 	backup.Status.Step = v1.StepPauseExporting
 	backup.Status.PartitionsCount = binding.Partitions
@@ -241,7 +313,12 @@ func (r *Reconciler) start(
 	backup.Status.Records = v1.BackupPart{State: v1.BackupPartPending}
 	backup.Status.Runtime = v1.BackupPart{State: v1.BackupPartPending}
 
-	r.recordStorageSizes(ctx, backup, res)
+	computed := v1.LogicalBackupStorageSizes{Zeebe: logicalbackup.ZeebeSize(res.Cluster.Status.Volumes)}
+	if size, err := r.elasticsearchSize(ctx, res.Storage); err == nil {
+		computed.Elasticsearch = size
+	}
+	logicalbackup.RecordStorageSizes(&backup.Status.StorageSizes, computed)
+
 	conditions.Stage(backup, conditions.Ready(
 		metav1.ConditionFalse, v1.ReasonProgressing, "The backup procedure started", backup.Generation,
 	))
@@ -258,29 +335,79 @@ func (r *Reconciler) start(
 	)
 }
 
-// recordStorageSizes fills the unset restore sizes, best effort: a size that
-// cannot be computed stays unset and never fails the backup.
-func (r *Reconciler) recordStorageSizes(
+// backfillStorageSizes fills the restore sizes that start could not compute,
+// best effort: a transient blip at start must not leave them empty forever.
+func (r *Reconciler) backfillStorageSizes(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
-	res *logicalbackup.PreCheckResult,
+	cluster *v1.CamundaCluster,
 ) {
-	computed := v1.LogicalBackupStorageSizes{Zeebe: logicalbackup.ZeebeSize(res.Cluster.Status.Volumes)}
+	sizes := &backup.Status.StorageSizes
+	if sizes.Zeebe != nil && sizes.Elasticsearch != nil {
+		return
+	}
 
-	if es, err := r.elasticsearchAdmin(ctx, res.Storage); err == nil {
-		if total, used, err := es.MaxNodeFSTotalAndUsedBytes(ctx); err == nil {
-			computed.Elasticsearch = logicalbackup.ElasticsearchSize(total, used)
+	computed := v1.LogicalBackupStorageSizes{Zeebe: logicalbackup.ZeebeSize(cluster.Status.Volumes)}
+	if sizes.Elasticsearch == nil {
+		if storage, err := r.resolveStorage(ctx, cluster); err == nil {
+			if size, err := r.elasticsearchSize(ctx, storage); err == nil {
+				computed.Elasticsearch = size
+			}
 		}
 	}
 
-	logicalbackup.RecordStorageSizes(&backup.Status.StorageSizes, computed)
+	logicalbackup.RecordStorageSizes(sizes, computed)
+}
+
+// elasticsearchSize computes the effective Elasticsearch restore size from
+// the node filesystem statistics.
+func (r *Reconciler) elasticsearchSize(
+	ctx context.Context,
+	storage *v1.SecondaryStorageConfig,
+) (*resource.Quantity, error) {
+	es, err := r.elasticsearchAdmin(ctx, storage)
+	if err != nil {
+		return nil, err
+	}
+
+	total, used, err := es.MaxNodeFSTotalAndUsedBytes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return logicalbackup.ElasticsearchSize(total, used), nil
+}
+
+// resolveStorage reads the storage contract of the cluster.
+func (r *Reconciler) resolveStorage(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (*v1.SecondaryStorageConfig, error) {
+	if cluster.Spec.StorageRef == "" {
+		return nil, fmt.Errorf(
+			"CamundaCluster %s/%s no longer names a storage contract",
+			cluster.Namespace,
+			cluster.Name,
+		)
+	}
+
+	var storage v1.SecondaryStorageConfig
+	key := types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Spec.StorageRef}
+	if err := r.APIReader.Get(ctx, key, &storage); err != nil {
+		return nil, fmt.Errorf("reading SecondaryStorageConfig %s: %w", key, err)
+	}
+
+	return &storage, nil
 }
 
 // inProgress reports another non-terminal backup of the same cluster, of this
 // kind or, once the manager wires it, of the sibling kind.
 func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
-		clusterNamespace := backup.EffectiveClusterNamespace()
+		cluster := types.NamespacedName{
+			Namespace: backup.EffectiveClusterNamespace(),
+			Name:      backup.Spec.ClusterRef.Name,
+		}
 
 		var list v1.LogicalBackupElasticsearchList
 		if err := r.APIReader.List(ctx, &list); err != nil {
@@ -292,13 +419,15 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 			if other.UID == backup.UID || other.Terminal() {
 				continue
 			}
-			if other.Spec.ClusterRef.Name != backup.Spec.ClusterRef.Name ||
-				other.EffectiveClusterNamespace() != clusterNamespace {
+			if other.Spec.ClusterRef.Name != cluster.Name ||
+				other.EffectiveClusterNamespace() != cluster.Namespace {
 				continue
 			}
-			// Two waiting backups must not block each other, or neither ever
-			// starts. Only one that holds an allocated id has begun.
-			if other.Status.BackupID == 0 {
+			// A sibling that holds an id has begun work worth waiting for.
+			// Between two unstarted backups the older one (by creation time,
+			// then name) goes first — a deterministic order, so two waiting
+			// backups can never deadlock on each other.
+			if other.Status.BackupID == 0 && !starts(other, backup) {
 				continue
 			}
 
@@ -309,42 +438,37 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 			return "", nil
 		}
 
-		return r.SiblingInProgress(ctx, clusterNamespace, backup.Spec.ClusterRef.Name)
+		return r.SiblingInProgress(ctx, cluster)
 	}
 }
 
-// managementClient builds the client of the cluster's management API from the
-// published binding.
-func (r *Reconciler) managementClient(
-	ctx context.Context,
-	binding *v1.ManagementBinding,
-) (*camundaadmin.Client, error) {
-	auth := camundaadmin.Auth{}
-	if binding.Auth.Method == v1.ManagementAuthMethodBasic && binding.Auth.CredentialsSecretRef != nil {
-		ref := binding.Auth.CredentialsSecretRef
-		secret, msg, err := secretref.Get(
-			ctx,
-			r.APIReader,
-			types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name},
-			ref.UsernameKey,
-			ref.PasswordKey,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("reading the management credentials: %w", err)
-		}
-		if msg != "" {
-			return nil, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
-		}
+// starts reports whether a goes before b when neither has started: the older
+// creation time wins, the lexically smaller name breaks a tie.
+func starts(a, b *v1.LogicalBackupElasticsearch) bool {
+	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	}
+	return a.Name < b.Name
+}
 
-		auth.Username = string(secret.Data[ref.UsernameKey])
-		auth.Password = string(secret.Data[ref.PasswordKey])
+// terminalReady rebuilds the Ready condition of a terminal backup from the
+// recorded outcome.
+func (r *Reconciler) terminalReady(backup *v1.LogicalBackupElasticsearch) metav1.Condition {
+	if backup.Status.Phase == v1.LogicalBackupCompleted {
+		return conditions.Ready(
+			metav1.ConditionTrue,
+			v1.ReasonCompleted,
+			"The backup finished and is restorable",
+			backup.Generation,
+		)
 	}
 
-	return camundaadmin.New(camundaadmin.Binding{
-		Endpoint: binding.Endpoint,
-		Version:  binding.Version,
-		Auth:     auth,
-	})
+	reason := backup.Status.TerminalReason
+	if reason == "" {
+		reason = v1.ReasonFailed
+	}
+
+	return conditions.Ready(metav1.ConditionFalse, reason, backup.Status.FailureMessage, backup.Generation)
 }
 
 // elasticsearchAdmin builds the Elasticsearch client from the published
@@ -445,6 +569,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.LogicalBackupElasticsearch{}).
 		Named("logicalbackupelasticsearch").
+		WithOptions(controller.Options{MaxConcurrentReconciles: concurrentReconciles}).
 		Watches(
 			&v1.CamundaCluster{},
 			refindex.Enqueue(

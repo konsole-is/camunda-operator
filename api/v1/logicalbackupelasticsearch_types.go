@@ -115,16 +115,35 @@ type LogicalBackupElasticsearchStatus struct {
 	// the snapshots after the cluster is gone.
 	// +optional
 	HistorySnapshots []string `json:"historySnapshots,omitempty"`
+	// Repository pins the snapshot repository that every part of the set is
+	// written to, recorded when the backup starts. Every later step and the
+	// finalizer use the pinned name, so a repository that is repointed on the
+	// storage contract mid-run cannot split the set or aim deletion at the
+	// wrong repository.
+	// +optional
+	Repository string `json:"repository,omitempty"`
 	// FailureMessage names the failing step and its error. It is recorded
 	// when a step fails and exporting still has to be resumed, so the reason
 	// survives the resume and reaches the terminal condition.
 	// +optional
 	FailureMessage string `json:"failureMessage,omitempty"`
-	// ResumeStartedTime is when the procedure entered ResumeExporting. The
-	// resume deadline counts from it, so the deadline survives an operator
+	// ResumeStartedTime anchors the resume deadline: the accumulated time of
+	// active resume attempts counts against the deadline, while gaps in which
+	// the procedure was parked (a suspended cluster, an unpublished binding)
+	// slide the anchor forward and do not count. It survives an operator
 	// restart.
 	// +optional
 	ResumeStartedTime *metav1.Time `json:"resumeStartedTime,omitempty"`
+	// LastResumeAttemptTime is when resume was last attempted; the gap to the
+	// next attempt decides whether the deadline anchor slides.
+	// +optional
+	LastResumeAttemptTime *metav1.Time `json:"lastResumeAttemptTime,omitempty"`
+	// TerminalReason is the Ready reason recorded at the terminal
+	// transition: Completed, Failed, or ResumeFailed. The controller
+	// re-stages the terminal condition from it when a write conflict
+	// restored an older one.
+	// +optional
+	TerminalReason string `json:"terminalReason,omitempty"`
 	// CompletionTime is when the backup reached a terminal phase.
 	// +optional
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
@@ -134,7 +153,7 @@ type LogicalBackupElasticsearchStatus struct {
 	// Conditions represent the current state; the Ready condition tracks the
 	// backup with reasons Progressing, Completed, Failed, ResumeFailed,
 	// ClusterSuspended, BackupInProgress, StorageTypeMismatch,
-	// InvalidReference, and ConnectionFailed.
+	// InvalidReference, MissingSecret, and ConnectionFailed.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

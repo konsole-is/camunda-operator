@@ -1774,6 +1774,10 @@ func (in *LogicalBackupElasticsearchStatus) DeepCopyInto(out *LogicalBackupElast
 		in, out := &in.ResumeStartedTime, &out.ResumeStartedTime
 		*out = (*in).DeepCopy()
 	}
+	if in.LastResumeAttemptTime != nil {
+		in, out := &in.LastResumeAttemptTime, &out.LastResumeAttemptTime
+		*out = (*in).DeepCopy()
+	}
 	if in.CompletionTime != nil {
 		in, out := &in.CompletionTime, &out.CompletionTime
 		*out = (*in).DeepCopy()
