@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -185,13 +186,19 @@ func (r *Reconciler) finalizerElasticsearch(
 	backup *v1.LogicalBackupElasticsearch,
 	cluster *v1.CamundaCluster,
 ) (es *esadmin.Client, released bool, err error) {
-	storage, err := r.resolveStorage(ctx, cluster)
+	storage, err := r.resolvePinnedStorage(ctx, backup, cluster)
 	if err != nil {
-		if apierrors.IsNotFound(errors.Unwrap(err)) || cluster.Spec.StorageRef == "" {
+		if apierrors.IsNotFound(errors.Unwrap(err)) || errors.Is(err, errNoStorage) {
 			r.releaseWithoutCleanup(backup, err.Error())
 			return nil, true, nil
 		}
 		return nil, false, err
+	}
+	if err := pinnedStorageMatches(backup, storage); err != nil {
+		// The artifacts live on the pinned cluster. To delete against a
+		// different one hits the wrong data. Hold until the contract points
+		// back, or the operator removes the finalizer by hand.
+		return nil, false, fmt.Errorf("the pinned storage no longer matches: %w", err)
 	}
 
 	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
@@ -204,6 +211,27 @@ func (r *Reconciler) finalizerElasticsearch(
 	}
 
 	return es, false, nil
+}
+
+// resolvePinnedStorage resolves the storage contract that the backup pinned
+// when it started. A backup that never started has no pin, so it resolves the
+// storage of the cluster.
+func (r *Reconciler) resolvePinnedStorage(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+) (*v1.SecondaryStorageConfig, error) {
+	if backup.Status.Storage == nil {
+		return r.resolveStorage(ctx, cluster)
+	}
+
+	storage := &v1.SecondaryStorageConfig{}
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: backup.Status.Storage.SecondaryStorageConfig}
+	if err := r.APIReader.Get(ctx, key, storage); err != nil {
+		return nil, fmt.Errorf("resolving the pinned SecondaryStorageConfig %q: %w", key.Name, err)
+	}
+
+	return storage, nil
 }
 
 // mayHoldExportingPaused reports whether the backup can have left exporting

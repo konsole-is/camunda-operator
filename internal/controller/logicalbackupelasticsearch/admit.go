@@ -127,6 +127,10 @@ func (r *Reconciler) start(
 
 	backup.Status.BackupID = logicalbackup.AllocateBackupID(metav1.Now())
 	backup.Status.Repository = binding.BackupRepository
+	backup.Status.Storage = &v1.PinnedStorage{
+		SecondaryStorageConfig: res.Storage.Name,
+		Endpoint:               res.Storage.Spec.Elasticsearch.Endpoint,
+	}
 	backup.Status.Phase = v1.LogicalBackupRunning
 	backup.Status.Step = v1.StepPauseExporting
 	backup.Status.PartitionsCount = binding.Partitions
@@ -252,13 +256,17 @@ func (r *Reconciler) elasticsearchSize(
 }
 
 // resolveStorage reads the storage contract of the cluster.
+// errNoStorage marks a cluster that names no storage contract.
+var errNoStorage = errors.New("no storage contract")
+
 func (r *Reconciler) resolveStorage(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (*v1.SecondaryStorageConfig, error) {
 	if cluster.Spec.StorageRef == "" {
 		return nil, fmt.Errorf(
-			"CamundaCluster %s/%s no longer names a storage contract",
+			"%w: CamundaCluster %s/%s no longer names a storage contract",
+			errNoStorage,
 			cluster.Namespace,
 			cluster.Name,
 		)

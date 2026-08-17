@@ -70,6 +70,9 @@ var _ = BeforeSuite(func() {
 			// arranges.
 			PollInterval:   100 * time.Millisecond,
 			ResumeDeadline: 2 * time.Second,
+			// Short for the same reason. Only the unreachable-Elasticsearch
+			// test arranges an endpoint that stays down.
+			ElasticsearchUnreachableBound: time.Second,
 			SiblingInProgress: func(_ context.Context, cluster types.NamespacedName) (string, error) {
 				if held, ok := siblings.Load(refindex.NamespacedKey(cluster.Namespace, cluster.Name)); ok {
 					return held.(string), nil

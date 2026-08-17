@@ -210,12 +210,13 @@ func (r *Reconciler) snapshotRecords(
 	state, err := es.SnapshotStatus(ctx, backup.Status.Repository, name)
 	if err != nil {
 		if errors.Is(err, esadmin.ErrUnreachable) {
-			return r.stageUnreachable(backup, err)
+			return r.stageElasticsearchUnreachable(backup, "SnapshotRecords", part, err)
 		}
 
 		r.failStep(backup, "SnapshotRecords", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
+	backup.Status.ElasticsearchUnreachableSince = nil
 
 	switch state {
 	case esadmin.SnapshotMissing:
@@ -223,7 +224,7 @@ func (r *Reconciler) snapshotRecords(
 			ctx, backup.Status.Repository, name, []string{zeebeRecordIndices},
 		); err != nil {
 			if errors.Is(err, esadmin.ErrUnreachable) {
-				return r.stageUnreachable(backup, err)
+				return r.stageElasticsearchUnreachable(backup, "SnapshotRecords", part, err)
 			}
 
 			r.failStep(backup, "SnapshotRecords", part, err)
@@ -260,6 +261,10 @@ func (r *Reconciler) elasticsearch(
 ) (*esadmin.Client, ctrl.Result, error) {
 	storage, err := r.resolveStorage(ctx, cluster)
 	if err != nil {
+		r.failStep(backup, step, part, err)
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+	if err := pinnedStorageMatches(backup, storage); err != nil {
 		r.failStep(backup, step, part, err)
 		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
@@ -301,6 +306,18 @@ func (r *Reconciler) backupRuntime(
 
 	switch status.State {
 	case camundaadmin.StateDoesNotExist:
+		// The cluster registers the backup asynchronously. After it accepted
+		// the request it can report the backup absent for a moment. A second
+		// POST for the same ID answers 409 then, and the valid backup would
+		// be marked failed. Within the registration grace, an absent backup
+		// is polled, not started again.
+		if requested := backup.Status.RuntimeRequestedTime; requested != nil {
+			if metav1.Now().Sub(requested.Time) < runtimeRegistrationGrace {
+				r.stageProgress(backup, "The backup of the Zeebe partitions is registering")
+				return ctrl.Result{RequeueAfter: r.poll()}, nil
+			}
+		}
+
 		id := backup.Status.BackupID
 		if _, err := mgmt.StartRuntimeBackup(ctx, &id); err != nil {
 			if errors.Is(err, camundaadmin.ErrUnreachable) {
@@ -313,6 +330,8 @@ func (r *Reconciler) backupRuntime(
 			r.failStep(backup, "BackupRuntime", part, err)
 			return ctrl.Result{RequeueAfter: r.poll()}, nil
 		}
+		now := metav1.Now()
+		backup.Status.RuntimeRequestedTime = &now
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")
 
@@ -375,6 +394,53 @@ func (r *Reconciler) stageUnreachable(
 	))
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
+}
+
+// stageElasticsearchUnreachable retries an unreachable Elasticsearch endpoint
+// for a bounded time. Exporting is paused at the steps that call
+// Elasticsearch, so the retry cannot be unbounded: a healthy management API
+// must get to resume the cluster. After the bound, the step fails through
+// resume.
+func (r *Reconciler) stageElasticsearchUnreachable(
+	backup *v1.LogicalBackupElasticsearch,
+	step string,
+	part *v1.BackupPart,
+	err error,
+) (ctrl.Result, error) {
+	now := metav1.Now()
+	if backup.Status.ElasticsearchUnreachableSince == nil {
+		backup.Status.ElasticsearchUnreachableSince = &now
+	}
+	if now.Sub(backup.Status.ElasticsearchUnreachableSince.Time) > r.elasticsearchUnreachableBound() {
+		r.failStep(backup, step, part, fmt.Errorf("the Elasticsearch endpoint stayed unreachable: %w", err))
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	return r.stageUnreachable(backup, err)
+}
+
+// pinnedStorageMatches reports an error when the storage contract no longer
+// matches the destination that start pinned. The repository name alone does
+// not identify a cluster. A repointed contract or endpoint with the same
+// repository name splits the set across two clusters.
+func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.SecondaryStorageConfig) error {
+	pinned := backup.Status.Storage
+	if pinned == nil {
+		return nil
+	}
+	if storage.Name != pinned.SecondaryStorageConfig {
+		return fmt.Errorf(
+			"the storage contract of the cluster changed from %q to %q mid-run; the set must stay on one cluster",
+			pinned.SecondaryStorageConfig, storage.Name,
+		)
+	}
+	if es := storage.Spec.Elasticsearch; es == nil || es.Endpoint != pinned.Endpoint {
+		return fmt.Errorf(
+			"the Elasticsearch endpoint of %q changed from %q mid-run; the set must stay on one cluster",
+			pinned.SecondaryStorageConfig, pinned.Endpoint,
+		)
+	}
+	return nil
 }
 
 // recordHistorySnapshots merges the snapshot names that the cluster reports

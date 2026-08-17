@@ -60,6 +60,11 @@ type Server struct {
 	historyStarts map[int64]int
 	runtimeStarts map[int64]int
 
+	// hiddenRuntimeStatus is how many more runtime status queries answer 404
+	// for a backup that the fake holds. It fakes the registration lag of the
+	// real cluster after it accepted a start.
+	hiddenRuntimeStatus int
+
 	nextGeneratedID int64
 
 	failures map[string]int
@@ -128,6 +133,16 @@ func (s *Server) RuntimeStarts(id int64) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.runtimeStarts[id]
+}
+
+// HideRuntimeStatus makes the next n runtime status queries answer 404 for a
+// backup that exists. The real cluster registers a runtime backup
+// asynchronously and can report it absent for a moment after it accepted the
+// start. A second start for the same id conflicts during that moment.
+func (s *Server) HideRuntimeStatus(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hiddenRuntimeStatus = n
 }
 
 // SetHistoryState sets the state of the history backup id, creating it when
@@ -302,26 +317,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/backupRuntime/"):
-		if s.failing("runtimeStatus") {
-			errorBody(w, http.StatusInternalServerError, "injected runtime status failure")
-			return
-		}
-		id, _ := strconv.ParseInt(strings.TrimPrefix(path, "/backupRuntime/"), 10, 64)
-		backup, ok := s.runtime[id]
-		if !ok {
-			errorBody(w, http.StatusNotFound, "backup does not exist")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"backupId":      backup.ID,
-			"state":         backup.State,
-			"failureReason": backup.FailureReason,
-			"details": []map[string]any{{
-				"partitionId":   1,
-				"state":         backup.State,
-				"failureReason": backup.FailureReason,
-			}},
-		})
+		s.handleRuntimeStatus(w, path)
 
 	case r.Method == http.MethodDelete && strings.HasPrefix(path, "/backupRuntime/"):
 		if s.failing("runtimeDelete") {
@@ -347,6 +343,35 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
 	}
+}
+
+// handleRuntimeStatus serves GET /backupRuntime/{id}. The caller holds the
+// lock.
+func (s *Server) handleRuntimeStatus(w http.ResponseWriter, path string) {
+	if s.failing("runtimeStatus") {
+		errorBody(w, http.StatusInternalServerError, "injected runtime status failure")
+		return
+	}
+	id, _ := strconv.ParseInt(strings.TrimPrefix(path, "/backupRuntime/"), 10, 64)
+	backup, ok := s.runtime[id]
+	if ok && s.hiddenRuntimeStatus > 0 {
+		s.hiddenRuntimeStatus--
+		ok = false
+	}
+	if !ok {
+		errorBody(w, http.StatusNotFound, "backup does not exist")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"backupId":      backup.ID,
+		"state":         backup.State,
+		"failureReason": backup.FailureReason,
+		"details": []map[string]any{{
+			"partitionId":   1,
+			"state":         backup.State,
+			"failureReason": backup.FailureReason,
+		}},
+	})
 }
 
 // decodeBackupID reads {"backupId": N} from the request body.

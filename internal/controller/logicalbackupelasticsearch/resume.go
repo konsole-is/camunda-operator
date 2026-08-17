@@ -105,10 +105,11 @@ func (r *Reconciler) giveUpOnResume(
 ) (ctrl.Result, error) {
 	backup.Status.Phase = v1.LogicalBackupFailed
 	backup.Status.TerminalReason = v1.ReasonResumeFailed
+	backup.Status.ResumeFailureMessage = fmt.Sprintf(
+		"Exporting could not be resumed before the deadline: %v", err,
+	)
 	if backup.Status.FailureMessage == "" {
-		backup.Status.FailureMessage = fmt.Sprintf(
-			"Exporting could not be resumed before the deadline: %v", err,
-		)
+		backup.Status.FailureMessage = backup.Status.ResumeFailureMessage
 	}
 	backup.Status.CompletionTime = &now
 	conditions.Stage(backup, terminalReady(backup))

@@ -26,8 +26,8 @@ limitations under the License.
 // state machine to resume-exporting and then to a terminal phase. A cluster
 // that is not addressable for a moment parks the procedure in place. A running
 // backup never returns to Pending and never starts again. Its identity, the
-// backup ID and the pinned repository, is written before the first side
-// effect and only read afterwards.
+// backup ID, the pinned repository, and the pinned storage destination, is
+// written before the first side effect and only read afterwards.
 package logicalbackupelasticsearch
 
 import (
@@ -66,6 +66,15 @@ const (
 	defaultPollInterval = 5 * time.Second
 	// retryInterval paces admission failures that no watch resolves.
 	retryInterval = 30 * time.Second
+	// runtimeRegistrationGrace bounds how long an absent runtime backup is
+	// polled after its request was accepted. The cluster registers the
+	// backup asynchronously and can report it absent for a moment. Within
+	// the grace the step polls; after it, the backup is missing.
+	runtimeRegistrationGrace = 2 * time.Minute
+	// elasticsearchUnreachableBound bounds the retry of an unreachable
+	// Elasticsearch endpoint at the steps that run with exporting paused.
+	// After it, the step fails and the procedure resumes exporting.
+	elasticsearchUnreachableBound = 10 * time.Minute
 	// concurrentReconciles bounds the parallel reconciles. Every step is a
 	// synchronous HTTP call. One black-holed endpoint must not block the
 	// polling and the finalizers of every other backup.
@@ -94,6 +103,10 @@ type Options struct {
 	// PollInterval paces the polling of a running backup. Zero means five
 	// seconds.
 	PollInterval time.Duration
+	// ElasticsearchUnreachableBound bounds the retry of an unreachable
+	// Elasticsearch endpoint while exporting is paused. Zero means ten
+	// minutes.
+	ElasticsearchUnreachableBound time.Duration
 	// SiblingInProgress reports a non-terminal backup of the same cluster
 	// that the other backup kind holds. With it, backups of one cluster run
 	// one at a time across kinds. Nil means that no other kind is checked.
@@ -205,7 +218,12 @@ func terminalReady(backup *v1.LogicalBackupElasticsearch) metav1.Condition {
 		reason = v1.ReasonFailed
 	}
 
-	return conditions.Ready(metav1.ConditionFalse, reason, backup.Status.FailureMessage, backup.Generation)
+	message := backup.Status.FailureMessage
+	if resume := backup.Status.ResumeFailureMessage; resume != "" && resume != message {
+		message = message + ". " + resume
+	}
+
+	return conditions.Ready(metav1.ConditionFalse, reason, message, backup.Generation)
 }
 
 func (r *Reconciler) poll() time.Duration {
@@ -220,6 +238,13 @@ func (r *Reconciler) resumeDeadline() time.Duration {
 		return r.options.ResumeDeadline
 	}
 	return defaultResumeDeadline
+}
+
+func (r *Reconciler) elasticsearchUnreachableBound() time.Duration {
+	if r.options.ElasticsearchUnreachableBound > 0 {
+		return r.options.ElasticsearchUnreachableBound
+	}
+	return elasticsearchUnreachableBound
 }
 
 // SetupWithManager registers the controller, the clusterRef index, and the

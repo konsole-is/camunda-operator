@@ -32,6 +32,10 @@ The whole spec is immutable. A backup is one-shot. To retry, create a new resour
 
 `status.phase` is `Pending`, `Running`, `Completed`, or `Failed`. The last two are terminal. `status.step` is the resume marker of the running procedure. `status.backupId` keys every stored artifact. `status.history`, `status.records`, and `status.runtime` track the three parts of the set.
 
-`status.historySnapshots` names the web-application snapshots, so a restore can locate them after the cluster is gone. `status.repository` pins the snapshot repository that the set is written to. A repository that changes mid-run fails the backup instead of splitting the set. `status.storageSizes` records the effective restore sizes, best effort.
+`status.historySnapshots` names the web-application snapshots, so a restore can locate them after the cluster is gone. `status.repository` pins the snapshot repository that the set is written to. `status.storage` pins the storage contract and the Elasticsearch endpoint. A repository, contract, or endpoint that changes mid-run fails the backup instead of splitting the set. The finalizer holds the deletion while the contract points at another endpoint, so it never deletes against the wrong cluster. `status.storageSizes` records the effective restore sizes, best effort.
+
+`status.failureMessage` names the step that failed. `status.resumeFailureMessage` stands beside it when the procedure also failed to resume exporting. Both survive, so a backup that ends as `ResumeFailed` still says which step failed first.
+
+The steps that call Elasticsearch run with exporting paused. An unreachable Elasticsearch endpoint is retried for ten minutes, then the step fails and the procedure resumes exporting. An unreachable management API is retried without a bound, because nothing else can resume the cluster.
 
 The `Ready` condition carries the reasons `Progressing`, `Completed`, `Failed`, `ResumeFailed`, `ClusterSuspended`, `BackupInProgress`, `StorageTypeMismatch`, `InvalidReference`, `MissingSecret`, and `ConnectionFailed`.

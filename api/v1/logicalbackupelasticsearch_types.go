@@ -69,6 +69,16 @@ type BackupPart struct {
 	FailureReason string `json:"failureReason,omitempty"`
 }
 
+// PinnedStorage is the Elasticsearch destination of a backup set, recorded
+// when the backup starts.
+type PinnedStorage struct {
+	// SecondaryStorageConfig is the name of the storage contract, in the
+	// namespace of the backup.
+	SecondaryStorageConfig string `json:"secondaryStorageConfig"`
+	// Endpoint is the Elasticsearch endpoint that the contract named.
+	Endpoint string `json:"endpoint"`
+}
+
 // LogicalBackupElasticsearchSpec identifies the cluster to back up. The whole
 // spec is immutable: a backup is a one-shot operation, retried by creating a
 // new resource.
@@ -123,6 +133,25 @@ type LogicalBackupElasticsearchStatus struct {
 	// deletion at the wrong repository.
 	// +optional
 	Repository string `json:"repository,omitempty"`
+	// Storage pins the Elasticsearch destination of the set: the storage
+	// contract and the endpoint it named when the backup started. The
+	// repository name alone does not identify a cluster. A storage contract
+	// or endpoint that changes mid-run fails the step, and the finalizer
+	// never deletes against a different cluster.
+	// +optional
+	Storage *PinnedStorage `json:"storage,omitempty"`
+	// RuntimeRequestedTime is when the runtime backup was requested. The
+	// cluster registers the backup asynchronously and can report it absent
+	// for a moment after it accepted the request. Within a registration
+	// grace after this time, an absent backup is polled, not started again.
+	// +optional
+	RuntimeRequestedTime *metav1.Time `json:"runtimeRequestedTime,omitempty"`
+	// ElasticsearchUnreachableSince is when a step first found the
+	// Elasticsearch endpoint unreachable. Exporting is paused at those steps,
+	// so the retry is bounded. After the bound, the step fails and the
+	// procedure resumes exporting.
+	// +optional
+	ElasticsearchUnreachableSince *metav1.Time `json:"elasticsearchUnreachableSince,omitempty"`
 	// FailureMessage names the failing step and its error. It is recorded
 	// when a step fails and exporting still has to be resumed, so the reason
 	// survives the resume and reaches the terminal condition.
@@ -145,6 +174,11 @@ type LogicalBackupElasticsearchStatus struct {
 	// restored an older one.
 	// +optional
 	TerminalReason string `json:"terminalReason,omitempty"`
+	// ResumeFailureMessage is the last error of resume-exporting when the
+	// procedure gave up on it. It stands beside FailureMessage, so a backup
+	// that failed a step and then failed to resume reports both.
+	// +optional
+	ResumeFailureMessage string `json:"resumeFailureMessage,omitempty"`
 	// CompletionTime is when the backup reached a terminal phase.
 	// +optional
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
@@ -172,9 +206,9 @@ type LogicalBackupElasticsearchStatus struct {
 // LogicalBackupElasticsearch is one backup of an Elasticsearch-backed
 // CamundaCluster. The backup is one coordinated set under one backup ID: the
 // web-application indices, the exported Zeebe record indices, and the Zeebe
-// partitions. It is taken hot, with exporting soft-paused. LogicalRestore
-// consumes a completed backup. When you delete the resource, a finalizer
-// deletes the stored artifacts.
+// partitions. It is taken hot, with exporting soft-paused. A restore reads a
+// completed backup by its backup ID and its recorded snapshot names. When you
+// delete the resource, a finalizer deletes the stored artifacts.
 type LogicalBackupElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 

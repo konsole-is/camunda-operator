@@ -291,6 +291,10 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		final := currentBackup(backup)
 		Expect(final.Status.PartitionsCount).To(Equal(int32(5)))
 		Expect(final.Status.Repository).To(Equal(r.repository))
+		Expect(final.Status.Storage).To(Equal(&v1.PinnedStorage{
+			SecondaryStorageConfig: "storage",
+			Endpoint:               r.search.URL(),
+		}))
 		Expect(final.Status.CompletionTime).NotTo(BeNil())
 		Expect(final.Status.HistorySnapshots).NotTo(BeEmpty())
 		Expect(final.Status.History.State).To(Equal(v1.BackupPartCompleted))
@@ -358,6 +362,75 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		expectPhase(backup, v1.LogicalBackupFailed)
 		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
 		expectEvent(backup, eventReasonResumeFailed, corev1.EventTypeWarning)
+
+		By("reporting the step failure and the resume failure side by side")
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupHistory"))
+		Expect(final.Status.ResumeFailureMessage).To(ContainSubstring("resumed"))
+		ready := meta.FindStatusCondition(final.Status.Conditions, v1.ConditionReady)
+		Expect(ready.Message).To(SatisfyAll(
+			ContainSubstring("BackupHistory"),
+			ContainSubstring("resumed"),
+		))
+	})
+
+	It("polls an absent runtime backup through the registration grace instead of starting it again", func() {
+		r := newRig()
+		// The cluster registers a runtime backup asynchronously. After it
+		// accepted the start it reports the backup absent for a moment. A
+		// second start in that moment answers 409 and would fail the step.
+		r.management.HideRuntimeStatus(3)
+
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		Eventually(func() v1.BackupPartState {
+			return currentBackup(backup).Status.Runtime.State
+		}, timeout, interval).Should(Equal(v1.BackupPartInProgress))
+		Consistently(func(g Gomega) {
+			g.Expect(currentBackup(backup).Status.Runtime.State).To(Equal(v1.BackupPartInProgress))
+		}, "1s", interval).Should(Succeed())
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupCompleted)
+		Expect(r.management.RuntimeStarts(id)).To(Equal(1))
+		Expect(currentBackup(backup).Status.RuntimeRequestedTime).NotTo(BeNil())
+	})
+
+	It("fails the records step through resume when Elasticsearch stays unreachable", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("taking Elasticsearch down before the records snapshot")
+		r.search.Close()
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		By("retrying with ConnectionFailed for a bounded time")
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonConnectionFailed)
+		Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepSnapshotRecords))
+
+		By("failing the step and resuming exporting after the bound")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("SnapshotRecords"),
+			ContainSubstring("unreachable"),
+		))
+		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
 	It("serializes backups of one cluster", func() {
@@ -682,6 +755,52 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(final.Status.FailureMessage).To(ContainSubstring("changed"))
 		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("fails the step when the storage endpoint is repointed mid-run, and holds the deletion", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("repointing the storage contract at another cluster with the same repository name")
+		other := esadmintest.NewTLS()
+		DeferCleanup(other.Close)
+		pointStorageAt := func(endpoint string) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				var storage v1.SecondaryStorageConfig
+				g.Expect(k8sClient.Get(
+					ctx, client.ObjectKey{Namespace: r.namespace, Name: "storage"}, &storage,
+				)).To(Succeed())
+				storage.Spec.Elasticsearch.Endpoint = endpoint
+				g.Expect(k8sClient.Update(ctx, &storage)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+		}
+		pointStorageAt(other.URL())
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(ContainSubstring("endpoint"))
+		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(r.management.Exporting()).To(Equal("running"))
+		Expect(other.SnapshotCreates(r.repository, RecordsSnapshotName(id))).To(BeZero())
+
+		By("holding the deletion while the contract points elsewhere")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+		}, "1s", interval).Should(Succeed())
+
+		By("completing the deletion once the contract points back")
+		pointStorageAt(r.search.URL())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
 	})
 
 	It("resumes exporting before a mid-run deletion releases", func() {

@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -81,11 +82,22 @@ var _ = Describe("LogicalBackupElasticsearch schema", func() {
 		Expect(found).To(BeFalse(), "the API server pruned the unknown namespace field")
 	})
 
-	It("serves the resource under its short name plural", func() {
+	It("serves the resource under its plural and short name", func() {
 		// The RESTMapper of the client resolves the resource. A wrong plural
-		// or short name fails every typed call. A successful list is proof
-		// enough of the path marker.
+		// fails every typed call. A successful list is proof enough of the
+		// path marker.
 		var list v1.LogicalBackupElasticsearchList
 		Expect(k8sClient.List(ctx, &list)).To(Succeed())
+
+		// The short name is what an operator types. Only discovery proves
+		// it: the typed client never uses it.
+		discovery, err := discovery.NewDiscoveryClientForConfig(env.Cfg)
+		Expect(err).NotTo(HaveOccurred())
+		resources, err := discovery.ServerResourcesForGroupVersion(v1.GroupVersion.String())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resources.APIResources).To(ContainElement(SatisfyAll(
+			HaveField("Name", "logicalbackupelasticsearches"),
+			HaveField("ShortNames", ConsistOf("lbes")),
+		)))
 	})
 })
