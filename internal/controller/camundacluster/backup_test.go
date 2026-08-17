@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -76,16 +77,35 @@ func expectBinding(cluster *v1.CamundaCluster, match func(Gomega, *v1.Management
 
 var _ = Describe("CamundaCluster backup wiring", func() {
 	Describe("the published management binding", func() {
+		// The default topology runs a standalone gateway, which hosts the web
+		// applications and serves the actuator endpoints of the cluster.
 		It("names the endpoint, the version, and the partition count", func() {
 			cluster := createDefaultCluster()
 
 			expectBinding(cluster, func(g Gomega, binding *v1.ManagementBinding) {
 				g.Expect(binding).NotTo(BeNil())
 				g.Expect(binding.Endpoint).To(Equal(
-					"http://" + cluster.Name + "-zeebe." + cluster.Namespace + ".svc:9600",
+					"http://" + cluster.Name + "-gateway." + cluster.Namespace + ".svc:9600",
 				))
 				g.Expect(binding.Version).To(Equal("8.9.9"))
 				g.Expect(binding.Partitions).To(Equal(int32(1)))
+			})
+		})
+
+		// With an embedded gateway the brokers serve the same endpoints, so
+		// the binding follows the topology instead of naming a Service that
+		// the cluster does not render.
+		It("names the broker Service when the gateway is embedded", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.Gateway = &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded}
+			createCluster(cluster)
+
+			expectBinding(cluster, func(g Gomega, binding *v1.ManagementBinding) {
+				g.Expect(binding).NotTo(BeNil())
+				g.Expect(binding.Endpoint).To(Equal(
+					"http://" + cluster.Name + "-zeebe." + cluster.Namespace + ".svc:9600",
+				))
 			})
 		})
 
@@ -300,5 +320,89 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				ContainSubstring("absent-keys"),
 			)
 		})
+	})
+})
+
+var _ = Describe("CamundaCluster backup schema", func() {
+	It("accepts the backup block of the doc", func() {
+		cluster := minimalCamundaCluster()
+		cluster.Spec.Backup = &v1.ClusterBackupSpec{
+			PrimaryStorage: &v1.PrimaryStorageBackupSpec{
+				Continuous:         new(true),
+				Schedule:           "PT1H",
+				CheckpointInterval: "PT15M",
+				Retention: &v1.PrimaryStorageRetentionSpec{
+					Window:          "P7D",
+					CleanupSchedule: "PT1H",
+				},
+			},
+			Dump: &v1.BackupDumpSpec{
+				PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
+				ScratchVolume:  &v1.ScratchVolumeSpec{SizeLimit: new(resource.MustParse("50Gi"))},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
+	})
+
+	// A CRON expression is legal for the two schedules, so only the pure
+	// duration fields carry a pattern.
+	It("accepts a CRON schedule and the none keyword", func() {
+		cluster := minimalCamundaCluster()
+		cluster.Spec.Backup = &v1.ClusterBackupSpec{
+			PrimaryStorage: &v1.PrimaryStorageBackupSpec{
+				Schedule:  "0 */5 * * * *",
+				Retention: &v1.PrimaryStorageRetentionSpec{CleanupSchedule: "none"},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
+	})
+
+	It("rejects a checkpoint interval that is not a duration", func() {
+		cluster := minimalCamundaCluster()
+		cluster.Spec.Backup = &v1.ClusterBackupSpec{
+			PrimaryStorage: &v1.PrimaryStorageBackupSpec{CheckpointInterval: "15 minutes"},
+		}
+
+		Expect(k8sClient.Create(ctx, cluster)).NotTo(Succeed())
+	})
+
+	It("rejects a retention window that is not a duration", func() {
+		cluster := minimalCamundaCluster()
+		cluster.Spec.Backup = &v1.ClusterBackupSpec{
+			PrimaryStorage: &v1.PrimaryStorageBackupSpec{
+				Retention: &v1.PrimaryStorageRetentionSpec{Window: "one week"},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, cluster)).NotTo(Succeed())
+	})
+
+	// The backup block is policy, so a preset may carry it. Where backups go
+	// is instance-bound and stays on the cluster.
+	It("accepts the backup block in a preset but not backupStorageRef", func() {
+		preset := &v1.CamundaClusterPreset{
+			ObjectMeta: metav1.ObjectMeta{Name: "ccp-" + utilrand.String(8)},
+			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+				Version: "8.9.0",
+				Backup: &v1.ClusterBackupSpec{
+					PrimaryStorage: &v1.PrimaryStorageBackupSpec{Schedule: "PT2H"},
+				},
+			}},
+		}
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+		rejected := &v1.CamundaClusterPreset{
+			ObjectMeta: metav1.ObjectMeta{Name: "ccp-" + utilrand.String(8)},
+			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+				Version:          "8.9.0",
+				BackupStorageRef: "my-backup-config",
+			}},
+		}
+		Expect(k8sClient.Create(ctx, rejected)).NotTo(Succeed())
 	})
 })
