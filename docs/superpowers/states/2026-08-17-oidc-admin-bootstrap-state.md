@@ -26,7 +26,7 @@ The two sub-issues are strictly sequential. #61 cannot go green until #73 has me
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #73 | feat/oidc-admin-bootstrap--admin-config | .claude/worktrees/oidc-admin-bootstrap--admin-config | #75 → feat/oidc-admin-bootstrap | self-merged |
-| #61 | feat/oidc-admin-bootstrap--keycloak-e2e | .claude/worktrees/oidc-admin-bootstrap--keycloak-e2e | #76 → feat/oidc-admin-bootstrap | ready |
+| #61 | feat/oidc-admin-bootstrap--keycloak-e2e | .claude/worktrees/oidc-admin-bootstrap--keycloak-e2e | #76 → feat/oidc-admin-bootstrap | self-merged |
 
 ## Contracts
 
