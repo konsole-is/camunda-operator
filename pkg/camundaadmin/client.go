@@ -115,8 +115,10 @@ type Auth struct {
 // mirrors the management binding that a CamundaCluster publishes in
 // status.management.
 type Binding struct {
-	// Endpoint is the base URL of the management port, for example
-	// http://my-cluster-camunda-management.ns.svc:9600.
+	// Endpoint is the base URL of the management port on the workload
+	// Service that hosts the gateway, for example
+	// http://my-cluster-zeebe.ns.svc:9600 (or the gateway Service when the
+	// topology runs one standalone).
 	Endpoint string
 	// Version is the Camunda version of the cluster, for example 8.9.9. Its
 	// minor selects the endpoint set.
