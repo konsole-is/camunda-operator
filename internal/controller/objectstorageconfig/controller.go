@@ -36,8 +36,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-const objectStorageConfigSecretRefField = "objectstorageconfig.spec.credentialsSecretRef"
-
 // ObjectStorageConfigReconciler validates ObjectStorageConfig contracts and
 // maintains their Ready condition.
 type ObjectStorageConfigReconciler struct {
@@ -106,16 +104,7 @@ func (r *ObjectStorageConfigReconciler) validate(
 // SetupWithManager registers the controller, an index of contracts by their
 // credentials Secret, and a metadata-only Secret watch.
 func (r *ObjectStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(), &v1.ObjectStorageConfig{},
-		objectStorageConfigSecretRefField, func(o client.Object) []string {
-			creds := o.(*v1.ObjectStorageConfig).CredentialsSecret()
-			if creds == nil {
-				return nil
-			}
-			return []string{refindex.NamespacedKey(creds.Namespace, creds.Name)}
-		},
-	); err != nil {
+	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
 		return err
 	}
 
@@ -125,7 +114,7 @@ func (r *ObjectStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error
 			&corev1.Secret{},
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.ObjectStorageConfigList{},
-				objectStorageConfigSecretRefField, refindex.ObjectNamespacedName,
+				refindex.ObjectStorageConfigSecretField, refindex.ObjectNamespacedName,
 			),
 			builder.OnlyMetadata,
 		).

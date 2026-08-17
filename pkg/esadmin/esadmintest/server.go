@@ -21,8 +21,10 @@ package esadmintest
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -58,6 +60,8 @@ type Server struct {
 	repos     map[string]*Repository
 	snapshots map[string]*Snapshot
 
+	repositoryPuts map[string]int
+
 	snapshotCreates map[string]int
 	reloadCalls     int
 
@@ -75,18 +79,45 @@ type nodeFS struct {
 	used  int64
 }
 
-// New starts the fake. Close it with Close.
+// New starts the fake over plain HTTP. Close it with Close.
 func New() *Server {
-	s := &Server{
+	s := newServer()
+	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+
+	return s
+}
+
+// NewTLS starts the fake over HTTPS with a self-signed certificate, the way
+// ECK serves Elasticsearch. CertificatePEM returns the bundle that verifies
+// it, so a test exercises the same CA path as production. Close it with
+// Close.
+func NewTLS() *Server {
+	s := newServer()
+	s.server = httptest.NewTLSServer(http.HandlerFunc(s.handle))
+
+	return s
+}
+
+func newServer() *Server {
+	return &Server{
 		repos:           map[string]*Repository{},
+		repositoryPuts:  map[string]int{},
 		snapshots:       map[string]*Snapshot{},
 		snapshotCreates: map[string]int{},
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
 		failures:        map[string]int{},
 	}
-	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+}
 
-	return s
+// CertificatePEM returns the PEM encoding of the certificate a NewTLS server
+// serves, which is its own CA: the certificate is self-signed.
+func (s *Server) CertificatePEM() []byte {
+	cert := s.server.Certificate()
+	if cert == nil {
+		return nil
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
 }
 
 // URL is the base URL of the fake.
@@ -104,6 +135,16 @@ func (s *Server) Repository(name string) *Repository {
 		return &copied
 	}
 	return nil
+}
+
+// RepositoryPuts reports how often the repository name was registered. A
+// converging controller registers on every reconcile, so the count grows with
+// the reconciles while Repository stays the same: that is what idempotence
+// looks like from the fake.
+func (s *Server) RepositoryPuts(name string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.repositoryPuts[name]
 }
 
 // SetSnapshotState sets the state of the snapshot repo/name, creating it
@@ -166,8 +207,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	path := strings.Trim(r.URL.Path, "/")
+	// Split the escaped form, then unescape each segment: an escaped slash
+	// inside a name must stay inside its segment, the way a real server
+	// routes.
+	path := strings.Trim(r.URL.EscapedPath(), "/")
 	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if unescaped, err := url.PathUnescape(part); err == nil {
+			parts[i] = unescaped
+		}
+	}
+	path, _ = url.PathUnescape(path)
 
 	switch {
 	case r.Method == http.MethodPost && path == "_nodes/reload_secure_settings":
@@ -207,11 +257,50 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		s.repos[parts[1]] = &Repository{Type: body.Type, Settings: body.Settings}
+		s.repositoryPuts[parts[1]]++
 		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
-	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodPut:
+	case len(parts) == 3 && parts[0] == snapshotPath:
+		s.handleSnapshot(w, r, parts)
+
+	default:
+		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func errorBody(w http.ResponseWriter, status int, message string) {
+	errorBodyTyped(w, status, "exception", message)
+}
+
+// errorBodyTyped writes the error shape of Elasticsearch:
+// {"error":{"type":...,"reason":...},"status":N}.
+func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string) {
+	writeJSON(w, status, map[string]any{
+		"error":  map[string]string{"type": errorType, "reason": reason},
+		"status": status,
+	})
+}
+
+// handleSnapshot routes the per-snapshot requests: create, status, delete.
+// The caller holds the lock.
+func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
+	switch r.Method {
+	case http.MethodPut:
 		if s.failing("snapshotCreate") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
+			return
+		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
 			return
 		}
 		key := parts[1] + "/" + parts[2]
@@ -230,44 +319,54 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.snapshotCreates[key]++
 		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
-	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodGet:
+	case http.MethodGet:
 		if s.failing("snapshotStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
 		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
 		snapshot, ok := s.snapshots[parts[1]+"/"+parts[2]]
 		if !ok {
-			errorBody(w, http.StatusNotFound, "snapshot_missing_exception")
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
+			)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"snapshots": []map[string]any{{"snapshot": snapshot.Name, "state": snapshot.State}},
 		})
 
-	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodDelete:
+	case http.MethodDelete:
 		if s.failing("snapshotDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return
 		}
+		if _, ok := s.repos[parts[1]]; !ok {
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"repository_missing_exception", "["+parts[1]+"] missing",
+			)
+			return
+		}
 		key := parts[1] + "/" + parts[2]
 		if _, ok := s.snapshots[key]; !ok {
-			errorBody(w, http.StatusNotFound, "snapshot_missing_exception")
+			errorBodyTyped(
+				w, http.StatusNotFound,
+				"snapshot_missing_exception", "["+parts[1]+":"+parts[2]+"] is missing",
+			)
 			return
 		}
 		delete(s.snapshots, key)
 		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
 	default:
-		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
+		errorBody(w, http.StatusMethodNotAllowed, "unsupported method "+r.Method)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func errorBody(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"message": message})
 }

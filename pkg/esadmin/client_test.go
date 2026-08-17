@@ -68,6 +68,7 @@ func TestEnsureSnapshotRepositoryConverges(t *testing.T) {
 func TestCreateSnapshotIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
 	indices := []string{"camunda_zeebe_records_backup_42"}
 	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices))
@@ -81,6 +82,7 @@ func TestCreateSnapshotIsIdempotent(t *testing.T) {
 func TestSnapshotStatus(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
 	state, err := client.SnapshotStatus(ctx, "repo", "absent")
 	require.NoError(t, err)
@@ -102,6 +104,7 @@ func TestSnapshotStatus(t *testing.T) {
 func TestDeleteSnapshotIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
 	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}))
 	require.NoError(t, client.DeleteSnapshot(ctx, "repo", "records-42"))
@@ -109,6 +112,61 @@ func TestDeleteSnapshotIsIdempotent(t *testing.T) {
 
 	// Deleting an absent snapshot is success for the re-entrant finalizer.
 	assert.NoError(t, client.DeleteSnapshot(ctx, "repo", "records-42"))
+}
+
+// A missing repository is not a missing snapshot. Both answer 404, but a
+// dropped repository read as "snapshot gone" would let a finalizer release
+// with the artifacts still in the bucket.
+func TestMissingRepositoryIsAnErrorNotAMissingSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client, _ := newClient(t)
+
+	_, err := client.SnapshotStatus(ctx, "no-such-repo", "records-42")
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Contains(t, err.Error(), "repository_missing_exception")
+
+	err = client.DeleteSnapshot(ctx, "no-such-repo", "records-42")
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Contains(t, err.Error(), "repository_missing_exception")
+}
+
+// A CA that is present but empty means the caller read the wrong Secret key;
+// falling back to the system pool would hide that as a TLS failure on every
+// later call.
+func TestNewRejectsAPresentButEmptyCA(t *testing.T) {
+	t.Parallel()
+
+	_, err := esadmin.New("https://es:9200", "u", "p", []byte{})
+	require.ErrorContains(t, err, "empty")
+
+	_, err = esadmin.New("https://es:9200", "u", "p", []byte("not a certificate"))
+	require.ErrorContains(t, err, "no PEM certificate")
+}
+
+// The TLS fake serves the self-signed certificate that CertificatePEM
+// returns, so the CA path of New is exercised the way production runs it.
+func TestClientVerifiesTheFakesTLSCertificate(t *testing.T) {
+	ctx := context.Background()
+	server := esadmintest.NewTLS()
+	t.Cleanup(server.Close)
+
+	client, err := esadmin.New(server.URL(), "camunda", "secret", server.CertificatePEM())
+	require.NoError(t, err)
+
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	assert.NotNil(t, server.Repository("repo"))
+}
+
+// A repository name from a hand-written contract is user input; a slash in it
+// must not retarget the request to another API path.
+func TestPathSegmentsAreEscaped(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	err := client.EnsureSnapshotRepository(ctx, "prod/main", esadmin.S3RepositoryConfig{Bucket: "b"})
+	require.NoError(t, err)
+	assert.NotNil(t, server.Repository("prod/main"), "the name must arrive as one segment")
+	assert.Nil(t, server.Repository("main"))
 }
 
 func TestReloadSecureSettings(t *testing.T) {

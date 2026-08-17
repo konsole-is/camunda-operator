@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -316,13 +317,22 @@ func openGCS(ctx context.Context, spec *v1.GCSStorage, creds *Credentials) (*Buc
 	return newBucket(bucket), nil
 }
 
-// openAzureBlob opens an Azure Blob Storage container.
-func openAzureBlob(ctx context.Context, spec *v1.AzureBlobStorage, creds *Credentials) (*Bucket, error) {
-	serviceURL := spec.Endpoint
+// azureContainerURL is the URL of the container of spec. A trailing slash on
+// the endpoint would double the separator, and the request signature is
+// computed over the canonical resource — Azure then answers 403, which reads
+// as bad credentials instead of a bad URL.
+func azureContainerURL(spec *v1.AzureBlobStorage) string {
+	serviceURL := strings.TrimRight(spec.Endpoint, "/")
 	if serviceURL == "" {
 		serviceURL = fmt.Sprintf("https://%s.blob.core.windows.net", spec.AccountName)
 	}
-	containerURL := serviceURL + "/" + spec.Container
+
+	return serviceURL + "/" + spec.Container
+}
+
+// openAzureBlob opens an Azure Blob Storage container.
+func openAzureBlob(ctx context.Context, spec *v1.AzureBlobStorage, creds *Credentials) (*Bucket, error) {
+	containerURL := azureContainerURL(spec)
 
 	var client *azcontainer.Client
 

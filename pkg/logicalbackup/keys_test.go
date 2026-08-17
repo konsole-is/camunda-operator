@@ -44,6 +44,32 @@ func TestAllocateBackupIDSeparatesBackupsWithinOneSecond(t *testing.T) {
 	assert.Greater(t, second, first)
 }
 
+// ClusterPrefix is the one definition of the bucket layout; the repository
+// base_path and every object key build on it, so a leading or trailing slash
+// in the contract must not fork the layout.
+func TestClusterPrefix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		basePath string
+		want     string
+	}{
+		{name: "no base path", basePath: "", want: "camunda/my-cluster"},
+		{name: "plain base path", basePath: "backups", want: "backups/camunda/my-cluster"},
+		{name: "leading slash trimmed", basePath: "/backups", want: "backups/camunda/my-cluster"},
+		{name: "trailing slash trimmed", basePath: "backups/", want: "backups/camunda/my-cluster"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, test.want, logicalbackup.ClusterPrefix(test.basePath, "camunda", "my-cluster"))
+		})
+	}
+}
+
 func TestObjectKeyPrefix(t *testing.T) {
 	tests := []struct {
 		name     string

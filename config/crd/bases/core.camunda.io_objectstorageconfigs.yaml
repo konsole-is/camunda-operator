@@ -119,8 +119,9 @@ spec:
                       rule: '!has(self.workloadIdentity) || self.type == ''workloadIdentity'''
                   basePath:
                     description: |-
-                      BasePath is the blob prefix under which consumers write objects. Empty
-                      means the container root.
+                      BasePath is the blob prefix under which consumers write objects,
+                      without leading or trailing slashes. Empty means the container root.
+                    pattern: ^[^/]+(/[^/]+)*$
                     type: string
                   container:
                     description: Container is the blob container that consumers write
@@ -213,8 +214,9 @@ spec:
                       rule: '!has(self.workloadIdentity) || self.type == ''workloadIdentity'''
                   basePath:
                     description: |-
-                      BasePath is the key prefix under which consumers write objects. Empty
-                      means the bucket root.
+                      BasePath is the key prefix under which consumers write objects,
+                      without leading or trailing slashes. Empty means the bucket root.
+                    pattern: ^[^/]+(/[^/]+)*$
                     type: string
                   bucketName:
                     description: BucketName is the bucket name as used by storage
@@ -303,8 +305,9 @@ spec:
                       rule: '!has(self.workloadIdentity) || self.type == ''workloadIdentity'''
                   basePath:
                     description: |-
-                      BasePath is the key prefix under which consumers write objects. Empty
-                      means the bucket root.
+                      BasePath is the key prefix under which consumers write objects,
+                      without leading or trailing slashes. Empty means the bucket root.
+                    pattern: ^[^/]+(/[^/]+)*$
                     type: string
                   bucketName:
                     description: BucketName is the bucket name as used by storage

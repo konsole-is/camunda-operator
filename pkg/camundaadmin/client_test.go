@@ -242,9 +242,18 @@ func TestDeleteRuntimeBackupIsIdempotent(t *testing.T) {
 	_, err := client.StartRuntimeBackup(ctx, &id)
 	require.NoError(t, err)
 
+	// A backup in progress cannot be deleted; the finalizer waits for a
+	// terminal state first.
+	require.ErrorIs(t, client.DeleteRuntimeBackup(ctx, id), camundaadmin.ErrRejected)
+
+	server.SetRuntimeState(id, "COMPLETED", "")
 	require.NoError(t, client.DeleteRuntimeBackup(ctx, id))
 	assert.Nil(t, server.RuntimeBackup(id))
 
 	// Deleting an absent backup is success for the re-entrant finalizer.
 	assert.NoError(t, client.DeleteRuntimeBackup(ctx, id))
+
+	// The id of a deleted backup is never reusable.
+	_, err = client.StartRuntimeBackup(ctx, &id)
+	require.ErrorIs(t, err, camundaadmin.ErrConflict)
 }
