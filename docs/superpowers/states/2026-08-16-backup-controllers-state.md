@@ -35,7 +35,7 @@ status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 | #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | #79 → feat/backup-controllers | self-merged |
 | #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | #77 → feat/backup-controllers | self-merged |
 | #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | #84 → feat/backup-controllers | draft (spec gate running) |
-| #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | → feat/backup-controllers | in-progress |
+| #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | #85 → feat/backup-controllers | draft (spec gate running) |
 | #70 | feat/backup-controllers--backup-schedule | .claude/worktrees/backup-controllers--backup-schedule | → feat/backup-controllers | not-started |
 | #71 | test/backup-controllers--e2e-minio | .claude/worktrees/backup-controllers--e2e-minio | → feat/backup-controllers | not-started |
 
@@ -53,6 +53,8 @@ status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 | backup-kind-types | PR6 branches after #68+#69 merge | n/a | pending |
 
 ## Bubble-up log
+
+- **2026-08-17 — #85 deviation to adjudicate at its spec gate: `DatabaseServerConfig.version`.** The spec keyed the pg_dump image off the server major, but no such field existed on the contract; #69 added it as optional with the contract doc updated, and a backup requires it. Real contract change to a Batch A CRD — the gate judges validation, failure mode, and consumer impact. Also from #69: envtest on k8s 1.34 rejects bare JobComplete/JobFailed conditions (set SuccessCriteriaMet/FailureTarget + timestamps); a Job SSA re-apply fails on API-server-stamped template labels, hence apply-once-adopt-after; `make helm-generate` reorders config/manager/kustomization.yaml keys (reordered form committed).
 
 - **2026-08-17 — Phase 2→3 checkpoint executed and clean.** Integrated verification: `make test` 29/29, lint 0, no drift, chart 132,844/524,288. Coherence sweep found six ALIGN NOW items (all shipped in #83: shared `conditions.UnwatchedPreCheckFailure`, three doc corrections, the camundaadmin endpoint example, exclude-don't-gate added to Conventions) and five record-only items (all recorded: CC/ES suspension stances, preset-legality asymmetry, spec API sections realigned, follow-ups #81 GCS/Azure ES repositories and #82 client HTTP-core dedup filed). Naming firewall clean; acceptance criteria of #65/#66/#67 covered as amended by their decision records.
 
