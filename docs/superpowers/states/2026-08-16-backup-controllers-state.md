@@ -34,8 +34,8 @@ status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 | #65 | feat/backup-controllers--foundation | (removed) | #74 → feat/backup-controllers | self-merged |
 | #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | #79 → feat/backup-controllers | self-merged |
 | #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | #77 → feat/backup-controllers | self-merged |
-| #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | #84 → feat/backup-controllers | READY FOR USER REVIEW (round 2: split, Options, live read, shared ES ctor, STE docstrings) |
-| #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | #85 → feat/backup-controllers | READY FOR USER REVIEW (round 2: CLI image+flag, probed serverVersion, split, ZeebeBackup rename; all 9 threads replied) |
+| #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | #84 → feat/backup-controllers | READY FOR USER REVIEW (round 2 + management.NewClient + settled sibling GoDoc; head 1d02610) |
+| #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | #85 → feat/backup-controllers | READY FOR USER REVIEW (round 2 + management.NewClient + settled sibling GoDoc; head 8556d0a) |
 | #70 | feat/backup-controllers--backup-schedule | .claude/worktrees/backup-controllers--backup-schedule | → feat/backup-controllers | not-started |
 | #71 | test/backup-controllers--e2e-minio | .claude/worktrees/backup-controllers--e2e-minio | → feat/backup-controllers | not-started |
 
@@ -53,6 +53,8 @@ status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 | backup-kind-types | PR6 branches after #68+#69 merge | n/a | pending |
 
 ## Bubble-up log
+
+- **2026-08-18 — Copilot balanced reviews on #84/#85: loops running; two decisions.** #84 round 1: 4 fixed (cross-ns tie-break, ResumeFailed-still-paused resume on deletion, no swallowed status errors in cleanup, per-part failure details), 1 rejected with reasoning (id-collision adoption — the serialization gate and persisted-before-side-effect rule refute the premise); round 2 re-requested. #85 round 1: 6 fixed + both suppressed findings (Job identity by UID; rejected calls through the mid-run grace; extraEnv reserved-name/merge-last; probe freshness for the DSC generation; pinned bucket location, no delete on retarget; wait for Job+pods gone before object delete), 2 rejected with reasoning (POST-before-durable-id is structurally unavoidable and recorded; only-started-siblings-block is the pinned contract). USER DECISION: `clusterRef` restricted to the CR namespace (Copilot's ungranted cross-namespace finding), applied to both kinds — collapses the namespace juggling. CI: #84's Lint fail was a gofmt miss fixed forward (green now); its Tests fail was a 10s Eventually timeout in Batch C's camundacluster admin-password spec (0 files touched by #84; passed on the prior run) — rerun requested to confirm it as a flake; if it flakes again it gets an issue, not a longer timeout.
 
 - **2026-08-17 — DECIDED by the user: keep `hack/helmcli`, expose `manager.cliImage.{repository,tag}` as a first-class chart value.** (Was an open packaging decision from #85's round.) kubebuilder's helm plugin can only project the CLI image env as `manager.env`; to expose `manager.cliImage.{repository,tag}` "exactly like manager.image", the implementer added a tested post-generation step (`hack/helmcli`, run by `make helm-generate`, fails loudly if the plugin's output shape changes; documented in AGENTS.md as part of generation). Plugin-native alternative: `--set manager.envOverrides.CAMUNDA_OPERATOR_CLI_IMAGE=repo:tag`. User to pick; either is a one-commit change.
 

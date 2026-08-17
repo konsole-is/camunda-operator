@@ -109,35 +109,27 @@ func TestPreCheckPasses(t *testing.T) {
 	assert.Equal(t, "my-bucket", result.Bucket.Name)
 }
 
-// The cluster and its secondary storage are read from the namespace of the
-// backup. A reference cannot name another namespace, so the pre-check needs
-// no second namespace to consider.
-func TestPreCheckResolvesInTheNamespaceOfTheBackup(t *testing.T) {
-	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
+// A ClusterRef never crosses namespaces: the cluster and its secondary
+// storage are read from the namespace of the backup, and a same-named cluster
+// elsewhere is never picked up.
+func TestPreCheckReadsTheClusterFromTheBackupNamespace(t *testing.T) {
+	elsewhere := cluster()
+	elsewhere.Namespace = "elsewhere"
+	reader := newReader(t, cluster(), elsewhere, storage(v1.SecondaryStorageTypeElasticsearch), bucket())
 
 	req := request(reader)
 	req.Namespace = clusterNamespace
 	result, err := logicalbackup.PreCheck(context.Background(), req)
-
 	require.NoError(t, err)
 	assert.Equal(t, clusterNamespace, result.Cluster.Namespace)
 	assert.Equal(t, clusterNamespace, result.Storage.Namespace)
-}
 
-// A backup in another namespace than the cluster does not find it: the
-// reference stays inside the RBAC boundary of the backup.
-func TestPreCheckDoesNotCrossNamespaces(t *testing.T) {
-	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
-
-	req := request(reader)
-	req.Namespace = "elsewhere"
-
-	_, err := logicalbackup.PreCheck(context.Background(), req)
-
+	req.Namespace = "backups-ns"
+	_, err = logicalbackup.PreCheck(context.Background(), req)
 	var failure *conditions.PreCheckFailure
 	require.ErrorAs(t, err, &failure)
 	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
-	assert.Contains(t, failure.Message, "elsewhere/my-cluster")
+	assert.Contains(t, failure.Message, "backups-ns/my-cluster")
 }
 
 func TestPreCheckFailures(t *testing.T) {
