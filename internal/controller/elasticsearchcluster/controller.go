@@ -171,7 +171,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 		// Only an unwatched failure needs a timer; everything else the
 		// pre-checks resolve re-enqueues through a watch.
-		var unwatched *unwatchedPreCheck
+		var unwatched *conditions.UnwatchedPreCheckFailure
 		if errors.As(err, &unwatched) {
 			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 		}

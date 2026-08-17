@@ -59,19 +59,6 @@ const (
 	registrationTimeout = 5 * time.Second
 )
 
-// unwatchedPreCheck marks a pre-check failure that no watch resolves: nothing
-// enqueues the cluster when the missing object appears, so the reconcile must
-// come back on its own.
-type unwatchedPreCheck struct {
-	failure *conditions.PreCheckFailure
-}
-
-// Error returns the message of the wrapped failure.
-func (u *unwatchedPreCheck) Error() string { return u.failure.Error() }
-
-// Unwrap exposes the wrapped failure, so errors.As finds both types.
-func (u *unwatchedPreCheck) Unwrap() error { return u.failure }
-
 // resolveSnapshotStorage resolves the snapshot bucket of the merged spec into
 // the contract and, for a contract with static credentials, the keys of its
 // Secret. It returns nil when the spec names no bucket, which means the
@@ -160,12 +147,10 @@ func (r *ElasticsearchClusterReconciler) checkServiceAccount(
 	key := types.NamespacedName{Namespace: cluster.Namespace, Name: name}
 	if err := r.APIReader.Get(ctx, key, &corev1.ServiceAccount{}); err != nil {
 		if apierrors.IsNotFound(err) {
-			return &unwatchedPreCheck{failure: &conditions.PreCheckFailure{
-				Reason: v1.ReasonInvalidReference,
-				Message: fmt.Sprintf(
-					"ServiceAccount %s not found, and serviceAccount.create is false", key,
-				),
-			}}
+			return conditions.NewUnwatchedFailure(
+				v1.ReasonInvalidReference,
+				fmt.Sprintf("ServiceAccount %s not found, and serviceAccount.create is false", key),
+			)
 		}
 
 		return fmt.Errorf("reading ServiceAccount %s: %w", key, err)

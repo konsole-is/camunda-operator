@@ -90,12 +90,10 @@ func (res *resolver) checkServiceAccount(ctx context.Context, in *components.Inp
 	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: name}
 	if err := res.reader.Get(ctx, key, &corev1.ServiceAccount{}); err != nil {
 		if apierrors.IsNotFound(err) {
-			return &unwatchedPreCheck{failure: &conditions.PreCheckFailure{
-				Reason: v1.ReasonInvalidReference,
-				Message: fmt.Sprintf(
-					"ServiceAccount %s not found, and serviceAccount.create is false", key,
-				),
-			}}
+			return conditions.NewUnwatchedFailure(
+				v1.ReasonInvalidReference,
+				fmt.Sprintf("ServiceAccount %s not found, and serviceAccount.create is false", key),
+			)
 		}
 
 		return fmt.Errorf("reading ServiceAccount %s: %w", key, err)
@@ -103,19 +101,6 @@ func (res *resolver) checkServiceAccount(ctx context.Context, in *components.Inp
 
 	return nil
 }
-
-// unwatchedPreCheck marks a pre-check failure that no watch resolves: nothing
-// enqueues the cluster when the missing object appears, so the reconcile must
-// come back on its own.
-type unwatchedPreCheck struct {
-	failure *conditions.PreCheckFailure
-}
-
-// Error returns the message of the wrapped failure.
-func (u *unwatchedPreCheck) Error() string { return u.failure.Error() }
-
-// Unwrap exposes the wrapped failure, so errors.As finds both types.
-func (u *unwatchedPreCheck) Unwrap() error { return u.failure }
 
 // rejectSharedAzureContainer rejects an Azure backup bucket that an older
 // cluster already backs up to. The azure store has no container field: its
