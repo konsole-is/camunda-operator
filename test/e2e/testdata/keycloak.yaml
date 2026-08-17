@@ -3,6 +3,10 @@
 # callers, and one static user. The data lives in the development-mode
 # in-memory database: the server exists for one suite run.
 #
+# The realm export holds the client secret and the password of the user, so it
+# is a Secret and not a ConfigMap, as the PostgreSQL fixture of the suite
+# already does with its credentials.
+#
 # The client carries two protocol mappers, and the flow does not work without
 # either one. The audience mapper puts the client id in "aud", because
 # Keycloak otherwise issues "aud": "account" and the Camunda audiences check
@@ -10,10 +14,11 @@
 # token, because a Keycloak token names its client in "azp", and "azp" is also
 # present in the tokens of persons.
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
   name: keycloak-realm
-data:
+type: Opaque
+stringData:
   realm.json: |
     {
       "realm": "camunda",
@@ -123,8 +128,8 @@ spec:
               readOnly: true
       volumes:
         - name: realm
-          configMap:
-            name: keycloak-realm
+          secret:
+            secretName: keycloak-realm
 ---
 apiVersion: v1
 kind: Service

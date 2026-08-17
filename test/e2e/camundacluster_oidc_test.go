@@ -30,6 +30,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -84,6 +85,19 @@ func keycloakTokenURL() string {
 	return keycloakIssuerURL() + "/protocol/openid-connect/token"
 }
 
+// oidcClientSecret returns the Secret that holds the client secret of the
+// realm. It lives in the manager namespace, which outlives the namespace of
+// the flow, so the suite applies it rather than creating it: a run that ends
+// before its cleanup must not stop the next one.
+func oidcClientSecret() *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		ObjectMeta: metav1.ObjectMeta{Name: ccOIDCSecretName, Namespace: namespace},
+		Type:       corev1.SecretTypeOpaque,
+		StringData: map[string]string{ccOIDCSecretKey: ccOIDCClientSecret},
+	}
+}
+
 // oidcPlatformConfig returns the platform config of the flow: the realm of
 // the in-cluster Keycloak, the client of that realm, and the two claim names
 // that turn a token into a caller.
@@ -136,12 +150,7 @@ var _ = Describe("CamundaCluster with OIDC", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("creating the client secret in the manager namespace")
-		_, err = utils.Kubectl(
-			"create", "secret", "generic", ccOIDCSecretName,
-			"-n", namespace,
-			"--from-literal="+ccOIDCSecretKey+"="+ccOIDCClientSecret,
-		)
-		Expect(err).NotTo(HaveOccurred())
+		Expect(apply(oidcClientSecret())).To(Succeed())
 
 		By("creating the ElasticsearchCluster and waiting for Ready Healthy")
 		Expect(apply(elasticsearch)).To(Succeed())
