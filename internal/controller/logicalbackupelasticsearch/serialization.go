@@ -24,9 +24,12 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
-// inProgress reports another non-terminal backup of the same cluster. It
-// checks this kind itself. It checks the sibling kind when the manager wires
-// SiblingInProgress.
+// inProgress reports another backup of the same cluster that blocks this
+// one. It checks this kind itself: a started sibling blocks unconditionally,
+// and between two pending backups the tie-break decides which starts first.
+// It then asks the sibling kind through SiblingInProgress when the manager
+// wires it. That callback reports only started siblings, so two pending
+// backups of different kinds cannot deadlock each other.
 func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
 		cluster := clusterKey(backup)

@@ -389,7 +389,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 	It("waits on a sibling backup of the other kind", func() {
 		r := newRig()
 		key := refindex.NamespacedKey(r.namespace, r.cluster.Name)
-		siblings.Store(key, "rdbms-backup-of-the-same-cluster")
+		// A started sibling: only those block, per the SiblingInProgress
+		// contract.
+		siblings.Store(key, "started-rdbms-backup-of-the-same-cluster")
 		DeferCleanup(func() { siblings.Delete(key) })
 
 		backup := r.newBackup()

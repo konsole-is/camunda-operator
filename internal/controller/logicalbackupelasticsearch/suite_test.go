@@ -46,9 +46,10 @@ var (
 	ctx       context.Context
 	k8sClient client.Client
 
-	// siblings fakes the other backup kind: a test marks a cluster as held
-	// by a sibling backup, and the pre-checks must wait on it. Keyed by
-	// namespace/name of the cluster.
+	// siblings fakes the other backup kind. A test marks a cluster as held
+	// by a STARTED sibling backup, and the pre-checks must wait on it. The
+	// contract of SiblingInProgress reports only started siblings; a pending
+	// sibling never blocks. Keyed by namespace/name of the cluster.
 	siblings sync.Map
 )
 
