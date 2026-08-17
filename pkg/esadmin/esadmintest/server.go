@@ -290,8 +290,8 @@ func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string)
 // handleSnapshot routes the per-snapshot requests: create, status, delete.
 // The caller holds the lock.
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
-	switch {
-	case r.Method == http.MethodPut:
+	switch r.Method {
+	case http.MethodPut:
 		if s.failing("snapshotCreate") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
 			return
@@ -319,7 +319,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 		s.snapshotCreates[key]++
 		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
-	case r.Method == http.MethodGet:
+	case http.MethodGet:
 		if s.failing("snapshotStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
@@ -343,7 +343,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			"snapshots": []map[string]any{{"snapshot": snapshot.Name, "state": snapshot.State}},
 		})
 
-	case r.Method == http.MethodDelete:
+	case http.MethodDelete:
 		if s.failing("snapshotDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return
