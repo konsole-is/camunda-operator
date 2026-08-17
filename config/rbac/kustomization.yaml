@@ -34,6 +34,9 @@ resources:
 - camundaoptimize_admin_role.yaml
 - camundaoptimize_editor_role.yaml
 - camundaoptimize_viewer_role.yaml
+- logicalbackupelasticsearch_admin_role.yaml
+- logicalbackupelasticsearch_editor_role.yaml
+- logicalbackupelasticsearch_viewer_role.yaml
 - logicalrestore_admin_role.yaml
 - logicalrestore_editor_role.yaml
 - logicalrestore_viewer_role.yaml

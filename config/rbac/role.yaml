@@ -7,13 +7,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - ""
-  resources:
   - persistentvolumeclaims
   verbs:
   - get
@@ -34,6 +27,14 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
 - apiGroups:
   - apps
   resources:
@@ -57,6 +58,7 @@ rules:
   - databaseconfigs
   - databases
   - elasticsearchclusters
+  - logicalbackupelasticsearches
   - logicalrestores
   - pointintimerestores
   - pvcautoresizes
@@ -78,6 +80,7 @@ rules:
   - camundaoptimizes/finalizers
   - databases/finalizers
   - elasticsearchclusters/finalizers
+  - logicalbackupelasticsearches/finalizers
   - logicalrestores/finalizers
   - pointintimerestores/finalizers
   - pvcautoresizes/finalizers
@@ -95,6 +98,7 @@ rules:
   - databases/status
   - databaseserverconfigs/status
   - elasticsearchclusters/status
+  - logicalbackupelasticsearches/status
   - logicalrestores/status
   - managementauthconfigs/status
   - objectstorageconfigs/status
