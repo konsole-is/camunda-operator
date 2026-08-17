@@ -32,8 +32,8 @@ status: consumer-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #65 | feat/backup-controllers--foundation | (removed) | #74 → feat/backup-controllers | self-merged |
-| #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | → feat/backup-controllers | in-progress |
-| #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | #77 → feat/backup-controllers | draft (verification incomplete: `make all`/`helm-verify`/full tests unrun under machine thrash) |
+| #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | #79 → feat/backup-controllers | draft |
+| #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | #77 → feat/backup-controllers | draft (verified: 29 pkgs, make all, 129840B gzipped) |
 | #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | → feat/backup-controllers | not-started |
 | #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | → feat/backup-controllers | not-started |
 | #70 | feat/backup-controllers--backup-schedule | .claude/worktrees/backup-controllers--backup-schedule | → feat/backup-controllers | not-started |
@@ -53,6 +53,9 @@ status: consumer-wave
 | backup-kind-types | PR6 branches after #68+#69 merge | n/a | pending |
 
 ## Bubble-up log
+
+- **2026-08-17 — Annotation-derivation divergence between #79 and #77 (watch-loop catch).** Both PRs implemented the per-cloud workload-identity switch independently: #79 as `v1.ObjectStorageConfig.WorkloadIdentityAnnotations()` (single bucket, api/v1), #77 as `DerivedServiceAccountAnnotations(buckets...)` with its own copies of the annotation keys. Resolution: the api/v1 method is the one switch (its GoDoc says consumers never repeat it); the multi-bucket merge and two-identity rejection stay CamundaCluster policy but call the method per bucket. Merge order: #79 first; #77 then merges the feature branch and refactors before its own merge. Also: `KUBEBUILDER_ASSETS` must be an absolute path — a relative one makes every envtest suite fail etcd startup in ~10ms (the earlier "flake" signature).
+- **2026-08-17 — Snapshot deletion needs the `manage` cluster privilege (verified, Elastic docs).** `create_snapshot` covers create/list/view only, and the Delete Snapshot API states `manage` outright; no narrower named privilege exists. #79 grants `manage` with the reasoning in the role comment and citations in the PR body. The earlier code comment claiming `create_snapshot` covers deletion was corrected — PR4's finalizer depends on this.
 
 - **2026-08-17 — Envtest control planes leak across worktrees and starved the machine.** Load average reached 851 with zero free memory; #66's agent stalled and #67 could not finish verification. Cause: 14 orphaned `kube-apiserver`/`etcd` processes from three backup worktrees, six of them from `backup-controllers--foundation` which had already merged and been removed hours earlier — `git worktree remove` does not reap them. Resolution: orchestrator reaped all 14 (leaving the sibling OIDC session's kind cluster untouched); implementers are now told to run `go test -p 1`, check `uptime` before a full run, and verify their own worktree leaks nothing afterwards. Standing rule for the rest of the epic: reap `pgrep -af "/.claude/worktrees/<wt>/bin/k8s/"` before removing any worktree.
 - **2026-08-17 — Two errors in the Camunda 8.9 property reference, found while wiring #67.** The page spells the continuous-backup key `continous` (missing `u`) in one table, contradicted by the env-var table, the broker-config section, and two chaos reports; and it gives `gcs.endpoint` the text belonging to `base-path` while omitting `gcs.base-path`, which the broker-config page and its YAML snippet both list. The corroborated spellings were used. Anything reading that page later (PR5, PR7) should not "correct" the code back to it.
