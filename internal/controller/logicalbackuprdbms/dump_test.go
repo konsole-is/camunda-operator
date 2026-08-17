@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -138,4 +139,64 @@ func TestDumpNeverAdoptsAnotherBackupsJob(t *testing.T) {
 	assert.Equal(t, v1.LogicalBackupFailed, backup.Status.Phase)
 	assert.Contains(t, backup.Status.FailureMessage, "belongs to another backup")
 	assert.Contains(t, backup.Status.FailureMessage, stranger.Name)
+}
+
+// TestStuckPodClassifiesWaitingStates pins which pod states count as stuck:
+// the waiting reasons the kubelet retries forever, and an unschedulable pod;
+// a plain Pending pod without either is still progressing.
+func TestStuckPodClassifiesWaitingStates(t *testing.T) {
+	t.Parallel()
+
+	scheme := dumpScheme(t)
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "b-dump", Namespace: "ns"}}
+	podOf := func(name string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: "ns", Labels: map[string]string{jobNameLabel: job.Name},
+		}, Status: corev1.PodStatus{Phase: corev1.PodPending}}
+	}
+
+	progressing := podOf("fine")
+	progressing.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: "upload", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}},
+	}}
+	pulling := podOf("pull")
+	pulling.Status.InitContainerStatuses = []corev1.ContainerStatus{{
+		Name: "dump", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+			Reason: "ImagePullBackOff", Message: "postgres:99 not found",
+		}},
+	}}
+	unschedulable := podOf("unbound")
+	unschedulable.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+		Reason: corev1.PodReasonUnschedulable, Message: "unbound immediate PersistentVolumeClaims",
+	}}
+
+	cases := map[string]struct {
+		pod    *corev1.Pod
+		reason string
+		text   string
+	}{
+		"progressing":   {pod: progressing},
+		"image pull":    {pod: pulling, reason: v1.ReasonInvalidReference, text: "ImagePullBackOff"},
+		"unschedulable": {pod: unschedulable, reason: v1.ReasonProgressing, text: "unbound"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := &LogicalBackupRDBMSReconciler{
+				APIReader: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.pod).Build(),
+			}
+			failure, err := r.stuckPod(context.Background(), job)
+			require.NoError(t, err)
+			if tc.reason == "" {
+				assert.Nil(t, failure)
+
+				return
+			}
+			require.NotNil(t, failure)
+			assert.Equal(t, tc.reason, failure.Reason)
+			assert.Contains(t, failure.Message, tc.text)
+			assert.Contains(t, failure.Message, tc.pod.Name)
+		})
+	}
 }

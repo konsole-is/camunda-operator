@@ -21,6 +21,8 @@ limitations under the License.
 package logicalbackuprdbms
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -30,6 +32,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -50,7 +53,16 @@ const (
 	// defaultBackoffLimit bounds the pod retries of the Job. A dump that
 	// fails three times needs a human, not a fourth pod.
 	defaultBackoffLimit = int32(3)
-	// postgresUID is the uid of the postgres user in the upstream image.
+	// DefaultActiveDeadlineSeconds bounds a Job whose dump block sets no
+	// deadline: 24 hours, room for a very large dump, never "forever". A pod
+	// that cannot start — an image that does not pull, a volume that does
+	// not bind — consumes no backoff, so without a deadline the Job would
+	// stay active for as long as the backup lived.
+	DefaultActiveDeadlineSeconds = int64(24 * 60 * 60)
+	// postgresUID is the uid of the postgres user in the upstream image. It
+	// is also the fsGroup of the pod, so a PVC-backed scratch volume — which
+	// a storage class commonly hands over root-owned — is writable by
+	// pg_dump.
 	postgresUID = int64(999)
 	// operatorUID is the uid of the distroless nonroot user that the
 	// operator image runs as.
@@ -62,6 +74,9 @@ const (
 	BackupUIDLabel = "camunda.io/logical-backup-rdbms-uid"
 	// jobNameSuffix ends every dump Job name.
 	jobNameSuffix = "-dump"
+	// nameHashLength is the hex length of the hash that keeps a long name
+	// unique once it is truncated to a DNS label.
+	nameHashLength = 10
 )
 
 // reservedEnvNames are the environment variables the Job sets to reach the
@@ -148,9 +163,25 @@ type JobInput struct {
 // JobName returns the name of the Job of one backup. It derives from the
 // backup name alone: the Job lives in the backup's own namespace, where that
 // name is unique, so a reconcile that re-enters after a crash adopts the Job
-// it already created instead of creating a second one.
+// it already created instead of creating a second one. A backup name may be
+// a full DNS subdomain while a Job name is a DNS label, so a long name is
+// truncated deterministically and kept unique by a hash of the whole name.
 func JobName(backup *v1.LogicalBackupRDBMS) string {
-	return backup.Name + jobNameSuffix
+	return boundedName(backup.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
+}
+
+// boundedName returns name when it fits limit, or its head followed by a
+// hash of the whole name otherwise. The result is deterministic, so every
+// render of one backup agrees, and two names that share the head differ in
+// the hash.
+func boundedName(name string, limit int) string {
+	if len(name) <= limit {
+		return name
+	}
+	sum := sha256.Sum256([]byte(name))
+	hash := hex.EncodeToString(sum[:])[:nameHashLength]
+
+	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
 }
 
 // JobBelongsTo reports whether job carries the identity of backup: the UID
@@ -212,7 +243,12 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		return nil, fmt.Errorf("encoding the bucket spec of %q: %w", in.Bucket.Name, err)
 	}
 
-	managed := labels.Managed(labels.LogicalBackupRDBMS(in.Backup.Name), componentName)
+	// Label values are DNS labels too; the owner label carries the bounded
+	// name, and the UID label carries the identity that never truncates.
+	managed := labels.Managed(
+		labels.LogicalBackupRDBMS(boundedName(in.Backup.Name, validation.LabelValueMaxLength)),
+		componentName,
+	)
 	managed[labels.ClusterKey] = in.ClusterName
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
@@ -231,6 +267,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 			ServiceAccountName: in.ServiceAccountName,
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsNonRoot:   new(true),
+				FSGroup:        new(postgresUID),
 				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 			},
 			InitContainers: []corev1.Container{dumpContainer(in, dump)},
@@ -259,10 +296,20 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:          new(defaultBackoffLimit),
-			ActiveDeadlineSeconds: dump.ActiveDeadlineSeconds,
+			ActiveDeadlineSeconds: activeDeadline(dump),
 			Template:              template,
 		},
 	}, nil
+}
+
+// activeDeadline returns the deadline of the dump block, or the production
+// default when it sets none.
+func activeDeadline(dump *v1.BackupDumpSpec) *int64 {
+	if dump.ActiveDeadlineSeconds != nil {
+		return dump.ActiveDeadlineSeconds
+	}
+
+	return new(DefaultActiveDeadlineSeconds)
 }
 
 // dumpContainer runs pg_dump of the entire logical database into the scratch

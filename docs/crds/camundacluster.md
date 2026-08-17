@@ -325,7 +325,7 @@ spec:
     dump:
       # object. Optional. CPU and memory of the dump pod.
       resources: {}
-      # integer. Optional. Seconds the dump Job may run before it is failed. Unset means no deadline.
+      # integer. Optional, default: 86400 (24 hours). Seconds the dump Job may run before it is failed. There is always a deadline: a pod that cannot start consumes no retry, so an unbounded Job would stay active for as long as the backup lived.
       activeDeadlineSeconds: 7200
       # string. Optional, default: postgres:<version of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag.
       postgresImage: ""
@@ -341,7 +341,7 @@ spec:
         sidecar.istio.io/inject: "false"
       # object. Optional. Scheduling constraints of the dump pod. Replaces the block of a preset entirely.
       scheduling: {}
-      # object. Optional. Where the dump is written before it is uploaded. Replaces the block of a preset entirely.
+      # object. Optional. Where the dump is written before it is uploaded. Replaces the block of a preset entirely. The dump pod runs with fsGroup 999 (the postgres group), so a PVC a storage class hands over root-owned is still writable.
       scratchVolume:
         # Quantity. Optional. Size of the emptyDir that holds the dump.
         sizeLimit: 50Gi

@@ -23,6 +23,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	ocfjob "github.com/sourcehawk/operator-component-framework/pkg/primitives/job"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,7 +57,7 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 				// never terminally fail a valid dump.
 				liveErr := r.APIReader.Get(ctx, key, &current)
 				if liveErr == nil {
-					return r.adopt(backup, &current)
+					return r.adopt(ctx, backup, &current)
 				}
 				if !apierrors.IsNotFound(liveErr) {
 					return settle, liveErr
@@ -72,7 +73,7 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 			return settle, err
 		}
 
-		return r.adopt(backup, &current)
+		return r.adopt(ctx, backup, &current)
 	}
 
 	// The Job does not exist yet; the read must be live, because a stale
@@ -81,7 +82,7 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 	err := r.APIReader.Get(ctx, key, &current)
 	switch {
 	case err == nil:
-		return r.adopt(backup, &current)
+		return r.adopt(ctx, backup, &current)
 	case !apierrors.IsNotFound(err):
 		return settle, err
 	}
@@ -96,6 +97,7 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 // dump of its own. That is a hard failure, not a wait: the other Job will not
 // change identity.
 func (r *LogicalBackupRDBMSReconciler) adopt(
+	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 	job *batchv1.Job,
 ) (hold, error) {
@@ -110,7 +112,7 @@ func (r *LogicalBackupRDBMSReconciler) adopt(
 	}
 	backup.Status.JobName = job.Name
 
-	return r.trackJob(backup, job)
+	return r.trackJob(ctx, backup, job)
 }
 
 // createJob re-resolves the dump dependencies and applies the Job. It runs
@@ -269,8 +271,12 @@ func (r *LogicalBackupRDBMSReconciler) recovered(backup *v1.LogicalBackupRDBMS) 
 }
 
 // trackJob maps the observed Job onto the backup through the same status
-// handler the ocf job primitive uses.
+// handler the ocf job primitive uses. A Job that is neither done nor failing
+// is checked for a pod that cannot start: such a pod consumes no retry and
+// never fails the Job, so it runs through the bounded mid-run grace instead
+// of holding the backup — and the queue behind it — forever.
 func (r *LogicalBackupRDBMSReconciler) trackJob(
+	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 	job *batchv1.Job,
 ) (hold, error) {
@@ -293,9 +299,84 @@ func (r *LogicalBackupRDBMSReconciler) trackJob(
 		return settle, nil
 	}
 
+	stuck, err := r.stuckPod(ctx, job)
+	if err != nil {
+		return settle, err
+	}
+	if stuck != nil {
+		return r.holdRunning(backup, stuck)
+	}
+	r.recovered(backup)
 	conditions.Stage(backup, progressing(backup, status.Reason))
 
-	// The watch on owned Jobs wakes the backup instantly; the poll is the
-	// safety net.
+	// The watch on owned Jobs wakes the backup on Job progress; the poll
+	// also re-checks the pods, whose waiting states the Job does not report.
 	return hold{after: r.opts.RetryInterval}, nil
+}
+
+// stuckWaitingReasons are the container waiting states that mean the pod
+// will not start on its own: the configuration it mounts does not resolve, or
+// its image does not pull. The kubelet keeps retrying them, the Job stays
+// active, and no backoff is consumed.
+var stuckWaitingReasons = map[string]string{
+	"CreateContainerConfigError": v1.ReasonMissingSecret,
+	"CreateContainerError":       v1.ReasonMissingSecret,
+	"ErrImagePull":               v1.ReasonInvalidReference,
+	"ImagePullBackOff":           v1.ReasonInvalidReference,
+	"InvalidImageName":           v1.ReasonInvalidReference,
+}
+
+// stuckPod reports the first pod of job that cannot start — a container in a
+// non-progressing waiting state, or a pod the scheduler cannot place, for
+// example on a volume that never binds — as a mid-run failure naming the pod
+// and the reason, or nil when every pod progresses.
+func (r *LogicalBackupRDBMSReconciler) stuckPod(
+	ctx context.Context,
+	job *batchv1.Job,
+) (*conditions.PreCheckFailure, error) {
+	var pods corev1.PodList
+	if err := r.APIReader.List(
+		ctx, &pods, client.InNamespace(job.Namespace), client.MatchingLabels{jobNameLabel: job.Name},
+	); err != nil {
+		return nil, fmt.Errorf("listing the pods of the dump Job: %w", err)
+	}
+
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Status.Phase != corev1.PodPending && pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		statuses := append(
+			append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...),
+			pod.Status.ContainerStatuses...,
+		)
+		for _, cs := range statuses {
+			waiting := cs.State.Waiting
+			if waiting == nil {
+				continue
+			}
+			if reason, stuck := stuckWaitingReasons[waiting.Reason]; stuck {
+				return &conditions.PreCheckFailure{
+					Reason: reason,
+					Message: fmt.Sprintf(
+						"pod %s of the dump Job cannot start: container %s reports %s: %s",
+						pod.Name, cs.Name, waiting.Reason, waiting.Message,
+					),
+				}, nil
+			}
+		}
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse &&
+				cond.Reason == corev1.PodReasonUnschedulable {
+				return &conditions.PreCheckFailure{
+					Reason: v1.ReasonProgressing,
+					Message: fmt.Sprintf(
+						"pod %s of the dump Job cannot be scheduled: %s", pod.Name, cond.Message,
+					),
+				}, nil
+			}
+		}
+	}
+
+	return nil, nil
 }

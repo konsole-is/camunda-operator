@@ -81,9 +81,14 @@ spec:
                   backup. Unset means the block of the cluster. The two never merge.
                 properties:
                   activeDeadlineSeconds:
+                    default: 86400
                     description: |-
                       ActiveDeadlineSeconds bounds how long the dump Job may run before it
-                      is failed. Unset means no bound.
+                      is failed, counted from its start. It defaults to 86400 (24 hours):
+                      room for a very large dump, never "forever" — a pod that cannot start
+                      consumes no retry, so without a deadline a broken Job would stay
+                      active for as long as the backup lived. Set it lower to fail a stuck
+                      dump sooner, or higher for a dump you know takes longer.
                     format: int64
                     minimum: 1
                     type: integer
@@ -980,7 +985,9 @@ spec:
                   scratchVolume:
                     description: |-
                       ScratchVolume is where the dump is written before it is uploaded. When
-                      set, it replaces the block of a preset entirely (no merge).
+                      set, it replaces the block of a preset entirely (no merge). The dump
+                      pod runs with fsGroup 999, the postgres group, so a volume a storage
+                      class hands over root-owned is still writable by pg_dump.
                     properties:
                       sizeLimit:
                         anyOf:
@@ -1121,7 +1128,10 @@ spec:
                 format: date-time
                 type: string
               jobName:
-                description: JobName is the Job that dumps and uploads the database.
+                description: |-
+                  JobName is the Job that dumps and uploads the database, while it
+                  exists. It clears once the dump is recorded and the Job released; a
+                  failed Job stays, and its name with it, until the backup is deleted.
                 type: string
               objectKey:
                 description: ObjectKey is the full key of the dump in the backup bucket.

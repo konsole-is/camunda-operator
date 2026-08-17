@@ -18,6 +18,7 @@ package logicalbackuprdbms
 
 import (
 	"flag"
+	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -270,6 +272,40 @@ func TestJobNameDerivesFromTheBackupAlone(t *testing.T) {
 	assert.Equal(t, "my-cluster-1748937221000-dump", JobName(backup()))
 }
 
+// TestLongBackupNamesRenderAValidJob pins the bounds: a backup name may be a
+// full DNS subdomain (253 characters), while the Job name and every label
+// value are DNS labels (63). Both are truncated deterministically and kept
+// unique by a hash of the full name.
+func TestLongBackupNamesRenderAValidJob(t *testing.T) {
+	t.Parallel()
+
+	for _, length := range []int{63, 100, 253} {
+		in := input()
+		in.Backup.Name = strings.Repeat("b", length)
+		job, err := BuildJob(in)
+		require.NoError(t, err, length)
+
+		assert.Empty(t, validation.IsDNS1123Label(job.Name), "%d: %s", length, job.Name)
+		assert.True(t, strings.HasSuffix(job.Name, "-dump"), job.Name)
+		for key, value := range job.Labels {
+			assert.Empty(t, validation.IsValidLabelValue(value), "%d: %s=%s", length, key, value)
+		}
+		for key, value := range job.Spec.Template.Labels {
+			assert.Empty(t, validation.IsValidLabelValue(value), "%d: %s=%s", length, key, value)
+		}
+
+		// Two long names that agree on the truncated prefix stay apart.
+		sibling := input()
+		sibling.Backup.Name = strings.Repeat("b", length-1) + "c"
+		siblingJob, err := BuildJob(sibling)
+		require.NoError(t, err)
+		if length > 63-len("-dump") {
+			assert.NotEqual(t, job.Name, siblingJob.Name, length)
+		}
+		assert.Equal(t, JobName(in.Backup), JobName(in.Backup), "the name is deterministic")
+	}
+}
+
 func TestJobBelongsToChecksTheUIDLabel(t *testing.T) {
 	t.Parallel()
 
@@ -365,4 +401,23 @@ func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {
 	require.Len(t, pod.InitContainers, 1)
 	require.Len(t, pod.Containers, 1)
 	assert.Equal(t, corev1.RestartPolicyNever, pod.RestartPolicy)
+
+	// A PVC-backed scratch volume is commonly root-owned; the fsGroup makes
+	// the kubelet hand it to the postgres group, so pg_dump can write it.
+	require.NotNil(t, pod.SecurityContext.FSGroup)
+	assert.Equal(t, int64(999), *pod.SecurityContext.FSGroup)
+
+	// No override means the production default, never "forever".
+	require.NotNil(t, job.Spec.ActiveDeadlineSeconds)
+	assert.Equal(t, int64(24*60*60), *job.Spec.ActiveDeadlineSeconds)
+}
+
+func TestBuildJobHonorsAnExplicitDeadline(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Dump = &v1.BackupDumpSpec{ActiveDeadlineSeconds: new(int64(7200))}
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7200), *job.Spec.ActiveDeadlineSeconds)
 }

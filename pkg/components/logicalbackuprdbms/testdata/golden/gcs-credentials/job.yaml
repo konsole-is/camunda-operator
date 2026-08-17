@@ -10,6 +10,7 @@ metadata:
   name: my-cluster-1748937221000-dump
   namespace: my-cluster-ns
 spec:
+  activeDeadlineSeconds: 86400
   backoffLimit: 3
   template:
     metadata:
@@ -93,6 +94,7 @@ spec:
           name: scratch
       restartPolicy: Never
       securityContext:
+        fsGroup: 999
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault

@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
@@ -58,6 +60,26 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 		return settle, err
 	}
 
+	// The dump is durably recorded once this step runs, so its Job — and
+	// the scratch volume a PVC-backed dump holds — can go now instead of at
+	// the end of the backup's life.
+	if err := r.releaseJob(ctx, backup); err != nil {
+		return settle, err
+	}
+
+	if backup.Status.ZeebeBackupID == nil {
+		// The Zeebe backup goes to the cluster's current backup store; the
+		// pair is one restore point only if that is still the bucket the
+		// dump was written to.
+		failure, err := r.bucketStillPinned(ctx, backup, &cluster)
+		if err != nil {
+			return settle, err
+		}
+		if failure != nil {
+			return r.holdRunning(backup, failure)
+		}
+	}
+
 	admin, failure, err := management.NewClient(ctx, r.APIReader, &cluster)
 	if err != nil {
 		return settle, err
@@ -71,6 +93,73 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 	}
 
 	return r.pollZeebeBackup(ctx, backup, &cluster, admin)
+}
+
+// releaseJob deletes the dump Job once the backup has recorded its result,
+// and clears status.jobName so the release runs once. The Job served its
+// purpose; keeping it — and its retained pod with a PVC-backed scratch
+// volume — for the life of the backup would hold storage for nothing. A
+// failed Job is not released: it stays for inspection until the backup is
+// deleted.
+func (r *LogicalBackupRDBMSReconciler) releaseJob(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) error {
+	if backup.Status.JobName == "" {
+		return nil
+	}
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+		Name: backup.Status.JobName, Namespace: backup.Namespace,
+	}}
+	propagation := metav1.DeletePropagationBackground
+	if err := r.Delete(
+		ctx, job, &client.DeleteOptions{PropagationPolicy: &propagation},
+	); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("releasing the dump Job: %w", err)
+	}
+	backup.Status.JobName = ""
+
+	return nil
+}
+
+// bucketStillPinned verifies that the cluster's backup store is still the
+// bucket the dump was written through — the same contract, pointing at the
+// same location. A retarget in between would send the Zeebe backup somewhere
+// else, and the reported pair would not be one restore point.
+func (r *LogicalBackupRDBMSReconciler) bucketStillPinned(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	cluster *v1.CamundaCluster,
+) (*conditions.PreCheckFailure, error) {
+	if cluster.Spec.BackupStorageRef != backup.Status.BucketRef {
+		return logicalbackup.InvalidReference(
+			"CamundaCluster %s/%s now backs up through ObjectStorageConfig %q, but the dump was "+
+				"written through %q; the Zeebe backup would land in a different bucket",
+			cluster.Namespace, cluster.Name, cluster.Spec.BackupStorageRef, backup.Status.BucketRef,
+		), nil
+	}
+
+	var bucket v1.ObjectStorageConfig
+	if err := r.APIReader.Get(
+		ctx, types.NamespacedName{Name: backup.Status.BucketRef}, &bucket,
+	); err != nil {
+		if apierrors.IsNotFound(err) {
+			return logicalbackup.InvalidReference(
+				"the pinned ObjectStorageConfig %q does not exist", backup.Status.BucketRef,
+			), nil
+		}
+
+		return nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", backup.Status.BucketRef, err)
+	}
+	if location := bucket.Location(); location != backup.Status.BucketLocation {
+		return logicalbackup.InvalidReference(
+			"ObjectStorageConfig %q now points at %s, but the dump was written to %s; the Zeebe "+
+				"backup would land in a different bucket",
+			bucket.Name, location, backup.Status.BucketLocation,
+		), nil
+	}
+
+	return nil, nil
 }
 
 // startZeebeBackup requests the backup without an id and records the one the

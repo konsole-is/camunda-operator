@@ -70,7 +70,9 @@ type LogicalBackupRDBMSStatus struct {
 	// once, when the backup leaves Pending.
 	// +optional
 	BackupID int64 `json:"backupId,omitempty"`
-	// JobName is the Job that dumps and uploads the database.
+	// JobName is the Job that dumps and uploads the database, while it
+	// exists. It clears once the dump is recorded and the Job released; a
+	// failed Job stays, and its name with it, until the backup is deleted.
 	// +optional
 	JobName string `json:"jobName,omitempty"`
 	// ObjectKey is the full key of the dump in the backup bucket.

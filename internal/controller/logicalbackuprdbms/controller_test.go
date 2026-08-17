@@ -917,6 +917,101 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		)
 	})
 
+	// P1: a pod that cannot start never fails its Job and consumes no retry;
+	// it must run through the bounded grace instead of holding the queue.
+	It("fails a dump whose pod is stuck in a non-progressing waiting state", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		job := jobOf(backup, w)
+
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: job.Name + "-stuck", Namespace: w.namespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": job.Name},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "upload", Image: "cli"}}},
+		}
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0)) })
+		pod.Status.Phase = corev1.PodPending
+		pod.Status.InitContainerStatuses = []corev1.ContainerStatus{{
+			Name: "dump",
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+				Reason: "CreateContainerConfigError", Message: `secret "backup-user" not found`,
+			}},
+		}}
+		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("CreateContainerConfigError"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring(pod.Name))
+		}, "15s", interval).Should(Succeed())
+	})
+
+	// P2: the Zeebe backup goes to the cluster's current backup store; a
+	// retarget between the dump and the request breaks the restore point.
+	It("fails when the cluster's backup store was retargeted after the dump", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		jobOf(backup, w)
+
+		other := w.bucket.DeepCopy()
+		other.ObjectMeta = metav1.ObjectMeta{Name: w.bucket.Name + "-other"}
+		other.Spec.S3.BucketName = "the-other-bucket"
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster)).To(Succeed())
+			w.cluster.Spec.BackupStorageRef = other.Name
+			g.Expect(k8sClient.Update(ctx, w.cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring(other.Name))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring(w.bucket.Name))
+			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
+		}, "15s", interval).Should(Succeed())
+	})
+
+	// S2: the Job is released once the dump is recorded, so a PVC-backed
+	// scratch volume does not live as long as the backup; the backup itself
+	// is unaffected and deletion stays clean.
+	It("releases the dump Job once the dump is recorded", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		job := jobOf(backup, w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.JobName).To(BeEmpty())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(job), job)).NotTo(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		managementAPI.SetRuntimeState(
+			*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
+		}, timeout, interval).Should(Succeed())
+		objectKey := backup.Status.ObjectKey
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+			g.Expect(bucket.Deleted()).To(ContainElement(objectKey))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// F2: a management API that keeps rejecting the call is bounded like an
 	// unreachable one; a Running backup never parks forever.
 	It("fails when the management API keeps rejecting the Zeebe backup request", func() {

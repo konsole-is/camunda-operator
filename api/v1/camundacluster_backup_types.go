@@ -116,12 +116,19 @@ type BackupDumpSpec struct {
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// ScratchVolume is where the dump is written before it is uploaded. When
-	// set, it replaces the block of a preset entirely (no merge).
+	// set, it replaces the block of a preset entirely (no merge). The dump
+	// pod runs with fsGroup 999, the postgres group, so a volume a storage
+	// class hands over root-owned is still writable by pg_dump.
 	// +optional
 	ScratchVolume *ScratchVolumeSpec `json:"scratchVolume,omitempty"`
 	// ActiveDeadlineSeconds bounds how long the dump Job may run before it
-	// is failed. Unset means no bound.
+	// is failed, counted from its start. It defaults to 86400 (24 hours):
+	// room for a very large dump, never "forever" — a pod that cannot start
+	// consumes no retry, so without a deadline a broken Job would stay
+	// active for as long as the backup lived. Set it lower to fail a stuck
+	// dump sooner, or higher for a dump you know takes longer.
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=86400
 	// +optional
 	ActiveDeadlineSeconds *int64 `json:"activeDeadlineSeconds,omitempty"`
 	// PostgresImage is the full image reference of the dump container,
