@@ -98,12 +98,17 @@ type EffectiveAuth struct {
 	// preset auth) when set, otherwise from the platform config. The
 	// audience defaults to the client id.
 	OIDC *v1.OIDCSpec
+	// Admin holds the members of the admin role. It comes from the effective
+	// cluster auth and is set only when Method is oidc, because basic
+	// authentication seeds its own administrator.
+	Admin *v1.ClusterAdminSpec
 }
 
 // ResolveAuth layers the authentication settings: the platform config gives
 // the method and the identity provider connection, the effective cluster
 // auth (preset then cluster) overrides the client id, the audience, and the
-// client secret reference. The platform spec is not mutated.
+// client secret reference, and provides the members of the admin role. The
+// platform spec is not mutated.
 func ResolveAuth(in Input) EffectiveAuth {
 	auth := EffectiveAuth{Method: in.Platform.Method()}
 	if auth.Method != v1.AuthenticationMethodOIDC || in.Platform.Auth == nil || in.Platform.Auth.OIDC == nil {
@@ -123,6 +128,7 @@ func ResolveAuth(in Input) EffectiveAuth {
 		if override.ClientSecretRef != nil {
 			oidc.ClientSecretRef = *override.ClientSecretRef
 		}
+		auth.Admin = override.Admin
 	}
 	if oidc.Audience == "" {
 		oidc.Audience = oidc.ClientID

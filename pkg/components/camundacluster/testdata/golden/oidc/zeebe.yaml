@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: ba30e10de8ba0f8f
+        camunda.io/config-hash: 3cbb020015193d58
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: zeebe
@@ -79,8 +79,26 @@ spec:
           value: https://idp.internal/realms/camunda/protocol/openid-connect/token
         - name: CAMUNDA_SECURITY_AUTHENTICATION_OIDC_AUTHORIZATIONURI
           value: https://idp.example.com/realms/camunda/protocol/openid-connect/auth
+        - name: CAMUNDA_SECURITY_AUTHENTICATION_OIDC_USERNAMECLAIM
+          value: preferred_username
+        - name: CAMUNDA_SECURITY_AUTHENTICATION_OIDC_CLIENTIDCLAIM
+          value: client_id
         - name: CAMUNDA_SECURITY_AUTHENTICATION_OIDC_REDIRECTURI
           value: https://my-cluster.camunda.example.com/sso-callback
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
+          value: ada@example.com
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_CLIENTS_0
+          value: my-cluster-client
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_MAPPINGRULES_0
+          value: platform-admins
+        - name: CAMUNDA_SECURITY_INITIALIZATION_MAPPINGRULES_0_MAPPINGRULEID
+          value: platform-admins
+        - name: CAMUNDA_SECURITY_INITIALIZATION_MAPPINGRULES_0_CLAIMNAME
+          value: groups
+        - name: CAMUNDA_SECURITY_INITIALIZATION_MAPPINGRULES_0_CLAIMVALUE
+          value: camunda-admins
+        - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_CONNECTORS_CLIENTS_0
+          value: my-cluster-client
         - name: SPRING_PROFILES_ACTIVE
           value: broker,consolidated-auth
         - name: JAVA_TOOL_OPTIONS
