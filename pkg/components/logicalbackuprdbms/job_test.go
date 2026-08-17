@@ -18,7 +18,6 @@ package logicalbackuprdbms
 
 import (
 	"flag"
-	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
@@ -29,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/validation"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -102,7 +100,6 @@ func input() JobInput {
 	return JobInput{
 		Backup:             backup(),
 		ClusterName:        "my-cluster",
-		ClusterNamespace:   "my-cluster-ns",
 		Bucket:             s3Bucket(s3Credentials()),
 		BucketSecretName:   "my-cluster-camunda-backup-credentials",
 		DBSecretName:       "my-cluster-camunda-dump-credentials",
@@ -267,33 +264,10 @@ func TestJobGoldenScratchPVC(t *testing.T) {
 	)
 }
 
-func TestJobNameIsUniquePerBackupNamespaceAndName(t *testing.T) {
+func TestJobNameDerivesFromTheBackupAlone(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "my-cluster-ns-my-cluster-1748937221000-dump", JobName(backup()))
-
-	// Two backups with one name from different namespaces target the same
-	// cluster namespace; their Jobs must not collide.
-	other := backup()
-	other.Namespace = "other-ns"
-	assert.NotEqual(t, JobName(backup()), JobName(other))
-}
-
-func TestJobNameStaysADNSLabelForLongNames(t *testing.T) {
-	t.Parallel()
-
-	long := backup()
-	long.Namespace = strings.Repeat("n", 40)
-	long.Name = strings.Repeat("b", 40)
-	name := JobName(long)
-	assert.Empty(t, validation.IsDNS1123Label(name), name)
-	assert.True(t, strings.HasSuffix(name, "-dump"))
-
-	// The hash keeps two long names apart where the truncated prefix agrees.
-	sibling := long.DeepCopy()
-	sibling.Name = strings.Repeat("b", 39) + "c"
-	assert.NotEqual(t, name, JobName(sibling))
-	assert.Equal(t, name, JobName(long), "the name is deterministic")
+	assert.Equal(t, "my-cluster-1748937221000-dump", JobName(backup()))
 }
 
 func TestJobBelongsToChecksTheUIDLabel(t *testing.T) {

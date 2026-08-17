@@ -43,7 +43,7 @@ import (
 // world is the resolved fixture set of one spec: a relational cluster with a
 // published binding, its storage chain, and every Secret the backup needs.
 // Both credential Secrets live in the cluster namespace, so the backup reads
-// them directly; the cross-namespace spec stands in the copies itself.
+// them directly; the spec for Secrets that live elsewhere stands in the copies.
 type world struct {
 	namespace string
 	cluster   *v1.CamundaCluster
@@ -869,55 +869,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("backs up a cluster in another namespace end to end", func() {
-		w := createWorld()
-		backupNamespace := newNamespace()
-		backup := &v1.LogicalBackupRDBMS{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "backup-" + utilrand.String(6), Namespace: backupNamespace,
-			},
-			Spec: v1.LogicalBackupRDBMSSpec{
-				ClusterRef: v1.ClusterRef{Name: w.cluster.Name, Namespace: w.namespace},
-			},
-		}
-		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
-
-		By("creating the Job in the cluster namespace, without a cross-namespace owner")
-		job := jobOf(backup, w)
-		Expect(job.Namespace).To(Equal(w.namespace))
-		Expect(job.OwnerReferences).To(BeEmpty())
-
-		By("completing across the namespace boundary")
-		markJob(backup, w, batchv1.JobComplete)
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
-		managementAPI.SetRuntimeState(
-			*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
-		)
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
-		}, timeout, interval).Should(Succeed())
-
-		By("cleaning up the Job in the cluster namespace on deletion")
-		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
-		Eventually(func(g Gomega) {
-			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
-			g.Expect(err).To(HaveOccurred())
-			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
-
-			var leftover batchv1.Job
-			g.Expect(k8sClient.Get(
-				ctx, types.NamespacedName{
-					Namespace: w.namespace, Name: components.JobName(backup),
-				}, &leftover,
-			)).To(HaveOccurred())
-		}, timeout, interval).Should(Succeed())
-	})
-
-	It("reads cross-namespace credentials through the cluster controller's copies", func() {
+	It("reads credentials that live outside the cluster namespace through the cluster controller's copies", func() {
 		w := createWorld()
 		remote := newNamespace()
 
@@ -963,46 +915,6 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(secretNameOfEnv(upload, components.EnvUploadCredentialPrefix+"0")).To(
 			Equal(bucketMirror),
 		)
-	})
-
-	// F1: the Job name derives from the backup namespace and name, so two
-	// backups with one name from different namespaces never share a Job.
-	It("gives same-named backups from different namespaces distinct Jobs", func() {
-		w := createWorld()
-		first := createBackup(w, func(backup *v1.LogicalBackupRDBMS) { backup.Name = "nightly" })
-		firstJob := jobOf(first, w)
-
-		markJob(first, w, batchv1.JobComplete)
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
-			g.Expect(first.Status.ZeebeBackupID).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
-		managementAPI.SetRuntimeState(
-			*first.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
-		)
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
-			g.Expect(first.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
-		}, timeout, interval).Should(Succeed())
-
-		other := newNamespace()
-		second := &v1.LogicalBackupRDBMS{
-			ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: other},
-			Spec: v1.LogicalBackupRDBMSSpec{
-				ClusterRef: v1.ClusterRef{Name: w.cluster.Name, Namespace: w.namespace},
-			},
-		}
-		Expect(k8sClient.Create(ctx, second)).To(Succeed())
-
-		By("creating a Job of its own instead of adopting the completed one")
-		secondJob := jobOf(second, w)
-		Expect(secondJob.Name).NotTo(Equal(firstJob.Name))
-		Expect(secondJob.Labels).To(HaveKeyWithValue(components.BackupUIDLabel, string(second.UID)))
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), second)).To(Succeed())
-			g.Expect(second.Status.JobName).To(Equal(secondJob.Name))
-			g.Expect(second.Status.Step).To(Equal(v1.StepDumping))
-		}, timeout, interval).Should(Succeed())
 	})
 
 	// F2: a management API that keeps rejecting the call is bounded like an

@@ -68,13 +68,9 @@ spec:
                   store its data in a relational database and have a backupStorageRef.
                 properties:
                   name:
-                    description: Name of the CamundaCluster.
+                    description: Name of the CamundaCluster, in the namespace of this
+                      object.
                     minLength: 1
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the CamundaCluster. Empty means the namespace of the
-                      referencing object.
                     type: string
                 required:
                 - name

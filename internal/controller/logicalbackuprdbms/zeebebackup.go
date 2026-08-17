@@ -43,17 +43,15 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) (hold, error) {
-	namespace := backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace)
-
 	var cluster v1.CamundaCluster
 	if err := r.APIReader.Get(
 		ctx,
-		types.NamespacedName{Namespace: namespace, Name: backup.Spec.ClusterRef.Name},
+		types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name},
 		&cluster,
 	); err != nil {
 		if apierrors.IsNotFound(err) {
 			return r.holdRunning(backup, logicalbackup.InvalidReference(
-				"CamundaCluster %s/%s does not exist", namespace, backup.Spec.ClusterRef.Name,
+				"CamundaCluster %s/%s does not exist", backup.Namespace, backup.Spec.ClusterRef.Name,
 			))
 		}
 

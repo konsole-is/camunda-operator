@@ -21,8 +21,6 @@ limitations under the License.
 package logicalbackuprdbms
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -32,7 +30,6 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -59,15 +56,12 @@ const (
 	// operator image runs as.
 	operatorUID = int64(65532)
 	// BackupUIDLabel carries the UID of the LogicalBackupRDBMS a Job works
-	// for. The Job lives in the cluster namespace, where the backup name
-	// alone is not unique across backup namespaces; the UID is what a
-	// reconcile checks before it adopts a Job by name.
+	// for. A reconcile checks it before it adopts a Job by name, so a
+	// leftover Job of a same-named backup that was deleted and recreated is
+	// never tracked as this one's.
 	BackupUIDLabel = "camunda.io/logical-backup-rdbms-uid"
 	// jobNameSuffix ends every dump Job name.
 	jobNameSuffix = "-dump"
-	// jobNameHashLength is the hex length of the hash that keeps a long
-	// name unique once it is truncated.
-	jobNameHashLength = 10
 )
 
 // reservedEnvNames are the environment variables the Job sets to reach the
@@ -115,11 +109,10 @@ const (
 type JobInput struct {
 	// Backup is the LogicalBackupRDBMS the Job works for.
 	Backup *v1.LogicalBackupRDBMS
-	// ClusterName and ClusterNamespace identify the backed-up cluster. The
-	// Job runs in the cluster namespace: the ServiceAccount and the
-	// credential copies live there.
-	ClusterName      string
-	ClusterNamespace string
+	// ClusterName identifies the backed-up cluster. The Job runs in the
+	// namespace of the backup, which is the cluster's: the ServiceAccount
+	// and the credential copies live there.
+	ClusterName string
 	// Dump is the effective dump block: the cluster's spec.backup.dump, or
 	// the backup's spec.dump replacing it as a whole. Nil means defaults.
 	Dump *v1.BackupDumpSpec
@@ -153,26 +146,17 @@ type JobInput struct {
 }
 
 // JobName returns the name of the Job of one backup. It derives from the
-// backup namespace and name, so a reconcile that re-enters after a crash
-// adopts the Job it already created instead of creating a second one, and
-// two backups of one cluster from different namespaces never share a Job.
-// The name is a DNS label: a long namespace/name pair is truncated and kept
-// unique by a hash of the pair.
+// backup name alone: the Job lives in the backup's own namespace, where that
+// name is unique, so a reconcile that re-enters after a crash adopts the Job
+// it already created instead of creating a second one.
 func JobName(backup *v1.LogicalBackupRDBMS) string {
-	base := backup.Namespace + "-" + backup.Name
-	limit := validation.DNS1123LabelMaxLength - len(jobNameSuffix)
-	if len(base) > limit {
-		sum := sha256.Sum256([]byte(backup.Namespace + "/" + backup.Name))
-		hash := hex.EncodeToString(sum[:])[:jobNameHashLength]
-		base = strings.TrimRight(base[:limit-1-jobNameHashLength], "-.") + "-" + hash
-	}
-
-	return base + jobNameSuffix
+	return backup.Name + jobNameSuffix
 }
 
 // JobBelongsTo reports whether job carries the identity of backup: the UID
-// label BuildJob stamps. A Job found by name without it, or with another UID,
-// belongs to another backup and must not be adopted or deleted for this one.
+// label BuildJob stamps. A Job found by name with another UID is a leftover
+// of a deleted-and-recreated backup of the same name, or foreign, and must
+// not be adopted or deleted for this one.
 func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
 	return job.Labels[BackupUIDLabel] == string(backup.UID)
 }
@@ -270,7 +254,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      JobName(in.Backup),
-			Namespace: in.ClusterNamespace,
+			Namespace: in.Backup.Namespace,
 			Labels:    managed,
 		},
 		Spec: batchv1.JobSpec{

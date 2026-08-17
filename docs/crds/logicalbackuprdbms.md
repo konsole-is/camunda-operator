@@ -15,7 +15,7 @@ A LogicalBackupRDBMS captures a complete restore point of a `CamundaCluster` tha
 
 1. The operator resolves `clusterRef` and checks: the cluster exists, has a `backupStorageRef`, is not suspended, stores its data in a relational database, and no other backup of it runs — a running backup blocks all others, and among pending ones the oldest starts first. The `DatabaseConfig` must name a `backupCredentialsSecretRef`, and the `DatabaseServerConfig` must have been probed for its current spec — `Ready=True` at its current generation with `status.serverVersion` published — because the dump runs client tools of the server's major version and a version left over from a retargeted server would pick the wrong ones. The dump block may not set the Job's own connection variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, and their libpq siblings) or any `UPLOAD_*` variable in `extraEnv`; `PGSSLMODE`-style settings stay open. These checks run only until the backup starts; a backup that fails them parks in `Pending` with the reason on `Ready`.
 2. It allocates the backup id (a millisecond timestamp), pins the bucket it writes through (`status.bucketRef` and `status.bucketLocation` — the type, bucket, base path, and endpoint), and records the object key `<basePath>/<namespace>/<cluster>/<id>/camunda.dump`.
-3. It applies a Job in the cluster namespace, named after the backup's namespace and name and labeled with the backup's UID, so backups of one cluster from different namespaces never share a Job and a Job found by name is adopted only when the UID matches: a `postgres:<version>` initContainer runs `pg_dump --format=custom` of the entire logical database into a scratch volume, then the `camunda-operator-cli upload` container streams the archive to the bucket. The CLI is its own image, shipped with every release; the manager renders the one it was started with (`--camunda-operator-cli-image`, defaulted by the chart's `manager.cliImage`). The pod runs under the cluster's ServiceAccount for workload identity, or with the bucket's static credentials — the source Secret when it lives in the cluster namespace, the local copy the cluster controller keeps otherwise. The pod settings come from the cluster's `spec.backup.dump`, or from this CR's `spec.dump` replacing that block as a whole.
+3. It applies a Job in the backup's namespace — which is the cluster's — owned by the backup and labeled with its UID, so a Job found by name is adopted only when the UID matches: a `postgres:<version>` initContainer runs `pg_dump --format=custom` of the entire logical database into a scratch volume, then the `camunda-operator-cli upload` container streams the archive to the bucket. The CLI is its own image, shipped with every release; the manager renders the one it was started with (`--camunda-operator-cli-image`, defaulted by the chart's `manager.cliImage`). The pod runs under the cluster's ServiceAccount for workload identity, or with the bucket's static credentials — the source Secret when it lives in the cluster namespace, the local copy the cluster controller keeps otherwise. The pod settings come from the cluster's `spec.backup.dump`, or from this CR's `spec.dump` replacing that block as a whole.
 4. When the Job succeeds, the operator requests one Zeebe backup through the cluster's management binding, without an id — the cluster generates it — and records it as `status.zeebeBackupId`, polling until it completes. Partitions register their parts asynchronously, so a backup the cluster does not report yet is polled for a short grace before it counts as failed.
 5. A dependency that fails mid-run — a deleted reference, a broken binding, a management API that stops answering — holds the backup for a bounded grace, measured from when the dependency first failed and reset when it recovers, then fails it. A `Running` backup either finishes or terminalizes; it never parks forever, because it would block every later backup of the cluster.
 6. Deleting the CR deletes a still-running Job, waits until the Job and its pods are gone, then deletes the dump object in the pinned bucket — never the Zeebe backups, which belong to the continuous range that a point-in-time restore consumes. When the cluster, the pinned bucket, or its credentials are genuinely gone, or when the pinned bucket now points somewhere else (`status.bucketLocation` no longer matches), the finalizer leaves the object, releases, and an event records why.
@@ -29,12 +29,15 @@ metadata:
   name: my-cluster-backup
   namespace: my-cluster-ns
 spec:
-  # object. Required. Immutable. The CamundaCluster to back up.
+  # object. Required. Immutable. The CamundaCluster to back up. It lives in
+  # this CR's namespace: the operator reads the cluster's Secrets, runs a Job
+  # in its namespace, and calls its management API, so the reference stays
+  # inside the RBAC boundary the CR itself lives in. Whoever may create a
+  # backup in a namespace may back up the clusters of that namespace, and no
+  # others.
   clusterRef:
-    # string. Required. Name of the CamundaCluster.
+    # string. Required. Name of the CamundaCluster, in this CR's namespace.
     name: my-cluster
-    # string. Optional, default: this CR's namespace.
-    namespace: my-cluster-ns
   # object. Optional. Replaces the cluster's spec.backup.dump block as a
   # whole for this backup. The two never merge.
   dump: {}

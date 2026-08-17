@@ -42,14 +42,12 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) (hold, error) {
-	namespace := backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace)
-	key := types.NamespacedName{Namespace: namespace, Name: components.JobName(backup)}
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: components.JobName(backup)}
 
 	var current batchv1.Job
 	if backup.Status.JobName != "" {
 		// The Job was applied; the cache is enough to track it, and the
-		// watch (same-namespace) or the poll below (cross-namespace) wakes
-		// the backup on progress.
+		// watch on owned Jobs wakes the backup on progress.
 		if err := r.Get(ctx, key, &current); err != nil {
 			if apierrors.IsNotFound(err) {
 				// The cache has no read-your-writes guarantee: right after
@@ -92,11 +90,11 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 }
 
 // adopt tracks a Job found under the backup's Job name, after proving it is
-// this backup's: the name derives from the backup namespace and name, but a
-// Job that carries another UID belongs to another backup and must never be
-// tracked — its completion would let this backup advance without a dump of
-// its own. That is a hard failure, not a wait: the other Job will not change
-// identity.
+// this backup's: a Job that carries another UID is a leftover of a
+// same-named backup that was deleted and recreated, or foreign, and must
+// never be tracked — its completion would let this backup advance without a
+// dump of its own. That is a hard failure, not a wait: the other Job will not
+// change identity.
 func (r *LogicalBackupRDBMSReconciler) adopt(
 	backup *v1.LogicalBackupRDBMS,
 	job *batchv1.Job,
@@ -134,7 +132,6 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 	job, err := components.BuildJob(components.JobInput{
 		Backup:             backup,
 		ClusterName:        res.cluster.Name,
-		ClusterNamespace:   res.cluster.Namespace,
 		Dump:               res.dump,
 		Bucket:             res.bucket,
 		BucketSecretName:   res.bucketSecret,
@@ -153,10 +150,8 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 		return settle, err
 	}
 
-	if job.Namespace == backup.Namespace {
-		if err := controllerutil.SetControllerReference(backup, job, r.Scheme); err != nil {
-			return settle, fmt.Errorf("owning the dump Job: %w", err)
-		}
+	if err := controllerutil.SetControllerReference(backup, job, r.Scheme); err != nil {
+		return settle, fmt.Errorf("owning the dump Job: %w", err)
 	}
 	//nolint:staticcheck // the repo applies through the deprecated client.Apply patch
 	if err := r.Patch(
@@ -167,8 +162,8 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 	backup.Status.JobName = job.Name
 	conditions.Stage(backup, progressing(backup, "the dump Job runs"))
 
-	// The watch only covers the backup's own namespace; a cross-namespace
-	// cluster needs the poll.
+	// The watch on owned Jobs wakes the backup on progress; the poll is the
+	// safety net.
 	return hold{after: r.opts.RetryInterval}, nil
 }
 
@@ -180,7 +175,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) (*dumpResolution, *conditions.PreCheckFailure, error) {
-	namespace := backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace)
+	namespace := backup.Namespace
 
 	var cluster v1.CamundaCluster
 	if err := r.APIReader.Get(
@@ -300,7 +295,7 @@ func (r *LogicalBackupRDBMSReconciler) trackJob(
 
 	conditions.Stage(backup, progressing(backup, status.Reason))
 
-	// The watch wakes same-namespace backups instantly; the poll covers a
-	// cross-namespace cluster, whose Job the watch cannot map back.
+	// The watch on owned Jobs wakes the backup instantly; the poll is the
+	// safety net.
 	return hold{after: r.opts.RetryInterval}, nil
 }

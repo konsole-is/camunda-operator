@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
@@ -34,13 +35,12 @@ import (
 // side: it reports only started backups, so a pending sibling never blocks.
 func (r *LogicalBackupRDBMSReconciler) inProgress(backup *v1.LogicalBackupRDBMS) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
-		cluster := types.NamespacedName{
-			Namespace: backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace),
-			Name:      backup.Spec.ClusterRef.Name,
-		}
+		cluster := types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name}
 
+		// A ClusterRef never crosses namespaces, so the backups of one
+		// cluster all live in its namespace.
 		var list v1.LogicalBackupRDBMSList
-		if err := r.APIReader.List(ctx, &list); err != nil {
+		if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
 			return "", err
 		}
 		for i := range list.Items {
@@ -48,11 +48,7 @@ func (r *LogicalBackupRDBMSReconciler) inProgress(backup *v1.LogicalBackupRDBMS)
 			if other.UID == backup.UID || other.Terminal() {
 				continue
 			}
-			otherCluster := types.NamespacedName{
-				Namespace: other.Spec.ClusterRef.EffectiveClusterNamespace(other.Namespace),
-				Name:      other.Spec.ClusterRef.Name,
-			}
-			if otherCluster != cluster {
+			if other.Spec.ClusterRef.Name != cluster.Name {
 				continue
 			}
 
@@ -80,10 +76,7 @@ func olderBackup(a, b *v1.LogicalBackupRDBMS) bool {
 }
 
 // clusterKey is the index value of one backup: the namespace and name of the
-// cluster it references.
+// cluster it references, which is the backup's own namespace.
 func clusterKey(backup *v1.LogicalBackupRDBMS) string {
-	return refindex.NamespacedKey(
-		backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace),
-		backup.Spec.ClusterRef.Name,
-	)
+	return refindex.NamespacedKey(backup.Namespace, backup.Spec.ClusterRef.Name)
 }

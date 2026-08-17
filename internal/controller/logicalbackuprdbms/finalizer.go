@@ -59,9 +59,7 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 		return settle, nil
 	}
 
-	namespace := backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace)
-
-	gone, err := r.deleteJob(ctx, backup, namespace)
+	gone, err := r.deleteJob(ctx, backup)
 	if err != nil {
 		return settle, err
 	}
@@ -72,7 +70,7 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 	}
 
 	if backup.Status.ObjectKey != "" {
-		left, err := r.deleteObject(ctx, backup, namespace)
+		left, err := r.deleteObject(ctx, backup)
 		if err != nil {
 			return settle, err
 		}
@@ -96,14 +94,13 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 // deleteJob deletes the dump Job of the backup and reports whether it and
 // its pods are gone from the live API. The name is deterministic, so a crash
 // that never recorded status.jobName still finds it; the UID label decides
-// whether it is this backup's — a Job of another backup under the same name
-// is left alone and counts as gone for this one.
+// whether it is this backup's — a leftover Job of a same-named backup is left
+// alone and counts as gone for this one.
 func (r *LogicalBackupRDBMSReconciler) deleteJob(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
-	namespace string,
 ) (bool, error) {
-	key := types.NamespacedName{Namespace: namespace, Name: components.JobName(backup)}
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: components.JobName(backup)}
 
 	var job batchv1.Job
 	err := r.APIReader.Get(ctx, key, &job)
@@ -151,10 +148,9 @@ func (r *LogicalBackupRDBMSReconciler) podsGone(ctx context.Context, job types.N
 func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
-	namespace string,
 ) (string, error) {
 	var cluster v1.CamundaCluster
-	clusterKey := types.NamespacedName{Namespace: namespace, Name: backup.Spec.ClusterRef.Name}
+	clusterKey := types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name}
 	if err := r.APIReader.Get(ctx, clusterKey, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return fmt.Sprintf("CamundaCluster %s is gone", clusterKey), nil

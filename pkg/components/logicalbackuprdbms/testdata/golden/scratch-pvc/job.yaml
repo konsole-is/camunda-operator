@@ -7,7 +7,7 @@ metadata:
     camunda.io/component: dump
     camunda.io/logical-backup-rdbms: my-cluster-1748937221000
     camunda.io/logical-backup-rdbms-uid: 3f2a9c1e-7b4d-4e0a-9c6f-2d1b8a5e4c73
-  name: my-cluster-ns-my-cluster-1748937221000-dump
+  name: my-cluster-1748937221000-dump
   namespace: my-cluster-ns
 spec:
   backoffLimit: 3
