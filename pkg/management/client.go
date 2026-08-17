@@ -14,7 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package logicalbackup
+// Package management builds clients for the management API that a
+// CamundaCluster publishes in status.management. Every consumer of that
+// binding, whichever kind it is, builds its client here, so the same broken
+// binding reports the same reason everywhere.
+package management
 
 import (
 	"context"
@@ -29,25 +33,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-// SiblingInProgress reports the name of a non-terminal backup of the other
-// backup kind for the cluster, or the empty string when none runs. Each
-// backup controller checks its own kind itself; the manager wires this seam
-// between the two kinds, so backups of one cluster run one at a time across
-// kinds. Both controllers use this one signature, so the wiring needs no
-// adapters.
-type SiblingInProgress func(ctx context.Context, cluster types.NamespacedName) (string, error)
-
-// ManagementClient builds the management API client of cluster from the
+// NewClient builds the management API client of cluster from the
 // binding it publishes, resolving the credentials the binding names. A state
 // the user must see comes back as a *conditions.PreCheckFailure:
 // ReasonProgressing when the cluster has not published its binding,
 // ReasonMissingSecret when the binding names basic auth without a resolvable
 // credentials Secret, and ReasonInvalidReference when the binding is
 // unusable, for example a Camunda version the client does not support. An
-// error is transient. Both backup controllers build their client through
-// this one constructor, so the same broken binding reports the same reason
-// on either kind.
-func ManagementClient(
+// error is transient.
+func NewClient(
 	ctx context.Context,
 	reader client.Reader,
 	cluster *v1.CamundaCluster,
