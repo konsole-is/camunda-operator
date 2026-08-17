@@ -342,6 +342,11 @@ const (
 // Federation bind the ServiceAccount on the cloud side and need no annotation.
 // Consumers apply the result to the ServiceAccount of their pods and never
 // repeat the switch over the storage types.
+//
+// The annotations are not the whole story for Azure: its workload identity
+// also needs the label azure.workload.identity/use: "true" on the pods
+// themselves, which no ServiceAccount annotation can express. A consumer that
+// accepts AzureBlob contracts must put that label on its pod template as well.
 func (in *ObjectStorageConfig) WorkloadIdentityAnnotations() map[string]string {
 	annotation := func(key, value string) map[string]string {
 		if value == "" {

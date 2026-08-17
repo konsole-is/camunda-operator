@@ -77,11 +77,13 @@ func createElasticsearchClusterPreset(spec v1.ElasticsearchClusterSpec) *v1.Elas
 	return preset
 }
 
-// createElasticsearchCluster creates cluster in its own fresh namespace and
-// registers its deletion.
+// createElasticsearchCluster creates cluster in its own fresh namespace,
+// unless the test assigned one already, and registers its deletion.
 func createElasticsearchCluster(cluster *v1.ElasticsearchCluster) {
 	GinkgoHelper()
-	cluster.Namespace = newElasticsearchClusterNamespace()
+	if cluster.Namespace == "" {
+		cluster.Namespace = newElasticsearchClusterNamespace()
+	}
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
 }
@@ -251,6 +253,25 @@ func createObjectStorageConfig(spec v1.ObjectStorageConfigSpec) *v1.ObjectStorag
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, config) })
 
 	return config
+}
+
+// createECKSecrets creates the Secrets that ECK publishes for a serving
+// cluster: the elastic user's password and the CA of the HTTPS endpoint. The
+// CA value is empty on purpose: the suite's fake serves plain HTTP, and an
+// empty bundle makes the admin client fall back to the system pool.
+func createECKSecrets(cluster *v1.ElasticsearchCluster) {
+	GinkgoHelper()
+	for name, data := range map[string]map[string][]byte{
+		esv1.ElasticUserSecret(cluster.Name):   {"elastic": []byte("elastic-password")},
+		cluster.Name + "-es-http-certs-public": {"ca.crt": nil},
+	} {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: cluster.Namespace},
+			Data:       data,
+		}
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+	}
 }
 
 // expectControlledBy asserts that obj carries a controller owner reference to
@@ -485,6 +506,169 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(contract.Spec.Elasticsearch).NotTo(BeNil())
 			g.Expect(contract.Spec.Elasticsearch.SnapshotRepository).To(Equal(cluster.Name))
 		}).Should(Succeed())
+	})
+
+	It("registers the snapshot repository and converges it idempotently", func() {
+		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = newElasticsearchClusterNamespace()
+		createECKSecrets(cluster)
+		createElasticsearchCluster(cluster)
+
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			condition := meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+		}, timeout, interval).Should(Succeed())
+
+		repo := elasticsearch.Repository(cluster.Name)
+		Expect(repo).NotTo(BeNil())
+		Expect(repo.Type).To(Equal("s3"))
+		Expect(repo.Settings).To(HaveKeyWithValue("bucket", "camunda-backups"))
+		Expect(repo.Settings).To(HaveKeyWithValue(
+			"base_path", "clusters/"+cluster.Namespace+"/"+cluster.Name,
+		))
+		// The workload-identity bucket names no endpoint and no path style,
+		// so neither may leak into the repository settings.
+		Expect(repo.Settings).NotTo(HaveKey("endpoint"))
+		Expect(repo.Settings).NotTo(HaveKey("path_style_access"))
+
+		// Convergence: another reconcile registers again, and registering
+		// again changes nothing. The PUT count grows, the repository does not.
+		puts := elasticsearch.RepositoryPuts(cluster.Name)
+		Expect(puts).NotTo(BeZero())
+		var fetched v1.ElasticsearchCluster
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+		fetched.Labels = map[string]string{"touched": "true"}
+		Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(elasticsearch.RepositoryPuts(cluster.Name)).To(BeNumerically(">", puts))
+			var after v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &after)).To(Succeed())
+			condition := meta.FindStatusCondition(
+				after.Status.Conditions, components.ConditionSnapshotRepository,
+			)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+		}, timeout, interval).Should(Succeed())
+		Expect(elasticsearch.Repository(cluster.Name)).To(Equal(repo))
+	})
+
+	// The keystore Secret is rendered from the bucket's credentials Secret,
+	// which carries no owner reference to the cluster. Only a watch brings
+	// the controller back when it rotates; without one, the nodes keep the
+	// old keys until an unrelated event.
+	It("re-renders the keystore when the bucket credentials rotate", func() {
+		credentials := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "minio-credentials-" + utilrand.String(8), Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"accessKeyId":     []byte("old-access"),
+				"secretAccessKey": []byte("old-secret"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, credentials)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, credentials) })
+
+		bucket := createObjectStorageConfig(s3BucketSpec(&v1.S3Credentials{
+			SecretRef: v1.S3CredentialsSecretRef{
+				Name:               credentials.Name,
+				Namespace:          credentials.Namespace,
+				AccessKeyIDKey:     "accessKeyId",
+				SecretAccessKeyKey: "secretAccessKey",
+			},
+		}))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = newElasticsearchClusterNamespace()
+		createECKSecrets(cluster)
+		createElasticsearchCluster(cluster)
+
+		keystoreKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-es-snapshot-keystore"}
+		Eventually(func(g Gomega) {
+			var keystore corev1.Secret
+			g.Expect(k8sClient.Get(ctx, keystoreKey, &keystore)).To(Succeed())
+			g.Expect(keystore.Data["s3.client.default.access_key"]).To(Equal([]byte("old-access")))
+		}, timeout, interval).Should(Succeed())
+
+		var fresh corev1.Secret
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(credentials), &fresh)).To(Succeed())
+		fresh.Data["accessKeyId"] = []byte("new-access")
+		fresh.Data["secretAccessKey"] = []byte("new-secret")
+		Expect(k8sClient.Update(ctx, &fresh)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var keystore corev1.Secret
+			g.Expect(k8sClient.Get(ctx, keystoreKey, &keystore)).To(Succeed())
+			g.Expect(keystore.Data["s3.client.default.access_key"]).To(Equal([]byte("new-access")))
+			g.Expect(keystore.Data["s3.client.default.secret_key"]).To(Equal([]byte("new-secret")))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// Suspension deletes the cluster, so there is nothing to register and
+	// nothing to assert; a failure condition would drag Ready false, and
+	// suspension is a Ready=True state by design.
+	It("reports no repository condition while suspended, even with a bucket", func() {
+		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Spec.Suspend = true
+		createElasticsearchCluster(cluster)
+
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			g.Expect(fetched.Status.Conditions).NotTo(BeEmpty())
+			g.Expect(meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("drops the repository condition when the bucket reference is removed", func() {
+		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = newElasticsearchClusterNamespace()
+		createECKSecrets(cluster)
+		createElasticsearchCluster(cluster)
+
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			g.Expect(meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		var fetched v1.ElasticsearchCluster
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+		fetched.Spec.SnapshotStorageRef = ""
+		Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var after v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &after)).To(Succeed())
+			g.Expect(meta.FindStatusCondition(
+				after.Status.Conditions, components.ConditionSnapshotRepository,
+			)).To(BeNil())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// Without a bucket there is no repository, so the condition must not

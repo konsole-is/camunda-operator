@@ -117,6 +117,40 @@ var _ = Describe("ElasticsearchCluster schema", func() {
 			}, "secondaryStorageConfig",
 		),
 		Entry(
+			"rejects a non-DNS-1123 snapshotStorageRef",
+			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				o.Spec.SnapshotStorageRef = "Not_A_Name"
+			}, "snapshotStorageRef",
+		),
+		Entry(
+			"rejects a non-DNS-1123 serviceAccount name",
+			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				o.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "Not_A_Name"}
+			}, "serviceAccount",
+		),
+		Entry(
+			"accepts a named, pre-existing serviceAccount",
+			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				no := false
+				o.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-es", Create: &no}
+			}, "",
+		),
+		Entry(
+			"rejects a secure setting source without a secretName",
+			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				o.Spec.SecureSettings = []v1.SecureSettingsSource{{SecretName: ""}}
+			}, "secretName",
+		),
+		Entry(
+			"rejects a secure setting entry without a key or path",
+			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
+				o.Spec.SecureSettings = []v1.SecureSettingsSource{{
+					SecretName: "extra",
+					Entries:    []v1.SecureSettingEntry{{Key: "", Path: ""}},
+				}}
+			}, "spec.secureSettings",
+		),
+		Entry(
 			"rejects a non-DNS-1123 secondaryStorageConfig",
 			validElasticsearchCluster, func(o *v1.ElasticsearchCluster) {
 				o.Spec.SecondaryStorageConfig = fixtures.NotAResourceName

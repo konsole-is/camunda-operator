@@ -30,6 +30,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
@@ -42,6 +45,11 @@ var (
 	env       *testenv.Env
 	ctx       context.Context
 	k8sClient client.Client
+
+	// elasticsearch fakes the admin surface of every cluster in the suite.
+	// Repository names are cluster names, and cluster names are unique, so
+	// one fake serves them all.
+	elasticsearch *esadmintest.Server
 )
 
 func TestElasticsearchClusterController(t *testing.T) {
@@ -53,11 +61,14 @@ func TestElasticsearchClusterController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
+	elasticsearch = esadmintest.New()
+
 	env = testenv.Start(func(mgr ctrl.Manager) error {
 		return (&ElasticsearchClusterReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+			Client:      mgr.GetClient(),
+			APIReader:   mgr.GetAPIReader(),
+			Scheme:      mgr.GetScheme(),
+			EndpointFor: func(*v1.ElasticsearchCluster) string { return elasticsearch.URL() },
 		}).SetupWithManager(mgr)
 	})
 
@@ -66,5 +77,6 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	elasticsearch.Close()
 	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
 })

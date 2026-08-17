@@ -27,12 +27,17 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
+	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
 
 const (
@@ -247,7 +252,12 @@ func (r *ElasticsearchClusterReconciler) elasticsearchAdmin(
 		return nil, err
 	}
 
-	admin, err := esadmin.New(components.HTTPEndpoint(cluster), elasticUsername, string(password), ca)
+	endpoint := components.HTTPEndpoint(cluster)
+	if r.EndpointFor != nil {
+		endpoint = r.EndpointFor(cluster)
+	}
+
+	admin, err := esadmin.New(endpoint, elasticUsername, string(password), ca)
 	if err != nil {
 		return nil, fmt.Errorf("building the Elasticsearch client of %q: %w", cluster.Name, err)
 	}
@@ -284,4 +294,60 @@ func (r *ElasticsearchClusterReconciler) secretValue(
 	}
 
 	return value, nil
+}
+
+// enqueueForBucketSecret maps a Secret event to every cluster whose snapshot
+// bucket holds its static credentials in that Secret. The bucket's Secret
+// carries no owner reference to any cluster, so without this watch a rotated
+// credential reaches the node keystore only when something unrelated triggers
+// a reconcile.
+func (r *ElasticsearchClusterReconciler) enqueueForBucketSecret() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		key := refindex.ObjectNamespacedName(o)
+
+		var requests []reconcile.Request
+		for _, bucket := range bucketsWithSecret(ctx, r.Client, key) {
+			var clusters v1.ElasticsearchClusterList
+			if err := r.List(
+				ctx, &clusters,
+				client.MatchingFields{elasticsearchClusterSnapshotStorageRefField: bucket},
+			); err != nil {
+				logf.FromContext(ctx).Error(
+					err, "Could not list clusters for a bucket Secret event", "secret", key,
+				)
+				continue
+			}
+			for i := range clusters.Items {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(&clusters.Items[i]),
+				})
+			}
+		}
+
+		return requests
+	})
+}
+
+// bucketsWithSecret returns the names of the ObjectStorageConfigs whose
+// static credentials live in the Secret at key. The contracts are
+// cluster-scoped and few, so they are filtered in memory rather than through
+// an index: the ObjectStorageConfig controller already owns an index of the
+// same field, and a second one under a different name would only add a way
+// for the two to disagree.
+func bucketsWithSecret(ctx context.Context, c client.Client, key string) []string {
+	var list v1.ObjectStorageConfigList
+	if err := c.List(ctx, &list); err != nil {
+		logf.FromContext(ctx).Error(err, "Could not list buckets for a Secret event", "secret", key)
+		return nil
+	}
+
+	var names []string
+	for i := range list.Items {
+		creds := list.Items[i].CredentialsSecret()
+		if creds != nil && refindex.NamespacedKey(creds.Namespace, creds.Name) == key {
+			names = append(names, list.Items[i].Name)
+		}
+	}
+
+	return names
 }

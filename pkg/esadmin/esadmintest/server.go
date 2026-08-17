@@ -58,6 +58,8 @@ type Server struct {
 	repos     map[string]*Repository
 	snapshots map[string]*Snapshot
 
+	repositoryPuts map[string]int
+
 	snapshotCreates map[string]int
 	reloadCalls     int
 
@@ -79,6 +81,7 @@ type nodeFS struct {
 func New() *Server {
 	s := &Server{
 		repos:           map[string]*Repository{},
+		repositoryPuts:  map[string]int{},
 		snapshots:       map[string]*Snapshot{},
 		snapshotCreates: map[string]int{},
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
@@ -104,6 +107,16 @@ func (s *Server) Repository(name string) *Repository {
 		return &copied
 	}
 	return nil
+}
+
+// RepositoryPuts reports how often the repository name was registered. A
+// converging controller registers on every reconcile, so the count grows with
+// the reconciles while Repository stays the same: that is what idempotence
+// looks like from the fake.
+func (s *Server) RepositoryPuts(name string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.repositoryPuts[name]
 }
 
 // SetSnapshotState sets the state of the snapshot repo/name, creating it
@@ -207,6 +220,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		s.repos[parts[1]] = &Repository{Type: body.Type, Settings: body.Settings}
+		s.repositoryPuts[parts[1]]++
 		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
 	case len(parts) == 3 && parts[0] == snapshotPath && r.Method == http.MethodPut:

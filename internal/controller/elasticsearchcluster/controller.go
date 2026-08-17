@@ -108,6 +108,11 @@ type ElasticsearchClusterReconciler struct {
 	// restMapper resolves whether the cluster serves the ServiceMonitor
 	// kind. SetupWithManager sets it from the manager.
 	restMapper meta.RESTMapper
+
+	// EndpointFor returns the Elasticsearch endpoint of a cluster. Nil means
+	// the in-cluster HTTPS Service that components.HTTPEndpoint names. Tests
+	// point it at a fake, because no Service resolves inside envtest.
+	EndpointFor func(*v1.ElasticsearchCluster) string
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
@@ -547,6 +552,7 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 				elasticsearchClusterSnapshotStorageRefField, refindex.ObjectName,
 			),
 		).
+		Watches(&corev1.Secret{}, r.enqueueForBucketSecret(), builder.OnlyMetadata).
 		Watches(&corev1.PersistentVolumeClaim{}, enqueueForDataClaim()).
 		Named("elasticsearchcluster").
 		Complete(r)

@@ -59,9 +59,9 @@ spec:
   storageSize: "64Gi"
   # string. Optional, default: the cluster's default StorageClass. StorageClass for the data volumes.
   storageClassName: "ssd"
-  # object. Optional. ServiceAccount settings for the Elasticsearch pods. When set, the operator creates a dedicated ServiceAccount named <name>-es and points the pods at it through the ECK podTemplate.
   # string. Optional. Name of a cluster-scoped ObjectStorageConfig holding the bucket of this cluster's snapshot repository. Set it to take part in backups; it must be the same bucket the CamundaCluster references.
   snapshotStorageRef: "my-backup-config"
+  # object. Optional. ServiceAccount of the Elasticsearch pods. The operator renders one when this is set, or when snapshotStorageRef names a bucket whose contract carries a workload identity.
   serviceAccount:
     # string. Optional, default: <name>-es. Name of the ServiceAccount of the pods. It is the principal that a workload identity without an annotation (EKS Pod Identity, Workload Identity Federation) binds: system:serviceaccount:<namespace>:<name>.
     name: "my-cluster-es"
