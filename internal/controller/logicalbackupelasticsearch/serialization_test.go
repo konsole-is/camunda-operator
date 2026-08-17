@@ -94,7 +94,7 @@ func TestFailureReasonNamesTheFailingParts(t *testing.T) {
 			want: "camunda_webapps_1_8.9_part_2_of_2: shard 3 unassigned",
 		},
 		{
-			name: "aggregate and parts together",
+			name:   "aggregate and parts together",
 			status: statusWithAggregateAndParts(),
 			want:   "partition 2 lost its snapshot; 2: leader changed",
 		},
