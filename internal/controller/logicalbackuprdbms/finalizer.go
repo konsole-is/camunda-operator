@@ -18,6 +18,7 @@ package logicalbackuprdbms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -38,6 +39,11 @@ import (
 
 // jobNameLabel is the label the Job controller stamps on the pods of a Job.
 const jobNameLabel = "batch.kubernetes.io/job-name"
+
+// errRepairable marks a cleanup failure the user can fix — a credentials
+// Secret that exists but lost a key. The finalizer holds and polls for the
+// repair instead of releasing or backing off.
+var errRepairable = errors.New("cleanup is waiting for a repair")
 
 // finalize removes the artifacts of a deleted backup: the Job and the dump
 // object, keyed strictly on this backup's own object key. Zeebe backups are
@@ -71,6 +77,11 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 
 	if backup.Status.ObjectKey != "" {
 		left, err := r.deleteObject(ctx, backup)
+		if errors.Is(err, errRepairable) {
+			// The user has to act; poll for the repair instead of backing off
+			// exponentially, so the deletion finishes soon after it lands.
+			return hold{after: r.opts.RetryInterval}, nil
+		}
 		if err != nil {
 			return settle, err
 		}
@@ -142,9 +153,11 @@ func (r *LogicalBackupRDBMSReconciler) podsGone(ctx context.Context, job types.N
 // deleteObject removes the dump from the pinned bucket — the one the backup
 // wrote through, and only while it still points where it did at the start.
 // It returns a non-empty reason when the object is left behind on purpose:
-// the dependency chain is genuinely gone, or the contract now points
-// somewhere else and a delete would hit a stranger's object at the same key.
-// An error means the failure is transient and a retry can still clean up.
+// the dependency chain is genuinely gone (the cluster, the contract, or the
+// credentials Secret no longer exists), or the contract now points somewhere
+// else and a delete would hit a stranger's object at the same key. An error
+// means the failure is repairable or transient — a Secret missing a key, an
+// API hiccup — and the deletion retries until it is.
 func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -207,9 +220,22 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 		}
 		parsed, err := objectstore.CredentialsFrom(&bucket, secret.Data)
 		if err != nil {
-			// Broken credential data does not heal on retry; holding the
-			// deletion on it would block forever.
-			return fmt.Sprintf("the bucket credentials no longer parse: %v", err), nil
+			// The Secret exists but a configured key is missing: that is
+			// repairable, so the deletion is held and retried, not released
+			// — releasing would orphan the dump on an in-progress edit. The
+			// event makes the hold visible, so the user knows what to fix.
+			r.EventRecorder.Eventf(
+				backup,
+				nil,
+				corev1.EventTypeWarning,
+				eventReasonCleanup,
+				eventActionFinalize,
+				"Deletion is waiting for the bucket credentials Secret %s to be repaired: %v",
+				local,
+				err,
+			)
+
+			return "", fmt.Errorf("%w: the bucket credentials do not resolve: %w", errRepairable, err)
 		}
 		creds = parsed
 	}

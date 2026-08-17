@@ -55,7 +55,7 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 
-		backup.Spec.Dump = &v1.BackupDumpSpec{
+		backup.Spec.Dump = &v1.DumpPodSpec{
 			PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
 		}
 		Expect(k8sClient.Update(ctx, backup)).To(HaveOccurred())

@@ -77,8 +77,11 @@ spec:
                 type: object
               dump:
                 description: |-
-                  Dump replaces the cluster's spec.backup.dump block as a whole for this
-                  backup. Unset means the block of the cluster. The two never merge.
+                  Dump replaces the pod settings of the cluster's spec.backup.dump block
+                  as a whole for this backup. Unset means the settings of the cluster.
+                  The two never merge. The image that runs the dump is not among them:
+                  the Job runs under the cluster's ServiceAccount, so the executable is
+                  the cluster owner's choice and always comes from the cluster block.
                 properties:
                   activeDeadlineSeconds:
                     default: 86400
@@ -316,13 +319,6 @@ spec:
                       type: string
                     description: PodLabels are extra labels of the dump pod.
                     type: object
-                  postgresImage:
-                    description: |-
-                      PostgresImage is the full image reference of the dump container,
-                      replacing the default postgres:<major> of the upstream registry. Set
-                      it in an air-gapped installation, where the default reference cannot
-                      be pulled.
-                    type: string
                   resources:
                     description: Resources are the CPU and memory of the dump pod.
                     properties:

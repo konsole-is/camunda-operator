@@ -134,7 +134,8 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 	job, err := components.BuildJob(components.JobInput{
 		Backup:             backup,
 		ClusterName:        res.cluster.Name,
-		Dump:               res.dump,
+		Dump:               res.pod,
+		PostgresImage:      res.image,
 		Bucket:             res.bucket,
 		BucketSecretName:   res.bucketSecret,
 		DBSecretName:       creds.Name,

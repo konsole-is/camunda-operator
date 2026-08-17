@@ -602,10 +602,10 @@ var _ = Describe("CamundaCluster backup schema", func() {
 					CleanupSchedule: "PT1H",
 				},
 			},
-			Dump: &v1.BackupDumpSpec{
+			Dump: &v1.BackupDumpSpec{DumpPodSpec: v1.DumpPodSpec{
 				PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
 				ScratchVolume:  &v1.ScratchVolumeSpec{SizeLimit: new(resource.MustParse("50Gi"))},
-			},
+			}},
 		}
 
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())

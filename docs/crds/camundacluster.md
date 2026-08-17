@@ -321,13 +321,13 @@ spec:
         window: "P7D"
         # string. Optional, default: PT1H. How often Zeebe looks for backups outside the window.
         cleanupSchedule: "PT1H"
-    # object. Optional. The pod of the Job that dumps the logical database. A LogicalBackupRDBMS can replace this block as a whole.
+    # object. Optional. The Job that dumps the logical database: the pod settings, which a LogicalBackupRDBMS can replace as a whole, and the image, which it cannot.
     dump:
       # object. Optional. CPU and memory of the dump pod.
       resources: {}
       # integer. Optional, default: 86400 (24 hours). Seconds the dump Job may run before it is failed. There is always a deadline: a pod that cannot start consumes no retry, so an unbounded Job would stay active for as long as the backup lived.
       activeDeadlineSeconds: 7200
-      # string. Optional, default: postgres:<version of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag.
+      # string. Optional, default: postgres:<probed major of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag. Cluster-level policy only: the Job runs under the cluster's ServiceAccount, with its cloud identity and database credentials, so the executable is the cluster owner's choice — a LogicalBackupRDBMS always inherits it.
       postgresImage: ""
       # []EnvVar. Optional. Extra environment variables of the dump pod. The connection variables the Job sets (PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, and their libpq siblings) and every UPLOAD_* variable are reserved; a backup that names one is rejected. Settings such as PGSSLMODE are allowed.
       extraEnv: []

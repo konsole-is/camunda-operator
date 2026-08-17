@@ -50,10 +50,13 @@ type LogicalBackupRDBMSSpec struct {
 	// store its data in a relational database and have a backupStorageRef.
 	// +required
 	ClusterRef ClusterRef `json:"clusterRef"`
-	// Dump replaces the cluster's spec.backup.dump block as a whole for this
-	// backup. Unset means the block of the cluster. The two never merge.
+	// Dump replaces the pod settings of the cluster's spec.backup.dump block
+	// as a whole for this backup. Unset means the settings of the cluster.
+	// The two never merge. The image that runs the dump is not among them:
+	// the Job runs under the cluster's ServiceAccount, so the executable is
+	// the cluster owner's choice and always comes from the cluster block.
 	// +optional
-	Dump *BackupDumpSpec `json:"dump,omitempty"`
+	Dump *DumpPodSpec `json:"dump,omitempty"`
 }
 
 // LogicalBackupRDBMSStatus is the observed state of one backup operation.

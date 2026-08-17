@@ -86,10 +86,12 @@ type PrimaryStorageRetentionSpec struct {
 	CleanupSchedule string `json:"cleanupSchedule,omitempty"`
 }
 
-// BackupDumpSpec configures the pod of the Job that dumps the logical
-// database of a relational cluster and uploads it to the backup bucket. The
-// pod runs the dump and the upload in turn, so one resource block sizes both.
-type BackupDumpSpec struct {
+// DumpPodSpec shapes the pod of the Job that dumps the logical database of a
+// relational cluster and uploads it to the backup bucket: everything a
+// backup may set per run. The pod runs the dump and the upload in turn, so
+// one resource block sizes both. It never names the image — see
+// BackupDumpSpec for why.
+type DumpPodSpec struct {
 	// Resources are the CPU and memory of the dump pod.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -131,6 +133,17 @@ type BackupDumpSpec struct {
 	// +kubebuilder:default=86400
 	// +optional
 	ActiveDeadlineSeconds *int64 `json:"activeDeadlineSeconds,omitempty"`
+}
+
+// BackupDumpSpec is the cluster-level dump configuration: the pod settings a
+// backup may also set per run, plus the image that runs the dump. The image
+// is cluster-level policy on purpose: the Job runs under the cluster's
+// ServiceAccount, with the cluster's cloud identity and its database
+// credentials mounted, so which executable it runs is the cluster owner's
+// choice — never that of whoever may create a backup. A LogicalBackupRDBMS
+// replaces the pod settings as a whole and always inherits the image.
+type BackupDumpSpec struct {
+	DumpPodSpec `json:",inline"`
 	// PostgresImage is the full image reference of the dump container,
 	// replacing the default postgres:<major> of the upstream registry. Set
 	// it in an air-gapped installation, where the default reference cannot

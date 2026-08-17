@@ -528,7 +528,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 	It("rejects a dump block that sets a reserved environment variable", func() {
 		w := createWorld()
 		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
-			backup.Spec.Dump = &v1.BackupDumpSpec{ExtraEnv: []corev1.EnvVar{
+			backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
 				{Name: "PGSSLMODE", Value: "require"},
 				{Name: "PGPASSWORD", Value: "hijack"},
 			}}
@@ -686,7 +686,10 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		w := createWorld(func(cluster *v1.CamundaCluster) {
 			cluster.Spec.Backup = &v1.ClusterBackupSpec{
 				Dump: &v1.BackupDumpSpec{
-					PodAnnotations: map[string]string{"linkerd.io/inject": "disabled"},
+					DumpPodSpec: v1.DumpPodSpec{
+						PodAnnotations: map[string]string{"linkerd.io/inject": "disabled"},
+					},
+					PostgresImage: "mirror.example/postgres:17.4",
 				},
 			}
 		})
@@ -696,6 +699,24 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(job.Spec.Template.Annotations).To(
 			HaveKeyWithValue("linkerd.io/inject", "disabled"),
 		)
+		Expect(job.Spec.Template.Spec.InitContainers[0].Image).To(Equal("mirror.example/postgres:17.4"))
+	})
+
+	// The image is cluster-level policy: a backup that replaces the pod
+	// settings still runs the cluster's image.
+	It("keeps the cluster's dump image when the backup overrides the pod settings", func() {
+		w := createWorld(func(cluster *v1.CamundaCluster) {
+			cluster.Spec.Backup = &v1.ClusterBackupSpec{
+				Dump: &v1.BackupDumpSpec{PostgresImage: "mirror.example/postgres:17.4"},
+			}
+		})
+		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
+			backup.Spec.Dump = &v1.DumpPodSpec{PodLabels: map[string]string{"from": "backup"}}
+		})
+
+		job := jobOf(backup, w)
+		Expect(job.Spec.Template.Labels).To(HaveKeyWithValue("from", "backup"))
+		Expect(job.Spec.Template.Spec.InitContainers[0].Image).To(Equal("mirror.example/postgres:17.4"))
 	})
 
 	It("runs the Job under an overridden ServiceAccount name", func() {
@@ -711,7 +732,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 	It("honors the backup's own dump block over the cluster's", func() {
 		w := createWorld()
 		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
-			backup.Spec.Dump = &v1.BackupDumpSpec{
+			backup.Spec.Dump = &v1.DumpPodSpec{
 				PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
 			}
 		})
@@ -1105,6 +1126,56 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
 			g.Expect(bucket.Deleted()).To(ContainElement(objectKey))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// S1: a Secret that exists but lost a key is repairable; the deletion
+	// must hold, visibly, until it is repaired — only a missing Secret takes
+	// the best-effort release path.
+	It("holds the deletion while the bucket credentials are broken, and finishes once repaired", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		objectKey := backup.Status.ObjectKey
+
+		By("removing a key from the credentials Secret")
+		var secret corev1.Secret
+		key := types.NamespacedName{Namespace: w.namespace, Name: "minio-credentials"}
+		Expect(k8sClient.Get(ctx, key, &secret)).To(Succeed())
+		delete(secret.Data, "secretAccessKey")
+		Expect(k8sClient.Update(ctx, &secret)).To(Succeed())
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		By("holding the finalizer and saying why")
+		Eventually(func(g Gomega) {
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(w.namespace))).To(Succeed())
+			notes := make([]string, 0, len(events.Items))
+			for _, event := range events.Items {
+				notes = append(notes, event.Reason+": "+event.Note)
+			}
+			g.Expect(notes).To(ContainElement(And(
+				HavePrefix("ArtifactCleanupFailed"), ContainSubstring("secretAccessKey"),
+			)))
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(bucket.Deleted()).NotTo(ContainElement(objectKey))
+		}, "2s", interval).Should(Succeed())
+
+		By("finishing the deletion once the key is back")
+		Expect(k8sClient.Get(ctx, key, &secret)).To(Succeed())
+		secret.Data["secretAccessKey"] = []byte("minio-secret")
+		Expect(k8sClient.Update(ctx, &secret)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+			g.Expect(bucket.Deleted()).To(ContainElement(objectKey))
+		}, "20s", interval).Should(Succeed())
 	})
 
 	It("releases the finalizer when the pinned bucket is gone", func() {

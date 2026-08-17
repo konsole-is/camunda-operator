@@ -128,9 +128,14 @@ type JobInput struct {
 	// namespace of the backup, which is the cluster's: the ServiceAccount
 	// and the credential copies live there.
 	ClusterName string
-	// Dump is the effective dump block: the cluster's spec.backup.dump, or
-	// the backup's spec.dump replacing it as a whole. Nil means defaults.
-	Dump *v1.BackupDumpSpec
+	// Dump shapes the pod: the backup's spec.dump when set, else the pod
+	// settings of the cluster's spec.backup.dump. Nil means defaults.
+	Dump *v1.DumpPodSpec
+	// PostgresImage runs the dump container: the cluster block's image, or
+	// empty for the default postgres:<ServerVersion>. It never comes from
+	// the backup — the Job runs under the cluster's ServiceAccount, so the
+	// executable is the cluster owner's choice.
+	PostgresImage string
 	// Bucket is the backup bucket contract.
 	Bucket *v1.ObjectStorageConfig
 	// BucketSecretName is the credentials Secret of the bucket as reachable
@@ -196,7 +201,7 @@ func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
 // itself, in the order they appear, or nothing when the block is clean. The
 // controller rejects a block that names one at admission, with the names in
 // the message.
-func ReservedEnv(dump *v1.BackupDumpSpec) []string {
+func ReservedEnv(dump *v1.DumpPodSpec) []string {
 	if dump == nil {
 		return nil
 	}
@@ -226,7 +231,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 
 	dump := in.Dump
 	if dump == nil {
-		dump = &v1.BackupDumpSpec{}
+		dump = &v1.DumpPodSpec{}
 	}
 
 	if dump.ScratchVolume != nil &&
@@ -304,7 +309,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 
 // activeDeadline returns the deadline of the dump block, or the production
 // default when it sets none.
-func activeDeadline(dump *v1.BackupDumpSpec) *int64 {
+func activeDeadline(dump *v1.DumpPodSpec) *int64 {
 	if dump.ActiveDeadlineSeconds != nil {
 		return dump.ActiveDeadlineSeconds
 	}
@@ -315,7 +320,7 @@ func activeDeadline(dump *v1.BackupDumpSpec) *int64 {
 // dumpContainer runs pg_dump of the entire logical database into the scratch
 // volume. The archive format (-Fc) restores with pg_restore and compresses
 // by default.
-func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
+func dumpContainer(in JobInput, dump *v1.DumpPodSpec) corev1.Container {
 	env := []corev1.EnvVar{
 		{Name: "PGHOST", Value: in.Host},
 		{Name: "PGPORT", Value: strconv.FormatInt(int64(in.Port), 10)},
@@ -324,7 +329,7 @@ func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
 		secretEnv("PGPASSWORD", in.DBSecretName, in.DBPasswordKey),
 	}
 
-	image := dump.PostgresImage
+	image := in.PostgresImage
 	if image == "" {
 		image = "postgres:" + in.ServerVersion
 	}
@@ -352,7 +357,7 @@ func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
 
 // uploadContainer streams the archive to the bucket through the upload
 // subcommand of camunda-operator-cli.
-func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.Container {
+func uploadContainer(in JobInput, dump *v1.DumpPodSpec, spec string) corev1.Container {
 	env := make([]corev1.EnvVar, 0, 6)
 	env = append(
 		env,
@@ -429,7 +434,7 @@ func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
 // by sizeLimit, or a generic ephemeral PersistentVolumeClaim when a storage
 // class is set, so a dump larger than the node's ephemeral storage still
 // fits.
-func scratchVolume(dump *v1.BackupDumpSpec) corev1.Volume {
+func scratchVolume(dump *v1.DumpPodSpec) corev1.Volume {
 	scratch := corev1.Volume{Name: scratchVolumeName}
 
 	switch {

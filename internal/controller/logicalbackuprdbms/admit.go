@@ -110,9 +110,13 @@ func (r *LogicalBackupRDBMSReconciler) checkManagement(
 
 // dumpResolution is what the Dumping step needs to render its Job.
 type dumpResolution struct {
-	cluster      *v1.CamundaCluster
-	bucket       *v1.ObjectStorageConfig
-	dump         *v1.BackupDumpSpec
+	cluster *v1.CamundaCluster
+	bucket  *v1.ObjectStorageConfig
+	// pod shapes the Job's pod; image runs its dump container. They come
+	// from different owners: the pod settings may be the backup's, the image
+	// is always the cluster's.
+	pod          *v1.DumpPodSpec
+	image        string
 	account      string
 	bucketSecret string
 	dbSecret     v1.CredentialsSecretRef
@@ -146,7 +150,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 		return nil, failure, err
 	}
 
-	dump, account, failure, err := r.resolvePod(ctx, precheck.Cluster, backup)
+	pod, failure, err := r.resolvePod(ctx, precheck.Cluster, backup)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
@@ -154,8 +158,9 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 	return &dumpResolution{
 		cluster:      precheck.Cluster,
 		bucket:       precheck.Bucket,
-		dump:         dump,
-		account:      account,
+		pod:          pod.settings,
+		image:        pod.image,
+		account:      pod.account,
 		bucketSecret: bucketSecret,
 		dbSecret:     dbSecret,
 		server:       server,
@@ -324,14 +329,24 @@ func localSecretName(cluster *v1.CamundaCluster, namespace, name, purpose string
 	return camundacluster.MirroredSecretName(cluster, purpose)
 }
 
-// resolvePod resolves the pod settings of the Job: the effective dump block
-// and the ServiceAccount, both through the cluster's preset when it names
-// one.
+// podResolution is what resolvePod produces: the pod settings, the image, and
+// the ServiceAccount of the Job.
+type podResolution struct {
+	settings *v1.DumpPodSpec
+	image    string
+	account  string
+}
+
+// resolvePod resolves the pod of the Job through the cluster's preset when it
+// names one: the pod settings — the backup's own block replacing the
+// cluster's as a whole, or the cluster's — the ServiceAccount, and the image,
+// which is always the cluster's: the Job runs under the cluster's
+// ServiceAccount, so the executable is the cluster owner's choice.
 func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	backup *v1.LogicalBackupRDBMS,
-) (*v1.BackupDumpSpec, string, *conditions.PreCheckFailure, error) {
+) (*podResolution, *conditions.PreCheckFailure, error) {
 	merged := cluster.Spec
 	if cluster.Spec.PresetRef != "" {
 		var preset v1.CamundaClusterPreset
@@ -339,23 +354,21 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 			ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset,
 		); err != nil {
 			if apierrors.IsNotFound(err) {
-				return nil, "", logicalbackup.InvalidReference(
+				return nil, logicalbackup.InvalidReference(
 					"CamundaClusterPreset %q does not exist", cluster.Spec.PresetRef,
 				), nil
 			}
 
-			return nil, "", nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"reading CamundaClusterPreset %q: %w", cluster.Spec.PresetRef, err,
 			)
 		}
 		merged = camundacluster.MergePreset(cluster.Spec, &preset.Spec)
 	}
 
-	account := camundacluster.ServiceAccountName(cluster, camundacluster.NewEffective(merged))
-
-	dump := dumpBlock(merged, backup)
-	if reserved := components.ReservedEnv(dump); len(reserved) > 0 {
-		return nil, "", logicalbackup.InvalidReference(
+	settings, image := dumpBlock(merged, backup)
+	if reserved := components.ReservedEnv(settings); len(reserved) > 0 {
+		return nil, logicalbackup.InvalidReference(
 			"the dump block sets %s in extraEnv; the Job reserves the connection variables "+
 				"(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, ...) and every UPLOAD_* variable "+
 				"for itself, so a dump cannot be redirected or run as someone else",
@@ -363,20 +376,33 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 		), nil
 	}
 
-	return dump, account, nil, nil
+	return &podResolution{
+		settings: settings,
+		image:    image,
+		account:  camundacluster.ServiceAccountName(cluster, camundacluster.NewEffective(merged)),
+	}, nil, nil
 }
 
-// dumpBlock returns the dump settings of one backup: the backup's own block
-// replacing the cluster's as a whole, or the cluster's.
-func dumpBlock(merged v1.CamundaClusterSpec, backup *v1.LogicalBackupRDBMS) *v1.BackupDumpSpec {
-	if backup != nil && backup.Spec.Dump != nil {
-		return backup.Spec.Dump
-	}
+// dumpBlock returns the pod settings and the image of one backup's Job. The
+// settings are the backup's own block replacing the cluster's as a whole, or
+// the cluster's; the image is the cluster's or empty for the default.
+func dumpBlock(merged v1.CamundaClusterSpec, backup *v1.LogicalBackupRDBMS) (*v1.DumpPodSpec, string) {
+	var cluster *v1.BackupDumpSpec
 	if merged.Backup != nil {
-		return merged.Backup.Dump
+		cluster = merged.Backup.Dump
+	}
+	image := ""
+	if cluster != nil {
+		image = cluster.PostgresImage
+	}
+	if backup != nil && backup.Spec.Dump != nil {
+		return backup.Spec.Dump, image
+	}
+	if cluster != nil {
+		return &cluster.DumpPodSpec, image
 	}
 
-	return nil
+	return nil, image
 }
 
 // start allocates the identity of the backup, pins the bucket it writes

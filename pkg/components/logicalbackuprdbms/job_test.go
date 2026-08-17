@@ -121,7 +121,7 @@ func TestJobGoldenS3Credentials(t *testing.T) {
 	t.Parallel()
 
 	in := input()
-	in.Dump = &v1.BackupDumpSpec{
+	in.Dump = &v1.DumpPodSpec{
 		Resources: &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("512Mi")},
 		},
@@ -253,7 +253,7 @@ func TestJobGoldenScratchPVC(t *testing.T) {
 	t.Parallel()
 
 	in := input()
-	in.Dump = &v1.BackupDumpSpec{
+	in.Dump = &v1.DumpPodSpec{
 		ScratchVolume: &v1.ScratchVolumeSpec{
 			SizeLimit:        new(resource.MustParse("200Gi")),
 			StorageClassName: new("fast"),
@@ -328,7 +328,7 @@ func TestBuildJobEnvOfTheJobWins(t *testing.T) {
 	t.Parallel()
 
 	in := input()
-	in.Dump = &v1.BackupDumpSpec{ExtraEnv: []corev1.EnvVar{
+	in.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
 		{Name: "PGHOST", Value: "evil.example"},
 		{Name: "PGSSLMODE", Value: "require"},
 		{Name: EnvUploadKey, Value: "somewhere/else"},
@@ -350,8 +350,8 @@ func TestReservedEnvNamesTheOffenders(t *testing.T) {
 	t.Parallel()
 
 	assert.Nil(t, ReservedEnv(nil))
-	assert.Nil(t, ReservedEnv(&v1.BackupDumpSpec{ExtraEnv: []corev1.EnvVar{{Name: "PGSSLMODE"}}}))
-	assert.Equal(t, []string{"PGPASSWORD", "UPLOAD_KEY"}, ReservedEnv(&v1.BackupDumpSpec{
+	assert.Nil(t, ReservedEnv(&v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{{Name: "PGSSLMODE"}}}))
+	assert.Equal(t, []string{"PGPASSWORD", "UPLOAD_KEY"}, ReservedEnv(&v1.DumpPodSpec{
 		ExtraEnv: []corev1.EnvVar{
 			{Name: "PGSSLMODE"}, {Name: "PGPASSWORD"}, {Name: "UPLOAD_KEY"}, {Name: "PGPASSWORD"},
 		},
@@ -412,11 +412,42 @@ func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {
 	assert.Equal(t, int64(24*60*60), *job.Spec.ActiveDeadlineSeconds)
 }
 
+// TestBuildJobTakesTheImageFromTheClusterOnly pins the policy boundary: the
+// pod settings may come from the backup, the image never does — a backup CR
+// cannot even express one (DumpPodSpec has no image field), and the Job
+// renders the cluster's image while the backup overrides every pod knob.
+func TestBuildJobTakesTheImageFromTheClusterOnly(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.PostgresImage = "mirror.example/postgres:17.4"
+	in.Dump = &v1.DumpPodSpec{ // the backup's own pod settings
+		PodLabels:             map[string]string{"from": "backup"},
+		ActiveDeadlineSeconds: new(int64(600)),
+	}
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.Equal(t, "mirror.example/postgres:17.4", job.Spec.Template.Spec.InitContainers[0].Image)
+	assert.Equal(t, "backup", job.Spec.Template.Labels["from"])
+	assert.Equal(t, int64(600), *job.Spec.ActiveDeadlineSeconds)
+
+	in.PostgresImage = ""
+	job, err = BuildJob(in)
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		"postgres:17",
+		job.Spec.Template.Spec.InitContainers[0].Image,
+		"the default follows the server major",
+	)
+}
+
 func TestBuildJobHonorsAnExplicitDeadline(t *testing.T) {
 	t.Parallel()
 
 	in := input()
-	in.Dump = &v1.BackupDumpSpec{ActiveDeadlineSeconds: new(int64(7200))}
+	in.Dump = &v1.DumpPodSpec{ActiveDeadlineSeconds: new(int64(7200))}
 	job, err := BuildJob(in)
 	require.NoError(t, err)
 	assert.Equal(t, int64(7200), *job.Spec.ActiveDeadlineSeconds)
