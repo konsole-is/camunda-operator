@@ -46,6 +46,10 @@ const (
 	// msgConnectorsVersionRequired rejects enabled connectors without a
 	// bundle version.
 	msgConnectorsVersionRequired = "connectors.version is required when connectors are enabled"
+	// msgContinuousWithoutSchedule quotes the pairing rule of the Camunda
+	// backup guide: continuous mode holds the log until a backup runs.
+	msgContinuousWithoutSchedule = "backup.primaryStorage.continuous is true but the schedule is none: " +
+		"continuous mode holds every log segment until a backup runs, so it always needs a schedule"
 )
 
 // versionFloor is the lowest Camunda version the operator supports.
@@ -320,6 +324,12 @@ func ValidateMerged(spec v1.CamundaClusterSpec) error {
 
 	if effective.ConnectorsEnabled() && spec.Connectors.Version == "" {
 		problems = append(problems, msgConnectorsVersionRequired)
+	}
+
+	if b := spec.Backup; b != nil && b.PrimaryStorage != nil &&
+		b.PrimaryStorage.Continuous != nil && *b.PrimaryStorage.Continuous &&
+		b.PrimaryStorage.Schedule == scheduleNone {
+		problems = append(problems, msgContinuousWithoutSchedule)
 	}
 
 	if len(problems) > 0 {

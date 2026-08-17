@@ -180,29 +180,31 @@ type primaryStorageBackup struct {
 	cleanupSchedule    string
 }
 
-// PrimaryStorageBackup returns the primary-storage backup policy with the
-// documented defaults applied. Continuous defaults to true: a relational
-// cluster that names a backup bucket needs an unbroken backup range for a
-// restore, and the schedule that accompanies it defaults with it.
-func (e Effective) PrimaryStorageBackup() primaryStorageBackup {
+// primaryStorageBackup returns the primary-storage backup policy with the
+// documented defaults applied. Continuous defaults to true only when a
+// schedule takes backups: continuous mode holds every log segment until a
+// backup runs, so with a schedule of none it would fill the disks and back
+// up nothing. An explicit continuous with a schedule of none is rejected by
+// ValidateMerged.
+func (e Effective) primaryStorageBackup() primaryStorageBackup {
 	resolved := primaryStorageBackup{
-		continuous:         true,
 		schedule:           defaultBackupSchedule,
 		checkpointInterval: defaultBackupCheckpointInterval,
 		retentionWindow:    defaultBackupRetentionWindow,
 		cleanupSchedule:    defaultBackupCleanupSchedule,
 	}
 
-	if e.Backup == nil || e.Backup.PrimaryStorage == nil {
-		return resolved
+	ps := &v1.PrimaryStorageBackupSpec{}
+	if e.Backup != nil && e.Backup.PrimaryStorage != nil {
+		ps = e.Backup.PrimaryStorage
 	}
 
-	ps := e.Backup.PrimaryStorage
-	if ps.Continuous != nil {
-		resolved.continuous = *ps.Continuous
-	}
 	if ps.Schedule != "" {
 		resolved.schedule = ps.Schedule
+	}
+	resolved.continuous = resolved.schedule != scheduleNone
+	if ps.Continuous != nil {
+		resolved.continuous = *ps.Continuous
 	}
 	if ps.CheckpointInterval != "" {
 		resolved.checkpointInterval = ps.CheckpointInterval
