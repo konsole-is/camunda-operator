@@ -296,7 +296,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Expect(secret.Data["username"]).To(Equal([]byte("camunda")))
-		Expect(secret.Data["roles"]).To(Equal([]byte("superuser")))
+		Expect(secret.Data["roles"]).To(Equal([]byte("camunda")))
 		Expect(secret.Data["password"]).To(HaveLen(32))
 		expectControlledBy(&secret, cluster)
 

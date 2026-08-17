@@ -102,15 +102,28 @@ const (
 // camundaRole is the definition of the role that the Camunda user holds, in
 // the file-based format that ECK loads through spec.auth.roles.
 //
-// Every privilege is one that Camunda documents as required. The cluster
-// privileges: monitor for the cluster health check and the node statistics
-// that size a restore; manage_index_templates and manage_ilm to create the
-// index templates and lifecycle policies on first start and on an upgrade;
-// manage_pipeline for the data migration of an upgrade; create_snapshot and
-// monitor_snapshot for the backups, where create_snapshot also covers deleting
-// a snapshot, which is what the backup finalizer does. Registering the
-// repository is deliberately absent: it needs cluster:admin/repository, and
-// the operator does it with the elastic user of ECK instead.
+// Every privilege is one that Camunda documents as required, except manage:
+// see below. The cluster privileges: monitor for the cluster health check and
+// the node statistics that size a restore; manage_index_templates and
+// manage_ilm to create the index templates and lifecycle policies on first
+// start and on an upgrade; manage_pipeline for the data migration of an
+// upgrade; create_snapshot and monitor_snapshot for taking a backup and
+// reading its status.
+//
+// manage is here for one reason only: deleting a snapshot, which the backup
+// finalizer does. create_snapshot's own definition is "create snapshots for
+// existing repositories. Can also list and view details on existing
+// repositories and snapshots" — creation and viewing, not deletion. The
+// Delete Snapshot API documents its requirement as the manage cluster
+// privilege, and no narrower named privilege for delete exists. manage grants
+// more than deletion alone (it "builds on monitor and adds cluster operations
+// that change values in the cluster"), but it is the documented way to get
+// this one operation, so it stands as a deliberate, wider-than-ideal grant
+// rather than an unverified raw action name.
+//
+// Registering the repository is deliberately absent: it needs
+// cluster:admin/repository, and the operator does it with the elastic user of
+// ECK instead.
 const camundaRole = `camunda:
   cluster:
     - monitor
@@ -119,6 +132,7 @@ const camundaRole = `camunda:
     - manage_pipeline
     - create_snapshot
     - monitor_snapshot
+    - manage
   indices:
     - names: [ "*" ]
       privileges:
