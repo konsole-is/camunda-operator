@@ -246,22 +246,6 @@ func (res *resolver) resolveRDBMSStorage(
 	return nil
 }
 
-// resolveObjectStorage checks that the ObjectStorageConfigs that
-// spec.backupStorageRef and spec.documentStorageRef name exist. Nothing of
-// them is rendered yet, so they do not enter the input.
-func (res *resolver) resolveObjectStorage(ctx context.Context, _ *components.Input) error {
-	for _, ref := range []string{res.cluster.Spec.BackupStorageRef, res.cluster.Spec.DocumentStorageRef} {
-		if ref == "" {
-			continue
-		}
-		if err := res.exists(ctx, client.ObjectKey{Name: ref}, &v1.ObjectStorageConfig{}); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // get reads the referenced object without the cache and records its
 // generation as a hash input. A missing object maps to InvalidReference,
 // naming the kind and the reference.
