@@ -54,7 +54,7 @@ The `logicalbackup-skeleton` row overrides the sketch in #65's issue text: the s
 
 - **Naming firewall:** PR numbers and "PR N" labels never appear in code, fixtures, or test names.
 - **Kinds:** `LogicalBackupElasticsearch`, `LogicalBackupRDBMS` everywhere — never `ESBackup`, `RDBMSBackup`, `Backup`.
-- **Packages:** `pkg/camundaadmin`, `pkg/esadmin`, `pkg/objectstore`, `pkg/logicalbackup`, `pkg/components/logicalbackuprdbms` (Job builder), controllers under `internal/controller/{logicalbackupelasticsearch,logicalbackuprdbms,backupschedule}` — one directory per CRD, matching Batch B/C layout.
+- **Packages:** `pkg/camundaadmin`, `pkg/esadmin`, `pkg/objectstore`, `pkg/logicalbackup`, `pkg/management` (contract→client for the CamundaCluster management binding; any consumer kind), `pkg/wrappers/secondarystorageconfig.ElasticsearchAdmin` (contract→client for the storage contract), `pkg/components/logicalbackuprdbms` (Job builder), controllers under `internal/controller/{logicalbackupelasticsearch,logicalbackuprdbms,backupschedule}` — one directory per CRD, matching Batch B/C layout.
 - **Labels:** owner keys via `pkg/labels` — `labels.LogicalBackupElasticsearchKey/LogicalBackupRDBMSKey/BackupScheduleKey`, shipped in PR1. Schedule linkage uses `labels.BackupScheduleKey`; `pkg/labels` is the single owner of label strings, so no package declares its own copy.
 - **Field managers:** ocf defaults for components; `camunda-operator/backup` for the dump Job SSA.
 - **Conditions:** `conditions.Aggregate` derives `Ready`; per-kind reasons live next to the kind's types; shared reasons come from `api/v1/conditions.go` — never redeclare.
