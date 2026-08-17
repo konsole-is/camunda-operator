@@ -35,7 +35,7 @@ status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 | #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | #79 → feat/backup-controllers | self-merged |
 | #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | #77 → feat/backup-controllers | self-merged |
 | #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | #84 → feat/backup-controllers | READY FOR USER REVIEW (do not merge) |
-| #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | #85 → feat/backup-controllers | quality fix round |
+| #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | #85 → feat/backup-controllers | READY FOR USER REVIEW (do not merge) |
 | #70 | feat/backup-controllers--backup-schedule | .claude/worktrees/backup-controllers--backup-schedule | → feat/backup-controllers | not-started |
 | #71 | test/backup-controllers--e2e-minio | .claude/worktrees/backup-controllers--e2e-minio | → feat/backup-controllers | not-started |
 
@@ -81,7 +81,8 @@ status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 
 ## Pending snapshot
 
-1. Phase 3 in flight: #68 and #69 dispatched in parallel worktrees off d9bab22. On each ready: spec-compliance gate, then quality pass, fix-loops with no cap — then STOP and request the user's own review; NEVER self-merge these two. After both merge on the user's word: Phase 4 (#70), Phase 5 (#71), integration PR (user-reviewed).
+1. BOTH Phase 3 PRs are READY FOR THE USER'S REVIEW and stopped: #84 (LogicalBackupElasticsearch) and #85 (LogicalBackupRDBMS). Each went through: spec gate + fix round, consolidated quality round (15 findings / ~30 items), independent delta review of the restructure, polish micro-round. NEVER merge these without the user's word. Decision points for the user, recorded in the PR bodies: the DatabaseServerConfig.version contract addition (upstream producers must fill it); the runtime operator-image self-resolution replacing the kustomize/Helm env; the dump-credentials Secret no longer rolls workload pods on rotation; the finalizer release-vs-retry contracts; the admission/runtime split semantics.
+2. After the user merges both: close #68/#69 with decision records, lock backup-kind-types, wire the cross-kind SiblingInProgress seam in cmd/main.go (one line per side, shared signature, contract pinned in its GoDoc: only STARTED siblings block), then Phase 4 (#70 BackupSchedule), Phase 5 (#71 e2e+docs), integration PR (user-reviewed).
 2. Merge order: #79 FIRST (owns `WorkloadIdentityAnnotations()`), close #66, lock `snapshot-repository-field`; then message #77's agent to merge the feature branch, refactor `DerivedServiceAccountAnnotations` onto the shared method (keeping the Azure pod label — see bubble-up), reconcile its stale PR-body verification paragraph, wire `serviceAccount.name`/`create` on the CamundaCluster side (the shared type now has the fields); re-review the delta, merge #77, close #67, lock `management-binding`.
 3. Then `reviewing-feature-progress` wave checkpoint; then fan out #68/#69 (Phase 3 — user-reviewed PRs).
 3. Phase 2: fan out #66 and #67 in parallel worktrees; loop to clean; self-merge; close.
