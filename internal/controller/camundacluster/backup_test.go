@@ -17,9 +17,12 @@ limitations under the License.
 package camundacluster
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -143,6 +146,21 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 
 		// The distinct name proves that the value comes from this contract,
 		// not from the shared fixture name of the other tests.
+		// Without a backupStorageRef the components are wired to no
+		// repository, so the binding must not name one.
+		It("omits the repository when the cluster takes no backups", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			setSnapshotRepository(binding, "repository-of-this-contract")
+			cluster := newCluster(ns, createPlatformConfig(), binding)
+			createCluster(cluster)
+
+			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
+				g.Expect(published).NotTo(BeNil())
+				g.Expect(published.BackupRepository).To(BeEmpty())
+			})
+		})
+
 		It("carries the snapshot repository of the storage contract", func() {
 			ns := newNamespace()
 			binding := createBinding(ns, true)
@@ -194,6 +212,58 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				Equal(v1.ReasonInvalidReference),
 				ContainSubstring("one cluster has one ServiceAccount"),
 			)
+		})
+
+		// The azure store has no container field: base-path IS the
+		// container, so the per-cluster prefix of S3 and GCS does not exist
+		// and a second cluster on the contract would write into the first
+		// cluster's container. The oldest cluster keeps the contract.
+		It("rejects a second cluster on one Azure contract, oldest wins", func() {
+			ns := newNamespace()
+			bucket := &v1.ObjectStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
+				Spec: v1.ObjectStorageConfigSpec{
+					Type: v1.ObjectStorageTypeAzureBlob,
+					AzureBlob: &v1.AzureBlobStorage{
+						AccountName: "camundabackups",
+						Container:   "backups",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, bucket)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, bucket) })
+
+			first := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			first.Spec.BackupStorageRef = bucket.Name
+			createCluster(first)
+
+			second := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			second.Spec.BackupStorageRef = bucket.Name
+			createCluster(second)
+
+			// The API server stamps creation times with one-second
+			// granularity, so which cluster is older is not for the test to
+			// say. The invariant is that exactly one yields, and its message
+			// names the one that keeps the contract.
+			rejected := func(cluster *v1.CamundaCluster, sibling *v1.CamundaCluster) bool {
+				var latest v1.CamundaCluster
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest); err != nil {
+					return false
+				}
+				ready := meta.FindStatusCondition(latest.Status.Conditions, "Ready")
+				return ready != nil && ready.Status == metav1.ConditionFalse &&
+					ready.Reason == v1.ReasonInvalidReference &&
+					strings.Contains(ready.Message, sibling.Name)
+			}
+			Eventually(func(g Gomega) {
+				firstRejected := rejected(first, second)
+				secondRejected := rejected(second, first)
+				g.Expect(firstRejected).NotTo(
+					Equal(secondRejected),
+					"exactly one cluster must yield the contract; first=%t second=%t",
+					firstRejected, secondRejected,
+				)
+			}, timeout, interval).Should(Succeed())
 		})
 
 		It("accepts two buckets that name the same identity", func() {
@@ -372,15 +442,38 @@ var _ = Describe("CamundaCluster backup schema", func() {
 		Expect(k8sClient.Create(ctx, cluster)).NotTo(Succeed())
 	})
 
-	It("rejects a retention window that is not a duration", func() {
+	// Camunda parses durations of days and time only. P1W, P1M, and P1Y are
+	// valid ISO 8601 but crash-loop the broker, so admission rejects them.
+	It("rejects duration units that Camunda does not parse", func() {
+		for _, window := range []string{"one week", "P1W", "P1M", "P1Y", "P", "PT"} {
+			cluster := minimalCamundaCluster()
+			cluster.Spec.Backup = &v1.ClusterBackupSpec{
+				PrimaryStorage: &v1.PrimaryStorageBackupSpec{
+					Retention: &v1.PrimaryStorageRetentionSpec{Window: window},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, cluster)).NotTo(Succeed(), window)
+		}
+
+		cluster := minimalCamundaCluster()
+		cluster.Spec.Backup = &v1.ClusterBackupSpec{
+			PrimaryStorage: &v1.PrimaryStorageBackupSpec{CheckpointInterval: "P1W"},
+		}
+		Expect(k8sClient.Create(ctx, cluster)).NotTo(Succeed())
+	})
+
+	It("accepts day and time durations", func() {
 		cluster := minimalCamundaCluster()
 		cluster.Spec.Backup = &v1.ClusterBackupSpec{
 			PrimaryStorage: &v1.PrimaryStorageBackupSpec{
-				Retention: &v1.PrimaryStorageRetentionSpec{Window: "one week"},
+				CheckpointInterval: "PT0.5S",
+				Retention:          &v1.PrimaryStorageRetentionSpec{Window: "P2DT12H"},
 			},
 		}
 
-		Expect(k8sClient.Create(ctx, cluster)).NotTo(Succeed())
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
 	})
 
 	// The backup block is policy, so a preset may carry it. Where backups go

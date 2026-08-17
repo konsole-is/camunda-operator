@@ -17,6 +17,7 @@ limitations under the License.
 package camundacluster
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,10 @@ import (
 
 // s3Bucket returns an S3 contract with workload identity, the shape that a
 // cloud cluster uses.
+// fixtureSnapshotRepository is the repository name of the storage contract
+// in the fixtures of this package.
+const fixtureSnapshotRepository = "my-cluster"
+
 func s3Bucket() *v1.ObjectStorageConfig {
 	return &v1.ObjectStorageConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
@@ -86,12 +91,12 @@ func TestBackupEnvIsAbsentWithoutABucket(t *testing.T) {
 func TestBackupEnvRendersTheS3StoreAndTheRepositoryName(t *testing.T) {
 	in := newInput(t, func(in *Input) {
 		in.Backup = s3Bucket()
-		in.Storage.Elasticsearch.SnapshotRepository = "my-cluster"
+		in.Storage.Elasticsearch.SnapshotRepository = fixtureSnapshotRepository
 	})
 
 	env := render(in, Process{Component: ComponentZeebe}).env
 
-	assertEnv(t, env, camundaconfig.KeyBackupRepositoryName.Env(), "my-cluster")
+	assertEnv(t, env, camundaconfig.KeyBackupRepositoryName.Env(), fixtureSnapshotRepository)
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupStore.Env(), "S3")
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupS3BucketName.Env(), "camunda-backups")
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupS3Region.Env(), "eu-west-1")
@@ -208,7 +213,6 @@ func TestBackupEnvUsesTheAzureBasePathAsTheContainer(t *testing.T) {
 
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupStore.Env(), "AZURE")
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupAzureBasePath.Env(), "backups")
-	assertEnv(t, env, camundaconfig.KeyPrimaryBackupAzureAccountName.Env(), "camundabackups")
 
 	// The endpoint is required without a connection string, and the contract
 	// carries none, so it is derived from the account.
@@ -267,7 +271,7 @@ func TestPrimaryStorageScheduleHonoursTheSpec(t *testing.T) {
 			Continuous:         new(false),
 			Schedule:           "PT10M",
 			CheckpointInterval: "PT1M",
-			Retention:          &v1.PrimaryStorageRetentionSpec{Window: "P1W", CleanupSchedule: "none"},
+			Retention:          &v1.PrimaryStorageRetentionSpec{Window: "P7D", CleanupSchedule: "none"},
 		},
 	})
 
@@ -276,7 +280,7 @@ func TestPrimaryStorageScheduleHonoursTheSpec(t *testing.T) {
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupContinuous.Env(), "false")
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupSchedule.Env(), "PT10M")
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupCheckpointInterval.Env(), "PT1M")
-	assertEnv(t, env, camundaconfig.KeyPrimaryBackupRetentionWindow.Env(), "P1W")
+	assertEnv(t, env, camundaconfig.KeyPrimaryBackupRetentionWindow.Env(), "P7D")
 	assertEnv(t, env, camundaconfig.KeyPrimaryBackupRetentionCleanupSchedule.Env(), "none")
 }
 
@@ -433,4 +437,216 @@ func TestUserAnnotationsWinOverTheDerivedOne(t *testing.T) {
 
 	assert.Equal(t, "arn:explicit", annotations[AWSRoleARNAnnotation])
 	assert.Equal(t, "kept", annotations["extra"])
+}
+
+// The derived identity is worthless unless the pods run under the annotated
+// ServiceAccount: the annotation binds the principal, the pod reference uses
+// it. This covers every cloud, because the binding mechanism is the same.
+func TestDerivedIdentityBindsThePods(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.ServiceAccountAnnotations = map[string]string{AWSRoleARNAnnotation: "arn:derived"}
+	})
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+
+	for _, pc := range comps {
+		if !pc.Process.Enabled {
+			continue
+		}
+		template := previewedPodTemplate(t, previewObjects(t, pc.Component))
+		assert.Equal(
+			t,
+			ServiceAccountName(in.Cluster),
+			template.Spec.ServiceAccountName,
+			pc.Process.Component,
+		)
+	}
+}
+
+// Camunda rejects an account name without an account key, and only falls back
+// to the credential chain of the runtime when name, key, connection string,
+// and SAS token are all absent. Workload identity must therefore render no
+// account fields at all; the endpoint alone addresses the store.
+func TestAzureWorkloadIdentityRendersNoAccountName(t *testing.T) {
+	t.Parallel()
+
+	azure := &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeAzureBlob,
+			AzureBlob: &v1.AzureBlobStorage{
+				AccountName: "camundabackups",
+				Container:   "backups",
+				Auth: v1.AzureBlobStorageAuth{
+					Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+					WorkloadIdentity: &v1.AzureBlobWorkloadIdentity{ClientID: "client"},
+				},
+			},
+		},
+	}
+	in := newInput(t, func(in *Input) { in.Backup = azure })
+
+	env := render(in, Process{Component: ComponentZeebe}).env
+
+	_, ok := envByName(env, camundaconfig.KeyPrimaryBackupAzureAccountName.Env())
+	assert.False(t, ok, "an account name without an account key crash-loops the broker")
+	_, ok = envByName(env, camundaconfig.KeyPrimaryBackupAzureAccountKey.Env())
+	assert.False(t, ok)
+
+	// The endpoint is still required: the account name of the contract
+	// derives it, it is just never rendered as a credential.
+	assertEnv(
+		t, env,
+		camundaconfig.KeyPrimaryBackupAzureEndpoint.Env(),
+		"https://camundabackups.blob.core.windows.net",
+	)
+}
+
+func TestAzureCredentialsRenderTheAccountPair(t *testing.T) {
+	t.Parallel()
+
+	azure := &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeAzureBlob,
+			AzureBlob: &v1.AzureBlobStorage{
+				AccountName: "camundabackups",
+				Container:   "backups",
+				Auth: v1.AzureBlobStorageAuth{
+					Type: v1.ObjectStorageAuthTypeCredentials,
+					Credentials: &v1.AzureBlobCredentials{SecretRef: v1.SecretKeyRef{
+						Name: "azure-key", Namespace: "my-cluster-ns", Key: "accountKey",
+					}},
+				},
+			},
+		},
+	}
+	in := newInput(t, func(in *Input) { in.Backup = azure })
+
+	env := render(in, Process{Component: ComponentZeebe}).env
+
+	assertEnv(t, env, camundaconfig.KeyPrimaryBackupAzureAccountName.Env(), "camundabackups")
+	assertSecretEnv(t, env, camundaconfig.KeyPrimaryBackupAzureAccountKey.Env(), "azure-key", "accountKey")
+}
+
+// Only the brokers take primary-storage backups, so only they get the store
+// and its credentials. The repository name configures the history backups of
+// the web applications, which any unified process can host, so it stays on
+// all of them.
+func TestBackupStoreEnvIsBrokerOnly(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Backup = minioBucket()
+		in.Storage.Elasticsearch.SnapshotRepository = fixtureSnapshotRepository
+	})
+
+	gateway := render(in, Process{Component: ComponentGateway, Kind: ProcessDeployment})
+	assertEnv(t, gateway.env, camundaconfig.KeyBackupRepositoryName.Env(), fixtureSnapshotRepository)
+	for _, name := range []string{
+		camundaconfig.KeyPrimaryBackupStore.Env(),
+		camundaconfig.KeyPrimaryBackupS3AccessKey.Env(),
+		camundaconfig.EnvAWSRequestChecksumCalculation,
+	} {
+		_, ok := envByName(gateway.env, name)
+		assert.False(t, ok, "%s belongs to the brokers only", name)
+	}
+
+	zeebe := render(in, Process{Component: ComponentZeebe})
+	assertEnv(t, zeebe.env, camundaconfig.KeyPrimaryBackupStore.Env(), "S3")
+}
+
+// The Google key file follows the store: only the broker pods mount it.
+func TestGoogleKeyMountIsBrokerOnly(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Backup = &v1.ObjectStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeGCS,
+				GCS: &v1.GCSStorage{
+					BucketName: "camunda-backups",
+					Auth: v1.GCSStorageAuth{
+						Type: v1.ObjectStorageAuthTypeCredentials,
+						Credentials: &v1.GCSCredentials{SecretRef: v1.SecretKeyRef{
+							Name: "gcs-key", Namespace: "my-cluster-ns", Key: "key.json",
+						}},
+					},
+				},
+			},
+		}
+	})
+
+	gateway := render(in, Process{Component: ComponentGateway, Kind: ProcessDeployment})
+	assert.Empty(t, gateway.volumes)
+	assert.Empty(t, gateway.mounts)
+
+	zeebe := render(in, Process{Component: ComponentZeebe})
+	require.Len(t, zeebe.volumes, 1)
+	assert.Equal(t, gcsKeyVolumeName, zeebe.volumes[0].Name)
+}
+
+// Continuous mode holds the log until a backup runs. A schedule of none takes
+// no backups, so defaulting continuous to true there would fill the disks of
+// a cluster that asked for nothing.
+func TestContinuousDefaultFollowsTheSchedule(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		backup *v1.ClusterBackupSpec
+		want   bool
+	}{
+		{name: "defaults on with the default schedule", backup: nil, want: true},
+		{
+			name: "defaults on with an explicit schedule",
+			backup: &v1.ClusterBackupSpec{
+				PrimaryStorage: &v1.PrimaryStorageBackupSpec{Schedule: "PT30M"},
+			},
+			want: true,
+		},
+		{
+			name: "defaults off when the schedule is none",
+			backup: &v1.ClusterBackupSpec{
+				PrimaryStorage: &v1.PrimaryStorageBackupSpec{Schedule: "none"},
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := rdbmsBackupInput(t, tc.backup)
+
+			env := render(in, Process{Component: ComponentZeebe}).env
+
+			assertEnv(t, env, camundaconfig.KeyPrimaryBackupContinuous.Env(), strconv.FormatBool(tc.want))
+		})
+	}
+}
+
+// An explicit continuous with no schedule is a contradiction the user must
+// resolve, not a state the operator quietly runs into a full disk.
+func TestValidateMergedRejectsContinuousWithoutASchedule(t *testing.T) {
+	t.Parallel()
+
+	spec := v1.CamundaClusterSpec{
+		Version: "8.9.9",
+		Backup: &v1.ClusterBackupSpec{
+			PrimaryStorage: &v1.PrimaryStorageBackupSpec{
+				Continuous: new(true),
+				Schedule:   "none",
+			},
+		},
+	}
+
+	err := ValidateMerged(spec)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "continuous")
+	assert.Contains(t, err.Error(), "schedule")
 }

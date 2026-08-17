@@ -233,7 +233,7 @@ func fixtureBackupElasticsearch(t *testing.T) Input {
 	return newInput(t, func(in *Input) {
 		in.Cluster.Spec.BackupStorageRef = "my-backup-config"
 		in.Effective = NewEffective(in.Cluster.Spec)
-		in.Storage.Elasticsearch.SnapshotRepository = "my-cluster"
+		in.Storage.Elasticsearch.SnapshotRepository = fixtureSnapshotRepository
 		in.Backup = minioBucket()
 	})
 }
