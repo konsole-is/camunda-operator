@@ -1101,6 +1101,13 @@ spec:
                   Ready condition carries the same message and is re-staged from this
                   field, so a write conflict can never lose it.
                 type: string
+              firstFailedAt:
+                description: |-
+                  FirstFailedAt is when a dependency of the running backup first stopped
+                  resolving, or the management API first stopped answering. The mid-run
+                  grace is measured from it; it clears when the backup recovers.
+                format: date-time
+                type: string
               jobName:
                 description: JobName is the Job that dumps and uploads the database.
                 type: string

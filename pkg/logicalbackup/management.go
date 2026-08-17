@@ -29,12 +29,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-// SiblingInProgress reports the name of a non-terminal backup of the other
-// backup kind for the cluster, or the empty string when none runs. Each
-// backup controller checks its own kind itself; the manager wires this seam
-// between the two kinds, so backups of one cluster run one at a time across
-// kinds. Both controllers use this one signature, so the wiring needs no
-// adapters.
+// SiblingInProgress reports the name of a backup of the other backup kind
+// for the cluster that has started — allocated its identity — and is not
+// terminal yet, or the empty string when none has. Pending siblings do not
+// block: the in-kind tie-break decides which pending backup starts first, so
+// two pending backups of different kinds cannot deadlock each other waiting
+// for one another — this mirrors the in-kind rule, where only a started
+// backup blocks unconditionally. Each backup controller checks its own kind
+// itself; the manager wires this seam between the two kinds. Both
+// controllers use this one signature, so the wiring needs no adapters.
 type SiblingInProgress func(ctx context.Context, cluster types.NamespacedName) (string, error)
 
 // ManagementClient builds the management API client of cluster from the

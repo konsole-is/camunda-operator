@@ -38,10 +38,13 @@ const managerContainer = "manager"
 // operatorImage returns the image the upload container runs: the explicit
 // --operator-image when set, or the image of the operator's own Pod. The pod
 // spec is immutable, so one successful resolution is cached for the process
-// lifetime. Reading the running pod means a chart or kustomize overlay cannot
-// drift from the deployed image, because nothing templates the image a second
-// time.
+// lifetime; a failed one is retried, which sync.Once could not do. The mutex
+// makes the cache safe under concurrent reconciles. Reading the running pod
+// means a chart or kustomize overlay cannot drift from the deployed image,
+// because nothing templates the image a second time.
 func (r *LogicalBackupRDBMSReconciler) operatorImage(ctx context.Context) (string, error) {
+	r.imageMu.Lock()
+	defer r.imageMu.Unlock()
 	if r.OperatorImage != "" {
 		return r.OperatorImage, nil
 	}

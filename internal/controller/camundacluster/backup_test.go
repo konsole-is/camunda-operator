@@ -21,7 +21,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -417,6 +419,76 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				g.Expect(copied.Data).To(HaveKeyWithValue("accessKeyId", []byte("minio")))
 				g.Expect(copied.Data).To(HaveKeyWithValue("secretAccessKey", []byte("minio123")))
 			}, timeout, interval).Should(Succeed())
+		})
+
+		// Only dump Jobs consume the backup user of the database, so a
+		// dangling reference must not park the whole cluster: it warns here
+		// and parks the backup that needs it, in its own pre-check.
+		It("warns on dangling dump credentials instead of parking the cluster", func() {
+			ns := newNamespace()
+
+			server := fixtures.DatabaseServerConfig()
+			Expect(k8sClient.Create(ctx, server)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+
+			createSecret(ns, "app-user", map[string]string{
+				"username": "camunda", "password": "app-secret",
+			})
+
+			dbConfig := fixtures.DatabaseConfig()
+			dbConfig.Namespace = ns
+			dbConfig.Spec.ServerRef = server.Name
+			dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
+				Name: "app-user", Namespace: ns,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+				Name: "gone-user", Namespace: ns,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+
+			storage := &v1.SecondaryStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: ns},
+				Spec: v1.SecondaryStorageConfigSpec{
+					Type:  v1.SecondaryStorageTypeRDBMS,
+					RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: dbConfig.Name},
+				},
+			}
+			Expect(k8sClient.Create(ctx, storage)).To(Succeed())
+
+			cluster := newCluster(ns, createPlatformConfig(), storage)
+			createCluster(cluster)
+
+			By("rendering the workloads: the pre-check did not park")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(
+					ctx, client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"},
+					&appsv1.StatefulSet{},
+				)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("warning about the unresolved dump credentials")
+			Eventually(func(g Gomega) {
+				var events eventsv1.EventList
+				g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+				reasons := make([]string, 0, len(events.Items))
+				for _, event := range events.Items {
+					reasons = append(reasons, event.Reason)
+				}
+				g.Expect(reasons).To(ContainElement("DumpCredentialsUnresolved"))
+			}, timeout, interval).Should(Succeed())
+
+			By("keeping no mirror for the unresolved reference")
+			var copied corev1.Secret
+			Expect(k8sClient.Get(
+				ctx, client.ObjectKey{
+					Namespace: ns,
+					Name: components.MirroredSecretName(
+						cluster, components.MirrorPurposeDumpCredentials,
+					),
+				}, &copied,
+			)).NotTo(Succeed())
 		})
 
 		// The dump Job of a LogicalBackupRDBMS mounts the backup user of the

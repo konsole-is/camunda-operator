@@ -1765,6 +1765,10 @@ func (in *LogicalBackupRDBMSStatus) DeepCopyInto(out *LogicalBackupRDBMSStatus) 
 		in, out := &in.PrimaryBackupRequestedAt, &out.PrimaryBackupRequestedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.FirstFailedAt != nil {
+		in, out := &in.FirstFailedAt, &out.FirstFailedAt
+		*out = (*in).DeepCopy()
+	}
 	in.StorageSizes.DeepCopyInto(&out.StorageSizes)
 	if in.CompletionTime != nil {
 		in, out := &in.CompletionTime, &out.CompletionTime

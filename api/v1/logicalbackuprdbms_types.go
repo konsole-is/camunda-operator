@@ -85,6 +85,11 @@ type LogicalBackupRDBMSStatus struct {
 	// does not report yet.
 	// +optional
 	PrimaryBackupRequestedAt *metav1.Time `json:"primaryBackupRequestedAt,omitempty"`
+	// FirstFailedAt is when a dependency of the running backup first stopped
+	// resolving, or the management API first stopped answering. The mid-run
+	// grace is measured from it; it clears when the backup recovers.
+	// +optional
+	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
 	// BucketRef pins the ObjectStorageConfig the dump was written through,
 	// so deletion cleans up against the bucket that actually holds the
 	// object, even after the cluster's backupStorageRef moved elsewhere.

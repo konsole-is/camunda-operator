@@ -30,6 +30,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -121,16 +122,18 @@ type LogicalBackupRDBMSReconciler struct {
 	EventRecorder events.EventRecorder
 	// OperatorImage runs the upload container of the dump Job. Empty means
 	// the image is resolved from the operator's own Pod on first use;
-	// --operator-image overrides it.
+	// --operator-image overrides it. imageMu guards the cached resolution.
 	OperatorImage string
+	imageMu       sync.Mutex
 	// OpenBucket opens the backup bucket for the finalizer. Nil means
 	// pkg/objectstore; tests point it at a local fake.
 	OpenBucket func(
 		ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
 	) (ArtifactBucket, error)
-	// SiblingInProgress reports a non-terminal backup of the other kind for
-	// the same cluster. The manager wires the LogicalBackupElasticsearch
-	// controller in here; nil means no other kind is checked.
+	// SiblingInProgress reports a started, non-terminal backup of the other
+	// kind for the same cluster; pending siblings do not block. The manager
+	// wires the LogicalBackupElasticsearch controller in here; nil means no
+	// other kind is checked.
 	SiblingInProgress logicalbackup.SiblingInProgress
 	// RetryInterval overrides defaultRetryInterval. Zero means the default.
 	RetryInterval time.Duration
@@ -530,6 +533,18 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 		// the backup on progress.
 		if err := r.Get(ctx, key, &current); err != nil {
 			if apierrors.IsNotFound(err) {
+				// The cache has no read-your-writes guarantee: right after
+				// the apply, the informer may not have seen the Job yet.
+				// Only the live view may declare it gone — a lost race must
+				// never terminally fail a valid dump.
+				liveErr := r.APIReader.Get(ctx, key, &current)
+				if liveErr == nil {
+					return r.trackJob(backup, &current)
+				}
+				if !apierrors.IsNotFound(liveErr) {
+					return settle, liveErr
+				}
+
 				// The recorded Job is gone before it reported: deleted by
 				// hand. The dump cannot be trusted to have uploaded.
 				r.fail(backup, "the dump Job disappeared before it completed")
@@ -579,6 +594,7 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 			"the operator image is unknown: %v", err,
 		))
 	}
+	r.recovered(backup)
 
 	creds := res.dbSecret
 	job, err := components.BuildJob(components.JobInput{
@@ -693,13 +709,18 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 
 // holdRunning stages a mid-run failure and decides its fate: within the
 // grace it holds the backup on a timer, past it the backup fails. The grace
-// is measured from the start of the backup — its id is the start timestamp.
+// is measured from when the dependency first stopped resolving — recorded in
+// status and cleared by recovered — so an hours-old backup gets the same
+// full grace as a fresh one.
 func (r *LogicalBackupRDBMSReconciler) holdRunning(
 	backup *v1.LogicalBackupRDBMS,
 	failure *conditions.PreCheckFailure,
 ) (hold, error) {
-	started := time.UnixMilli(backup.Status.BackupID)
-	if time.Since(started) > r.midRunGrace() {
+	now := metav1.Now()
+	if backup.Status.FirstFailedAt == nil {
+		backup.Status.FirstFailedAt = &now
+	}
+	if now.Sub(backup.Status.FirstFailedAt.Time) > r.midRunGrace() {
 		r.fail(backup, fmt.Sprintf(
 			"a dependency stopped resolving and did not recover: %s", failure.Message,
 		))
@@ -710,6 +731,12 @@ func (r *LogicalBackupRDBMSReconciler) holdRunning(
 	conditions.Stage(backup, conditions.Failed(backup, failure))
 
 	return hold{after: r.retryInterval()}, nil
+}
+
+// recovered clears the mid-run failure clock: the step just succeeded at
+// what it needed, so the next failure gets the full grace again.
+func (r *LogicalBackupRDBMSReconciler) recovered(backup *v1.LogicalBackupRDBMS) {
+	backup.Status.FirstFailedAt = nil
 }
 
 // trackJob maps the observed Job onto the backup through the same status
@@ -779,9 +806,10 @@ func (r *LogicalBackupRDBMSReconciler) primaryBackup(
 		id, err := admin.StartRuntimeBackup(ctx, nil)
 		switch {
 		case errors.Is(err, camundaadmin.ErrUnreachable):
-			conditions.Stage(backup, unreachable(backup, err))
-
-			return hold{after: r.retryInterval()}, nil
+			// The same bounded grace as any other mid-run failure: a
+			// management API that never answers again must terminalize the
+			// backup, not park it forever.
+			return r.holdRunning(backup, unreachable(&cluster, err))
 		case err != nil:
 			// A rejected call — a 503 through a restarting gateway, or even
 			// a conflict on the generated id — is retried with backoff. The
@@ -790,6 +818,7 @@ func (r *LogicalBackupRDBMSReconciler) primaryBackup(
 			// adopting the backup that holds the id.
 			return settle, fmt.Errorf("requesting the primary-storage backup: %w", err)
 		}
+		r.recovered(backup)
 
 		now := metav1.Now()
 		backup.Status.PrimaryBackupID = &id
@@ -803,13 +832,12 @@ func (r *LogicalBackupRDBMSReconciler) primaryBackup(
 
 	status, err := admin.RuntimeBackupStatus(ctx, *backup.Status.PrimaryBackupID)
 	if errors.Is(err, camundaadmin.ErrUnreachable) {
-		conditions.Stage(backup, unreachable(backup, err))
-
-		return hold{after: r.retryInterval()}, nil
+		return r.holdRunning(backup, unreachable(&cluster, err))
 	}
 	if err != nil {
 		return settle, fmt.Errorf("reading the primary-storage backup: %w", err)
 	}
+	r.recovered(backup)
 
 	switch status.State {
 	case camundaadmin.StateCompleted:
@@ -899,7 +927,8 @@ func (r *LogicalBackupRDBMSReconciler) stageTerminal(backup *v1.LogicalBackupRDB
 // entry gate: an already-running backup blocks everything else, and among
 // the pending ones only the oldest (creation time, then name) may start.
 // Both halves read live state, so two backups admitted from a stale cache
-// cannot both start.
+// cannot both start. The sibling seam follows the same rule from the other
+// side: it reports only started backups, so a pending sibling never blocks.
 func (r *LogicalBackupRDBMSReconciler) inProgress(backup *v1.LogicalBackupRDBMS) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
 		cluster := types.NamespacedName{
@@ -975,10 +1004,16 @@ func progressing(backup *v1.LogicalBackupRDBMS, message string) metav1.Condition
 	return conditions.Ready(metav1.ConditionFalse, v1.ReasonProgressing, message, backup.Generation)
 }
 
-func unreachable(backup *v1.LogicalBackupRDBMS, err error) metav1.Condition {
-	return conditions.Ready(
-		metav1.ConditionFalse, v1.ReasonConnectionFailed, err.Error(), backup.Generation,
-	)
+// unreachable is the mid-run failure of a management API that does not
+// answer, naming the endpoint so the terminal message points somewhere.
+func unreachable(cluster *v1.CamundaCluster, err error) *conditions.PreCheckFailure {
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonConnectionFailed,
+		Message: fmt.Sprintf(
+			"the management API at %s is not reachable: %v",
+			cluster.Status.Management.Endpoint, err,
+		),
+	}
 }
 
 // clusterKey is the index value of one backup: the namespace and name of the

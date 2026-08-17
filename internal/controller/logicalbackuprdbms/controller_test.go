@@ -446,6 +446,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 	It("consults the sibling kind through the seam", func() {
 		w := createWorld()
+		// The seam contract reports only STARTED, non-terminal siblings; the
+		// fake stands in for one that already allocated its identity.
 		setSibling(func(context.Context, types.NamespacedName) (string, error) {
 			return "an-elasticsearch-backup", nil
 		})
@@ -683,7 +685,86 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("stopped resolving"))
+		}, "15s", interval).Should(Succeed())
+	})
+
+	It("holds a mid-run failure and recovers when the dependency returns", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		jobOf(backup, w)
+
+		// Once the Job is tracked, the dump step needs no resolution; the
+		// missing cluster bites when the primary-storage step starts.
+		By("deleting the cluster, then finishing the dump")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		markJob(backup, w, batchv1.JobComplete)
+
+		By("holding the backup within the grace, failure clock running")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(backup.Status.FirstFailedAt).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
+
+		By("bringing the cluster back within the grace")
+		revived := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       w.cluster.Spec,
+		}
+		Expect(k8sClient.Create(ctx, revived)).To(Succeed())
+		revived.Status.Management = &v1.ManagementBinding{
+			Endpoint:   management.URL(),
+			Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+			Version:    "8.9.9",
+			Partitions: 3,
+		}
+		Expect(k8sClient.Status().Update(ctx, revived)).To(Succeed())
+
+		By("recovering: the failure clock clears and the backup completes")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.PrimaryBackupID).NotTo(BeNil())
+			g.Expect(backup.Status.FirstFailedAt).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+		management.SetRuntimeState(
+			*backup.Status.PrimaryBackupID, string(camundaadmin.StateCompleted), "",
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("fails when the management API stays unreachable past the grace", func() {
+		w := createWorld()
+		Eventually(func(g Gomega) {
+			g.Expect(
+				k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster),
+			).To(Succeed())
+			w.cluster.Status.Management.Endpoint = "http://127.0.0.1:1"
+			g.Expect(k8sClient.Status().Update(ctx, w.cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		backup := createBackup(w)
+		markJob(backup, w, batchv1.JobComplete)
+
+		By("terminalizing with the endpoint named, instead of parking forever")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("127.0.0.1:1"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("not reachable"))
+		}, "15s", interval).Should(Succeed())
+	})
+
+	It("parks in Pending when the dump credentials Secret is gone", func() {
+		w := createWorld()
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "backup-user", Namespace: w.namespace},
+		})).To(Succeed())
+
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonMissingSecret)
 	})
 
 	It("tolerates a primary-storage backup that has not registered yet", func() {

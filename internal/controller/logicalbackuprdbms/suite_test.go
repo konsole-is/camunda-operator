@@ -117,7 +117,7 @@ var _ = BeforeSuite(func() {
 			RetryInterval: time.Second,
 			// Small graces, so the specs that outwait them stay fast. The
 			// windows the specs assert within must stay well inside these.
-			MidRunGrace:       3 * time.Second,
+			MidRunGrace:       4 * time.Second,
 			RegistrationGrace: 4 * time.Second,
 			OpenBucket: func(
 				context.Context, *v1.ObjectStorageConfig, *objectstore.Credentials,
