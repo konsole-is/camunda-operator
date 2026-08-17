@@ -9,7 +9,7 @@ sub_pr_approval: autonomous   # EXCEPT #68, #69, integration PR: manual (user re
 sub_pr_review_loop: on        # no round cap — loop until clean
 sub_pr_target: feature-branch
 integration_pr:
-status: consumer-wave
+status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 ---
 
 # Backup controllers — orchestration state
@@ -54,6 +54,8 @@ status: consumer-wave
 
 ## Bubble-up log
 
+- **2026-08-17 — Phase 2→3 checkpoint executed and clean.** Integrated verification: `make test` 29/29, lint 0, no drift, chart 132,844/524,288. Coherence sweep found six ALIGN NOW items (all shipped in #83: shared `conditions.UnwatchedPreCheckFailure`, three doc corrections, the camundaadmin endpoint example, exclude-don't-gate added to Conventions) and five record-only items (all recorded: CC/ES suspension stances, preset-legality asymmetry, spec API sections realigned, follow-ups #81 GCS/Azure ES repositories and #82 client HTTP-core dedup filed). Naming firewall clean; acceptance criteria of #65/#66/#67 covered as amended by their decision records.
+
 - **2026-08-17 — Cross-PR find: gated-off ocf resources are deletion targets; foreign ServiceAccounts must be EXCLUDED, not gated.** #77's new envtest showed the operator deleting a user's pre-existing SA under `create: false` — the component held the foreign-named resource behind a false gate, and gate-off means delete. Fix: `IncludeWhen` exclusion (#77, merged). #79 has the identical latent bug on the ES side (`elasticsearchcluster/components.go` ~429); follow-up PR `fix/backup-controllers--foreign-sa-exclusion` dispatched. Standing rule for PR4/PR5: a resource that may pre-exist and be user-owned is excluded from the component when unmanaged, never gated.
 
 - **2026-08-17 — Quality reviews of #77 and #79: both sent back with substantial findings.** #77 (15 findings, 12 confirmed): the derived ServiceAccount was rendered but NO pod referenced it (workload identity silently never bound on any cloud — golden proved it); Azure account-name-without-key crash-loops the broker; the duration CRD pattern admitted P1W/P1M/P1Y which java.time.Duration rejects; schedule "none" + the continuous default fills the disk; Azure two-cluster container collision; backupRepository published without a backup bucket; repository-name key canonical-vs-legacy dispute (implementer resolves against the MCP — spec's verified fact may be the alias). #79 (10 finder angles): preset-provided snapshotStorageRef invisible to the watches; pre-checks run before suspend; stale SnapshotRepositoryReady after ref deletion; the base-path leading-slash divergence (five finders independently); contract publishes snapshotRepository before registration succeeds; empty-identity WI bucket leaves pods on the default SA; esadmin empty-CA loophole (the convergence test depended on it); 404 repo-vs-snapshot conflation; unescaped URL path segments; %v flattening breaking errors.Is(context.Canceled); fake-fidelity gaps (deleted ids reusable, wrong ES error shape, undocumented 404).
@@ -75,9 +77,7 @@ status: consumer-wave
 
 ## Pending snapshot
 
-1. Phase 2 MERGED: #79 (d6435ea) and #77 (8e93f76); #66 and #67 closed with decision records; all Phase 2 contracts locked. In flight: `fix/backup-controllers--foreign-sa-exclusion` (ES-side foreign-SA deletion bug, small PR to the feature branch) — verify red→green, quick review, self-merge.
-2. Then the wave checkpoint (`reviewing-feature-progress`) over the merged feature branch.
-3. Then fan out #68 (LBES) and #69 (LBRDBMS) per the plan's PR4/PR5 sections — dispatch prompts must carry: the locked contract rows AS AMENDED (camundaadmin protocol facts, management-binding shape with method `none`, logicalbackup PreCheckRequest + InProgress-lists-both-kinds, ClusterPrefix as the one layout), the per-kind reason declarations (ResumeFailed → #68, MissingCredentials → #69), the exclude-don't-gate rule for possibly-foreign resources, the KUBEBUILDER_ASSETS-absolute + control-plane-reaping etiquette, and the standing directive that these two PRs STOP after a clean loop for the user's own review — never self-merge.
+1. Phase 3 in flight: #68 and #69 dispatched in parallel worktrees off d9bab22. On each ready: spec-compliance gate, then quality pass, fix-loops with no cap — then STOP and request the user's own review; NEVER self-merge these two. After both merge on the user's word: Phase 4 (#70), Phase 5 (#71), integration PR (user-reviewed).
 2. Merge order: #79 FIRST (owns `WorkloadIdentityAnnotations()`), close #66, lock `snapshot-repository-field`; then message #77's agent to merge the feature branch, refactor `DerivedServiceAccountAnnotations` onto the shared method (keeping the Azure pod label — see bubble-up), reconcile its stale PR-body verification paragraph, wire `serviceAccount.name`/`create` on the CamundaCluster side (the shared type now has the fields); re-review the delta, merge #77, close #67, lock `management-binding`.
 3. Then `reviewing-feature-progress` wave checkpoint; then fan out #68/#69 (Phase 3 — user-reviewed PRs).
 3. Phase 2: fan out #66 and #67 in parallel worktrees; loop to clean; self-merge; close.
