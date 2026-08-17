@@ -1936,10 +1936,10 @@ spec:
                           checkpointInterval:
                             description: |-
                               CheckpointInterval is the interval at which Zeebe writes marker
-                              checkpoints into the log stream, as an ISO 8601 duration. It is the
-                              granularity of a point-in-time restore. Defaults to PT15M.
-                            minLength: 2
-                            pattern: ^P([0-9]+[YMWD])*(T([0-9]+(\.[0-9]+)?[HMS])+)?$
+                              checkpoints into the log stream, as an ISO 8601 duration of days and
+                              time (P2DT3H, PT15M). Camunda parses no week, month, or year units.
+                              It is the granularity of a point-in-time restore. Defaults to PT15M.
+                            pattern: ^P([0-9]+D(T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))?|T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))$
                             type: string
                           continuous:
                             description: |-
@@ -1962,12 +1962,12 @@ spec:
                               window:
                                 description: |-
                                   Window is how far back the backups stay available for a restore, as an
-                                  ISO 8601 duration. Defaults to P7D. It bounds the restore window, so
-                                  set it at least as long as the recovery point the cluster needs. A
-                                  BackupSchedule that keeps database dumps for longer than this window
-                                  keeps dumps that can no longer be restored.
-                                minLength: 2
-                                pattern: ^P([0-9]+[YMWD])*(T([0-9]+(\.[0-9]+)?[HMS])+)?$
+                                  ISO 8601 duration of days and time (P7D, PT12H). Camunda parses no
+                                  week, month, or year units. Defaults to P7D. It bounds the restore
+                                  window, so set it at least as long as the recovery point the cluster
+                                  needs. A BackupSchedule that keeps database dumps for longer than this
+                                  window keeps dumps that can no longer be restored.
+                                pattern: ^P([0-9]+D(T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))?|T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))$
                                 type: string
                             type: object
                           schedule:

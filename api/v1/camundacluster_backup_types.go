@@ -55,10 +55,10 @@ type PrimaryStorageBackupSpec struct {
 	// +optional
 	Schedule string `json:"schedule,omitempty"`
 	// CheckpointInterval is the interval at which Zeebe writes marker
-	// checkpoints into the log stream, as an ISO 8601 duration. It is the
-	// granularity of a point-in-time restore. Defaults to PT15M.
-	// +kubebuilder:validation:Pattern=`^P([0-9]+[YMWD])*(T([0-9]+(\.[0-9]+)?[HMS])+)?$`
-	// +kubebuilder:validation:MinLength=2
+	// checkpoints into the log stream, as an ISO 8601 duration of days and
+	// time (P2DT3H, PT15M). Camunda parses no week, month, or year units.
+	// It is the granularity of a point-in-time restore. Defaults to PT15M.
+	// +kubebuilder:validation:Pattern=`^P([0-9]+D(T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))?|T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))$`
 	// +optional
 	CheckpointInterval string `json:"checkpointInterval,omitempty"`
 	// Retention bounds how long Zeebe keeps its primary-storage backups.
@@ -70,12 +70,12 @@ type PrimaryStorageBackupSpec struct {
 // keeps. Zeebe always keeps at least one backup, even outside the window.
 type PrimaryStorageRetentionSpec struct {
 	// Window is how far back the backups stay available for a restore, as an
-	// ISO 8601 duration. Defaults to P7D. It bounds the restore window, so
-	// set it at least as long as the recovery point the cluster needs. A
-	// BackupSchedule that keeps database dumps for longer than this window
-	// keeps dumps that can no longer be restored.
-	// +kubebuilder:validation:Pattern=`^P([0-9]+[YMWD])*(T([0-9]+(\.[0-9]+)?[HMS])+)?$`
-	// +kubebuilder:validation:MinLength=2
+	// ISO 8601 duration of days and time (P7D, PT12H). Camunda parses no
+	// week, month, or year units. Defaults to P7D. It bounds the restore
+	// window, so set it at least as long as the recovery point the cluster
+	// needs. A BackupSchedule that keeps database dumps for longer than this
+	// window keeps dumps that can no longer be restored.
+	// +kubebuilder:validation:Pattern=`^P([0-9]+D(T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))?|T(([0-9]+H)([0-9]+M)?([0-9]+([.][0-9]+)?S)?|([0-9]+M)([0-9]+([.][0-9]+)?S)?|[0-9]+([.][0-9]+)?S))$`
 	// +optional
 	Window string `json:"window,omitempty"`
 	// CleanupSchedule is the interval at which Zeebe looks for backups
