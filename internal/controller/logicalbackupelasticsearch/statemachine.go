@@ -30,7 +30,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
-	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
@@ -84,7 +84,7 @@ func (r *Reconciler) management(
 	step string,
 	part *v1.BackupPart,
 ) (*camundaadmin.Client, ctrl.Result, error) {
-	mgmt, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, cluster)
+	mgmt, failure, err := management.NewClient(ctx, r.APIReader, cluster)
 	if err != nil {
 		return nil, ctrl.Result{}, err
 	}

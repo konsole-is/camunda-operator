@@ -28,7 +28,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 )
 
 // resumeExporting always runs, after success and after any failure. A cluster
@@ -87,7 +87,7 @@ func (r *Reconciler) chargeResumeAttempt(backup *v1.LogicalBackupElasticsearch, 
 
 // resumeOnce makes one resume call against the cluster.
 func resumeOnce(ctx context.Context, r *Reconciler, cluster *v1.CamundaCluster) error {
-	mgmt, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, cluster)
+	mgmt, failure, err := management.NewClient(ctx, r.APIReader, cluster)
 	if err != nil {
 		return err
 	}

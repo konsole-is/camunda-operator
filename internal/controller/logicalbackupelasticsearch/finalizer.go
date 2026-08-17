@@ -30,6 +30,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
@@ -99,7 +100,7 @@ func (r *Reconciler) deleteArtifacts(
 		return false, nil
 	}
 
-	mgmt, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, &cluster)
+	mgmt, failure, err := management.NewClient(ctx, r.APIReader, &cluster)
 	if err != nil {
 		return false, fmt.Errorf("building the management client: %w", err)
 	}

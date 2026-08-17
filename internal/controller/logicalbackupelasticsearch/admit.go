@@ -31,6 +31,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/management"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
@@ -84,7 +85,7 @@ func (r *Reconciler) admitBinding(
 	backup *v1.LogicalBackupElasticsearch,
 	cluster *v1.CamundaCluster,
 ) (result ctrl.Result, done bool, err error) {
-	_, failure, err := logicalbackup.ManagementClient(ctx, r.APIReader, cluster)
+	_, failure, err := management.NewClient(ctx, r.APIReader, cluster)
 	if err != nil {
 		return ctrl.Result{}, true, err
 	}
