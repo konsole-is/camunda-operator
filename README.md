@@ -29,7 +29,7 @@ upgrades, see the [installation guide](docs/installation.md).
 - [Installation](docs/installation.md) — Helm and manifest installation.
 - [Architecture](docs/architecture.md) — the extension model and how features
   attach to workloads.
-- [CRD reference](docs/crds/index.md) — all 19 custom resource definitions.
+- [CRD reference](docs/crds/index.md) — every custom resource definition.
 
 ## Development
 
