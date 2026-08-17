@@ -22,10 +22,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// SiblingInProgress reports the name of a non-terminal backup of the other
-// backup kind for the cluster, or the empty string when none runs. Each
-// backup controller checks its own kind itself; the manager wires this seam
-// between the two kinds, so backups of one cluster run one at a time across
-// kinds. Both controllers use this one signature, so the wiring needs no
-// adapters.
+// SiblingInProgress reports the name of a backup of the other backup kind
+// for the cluster, or the empty string when none blocks. A sibling blocks
+// only when it has started, that is, when it has allocated its identity, and
+// it is not terminal yet. A pending sibling does not block. The in-kind
+// tie-break decides which pending backup starts first, so two pending
+// backups of different kinds cannot deadlock each other. This mirrors the
+// in-kind rule, where only a started backup blocks unconditionally. Each
+// backup controller checks its own kind itself, and the manager wires this
+// seam between the two kinds. Both controllers use this one signature, so
+// the wiring needs no adapters.
 type SiblingInProgress func(ctx context.Context, cluster types.NamespacedName) (string, error)
