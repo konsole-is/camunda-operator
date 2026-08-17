@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: e40ac5f1bcfef6b0
+        camunda.io/config-hash: a0b387b7866d3805
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: zeebe
@@ -60,7 +60,7 @@ spec:
             secretKeyRef:
               key: password
               name: es-user
-        - name: CAMUNDA_DATA_BACKUP_REPOSITORYNAME
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_BACKUP_REPOSITORYNAME
           value: my-cluster
         - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_STORE
           value: S3

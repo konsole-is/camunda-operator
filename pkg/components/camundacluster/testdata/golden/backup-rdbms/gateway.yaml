@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 50086652fcbdadae
+        camunda.io/config-hash: 5a00142469caabc3
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: gateway
@@ -57,24 +57,6 @@ spec:
               name: camunda-db-user
         - name: CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_DATABASEVENDORID
           value: postgresql
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_STORE
-          value: S3
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_BUCKETNAME
-          value: camunda-backups
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_BASEPATH
-          value: clusters/my-cluster-ns/my-cluster
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_REGION
-          value: eu-west-1
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_CONTINUOUS
-          value: "true"
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_SCHEDULE
-          value: PT30M
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_CHECKPOINTINTERVAL
-          value: PT15M
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_RETENTION_WINDOW
-          value: P14D
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_RETENTION_CLEANUPSCHEDULE
-          value: PT1H
         - name: CAMUNDA_SECURITY_AUTHENTICATION_METHOD
           value: basic
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME
@@ -128,6 +110,7 @@ spec:
         runAsGroup: 1001
         runAsNonRoot: true
         runAsUser: 1001
+      serviceAccountName: my-cluster-camunda
 ---
 apiVersion: v1
 kind: Service

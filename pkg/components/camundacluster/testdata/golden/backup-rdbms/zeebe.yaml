@@ -150,6 +150,7 @@ spec:
         runAsGroup: 1001
         runAsNonRoot: true
         runAsUser: 1001
+      serviceAccountName: my-cluster-camunda
   updateStrategy:
     type: RollingUpdate
   volumeClaimTemplates:

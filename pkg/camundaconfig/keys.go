@@ -97,10 +97,14 @@ const (
 	// (MyBatisConfiguration.java).
 	KeyRDBMSDatabaseVendorID Key = "camunda.data.secondary-storage.rdbms.database-vendor-id"
 
-	// KeyBackupRepositoryName is camunda.data.backup.repository-name, the
-	// snapshot repository that the web applications write their backups to
-	// (docs "Core settings > Concepts > Backups").
-	KeyBackupRepositoryName Key = "camunda.data.backup.repository-name"
+	// KeyBackupRepositoryName is
+	// camunda.data.secondary-storage.elasticsearch.backup.repository-name,
+	// the snapshot repository that the web applications write their history
+	// backups to. The 8.9 property-changes table lists it as the unified
+	// property and camunda.data.backup.repository-name as one of its legacy
+	// aliases, a breaking change (docs "Core settings > Configuration >
+	// Property changes in Camunda 8.9").
+	KeyBackupRepositoryName Key = "camunda.data.secondary-storage.elasticsearch.backup.repository-name"
 
 	// KeyPrimaryBackupStore is camunda.data.primary-storage.backup.store, one
 	// of NONE, S3, GCS, AZURE, FILESYSTEM (BackupStoreCfg.java).

@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 40fe7c9fd53fe933
+        camunda.io/config-hash: 3c41ffc7b9e4b544
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: gateway
@@ -55,32 +55,8 @@ spec:
             secretKeyRef:
               key: password
               name: es-user
-        - name: CAMUNDA_DATA_BACKUP_REPOSITORYNAME
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_BACKUP_REPOSITORYNAME
           value: my-cluster
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_STORE
-          value: S3
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_BUCKETNAME
-          value: camunda-backups
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_BASEPATH
-          value: clusters/my-cluster-ns/my-cluster
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_ENDPOINT
-          value: http://minio.minio.svc:9000
-        - name: AWS_REQUEST_CHECKSUM_CALCULATION
-          value: WHEN_REQUIRED
-        - name: AWS_RESPONSE_CHECKSUM_CALCULATION
-          value: WHEN_REQUIRED
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_FORCEPATHSTYLEACCESS
-          value: "true"
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_ACCESSKEY
-          valueFrom:
-            secretKeyRef:
-              key: accessKeyId
-              name: my-cluster-camunda-backup-credentials
-        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_SECRETKEY
-          valueFrom:
-            secretKeyRef:
-              key: secretAccessKey
-              name: my-cluster-camunda-backup-credentials
         - name: CAMUNDA_SECURITY_AUTHENTICATION_METHOD
           value: basic
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME
