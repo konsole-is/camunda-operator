@@ -327,17 +327,17 @@ func TestDerivedServiceAccountAnnotationsPerCloud(t *testing.T) {
 		{
 			name:   "aws",
 			bucket: s3Bucket(),
-			want:   map[string]string{AWSRoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda"},
+			want:   map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda"},
 		},
 		{
 			name:   "gcp",
 			bucket: gcs,
-			want:   map[string]string{GCPServiceAccountAnnotation: "camunda@p.iam.gserviceaccount.com"},
+			want:   map[string]string{v1.GKEServiceAccountAnnotation: "camunda@p.iam.gserviceaccount.com"},
 		},
 		{
 			name:   "azure",
 			bucket: azure,
-			want:   map[string]string{AzureClientIDAnnotation: "11111111-2222-3333-4444-555555555555"},
+			want:   map[string]string{v1.AzureClientIDAnnotation: "11111111-2222-3333-4444-555555555555"},
 		},
 		{
 			name:   "static credentials carry no identity",
@@ -387,55 +387,142 @@ func TestDerivedServiceAccountAnnotationsAcceptTheSameIdentityTwice(t *testing.T
 	got, err := DerivedServiceAccountAnnotations(s3Bucket(), documents)
 
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{AWSRoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda"}, got)
+	assert.Equal(t, map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda"}, got)
 }
 
 // The Azure webhook injects the projected token only into a pod that carries
 // the opt-in label, so the annotation alone would leave the identity unused.
+// The label must also survive an identity block with no client id: the
+// binding then lives on the cloud side, but the webhook still needs the
+// opt-in.
 func TestAzureWorkloadIdentityAddsThePodLabel(t *testing.T) {
-	in := newInput(t, func(in *Input) {
-		in.ServiceAccountAnnotations = map[string]string{AzureClientIDAnnotation: "client"}
-	})
+	azure := &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeAzureBlob,
+			AzureBlob: &v1.AzureBlobStorage{
+				AccountName: "camundabackups",
+				Container:   "backups",
+				Auth: v1.AzureBlobStorageAuth{
+					Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+					WorkloadIdentity: &v1.AzureBlobWorkloadIdentity{},
+				},
+			},
+		},
+	}
+	in := newInput(t, func(in *Input) { in.Backup = azure })
 
 	labels := podTemplate(in, Process{Component: ComponentZeebe}).Labels
 
-	assert.Equal(t, "true", labels[AzureWorkloadIdentityPodLabel])
+	assert.Equal(t, "true", labels[v1.AzureWorkloadIdentityUseLabel])
 }
 
 func TestOtherCloudsAddNoPodLabel(t *testing.T) {
-	in := newInput(t, func(in *Input) {
-		in.ServiceAccountAnnotations = map[string]string{AWSRoleARNAnnotation: "arn"}
-	})
+	in := newInput(t, func(in *Input) { in.Backup = s3Bucket() })
 
 	labels := podTemplate(in, Process{Component: ComponentZeebe}).Labels
 
-	_, ok := labels[AzureWorkloadIdentityPodLabel]
+	_, ok := labels[v1.AzureWorkloadIdentityUseLabel]
 	assert.False(t, ok)
 }
 
 func TestServiceAccountCarriesTheDerivedAnnotation(t *testing.T) {
 	in := newInput(t, func(in *Input) {
-		in.ServiceAccountAnnotations = map[string]string{AWSRoleARNAnnotation: "arn:derived"}
+		in.Backup = s3Bucket()
+		in.ServiceAccountAnnotations = map[string]string{v1.IRSARoleARNAnnotation: "arn:derived"}
 	})
 
-	assert.True(t, serviceAccountRendered(in), "a derived identity needs a ServiceAccount to live on")
-	assert.Equal(t, "arn:derived", serviceAccountFor(in).Annotations[AWSRoleARNAnnotation])
+	assert.True(t, rendersServiceAccount(in), "a derived identity needs a ServiceAccount to live on")
+	assert.Equal(t, "arn:derived", serviceAccountFor(in).Annotations[v1.IRSARoleARNAnnotation])
+}
+
+// An identity block with nothing in it is still an identity: EKS Pod
+// Identity and Workload Identity Federation bind the ServiceAccount by name
+// on the cloud side, so the account must exist and the pods must reference
+// it even though there is nothing to annotate onto it.
+func TestEmptyIdentityBlockStillBindsTheServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	bucket := s3Bucket()
+	bucket.Spec.S3.Auth.WorkloadIdentity = &v1.S3WorkloadIdentity{}
+	in := newInput(t, func(in *Input) { in.Backup = bucket })
+
+	assert.True(t, usesServiceAccount(in))
+	assert.True(t, rendersServiceAccount(in))
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+	template := previewedPodTemplate(t, previewObjects(t, comps[0].Component))
+	assert.Equal(t, ServiceAccountName(in.Cluster, in.Effective), template.Spec.ServiceAccountName)
+}
+
+// Static credentials carry no identity, so without spec.serviceAccount there
+// is no ServiceAccount to render or reference.
+func TestCredentialsBucketBindsNoServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) { in.Backup = minioBucket() })
+
+	assert.False(t, usesServiceAccount(in))
+	assert.False(t, rendersServiceAccount(in))
+}
+
+// A named ServiceAccount overrides the derived default everywhere it is
+// used: the rendered account, the pod reference, and the documented
+// principal are one name.
+func TestServiceAccountNameIsOverridable(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "camunda-prod"}
+		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, nil))
+	})
+
+	assert.Equal(t, "camunda-prod", ServiceAccountName(in.Cluster, in.Effective))
+	assert.Equal(t, "camunda-prod", serviceAccountFor(in).Name)
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+	template := previewedPodTemplate(t, previewObjects(t, comps[0].Component))
+	assert.Equal(t, "camunda-prod", template.Spec.ServiceAccountName)
+}
+
+// create: false names a pre-existing ServiceAccount: the pods reference it,
+// and the operator renders nothing it would own and delete with the cluster.
+func TestForeignServiceAccountIsReferencedNotRendered(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
+			Name:   "platform-sa",
+			Create: new(false),
+		}
+		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, nil))
+	})
+
+	assert.True(t, usesServiceAccount(in))
+	assert.False(t, rendersServiceAccount(in))
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+	template := previewedPodTemplate(t, previewObjects(t, comps[0].Component))
+	assert.Equal(t, "platform-sa", template.Spec.ServiceAccountName)
 }
 
 // A user who writes the annotation by hand has the last word: the operator
 // must not overwrite an explicit value with the one it derived.
 func TestUserAnnotationsWinOverTheDerivedOne(t *testing.T) {
 	in := newInput(t, func(in *Input) {
-		in.ServiceAccountAnnotations = map[string]string{AWSRoleARNAnnotation: "arn:derived"}
+		in.ServiceAccountAnnotations = map[string]string{v1.IRSARoleARNAnnotation: "arn:derived"}
 		in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
-			Annotations: map[string]string{AWSRoleARNAnnotation: "arn:explicit", "extra": "kept"},
+			Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:explicit", "extra": "kept"},
 		}
 		in.Effective = NewEffective(MergePreset(in.Cluster.Spec, nil))
 	})
 
 	annotations := serviceAccountFor(in).Annotations
 
-	assert.Equal(t, "arn:explicit", annotations[AWSRoleARNAnnotation])
+	assert.Equal(t, "arn:explicit", annotations[v1.IRSARoleARNAnnotation])
 	assert.Equal(t, "kept", annotations["extra"])
 }
 
@@ -446,7 +533,8 @@ func TestDerivedIdentityBindsThePods(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
-		in.ServiceAccountAnnotations = map[string]string{AWSRoleARNAnnotation: "arn:derived"}
+		in.Backup = s3Bucket()
+		in.ServiceAccountAnnotations = map[string]string{v1.IRSARoleARNAnnotation: "arn:derived"}
 	})
 
 	comps, err := Build(in)
@@ -459,7 +547,7 @@ func TestDerivedIdentityBindsThePods(t *testing.T) {
 		template := previewedPodTemplate(t, previewObjects(t, pc.Component))
 		assert.Equal(
 			t,
-			ServiceAccountName(in.Cluster),
+			ServiceAccountName(in.Cluster, in.Effective),
 			template.Spec.ServiceAccountName,
 			pc.Process.Component,
 		)

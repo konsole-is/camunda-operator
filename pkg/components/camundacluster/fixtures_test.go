@@ -265,7 +265,7 @@ func fixtureBackupRDBMS(t *testing.T) Input {
 		}
 		in.Backup = s3Bucket()
 		in.ServiceAccountAnnotations = map[string]string{
-			AWSRoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda",
+			v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda",
 		}
 	})
 }
