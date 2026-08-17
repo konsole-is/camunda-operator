@@ -238,6 +238,42 @@ var _ = Describe("CamundaCluster schema", func() {
 			"mode",
 		),
 		Entry(
+			"accepts an admin block with all three member kinds",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{
+					Users:   []string{"ada@example.com"},
+					Clients: []string{"my-cluster-client"},
+					MappingRules: []v1.AdminMappingRule{
+						{ID: "platform-admins", ClaimName: "groups", ClaimValue: "camunda-admins"},
+					},
+				}}
+			},
+			"",
+		),
+		Entry(
+			"rejects an empty admin user",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{Users: []string{""}}}
+			},
+			"users",
+		),
+		Entry(
+			"rejects an empty admin client",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{Clients: []string{""}}}
+			},
+			"clients",
+		),
+		Entry(
+			"rejects a mapping rule without a claim value",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Auth = &v1.ClusterAuthSpec{Admin: &v1.ClusterAdminSpec{
+					MappingRules: []v1.AdminMappingRule{{ID: "platform-admins", ClaimName: "groups"}},
+				}}
+			},
+			"claimValue",
+		),
+		Entry(
 			"rejects an unknown retention policy",
 			realisticCamundaCluster, func(o *v1.CamundaCluster) {
 				o.Spec.Zeebe.PersistentVolumeClaimRetentionPolicy = &v1.PersistentVolumeClaimRetentionPolicy{

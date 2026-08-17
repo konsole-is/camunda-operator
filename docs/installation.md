@@ -26,7 +26,7 @@ helm install camunda-operator \
   --create-namespace
 ```
 
-This installs the controller manager and all 19 custom resource definitions.
+This installs the controller manager and every custom resource definition. Server-side apply is required: the CamundaCluster CRDs are larger than the annotation that client-side apply writes.
 
 Replace `<version>` with a released version — for example `0.1.0`. Release tags
 are unprefixed SemVer, and the chart version, chart `appVersion`, and operator
@@ -62,7 +62,7 @@ helm install camunda-operator \
 Every release attaches a rendered manifest:
 
 ```bash
-kubectl apply -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/install.yaml
+kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/install.yaml
 ```
 
 This is **not** the same as the chart's defaults. `install.yaml` includes the

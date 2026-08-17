@@ -221,7 +221,7 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 
 		By("serving Operate on its own Service with the admin credentials")
 		Eventually(func(g Gomega) {
-			status, body, err := camundaRESTOn(
+			resp, err := camundaRESTOn(
 				cluster,
 				components.ComponentOperate,
 				"operate",
@@ -230,7 +230,7 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 				nil,
 			)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(status).To(Equal(http.StatusOK), body)
+			g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
 		}, ccAPITimeout).Should(Succeed())
 
 		By("setting spec.operate.mode back to Embedded")
@@ -249,9 +249,9 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 
 		By("serving Operate on the gateway again")
 		Eventually(func(g Gomega) {
-			status, body, err := camundaREST(cluster, "webapp", http.MethodGet, "/operate/", nil)
+			resp, err := camundaREST(cluster, "webapp", http.MethodGet, "/operate/", nil)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(status).To(Equal(http.StatusOK), body)
+			g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 	})
 
@@ -444,24 +444,24 @@ func itRunsTheOrchestrationCluster(cluster *v1.CamundaCluster) {
 		}
 
 		Eventually(func(g Gomega) {
-			status, body, err := camundaREST(cluster, "topology", http.MethodGet, pathTopology, nil)
+			resp, err := camundaREST(cluster, "topology", http.MethodGet, pathTopology, nil)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(status).To(Equal(http.StatusOK), body)
-			g.Expect(json.Unmarshal([]byte(body), &topology)).To(Succeed(), body)
-			g.Expect(topology.Brokers).To(HaveLen(1), body)
-			g.Expect(topology.Brokers[0].Partitions).To(HaveLen(1), body)
-			g.Expect(topology.Brokers[0].Partitions).To(HaveEach(HaveField("Health", "healthy")), body)
-			g.Expect(topology.ClusterSize).To(Equal(1), body)
-			g.Expect(topology.PartitionsCount).To(Equal(1), body)
+			g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+			g.Expect(json.Unmarshal([]byte(resp.Body), &topology)).To(Succeed(), resp.Body)
+			g.Expect(topology.Brokers).To(HaveLen(1), resp.Body)
+			g.Expect(topology.Brokers[0].Partitions).To(HaveLen(1), resp.Body)
+			g.Expect(topology.Brokers[0].Partitions).To(HaveEach(HaveField("Health", "healthy")), resp.Body)
+			g.Expect(topology.ClusterSize).To(Equal(1), resp.Body)
+			g.Expect(topology.PartitionsCount).To(Equal(1), resp.Body)
 		}, ccAPITimeout).Should(Succeed())
 	})
 
 	It("serves Operate, Tasklist, and Admin on the gateway", func() {
 		for _, path := range webAppPaths {
 			Eventually(func(g Gomega) {
-				status, body, err := camundaREST(cluster, "webapp", http.MethodGet, path, nil)
+				resp, err := camundaREST(cluster, "webapp", http.MethodGet, path, nil)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(status).To(Equal(http.StatusOK), "%s: %s", path, body)
+				g.Expect(resp.Status).To(Equal(http.StatusOK), "%s: %s", path, resp.Body)
 			}, ccAPITimeout).Should(Succeed())
 		}
 	})
@@ -473,23 +473,23 @@ func itRunsTheOrchestrationCluster(cluster *v1.CamundaCluster) {
 		bpmn, err := os.ReadFile(filepath.Join(dir, "test", "e2e", "testdata", processFile))
 		Expect(err).NotTo(HaveOccurred())
 
-		status, body, err := camundaREST(
+		resp, err := camundaREST(
 			cluster, "deploy", http.MethodPost, pathDeployments,
 			map[string]string{processFile: string(bpmn)},
 			"-F", "resources=@/tmp/"+processFile,
 		)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(status).To(Equal(http.StatusOK), body)
-		Expect(body).To(ContainSubstring(`"processDefinitionId":"` + processID + `"`))
+		Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+		Expect(resp.Body).To(ContainSubstring(`"processDefinitionId":"` + processID + `"`))
 
 		By("starting an instance")
-		status, body, err = camundaREST(
+		resp, err = camundaREST(
 			cluster, "start", http.MethodPost, pathProcessInstances, nil,
 			"-H", "Content-Type: application/json", "-d", `{"processDefinitionId":"`+processID+`"}`,
 		)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(status).To(Equal(http.StatusOK), body)
-		Expect(body).To(ContainSubstring(`"processInstanceKey"`))
+		Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+		Expect(resp.Body).To(ContainSubstring(`"processInstanceKey"`))
 
 		By("searching the instance in secondary storage")
 		expectInstanceSearchable(cluster)
@@ -507,28 +507,27 @@ func expectInstanceSearchable(cluster *v1.CamundaCluster) {
 	}
 
 	Eventually(func(g Gomega) {
-		status, body, err := camundaREST(
+		resp, err := camundaREST(
 			cluster, "search", http.MethodPost, pathInstanceSearch, nil,
 			"-H", "Content-Type: application/json", "-d", `{"filter":{"processDefinitionId":"`+processID+`"}}`,
 		)
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(status).To(Equal(http.StatusOK), body)
-		g.Expect(json.Unmarshal([]byte(body), &result)).To(Succeed(), body)
-		g.Expect(result.Items).NotTo(BeEmpty(), body)
-		g.Expect(result.Items).To(HaveEach(HaveField("ProcessDefinitionID", processID)), body)
+		g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+		g.Expect(json.Unmarshal([]byte(resp.Body), &result)).To(Succeed(), resp.Body)
+		g.Expect(result.Items).NotTo(BeEmpty(), resp.Body)
+		g.Expect(result.Items).To(HaveEach(HaveField("ProcessDefinitionID", processID)), resp.Body)
 	}, ccAPITimeout).Should(Succeed())
 }
 
 // camundaREST calls path on the gateway Service of cluster with the
-// credentials of the admin Secret and returns the final status code and the
-// body. files are uploaded into /tmp of the helper pod; args are extra curl
-// arguments.
+// credentials of the admin Secret. files are uploaded into /tmp of the helper
+// pod; args are extra curl arguments.
 func camundaREST(
 	cluster *v1.CamundaCluster,
 	name, method, path string,
 	files map[string]string,
 	args ...string,
-) (int, string, error) {
+) (utils.CamundaResponse, error) {
 	return camundaRESTOn(cluster, components.ComponentGateway, name, method, path, files, args...)
 }
 
@@ -539,7 +538,7 @@ func camundaRESTOn(
 	component, name, method, path string,
 	files map[string]string,
 	args ...string,
-) (int, string, error) {
+) (utils.CamundaResponse, error) {
 	return utils.CamundaREST(utils.CamundaRequest{
 		Namespace: cluster.Namespace,
 		Name:      name,
@@ -548,12 +547,14 @@ func camundaRESTOn(
 			"http://%s.%s.svc:%d%s",
 			components.WorkloadName(cluster, component), cluster.Namespace, components.PortHTTP, path,
 		),
-		CredentialsSecret: components.AdminSecretName(cluster),
-		UsernameKey:       components.AdminUsernameKey,
-		PasswordKey:       components.AdminPasswordKey,
-		Files:             files,
-		Args:              args,
-		Timeout:           podTimeout,
+		Auth: utils.BasicAuth{
+			Secret:      components.AdminSecretName(cluster),
+			UsernameKey: components.AdminUsernameKey,
+			PasswordKey: components.AdminPasswordKey,
+		},
+		Files:   files,
+		Args:    args,
+		Timeout: podTimeout,
 	})
 }
 

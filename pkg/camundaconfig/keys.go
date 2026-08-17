@@ -211,6 +211,12 @@ const (
 	// KeyOIDCAudiences is camunda.security.authentication.oidc.audiences
 	// (OidcAuthenticationConfiguration.java).
 	KeyOIDCAudiences Key = "camunda.security.authentication.oidc.audiences"
+	// KeyOIDCUsernameClaim is camunda.security.authentication.oidc.username-claim
+	// (OidcAuthenticationConfiguration.java).
+	KeyOIDCUsernameClaim Key = "camunda.security.authentication.oidc.username-claim"
+	// KeyOIDCClientIDClaim is camunda.security.authentication.oidc.client-id-claim
+	// (OidcAuthenticationConfiguration.java).
+	KeyOIDCClientIDClaim Key = "camunda.security.authentication.oidc.client-id-claim"
 
 	// KeyInitializationUsers is camunda.security.initialization.users
 	// (InitializationConfiguration.java).
@@ -232,6 +238,37 @@ const (
 	KeyDefaultRolesAdminUsers Key = "camunda.security.initialization.default-roles.admin.users"
 	// KeyDefaultRolesAdminUserItem is one list element of KeyDefaultRolesAdminUsers.
 	KeyDefaultRolesAdminUserItem Key = "camunda.security.initialization.default-roles.admin.users[N]"
+	// KeyInitializationMappingRules is camunda.security.initialization.mapping-rules
+	// (InitializationConfiguration.java).
+	KeyInitializationMappingRules Key = "camunda.security.initialization.mapping-rules"
+	// KeyInitializationMappingRuleID is the mapping rule id of one list element of
+	// KeyInitializationMappingRules (ConfiguredMappingRule.java).
+	KeyInitializationMappingRuleID Key = "camunda.security.initialization.mapping-rules[N].mapping-rule-id"
+	// KeyInitializationMappingRuleClaimName is the claim name of one list element of
+	// KeyInitializationMappingRules (ConfiguredMappingRule.java).
+	KeyInitializationMappingRuleClaimName Key = "camunda.security.initialization.mapping-rules[N].claim-name"
+	// KeyInitializationMappingRuleClaimValue is the claim value of one list element of
+	// KeyInitializationMappingRules (ConfiguredMappingRule.java).
+	KeyInitializationMappingRuleClaimValue Key = "camunda.security.initialization.mapping-rules[N].claim-value"
+	// KeyDefaultRolesAdminClients is camunda.security.initialization.default-roles.admin.clients
+	// (InitializationConfiguration.java, PlatformDefaultEntities.java).
+	KeyDefaultRolesAdminClients Key = "camunda.security.initialization.default-roles.admin.clients"
+	// KeyDefaultRolesAdminClientItem is one list element of KeyDefaultRolesAdminClients.
+	KeyDefaultRolesAdminClientItem Key = "camunda.security.initialization.default-roles.admin.clients[N]"
+	// KeyDefaultRolesAdminMappingRules is
+	// camunda.security.initialization.default-roles.admin.mapping-rules
+	// (InitializationConfiguration.java, PlatformDefaultEntities.java).
+	KeyDefaultRolesAdminMappingRules Key = "camunda.security.initialization.default-roles.admin.mapping-rules"
+	// KeyDefaultRolesAdminMappingRuleItem is one list element of
+	// KeyDefaultRolesAdminMappingRules.
+	KeyDefaultRolesAdminMappingRuleItem Key = "camunda.security.initialization.default-roles.admin.mapping-rules[N]"
+	// KeyDefaultRolesConnectorsClients is
+	// camunda.security.initialization.default-roles.connectors.clients
+	// (InitializationConfiguration.java, PlatformDefaultEntities.java).
+	KeyDefaultRolesConnectorsClients Key = "camunda.security.initialization.default-roles.connectors.clients"
+	// KeyDefaultRolesConnectorsClientItem is one list element of
+	// KeyDefaultRolesConnectorsClients.
+	KeyDefaultRolesConnectorsClientItem Key = "camunda.security.initialization.default-roles.connectors.clients[N]"
 
 	// KeyLicenseKey is camunda.license.key (ManagementServicesConfiguration.java).
 	KeyLicenseKey Key = "camunda.license.key"
@@ -362,6 +399,8 @@ var declared = []Key{
 	KeyOIDCAuthorizationURI,
 	KeyOIDCTokenURI,
 	KeyOIDCAudiences,
+	KeyOIDCUsernameClaim,
+	KeyOIDCClientIDClaim,
 	KeyInitializationUsers,
 	KeyInitializationUserUsername,
 	KeyInitializationUserPassword,
@@ -369,6 +408,16 @@ var declared = []Key{
 	KeyInitializationUserEmail,
 	KeyDefaultRolesAdminUsers,
 	KeyDefaultRolesAdminUserItem,
+	KeyInitializationMappingRules,
+	KeyInitializationMappingRuleID,
+	KeyInitializationMappingRuleClaimName,
+	KeyInitializationMappingRuleClaimValue,
+	KeyDefaultRolesAdminClients,
+	KeyDefaultRolesAdminClientItem,
+	KeyDefaultRolesAdminMappingRules,
+	KeyDefaultRolesAdminMappingRuleItem,
+	KeyDefaultRolesConnectorsClients,
+	KeyDefaultRolesConnectorsClientItem,
 	KeyLicenseKey,
 	KeyClientMode,
 	KeyClientGRPCAddress,

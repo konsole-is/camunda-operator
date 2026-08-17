@@ -21,6 +21,21 @@ Consuming controllers watch this CR: when you change it, the change propagates a
 The CamundaCluster controller renders the auth fields into the orchestration cluster's `camunda.security.authentication.*` configuration (`method: basic | oidc` and the `camunda.security.authentication.oidc.*` properties in Camunda 8.9), so an endpoint or registry change rolls out as an ordinary workload update.
 The OIDC client credentials defined here are environment-wide defaults; a [CamundaClusterPreset](camundaclusterpreset.md) baseline or a per-cluster `auth` block on the [CamundaCluster](camundacluster.md) overrides them for individual clusters.
 
+### How a token becomes a caller
+
+`usernameClaim` and `clientIdClaim` name the claims that identify the caller behind an access token. They describe the tokens of one identity provider, so every cluster that trusts that provider reads the same claims, and they live here and not on a cluster.
+
+The orchestration cluster resolves a token in this order (`TokenClaimsConverter.java`):
+
+1. If the token holds the client id claim, the caller is a machine client with that id.
+2. If not, and the token holds the username claim, the caller is a person with that username.
+3. If the token holds neither claim, the request is refused.
+
+The claim only says who the caller is. It grants nothing. The `spec.auth.admin` block of a [CamundaCluster](camundacluster.md) is what makes a caller an administrator.
+
+!!! warning "Do not set a client id claim that persons also carry"
+    A token that holds the client id claim always becomes a machine client, even when a person signed in. Some providers put a client identifier in every token they issue, `azp` in Keycloak for example. If one OIDC client serves both the browser login and the machine callers, pick a claim that the provider adds to machine tokens only. Camunda gives the same advice.
+
 ```mermaid
 graph LR
     CC[CamundaCluster] -.->|platformConfigRef| PFC[CamundaPlatformConfig]
@@ -60,6 +75,10 @@ spec:
       clientId: "camunda-orchestration"
       # string. Optional, default: the clientId. Audience validated in access tokens.
       audience: "camunda-orchestration"
+      # string. Optional, default: sub. Token claim that holds the username of a person.
+      usernameClaim: "preferred_username"
+      # string. Optional, default: unset. Token claim that holds the id of a machine client. Without it every token becomes a person.
+      clientIdClaim: "client_id"
       # object. Required. Secret holding the default OIDC client secret.
       clientSecretRef:
         # string. Required. Name of the Secret.
