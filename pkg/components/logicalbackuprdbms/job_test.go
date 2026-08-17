@@ -185,7 +185,7 @@ func TestJobGoldenScratchPVC(t *testing.T) {
 	in.Dump = &v1.BackupDumpSpec{
 		ScratchVolume: &v1.ScratchVolumeSpec{
 			SizeLimit:        ptrQuantity("200Gi"),
-			StorageClassName: ptr("fast"),
+			StorageClassName: new("fast"),
 		},
 	}
 
@@ -224,8 +224,6 @@ func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {
 	require.Len(t, pod.Containers, 1)
 	assert.Equal(t, corev1.RestartPolicyNever, pod.RestartPolicy)
 }
-
-func ptr[T any](v T) *T { return &v }
 
 func ptrQuantity(s string) *resource.Quantity {
 	q := resource.MustParse(s)

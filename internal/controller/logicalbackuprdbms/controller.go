@@ -419,7 +419,11 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 	case apierrors.IsNotFound(err):
 		r.ownWhenLocal(backup, job)
 		if err := r.Patch(
-			ctx, job, client.Apply, client.FieldOwner(fieldManager), client.ForceOwnership,
+			ctx,
+			job,
+			client.Apply, //nolint:staticcheck // the repo applies through the deprecated client.Apply patch
+			client.FieldOwner(fieldManager),
+			client.ForceOwnership,
 		); err != nil {
 			return ctrl.Result{}, fmt.Errorf("applying the dump Job: %w", err)
 		}
@@ -617,7 +621,11 @@ func (r *LogicalBackupRDBMSReconciler) mirrorDBCredentials(
 	r.ownWhenLocal(backup, local)
 
 	if err := r.Patch(
-		ctx, local, client.Apply, client.FieldOwner(fieldManager), client.ForceOwnership,
+		ctx,
+		local,
+		client.Apply, //nolint:staticcheck // the repo applies through the deprecated client.Apply patch
+		client.FieldOwner(fieldManager),
+		client.ForceOwnership,
 	); err != nil {
 		return fmt.Errorf("copying the backup credentials: %w", err)
 	}

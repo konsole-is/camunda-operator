@@ -225,12 +225,14 @@ func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
 // uploadContainer streams the archive to the bucket through the upload
 // subcommand of the operator image.
 func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.Container {
-	env := []corev1.EnvVar{
-		{Name: EnvUploadFile, Value: scratchMountPath + "/" + DumpFileName},
-		{Name: EnvUploadKey, Value: in.ObjectKey},
-		{Name: EnvUploadStorageName, Value: in.Bucket.Name},
-		{Name: EnvUploadStorageSpec, Value: spec},
-	}
+	env := make([]corev1.EnvVar, 0, 6)
+	env = append(
+		env,
+		corev1.EnvVar{Name: EnvUploadFile, Value: scratchMountPath + "/" + DumpFileName},
+		corev1.EnvVar{Name: EnvUploadKey, Value: in.ObjectKey},
+		corev1.EnvVar{Name: EnvUploadStorageName, Value: in.Bucket.Name},
+		corev1.EnvVar{Name: EnvUploadStorageSpec, Value: spec},
+	)
 	env = append(env, credentialEnv(in)...)
 
 	container := corev1.Container{

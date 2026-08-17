@@ -236,7 +236,8 @@ func markJob(backup *v1.LogicalBackupRDBMS, w *world, kind batchv1.JobConditionT
 		precursor = batchv1.JobFailureTarget
 	}
 	job.Status.StartTime = &now
-	job.Status.Conditions = append(job.Status.Conditions,
+	job.Status.Conditions = append(
+		job.Status.Conditions,
 		batchv1.JobCondition{
 			Type: precursor, Status: corev1.ConditionTrue,
 			Reason: "Test", Message: "marked by the suite",
