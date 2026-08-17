@@ -142,36 +142,14 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 			set.addList(ctx, r.Client, client.InNamespace(dbConfig.Namespace))
 		}
 
-		for _, bucket := range bucketsWithSecret(ctx, r.Client, key) {
-			set.addList(ctx, r.Client, client.MatchingFields{objectStorageRefsField: bucket})
+		for _, bucket := range listByIndex[v1.ObjectStorageConfigList](
+			ctx, r.Client, refindex.ObjectStorageConfigSecretField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.MatchingFields{objectStorageRefsField: bucket.Name})
 		}
 
 		return set.requests()
 	})
-}
-
-// bucketsWithSecret returns the names of the ObjectStorageConfigs whose
-// static credentials live in the Secret at key. The contracts are
-// cluster-scoped and few, so they are filtered in memory rather than through
-// an index: the ObjectStorageConfig controller already owns an index of the
-// same field, and a second one under a different name would only add a way
-// for the two to disagree.
-func bucketsWithSecret(ctx context.Context, c client.Client, key string) []string {
-	var list v1.ObjectStorageConfigList
-	if err := c.List(ctx, &list); err != nil {
-		logf.FromContext(ctx).Error(err, "Failed to list buckets for Secret enqueue", "secret", key)
-		return nil
-	}
-
-	var names []string
-	for i := range list.Items {
-		creds := list.Items[i].CredentialsSecret()
-		if creds != nil && refindex.NamespacedKey(creds.Namespace, creds.Name) == key {
-			names = append(names, list.Items[i].Name)
-		}
-	}
-
-	return names
 }
 
 // listByIndex lists the objects of L whose index field matches key. A list
@@ -272,6 +250,10 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return fmt.Errorf("building the component client: %w", err)
 		}
 		r.componentClient = componentClient
+	}
+
+	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
+		return fmt.Errorf("registering the bucket credentials index: %w", err)
 	}
 
 	for field, indexer := range indexers {

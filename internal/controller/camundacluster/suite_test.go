@@ -86,6 +86,9 @@ var _ = BeforeSuite(func() {
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
+			// The unwatched pre-check must come back within the Eventually
+			// window of the tests.
+			RetryInterval: time.Second,
 		}).SetupWithManager(mgr)
 	})
 

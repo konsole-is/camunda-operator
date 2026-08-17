@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -53,20 +55,67 @@ func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.In
 		return &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: err.Error()}
 	}
 	in.ServiceAccountAnnotations = annotations
+	in.Documents = documents
 
-	if backup == nil {
+	if backup != nil {
+		if err := res.rejectSharedAzureContainer(ctx, backup); err != nil {
+			return err
+		}
+		// The credentials rewrite works on a copy: the resolver hands the
+		// render input rewritten references, never a mutated read.
+		backup = backup.DeepCopy()
+		if err := res.localizeBucketCredentials(ctx, backup); err != nil {
+			return err
+		}
+		in.Backup = backup
+		if err := res.requireSnapshotRepository(in); err != nil {
+			return err
+		}
+	}
+
+	return res.checkServiceAccount(ctx, in)
+}
+
+// checkServiceAccount fails the pre-check when the spec names a pre-existing
+// ServiceAccount that does not exist. The operator never creates, annotates,
+// nor owns it, so an absent one would otherwise surface as unschedulable
+// pods. Nothing watches the ServiceAccount, so the failure is unwatched: the
+// reconcile comes back on a timer instead of an event.
+func (res *resolver) checkServiceAccount(ctx context.Context, in *components.Input) error {
+	if in.Effective.ServiceAccount.Creates() {
 		return nil
 	}
-	if err := res.rejectSharedAzureContainer(ctx, backup); err != nil {
-		return err
-	}
-	if err := res.localizeBucketCredentials(ctx, backup); err != nil {
-		return err
-	}
-	in.Backup = backup
 
-	return res.requireSnapshotRepository(in)
+	name := components.ServiceAccountName(res.cluster, in.Effective)
+	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: name}
+	if err := res.reader.Get(ctx, key, &corev1.ServiceAccount{}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return &unwatchedPreCheck{failure: &conditions.PreCheckFailure{
+				Reason: v1.ReasonInvalidReference,
+				Message: fmt.Sprintf(
+					"ServiceAccount %s not found, and serviceAccount.create is false", key,
+				),
+			}}
+		}
+
+		return fmt.Errorf("reading ServiceAccount %s: %w", key, err)
+	}
+
+	return nil
 }
+
+// unwatchedPreCheck marks a pre-check failure that no watch resolves: nothing
+// enqueues the cluster when the missing object appears, so the reconcile must
+// come back on its own.
+type unwatchedPreCheck struct {
+	failure *conditions.PreCheckFailure
+}
+
+// Error returns the message of the wrapped failure.
+func (u *unwatchedPreCheck) Error() string { return u.failure.Error() }
+
+// Unwrap exposes the wrapped failure, so errors.As finds both types.
+func (u *unwatchedPreCheck) Unwrap() error { return u.failure }
 
 // rejectSharedAzureContainer rejects an Azure backup bucket that an older
 // cluster already backs up to. The azure store has no container field: its
@@ -131,9 +180,11 @@ func (res *resolver) objectStorage(ctx context.Context, ref string) (*v1.ObjectS
 }
 
 // localizeBucketCredentials checks the static credentials of bucket and
-// rewrites its reference to the copy in the cluster namespace. A bucket that
-// authenticates with workload identity references no Secret and is left
-// alone.
+// rewrites its reference to the copy in the cluster namespace. The lookup
+// goes through CredentialsSecret, so only the rewrite still switches over the
+// storage types: the contract exposes no setter, and the three references are
+// three different types. A bucket that authenticates with workload identity
+// references no Secret and is left alone.
 func (res *resolver) localizeBucketCredentials(ctx context.Context, bucket *v1.ObjectStorageConfig) error {
 	creds := bucket.CredentialsSecret()
 	if creds == nil {

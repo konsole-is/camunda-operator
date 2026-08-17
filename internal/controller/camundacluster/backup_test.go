@@ -281,6 +281,70 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			})
 		})
 
+		// A pre-existing ServiceAccount is a reference, not a resource: the
+		// operator must not adopt it, because an owned account is deleted
+		// with the cluster. Its absence fails fast instead of leaving the
+		// pods unschedulable.
+		It("requires a pre-existing ServiceAccount to exist", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
+				Name:   "platform-sa",
+				Create: new(false),
+			}
+			createCluster(cluster)
+
+			expectReady(
+				cluster,
+				metav1.ConditionFalse,
+				Equal(v1.ReasonInvalidReference),
+				ContainSubstring("platform-sa"),
+			)
+
+			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "platform-sa"},
+			})).To(Succeed())
+
+			// Nothing watches the foreign account, so the recovery proves
+			// the unwatched pre-check comes back on its own.
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, "Ready")
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+			}, timeout, interval).Should(Succeed())
+
+			// The operator neither owns nor deletes the foreign account: an
+			// excluded resource is no deletion target, so it survives the
+			// reconciles that just ran, unannotated and unowned.
+			var account corev1.ServiceAccount
+			key := client.ObjectKey{Namespace: ns, Name: "platform-sa"}
+			Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+			Expect(account.Annotations).NotTo(HaveKey(v1.IRSARoleARNAnnotation))
+			Expect(account.OwnerReferences).To(BeEmpty())
+		})
+
+		It("renders and annotates the ServiceAccount under a custom name", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			setSnapshotRepository(binding, "my-repository")
+			cluster := newCluster(ns, createPlatformConfig(), binding)
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "camunda-prod"}
+			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
+			createCluster(cluster)
+
+			Eventually(func(g Gomega) {
+				var account corev1.ServiceAccount
+				key := client.ObjectKey{Namespace: cluster.Namespace, Name: "camunda-prod"}
+				g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+				g.Expect(account.Annotations).To(HaveKeyWithValue(
+					v1.IRSARoleARNAnnotation,
+					"arn:aws:iam::123456789012:role/camunda",
+				))
+			}, timeout, interval).Should(Succeed())
+		})
+
 		It("annotates the ServiceAccount with the identity of the bucket", func() {
 			ns := newNamespace()
 			binding := createBinding(ns, true)
@@ -293,11 +357,11 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				var account corev1.ServiceAccount
 				key := client.ObjectKey{
 					Namespace: cluster.Namespace,
-					Name:      components.ServiceAccountName(cluster),
+					Name:      components.ServiceAccountName(cluster, components.NewEffective(cluster.Spec)),
 				}
 				g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
 				g.Expect(account.Annotations).To(HaveKeyWithValue(
-					components.AWSRoleARNAnnotation,
+					v1.IRSARoleARNAnnotation,
 					"arn:aws:iam::123456789012:role/camunda",
 				))
 			}, timeout, interval).Should(Succeed())
