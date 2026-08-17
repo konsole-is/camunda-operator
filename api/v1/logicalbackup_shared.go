@@ -33,15 +33,16 @@ type LogicalBackupStorageSizes struct {
 	Zeebe *resource.Quantity `json:"zeebe,omitempty"`
 }
 
-// ClusterRef references a CamundaCluster by name and namespace.
+// ClusterRef references a CamundaCluster by name, in the namespace of the
+// referencing object. The reference cannot cross namespaces on purpose: for
+// a backup the operator reads the cluster's Secrets, runs a Job in its
+// namespace, and calls its management API, so the reference stays inside
+// the RBAC boundary the CR itself lives in. Whoever may create the CR in a
+// namespace may back up the clusters of that namespace, and no others.
 type ClusterRef struct {
-	// Name of the CamundaCluster.
+	// Name of the CamundaCluster, in the namespace of this object.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
-	// Namespace of the CamundaCluster. Empty means the namespace of the
-	// referencing object.
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
 }
 
 // LogicalBackupPhase tracks a one-shot backup operation. Completed and Failed

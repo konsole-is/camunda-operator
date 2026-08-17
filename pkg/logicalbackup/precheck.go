@@ -43,7 +43,8 @@ type PreCheckRequest struct {
 	Reader client.Reader
 	// Ref is the clusterRef of the backup.
 	Ref v1.ClusterRef
-	// Namespace is the namespace of the backup, the default namespace of Ref.
+	// Namespace is the namespace of the backup, which is the namespace of
+	// the referenced cluster: a ClusterRef never crosses namespaces.
 	Namespace string
 	// StorageType is the secondary storage type that the backup kind backs
 	// up. A cluster on any other type is not backed up by this kind.
@@ -76,10 +77,7 @@ type PreCheckResult struct {
 // cluster runs. Waiting reports which of those resolve on their own. Any
 // other error is a transient API failure and carries no reason.
 func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error) {
-	namespace := req.Ref.Namespace
-	if namespace == "" {
-		namespace = req.Namespace
-	}
+	namespace := req.Namespace
 
 	var cluster v1.CamundaCluster
 	if err := req.Reader.Get(
@@ -88,13 +86,13 @@ func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error)
 		&cluster,
 	); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, invalidReference("CamundaCluster %s/%s does not exist", namespace, req.Ref.Name)
+			return nil, InvalidReference("CamundaCluster %s/%s does not exist", namespace, req.Ref.Name)
 		}
 		return nil, fmt.Errorf("reading CamundaCluster %s/%s: %w", namespace, req.Ref.Name, err)
 	}
 
 	if cluster.Spec.BackupStorageRef == "" {
-		return nil, invalidReference(
+		return nil, InvalidReference(
 			"CamundaCluster %s/%s has no spec.backupStorageRef, so a backup has nowhere to write",
 			namespace, req.Ref.Name,
 		)
@@ -115,7 +113,7 @@ func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error)
 	// unset reference would loop as a transient error instead of reporting
 	// itself.
 	if cluster.Spec.StorageRef == "" {
-		return nil, invalidReference(
+		return nil, InvalidReference(
 			"CamundaCluster %s/%s has no spec.storageRef", namespace, req.Ref.Name,
 		)
 	}
@@ -123,7 +121,7 @@ func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error)
 	storageName := types.NamespacedName{Name: cluster.Spec.StorageRef, Namespace: namespace}
 	if err := req.Reader.Get(ctx, storageName, &storage); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, invalidReference("SecondaryStorageConfig %s does not exist", storageName)
+			return nil, InvalidReference("SecondaryStorageConfig %s does not exist", storageName)
 		}
 		return nil, fmt.Errorf("reading SecondaryStorageConfig %s: %w", storageName, err)
 	}
@@ -141,7 +139,7 @@ func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error)
 	var bucket v1.ObjectStorageConfig
 	if err := req.Reader.Get(ctx, types.NamespacedName{Name: cluster.Spec.BackupStorageRef}, &bucket); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, invalidReference("ObjectStorageConfig %q does not exist", cluster.Spec.BackupStorageRef)
+			return nil, InvalidReference("ObjectStorageConfig %q does not exist", cluster.Spec.BackupStorageRef)
 		}
 		return nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", cluster.Spec.BackupStorageRef, err)
 	}
@@ -176,7 +174,9 @@ func Waiting(err error) bool {
 	return failure.Reason == v1.ReasonClusterSuspended || failure.Reason == v1.ReasonBackupInProgress
 }
 
-func invalidReference(format string, args ...any) *conditions.PreCheckFailure {
+// InvalidReference builds the pre-check failure of a reference that does not
+// resolve.
+func InvalidReference(format string, args ...any) *conditions.PreCheckFailure {
 	return &conditions.PreCheckFailure{
 		Reason:  v1.ReasonInvalidReference,
 		Message: fmt.Sprintf(format, args...),

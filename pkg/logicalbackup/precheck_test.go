@@ -109,52 +109,27 @@ func TestPreCheckPasses(t *testing.T) {
 	assert.Equal(t, "my-bucket", result.Bucket.Name)
 }
 
-// An empty ref namespace means the namespace of the backup itself, so the
-// common case needs no namespace in the manifest.
-func TestPreCheckDefaultsTheNamespaceToTheBackup(t *testing.T) {
-	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
+// A ClusterRef never crosses namespaces: the cluster and its secondary
+// storage are read from the namespace of the backup, and a same-named cluster
+// elsewhere is never picked up.
+func TestPreCheckReadsTheClusterFromTheBackupNamespace(t *testing.T) {
+	elsewhere := cluster()
+	elsewhere.Namespace = "elsewhere"
+	reader := newReader(t, cluster(), elsewhere, storage(v1.SecondaryStorageTypeElasticsearch), bucket())
 
 	req := request(reader)
 	req.Namespace = clusterNamespace
-	req.Ref.Namespace = ""
 	result, err := logicalbackup.PreCheck(context.Background(), req)
-
-	require.NoError(t, err)
-	assert.Equal(t, clusterNamespace, result.Cluster.Namespace)
-}
-
-// A backup can name a cluster in another namespace. The cluster and its
-// secondary storage are then read from the namespace of the reference, not
-// from the namespace of the backup.
-func TestPreCheckResolvesAClusterInAnotherNamespace(t *testing.T) {
-	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
-
-	req := request(reader)
-	req.Namespace = "backups-ns"
-	req.Ref.Namespace = clusterNamespace
-
-	result, err := logicalbackup.PreCheck(context.Background(), req)
-
 	require.NoError(t, err)
 	assert.Equal(t, clusterNamespace, result.Cluster.Namespace)
 	assert.Equal(t, clusterNamespace, result.Storage.Namespace)
-}
 
-// A reference that names another namespace never falls back to the namespace
-// of the backup, which would silently back up the wrong cluster.
-func TestPreCheckDoesNotFallBackToTheBackupNamespace(t *testing.T) {
-	reader := newReader(t, cluster(), storage(v1.SecondaryStorageTypeElasticsearch), bucket())
-
-	req := request(reader)
-	req.Namespace = clusterNamespace
-	req.Ref.Namespace = "elsewhere"
-
-	_, err := logicalbackup.PreCheck(context.Background(), req)
-
+	req.Namespace = "backups-ns"
+	_, err = logicalbackup.PreCheck(context.Background(), req)
 	var failure *conditions.PreCheckFailure
 	require.ErrorAs(t, err, &failure)
 	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
-	assert.Contains(t, failure.Message, "elsewhere/my-cluster")
+	assert.Contains(t, failure.Message, "backups-ns/my-cluster")
 }
 
 func TestPreCheckFailures(t *testing.T) {
