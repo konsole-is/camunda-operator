@@ -93,7 +93,11 @@ type BackupDumpSpec struct {
 	// Resources are the CPU and memory of the dump pod.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// ExtraEnv are extra environment variables of the dump pod.
+	// ExtraEnv are extra environment variables of the dump pod. The
+	// connection variables the Job sets (PGHOST, PGPORT, PGDATABASE, PGUSER,
+	// PGPASSWORD, and their libpq siblings) and every UPLOAD_* variable are
+	// reserved; a backup that names one is rejected at admission. Settings
+	// such as PGSSLMODE are allowed.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources of the dump pod.

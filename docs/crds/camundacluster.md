@@ -329,7 +329,7 @@ spec:
       activeDeadlineSeconds: 7200
       # string. Optional, default: postgres:<version of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag.
       postgresImage: ""
-      # []EnvVar. Optional. Extra environment variables of the dump pod.
+      # []EnvVar. Optional. Extra environment variables of the dump pod. The connection variables the Job sets (PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, and their libpq siblings) and every UPLOAD_* variable are reserved; a backup that names one is rejected. Settings such as PGSSLMODE are allowed.
       extraEnv: []
       # []EnvFromSource. Optional. Extra environment sources of the dump pod.
       extraEnvFrom: []

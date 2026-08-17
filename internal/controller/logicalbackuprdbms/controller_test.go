@@ -85,12 +85,9 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 
-	// The probed version that the DatabaseServerConfig controller would
-	// publish after reaching the server.
-	now := metav1.Now()
-	server.Status.ServerVersion = "17"
-	server.Status.ProbedAt = &now
-	Expect(k8sClient.Status().Update(ctx, server)).To(Succeed())
+	// The probed version and the current Ready that the DatabaseServerConfig
+	// controller would publish after reaching the server.
+	probeServer(server, "17", metav1.ConditionTrue, v1.ReasonHealthy)
 
 	dbCredentials := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "backup-user", Namespace: namespace},
@@ -196,6 +193,26 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		server:    server,
 		bucket:    bucket,
 	}
+}
+
+// probeServer stands in for the DatabaseServerConfig controller: it publishes
+// the probed version and a Ready condition observed at the server's current
+// generation.
+func probeServer(
+	server *v1.DatabaseServerConfig, version string, status metav1.ConditionStatus, reason string,
+) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), server)).To(Succeed())
+		now := metav1.Now()
+		server.Status.ServerVersion = version
+		server.Status.ProbedAt = &now
+		meta.SetStatusCondition(&server.Status.Conditions, metav1.Condition{
+			Type: v1.ConditionReady, Status: status, Reason: reason,
+			Message: "stand-in probe", ObservedGeneration: server.Generation,
+		})
+		g.Expect(k8sClient.Status().Update(ctx, server)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 func createBackup(w *world, mutate ...func(*v1.LogicalBackupRDBMS)) *v1.LogicalBackupRDBMS {
@@ -489,6 +506,37 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		backup := createBackup(w)
 		expectPending(backup, v1.ReasonInvalidReference)
 		Expect(readyCondition(backup).Message).To(ContainSubstring("not been probed"))
+	})
+
+	// The DatabaseServerConfig controller keeps the last version while a
+	// retargeted server is unreachable; a new backup must not start on it.
+	It("waits when the server was retargeted and the probe of the new spec failed", func() {
+		w := createWorld()
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), w.server)).To(Succeed())
+			w.server.Spec.Host = "postgres-18.databases.svc"
+			g.Expect(k8sClient.Update(ctx, w.server)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		probeServer(w.server, "17", metav1.ConditionFalse, v1.ReasonConnectionFailed)
+
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonInvalidReference)
+		Expect(readyCondition(backup).Message).To(ContainSubstring("current spec"))
+	})
+
+	// F3: the Job reserves its connection and upload variables.
+	It("rejects a dump block that sets a reserved environment variable", func() {
+		w := createWorld()
+		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
+			backup.Spec.Dump = &v1.BackupDumpSpec{ExtraEnv: []corev1.EnvVar{
+				{Name: "PGSSLMODE", Value: "require"},
+				{Name: "PGPASSWORD", Value: "hijack"},
+			}}
+		})
+
+		expectPending(backup, v1.ReasonInvalidReference)
+		Expect(readyCondition(backup).Message).To(ContainSubstring("PGPASSWORD"))
+		Expect(readyCondition(backup).Message).NotTo(ContainSubstring("PGSSLMODE"))
 	})
 
 	It("reports MissingCredentials until the bucket credentials resolve", func() {
@@ -915,6 +963,141 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(secretNameOfEnv(upload, components.EnvUploadCredentialPrefix+"0")).To(
 			Equal(bucketMirror),
 		)
+	})
+
+	// F1: the Job name derives from the backup namespace and name, so two
+	// backups with one name from different namespaces never share a Job.
+	It("gives same-named backups from different namespaces distinct Jobs", func() {
+		w := createWorld()
+		first := createBackup(w, func(backup *v1.LogicalBackupRDBMS) { backup.Name = "nightly" })
+		firstJob := jobOf(first, w)
+
+		markJob(first, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
+			g.Expect(first.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		managementAPI.SetRuntimeState(
+			*first.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
+			g.Expect(first.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		other := newNamespace()
+		second := &v1.LogicalBackupRDBMS{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: other},
+			Spec: v1.LogicalBackupRDBMSSpec{
+				ClusterRef: v1.ClusterRef{Name: w.cluster.Name, Namespace: w.namespace},
+			},
+		}
+		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+
+		By("creating a Job of its own instead of adopting the completed one")
+		secondJob := jobOf(second, w)
+		Expect(secondJob.Name).NotTo(Equal(firstJob.Name))
+		Expect(secondJob.Labels).To(HaveKeyWithValue(components.BackupUIDLabel, string(second.UID)))
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), second)).To(Succeed())
+			g.Expect(second.Status.JobName).To(Equal(secondJob.Name))
+			g.Expect(second.Status.Step).To(Equal(v1.StepDumping))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// F2: a management API that keeps rejecting the call is bounded like an
+	// unreachable one; a Running backup never parks forever.
+	It("fails when the management API keeps rejecting the Zeebe backup request", func() {
+		w := createWorld()
+		managementAPI.FailNext("runtimeStart", 1000)
+		DeferCleanup(func() { managementAPI.FailNext("runtimeStart", 0) })
+
+		backup := createBackup(w)
+		markJob(backup, w, batchv1.JobComplete)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("rejected the call"))
+			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
+		}, "15s", interval).Should(Succeed())
+	})
+
+	// F5: a retargeted bucket must never make the finalizer delete a
+	// stranger's object at the same key.
+	It("leaves the object behind when the pinned bucket was retargeted", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.BucketLocation).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		objectKey := backup.Status.ObjectKey
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
+			w.bucket.Spec.S3.BucketName = "someone-elses-bucket"
+			g.Expect(k8sClient.Update(ctx, w.bucket)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(w.namespace))).To(Succeed())
+			notes := make([]string, 0, len(events.Items))
+			for _, event := range events.Items {
+				notes = append(notes, event.Reason+": "+event.Note)
+			}
+			g.Expect(notes).To(ContainElement(And(
+				HavePrefix("ArtifactCleanupFailed"), ContainSubstring("someone-elses-bucket"),
+			)))
+		}, timeout, interval).Should(Succeed())
+		Expect(bucket.Deleted()).NotTo(ContainElement(objectKey))
+	})
+
+	// F6: the object is deleted only once the Job and its pods are gone, so
+	// a terminating uploader cannot recreate it after the delete.
+	It("waits for the Job's pods before deleting the object", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		job := jobOf(backup, w)
+		objectKey := backup.Status.ObjectKey
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
+			objectKey = backup.Status.ObjectKey
+		}, timeout, interval).Should(Succeed())
+
+		// A pod of the Job, still around: envtest runs no kubelet, so it
+		// stays until it is deleted by hand.
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: job.Name + "-x1", Namespace: w.namespace,
+				Labels: map[string]string{"batch.kubernetes.io/job-name": job.Name},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "upload", Image: "cli"}}},
+		}
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		By("holding the object while the pod lives")
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(bucket.Deleted()).NotTo(ContainElement(objectKey))
+		}, "3s", interval).Should(Succeed())
+
+		By("deleting the object once the pod is gone")
+		Expect(k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0))).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+			g.Expect(bucket.Deleted()).To(ContainElement(objectKey))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("releases the finalizer when the pinned bucket is gone", func() {

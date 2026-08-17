@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -211,16 +213,32 @@ func (r *LogicalBackupRDBMSReconciler) resolveServer(
 		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %q: %w", key.Name, err)
 	}
 
-	if server.Status.ServerVersion == "" {
+	if !serverProbedForCurrentSpec(&server) {
 		return nil, logicalbackup.InvalidReference(
-			"DatabaseServerConfig %q has not been probed yet: its controller publishes "+
-				"status.serverVersion once it reaches the server, and the dump needs it to run "+
-				"matching client tools",
+			"DatabaseServerConfig %q has not been probed for its current spec: its controller "+
+				"publishes status.serverVersion once it reaches the server as declared, and the "+
+				"dump needs it to run matching client tools",
 			key.Name,
 		), nil
 	}
 
 	return &server, nil, nil
+}
+
+// serverProbedForCurrentSpec reports whether the version the server publishes
+// belongs to the spec it has now: Ready is True for the current generation
+// and a version is recorded. The controller keeps the last version while a
+// retargeted server is unreachable, so the version alone could be the old
+// server's; only a current Ready proves it is this one's.
+func serverProbedForCurrentSpec(server *v1.DatabaseServerConfig) bool {
+	if server.Status.ServerVersion == "" {
+		return false
+	}
+	ready := meta.FindStatusCondition(server.Status.Conditions, v1.ConditionReady)
+
+	return ready != nil &&
+		ready.Status == metav1.ConditionTrue &&
+		ready.ObservedGeneration == server.Generation
 }
 
 // resolveCredentials locates the two Secrets the Job mounts as reachable from
@@ -335,7 +353,17 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 
 	account := camundacluster.ServiceAccountName(cluster, camundacluster.NewEffective(merged))
 
-	return dumpBlock(merged, backup), account, nil, nil
+	dump := dumpBlock(merged, backup)
+	if reserved := components.ReservedEnv(dump); len(reserved) > 0 {
+		return nil, "", logicalbackup.InvalidReference(
+			"the dump block sets %s in extraEnv; the Job reserves the connection variables "+
+				"(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, ...) and every UPLOAD_* variable "+
+				"for itself, so a dump cannot be redirected or run as someone else",
+			strings.Join(reserved, ", "),
+		), nil
+	}
+
+	return dump, account, nil, nil
 }
 
 // dumpBlock returns the dump settings of one backup: the backup's own block
@@ -367,6 +395,7 @@ func (r *LogicalBackupRDBMSReconciler) start(
 	) + "/" + components.DumpFileName
 	backup.Status.BucketRef = precheck.Bucket.Name
 	backup.Status.BucketGeneration = precheck.Bucket.Generation
+	backup.Status.BucketLocation = precheck.Bucket.Location()
 	backup.Status.Step = v1.StepDumping
 	backup.Status.Phase = v1.LogicalBackupRunning
 

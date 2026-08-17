@@ -21,14 +21,18 @@ limitations under the License.
 package logicalbackuprdbms
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -54,7 +58,31 @@ const (
 	// operatorUID is the uid of the distroless nonroot user that the
 	// operator image runs as.
 	operatorUID = int64(65532)
+	// BackupUIDLabel carries the UID of the LogicalBackupRDBMS a Job works
+	// for. The Job lives in the cluster namespace, where the backup name
+	// alone is not unique across backup namespaces; the UID is what a
+	// reconcile checks before it adopts a Job by name.
+	BackupUIDLabel = "camunda.io/logical-backup-rdbms-uid"
+	// jobNameSuffix ends every dump Job name.
+	jobNameSuffix = "-dump"
+	// jobNameHashLength is the hex length of the hash that keeps a long
+	// name unique once it is truncated.
+	jobNameHashLength = 10
 )
+
+// reservedEnvNames are the environment variables the Job sets to reach the
+// right database with the right identity. A dump block may not override
+// them: a user-set PGHOST or PGPASSWORD would redirect the dump or run it as
+// someone else. Everything else libpq reads, for example PGSSLMODE, stays
+// open to extraEnv.
+var reservedEnvNames = []string{
+	"PGHOST", "PGHOSTADDR", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD",
+	"PGPASSFILE", "PGSERVICE", "PGSERVICEFILE",
+}
+
+// reservedEnvPrefix is the prefix of the upload contract; every variable
+// under it belongs to the operator.
+const reservedEnvPrefix = "UPLOAD_"
 
 // The environment contract of the upload subcommand. The Job renders these
 // variables and cmd/upload reads them; they are the only interface between
@@ -125,10 +153,50 @@ type JobInput struct {
 }
 
 // JobName returns the name of the Job of one backup. It derives from the
-// backup name alone, so a reconcile that re-enters after a crash adopts the
-// Job it already created instead of creating a second one.
+// backup namespace and name, so a reconcile that re-enters after a crash
+// adopts the Job it already created instead of creating a second one, and
+// two backups of one cluster from different namespaces never share a Job.
+// The name is a DNS label: a long namespace/name pair is truncated and kept
+// unique by a hash of the pair.
 func JobName(backup *v1.LogicalBackupRDBMS) string {
-	return backup.Name + "-dump"
+	base := backup.Namespace + "-" + backup.Name
+	limit := validation.DNS1123LabelMaxLength - len(jobNameSuffix)
+	if len(base) > limit {
+		sum := sha256.Sum256([]byte(backup.Namespace + "/" + backup.Name))
+		hash := hex.EncodeToString(sum[:])[:jobNameHashLength]
+		base = strings.TrimRight(base[:limit-1-jobNameHashLength], "-.") + "-" + hash
+	}
+
+	return base + jobNameSuffix
+}
+
+// JobBelongsTo reports whether job carries the identity of backup: the UID
+// label BuildJob stamps. A Job found by name without it, or with another UID,
+// belongs to another backup and must not be adopted or deleted for this one.
+func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
+	return job.Labels[BackupUIDLabel] == string(backup.UID)
+}
+
+// ReservedEnv returns the names in dump.extraEnv that the Job reserves for
+// itself, in the order they appear, or nothing when the block is clean. The
+// controller rejects a block that names one at admission, with the names in
+// the message.
+func ReservedEnv(dump *v1.BackupDumpSpec) []string {
+	if dump == nil {
+		return nil
+	}
+	var reserved []string
+	for _, env := range dump.ExtraEnv {
+		if isReservedEnv(env.Name) && !slices.Contains(reserved, env.Name) {
+			reserved = append(reserved, env.Name)
+		}
+	}
+
+	return reserved
+}
+
+func isReservedEnv(name string) bool {
+	return slices.Contains(reservedEnvNames, name) || strings.HasPrefix(name, reservedEnvPrefix)
 }
 
 // BuildJob renders the Job that dumps the logical database and uploads the
@@ -162,6 +230,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 
 	managed := labels.Managed(labels.LogicalBackupRDBMS(in.Backup.Name), componentName)
 	managed[labels.ClusterKey] = in.ClusterName
+	managed[BackupUIDLabel] = string(in.Backup.UID)
 
 	// The workload-identity pod label is operator-required: without it the
 	// Azure webhook injects no token, whatever the ServiceAccount carries.
@@ -238,7 +307,7 @@ func dumpContainer(in JobInput, dump *v1.BackupDumpSpec) corev1.Container {
 			"--no-password",
 			"--file=" + scratchMountPath + "/" + DumpFileName,
 		},
-		Env:             append(env, dump.ExtraEnv...),
+		Env:             mergeEnv(env, dump.ExtraEnv),
 		EnvFrom:         dump.ExtraEnvFrom,
 		SecurityContext: containerSecurity(postgresUID),
 		VolumeMounts:    []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
@@ -270,7 +339,7 @@ func uploadContainer(in JobInput, dump *v1.BackupDumpSpec, spec string) corev1.C
 		Name:            "upload",
 		Image:           in.CLIImage,
 		Args:            []string{"upload"},
-		Env:             append(env, dump.ExtraEnv...),
+		Env:             mergeEnv(env, dump.ExtraEnv),
 		EnvFrom:         dump.ExtraEnvFrom,
 		SecurityContext: security,
 		VolumeMounts:    []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
@@ -305,6 +374,24 @@ func credentialEnv(in JobInput) []corev1.EnvVar {
 	}
 
 	return env
+}
+
+// mergeEnv combines the variables the Job sets with the extras of the dump
+// block, by name: the Job's own values always win, and a name appears once,
+// so a duplicate can neither redirect the dump nor make the apply fail on a
+// duplicate list-map key. Admission already rejects reserved names; this is
+// the second layer.
+func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
+	merged := make([]corev1.EnvVar, 0, len(own)+len(extra))
+	merged = append(merged, own...)
+	for _, env := range extra {
+		if slices.ContainsFunc(own, func(o corev1.EnvVar) bool { return o.Name == env.Name }) {
+			continue
+		}
+		merged = append(merged, env)
+	}
+
+	return merged
 }
 
 // scratchVolume returns the volume that holds the dump: an emptyDir bounded

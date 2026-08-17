@@ -1083,8 +1083,12 @@ spec:
                             minimum: 1
                             type: integer
                           extraEnv:
-                            description: ExtraEnv are extra environment variables
-                              of the dump pod.
+                            description: |-
+                              ExtraEnv are extra environment variables of the dump pod. The
+                              connection variables the Job sets (PGHOST, PGPORT, PGDATABASE, PGUSER,
+                              PGPASSWORD, and their libpq siblings) and every UPLOAD_* variable are
+                              reserved; a backup that names one is rejected at admission. Settings
+                              such as PGSSLMODE are allowed.
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.

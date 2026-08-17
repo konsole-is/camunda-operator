@@ -36,48 +36,47 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
+// jobNameLabel is the label the Job controller stamps on the pods of a Job.
+const jobNameLabel = "batch.kubernetes.io/job-name"
+
 // finalize removes the artifacts of a deleted backup: the Job and the dump
-// object, keyed strictly on this backup's own object key. Primary-storage
-// backups are never touched: they belong to the continuous range that a
-// point-in-time restore consumes. Transient errors are returned, so the
-// deletion retries; only when the dependency chain is genuinely gone — the
-// cluster, the pinned bucket, or its credentials no longer exist — does the
-// finalizer release with an event that records what was left behind, so a
-// dead cluster never blocks deletion forever.
+// object, keyed strictly on this backup's own object key. Zeebe backups are
+// never touched: they belong to the continuous range that a point-in-time
+// restore consumes. The order matters: the Job goes first, and the object is
+// deleted only once the live API confirms the Job and its pods are gone, so a
+// terminating uploader cannot recreate the object after the delete. Transient
+// errors are returned, so the deletion retries; only when the dependency
+// chain is genuinely gone — the cluster, the pinned bucket, or its
+// credentials no longer exist — or when the pinned bucket now points
+// somewhere else does the finalizer release with an event that records what
+// was left behind, so a dead or retargeted contract never blocks deletion
+// forever and never deletes a stranger's object.
 func (r *LogicalBackupRDBMSReconciler) finalize(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
-) error {
+) (hold, error) {
 	if !controllerutil.ContainsFinalizer(backup, logicalbackup.Finalizer) {
-		return nil
+		return settle, nil
 	}
 
 	namespace := backup.Spec.ClusterRef.EffectiveClusterNamespace(backup.Namespace)
 
-	// The Job goes first so it is never left running for a backup that is
-	// going away. The delete is not awaited, so an upload already in flight
-	// can still finish after the object deletion below and leave the object
-	// behind; the window is small and the leftover is only ever this
-	// backup's own key, never another backup's data. The name is
-	// deterministic, so a crash that never recorded status.jobName still
-	// finds it.
-	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
-		Name:      components.JobName(backup),
-		Namespace: namespace,
-	}}
-	propagation := metav1.DeletePropagationBackground
-	if err := r.Delete(
-		ctx, job, &client.DeleteOptions{PropagationPolicy: &propagation},
-	); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("deleting the dump Job: %w", err)
+	gone, err := r.deleteJob(ctx, backup, namespace)
+	if err != nil {
+		return settle, err
+	}
+	if !gone {
+		// The Job or its pods are still terminating; the object must wait,
+		// or an upload still in flight could recreate it after the delete.
+		return hold{after: shortly.after}, nil
 	}
 
 	if backup.Status.ObjectKey != "" {
-		gone, err := r.deleteObject(ctx, backup, namespace)
+		left, err := r.deleteObject(ctx, backup, namespace)
 		if err != nil {
-			return err
+			return settle, err
 		}
-		if gone != "" {
+		if left != "" {
 			r.EventRecorder.Eventf(
 				backup,
 				nil,
@@ -86,19 +85,69 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 				eventActionFinalize,
 				"The dump object %q was left behind: %s",
 				backup.Status.ObjectKey,
-				gone,
+				left,
 			)
 		}
 	}
 
-	return r.releaseFinalizer(ctx, backup)
+	return settle, r.releaseFinalizer(ctx, backup)
+}
+
+// deleteJob deletes the dump Job of the backup and reports whether it and
+// its pods are gone from the live API. The name is deterministic, so a crash
+// that never recorded status.jobName still finds it; the UID label decides
+// whether it is this backup's — a Job of another backup under the same name
+// is left alone and counts as gone for this one.
+func (r *LogicalBackupRDBMSReconciler) deleteJob(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	namespace string,
+) (bool, error) {
+	key := types.NamespacedName{Namespace: namespace, Name: components.JobName(backup)}
+
+	var job batchv1.Job
+	err := r.APIReader.Get(ctx, key, &job)
+	switch {
+	case apierrors.IsNotFound(err):
+		return r.podsGone(ctx, key)
+	case err != nil:
+		return false, fmt.Errorf("reading the dump Job: %w", err)
+	case !components.JobBelongsTo(&job, backup):
+		return true, nil
+	}
+
+	if job.DeletionTimestamp.IsZero() {
+		propagation := metav1.DeletePropagationBackground
+		if err := r.Delete(
+			ctx, &job, &client.DeleteOptions{PropagationPolicy: &propagation},
+		); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("deleting the dump Job: %w", err)
+		}
+	}
+
+	return false, nil
+}
+
+// podsGone reports whether no pod of the Job is left in the live API. The
+// Job controller labels its pods with the Job name; a pod still terminating
+// may still be uploading.
+func (r *LogicalBackupRDBMSReconciler) podsGone(ctx context.Context, job types.NamespacedName) (bool, error) {
+	var pods corev1.PodList
+	if err := r.APIReader.List(
+		ctx, &pods, client.InNamespace(job.Namespace), client.MatchingLabels{jobNameLabel: job.Name},
+	); err != nil {
+		return false, fmt.Errorf("listing the pods of the dump Job: %w", err)
+	}
+
+	return len(pods.Items) == 0, nil
 }
 
 // deleteObject removes the dump from the pinned bucket — the one the backup
-// wrote through, not whatever the cluster references today. It returns a
-// non-empty reason when the dependency chain is genuinely gone and the object
-// cannot be reached anymore, and an error when the failure is transient and
-// a retry can still clean up.
+// wrote through, and only while it still points where it did at the start.
+// It returns a non-empty reason when the object is left behind on purpose:
+// the dependency chain is genuinely gone, or the contract now points
+// somewhere else and a delete would hit a stranger's object at the same key.
+// An error means the failure is transient and a retry can still clean up.
 func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -126,22 +175,15 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 
 		return "", fmt.Errorf("reading ObjectStorageConfig %q: %w", backup.Status.BucketRef, err)
 	}
-	if bucket.Generation != backup.Status.BucketGeneration {
-		// The contract changed under the object. The delete still runs against
-		// the current spec — the old one is not retrievable — but the change is
-		// worth a trace when the key then turns out not to be there.
-		r.EventRecorder.Eventf(
-			backup,
-			nil,
-			corev1.EventTypeWarning,
-			eventReasonCleanup,
-			eventActionFinalize,
-			"ObjectStorageConfig %q changed since the backup wrote through it "+
-				"(generation %d, was %d); the cleanup uses the current spec",
-			bucket.Name,
-			bucket.Generation,
-			backup.Status.BucketGeneration,
-		)
+	if location := bucket.Location(); location != backup.Status.BucketLocation {
+		// The contract was retargeted under the object. The same key in the
+		// new location is a stranger's; leaving the old object is the safe
+		// failure.
+		return fmt.Sprintf(
+			"ObjectStorageConfig %q now points at %s, but the dump was written to %s; "+
+				"deleting there could hit an unrelated object",
+			bucket.Name, location, backup.Status.BucketLocation,
+		), nil
 	}
 
 	var creds *objectstore.Credentials

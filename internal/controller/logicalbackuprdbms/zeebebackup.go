@@ -85,18 +85,19 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 ) (hold, error) {
 	id, err := admin.StartRuntimeBackup(ctx, nil)
 	switch {
-	case errors.Is(err, camundaadmin.ErrUnreachable):
-		// The same bounded grace as any other mid-run failure: a management
-		// API that never answers again must terminalize the backup, not park
-		// it forever.
-		return r.holdRunning(backup, unreachable(cluster, err))
-	case err != nil:
-		// A rejected call — a 503 through a restarting gateway, or even a
-		// conflict on the generated id — is retried with backoff. The dump
-		// already succeeded; discarding it over one bad answer would be the
-		// real loss. A conflict is never resolved by adopting the backup that
-		// holds the id.
+	case errors.Is(err, camundaadmin.ErrConflict):
+		// A conflict on the id the cluster just generated means a higher id
+		// landed in between; the next request generates a fresh one, so this
+		// is retried with backoff — and never resolved by adopting the backup
+		// that holds the id.
 		return settle, fmt.Errorf("requesting the Zeebe backup: %w", err)
+	case err != nil:
+		// Unreachable or rejected (a 503 through a restarting gateway, a
+		// 401): both run through the same bounded grace as any other mid-run
+		// failure. The dump already succeeded, so one bad answer must not
+		// discard it — but an API that never answers well again must
+		// terminalize the backup, not park it forever.
+		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
 	r.recovered(backup)
 
@@ -121,11 +122,9 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	admin *camundaadmin.Client,
 ) (hold, error) {
 	status, err := admin.RuntimeBackupStatus(ctx, *backup.Status.ZeebeBackupID)
-	if errors.Is(err, camundaadmin.ErrUnreachable) {
-		return r.holdRunning(backup, unreachable(cluster, err))
-	}
 	if err != nil {
-		return settle, fmt.Errorf("reading the Zeebe backup: %w", err)
+		// Unreachable or rejected alike: bounded by the mid-run grace.
+		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
 	r.recovered(backup)
 
@@ -157,14 +156,20 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	return settle, nil
 }
 
-// unreachable is the mid-run failure of a management API that does not
-// answer, naming the endpoint so the terminal message points somewhere.
-func unreachable(cluster *v1.CamundaCluster, err error) *conditions.PreCheckFailure {
+// managementFailure is the mid-run failure of a management API that does
+// not answer, or answers with an error, naming the endpoint so the terminal
+// message points somewhere. Both share ConnectionFailed: from the backup's
+// side the API is not usable, whichever way it fails.
+func managementFailure(cluster *v1.CamundaCluster, err error) *conditions.PreCheckFailure {
+	verb := "rejected the call"
+	if errors.Is(err, camundaadmin.ErrUnreachable) {
+		verb = "is not reachable"
+	}
+
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonConnectionFailed,
 		Message: fmt.Sprintf(
-			"the management API at %s is not reachable: %v",
-			cluster.Status.Management.Endpoint, err,
+			"the management API at %s %s: %v", cluster.Status.Management.Endpoint, verb, err,
 		),
 	}
 }

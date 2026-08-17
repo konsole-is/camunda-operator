@@ -18,15 +18,18 @@ package logicalbackuprdbms
 
 import (
 	"flag"
+	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -54,7 +57,11 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 
 func backup() *v1.LogicalBackupRDBMS {
 	return &v1.LogicalBackupRDBMS{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-1748937221000", Namespace: "my-cluster-ns"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster-1748937221000",
+			Namespace: "my-cluster-ns",
+			UID:       "3f2a9c1e-7b4d-4e0a-9c6f-2d1b8a5e4c73",
+		},
 		Spec: v1.LogicalBackupRDBMSSpec{
 			ClusterRef: v1.ClusterRef{Name: "my-cluster"},
 		},
@@ -260,10 +267,106 @@ func TestJobGoldenScratchPVC(t *testing.T) {
 	)
 }
 
-func TestJobNameDerivesFromTheBackupAlone(t *testing.T) {
+func TestJobNameIsUniquePerBackupNamespaceAndName(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "my-cluster-1748937221000-dump", JobName(backup()))
+	assert.Equal(t, "my-cluster-ns-my-cluster-1748937221000-dump", JobName(backup()))
+
+	// Two backups with one name from different namespaces target the same
+	// cluster namespace; their Jobs must not collide.
+	other := backup()
+	other.Namespace = "other-ns"
+	assert.NotEqual(t, JobName(backup()), JobName(other))
+}
+
+func TestJobNameStaysADNSLabelForLongNames(t *testing.T) {
+	t.Parallel()
+
+	long := backup()
+	long.Namespace = strings.Repeat("n", 40)
+	long.Name = strings.Repeat("b", 40)
+	name := JobName(long)
+	assert.Empty(t, validation.IsDNS1123Label(name), name)
+	assert.True(t, strings.HasSuffix(name, "-dump"))
+
+	// The hash keeps two long names apart where the truncated prefix agrees.
+	sibling := long.DeepCopy()
+	sibling.Name = strings.Repeat("b", 39) + "c"
+	assert.NotEqual(t, name, JobName(sibling))
+	assert.Equal(t, name, JobName(long), "the name is deterministic")
+}
+
+func TestJobBelongsToChecksTheUIDLabel(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Backup.UID = "uid-1"
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+	assert.True(t, JobBelongsTo(job, in.Backup))
+
+	stranger := in.Backup.DeepCopy()
+	stranger.UID = "uid-2"
+	assert.False(t, JobBelongsTo(job, stranger))
+	assert.False(t, JobBelongsTo(&batchv1.Job{}, in.Backup), "no label means not ours")
+}
+
+// TestBuildJobEnvOfTheJobWins pins the precedence: an extra that names a
+// connection variable does not replace the Job's own, and no name appears
+// twice, so a duplicate can neither redirect the dump nor break the apply.
+func TestBuildJobEnvOfTheJobWins(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Dump = &v1.BackupDumpSpec{ExtraEnv: []corev1.EnvVar{
+		{Name: "PGHOST", Value: "evil.example"},
+		{Name: "PGSSLMODE", Value: "require"},
+		{Name: EnvUploadKey, Value: "somewhere/else"},
+	}}
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	dump := job.Spec.Template.Spec.InitContainers[0]
+	assert.Equal(t, "postgres.databases.svc", envValue(dump, "PGHOST"))
+	assert.Equal(t, "require", envValue(dump, "PGSSLMODE"))
+	assert.Equal(t, 1, countEnv(dump, "PGHOST"))
+
+	upload := job.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, in.ObjectKey, envValue(upload, EnvUploadKey))
+	assert.Equal(t, 1, countEnv(upload, EnvUploadKey))
+}
+
+func TestReservedEnvNamesTheOffenders(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, ReservedEnv(nil))
+	assert.Nil(t, ReservedEnv(&v1.BackupDumpSpec{ExtraEnv: []corev1.EnvVar{{Name: "PGSSLMODE"}}}))
+	assert.Equal(t, []string{"PGPASSWORD", "UPLOAD_KEY"}, ReservedEnv(&v1.BackupDumpSpec{
+		ExtraEnv: []corev1.EnvVar{
+			{Name: "PGSSLMODE"}, {Name: "PGPASSWORD"}, {Name: "UPLOAD_KEY"}, {Name: "PGPASSWORD"},
+		},
+	}))
+}
+
+func envValue(container corev1.Container, name string) string {
+	for _, env := range container.Env {
+		if env.Name == name {
+			return env.Value
+		}
+	}
+
+	return ""
+}
+
+func countEnv(container corev1.Container, name string) int {
+	n := 0
+	for _, env := range container.Env {
+		if env.Name == name {
+			n++
+		}
+	}
+
+	return n
 }
 
 func TestBuildJobRejectsAnEmptyCLIImage(t *testing.T) {

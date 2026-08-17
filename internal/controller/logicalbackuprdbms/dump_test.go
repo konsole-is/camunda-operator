@@ -48,12 +48,22 @@ func trackedBackup() *v1.LogicalBackupRDBMS {
 		ObjectMeta: metav1.ObjectMeta{Name: "backup-1", Namespace: "camunda"},
 		Spec:       v1.LogicalBackupRDBMSSpec{ClusterRef: v1.ClusterRef{Name: "my-cluster"}},
 	}
+	backup.UID = "uid-of-this-backup"
 	backup.Status.BackupID = 1748937221000
 	backup.Status.Phase = v1.LogicalBackupRunning
 	backup.Status.Step = v1.StepDumping
 	backup.Status.JobName = components.JobName(backup)
 
 	return backup
+}
+
+// ownJob is the Job of backup as BuildJob stamps it: named after the backup
+// and carrying its UID.
+func ownJob(backup *v1.LogicalBackupRDBMS) *batchv1.Job {
+	return &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+		Name: backup.Status.JobName, Namespace: backup.Namespace,
+		Labels: map[string]string{components.BackupUIDLabel: string(backup.UID)},
+	}}
 }
 
 // TestDumpTrustsTheLiveViewOverAStaleCache pins the read-your-writes gap:
@@ -65,9 +75,7 @@ func TestDumpTrustsTheLiveViewOverAStaleCache(t *testing.T) {
 
 	scheme := dumpScheme(t)
 	backup := trackedBackup()
-	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
-		Name: backup.Status.JobName, Namespace: backup.Namespace,
-	}}
+	job := ownJob(backup)
 
 	r := &LogicalBackupRDBMSReconciler{
 		// The cache lost the race: no Job. The live view has it.
@@ -104,4 +112,30 @@ func TestDumpFailsWhenTheJobIsGoneFromTheLiveView(t *testing.T) {
 	assert.Equal(t, v1.LogicalBackupFailed, backup.Status.Phase)
 	assert.Contains(t, backup.Status.FailureMessage, "disappeared")
 	assert.Equal(t, settle, wait)
+}
+
+// TestDumpNeverAdoptsAnotherBackupsJob pins the identity check: a Job under
+// this backup's name that carries another UID belongs to another backup —
+// tracking it would let this backup advance without a dump of its own, so it
+// is a hard failure naming the conflicting Job.
+func TestDumpNeverAdoptsAnotherBackupsJob(t *testing.T) {
+	t.Parallel()
+
+	scheme := dumpScheme(t)
+	backup := trackedBackup()
+	stranger := ownJob(backup)
+	stranger.Labels[components.BackupUIDLabel] = "uid-of-someone-else"
+
+	r := &LogicalBackupRDBMSReconciler{
+		Client:        fake.NewClientBuilder().WithScheme(scheme).WithObjects(stranger).Build(),
+		APIReader:     fake.NewClientBuilder().WithScheme(scheme).WithObjects(stranger).Build(),
+		EventRecorder: events.NewFakeRecorder(4),
+		opts:          Options{RetryInterval: time.Second},
+	}
+
+	_, err := r.dump(context.Background(), backup)
+	require.NoError(t, err)
+	assert.Equal(t, v1.LogicalBackupFailed, backup.Status.Phase)
+	assert.Contains(t, backup.Status.FailureMessage, "belongs to another backup")
+	assert.Contains(t, backup.Status.FailureMessage, stranger.Name)
 }

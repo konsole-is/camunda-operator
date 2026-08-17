@@ -95,9 +95,17 @@ type LogicalBackupRDBMSStatus struct {
 	// object, even after the cluster's backupStorageRef moved elsewhere.
 	// +optional
 	BucketRef string `json:"bucketRef,omitempty"`
+	// BucketLocation pins where the object was written: the storage type,
+	// bucket, base path, and endpoint of the ObjectStorageConfig at the
+	// start, as ObjectStorageConfig.Location renders them. Deletion runs
+	// only while the contract still points there; a retargeted contract
+	// leaves the object behind instead of deleting a stranger's object at
+	// the same key.
+	// +optional
+	BucketLocation string `json:"bucketLocation,omitempty"`
 	// BucketGeneration is the generation of the pinned config when the
-	// backup started. A different generation at deletion time means the
-	// bucket coordinates may have changed under the object.
+	// backup started, for reference; BucketLocation is what decides whether
+	// deletion may run.
 	// +optional
 	BucketGeneration int64 `json:"bucketGeneration,omitempty"`
 	// StorageSizes are the effective restore sizes recorded when the backup

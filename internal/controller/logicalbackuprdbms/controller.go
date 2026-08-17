@@ -180,6 +180,7 @@ type LogicalBackupRDBMSReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;databaseconfigs;databaseserverconfigs;objectstorageconfigs;camundaclusterpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile drives one backup to a terminal phase: admission, the dump Job,
@@ -202,7 +203,9 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 	}
 
 	if !backup.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finalize(ctx, &backup)
+		wait, err := r.finalize(ctx, &backup)
+
+		return ctrl.Result{RequeueAfter: wait.after}, err
 	}
 
 	if !controllerutil.ContainsFinalizer(&backup, logicalbackup.Finalizer) {

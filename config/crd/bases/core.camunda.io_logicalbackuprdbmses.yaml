@@ -92,8 +92,12 @@ spec:
                     minimum: 1
                     type: integer
                   extraEnv:
-                    description: ExtraEnv are extra environment variables of the dump
-                      pod.
+                    description: |-
+                      ExtraEnv are extra environment variables of the dump pod. The
+                      connection variables the Job sets (PGHOST, PGPORT, PGDATABASE, PGUSER,
+                      PGPASSWORD, and their libpq siblings) and every UPLOAD_* variable are
+                      reserved; a backup that names one is rejected at admission. Settings
+                      such as PGSSLMODE are allowed.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -1021,10 +1025,19 @@ spec:
               bucketGeneration:
                 description: |-
                   BucketGeneration is the generation of the pinned config when the
-                  backup started. A different generation at deletion time means the
-                  bucket coordinates may have changed under the object.
+                  backup started, for reference; BucketLocation is what decides whether
+                  deletion may run.
                 format: int64
                 type: integer
+              bucketLocation:
+                description: |-
+                  BucketLocation pins where the object was written: the storage type,
+                  bucket, base path, and endpoint of the ObjectStorageConfig at the
+                  start, as ObjectStorageConfig.Location renders them. Deletion runs
+                  only while the contract still points there; a retargeted contract
+                  leaves the object behind instead of deleting a stranger's object at
+                  the same key.
+                type: string
               bucketRef:
                 description: |-
                   BucketRef pins the ObjectStorageConfig the dump was written through,

@@ -58,7 +58,7 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 				// never terminally fail a valid dump.
 				liveErr := r.APIReader.Get(ctx, key, &current)
 				if liveErr == nil {
-					return r.trackJob(backup, &current)
+					return r.adopt(backup, &current)
 				}
 				if !apierrors.IsNotFound(liveErr) {
 					return settle, liveErr
@@ -74,7 +74,7 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 			return settle, err
 		}
 
-		return r.trackJob(backup, &current)
+		return r.adopt(backup, &current)
 	}
 
 	// The Job does not exist yet; the read must be live, because a stale
@@ -83,14 +83,36 @@ func (r *LogicalBackupRDBMSReconciler) dump(
 	err := r.APIReader.Get(ctx, key, &current)
 	switch {
 	case err == nil:
-		backup.Status.JobName = current.Name
-
-		return r.trackJob(backup, &current)
+		return r.adopt(backup, &current)
 	case !apierrors.IsNotFound(err):
 		return settle, err
 	}
 
 	return r.createJob(ctx, backup)
+}
+
+// adopt tracks a Job found under the backup's Job name, after proving it is
+// this backup's: the name derives from the backup namespace and name, but a
+// Job that carries another UID belongs to another backup and must never be
+// tracked — its completion would let this backup advance without a dump of
+// its own. That is a hard failure, not a wait: the other Job will not change
+// identity.
+func (r *LogicalBackupRDBMSReconciler) adopt(
+	backup *v1.LogicalBackupRDBMS,
+	job *batchv1.Job,
+) (hold, error) {
+	if !components.JobBelongsTo(job, backup) {
+		r.fail(backup, fmt.Sprintf(
+			"Job %s/%s exists but belongs to another backup (label %s=%q); this backup cannot "+
+				"track it and will not create a second Job under the same name",
+			job.Namespace, job.Name, components.BackupUIDLabel, job.Labels[components.BackupUIDLabel],
+		))
+
+		return settle, nil
+	}
+	backup.Status.JobName = job.Name
+
+	return r.trackJob(backup, job)
 }
 
 // createJob re-resolves the dump dependencies and applies the Job. It runs
