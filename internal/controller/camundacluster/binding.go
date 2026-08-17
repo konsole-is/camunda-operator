@@ -42,7 +42,11 @@ func managementBinding(cluster *v1.CamundaCluster, in components.Input) *v1.Mana
 		Partitions: in.Effective.Partitions(),
 	}
 
-	if in.Storage.Type == v1.SecondaryStorageTypeElasticsearch && in.Storage.Elasticsearch != nil {
+	// The repository is published only when the cluster takes backups: the
+	// binding names what the components are wired to, and without a bucket
+	// they are wired to nothing.
+	if in.Backup != nil && in.Storage.Type == v1.SecondaryStorageTypeElasticsearch &&
+		in.Storage.Elasticsearch != nil {
 		binding.BackupRepository = in.Storage.Elasticsearch.SnapshotRepository
 	}
 

@@ -57,12 +57,62 @@ func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.In
 	if backup == nil {
 		return nil
 	}
+	if err := res.rejectSharedAzureContainer(ctx, backup); err != nil {
+		return err
+	}
 	if err := res.localizeBucketCredentials(ctx, backup); err != nil {
 		return err
 	}
 	in.Backup = backup
 
 	return res.requireSnapshotRepository(in)
+}
+
+// rejectSharedAzureContainer rejects an Azure backup bucket that an older
+// cluster already backs up to. The azure store has no container field: its
+// base-path IS the container, so the per-cluster prefix that isolates two
+// clusters on S3 and GCS does not exist there, and two clusters on one
+// contract would write into one container. The oldest cluster keeps the
+// contract (ties break by name), so creating a second cluster never breaks
+// the first.
+func (res *resolver) rejectSharedAzureContainer(ctx context.Context, bucket *v1.ObjectStorageConfig) error {
+	if bucket.Spec.AzureBlob == nil {
+		return nil
+	}
+
+	var clusters v1.CamundaClusterList
+	if err := res.reader.List(ctx, &clusters); err != nil {
+		return fmt.Errorf("listing clusters that share ObjectStorageConfig %q: %w", bucket.Name, err)
+	}
+
+	for i := range clusters.Items {
+		other := &clusters.Items[i]
+		if other.UID == res.cluster.UID || other.Spec.BackupStorageRef != bucket.Name {
+			continue
+		}
+		if olderThan(other, res.cluster) {
+			return &conditions.PreCheckFailure{
+				Reason: v1.ReasonInvalidReference,
+				Message: fmt.Sprintf(
+					"ObjectStorageConfig %q is an Azure container that CamundaCluster %q already backs up "+
+						"to; the azure store writes into one container per contract, so every cluster needs "+
+						"a contract with its own container",
+					bucket.Name, objectPath(client.ObjectKeyFromObject(other)),
+				),
+			}
+		}
+	}
+
+	return nil
+}
+
+// olderThan reports whether a was created before b, with the name as the
+// tie-break, so exactly one of two clusters ever yields.
+func olderThan(a, b *v1.CamundaCluster) bool {
+	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	}
+	return a.Name < b.Name
 }
 
 // objectStorage reads the ObjectStorageConfig that ref names, or returns nil

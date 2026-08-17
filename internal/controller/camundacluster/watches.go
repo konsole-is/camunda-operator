@@ -159,7 +159,7 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 func bucketsWithSecret(ctx context.Context, c client.Client, key string) []string {
 	var list v1.ObjectStorageConfigList
 	if err := c.List(ctx, &list); err != nil {
-		logf.FromContext(ctx).Error(err, "listing buckets for Secret enqueue", "secret", key)
+		logf.FromContext(ctx).Error(err, "Failed to list buckets for Secret enqueue", "secret", key)
 		return nil
 	}
 
