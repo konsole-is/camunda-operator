@@ -32,7 +32,7 @@ status: consumer-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #65 | feat/backup-controllers--foundation | (removed) | #74 → feat/backup-controllers | self-merged |
-| #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | #79 → feat/backup-controllers | draft |
+| #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | #79 → feat/backup-controllers | self-merged |
 | #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | #77 → feat/backup-controllers | draft (verified: 29 pkgs, make all, 129840B gzipped) |
 | #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | → feat/backup-controllers | not-started |
 | #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | → feat/backup-controllers | not-started |
@@ -48,7 +48,7 @@ status: consumer-wave
 | esadmin-api | merged producer PR (`New` now returns `(*Client, error)`) | #74 | locked |
 | camundaadmin-api | merged producer PR (+`ErrConflict`; four verified 8.9 protocol corrections) | #74 | locked |
 | logicalbackup-skeleton | merged producer PR (status vocabulary in `api/v1`; `PreCheckRequest` with injected `InProgress`) | #74 | locked |
-| snapshot-repository-field | pre-merge stub committed to the feature branch so #66 and #67 build in parallel; #66 fills it, #67 reads it | feat/backup-controllers@1ba9d1c | locked |
+| snapshot-repository-field | stub filled by #79: published only after registration converges; suspension keeps the last name; pattern-validated | #79 (d6435ea) | locked |
 | management-binding | merged producer PR | #67's PR | pending |
 | backup-kind-types | PR6 branches after #68+#69 merge | n/a | pending |
 
@@ -73,7 +73,7 @@ status: consumer-wave
 
 ## Pending snapshot
 
-1. Phase 2: both PRs in quality fix-loops. #77 works Q1–Q10 (4 critical); #79 works R1–R18 + cleanups. On each report: verify the critical fixes in the diff, re-run targeted suites, then loop again if findings remain (no cap).
+1. Phase 2: #79 MERGED (d6435ea), #66 closed with decision record. #77 in its final round: merge the feature branch, refactor onto the shared api/v1 accessors (WorkloadIdentityAnnotations + PodLabels — Azure pod label must survive), shared Secret index, wire serviceAccount.name/create, ClusterPrefix reuse, PR-body reconciliation. On its report: verify, merge #77, close #67 with decision record, lock management-binding, wave checkpoint (reviewing-feature-progress), then fan out #68/#69.
 2. Merge order: #79 FIRST (owns `WorkloadIdentityAnnotations()`), close #66, lock `snapshot-repository-field`; then message #77's agent to merge the feature branch, refactor `DerivedServiceAccountAnnotations` onto the shared method (keeping the Azure pod label — see bubble-up), reconcile its stale PR-body verification paragraph, wire `serviceAccount.name`/`create` on the CamundaCluster side (the shared type now has the fields); re-review the delta, merge #77, close #67, lock `management-binding`.
 3. Then `reviewing-feature-progress` wave checkpoint; then fan out #68/#69 (Phase 3 — user-reviewed PRs).
 3. Phase 2: fan out #66 and #67 in parallel worktrees; loop to clean; self-merge; close.
