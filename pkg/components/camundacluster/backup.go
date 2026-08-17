@@ -18,13 +18,14 @@ package camundacluster
 
 import (
 	"fmt"
-	"path"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
 // The documented defaults of the primary-storage backup scheduler. They are
@@ -52,10 +53,6 @@ const (
 	// credentials of the runtime. It is the only value that authenticates;
 	// the alternative, none, is for an emulator.
 	gcsAuthAuto = "auto"
-	// azurePublicSuffix builds the blob service endpoint of an account in
-	// the public Azure cloud. The azure block needs an endpoint unless a
-	// connection string carries one, and the contract has none.
-	azurePublicSuffix = ".blob.core.windows.net"
 	// gcsKeyVolumeName is the volume that carries a static Google
 	// service-account key, and gcsKeyMountPath is where it is mounted. The
 	// GCS backup store takes no key as a property, so the key must be a file.
@@ -63,41 +60,24 @@ const (
 	gcsKeyMountPath  = "/etc/camunda/gcs-backup"
 )
 
-// The workload-identity annotations of each cloud, and the pod label that
-// the Azure webhook requires. Each one binds a cloud principal to the
-// ServiceAccount of the pods.
-const (
-	// AWSRoleARNAnnotation is the IRSA annotation of a ServiceAccount.
-	AWSRoleARNAnnotation = "eks.amazonaws.com/role-arn"
-	// GCPServiceAccountAnnotation is the Workload Identity annotation of a
-	// ServiceAccount on GKE.
-	GCPServiceAccountAnnotation = "iam.gke.io/gcp-service-account"
-	// AzureClientIDAnnotation is the Workload Identity annotation of a
-	// ServiceAccount on AKS.
-	AzureClientIDAnnotation = "azure.workload.identity/client-id"
-	// AzureWorkloadIdentityPodLabel opts a pod into the Azure Workload
-	// Identity webhook, which injects the projected token. Without it the
-	// annotation alone does nothing.
-	AzureWorkloadIdentityPodLabel = "azure.workload.identity/use"
-)
-
 // BackupBasePath returns the prefix that this cluster writes its backups
-// under: the prefix of the contract, then the namespace and the name of the
-// cluster. Two clusters that share a bucket therefore never share a prefix,
-// which the Zeebe backup store requires. Azure has no prefix of its own; see
-// azureEnv.
+// under, through the one layout definition of pkg/logicalbackup: the prefix
+// of the contract, then the namespace and the name of the cluster. Two
+// clusters that share a bucket therefore never share a prefix, which the
+// Zeebe backup store requires. Azure has no prefix of its own; see azureEnv.
 func BackupBasePath(in Input) string {
-	return path.Join(in.Backup.BasePath(), in.Cluster.Namespace, in.Cluster.Name)
+	return logicalbackup.ClusterPrefix(in.Backup.BasePath(), in.Cluster.Namespace, in.Cluster.Name)
 }
 
 // DerivedServiceAccountAnnotations returns the workload-identity annotations
-// of every bucket that cluster references, keyed by annotation. A bucket that
-// carries no identity contributes nothing: the binding then lives on the
-// cloud side and names the ServiceAccount itself, as EKS Pod Identity and
-// Workload Identity Federation for GKE do.
+// of every referenced bucket, merged. The per-cloud knowledge lives on the
+// contract (WorkloadIdentityAnnotations); this function only merges and
+// rejects a conflict. A bucket that carries no identity contributes nothing:
+// the binding then lives on the cloud side and names the ServiceAccount
+// itself, as EKS Pod Identity and Workload Identity Federation for GKE do.
 //
-// Two buckets of one storage type that name different identities are an
-// error: a pod has one ServiceAccount, so the operator cannot honor both.
+// Two buckets that name different identities on one annotation are an error:
+// a pod has one ServiceAccount, so the operator cannot honor both.
 func DerivedServiceAccountAnnotations(buckets ...*v1.ObjectStorageConfig) (map[string]string, error) {
 	annotations := map[string]string{}
 	sources := map[string]string{}
@@ -106,18 +86,16 @@ func DerivedServiceAccountAnnotations(buckets ...*v1.ObjectStorageConfig) (map[s
 		if bucket == nil {
 			continue
 		}
-		key, value := workloadIdentityOf(bucket)
-		if key == "" || value == "" {
-			continue
+		for key, value := range bucket.WorkloadIdentityAnnotations() {
+			if previous, seen := annotations[key]; seen && previous != value {
+				return nil, fmt.Errorf(
+					"ObjectStorageConfig %q wants %s=%q but %q wants %q; one cluster has one ServiceAccount",
+					bucket.Name, key, value, sources[key], previous,
+				)
+			}
+			annotations[key] = value
+			sources[key] = bucket.Name
 		}
-		if previous, seen := annotations[key]; seen && previous != value {
-			return nil, fmt.Errorf(
-				"ObjectStorageConfig %q wants %s=%q but %q wants %q; one cluster has one ServiceAccount",
-				bucket.Name, key, value, sources[key], previous,
-			)
-		}
-		annotations[key] = value
-		sources[key] = bucket.Name
 	}
 
 	if len(annotations) == 0 {
@@ -126,31 +104,24 @@ func DerivedServiceAccountAnnotations(buckets ...*v1.ObjectStorageConfig) (map[s
 	return annotations, nil
 }
 
-// workloadIdentityOf returns the annotation key and value of the workload
-// identity of bucket, or two empty strings when it authenticates with static
-// credentials or carries no identity.
-func workloadIdentityOf(bucket *v1.ObjectStorageConfig) (string, string) {
-	switch spec := bucket.Spec; {
-	case spec.S3 != nil && spec.S3.Auth.WorkloadIdentity != nil:
-		return AWSRoleARNAnnotation, spec.S3.Auth.WorkloadIdentity.RoleARN
-	case spec.GCS != nil && spec.GCS.Auth.WorkloadIdentity != nil:
-		return GCPServiceAccountAnnotation, spec.GCS.Auth.WorkloadIdentity.ServiceAccountEmail
-	case spec.AzureBlob != nil && spec.AzureBlob.Auth.WorkloadIdentity != nil:
-		return AzureClientIDAnnotation, spec.AzureBlob.Auth.WorkloadIdentity.ClientID
+// DerivedPodLabels returns the labels that the pods of the cluster need for
+// the identities of the referenced buckets. The per-cloud knowledge lives on
+// the contract (WorkloadIdentityPodLabels); today only Azure carries one,
+// with or without an annotation, because its webhook injects nothing into an
+// unlabeled pod.
+func DerivedPodLabels(buckets ...*v1.ObjectStorageConfig) map[string]string {
+	var merged map[string]string
+	for _, bucket := range buckets {
+		if bucket == nil {
+			continue
+		}
+		merged = labels.Merge(merged, bucket.WorkloadIdentityPodLabels())
 	}
 
-	return "", ""
-}
-
-// derivedPodLabels returns the labels that a derived workload identity needs
-// on the pods. Only Azure has one: its webhook injects the projected token
-// only into a pod that carries the opt-in label.
-func derivedPodLabels(in Input) map[string]string {
-	if _, ok := in.ServiceAccountAnnotations[AzureClientIDAnnotation]; !ok {
+	if len(merged) == 0 {
 		return nil
 	}
-
-	return map[string]string{AzureWorkloadIdentityPodLabel: "true"}
+	return merged
 }
 
 // backupEnv is the backup layer of the configuration. Every unified process
@@ -300,14 +271,9 @@ func gcsEnv(in Input, gcs *v1.GCSStorage) rendered {
 // SAS token are all absent. Under workload identity the account name of the
 // contract therefore only derives the endpoint.
 func azureEnv(azure *v1.AzureBlobStorage) []corev1.EnvVar {
-	endpoint := azure.Endpoint
-	if endpoint == "" {
-		endpoint = "https://" + azure.AccountName + azurePublicSuffix
-	}
-
 	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupStore, backupStoreAzure),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupAzureEndpoint, endpoint),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupAzureEndpoint, azure.ServiceEndpoint()),
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupAzureBasePath, azure.Container),
 	}
 

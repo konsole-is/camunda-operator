@@ -64,6 +64,10 @@ type Input struct {
 	// cluster namespace. Nil when the cluster names no backup bucket; the
 	// backup wiring is then not rendered and the store stays NONE.
 	Backup *v1.ObjectStorageConfig
+	// Documents is the ObjectStorageConfig that spec.documentStorageRef
+	// names. Its workload identity and pod labels bind like the backup
+	// bucket's; nothing else of it is wired yet.
+	Documents *v1.ObjectStorageConfig
 	// ServiceAccountAnnotations are the workload-identity annotations that
 	// the referenced buckets derive, already checked for a conflict by the
 	// controller. The annotations of spec.serviceAccount merge over them, so

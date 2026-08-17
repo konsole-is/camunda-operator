@@ -97,7 +97,13 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 }
 
 // ServiceAccountName returns the name of the ServiceAccount of every
-// workload pod. The operator creates it only when spec.serviceAccount is set.
-func ServiceAccountName(cluster *v1.CamundaCluster) string {
+// workload pod: the name that the spec sets, or the name derived from the
+// cluster otherwise. It is the principal that a workload identity without an
+// annotation binds, so it is part of the contract with the cloud provider.
+func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
+	if e.ServiceAccount != nil && e.ServiceAccount.Name != "" {
+		return e.ServiceAccount.Name
+	}
+
 	return cluster.Name + serviceAccountSuffix
 }
