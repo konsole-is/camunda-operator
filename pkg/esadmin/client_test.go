@@ -17,7 +17,11 @@ limitations under the License.
 package esadmin_test
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -240,4 +244,39 @@ func TestCreateSnapshotRejectsAnEmptyIndexList(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "names no index")
 	assert.False(t, server.SnapshotExists("repo", "records-42"))
+}
+
+// A rejection carries the response body so the operator can read why. A body
+// that is far larger than a condition allows must not travel whole into the
+// error, or every status flush that carries it is refused.
+func TestRejectedErrorBoundsTheBody(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 100_000))
+	}))
+	t.Cleanup(server.Close)
+	client, err := esadmin.New(server.URL, "camunda", "secret", nil)
+	require.NoError(t, err)
+
+	err = client.ReloadSecureSettings(ctx)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Less(t, len(err.Error()), 2_000)
+	assert.Contains(t, err.Error(), "(truncated, 100000 bytes)")
+}
+
+func TestRejectedErrorKeepsASmallBodyWhole(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("  repository is missing  "))
+	}))
+	t.Cleanup(server.Close)
+	client, err := esadmin.New(server.URL, "camunda", "secret", nil)
+	require.NoError(t, err)
+
+	err = client.ReloadSecureSettings(ctx)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.True(t, strings.HasSuffix(err.Error(), "returned 500: repository is missing"), err.Error())
+	assert.NotContains(t, err.Error(), "truncated")
 }

@@ -41,6 +41,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrUnreachable, ErrRejected, and ErrConflict classify every failure of the
@@ -424,9 +425,29 @@ func (c *Client) do(
 	if resp.StatusCode != want {
 		return payload, resp.StatusCode, fmt.Errorf(
 			"%w: %s %s returned %d: %s",
-			ErrRejected, method, path, resp.StatusCode, strings.TrimSpace(string(payload)),
+			ErrRejected, method, path, resp.StatusCode, errorBody(payload),
 		)
 	}
 
 	return payload, resp.StatusCode, nil
+}
+
+// errorBodyLimit bounds how much of a rejected response body an error message
+// carries. The full body is still read and returned to the caller. Only the
+// message is bounded, so an error can land in a condition or an event without
+// exceeding their limits.
+const errorBodyLimit = 1 << 10
+
+// errorBody returns the trimmed body for an error message, cut to
+// errorBodyLimit bytes on a rune boundary and marked when cut.
+func errorBody(payload []byte) string {
+	body := strings.TrimSpace(string(payload))
+	if len(body) <= errorBodyLimit {
+		return body
+	}
+	cut := body[:errorBodyLimit]
+	for !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return fmt.Sprintf("%s... (truncated, %d bytes)", cut, len(body))
 }
