@@ -786,6 +786,53 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.leaseHolder()).To(BeEmpty())
 	})
 
+	// Round 14 (from #85's review, mirrored here): the claim is taken
+	// before the ID is allocated. A backup that left admission without a
+	// start was able to keep the Lease. If a pre-check then parked it, the held
+	// Lease blocked every sibling for as long as the park lasted. Every
+	// exit of admission without a start now releases the claim.
+	It("holds no claim while admission parks it", func() {
+		r := newRig()
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Spec.Suspend = true
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		backup := r.newBackup()
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonClusterSuspended)
+
+		By("a Lease this parked backup holds from an interrupted admission")
+		self := claimant(currentBackup(backup))
+		identity := self.HolderIdentity()
+		lease := &coordinationv1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+				Annotations: map[string]string{
+					logicalbackup.ClaimHolderKindAnnotation: self.Kind,
+					logicalbackup.ClaimHolderNameAnnotation: self.Name,
+					logicalbackup.ClaimHolderUIDAnnotation:  string(self.UID),
+				},
+			},
+			Spec: coordinationv1.LeaseSpec{HolderIdentity: &identity},
+		}
+		Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+
+		By("the parked backup releases it on its next admission pass")
+		Eventually(func() string { return r.leaseHolder() }, timeout, interval).Should(BeEmpty())
+
+		By("resuming the cluster: the backup claims and starts")
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Spec.Suspend = false
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		r.publishBinding(3)
+		Expect(backupID(backup)).NotTo(BeZero())
+		Expect(r.leaseHolder()).To(Equal(self.String()))
+	})
+
 	It("stays Pending until the cluster publishes its binding", func() {
 		r := newRig()
 		Eventually(func(g Gomega) {

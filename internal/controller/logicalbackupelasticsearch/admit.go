@@ -41,10 +41,25 @@ import (
 // the backup ID is allocated. From then on the backup never returns here. A
 // dependency that breaks mid-run is the state machine's to handle, not a
 // reason to park.
+//
+// A backup that leaves admission without a start holds no claim. The claim
+// is taken before the ID is allocated. A sibling-list read that fails, or a
+// status flush that conflicts, can therefore leave the Lease held by a
+// backup with no ID. If a pre-check then parks that backup, the held Lease blocks every
+// sibling for as long as the park lasts. Every exit without a start
+// therefore releases the claim. The release is a no-op read when the backup
+// holds nothing.
 func (r *Reconciler) admit(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
-) (ctrl.Result, error) {
+) (result ctrl.Result, err error) {
+	started := false
+	defer func() {
+		if !started {
+			err = errors.Join(err, r.releaseClaim(ctx, backup))
+		}
+	}()
+
 	res, err := logicalbackup.PreCheck(ctx, logicalbackup.PreCheckRequest{
 		Reader:      r.APIReader,
 		Ref:         backup.Spec.ClusterRef,
@@ -95,6 +110,7 @@ func (r *Reconciler) admit(
 	}
 
 	r.start(ctx, backup, res, highest)
+	started = true
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
