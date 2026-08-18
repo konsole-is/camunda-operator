@@ -85,8 +85,10 @@ func (p Password) PreconditionAnnotations() map[string]string {
 }
 
 // LookupOrNew returns the password stored under field in the Secret at key,
-// together with the UID of that Secret. If the Secret or the field is absent,
-// it returns a new password and no UID. Controllers call it with an uncached
+// together with the UID of that Secret. If the Secret is absent, or the field
+// is absent or empty, it returns a new password and no UID: an empty value
+// is never a credential, so it is replaced, not kept. Controllers call it
+// with an uncached
 // reader before they publish a credential Secret. A password then stays stable
 // after creation, and to rotate it you delete the Secret.
 //
