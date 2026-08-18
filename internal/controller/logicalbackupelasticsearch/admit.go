@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -210,9 +211,11 @@ func (r *Reconciler) start(
 	backup.Status.BackupID = logicalbackup.AllocateBackupIDAfter(metav1.Now(), highestSiblingID)
 	backup.Status.ClusterUID = string(res.Cluster.UID)
 	backup.Status.Repository = binding.BackupRepository
+	// The endpoint is pinned in the form the client reaches: esadmin.New
+	// trims trailing slashes, so a slash never reads as a retarget.
 	backup.Status.Storage = &v1.PinnedStorage{
 		SecondaryStorageConfig: res.Storage.Name,
-		Endpoint:               res.Storage.Spec.Elasticsearch.Endpoint,
+		Endpoint:               strings.TrimRight(res.Storage.Spec.Elasticsearch.Endpoint, "/"),
 		BucketRef:              res.Bucket.Name,
 		BucketLocation:         res.Bucket.Location(),
 	}

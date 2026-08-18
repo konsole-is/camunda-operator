@@ -669,7 +669,9 @@ func (r *Reconciler) stageElasticsearchUnreachable(
 // pinnedStorageMatches reports an error when the storage contract no longer
 // matches the destination that start pinned. The repository name alone does
 // not identify a cluster. A repointed contract or endpoint with the same
-// repository name splits the set across two clusters.
+// repository name splits the set across two clusters. Endpoints compare in
+// the form the client reaches: esadmin.New trims trailing slashes, so an
+// endpoint that differs by one is the same cluster, not a retarget.
 func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.SecondaryStorageConfig) error {
 	pinned := backup.Status.Storage
 	if pinned == nil {
@@ -681,7 +683,8 @@ func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.Sec
 			pinned.SecondaryStorageConfig, storage.Name,
 		)
 	}
-	if es := storage.Spec.Elasticsearch; es == nil || es.Endpoint != pinned.Endpoint {
+	if es := storage.Spec.Elasticsearch; es == nil ||
+		strings.TrimRight(es.Endpoint, "/") != strings.TrimRight(pinned.Endpoint, "/") {
 		return fmt.Errorf(
 			"the Elasticsearch endpoint of %q changed from %q mid-run; the set must stay on one cluster",
 			pinned.SecondaryStorageConfig, pinned.Endpoint,

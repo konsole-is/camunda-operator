@@ -316,3 +316,27 @@ func TestRuntimeRequestRecordsTheIntentFirst(t *testing.T) {
 	assert.NotNil(t, backup.Status.RuntimeRequestedTime)
 	assert.Nil(t, backup.Status.RuntimeAcceptedTime)
 }
+
+// The pin represents the destination the client reaches. esadmin.New trims
+// trailing slashes, so an endpoint that differs from the pinned one by a
+// slash is the same cluster: neither a step failure nor a held deletion.
+func TestPinnedStorageMatchesIgnoresATrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	backup := &v1.LogicalBackupElasticsearch{}
+	backup.Status.Storage = &v1.PinnedStorage{SecondaryStorageConfig: "storage", Endpoint: "https://es:9200"}
+	storage := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "storage"},
+		Spec: v1.SecondaryStorageConfigSpec{
+			Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200/"},
+		},
+	}
+
+	assert.NoError(t, pinnedStorageMatches(backup, storage))
+
+	storage.Spec.Elasticsearch.Endpoint = "https://other:9200/"
+	assert.ErrorContains(t, pinnedStorageMatches(backup, storage), "endpoint")
+	storage.Spec.Elasticsearch.Endpoint = "https://es:9200"
+	storage.Name = "another"
+	assert.ErrorContains(t, pinnedStorageMatches(backup, storage), "storage contract")
+}
