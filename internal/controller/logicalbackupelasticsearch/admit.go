@@ -98,6 +98,36 @@ func (r *Reconciler) admit(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
+// clusterReplaced reports whether the live cluster is a different resource
+// than the one the backup pinned at its start.
+func clusterReplaced(backup *v1.LogicalBackupElasticsearch, cluster *v1.CamundaCluster) bool {
+	return backup.Status.ClusterUID != "" && string(cluster.UID) != backup.Status.ClusterUID
+}
+
+// failReplaced ends the backup terminally: the pinned cluster is gone, and
+// the same-named cluster that stands in its place is not this backup's.
+func (r *Reconciler) failReplaced(backup *v1.LogicalBackupElasticsearch, cluster *v1.CamundaCluster) {
+	now := metav1.Now()
+	backup.Status.Phase = v1.LogicalBackupFailed
+	backup.Status.TerminalReason = v1.ReasonFailed
+	backup.Status.FailureMessage = fmt.Sprintf(
+		"CamundaCluster %s/%s was replaced mid-run (UID %s, the backup started against %s); "+
+			"the backup ends without touching the replacement",
+		cluster.Namespace, cluster.Name, cluster.UID, backup.Status.ClusterUID,
+	)
+	backup.Status.CompletionTime = &now
+	conditions.Stage(backup, terminalReady(backup))
+	r.EventRecorder.Eventf(
+		backup,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonStepFailed,
+		eventActionBackup,
+		"%s",
+		backup.Status.FailureMessage,
+	)
+}
+
 // highestSiblingBackupID returns the highest backup ID among the other
 // backups of this kind that name the same cluster, or zero. It arbitrates
 // the ID allocation against the siblings that this controller can see. A
@@ -178,6 +208,7 @@ func (r *Reconciler) start(
 	binding := res.Cluster.Status.Management
 
 	backup.Status.BackupID = logicalbackup.AllocateBackupIDAfter(metav1.Now(), highestSiblingID)
+	backup.Status.ClusterUID = string(res.Cluster.UID)
 	backup.Status.Repository = binding.BackupRepository
 	backup.Status.Storage = &v1.PinnedStorage{
 		SecondaryStorageConfig: res.Storage.Name,
@@ -238,6 +269,19 @@ func (r *Reconciler) run(
 			return r.runStep(ctx, backup, &cluster)
 		}
 		return ctrl.Result{}, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
+	}
+
+	// A cluster that was deleted and recreated under the same name is a
+	// different cluster. Its exporting was never paused by this backup, so
+	// there is nothing to resume. Every management call would drive the
+	// replacement instead: a resume mid-run of its own backup, or a pairing
+	// of old snapshots with its runtime state. The backup ends here,
+	// terminally and without a management call. The claim goes back on the
+	// terminal reconcile, because nothing of this backup pauses the
+	// replacement.
+	if clusterReplaced(backup, &cluster) {
+		r.failReplaced(backup, &cluster)
+		return ctrl.Result{}, nil
 	}
 
 	binding := cluster.Status.Management

@@ -48,6 +48,10 @@ The backups of one cluster run one at a time, across both backup kinds. The clai
 
 The claim follows the pause, not the phase. A backup that ends as `ResumeFailed` left the cluster's exporting paused, and it keeps its Lease: a sibling must not back up a paused cluster. Such a holder is never taken over, and a waiting sibling says that the cluster is paused and needs the holder's deletion or repair. Deleting the holder resumes exporting in its finalizer, then releases the Lease, and only then does the sibling start.
 
+A deleted backup removes its finalizer before it releases its Lease. Once the removal is durable the resource can never reconcile again, so no retry of its finalizer can resume exporting inside a sibling's run. A release that is interrupted after the removal leaves a Lease whose holder no longer exists, and the next claimant takes it over.
+
+`status.clusterUID` pins the identity of the CamundaCluster the backup started against. A cluster that is deleted and recreated under the same name is a different cluster: its exporting was never paused by this backup, and its runtime backup is not this backup's. A running backup that meets the replacement ends as `Failed` without one management call against it, and its claim goes back. The finalizer of such a backup makes no management call either. It sweeps the snapshots that the backup owns from the pinned Elasticsearch storage, best effort, and releases. The runtime backup and the history backup inside the old cluster died with it.
+
 The backup ID is the clock in milliseconds, raised past the highest ID of the other backups of this kind that name the same cluster. A clock that stepped back therefore cannot reuse an ID a visible sibling holds. The IDs of the other backup kind and of deleted resources stay with the cluster, which answers a repeated or lower ID with a conflict.
 
 Deleting a backup while its history backup is still `IN_PROGRESS` waits until the web applications report a terminal state. Camunda 8.9 offers no call that cancels a history backup, and the snapshots it still creates would leak. The hold has no bound, like the hold on a runtime backup that is still in progress.

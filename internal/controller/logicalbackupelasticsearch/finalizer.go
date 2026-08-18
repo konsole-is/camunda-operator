@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
@@ -63,20 +64,30 @@ func (r *Reconciler) finalize(
 		}
 	}
 
-	// The claim goes back with the artifacts, and only now. For a backup
-	// that ended as ResumeFailed this is the one release. deleteArtifacts
-	// resumed exporting first, or held the deletion, so a sibling that
-	// starts after this release never meets a paused cluster. A backup
-	// whose flush failed between the claim and the ID can hold the claim
-	// without an ID, so this runs for every backup. It is a no-op when
-	// nothing is held.
-	if err := r.releaseClaim(ctx, backup); err != nil {
-		return ctrl.Result{}, err
-	}
-
+	// The finalizer goes first, the claim after. Once the removal is
+	// durable the object is gone for good. Its Get answers NotFound, and no
+	// retry of this finalizer can ever resume exporting again. Releasing
+	// first would open exactly that window. A crash between the release
+	// and the removal would let a sibling claim and pause. The retried
+	// finalizer would then resume exporting inside the sibling's run.
 	controllerutil.RemoveFinalizer(backup, logicalbackup.Finalizer)
 	if err := r.Update(ctx, backup); err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("removing the finalizer: %w", err)
+	}
+
+	// The release is best effort. The object no longer exists, so an error
+	// must not fail this reconcile. It is logged, and the stale-holder
+	// takeover reclaims the Lease of a gone holder. For a backup that ended
+	// as ResumeFailed this is the one release. deleteArtifacts resumed
+	// exporting first, or held the deletion, so a sibling that starts after
+	// this release never meets a paused cluster.
+	if err := r.releaseClaim(ctx, backup); err != nil {
+		log.FromContext(ctx).Error(
+			err,
+			"Could not release the claim Lease of a deleted backup; a later claimant takes it over",
+			"backup", backup.Name,
+			"cluster", backup.Spec.ClusterRef.Name,
+		)
 	}
 
 	return ctrl.Result{}, nil
@@ -94,12 +105,34 @@ func (r *Reconciler) deleteArtifacts(
 ) (released bool, err error) {
 	var cluster v1.CamundaCluster
 	key := clusterKey(backup)
+	gone := false
 	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			r.releaseWithoutCleanup(backup, fmt.Sprintf("CamundaCluster %s is gone", key))
-			return true, nil
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
 		}
-		return false, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
+		gone = true
+	}
+
+	// A gone cluster and a replaced one are the same case: the cluster that
+	// this backup paused and backed up no longer exists. No management call
+	// is made — a resume or a runtime-backup delete would drive the
+	// replacement, whose exporting this backup never paused. The
+	// Elasticsearch cluster can outlive the CamundaCluster, so the
+	// snapshots that this backup owns are swept through the pinned storage,
+	// best effort, before the release.
+	if gone || clusterReplaced(backup, &cluster) {
+		reason := fmt.Sprintf("CamundaCluster %s is gone", key)
+		if !gone {
+			reason = fmt.Sprintf(
+				"CamundaCluster %s was replaced (UID %s, the backup started against %s)",
+				key, cluster.UID, backup.Status.ClusterUID,
+			)
+		}
+		if err := r.sweepPinnedSnapshots(ctx, backup); err != nil {
+			reason = fmt.Sprintf("%s; the snapshot sweep did not finish: %v", reason, err)
+		}
+		r.releaseWithoutCleanup(backup, reason)
+		return true, nil
 	}
 
 	binding := cluster.Status.Management
@@ -306,6 +339,56 @@ func (r *Reconciler) holdDeletion(backup *v1.LogicalBackupElasticsearch, reason 
 // releaseWithoutCleanup records that the artifacts are not reachable. The
 // finalizer releases anyway. A deleted cluster must not pin its backups
 // forever.
+// sweepPinnedSnapshots deletes the snapshots that this backup owns from the
+// pinned storage. Those are the recorded history snapshots when their
+// backup was accepted, and the records snapshot when it carries the UID. It
+// is best effort for a cluster that no longer exists. An unreachable or
+// repointed storage abandons the sweep, and the caller releases anyway.
+func (r *Reconciler) sweepPinnedSnapshots(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
+	pinned := backup.Status.Storage
+	if pinned == nil {
+		return nil
+	}
+
+	storage := &v1.SecondaryStorageConfig{}
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: pinned.SecondaryStorageConfig}
+	if err := r.APIReader.Get(ctx, key, storage); err != nil {
+		return fmt.Errorf("resolving the pinned SecondaryStorageConfig %q: %w", key.Name, err)
+	}
+	if err := pinnedStorageMatches(backup, storage); err != nil {
+		return err
+	}
+	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
+	if err != nil {
+		return fmt.Errorf("building the Elasticsearch client: %w", err)
+	}
+	if failure != nil {
+		return errors.New(failure.Message)
+	}
+
+	repository := backup.Status.Repository
+	if backup.Status.HistoryAcceptedTime != nil {
+		for _, name := range backup.Status.HistorySnapshots {
+			if err := es.DeleteSnapshot(ctx, repository, name); err != nil {
+				return fmt.Errorf("deleting snapshot %q: %w", name, err)
+			}
+		}
+	}
+
+	records := RecordsSnapshotName(backup.Status.BackupID)
+	snapshot, err := es.SnapshotStatus(ctx, repository, records)
+	if err != nil {
+		return fmt.Errorf("querying snapshot %q: %w", records, err)
+	}
+	if snapshot.State != esadmin.SnapshotMissing && snapshotOwnedBy(snapshot, backup) {
+		if err := es.DeleteSnapshot(ctx, repository, records); err != nil {
+			return fmt.Errorf("deleting snapshot %q: %w", records, err)
+		}
+	}
+
+	return nil
+}
+
 func (r *Reconciler) releaseWithoutCleanup(backup *v1.LogicalBackupElasticsearch, reason string) {
 	r.EventRecorder.Eventf(
 		backup,

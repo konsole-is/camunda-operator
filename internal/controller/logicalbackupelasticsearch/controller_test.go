@@ -170,6 +170,14 @@ func (r *rig) publishBinding(partitions int32) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// currentCluster re-reads the rig's CamundaCluster.
+func currentCluster(r *rig) *v1.CamundaCluster {
+	GinkgoHelper()
+	var cluster v1.CamundaCluster
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+	return &cluster
+}
+
 // leaseHolder returns the exact identity of the holder of the claim Lease
 // of the rig's cluster. That is the Claimant from the annotations, or the
 // raw holderIdentity of a foreign Lease. Without a Lease it returns "".
@@ -900,6 +908,97 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupRuntime"))
 		Expect(r.management.RuntimeStarts(id)).To(BeZero())
 		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("ends terminally without touching a same-named replacement cluster", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("replacing the cluster mid-run: same name, new UID, its own management API")
+		old := r.management
+		replacement := camundaadmintest.New()
+		DeferCleanup(replacement.Close)
+		spec := currentCluster(r).Spec
+		Expect(k8sClient.Delete(ctx, r.cluster)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.CamundaCluster
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		recreated := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: r.cluster.Name, Namespace: r.namespace},
+			Spec:       spec,
+		}
+		Expect(k8sClient.Create(ctx, recreated)).To(Succeed())
+		r.management = replacement
+		r.publishBinding(3)
+
+		By("failing terminally, with no call against the replacement")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(ContainSubstring("replaced"))
+		Expect(replacement.PauseCalls()).To(BeZero())
+		Expect(replacement.ResumeAttempts()).To(BeZero())
+		Expect(replacement.HistoryStarts(id)).To(BeZero())
+		Expect(replacement.RuntimeStarts(id)).To(BeZero())
+		Expect(old.Exporting()).To(Equal("softPaused"), "the old cluster's pause died with it")
+
+		By("releasing the claim: nothing of this backup pauses the replacement")
+		Eventually(func() string { return r.leaseHolder() }, timeout, interval).Should(BeEmpty())
+	})
+
+	It("sweeps its snapshots and skips every management call when the cluster was replaced", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		expectPhase(backup, v1.LogicalBackupCompleted)
+		historySnapshot := currentBackup(backup).Status.HistorySnapshots[0]
+		r.search.SetSnapshotState(r.repository, historySnapshot, "SUCCESS")
+
+		By("replacing the cluster after the backup completed")
+		old := r.management
+		replacement := camundaadmintest.New()
+		DeferCleanup(replacement.Close)
+		spec := currentCluster(r).Spec
+		Expect(k8sClient.Delete(ctx, r.cluster)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.CamundaCluster
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		recreated := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: r.cluster.Name, Namespace: r.namespace},
+			Spec:       spec,
+		}
+		Expect(k8sClient.Create(ctx, recreated)).To(Succeed())
+		r.management = replacement
+		r.publishBinding(3)
+
+		By("deleting the backup: the snapshots go, the management APIs stay untouched")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeFalse(), "the records snapshot was swept")
+		Expect(r.search.SnapshotExists(r.repository, historySnapshot)).To(BeFalse(), "the history snapshot was swept")
+		runtime := old.RuntimeBackup(id)
+		Expect(runtime).NotTo(BeNil())
+		Expect(runtime.State).To(Equal("COMPLETED"), "no delete against the old cluster's management API")
+		Expect(replacement.PauseCalls()).To(BeZero())
+		Expect(replacement.ResumeAttempts()).To(BeZero())
+		expectEvent(backup, eventReasonReleased, corev1.EventTypeWarning)
 	})
 
 	It("never adopts a history backup it did not see accepted, and never deletes its snapshots", func() {

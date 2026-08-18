@@ -92,6 +92,16 @@ spec:
                   locates the set by it.
                 format: int64
                 type: integer
+              clusterUID:
+                description: |-
+                  ClusterUID pins the identity of the CamundaCluster that the backup
+                  started against. A cluster that is deleted and recreated under the
+                  same name is a different cluster. Its exporting was never paused by
+                  this backup, and its artifacts are not this backup's. Every
+                  management call after the start verifies the live cluster against
+                  this UID. A mismatch ends the backup without touching the
+                  replacement.
+                type: string
               completionTime:
                 description: CompletionTime is when the backup reached a terminal
                   phase.

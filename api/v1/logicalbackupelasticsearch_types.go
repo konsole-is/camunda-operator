@@ -140,6 +140,15 @@ type LogicalBackupElasticsearchStatus struct {
 	// never deletes against a different cluster.
 	// +optional
 	Storage *PinnedStorage `json:"storage,omitempty"`
+	// ClusterUID pins the identity of the CamundaCluster that the backup
+	// started against. A cluster that is deleted and recreated under the
+	// same name is a different cluster. Its exporting was never paused by
+	// this backup, and its artifacts are not this backup's. Every
+	// management call after the start verifies the live cluster against
+	// this UID. A mismatch ends the backup without touching the
+	// replacement.
+	// +optional
+	ClusterUID string `json:"clusterUID,omitempty"`
 	// HistoryRequestedTime is when the controller decided to request the
 	// backup of the web-application indices. It is written before the
 	// request is sent, so the intent survives a lost response or a restart.
