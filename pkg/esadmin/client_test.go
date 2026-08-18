@@ -102,6 +102,22 @@ func TestCreateSnapshotDoesNotResolveAForeignDuplicate(t *testing.T) {
 	assert.Equal(t, 0, server.SnapshotCreates("repo", "records-42"))
 }
 
+// The ownership evidence of the duplicate rule is the metadata. A caller
+// that carries none has no evidence, so an existing metadata-free snapshot
+// under the name is not adopted: sameMetadata(nil, nil) is true, and the
+// rule must not rest on it. The duplicate rejection reaches the caller.
+func TestCreateSnapshotWithoutMetadataDoesNotResolveADuplicate(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	// A snapshot that another actor created: no metadata.
+	server.SetSnapshotState("repo", "records-42", "SUCCESS")
+
+	err := client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, nil)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Equal(t, 0, server.SnapshotCreates("repo", "records-42"))
+}
+
 // The metadata travels with the snapshot. The creation carries it, and the
 // status returns it. A caller can therefore tell its own snapshot from a
 // foreign one under the same name.

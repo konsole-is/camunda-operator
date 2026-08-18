@@ -194,7 +194,9 @@ func sameMetadata(existing map[string]any, want map[string]string) bool {
 // exists under the same name AND the same metadata is success, so a
 // re-entrant caller never double-starts. An existing snapshot with other
 // metadata is another actor's, and the duplicate rejection comes back as an
-// error.
+// error. The metadata is the ownership evidence of that rule. A caller that
+// carries none gets every duplicate rejection back as an error, because a
+// metadata-free snapshot under the name can be anyone's.
 //
 // indices must name at least one index. An empty list would send an empty
 // pattern, which selects nothing rather than everything: the snapshot would
@@ -226,8 +228,10 @@ func (c *Client) CreateSnapshot(
 		// Elasticsearch rejects a duplicate name with
 		// invalid_snapshot_name_exception or snapshot_name_already_in_use.
 		// Re-entry is not a failure, but only the caller's own earlier
-		// snapshot counts: the metadata must match.
-		if status == http.StatusBadRequest || status == http.StatusConflict {
+		// snapshot counts: the metadata must match, and there must be
+		// metadata to match. Without it, sameMetadata(nil, nil) adopted any
+		// metadata-free snapshot under the name.
+		if (status == http.StatusBadRequest || status == http.StatusConflict) && len(metadata) > 0 {
 			if existing, statusErr := c.SnapshotStatus(ctx, repo, name); statusErr == nil &&
 				existing.State != SnapshotMissing &&
 				sameMetadata(existing.Metadata, metadata) {
