@@ -124,8 +124,8 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	"$(GOLANGCI_LINT)" run --fix
 
 .PHONY: lint-config
-lint-config: golangci-lint ## Verify golangci-lint linter configuration
-	"$(GOLANGCI_LINT)" config verify
+lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter configuration
+	"$(GOLANGCI_LINT)" config verify --schema "$(GOLANGCI_LINT_SCHEMA)"
 
 ##@ Build
 
@@ -211,6 +211,10 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+# The JSON schema that `golangci-lint config verify` checks .golangci.yml against. golangci-lint fetches it itself
+# with a 2 s HTTP timeout and no retry, which fails CI on a slow CDN answer, so lint-config downloads it with
+# retries and passes it in. The file name carries the major.minor of GOLANGCI_LINT_VERSION (v2.8.0 -> v2.8).
+GOLANGCI_LINT_SCHEMA = $(LOCALBIN)/golangci.$(basename $(GOLANGCI_LINT_VERSION)).jsonschema.json
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -249,6 +253,12 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: golangci-lint-schema
+golangci-lint-schema: $(GOLANGCI_LINT_SCHEMA) ## Download the golangci-lint JSON schema locally if necessary.
+$(GOLANGCI_LINT_SCHEMA): | $(LOCALBIN)
+	curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 \
+		-o "$@.tmp" "https://golangci-lint.run/jsonschema/$(notdir $@)" && mv -f "$@.tmp" "$@"
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
