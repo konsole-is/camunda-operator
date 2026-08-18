@@ -104,17 +104,17 @@ func clusterReplaced(backup *v1.LogicalBackupElasticsearch, cluster *v1.CamundaC
 	return backup.Status.ClusterUID != "" && string(cluster.UID) != backup.Status.ClusterUID
 }
 
-// failReplaced ends the backup terminally: the pinned cluster is gone, and
-// the same-named cluster that stands in its place is not this backup's.
-func (r *Reconciler) failReplaced(backup *v1.LogicalBackupElasticsearch, cluster *v1.CamundaCluster) {
+// failClusterLost ends the backup terminally with message: the cluster it
+// pinned no longer exists, gone or replaced by a same-named one, so nothing
+// of this backup is left to resume and no management call is made. The
+// terminal reason is Failed, never ResumeFailed: a ResumeFailed holder keeps
+// its claim, and a claim kept for a cluster that is gone would block every
+// backup of a cluster recreated later under the name.
+func (r *Reconciler) failClusterLost(backup *v1.LogicalBackupElasticsearch, message string) {
 	now := metav1.Now()
 	backup.Status.Phase = v1.LogicalBackupFailed
 	backup.Status.TerminalReason = v1.ReasonFailed
-	backup.Status.FailureMessage = fmt.Sprintf(
-		"CamundaCluster %s/%s was replaced mid-run (UID %s, the backup started against %s); "+
-			"the backup ends without touching the replacement",
-		cluster.Namespace, cluster.Name, cluster.UID, backup.Status.ClusterUID,
-	)
+	backup.Status.FailureMessage = message
 	backup.Status.CompletionTime = &now
 	conditions.Stage(backup, terminalReady(backup))
 	r.EventRecorder.Eventf(
@@ -246,27 +246,27 @@ func (r *Reconciler) start(
 // run advances a started backup. The cluster is the only dependency that run
 // resolves. Without its binding the procedure parks in place, with the same
 // phase and the same step. A suspended cluster is not a failure. A cluster
-// that is gone for good routes through the machine, so the resume deadline
-// still bounds the end.
+// that is gone, or replaced under its name, ends the backup terminally
+// without a management call: nothing of this backup is left to resume.
 func (r *Reconciler) run(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 ) (ctrl.Result, error) {
+	// The read is live, so a NotFound is the cluster gone, not a cache
+	// that lags. Its exporting state died with it: there is nothing to
+	// resume, and no endpoint to resume it at. Walking the machine to
+	// ResumeFailed instead would keep the claim for a cluster that does not
+	// exist, and block every backup of a cluster recreated later under the
+	// name. The backup ends here, and the claim goes back on the terminal
+	// reconcile.
 	var cluster v1.CamundaCluster
 	key := clusterKey(backup)
 	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			// Nothing is addressable anymore. The machine walks to its
-			// terminal phase through the resume deadline.
-			if backup.Status.Step != v1.StepResumeExporting {
-				r.failStep(
-					backup,
-					string(backup.Status.Step),
-					partOf(backup, backup.Status.Step),
-					fmt.Errorf("CamundaCluster %s is gone", key),
-				)
-			}
-			return r.runStep(ctx, backup, &cluster)
+			r.failClusterLost(backup, fmt.Sprintf(
+				"CamundaCluster %s is gone mid-run; the backup ends without a management call", key,
+			))
+			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
 	}
@@ -280,7 +280,11 @@ func (r *Reconciler) run(
 	// terminal reconcile, because nothing of this backup pauses the
 	// replacement.
 	if clusterReplaced(backup, &cluster) {
-		r.failReplaced(backup, &cluster)
+		r.failClusterLost(backup, fmt.Sprintf(
+			"CamundaCluster %s/%s was replaced mid-run (UID %s, the backup started against %s); "+
+				"the backup ends without touching the replacement",
+			cluster.Namespace, cluster.Name, cluster.UID, backup.Status.ClusterUID,
+		))
 		return ctrl.Result{}, nil
 	}
 

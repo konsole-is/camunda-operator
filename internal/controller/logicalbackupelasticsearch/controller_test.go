@@ -974,6 +974,41 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Eventually(func() string { return r.leaseHolder() }, timeout, interval).Should(BeEmpty())
 	})
 
+	It("ends terminally and releases the claim when the cluster is gone mid-run", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		resumesBefore := r.management.ResumeAttempts()
+
+		By("deleting the cluster mid-run, with nothing in its place")
+		spec := currentCluster(r).Spec
+		Expect(k8sClient.Delete(ctx, r.cluster)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.CamundaCluster
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+
+		By("failing terminally as Failed, never ResumeFailed, and without a resume against the dead endpoint")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.TerminalReason).To(Equal(v1.ReasonFailed))
+		Expect(final.Status.FailureMessage).To(ContainSubstring("gone"))
+		Expect(r.management.ResumeAttempts()).To(Equal(resumesBefore))
+
+		By("releasing the claim, so a cluster recreated under the name is not blocked forever")
+		Eventually(func() string { return r.leaseHolder() }, timeout, interval).Should(BeEmpty())
+		recreated := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: r.cluster.Name, Namespace: r.namespace},
+			Spec:       spec,
+		}
+		Expect(k8sClient.Create(ctx, recreated)).To(Succeed())
+		r.publishBinding(3)
+		next := r.newBackup()
+		Expect(backupID(next)).To(BeNumerically(">", id), "the next backup of the recreated cluster starts")
+	})
+
 	It("sweeps its snapshots and skips every management call when the cluster was replaced", func() {
 		r := newRig()
 		backup := r.newBackup()
