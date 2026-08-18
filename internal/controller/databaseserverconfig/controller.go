@@ -52,6 +52,12 @@ const (
 	// again. A major upgrade behind the same endpoint then reaches status
 	// without a spec change.
 	probeInterval = 10 * time.Minute
+	// probeTimeout bounds one probe, the connection and the query together.
+	// The reconcile context carries no deadline, and connect_timeout bounds
+	// only the handshake. A server that accepts the connection and then
+	// stalls must not hold the worker, because one stalled server would
+	// then block every other DatabaseServerConfig.
+	probeTimeout = 30 * time.Second
 )
 
 // DatabaseServerConfigReconciler validates DatabaseServerConfig contracts. It
@@ -203,8 +209,23 @@ func (r *DatabaseServerConfigReconciler) probeServer(
 
 // probe opens the admin connection to the server that cfg describes and reads
 // the major version that it reports. Any failure means that the server, as
-// declared, is not usable with these credentials.
+// declared, is not usable with these credentials. The whole probe ends
+// within probeTimeout.
 func probe(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error) {
+	return probeWithin(ctx, probeTimeout, cfg, user, password)
+}
+
+// probeWithin is probe with an explicit deadline for the connection and the
+// query together.
+func probeWithin(
+	ctx context.Context,
+	timeout time.Duration,
+	cfg *v1.DatabaseServerConfig,
+	user, password string,
+) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	admin, err := pgbootstrap.Connect(ctx, pgbootstrap.Connection{
 		Host:          cfg.Spec.Host,
 		Port:          cfg.Spec.Port,
