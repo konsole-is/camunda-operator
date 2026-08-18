@@ -217,9 +217,9 @@ func completeBackup(r *rig, backup *v1.LogicalBackupElasticsearch) int64 {
 }
 
 // keepRegistrationGraceOpen stamps the history and runtime acceptance times
-// of a terminal backup ahead of now, so the registration grace measured
-// from them cannot elapse while the spec runs, whatever the load. A
-// terminal backup's status is not rewritten by the controller.
+// of a terminal backup ahead of now. The registration grace measured from
+// them then cannot elapse while the spec runs, whatever the load. The
+// controller does not rewrite the status of a terminal backup.
 func keepRegistrationGraceOpen(backup *v1.LogicalBackupElasticsearch) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -267,8 +267,8 @@ func (r *rig) leaseHolder() string {
 	return *lease.Spec.HolderIdentity
 }
 
-// holdLease writes the claim Lease of the rig's cluster for the given holder
-// identity, as another actor would: no holder annotations.
+// holdLease writes the claim Lease of the cluster of the rig for the given
+// holder identity, the way another actor writes it: no holder annotations.
 func (r *rig) holdLease(holder string) {
 	GinkgoHelper()
 	lease := &coordinationv1.Lease{
@@ -527,7 +527,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		r := newRig()
 		// The cluster registers a runtime backup asynchronously. After it
 		// accepted the start it reports the backup absent for a moment. A
-		// second start in that moment answers 409 and would fail the step.
+		// second start in that moment answers 409 and fails the step.
 		r.management.HideRuntimeStatus(3)
 
 		backup := r.newBackup()
@@ -692,7 +692,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		r := newRig()
 
 		// Both are created within the same second. The tie-break orders
-		// them; the Lease decides. Exactly one holds it and starts, the
+		// them. The Lease decides. Exactly one holds it and starts, the
 		// other waits and names the holder.
 		first := r.newBackup()
 		second := r.newBackup()
@@ -717,7 +717,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Expect(r.leaseHolder()).To(Equal(claimant(holder).String()))
 		expectReady(waiter, metav1.ConditionFalse, v1.ReasonBackupInProgress)
-		// The pre-filter or the Lease names the holder; either way the
+		// The pre-filter or the Lease names the holder. In both cases the
 		// waiter says who goes first.
 		ready := meta.FindStatusCondition(currentBackup(waiter).Status.Conditions, v1.ConditionReady)
 		Expect(ready.Message).To(ContainSubstring(holder.Name))
@@ -1005,9 +1005,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		By("failing terminally, with no call against the replacement")
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
-		// The reconciler reads the cluster live. Whether it observes the
-		// gap between the delete and the create, or only the replacement,
-		// is timing; both end the same way, and the message names which.
+		// The reconciler reads the cluster live. Timing decides whether it
+		// observes the gap between the delete and the create, or only the
+		// replacement. Both end the same way, and the message names which.
 		Expect(final.Status.FailureMessage).To(SatisfyAny(
 			ContainSubstring("replaced"), ContainSubstring("gone"),
 		))
@@ -1056,6 +1056,47 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		next := r.newBackup()
 		Expect(backupID(next)).To(BeNumerically(">", id), "the next backup of the recreated cluster starts")
 	})
+
+	// Round 13 P1: the start answer names the scheduled snapshots, and the
+	// documentation requires them to be persisted with the backup id. A
+	// controller that recorded names only from the status poll left a
+	// window. If the cluster was gone between the acceptance and the first
+	// poll, the finalizer had no history names to sweep.
+	It(
+		"records the scheduled history snapshot names at acceptance and sweeps them when the cluster is gone before the first poll",
+		func() {
+			r := newRig()
+			// The cluster hides the accepted backup from every status query, so
+			// no poll can record a name. Only the start answer can.
+			r.management.HideHistoryStatus(1_000_000)
+			backup := r.newBackup()
+			id := backupID(backup)
+			scheduled := camundaadmintest.HistorySnapshotName(id)
+
+			Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+			Eventually(func() []string {
+				return currentBackup(backup).Status.HistorySnapshots
+			}, timeout, interval).Should(ConsistOf(scheduled), "the scheduled names are recorded with the acceptance")
+			Expect(currentBackup(backup).Status.HistoryAcceptedTime).NotTo(BeNil())
+			Expect(r.management.HistoryStarts(id)).To(Equal(1))
+			// The web applications wrote the snapshot into the repository.
+			r.search.SetSnapshotState(r.repository, scheduled, "SUCCESS")
+
+			By("deleting the cluster before any status poll answered")
+			Expect(k8sClient.Delete(ctx, r.cluster)).To(Succeed())
+			expectPhase(backup, v1.LogicalBackupFailed)
+
+			By("deleting the backup: the finalizer sweeps the scheduled snapshot from the pinned repository")
+			Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+			Eventually(func() bool {
+				var gone v1.LogicalBackupElasticsearch
+				return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(
+				r.search.SnapshotExists(r.repository, scheduled),
+			).To(BeFalse(), "the scheduled history snapshot was swept")
+		},
+	)
 
 	It("sweeps its snapshots and skips every management call when the cluster was replaced", func() {
 		r := newRig()
@@ -1201,9 +1242,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 			// Elasticsearch stores any JSON value as snapshot metadata. A
 			// snapshot that another tool created under the deterministic name
-			// carries numbers and objects — never this backup's UID as a
-			// string. The status must decode, or the step and later the
-			// finalizer would fail on the decode forever.
+			// carries numbers and objects. It never carries the UID of this
+			// backup as a string. The status must decode. If it does not,
+			// the step and later the finalizer fail on the decode forever.
 			Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 			name := RecordsSnapshotName(id)
 			r.search.SetSnapshotMetadata(r.repository, name, map[string]any{
@@ -1354,8 +1395,8 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 	// Round 12 P2: a management API that stays unreachable mid-pause was
 	// retried without a bound. A route that black-holes only the backup
-	// endpoint while resume is healthy would have left the cluster paused
-	// for good; the bound routes the step through resume.
+	// endpoint while resume is healthy left the cluster paused for good.
+	// The bound routes the step through resume.
 	It("fails the step through resume when the management API stays unreachable mid-pause past the bound", func() {
 		r := newRig()
 		backup := r.newBackup()
@@ -1384,7 +1425,8 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 	// Round 12 P1: an accepted runtime or history backup registers
 	// asynchronously. A finalizer that read the unregistered answer as
-	// "nothing to delete" released while the backup could still register.
+	// "nothing to delete" released while the backup was still able to
+	// register.
 	It("holds the deletion of an accepted runtime backup through the registration grace", func() {
 		r := newRig()
 		backup := r.newBackup()
@@ -1596,12 +1638,13 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			r.search.SetSnapshotState(pinned, historySnapshot, "SUCCESS")
 
 			By("repointing the repository while the history backup runs")
-			// The history backup stays in progress until the step has
-			// failed on the repoint: the step verifies the destination
-			// before it trusts the status, so no reconcile can advance
-			// past BackupHistory in between. Completing it here would race
-			// a reconcile that read the old binding and then saw the
-			// completed history, failing one step later.
+			// The history backup stays in progress until the step failed
+			// on the repoint. The step verifies the destination before it
+			// trusts the status, so no reconcile can advance past
+			// BackupHistory in between. If the spec completes the history
+			// here, it races a reconcile that read the old binding and then
+			// sees the completed history. That reconcile fails one step
+			// later.
 			r.repository = "another-repository"
 			r.publishBinding(3)
 
@@ -1616,7 +1659,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			Expect(r.management.Exporting()).To(Equal("running"))
 
 			By("deleting the backup: the finalizer removes the snapshot from the pinned repository")
-			// A deletion holds while the history backup is in progress; it
+			// A deletion holds while the history backup is in progress. It
 			// ends now, so only the pinned repository decides the cleanup.
 			r.management.SetHistoryState(id, "COMPLETED", "")
 			Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
@@ -2029,8 +2072,8 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 	// Round 10 S1: the finalizer runs before the deferred status flush of
 	// Reconcile. A history snapshot name it discovers must be durable before
-	// the first delete, or a crash mid-way and a cluster gone by the next
-	// reconcile make the sweep read the old list and leak the name.
+	// the first delete. If it is not, a crash mid-way and a cluster gone by
+	// the next reconcile leave the sweep the old list. The name then leaks.
 	It("persists the history snapshot names it discovers before it deletes anything", func() {
 		r := newRig()
 		backup := r.newBackup()

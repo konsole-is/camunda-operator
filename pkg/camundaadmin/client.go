@@ -217,27 +217,40 @@ func (c *Client) exporting(ctx context.Context, path string) error {
 }
 
 // StartHistoryBackup starts the backup of the web-application indices under
-// id. A backup that already exists under the same id returns ErrConflict,
-// like StartRuntimeBackup. The client cannot know whether that backup is
-// the caller's own from an earlier request or another actor's under a
-// reused id. Resolving it as success would adopt a backup without
-// ownership evidence, so the caller decides from its own recorded state.
-func (c *Client) StartHistoryBackup(ctx context.Context, id int64) error {
+// id. It returns the names of the snapshots that the cluster scheduled. The
+// documentation requires the caller to persist the names with the backup id,
+// because a restore locates the snapshots by them. A backup that already
+// exists under the same id returns ErrConflict, like StartRuntimeBackup.
+// The client cannot know whether that backup is the caller's own from an
+// earlier request or another actor's under a reused id. If the client
+// resolved it as success, it adopted a backup without ownership evidence.
+// The caller therefore decides from its own recorded state.
+func (c *Client) StartHistoryBackup(ctx context.Context, id int64) ([]string, error) {
 	body, err := json.Marshal(map[string]int64{"backupId": id})
 	if err != nil {
-		return fmt.Errorf("encoding request: %w", err)
+		return nil, fmt.Errorf("encoding request: %w", err)
 	}
 
-	// The endpoint answers 200 and creates the snapshots asynchronously; the
-	// caller polls HistoryBackupStatus for the outcome.
-	_, status, err := c.do(ctx, http.MethodPost, "/actuator/backupHistory", body, http.StatusOK)
+	// The endpoint answers 200 with the scheduled snapshot names and creates
+	// the snapshots asynchronously. The caller polls HistoryBackupStatus for
+	// the outcome. A 200 is an acceptance whatever its body holds. A body
+	// that does not decode yields no names, and the status poll reports the
+	// names later. If the client returned an error here, the caller lost an
+	// acceptance that happened.
+	payload, status, err := c.do(ctx, http.MethodPost, "/actuator/backupHistory", body, http.StatusOK)
 	if err == nil {
-		return nil
+		var scheduled struct {
+			ScheduledSnapshots []string `json:"scheduledSnapshots"`
+		}
+		if json.Unmarshal(payload, &scheduled) != nil {
+			return nil, nil
+		}
+		return scheduled.ScheduledSnapshots, nil
 	}
 
 	// The endpoint answers 400 when the id already exists. 409 is treated
 	// the same because it is the conventional code for the condition. Only
-	// an id that the cluster really holds is a conflict; any other 400
+	// an id that the cluster really holds is a conflict. Any other 400
 	// stays the rejection it is.
 	if status == http.StatusBadRequest || status == http.StatusConflict {
 		if existing, statusErr := c.HistoryBackupStatus(
@@ -245,11 +258,11 @@ func (c *Client) StartHistoryBackup(ctx context.Context, id int64) error {
 			id,
 		); statusErr == nil &&
 			existing.State != StateDoesNotExist {
-			return fmt.Errorf("%w: %v", ErrConflict, err)
+			return nil, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 	}
 
-	return err
+	return nil, err
 }
 
 // HistoryBackupStatus reports the status of the history backup id. A backup

@@ -134,8 +134,9 @@ func (r *Reconciler) pauseExporting(
 // backupHistory drives the backup of the web-application indices. It starts
 // the backup when the cluster holds none under the ID, then it polls the
 // backup to completion. The snapshot names are recorded as soon as the
-// cluster reports them. The finalizer and a restore can then locate the
-// snapshots after the cluster is gone.
+// cluster names them. The start answer names the scheduled snapshots, and
+// every status report names them again. The finalizer and a restore can
+// then locate the snapshots after the cluster is gone.
 func (r *Reconciler) backupHistory(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
@@ -250,11 +251,16 @@ func (r *Reconciler) requestHistoryBackup(
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
-	err := mgmt.StartHistoryBackup(ctx, backup.Status.BackupID)
+	scheduled, err := mgmt.StartHistoryBackup(ctx, backup.Status.BackupID)
 	switch {
 	case err == nil:
+		// The names are recorded in the reconcile that saw the acceptance.
+		// The status flush at its end makes the acceptance and the names
+		// durable together. If the cluster is gone before the first poll,
+		// the finalizer then still knows which snapshots to sweep.
 		accepted := metav1.Now()
 		backup.Status.HistoryAcceptedTime = &accepted
+		recordHistorySnapshotNames(backup, scheduled)
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the web-application indices started")
 
@@ -358,9 +364,10 @@ func snapshotMetadata(backup *v1.LogicalBackupElasticsearch) map[string]string {
 }
 
 // snapshotOwnedBy reports whether the snapshot carries the UID of backup. Only
-// the one entry decides: whatever else a foreign snapshot carries under
-// the name, of whatever JSON type, never makes it this backup's and never
-// keeps the finalizer from telling it apart.
+// the one entry decides. A foreign snapshot can carry any other value under
+// the name, of any JSON type. No such value makes the snapshot the property
+// of this backup, and no such value keeps the finalizer from telling it
+// apart.
 func snapshotOwnedBy(snapshot esadmin.Snapshot, backup *v1.LogicalBackupElasticsearch) bool {
 	uid, ok := snapshot.MetadataString(snapshotOwnerUIDKey)
 	return ok && uid == string(backup.UID)
@@ -462,8 +469,8 @@ func (r *Reconciler) backupRuntime(
 
 	// The partitions write into the backup store that the cluster is
 	// configured with now. A store that moved since the start puts the
-	// runtime backup outside the pinned set, and the finalizer's delete
-	// through the new store would miss it. The check runs before the
+	// runtime backup outside the pinned set. The delete of the finalizer
+	// through the new store then misses it. The check runs before the
 	// status of an existing backup is trusted and before a start.
 	if storage, result, err := r.destination(ctx, backup, cluster, "BackupRuntime", part); storage == nil {
 		return result, err
@@ -628,14 +635,14 @@ func (r *Reconciler) stageProgress(backup *v1.LogicalBackupElasticsearch, messag
 	))
 }
 
-// stageUnreachable retries an unreachable endpoint — the management API or
-// Elasticsearch — for a bounded time, keeping the step. Exporting is
-// paused, or may be, at every working step, so the retry cannot be
-// unbounded: a route that black-holes only the backup endpoint while
-// resume stays healthy would leave the cluster paused for good. After the
-// bound, the step fails through resume. The clock starts on the first
-// unreachable answer and clears through answered, once every call of a
-// reconcile answered.
+// stageUnreachable retries an unreachable endpoint for a bounded time and
+// keeps the step. The endpoint is the management API or Elasticsearch,
+// whichever the step calls. Exporting can be paused at every working step,
+// so the retry cannot be unbounded. A route that black-holes only the
+// backup endpoint while resume stays healthy leaves the cluster paused for
+// good. After the bound, the step fails through resume. The clock starts on
+// the first unreachable answer. It clears through answered, once every call
+// of a reconcile answered.
 func (r *Reconciler) stageUnreachable(
 	backup *v1.LogicalBackupElasticsearch,
 	step string,
@@ -667,9 +674,9 @@ func (r *Reconciler) stageUnreachable(
 }
 
 // answered clears the unreachable clock. A step calls it only after every
-// call of the reconcile answered: an answer before a call that stays
-// unreachable must not reset the bound, or the step retries forever with
-// exporting paused.
+// call of the reconcile answered. An answer before a call that stays
+// unreachable must not reset the bound. If it does, the step retries
+// forever with exporting paused.
 func answered(backup *v1.LogicalBackupElasticsearch) {
 	backup.Status.UnreachableSince = nil
 }
@@ -678,8 +685,9 @@ func answered(backup *v1.LogicalBackupElasticsearch) {
 // matches the destination that start pinned. The repository name alone does
 // not identify a cluster. A repointed contract or endpoint with the same
 // repository name splits the set across two clusters. Endpoints compare in
-// the form the client reaches: esadmin.New trims trailing slashes, so an
-// endpoint that differs by one is the same cluster, not a retarget.
+// the form the client reaches. esadmin.New trims trailing slashes. An
+// endpoint that differs by one slash is therefore the same cluster, not a
+// retarget.
 func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.SecondaryStorageConfig) error {
 	pinned := backup.Status.Storage
 	if pinned == nil {
@@ -704,11 +712,22 @@ func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.Sec
 // recordHistorySnapshots merges the snapshot names that the cluster reports
 // into status, so they survive the cluster.
 func recordHistorySnapshots(backup *v1.LogicalBackupElasticsearch, status camundaadmin.BackupStatus) (added bool) {
+	names := make([]string, 0, len(status.Details))
 	for _, detail := range status.Details {
-		if detail.Name == "" || slices.Contains(backup.Status.HistorySnapshots, detail.Name) {
+		names = append(names, detail.Name)
+	}
+
+	return recordHistorySnapshotNames(backup, names)
+}
+
+// recordHistorySnapshotNames merges names into status.historySnapshots. It
+// skips empty names and names that the status already holds.
+func recordHistorySnapshotNames(backup *v1.LogicalBackupElasticsearch, names []string) (added bool) {
+	for _, name := range names {
+		if name == "" || slices.Contains(backup.Status.HistorySnapshots, name) {
 			continue
 		}
-		backup.Status.HistorySnapshots = append(backup.Status.HistorySnapshots, detail.Name)
+		backup.Status.HistorySnapshots = append(backup.Status.HistorySnapshots, name)
 		added = true
 	}
 

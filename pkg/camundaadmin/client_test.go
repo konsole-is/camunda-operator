@@ -133,18 +133,32 @@ func TestUnreachableEndpoint(t *testing.T) {
 	require.ErrorIs(t, err, camundaadmin.ErrUnreachable)
 }
 
+// The start answer names the scheduled snapshots. The documentation requires
+// the caller to persist them with the backup id, so the client returns them
+// instead of discarding the body.
+func TestStartHistoryBackupReturnsTheScheduledSnapshots(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	scheduled, err := client.StartHistoryBackup(ctx, 42)
+	require.NoError(t, err)
+	assert.Equal(t, []string{camundaadmintest.HistorySnapshotName(42)}, scheduled)
+	assert.Equal(t, 1, server.HistoryStarts(42))
+}
+
 // A duplicate history start is a conflict, not success. The client cannot
 // know whether the existing backup is the caller's own with a lost response
-// or another actor's under a reused id. Resolving it as success would adopt
-// a backup without ownership evidence. The caller decides from its own
-// recorded state, like it does for the runtime start.
+// or another actor's under a reused id. If the client resolved it as
+// success, it adopted a backup without ownership evidence. The caller
+// decides from its own recorded state, like it does for the runtime start.
 func TestStartHistoryBackupSurfacesTheDuplicateAsAConflict(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
-	require.NoError(t, client.StartHistoryBackup(ctx, 42))
+	_, err := client.StartHistoryBackup(ctx, 42)
+	require.NoError(t, err)
 
-	err := client.StartHistoryBackup(ctx, 42)
+	_, err = client.StartHistoryBackup(ctx, 42)
 	require.ErrorIs(t, err, camundaadmin.ErrConflict)
 	assert.Equal(t, 1, server.HistoryStarts(42))
 }
@@ -157,7 +171,8 @@ func TestHistoryBackupStatus(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, camundaadmin.StateDoesNotExist, status.State)
 
-	require.NoError(t, client.StartHistoryBackup(ctx, 42))
+	_, err = client.StartHistoryBackup(ctx, 42)
+	require.NoError(t, err)
 	server.SetHistoryState(42, "COMPLETED", "")
 
 	status, err = client.HistoryBackupStatus(ctx, 42)
