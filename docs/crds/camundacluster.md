@@ -332,7 +332,7 @@ spec:
       postgresImage: ""
       # []EnvVar. Optional. Extra environment variables of the dump pod. Unrestricted here: the cluster owner sets connection policy (PGSSLMODE included) inside their own boundary. A LogicalBackupRDBMS's own dump block may not supply anything under the PG or UPLOAD_ prefixes.
       extraEnv: []
-      # []EnvFromSource. Optional. Extra environment sources of the dump pod.
+      # []EnvFromSource. Optional. Extra environment sources of the dump pod, at most 8. The cap applies here and in a LogicalBackupRDBMS. It keeps the prefix rule of a LogicalBackupRDBMS inside the cost budget of the API server.
       extraEnvFrom: []
       # map[string]string. Optional. Extra labels of the dump pod.
       podLabels: {}
