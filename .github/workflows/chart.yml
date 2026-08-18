@@ -45,7 +45,7 @@ jobs:
       - name: Install kind
         run: |
           VERSION=0.31.0
-          curl -fsSLo ./kind \
+          curl -fsSLo ./kind --retry 5 --retry-delay 10 --retry-all-errors \
             "https://kind.sigs.k8s.io/dl/v${VERSION}/kind-linux-$(go env GOARCH)"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
