@@ -164,6 +164,7 @@ func TestMajorVersionParsesServerVersionNum(t *testing.T) {
 		// "90624", and its client tools are postgres:9.6, not postgres:9.
 		"90624": "9.6",
 		"90418": "9.4",
+		"90023": "9.0",
 	}
 	for num, want := range cases {
 		got, err := majorVersion(num)

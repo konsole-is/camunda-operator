@@ -396,7 +396,13 @@ func majorVersion(num string) (string, error) {
 	}
 	switch {
 	case len(num) == 5:
-		return num[:1] + "." + strings.TrimLeft(num[1:3], "0"), nil
+		minor := strings.TrimLeft(num[1:3], "0")
+		if minor == "" {
+			// 9.0.x is "900xx": an all-zero minor is still a minor.
+			minor = "0"
+		}
+
+		return num[:1] + "." + minor, nil
 	case len(num) > 5:
 		return num[:len(num)-4], nil
 	}
