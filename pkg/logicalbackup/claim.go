@@ -213,7 +213,7 @@ func create(
 			return "", fmt.Errorf("creating the claim Lease %s/%s: %w", namespace, lease.Name, err)
 		}
 
-		holder, found, err := currentHolder(ctx, reader, namespace, cluster)
+		holder, ours, found, err := currentHolder(ctx, reader, namespace, cluster)
 		if err != nil {
 			return "", err
 		}
@@ -222,7 +222,11 @@ func create(
 			// or a takeover raced this claimant. Try the Create once more.
 			continue
 		}
-		if holder == self.String() {
+		// Only an annotated Lease can be self. A foreign Lease whose
+		// holderIdentity happens to spell the same identity has no
+		// provenance. It blocks: a Lease without the holder annotations
+		// is not ours.
+		if ours && holder == self.String() {
 			return "", nil
 		}
 		return holder, nil
@@ -237,11 +241,11 @@ func create(
 // tie-break says. Otherwise the tie-break and the claim block each other.
 // reader must read the API server directly, like every read of the claim.
 func Holds(ctx context.Context, reader client.Reader, namespace, cluster string, self Claimant) (bool, error) {
-	holder, found, err := currentHolder(ctx, reader, namespace, cluster)
+	holder, ours, found, err := currentHolder(ctx, reader, namespace, cluster)
 	if err != nil {
 		return false, err
 	}
-	return found && holder == self.String(), nil
+	return found && ours && holder == self.String(), nil
 }
 
 // unidentifiedHolder stands in for the holder of a Lease that carries no
@@ -249,20 +253,21 @@ func Holds(ctx context.Context, reader client.Reader, namespace, cluster string,
 // blocks the claim, and ParseClaimant rejects it, so it is never taken over.
 const unidentifiedHolder = "unidentified holder"
 
-// holderOf returns the identity of the holder that the Lease records. A
-// Lease with the three holder annotations is one of ours, and the identity
-// is the String of that Claimant. Any other Lease returns its holderIdentity
-// as it is, or unidentifiedHolder when it has none. Such a Lease is foreign.
-// It blocks, and takeOver never deletes it: only a Lease whose annotations
-// name the holder is taken over.
-func holderOf(lease *coordinationv1.Lease) string {
+// holderOf returns the identity of the holder that the Lease records and
+// whether it came from the holder annotations. A Lease with the three
+// annotations is one of ours, and the identity is the String of that
+// Claimant. Any other Lease returns its holderIdentity as it is, or
+// unidentifiedHolder when it has none. Such a Lease is foreign, whatever
+// its holderIdentity spells. It blocks, it is never self, and takeOver
+// never deletes it: only annotations carry provenance.
+func holderOf(lease *coordinationv1.Lease) (string, bool) {
 	if claimant, ok := annotatedHolder(lease); ok {
-		return claimant.String()
+		return claimant.String(), true
 	}
 	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
-		return unidentifiedHolder
+		return unidentifiedHolder, false
 	}
-	return *lease.Spec.HolderIdentity
+	return *lease.Spec.HolderIdentity, false
 }
 
 // annotatedHolder reads the exact holder identity from the annotations of
@@ -280,18 +285,23 @@ func annotatedHolder(lease *coordinationv1.Lease) (Claimant, bool) {
 	return claimant, true
 }
 
-// currentHolder returns the identity of the holder of the Lease and whether
-// the Lease exists.
-func currentHolder(ctx context.Context, reader client.Reader, namespace, cluster string) (string, bool, error) {
+// currentHolder returns the identity of the holder of the Lease, whether it
+// came from the holder annotations, and whether the Lease exists.
+func currentHolder(
+	ctx context.Context,
+	reader client.Reader,
+	namespace, cluster string,
+) (holder string, ours bool, found bool, err error) {
 	var lease coordinationv1.Lease
 	key := client.ObjectKey{Namespace: namespace, Name: ClaimLeaseName(cluster)}
 	if err := reader.Get(ctx, key, &lease); err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", false, nil
+			return "", false, false, nil
 		}
-		return "", false, fmt.Errorf("reading the claim Lease %s: %w", key, err)
+		return "", false, false, fmt.Errorf("reading the claim Lease %s: %w", key, err)
 	}
-	return holderOf(&lease), true, nil
+	holder, ours = holderOf(&lease)
+	return holder, ours, true, nil
 }
 
 // takeOver deletes the Lease while it still records holder. A Lease that
@@ -456,9 +466,21 @@ func holderResource(
 	return backup, nil
 }
 
-// holderResumeFailed reports whether the Ready condition of the holder
-// carries the reason ResumeFailed.
+// holderResumeFailed reports whether the holder ended as ResumeFailed. The
+// recorded status.terminalReason decides first. A write conflict at the
+// terminal transition can persist the phase and the terminal reason while
+// it restores an older Ready condition. A decision from that stale
+// condition would take a live paused-cluster claim over. A kind without the
+// field falls back to the reason of the Ready condition.
 func holderResumeFailed(backup *unstructured.Unstructured, holder Claimant) (bool, error) {
+	terminalReason, found, err := unstructured.NestedString(backup.Object, "status", "terminalReason")
+	if err != nil {
+		return false, fmt.Errorf("reading the terminal reason of the claim holder %s: %w", holder.Display(), err)
+	}
+	if found && terminalReason != "" {
+		return terminalReason == readyReasonResumeFailed, nil
+	}
+
 	items, _, err := unstructured.NestedSlice(backup.Object, "status", "conditions")
 	if err != nil {
 		return false, fmt.Errorf("reading the conditions of the claim holder %s: %w", holder.Display(), err)
