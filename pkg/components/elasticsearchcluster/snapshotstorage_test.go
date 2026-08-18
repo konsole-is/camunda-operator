@@ -415,3 +415,23 @@ func TestAzurePublicEndpointConfiguresNothing(t *testing.T) {
 
 	assert.Nil(t, es.Spec.NodeSets[0].Config)
 }
+
+// A contract whose declared type and block disagree names no bucket, so every
+// renderer must treat it as one with nothing to render. The pre-check rejects
+// such a contract before the components are built, but a panic here would
+// take the whole manager down if it ever did reach them.
+func TestAMismatchedContractRendersNothing(t *testing.T) {
+	t.Parallel()
+
+	cluster := &v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "my-ns"},
+	}
+	storage := &SnapshotStorage{Config: &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "bucket"},
+		Spec:       v1.ObjectStorageConfigSpec{Type: v1.ObjectStorageTypeAzureBlob},
+	}}
+
+	assert.Nil(t, keystoreData(t, storage))
+	assert.Equal(t, esadmin.RepositoryConfig{}, RepositoryConfig(cluster, storage))
+	assert.NotNil(t, elasticsearchOf(t, storage))
+}

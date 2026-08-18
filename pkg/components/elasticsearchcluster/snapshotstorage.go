@@ -97,13 +97,34 @@ func (s *SnapshotStorage) repository() bool {
 }
 
 // storageType returns the storage API of the bucket, or the empty string when
-// there is no bucket.
+// there is no bucket. A contract whose declared type and block disagree also
+// yields the empty string: it names no bucket, and every switch below is safe
+// to read the block of whatever type this returns. The pre-check rejects such
+// a contract long before the components are built.
 func (s *SnapshotStorage) storageType() v1.ObjectStorageType {
 	if s == nil || s.Config == nil {
 		return ""
 	}
 
-	return s.Config.Spec.Type
+	spec := s.Config.Spec
+	switch spec.Type {
+	case v1.ObjectStorageTypeS3:
+		if spec.S3 == nil {
+			return ""
+		}
+
+	case v1.ObjectStorageTypeGCS:
+		if spec.GCS == nil {
+			return ""
+		}
+
+	case v1.ObjectStorageTypeAzureBlob:
+		if spec.AzureBlob == nil {
+			return ""
+		}
+	}
+
+	return spec.Type
 }
 
 // keystoreEntries returns the keystore entries that the repository client of
@@ -193,12 +214,17 @@ func RepositoryConfig(
 	cluster *v1.ElasticsearchCluster,
 	storage *SnapshotStorage,
 ) esadmin.RepositoryConfig {
+	storageType := storage.storageType()
+	if storageType == "" {
+		return esadmin.RepositoryConfig{}
+	}
+
 	config := storage.Config
 	cfg := esadmin.RepositoryConfig{
 		BasePath: logicalbackup.ClusterPrefix(config.BasePath(), cluster.Namespace, cluster.Name),
 	}
 
-	switch config.Spec.Type {
+	switch storageType {
 	case v1.ObjectStorageTypeS3:
 		cfg.Type = esadmin.RepositoryTypeS3
 		cfg.Bucket = config.Spec.S3.BucketName
