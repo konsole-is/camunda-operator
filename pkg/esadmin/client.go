@@ -25,19 +25,15 @@ limitations under the License.
 package esadmin
 
 import (
-	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
-	"unicode/utf8"
+
+	"github.com/konsole-is/camunda-operator/pkg/adminhttp"
 )
 
 // ErrUnreachable and ErrRejected classify every failure of the client.
@@ -85,10 +81,7 @@ type S3RepositoryConfig struct {
 
 // Client administers one Elasticsearch cluster.
 type Client struct {
-	base string
-	user string
-	pass string
-	http *http.Client
+	api *adminhttp.Client
 }
 
 // New builds a client for the cluster at endpoint, authenticated with basic
@@ -96,28 +89,22 @@ type Client struct {
 // pool.
 //
 // A ca that is present but holds no certificate is an error, not a fallback:
-// an empty or unparseable bundle means the caller read the wrong Secret key,
-// and the system pool would hide that as an unexplained TLS failure on every
-// call. Only a caller that deliberately passes nil gets the system pool.
+// the system pool would hide a wrongly read Secret key as an unexplained TLS
+// failure on every call. Only a caller that deliberately passes nil gets the
+// system pool.
 func New(endpoint, user, pass string, ca []byte) (*Client, error) {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if ca != nil {
-		if len(ca) == 0 {
-			return nil, errors.New("the CA bundle is empty")
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(ca) {
-			return nil, errors.New("the CA bundle holds no PEM certificate")
-		}
-		transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	api, err := adminhttp.New(adminhttp.Config{
+		Endpoint:    endpoint,
+		Auth:        adminhttp.BasicAuth{Username: user, Password: pass},
+		CABundle:    ca,
+		Unreachable: ErrUnreachable,
+		Rejected:    ErrRejected,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return &Client{
-		base: strings.TrimRight(endpoint, "/"),
-		user: user,
-		pass: pass,
-		http: &http.Client{Timeout: 30 * time.Second, Transport: transport},
-	}, nil
+	return &Client{api: api}, nil
 }
 
 // EnsureSnapshotRepository registers the s3 repository name with cfg,
@@ -143,7 +130,11 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 		return fmt.Errorf("encoding repository settings: %w", err)
 	}
 
-	_, _, err = c.do(ctx, http.MethodPut, "/_snapshot/"+url.PathEscape(name), body)
+	_, _, err = c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodPut,
+		Path:   "/_snapshot/" + url.PathEscape(name),
+		Body:   body,
+	})
 	return err
 }
 
@@ -223,7 +214,11 @@ func (c *Client) CreateSnapshot(
 		return fmt.Errorf("encoding snapshot request: %w", err)
 	}
 
-	_, status, err := c.do(ctx, http.MethodPut, snapshotPath(repo, name), body)
+	_, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodPut,
+		Path:   snapshotPath(repo, name),
+		Body:   body,
+	})
 	if err != nil {
 		// Elasticsearch rejects a duplicate name with
 		// invalid_snapshot_name_exception or snapshot_name_already_in_use.
@@ -248,7 +243,7 @@ func (c *Client) CreateSnapshot(
 // metadata. A snapshot that does not exist is SnapshotMissing, not an
 // error.
 func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapshot, error) {
-	payload, status, err := c.do(ctx, http.MethodGet, snapshotPath(repo, name), nil)
+	payload, status, err := c.api.Do(ctx, adminhttp.Request{Method: http.MethodGet, Path: snapshotPath(repo, name)})
 	if status == http.StatusNotFound {
 		// A 404 is how Elasticsearch reports an absent snapshot, but also an
 		// absent repository. Only the first is a state; a dropped repository
@@ -287,7 +282,7 @@ func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapsho
 // still sit in the bucket, and a finalizer that read that as success would
 // release without cleaning up.
 func (c *Client) DeleteSnapshot(ctx context.Context, repo, name string) error {
-	payload, status, err := c.do(ctx, http.MethodDelete, snapshotPath(repo, name), nil)
+	payload, status, err := c.api.Do(ctx, adminhttp.Request{Method: http.MethodDelete, Path: snapshotPath(repo, name)})
 	if status == http.StatusNotFound && errorType(payload) == "snapshot_missing_exception" {
 		return nil
 	}
@@ -321,7 +316,7 @@ func errorType(payload []byte) string {
 // credentials among them) on every node, so a rotated keystore value is
 // picked up without a restart.
 func (c *Client) ReloadSecureSettings(ctx context.Context) error {
-	_, _, err := c.do(ctx, http.MethodPost, "/_nodes/reload_secure_settings", nil)
+	_, _, err := c.api.Do(ctx, adminhttp.Request{Method: http.MethodPost, Path: "/_nodes/reload_secure_settings"})
 	return err
 }
 
@@ -330,7 +325,7 @@ func (c *Client) ReloadSecureSettings(ctx context.Context) error {
 // statistics. The two are the inputs of the effective restore size, and they
 // can come from different nodes: each is the worst case of its own kind.
 func (c *Client) MaxNodeFSTotalAndUsedBytes(ctx context.Context) (total, used int64, err error) {
-	payload, _, err := c.do(ctx, http.MethodGet, "/_nodes/stats/fs", nil)
+	payload, _, err := c.api.Do(ctx, adminhttp.Request{Method: http.MethodGet, Path: "/_nodes/stats/fs"})
 	if err != nil {
 		return 0, 0, err
 	}
@@ -357,68 +352,4 @@ func (c *Client) MaxNodeFSTotalAndUsedBytes(ctx context.Context) (total, used in
 	}
 
 	return total, used, nil
-}
-
-// do sends one request and returns the body and status code. A transport
-// error wraps ErrUnreachable. A non-2xx status wraps ErrRejected with the
-// response body in the message; the caller reads the returned status for the
-// branches that are not failures.
-func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]byte, int, error) {
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
-	if err != nil {
-		return nil, 0, fmt.Errorf("building request: %w", err)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if c.user != "" || c.pass != "" {
-		req.SetBasicAuth(c.user, c.pass)
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %s %s: %w", ErrUnreachable, method, path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf(
-			"%w: reading response of %s %s: %w", ErrUnreachable, method, path, err,
-		)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return payload, resp.StatusCode, fmt.Errorf(
-			"%w: %s %s returned %d: %s",
-			ErrRejected, method, path, resp.StatusCode, errorBody(payload),
-		)
-	}
-
-	return payload, resp.StatusCode, nil
-}
-
-// errorBodyLimit bounds how much of a rejected response body an error message
-// carries. The full body is still read and returned to the caller. Only the
-// message is bounded, so an error can land in a condition or an event without
-// exceeding their limits.
-const errorBodyLimit = 1 << 10
-
-// errorBody returns the trimmed body for an error message, cut to
-// errorBodyLimit bytes on a rune boundary and marked when cut.
-func errorBody(payload []byte) string {
-	body := strings.TrimSpace(string(payload))
-	if len(body) <= errorBodyLimit {
-		return body
-	}
-	cut := body[:errorBodyLimit]
-	for !utf8.ValidString(cut) {
-		cut = cut[:len(cut)-1]
-	}
-	return fmt.Sprintf("%s... (truncated, %d bytes)", cut, len(body))
 }

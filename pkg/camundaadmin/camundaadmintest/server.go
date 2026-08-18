@@ -23,10 +23,10 @@ package camundaadmintest
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
-	"sync"
+
+	"github.com/konsole-is/camunda-operator/pkg/adminhttp/adminhttptest"
 )
 
 // Backup is the fake's record of one backup on either endpoint.
@@ -41,8 +41,13 @@ type Backup struct {
 
 // Server fakes the management API. Every exported method is safe for
 // concurrent use.
+//
+// The operations that the inherited FailNext and DropNext name are "pause",
+// "resume", "historyStart", "historyStatus", "runtimeStart",
+// "runtimeStatus", and "runtimeDelete". A failing operation answers 500; a
+// dropped one closes the connection.
 type Server struct {
-	mu sync.Mutex
+	adminhttptest.Fake
 
 	// Exporting is the exporting state: "running", "softPaused", or
 	// "paused". It starts as "running".
@@ -73,10 +78,6 @@ type Server struct {
 	hiddenHistoryStatus int
 
 	nextGeneratedID int64
-
-	failures map[string]int
-
-	server *httptest.Server
 }
 
 // New starts the fake. Close it with Close.
@@ -89,24 +90,17 @@ func New() *Server {
 		historyStarts:   map[int64]int{},
 		runtimeStarts:   map[int64]int{},
 		nextGeneratedID: 1,
-		failures:        map[string]int{},
 	}
-	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+	s.Start(s.handle)
 
 	return s
 }
 
-// URL is the base URL of the fake, used as the binding endpoint.
-func (s *Server) URL() string { return s.server.URL }
-
-// Close stops the fake.
-func (s *Server) Close() { s.server.Close() }
-
 // Exporting reports the exporting state: "running", "softPaused", or
 // "paused".
 func (s *Server) Exporting() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.exporting
 }
 
@@ -114,39 +108,39 @@ func (s *Server) Exporting() string {
 // called, so a test can assert that a re-entrant caller does not repeat a
 // POST.
 func (s *Server) PauseCalls() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.pauseCalls
 }
 
 // ResumeAttempts reports how often resume was requested, injected failures
 // included. A test paces itself on the retries of a caller with it.
 func (s *Server) ResumeAttempts() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.resumeAttempts
 }
 
 // ResumeCalls reports the number of resume calls that resumed exporting.
 func (s *Server) ResumeCalls() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.resumeCalls
 }
 
 // HistoryStarts reports how often a history backup start was accepted for
 // id.
 func (s *Server) HistoryStarts(id int64) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.historyStarts[id]
 }
 
 // RuntimeStarts reports how often a runtime backup start was accepted for
 // id.
 func (s *Server) RuntimeStarts(id int64) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.runtimeStarts[id]
 }
 
@@ -155,8 +149,8 @@ func (s *Server) RuntimeStarts(id int64) int {
 // asynchronously and can report it absent for a moment after it accepted the
 // start. A second start for the same id conflicts during that moment.
 func (s *Server) HideRuntimeStatus(n int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	s.hiddenRuntimeStatus = n
 }
 
@@ -164,8 +158,8 @@ func (s *Server) HideRuntimeStatus(n int) {
 // a backup that exists, the way the web applications report an accepted
 // history backup absent while it registers.
 func (s *Server) HideHistoryStatus(n int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	s.hiddenHistoryStatus = n
 }
 
@@ -179,23 +173,23 @@ func HistorySnapshotName(id int64) string {
 // SetHistoryState sets the state of the history backup id, creating it when
 // absent.
 func (s *Server) SetHistoryState(id int64, state, failureReason string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	s.history[id] = &Backup{ID: id, State: state, FailureReason: failureReason}
 }
 
 // SetRuntimeState sets the state of the runtime backup id, creating it when
 // absent.
 func (s *Server) SetRuntimeState(id int64, state, failureReason string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	s.runtime[id] = &Backup{ID: id, State: state, FailureReason: failureReason}
 }
 
 // RuntimeBackup returns the runtime backup id, or nil.
 func (s *Server) RuntimeBackup(id int64) *Backup {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	if b, ok := s.runtime[id]; ok {
 		copied := *b
 		return &copied
@@ -207,27 +201,9 @@ func (s *Server) RuntimeBackup(id int64) *Backup {
 // conflict, the way a cluster does when a higher id landed between the
 // generation and the registration of one.
 func (s *Server) ConflictNextRuntimeStart(n int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	s.conflictRuntimeStarts = n
-}
-
-// FailNext makes the next n calls of op answer 500. op is one of "pause",
-// "resume", "historyStart", "historyStatus", "runtimeStart",
-// "runtimeStatus", "runtimeDelete".
-func (s *Server) FailNext(op string, n int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.failures[op] = n
-}
-
-// failing consumes one injected failure of op.
-func (s *Server) failing(op string) bool {
-	if s.failures[op] > 0 {
-		s.failures[op]--
-		return true
-	}
-	return false
 }
 
 // handleExporting serves the pause and resume operations. Both answer the
@@ -235,7 +211,10 @@ func (s *Server) failing(op string) bool {
 func (s *Server) handleExporting(w http.ResponseWriter, r *http.Request, operation string) {
 	switch operation {
 	case "pause":
-		if s.failing("pause") {
+		if s.Dropping(w, "pause") {
+			return
+		}
+		if s.Failing("pause") {
 			exportingEnvelope(w, http.StatusInternalServerError, "injected pause failure")
 			return
 		}
@@ -249,7 +228,10 @@ func (s *Server) handleExporting(w http.ResponseWriter, r *http.Request, operati
 
 	case "resume":
 		s.resumeAttempts++
-		if s.failing("resume") {
+		if s.Dropping(w, "resume") {
+			return
+		}
+		if s.Failing("resume") {
 			exportingEnvelope(w, http.StatusInternalServerError, "injected resume failure")
 			return
 		}
@@ -263,9 +245,6 @@ func (s *Server) handleExporting(w http.ResponseWriter, r *http.Request, operati
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	path := strings.TrimPrefix(r.URL.Path, "/actuator")
 
 	if strings.HasPrefix(path, "/exporting/") && r.Method == http.MethodPost {
@@ -275,7 +254,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == http.MethodPost && path == "/backupHistory":
-		if s.failing("historyStart") {
+		if s.Dropping(w, "historyStart") {
+			return
+		}
+		if s.Failing("historyStart") {
 			errorBody(w, http.StatusInternalServerError, "injected history start failure")
 			return
 		}
@@ -286,10 +268,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		s.history[id] = &Backup{ID: id, State: "IN_PROGRESS"}
 		s.historyStarts[id]++
-		writeJSON(w, http.StatusOK, map[string]any{"scheduledSnapshots": []string{HistorySnapshotName(id)}})
+		adminhttptest.WriteJSON(
+			w,
+			http.StatusOK,
+			map[string]any{"scheduledSnapshots": []string{HistorySnapshotName(id)}},
+		)
 
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/backupHistory/"):
-		if s.failing("historyStatus") {
+		if s.Dropping(w, "historyStatus") {
+			return
+		}
+		if s.Failing("historyStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected history status failure")
 			return
 		}
@@ -303,7 +292,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			errorBody(w, http.StatusNotFound, "backup does not exist")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
 			"backupId":      backup.ID,
 			"state":         backup.State,
 			"failureReason": backup.FailureReason,
@@ -320,7 +309,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleRuntimeStatus(w, path)
 
 	case r.Method == http.MethodDelete && strings.HasPrefix(path, "/backupRuntime/"):
-		if s.failing("runtimeDelete") {
+		if s.Dropping(w, "runtimeDelete") {
+			return
+		}
+		if s.Failing("runtimeDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected runtime delete failure")
 			return
 		}
@@ -348,7 +340,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 // handleRuntimeStart answers POST /backupRuntime: an explicit id conflicts
 // with any same-or-higher (or deleted) id; a nil id gets a generated one.
 func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
-	if s.failing("runtimeStart") {
+	if s.Dropping(w, "runtimeStart") {
+		return
+	}
+	if s.Failing("runtimeStart") {
 		errorBody(w, http.StatusInternalServerError, "injected runtime start failure")
 		return
 	}
@@ -393,16 +388,18 @@ func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 		echoed = s.nextGeneratedID
 		s.nextGeneratedID++
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	adminhttptest.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"backupId": echoed,
 		"message":  "A backup has been scheduled",
 	})
 }
 
-// handleRuntimeStatus serves GET /backupRuntime/{id}. The caller holds the
-// lock.
+// handleRuntimeStatus serves GET /backupRuntime/{id}.
 func (s *Server) handleRuntimeStatus(w http.ResponseWriter, path string) {
-	if s.failing("runtimeStatus") {
+	if s.Dropping(w, "runtimeStatus") {
+		return
+	}
+	if s.Failing("runtimeStatus") {
 		errorBody(w, http.StatusInternalServerError, "injected runtime status failure")
 		return
 	}
@@ -416,7 +413,7 @@ func (s *Server) handleRuntimeStatus(w http.ResponseWriter, path string) {
 		errorBody(w, http.StatusNotFound, "backup does not exist")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
 		"backupId":      backup.ID,
 		"state":         backup.State,
 		"failureReason": backup.FailureReason,
@@ -437,14 +434,8 @@ func decodeBackupID(r *http.Request) int64 {
 	return body.BackupID
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
 func errorBody(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"message": message})
+	adminhttptest.WriteJSON(w, status, map[string]string{"message": message})
 }
 
 // conflictBody answers the 409 a cluster answers when an id is not usable.
@@ -461,5 +452,5 @@ func exportingEnvelope(w http.ResponseWriter, status int, message string) {
 		envelope["body"] = map[string]string{"message": message}
 	}
 
-	writeJSON(w, http.StatusOK, envelope)
+	adminhttptest.WriteJSON(w, http.StatusOK, envelope)
 }
