@@ -142,6 +142,17 @@ func (r *Reconciler) deleteArtifacts(
 		return false, fmt.Errorf("querying the history backup %d: %w", backup.Status.BackupID, err)
 	}
 	recordHistorySnapshots(backup, status)
+	if status.State == camundaadmin.StateInProgress {
+		// The web applications keep creating snapshots until the backup is
+		// terminal, and the management API of Camunda 8.9 offers no way to
+		// cancel it. A deletion that ran now would remove the snapshots
+		// that exist and leave the ones still to come. The hold has no
+		// bound, like the hold on an in-progress runtime backup.
+		r.holdDeletion(backup, fmt.Sprintf(
+			"history backup %d is still in progress and cannot be cancelled", backup.Status.BackupID,
+		))
+		return false, nil
+	}
 
 	repository := backup.Status.Repository
 	if repository == "" {

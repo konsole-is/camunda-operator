@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -71,9 +72,43 @@ func (r *Reconciler) admit(
 		return result, err
 	}
 
-	r.start(ctx, backup, res)
+	highest, err := r.highestSiblingBackupID(ctx, backup)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	r.start(ctx, backup, res, highest)
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
+}
+
+// highestSiblingBackupID returns the highest backup ID among the other
+// backups of this kind that name the same cluster, or zero. It arbitrates
+// the ID allocation against the siblings that this controller can see. A
+// clock that stepped backwards then cannot hand out an ID that one of them
+// holds. The residual stays with the cluster: the IDs of the other backup
+// kind and of deleted resources are arbitrated only by its own conflict
+// answer.
+func (r *Reconciler) highestSiblingBackupID(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+) (int64, error) {
+	var list v1.LogicalBackupElasticsearchList
+	if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
+		return 0, fmt.Errorf("listing LogicalBackupElasticsearch: %w", err)
+	}
+
+	cluster := clusterKey(backup)
+	var highest int64
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.UID == backup.UID || clusterKey(other) != cluster {
+			continue
+		}
+		highest = max(highest, other.Status.BackupID)
+	}
+
+	return highest, nil
 }
 
 // admitBinding checks the management binding of the cluster once, before the
@@ -122,10 +157,11 @@ func (r *Reconciler) start(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 	res *logicalbackup.PreCheckResult,
+	highestSiblingID int64,
 ) {
 	binding := res.Cluster.Status.Management
 
-	backup.Status.BackupID = logicalbackup.AllocateBackupID(metav1.Now())
+	backup.Status.BackupID = logicalbackup.AllocateBackupIDAfter(metav1.Now(), highestSiblingID)
 	backup.Status.Repository = binding.BackupRepository
 	backup.Status.Storage = &v1.PinnedStorage{
 		SecondaryStorageConfig: res.Storage.Name,

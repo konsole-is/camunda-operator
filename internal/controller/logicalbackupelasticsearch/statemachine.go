@@ -336,11 +336,13 @@ func (r *Reconciler) backupRuntime(
 //
 // The cluster registers the backup asynchronously and can report it absent
 // for a moment after it accepted the request. A second request answers 409
-// then. With the intent recorded, a conflict asks the cluster for the ID:
-// held by this backup, the request landed and the step continues. Absent
-// within the registration grace, the step polls. Absent after the grace,
-// another actor took a same-or-higher ID and the step fails. To adopt that
-// backup points this resource at the artifacts of someone else.
+// then. Both answers mean that the cluster holds the ID now, and both record
+// the acceptance time. An absent backup with the acceptance recorded is
+// registration lag, and the step polls through the registration grace. The
+// grace starts at the acceptance, so downtime before the request cannot
+// consume it. Absent after the grace, the step fails: another actor took a
+// same-or-higher ID, or the request was lost. To adopt that backup points
+// this resource at the artifacts of someone else.
 func (r *Reconciler) requestRuntimeBackup(
 	ctx context.Context,
 	mgmt *camundaadmin.Client,
@@ -348,16 +350,22 @@ func (r *Reconciler) requestRuntimeBackup(
 	part *v1.BackupPart,
 ) (ctrl.Result, error) {
 	now := metav1.Now()
-	requested := backup.Status.RuntimeRequestedTime
-	if requested == nil {
+	if backup.Status.RuntimeRequestedTime == nil {
 		backup.Status.RuntimeRequestedTime = &now
 		r.stageProgress(backup, "The backup of the Zeebe partitions is requested")
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
-	withinGrace := now.Sub(requested.Time) < r.runtimeRegistrationGrace()
 
-	if part.State == v1.BackupPartInProgress && withinGrace {
-		r.stageProgress(backup, "The backup of the Zeebe partitions is registering")
+	if accepted := backup.Status.RuntimeAcceptedTime; accepted != nil {
+		if now.Sub(accepted.Time) < r.runtimeRegistrationGrace() {
+			r.stageProgress(backup, "The backup of the Zeebe partitions is registering")
+			return ctrl.Result{RequeueAfter: r.poll()}, nil
+		}
+		r.failStep(backup, "BackupRuntime", part, fmt.Errorf(
+			"the cluster holds no runtime backup %d within %s of the request: "+
+				"the request was lost, or a backup with the same or a higher id already exists",
+			backup.Status.BackupID, r.runtimeRegistrationGrace(),
+		))
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
@@ -365,6 +373,7 @@ func (r *Reconciler) requestRuntimeBackup(
 	_, err := mgmt.StartRuntimeBackup(ctx, &id)
 	switch {
 	case err == nil:
+		backup.Status.RuntimeAcceptedTime = &now
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")
 
@@ -372,20 +381,11 @@ func (r *Reconciler) requestRuntimeBackup(
 		return r.stageUnreachable(backup, err)
 
 	case errors.Is(err, camundaadmin.ErrConflict):
-		status, statusErr := mgmt.RuntimeBackupStatus(ctx, id)
-		switch {
-		case statusErr != nil && errors.Is(statusErr, camundaadmin.ErrUnreachable):
-			return r.stageUnreachable(backup, statusErr)
-		case statusErr != nil:
-			r.failStep(backup, "BackupRuntime", part, statusErr)
-		case status.State != camundaadmin.StateDoesNotExist:
-			*part = v1.BackupPart{State: v1.BackupPartInProgress}
-			r.stageProgress(backup, "The backup of the Zeebe partitions was requested earlier and is in progress")
-		case withinGrace:
-			r.stageProgress(backup, "The backup of the Zeebe partitions is registering")
-		default:
-			r.failStep(backup, "BackupRuntime", part, err)
-		}
+		// Held by this backup when an earlier request landed, or by another
+		// actor. The next status query tells: found continues, absent past
+		// the grace fails.
+		backup.Status.RuntimeAcceptedTime = &now
+		r.stageProgress(backup, "The cluster holds the backup ID; waiting for the runtime backup to register")
 
 	default:
 		r.failStep(backup, "BackupRuntime", part, err)

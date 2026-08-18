@@ -17,6 +17,9 @@ limitations under the License.
 package logicalbackupelasticsearch
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,6 +33,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
@@ -403,7 +407,84 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		expectPhase(backup, v1.LogicalBackupCompleted)
 		Expect(r.management.RuntimeStarts(id)).To(Equal(1))
-		Expect(currentBackup(backup).Status.RuntimeRequestedTime).NotTo(BeNil())
+		final := currentBackup(backup)
+		Expect(final.Status.RuntimeRequestedTime).NotTo(BeNil())
+		Expect(final.Status.RuntimeAcceptedTime).NotTo(BeNil())
+	})
+
+	It("allocates the next id after a sibling that holds a higher one", func() {
+		r := newRig()
+		// The sibling fails fast and ends terminal, so it does not block.
+		r.management.FailNext("historyStart", 1)
+		sibling := r.newBackup()
+		expectPhase(sibling, v1.LogicalBackupFailed)
+
+		By("moving the id of the sibling far ahead of the clock, as a stepped-back clock would see it")
+		ahead := time.Now().Add(365 * 24 * time.Hour).UnixMilli()
+		Eventually(func(g Gomega) {
+			current := currentBackup(sibling)
+			current.Status.BackupID = ahead
+			g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		backup := r.newBackup()
+		Expect(backupID(backup)).To(Equal(ahead + 1))
+	})
+
+	It("holds the deletion while the history backup is in progress", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("deleting the backup while the web applications still create snapshots")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		By("resuming exporting first, then holding on the in-progress history backup")
+		Eventually(func() string { return r.management.Exporting() }, timeout, interval).Should(Equal("running"))
+		expectEvent(backup, eventReasonDeleteHeld, corev1.EventTypeWarning)
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+		}, "1s", interval).Should(Succeed())
+
+		By("releasing once the history backup is terminal")
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+	})
+
+	It("keeps the status writable when the management API answers with an oversized body", func() {
+		r := newRig()
+		// Every call is rejected with a body far larger than a condition
+		// allows. Pausing fails on it, so does every resume, and the backup
+		// ends as ResumeFailed with both messages carrying the error.
+		oversized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write(bytes.Repeat([]byte("x"), 200_000))
+		}))
+		DeferCleanup(oversized.Close)
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Status.Management.Endpoint = oversized.URL
+			g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		backup := r.newBackup()
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(ContainSubstring("PauseExporting"))
+		Expect(len(final.Status.FailureMessage)).To(BeNumerically("<", conditions.MaxMessageLength))
+		Expect(len(final.Status.ResumeFailureMessage)).To(BeNumerically("<", conditions.MaxMessageLength))
+		ready := meta.FindStatusCondition(final.Status.Conditions, v1.ConditionReady)
+		Expect(len(ready.Message)).To(BeNumerically("<=", conditions.MaxMessageLength+100))
+		Expect(ready.Message).To(ContainSubstring("truncated"))
 	})
 
 	It("fails the records step through resume when Elasticsearch stays unreachable", func() {
@@ -418,8 +499,14 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		r.management.SetHistoryState(id, "COMPLETED", "")
 
 		By("retrying with ConnectionFailed for a bounded time")
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonConnectionFailed)
-		Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepSnapshotRecords))
+		// One read for both, so the bound cannot elapse between them.
+		Eventually(func(g Gomega) {
+			current := currentBackup(backup)
+			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonConnectionFailed))
+			g.Expect(current.Status.Step).To(Equal(v1.StepSnapshotRecords))
+		}, timeout, interval).Should(Succeed())
 
 		By("failing the step and resuming exporting after the bound")
 		expectPhase(backup, v1.LogicalBackupFailed)
@@ -739,7 +826,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 	It("keeps a deletion waiting while the cluster exists without a binding", func() {
 		r := newRig()
 		backup := r.newBackup()
-		backupID(backup)
+		id := backupID(backup)
 
 		Eventually(func(g Gomega) {
 			var cluster v1.CamundaCluster
@@ -755,6 +842,13 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}, "1s", interval).Should(Succeed())
 
 		By("completing the deletion once the binding is back")
+		// The procedure can have started the history backup before the
+		// binding went away. A deletion waits for that backup to end, which
+		// another test covers. Here it ends, so the missing binding is the
+		// only thing that held the deletion.
+		if r.management.HistoryStarts(id) > 0 {
+			r.management.SetHistoryState(id, "COMPLETED", "")
+		}
 		r.publishBinding(3)
 		Eventually(func() bool {
 			var gone v1.LogicalBackupElasticsearch

@@ -142,14 +142,21 @@ type LogicalBackupElasticsearchStatus struct {
 	Storage *PinnedStorage `json:"storage,omitempty"`
 	// RuntimeRequestedTime is when the controller decided to request the
 	// runtime backup. It is written before the request is sent, so the
-	// intent survives a lost response or a restart. A conflict on the
-	// backup ID after this time is checked against the cluster: the ID is
-	// held by this backup, or by another actor. The cluster registers the
-	// backup asynchronously and can report it absent for a moment. Within
-	// a registration grace after this time, an absent backup is polled,
-	// not failed.
+	// intent survives a lost response or a restart. With the intent
+	// recorded, a request is sent again until the cluster accepts it or
+	// reports the ID as held.
 	// +optional
 	RuntimeRequestedTime *metav1.Time `json:"runtimeRequestedTime,omitempty"`
+	// RuntimeAcceptedTime is when the cluster first acknowledged the runtime
+	// backup: it accepted the request, or it reported the ID as held. The
+	// cluster registers the backup asynchronously and can report it absent
+	// for a moment after that. Within a registration grace after this
+	// time, an absent backup is polled. After the grace, an absent backup
+	// fails the step: the ID is held by another actor, or the request was
+	// lost. Downtime between the intent and the request cannot consume the
+	// grace, because the grace starts here.
+	// +optional
+	RuntimeAcceptedTime *metav1.Time `json:"runtimeAcceptedTime,omitempty"`
 	// ElasticsearchUnreachableSince is when a step first found the
 	// Elasticsearch endpoint unreachable. Exporting is paused at those steps,
 	// so the retry is bounded. After the bound, the step fails and the

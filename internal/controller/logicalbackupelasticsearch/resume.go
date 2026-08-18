@@ -105,9 +105,9 @@ func (r *Reconciler) giveUpOnResume(
 ) (ctrl.Result, error) {
 	backup.Status.Phase = v1.LogicalBackupFailed
 	backup.Status.TerminalReason = v1.ReasonResumeFailed
-	backup.Status.ResumeFailureMessage = fmt.Sprintf(
+	backup.Status.ResumeFailureMessage = conditions.BoundMessage(fmt.Sprintf(
 		"Exporting could not be resumed before the deadline: %v", err,
-	)
+	))
 	if backup.Status.FailureMessage == "" {
 		backup.Status.FailureMessage = backup.Status.ResumeFailureMessage
 	}
@@ -165,10 +165,13 @@ func (r *Reconciler) failStep(
 		if part.FailureReason != "" {
 			reason = part.FailureReason
 		}
-		*part = v1.BackupPart{State: v1.BackupPartFailed, FailureReason: reason}
+		*part = v1.BackupPart{State: v1.BackupPartFailed, FailureReason: conditions.BoundMessage(reason)}
 	}
 
-	backup.Status.FailureMessage = fmt.Sprintf("Step %s failed: %v", step, err)
+	// The clients bound the body they carry, and every condition is bounded
+	// centrally. The status strings that hold the same text are bounded here
+	// too, so one oversized error can never make the status unwritable.
+	backup.Status.FailureMessage = conditions.BoundMessage(fmt.Sprintf("Step %s failed: %v", step, err))
 	backup.Status.Step = v1.StepResumeExporting
 	backup.Status.ResumeStartedTime = nil
 	backup.Status.LastResumeAttemptTime = nil
