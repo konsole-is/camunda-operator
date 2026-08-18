@@ -209,7 +209,11 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 		// A conflict on the id that the cluster just generated means that a
 		// higher id landed in between. The next request generates a fresh
 		// one, so the controller retries with backoff. It never adopts the
-		// backup that holds the id.
+		// backup that holds the id. The API answered, so the failure clock
+		// of an earlier outage must not carry into the next unreachable
+		// answer.
+		r.recovered(backup)
+
 		return settle, fmt.Errorf("requesting the Zeebe backup: %w", err)
 	case err != nil:
 		// Unreachable or rejected, for example a 503 through a gateway that
