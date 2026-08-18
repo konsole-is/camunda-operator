@@ -1,28 +1,31 @@
 # BackupSchedule
 
-A BackupSchedule creates Backup CRs for one orchestration cluster on a cron schedule.
+A BackupSchedule creates logical backups of one orchestration cluster on a cron schedule.
 
 ## Purpose
 
-A BackupSchedule automates recurring backups of a `CamundaCluster` so you do not have to create Backup CRs by hand.
-You create it, or a composition layer above creates it as part of a managed backup policy.
-It only creates Backup CRs — the backup procedure itself is owned by the Backup controller, and old backups are cleaned up by BackupRetention, not by the schedule.
+A BackupSchedule creates the recurring backups of a `CamundaCluster` for you.
+You then create no backup by hand.
+You create the schedule, or a composition layer above creates it as part of a managed backup policy.
+The schedule only creates the backup CRs.
+The controller of the backup kind runs the procedure.
+The schedule also owns retention: it prunes its own completed backups to `retained`.
 
 ## How it works
 
 1. The operator parses `spec.schedule` and computes the next trigger time from `status.lastScheduleTime`, or from the CR's creation time on first reconcile.
 2. At each trigger it resolves `clusterRef`; if the cluster does not exist, it records `Ready: InvalidReference` and skips the trigger.
-3. If the referenced cluster is suspended, the operator skips the trigger without creating a Backup — a suspended cluster's management API is unreachable, so the Backup would only fail. The skip is recorded as an event and the trigger is not retried; the next trigger fires normally once the cluster is unsuspended.
-4. If a Backup previously created by this schedule is still `Pending` or `Running`, the trigger is skipped the same way — overlapping backups are never created.
-5. Otherwise the operator creates a Backup named `<schedule-name>-<unix-timestamp>`, for example `my-cluster-schedule-1748937221`, labeled with `camunda.io/cluster: <cluster-name>` and `camunda.io/backup-schedule: <schedule-name>`.
-6. Created Backups carry no owner reference to the schedule: deleting a BackupSchedule must never delete the backups it produced. Retention is BackupRetention's job.
+3. If the referenced cluster is suspended, the operator skips the trigger and creates no backup. The management API of a suspended cluster is unreachable, so a backup can only fail. The operator records the skip as an event and does not retry the trigger. The next trigger fires normally once the cluster is unsuspended.
+4. If a backup that this schedule created earlier is still `Pending` or `Running`, the operator skips the trigger the same way. Overlapping backups are never created.
+5. Otherwise the operator creates the logical backup that matches the secondary storage of the cluster. The name is `<schedule-name>-<unix-timestamp>`, for example `my-cluster-schedule-1748937221`. The labels are `camunda.io/cluster: <cluster-name>` and `camunda.io/backup-schedule: <schedule-name>`.
+6. A created backup carries no owner reference to the schedule. When you delete a BackupSchedule, its backups stay. The schedule prunes its own completed backups to `retained` instead.
 7. The operator records the trigger in `status.lastScheduleTime` and the created CR in `status.lastBackupName`.
 
 ```mermaid
 graph LR
-    BS[BackupSchedule] -->|creates on cron| B[Backup]
+    BS[BackupSchedule] -->|creates on cron| LB[LogicalBackupElasticsearch or LogicalBackupRDBMS]
     BS -.->|clusterRef| CC[CamundaCluster]
-    B -.->|clusterRef| CC
+    LB -.->|clusterRef| CC
 ```
 
 ## API reference
@@ -34,12 +37,11 @@ metadata:
   name: my-cluster-schedule
   namespace: my-cluster-ns
 spec:
-  # object. Required. Reference to the CamundaCluster to back up on schedule.
+  # object. Required. Reference to the CamundaCluster to back up on schedule,
+  # in the namespace of this CR.
   clusterRef:
     # string. Required. Name of the CamundaCluster.
     name: my-cluster
-    # string. Optional, default: this CR's namespace. Namespace of the CamundaCluster.
-    namespace: my-cluster-ns
   # string. Required. Standard five-field cron expression evaluated in UTC.
   schedule: "0 2 * * *"
 ```
@@ -51,9 +53,9 @@ spec:
 | `Ready` | `Healthy` | The schedule is active and triggers are being evaluated. |
 | `Ready` | `InvalidReference` | The referenced CamundaCluster does not exist. |
 
-`status.lastScheduleTime` records the most recent trigger that was evaluated, and `status.lastBackupName` the most recent Backup created.
+`status.lastScheduleTime` records the most recent trigger that the operator evaluated. `status.lastBackupName` records the name of the most recent backup that it created.
 
-Skipped triggers — suspended cluster or a still-running previous Backup — are surfaced as events on the BackupSchedule, not as conditions, because they are expected transient states.
+The operator records a skipped trigger as an event on the BackupSchedule, not as a condition. A suspended cluster and a previous backup that still runs are both expected transient states.
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
@@ -63,9 +65,8 @@ The operator records the last reconciled generation in `status.observedGeneratio
 
 ## Relationships
 
-- Backup — created by this CR on each trigger.
-- BackupRetention — complements this CR by deleting the oldest completed Backups.
-- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; its suspend state gates trigger execution.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md), [LogicalBackupRDBMS](logicalbackuprdbms.md) — created by this CR on each trigger, and pruned by it to `retained`.
+- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`, in the namespace of this CR. Its suspend state gates trigger execution.
 
 ## Examples
 
@@ -96,7 +97,6 @@ metadata:
 spec:
   clusterRef:
     name: my-cluster
-    namespace: my-cluster-ns
   # Nightly at 02:00 UTC, outside business hours.
   schedule: "0 2 * * *"
 ```

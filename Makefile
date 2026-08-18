@@ -94,6 +94,12 @@ ECK_VERSION ?= 3.5.0
 # default 10 minutes of go test.
 E2E_TIMEOUT ?= 60m
 
+# setup-test-e2e ends with an unconditional context switch. The e2e suite
+# drives kubectl through the current context, and only a cluster that kind
+# just created sets that context. A run against an existing kind cluster
+# therefore applies the CRDs, the operator, and the test resources wherever
+# the context points. The switch runs after both branches of the case, so
+# neither path can drift away from the guard.
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	@command -v $(KIND) >/dev/null 2>&1 || { \
@@ -107,6 +113,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
 			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
 	esac
+	@$(KUBECTL) config use-context kind-$(KIND_CLUSTER)
 
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
