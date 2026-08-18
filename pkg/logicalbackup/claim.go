@@ -88,7 +88,9 @@ func ClaimLeaseName(cluster string) string {
 
 // boundName returns name when it fits limit. A longer name is cut and
 // suffixed with "-" and a hash of the full name. The result stays
-// deterministic and tells two long names apart.
+// deterministic and tells two long names apart. The cut can land after a
+// "." or a "-". A separator before the suffix is not a valid DNS subdomain,
+// so trailing separators are trimmed from the kept head.
 func boundName(name string, limit int) string {
 	if len(name) <= limit {
 		return name
@@ -96,7 +98,8 @@ func boundName(name string, limit int) string {
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(name))
 	suffix := fmt.Sprintf("-%08x", hash.Sum32())
-	return name[:limit-len(suffix)] + suffix
+	head := strings.TrimRight(name[:limit-len(suffix)], "-.")
+	return head + suffix
 }
 
 // Claimant identifies the backup that holds or wants the claim: the kind of
@@ -364,38 +367,112 @@ func newLease(namespace, cluster string, self Claimant) *coordinationv1.Lease {
 	}
 }
 
+// readyReasonResumeFailed is the Ready condition reason of a backup that
+// ended with exporting still paused. It is declared here, not taken from
+// the kind's own constants. The claim reads every holder kind, and each
+// branch of the module compiles with only its own kind.
+const readyReasonResumeFailed = "ResumeFailed"
+
 // HolderActive reports whether the backup that holder names still needs the
 // claim. It reads the resource of holder.Kind in the namespace. Absent, a
 // UID other than holder.UID (a later resource with the same name), or a
 // terminal phase means inactive. A kind that the API server does not serve
-// means inactive too: no resource of that kind can exist. The phase
-// vocabulary is shared by both backup kinds. The check therefore reads the
-// resource without a typed client, and it works whichever kind this
-// operator has compiled in. reader must read the API server directly: a
-// cached read of the holder can be behind, and a stale "gone" or a stale
-// phase would take a live claim over.
+// means inactive too: no resource of that kind can exist.
+//
+// One terminal holder stays active: a backup whose Ready condition carries
+// the reason ResumeFailed. Such a backup ended with the cluster's exporting
+// still paused, and its claim is what keeps a sibling from backing up a
+// paused cluster. The claim follows the pause, not the phase. It goes back
+// when the holder's deletion resumes exporting, or when the holder is gone.
+//
+// The phase and condition vocabulary is shared by both backup kinds. The
+// check therefore reads the resource without a typed client, and it works
+// whichever kind this operator has compiled in. reader must read the API
+// server directly: a cached read of the holder can be behind, and a stale
+// "gone" or a stale phase would take a live claim over.
 func HolderActive(ctx context.Context, reader client.Reader, namespace string, holder Claimant) (bool, error) {
+	backup, err := holderResource(ctx, reader, namespace, holder)
+	if err != nil || backup == nil {
+		return false, err
+	}
+
+	phase, _, err := unstructured.NestedString(backup.Object, "status", "phase")
+	if err != nil {
+		return false, fmt.Errorf("reading the phase of the claim holder %s: %w", holder.Display(), err)
+	}
+	terminal := v1.LogicalBackupPhase(phase) == v1.LogicalBackupCompleted ||
+		v1.LogicalBackupPhase(phase) == v1.LogicalBackupFailed
+	if !terminal {
+		return true, nil
+	}
+
+	resumeFailed, err := holderResumeFailed(backup, holder)
+	if err != nil {
+		return false, err
+	}
+
+	return resumeFailed, nil
+}
+
+// HolderKeepsClusterPaused reports whether the holder is a terminal backup
+// that left the cluster's exporting paused: its Ready condition reason is
+// ResumeFailed. A claimant blocked by such a holder tells the user more
+// than "a backup runs". The cluster is paused, and it needs the holder's
+// deletion or repair.
+func HolderKeepsClusterPaused(
+	ctx context.Context,
+	reader client.Reader,
+	namespace string,
+	holder Claimant,
+) (bool, error) {
+	backup, err := holderResource(ctx, reader, namespace, holder)
+	if err != nil || backup == nil {
+		return false, err
+	}
+	return holderResumeFailed(backup, holder)
+}
+
+// holderResource reads the resource of the holder. It returns nil when the
+// resource is gone or replaced under the same name. A kind that the API
+// server does not serve is nil too.
+func holderResource(
+	ctx context.Context,
+	reader client.Reader,
+	namespace string,
+	holder Claimant,
+) (*unstructured.Unstructured, error) {
 	backup := &unstructured.Unstructured{}
 	backup.SetGroupVersionKind(v1.GroupVersion.WithKind(holder.Kind))
 	key := client.ObjectKey{Namespace: namespace, Name: holder.Name}
 	if err := reader.Get(ctx, key, backup); err != nil {
 		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-			return false, nil
+			return nil, nil
 		}
-		return false, fmt.Errorf("reading the claim holder %s %s: %w", holder.Kind, key, err)
+		return nil, fmt.Errorf("reading the claim holder %s %s: %w", holder.Kind, key, err)
 	}
 	if backup.GetUID() != holder.UID {
-		return false, nil
+		return nil, nil
 	}
+	return backup, nil
+}
 
-	phase, _, err := unstructured.NestedString(backup.Object, "status", "phase")
+// holderResumeFailed reports whether the Ready condition of the holder
+// carries the reason ResumeFailed.
+func holderResumeFailed(backup *unstructured.Unstructured, holder Claimant) (bool, error) {
+	items, _, err := unstructured.NestedSlice(backup.Object, "status", "conditions")
 	if err != nil {
-		return false, fmt.Errorf("reading the phase of the claim holder %s %s: %w", holder.Kind, key, err)
+		return false, fmt.Errorf("reading the conditions of the claim holder %s: %w", holder.Display(), err)
 	}
-	terminal := v1.LogicalBackupPhase(phase) == v1.LogicalBackupCompleted ||
-		v1.LogicalBackupPhase(phase) == v1.LogicalBackupFailed
-
-	return !terminal, nil
+	for _, item := range items {
+		condition, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if condition["type"] == v1.ConditionReady {
+			return condition["reason"] == readyReasonResumeFailed, nil
+		}
+	}
+	return false, nil
 }
 
 // Release gives the claim on the cluster back when self holds it. It is a
