@@ -68,10 +68,11 @@ func (r *Reconciler) finalize(
 
 	// The finalizer goes first, the claim after. Once the removal is
 	// durable the object is gone for good. Its Get answers NotFound, and no
-	// retry of this finalizer can ever resume exporting again. Releasing
-	// first would open exactly that window. A crash between the release
-	// and the removal would let a sibling claim and pause. The retried
-	// finalizer would then resume exporting inside the sibling's run.
+	// retry of this finalizer can ever resume exporting again. A release
+	// before the removal opens exactly that window. If the operator crashes
+	// between the release and the removal, a sibling can claim and pause.
+	// The retried finalizer then resumes exporting inside the run of the
+	// sibling.
 	controllerutil.RemoveFinalizer(backup, logicalbackup.Finalizer)
 	if err := r.Update(ctx, backup); err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("removing the finalizer: %w", err)
@@ -81,8 +82,8 @@ func (r *Reconciler) finalize(
 	// must not fail this reconcile. It is logged, and the stale-holder
 	// takeover reclaims the Lease of a gone holder. For a backup that ended
 	// as ResumeFailed this is the one release. deleteArtifacts resumed
-	// exporting first, or held the deletion, so a sibling that starts after
-	// this release never meets a paused cluster.
+	// exporting first, or it held the deletion. A sibling that starts after
+	// this release therefore never meets a paused cluster.
 	if err := r.releaseClaim(ctx, backup); err != nil {
 		log.FromContext(ctx).Error(
 			err,
@@ -117,8 +118,8 @@ func (r *Reconciler) deleteArtifacts(
 
 	// A gone cluster and a replaced one are the same case: the cluster that
 	// this backup paused and backed up no longer exists. No management call
-	// is made — a resume or a runtime-backup delete would drive the
-	// replacement, whose exporting this backup never paused. The
+	// is made. A resume or a runtime-backup delete drives the replacement,
+	// and this backup never paused the exporting of the replacement. The
 	// Elasticsearch cluster can outlive the CamundaCluster, so the
 	// snapshots that this backup owns are swept through the pinned storage,
 	// best effort, before the release.
@@ -152,15 +153,15 @@ func (r *Reconciler) deleteArtifacts(
 		return false, fmt.Errorf("building the management client: %w", err)
 	}
 	if failure != nil {
-		// A binding that is broken by construction — the credentials Secret
-		// is gone, or the binding is unusable — is repaired by whoever
-		// publishes it, not by this deletion. What decides is the pause:
-		// a backup that can still hold exporting paused is the only thing
-		// that resumes it, and a deletion that released now would leave
-		// the cluster paused with nothing left to resume it, even after
-		// the credentials come back. That deletion holds, visibly, until
-		// the client can be built. A backup that cannot hold a pause has
-		// nothing to resume; its artifacts are not reachable, and it
+		// A binding that is broken by construction is repaired by whoever
+		// publishes it, not by this deletion. The credentials Secret is
+		// gone, or the binding is unusable. The pause decides. A backup
+		// that can still hold exporting paused is the only thing that
+		// resumes it. If that deletion releases now, the cluster stays
+		// paused with nothing left to resume it, even after the
+		// credentials come back. That deletion holds, visibly, until the
+		// client can be built. A backup that cannot hold a pause has
+		// nothing to resume. Its artifacts are not reachable, and it
 		// releases rather than pin the namespace forever.
 		if mayHoldExportingPaused(backup) {
 			r.holdDeletion(backup, fmt.Sprintf(
@@ -186,10 +187,10 @@ func (r *Reconciler) deleteArtifacts(
 	}
 
 	// The artifacts live in the pinned bucket. A pinned contract that is
-	// gone leaves nothing to delete through; one that points elsewhere
-	// would aim every delete at the wrong bucket, so the deletion holds
-	// until it points back, or the operator removes the finalizer by hand
-	// — the same rule as a moved Elasticsearch endpoint.
+	// gone leaves nothing to delete through. One that points elsewhere aims
+	// every delete at the wrong bucket. The deletion therefore holds until
+	// the contract points back, or until the operator removes the finalizer
+	// by hand. This is the same rule as for a moved Elasticsearch endpoint.
 	if err := r.pinnedBucketCurrent(ctx, backup, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.releaseWithoutCleanup(backup, err.Error())
@@ -255,10 +256,10 @@ func (r *Reconciler) deleteRuntimeBackup(
 	mgmt *camundaadmin.Client,
 ) (released bool, err error) {
 	// The partitions register an accepted backup asynchronously, and the
-	// delete of an unregistered one answers as if it never existed. A
-	// deletion that released on that answer would leave the finalizer gone
-	// while the backup registers after it. Within the registration grace of
-	// the acceptance the deletion waits; past it, the backup never
+	// delete of an unregistered one answers as if it never existed. If the
+	// deletion releases on that answer, the finalizer is gone while the
+	// backup registers after it. Within the registration grace of the
+	// acceptance the deletion waits. Past the grace, the backup never
 	// registered and there is nothing to delete.
 	status, err := mgmt.RuntimeBackupStatus(ctx, backup.Status.BackupID)
 	if err != nil {
@@ -293,9 +294,10 @@ func (r *Reconciler) deleteRuntimeBackup(
 }
 
 // deleteHistorySnapshots deletes the snapshots of the history backup that
-// this backup owns. It reports released=false when the deletion must wait:
-// the names it discovered had to be persisted first, the history backup is
-// still in progress, or a query or a delete failed.
+// this backup owns. It reports released=false when the deletion must wait.
+// The deletion waits when the names it discovered had to be persisted
+// first. It waits while the history backup is in progress. It waits when a
+// query or a delete failed.
 func (r *Reconciler) deleteHistorySnapshots(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
@@ -315,9 +317,9 @@ func (r *Reconciler) deleteHistorySnapshots(
 	}
 	if status.State == camundaadmin.StateDoesNotExist && r.registering(backup.Status.HistoryAcceptedTime) {
 		// The web applications register an accepted backup asynchronously.
-		// A deletion that released now would leave the finalizer gone
-		// while the backup registers and writes its snapshots after it.
-		// The same grace as the state machine's bounds the wait; past it,
+		// If the deletion releases now, the finalizer is gone while the
+		// backup registers and writes its snapshots after it. The same
+		// grace as in the state machine bounds the wait. Past the grace,
 		// the backup never registered and there is nothing to delete.
 		r.holdDeletion(backup, fmt.Sprintf(
 			"history backup %d was accepted and is not registered yet; the deletion waits for the registration grace",
@@ -328,9 +330,10 @@ func (r *Reconciler) deleteHistorySnapshots(
 	if recordHistorySnapshots(backup, status) {
 		// Names the status did not hold yet are persisted before any
 		// delete. The finalizer runs before the deferred status flush
-		// of Reconcile, so an in-memory list dies with a crash mid-way
-		// through the deletes, and the sweep of a cluster gone by then
-		// would read the old list and leak the names found here.
+		// of Reconcile. An in-memory list therefore dies with a crash
+		// mid-way through the deletes. If the cluster is gone by the next
+		// reconcile, the sweep reads the old list and leaks the names
+		// found here.
 		if err := r.persistStatus(ctx, backup); err != nil {
 			return false, fmt.Errorf("recording the history snapshot names: %w", err)
 		}
@@ -339,8 +342,8 @@ func (r *Reconciler) deleteHistorySnapshots(
 	if status.State == camundaadmin.StateInProgress {
 		// The web applications keep creating snapshots until the backup
 		// is terminal, and the management API of Camunda 8.9 offers no
-		// way to cancel it. A deletion that ran now would remove the
-		// snapshots that exist and leave the ones still to come. The
+		// way to cancel it. If the deletion runs now, it removes the
+		// snapshots that exist and leaves the ones still to come. The
 		// hold has no bound, like the hold on an in-progress runtime
 		// backup.
 		r.holdDeletion(backup, fmt.Sprintf(

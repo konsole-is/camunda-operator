@@ -69,13 +69,14 @@ const (
 	// defaultRuntimeRegistrationGrace bounds how long an absent runtime
 	// backup is polled after its request was recorded. The cluster registers
 	// the backup asynchronously and can report it absent for a moment.
-	// Within the grace the step polls; after it, the backup is missing.
+	// Within the grace the step polls. After it, the backup is missing.
 	defaultRuntimeRegistrationGrace = 2 * time.Minute
-	// unreachableBound bounds the retry of an unreachable endpoint — the
-	// management API or Elasticsearch — at the working steps, which run
-	// with exporting paused. After it, the step fails and the procedure
-	// resumes exporting; a black-holed backup route beside a healthy resume
-	// route must never leave the cluster paused for good.
+	// unreachableBound bounds the retry of an unreachable endpoint at the
+	// working steps, which run with exporting paused. The endpoint is the
+	// management API or Elasticsearch, whichever the step calls. After the
+	// bound, the step fails and the procedure resumes exporting. A
+	// black-holed backup route beside a healthy resume route must never
+	// leave the cluster paused for good.
 	unreachableBound = 10 * time.Minute
 	// concurrentReconciles bounds the parallel reconciles. Every step is a
 	// synchronous HTTP call. One black-holed endpoint must not block the
@@ -209,9 +210,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 }
 
 // persistStatus writes the status of backup through the ocf flush: the one
-// status write of a reconcile. Reconcile defers it; the finalizer, which
-// runs before that defer is installed, calls it when it must make a status
-// fact durable before it acts on it.
+// status write of a reconcile. Reconcile defers it. The finalizer runs
+// before that defer is installed. It calls persistStatus when it must make
+// a status fact durable before it acts on it.
 func (r *Reconciler) persistStatus(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
 	return component.FlushStatus(
 		ctx, component.ReconcileContext{

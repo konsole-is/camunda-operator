@@ -70,19 +70,21 @@ type BackupPart struct {
 }
 
 // PinnedStorage is the destination of a backup set, recorded when the backup
-// starts: the Elasticsearch cluster the snapshots are taken on, and the
-// backup bucket the snapshot repository and the runtime backup land in.
-// Every step verifies it before it writes, and the finalizer before it
-// deletes, so a destination that moved mid-run splits no set and aims no
-// delete at the wrong place.
+// starts. It names the storage contract and the Elasticsearch endpoint that
+// hold the snapshots. It names the backup bucket that holds the runtime
+// backup. The snapshot repository is pinned by name in status.repository.
+// Every step verifies the destination before it writes. The finalizer
+// verifies it before it deletes. A destination that moved mid-run therefore
+// splits no set and aims no delete at the wrong place.
 type PinnedStorage struct {
 	// SecondaryStorageConfig is the name of the storage contract, in the
 	// namespace of the backup.
 	SecondaryStorageConfig string `json:"secondaryStorageConfig"`
 	// Endpoint is the Elasticsearch endpoint that the contract named.
 	Endpoint string `json:"endpoint"`
-	// BucketRef is the ObjectStorageConfig the cluster backed up through
-	// when the backup started: its spec.backupStorageRef then.
+	// BucketRef is the ObjectStorageConfig that the cluster backed up
+	// through when the backup started: its spec.backupStorageRef then. The
+	// runtime backup lands in that bucket.
 	BucketRef string `json:"bucketRef"`
 	// BucketLocation is where that contract pointed: the storage type,
 	// bucket, base path, and endpoint. The steps write, and the finalizer
@@ -119,10 +121,11 @@ type LogicalBackupElasticsearchStatus struct {
 	// +optional
 	PartitionsCount int32 `json:"partitionsCount,omitempty"`
 	// StorageSizes are the effective restore sizes, recorded best effort.
-	// They are computed when the backup starts; a value that was not
-	// available then is backfilled while exporting runs — before the pause,
-	// and after the resume — never while it is paused. A value that is
-	// absent can therefore still arrive later in the run.
+	// They are computed when the backup starts. A value that was not
+	// available then is backfilled while exporting runs: before the pause,
+	// and after the resume. No value is backfilled while exporting is
+	// paused. A value that is absent can therefore still arrive later in
+	// the run.
 	// +optional
 	StorageSizes LogicalBackupStorageSizes `json:"storageSizes,omitempty"`
 	// History is the backup of the web-application indices.
@@ -136,8 +139,9 @@ type LogicalBackupElasticsearchStatus struct {
 	Runtime BackupPart `json:"runtime,omitempty"`
 	// HistorySnapshots names the Elasticsearch snapshots of the
 	// web-application indices. The names are recorded as soon as the
-	// management API reports them. The finalizer and a restore can then
-	// locate the snapshots after the cluster is gone.
+	// management API names them. The answer to the start names the scheduled
+	// snapshots, and every status report names them again. The finalizer and
+	// a restore can then locate the snapshots after the cluster is gone.
 	// +optional
 	HistorySnapshots []string `json:"historySnapshots,omitempty"`
 	// Repository pins the snapshot repository that every part of the set is
@@ -201,16 +205,17 @@ type LogicalBackupElasticsearchStatus struct {
 	// backup fails the step.
 	// +optional
 	RuntimeAcceptedTime *metav1.Time `json:"runtimeAcceptedTime,omitempty"`
-	// UnreachableSince is when a working step first found the endpoint it
-	// calls — the management API or Elasticsearch — unreachable. Exporting
-	// is paused, or may be, at every working step, so the retry is bounded:
-	// after the bound the step fails and the procedure resumes exporting.
-	// It clears once every call of a reconcile answered.
+	// UnreachableSince is when a working step first found its endpoint
+	// unreachable. The endpoint is the management API or Elasticsearch,
+	// whichever the step calls. Exporting can be paused at every working
+	// step, so the retry is bounded. After the bound the step fails and the
+	// procedure resumes exporting. It clears once every call of a reconcile
+	// answered.
 	// +optional
 	UnreachableSince *metav1.Time `json:"unreachableSince,omitempty"`
 	// FailureMessage names the failing step and its error. It is recorded
-	// when a step fails and exporting still has to be resumed, so the reason
-	// survives the resume and reaches the terminal condition.
+	// when a step fails and exporting still has to be resumed. The reason
+	// then survives the resume and reaches the terminal condition.
 	// +optional
 	FailureMessage string `json:"failureMessage,omitempty"`
 	// ResumeStartedTime anchors the resume deadline. Only the accumulated

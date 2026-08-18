@@ -128,8 +128,9 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			server.SetRuntimeState(1_000, state, "")
 			backup := runtimeBackup()
 			// The step verifies the pinned destination before it trusts the
-			// runtime status, so the world holds the storage contract the
-			// cluster names; the backup pins nothing, so nothing mismatches.
+			// runtime status, so the world holds the storage contract that
+			// the cluster names. The backup pins nothing, so nothing
+			// mismatches.
 			storage := &v1.SecondaryStorageConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "ns"},
 				Spec: v1.SecondaryStorageConfigSpec{
@@ -317,9 +318,10 @@ func TestRuntimeRequestRecordsTheIntentFirst(t *testing.T) {
 	assert.Nil(t, backup.Status.RuntimeAcceptedTime)
 }
 
-// The pin represents the destination the client reaches. esadmin.New trims
-// trailing slashes, so an endpoint that differs from the pinned one by a
-// slash is the same cluster: neither a step failure nor a held deletion.
+// The pin represents the destination that the client reaches. esadmin.New
+// trims trailing slashes. An endpoint that differs from the pinned one by a
+// slash is therefore the same cluster: neither a step failure nor a held
+// deletion.
 func TestPinnedStorageMatchesIgnoresATrailingSlash(t *testing.T) {
 	t.Parallel()
 

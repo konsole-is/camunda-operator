@@ -90,7 +90,7 @@ func TestFinalizeRemovesTheFinalizerBeforeReleasingTheClaim(t *testing.T) {
 		}).Build()
 	r := &Reconciler{Client: c, APIReader: c, EventRecorder: events.NewFakeRecorder(16)}
 
-	// The deletion marks the object; the finalizer keeps it alive.
+	// The deletion marks the object. The finalizer keeps it alive.
 	require.NoError(t, c.Delete(ctx, backup))
 	var deleting v1.LogicalBackupElasticsearch
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(backup), &deleting))

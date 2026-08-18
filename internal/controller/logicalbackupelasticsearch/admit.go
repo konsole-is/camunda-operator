@@ -105,12 +105,13 @@ func clusterReplaced(backup *v1.LogicalBackupElasticsearch, cluster *v1.CamundaC
 	return backup.Status.ClusterUID != "" && string(cluster.UID) != backup.Status.ClusterUID
 }
 
-// failClusterLost ends the backup terminally with message: the cluster it
-// pinned no longer exists, gone or replaced by a same-named one, so nothing
-// of this backup is left to resume and no management call is made. The
-// terminal reason is Failed, never ResumeFailed: a ResumeFailed holder keeps
-// its claim, and a claim kept for a cluster that is gone would block every
-// backup of a cluster recreated later under the name.
+// failClusterLost ends the backup terminally with message. The cluster that
+// the backup pinned no longer exists: it is gone, or a same-named cluster
+// replaced it. Nothing of this backup is left to resume, so no management
+// call is made. The terminal reason is Failed, never ResumeFailed. A
+// ResumeFailed holder keeps its claim. If a claim is kept for a cluster
+// that is gone, it blocks every backup of a cluster recreated later under
+// the name.
 func (r *Reconciler) failClusterLost(backup *v1.LogicalBackupElasticsearch, message string) {
 	now := metav1.Now()
 	backup.Status.Phase = v1.LogicalBackupFailed
@@ -252,18 +253,18 @@ func (r *Reconciler) start(
 // resolves. Without its binding the procedure parks in place, with the same
 // phase and the same step. A suspended cluster is not a failure. A cluster
 // that is gone, or replaced under its name, ends the backup terminally
-// without a management call: nothing of this backup is left to resume.
+// without a management call. Nothing of this backup is left to resume.
 func (r *Reconciler) run(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 ) (ctrl.Result, error) {
 	// The read is live, so a NotFound is the cluster gone, not a cache
 	// that lags. Its exporting state died with it: there is nothing to
-	// resume, and no endpoint to resume it at. Walking the machine to
-	// ResumeFailed instead would keep the claim for a cluster that does not
-	// exist, and block every backup of a cluster recreated later under the
-	// name. The backup ends here, and the claim goes back on the terminal
-	// reconcile.
+	// resume, and no endpoint to resume it at. If the machine walks to
+	// ResumeFailed instead, the claim stays with a cluster that does not
+	// exist. That claim then blocks every backup of a cluster recreated
+	// later under the name. The backup ends here, and the claim goes back
+	// on the terminal reconcile.
 	var cluster v1.CamundaCluster
 	key := clusterKey(backup)
 	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
@@ -278,7 +279,7 @@ func (r *Reconciler) run(
 
 	// A cluster that was deleted and recreated under the same name is a
 	// different cluster. Its exporting was never paused by this backup, so
-	// there is nothing to resume. Every management call would drive the
+	// there is nothing to resume. Every management call drives the
 	// replacement instead: a resume mid-run of its own backup, or a pairing
 	// of old snapshots with its runtime state. The backup ends here,
 	// terminally and without a management call. The claim goes back on the
@@ -405,15 +406,15 @@ func (r *Reconciler) resolveStorage(
 var errBucketMoved = errors.New("the backup store moved")
 
 // pinnedBucketCurrent verifies that the cluster still backs up through the
-// ObjectStorageConfig the backup pinned at its start, and that the contract
-// still points at the pinned location. The snapshot repository and the
-// runtime backup land in that bucket, so a store that moved mid-run would
-// split the set, and a delete aimed through the new store would miss the
-// artifacts. It returns nil when the pin holds; an error wrapping
-// errBucketMoved, naming the change, when the cluster names another
-// contract or the contract points elsewhere; a NotFound when the pinned
-// contract is gone; any other error is a transient read. A backup that has
-// not started has no pin and passes.
+// ObjectStorageConfig that the backup pinned at its start. It also verifies
+// that the contract still points at the pinned location. The snapshot
+// repository and the runtime backup land in that bucket. A store that moved
+// mid-run splits the set, and a delete aimed through the new store misses
+// the artifacts. It returns nil when the pin holds. It returns an error
+// that wraps errBucketMoved, naming the change, when the cluster names
+// another contract or the contract points elsewhere. It returns a NotFound
+// when the pinned contract is gone. Any other error is a transient read. A
+// backup that has not started has no pin and passes.
 func (r *Reconciler) pinnedBucketCurrent(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
