@@ -433,6 +433,10 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		expectPhase(backup, v1.LogicalBackupFailed)
 		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
 		expectEvent(backup, eventReasonResumeFailed, corev1.EventTypeWarning)
+		Expect(r.leaseHolder()).To(
+			Equal(claimant(currentBackup(backup)).String()),
+			"a ResumeFailed backup keeps its claim: the cluster is still paused",
+		)
 
 		By("reporting the step failure and the resume failure side by side")
 		final := currentBackup(backup)
@@ -552,6 +556,29 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		ready := meta.FindStatusCondition(final.Status.Conditions, v1.ConditionReady)
 		Expect(len(ready.Message)).To(BeNumerically("<=", conditions.MaxMessageLength+100))
 		Expect(ready.Message).To(ContainSubstring("truncated"))
+	})
+
+	It("fails the records step when only the snapshot creation stays unreachable", func() {
+		r := newRig()
+		// The status query is served, the creation is dropped: a proxy that
+		// serves GET and drops PUT. The successful query must not reset the
+		// unreachable bound, or this retries forever with exporting paused.
+		r.search.DropNext("snapshotCreate", 1000000)
+
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("SnapshotRecords"),
+			ContainSubstring("unreachable"),
+		))
+		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
 	It("fails the records step through resume when Elasticsearch stays unreachable", func() {
@@ -932,9 +959,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 		id := backupID(backup)
-		// The window under test starts once resume attempts are under way,
-		// so no probe of an earlier step is still in flight, and it spans
-		// five more attempts.
+		// The window under test starts once resume attempts are under way.
+		// No probe of an earlier step is still in flight then. The window
+		// spans five more attempts.
 		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", 3))
 		before, attempts := r.search.StatsCalls(), r.management.ResumeAttempts()
 		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", attempts+5))
@@ -1315,7 +1342,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
-	It("resumes exporting when a ResumeFailed backup is deleted after the cluster recovers", func() {
+	It("keeps the claim of a ResumeFailed backup until its deletion resumes exporting", func() {
 		r := newRig()
 		r.management.FailNext("historyStart", 1)
 		r.management.FailNext("resume", 1000000)
@@ -1327,15 +1354,46 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
 		Expect(r.management.Exporting()).To(Equal("softPaused"))
 
-		By("deleting the backup once resume can succeed again")
-		r.management.FailNext("resume", 0)
-		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		By("holding the Lease after the terminal phase: the cluster is still paused")
+		Consistently(func() string { return r.leaseHolder() }, "1s", interval).
+			Should(Equal(claimant(currentBackup(backup)).String()))
 
+		By("blocking a sibling with a message that names the pause")
+		sibling := r.newBackup()
+		expectReady(sibling, metav1.ConditionFalse, v1.ReasonBackupInProgress)
+		ready := meta.FindStatusCondition(currentBackup(sibling).Status.Conditions, v1.ConditionReady)
+		Expect(ready.Message).To(SatisfyAll(
+			ContainSubstring(backup.Name),
+			ContainSubstring("still paused"),
+			ContainSubstring("deletion or repair"),
+		))
+
+		By("deleting the ResumeFailed backup while resume still fails: the deletion holds")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+			g.Expect(currentBackup(sibling).Status.BackupID).To(BeZero(), "the sibling stays blocked")
+		}, "1s", interval).Should(Succeed())
+
+		By("resuming, releasing, and only then letting the sibling start")
+		pausesBefore := r.management.PauseCalls()
+		r.management.FailNext("resume", 0)
 		Eventually(func() bool {
 			var gone v1.LogicalBackupElasticsearch
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
 		}, timeout, interval).Should(BeTrue())
-		Expect(r.management.Exporting()).To(Equal("running"))
+		Expect(r.management.ResumeCalls()).To(BeNumerically(">=", 1), "the finalizer resumed exporting")
+
+		siblingID := backupID(sibling)
+		Expect(r.leaseHolder()).To(Equal(claimant(currentBackup(sibling)).String()))
+		// The sibling pauses exporting again for its own run. Its pause is a
+		// new one, after the resume of the finalizer: the Consistently block
+		// above proved that the sibling never started while the holder
+		// lived, so the resume never fired inside a running sibling.
+		Eventually(func() int { return r.management.HistoryStarts(siblingID) }, timeout, interval).Should(Equal(1))
+		Expect(r.management.PauseCalls()).To(Equal(pausesBefore+1), "the sibling paused anew for its own run")
+		Expect(r.management.Exporting()).To(Equal("softPaused"))
 	})
 
 	It("holds the deletion while the history status query is rejected", func() {

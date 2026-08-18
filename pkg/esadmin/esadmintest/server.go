@@ -70,6 +70,7 @@ type Server struct {
 	nodeFS map[string]nodeFS
 
 	failures map[string]int
+	drops    map[string]int
 
 	server *httptest.Server
 }
@@ -107,6 +108,7 @@ func newServer() *Server {
 		snapshotCreates: map[string]int{},
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
 		failures:        map[string]int{},
+		drops:           map[string]int{},
 	}
 }
 
@@ -203,6 +205,35 @@ func (s *Server) FailNext(op string, n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failures[op] = n
+}
+
+// DropNext makes the next n calls of op close the connection without any
+// response, the way a dropped route or a broken proxy does. The client of
+// pkg/esadmin reports such a call as ErrUnreachable. op takes the values of
+// FailNext. A fake can be reachable for one operation and unreachable for
+// another, for example a proxy that serves GET and drops PUT.
+func (s *Server) DropNext(op string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.drops[op] = n
+}
+
+// dropping consumes one injected drop of op and closes the connection.
+func (s *Server) dropping(w http.ResponseWriter, op string) bool {
+	if s.drops[op] <= 0 {
+		return false
+	}
+	s.drops[op]--
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		panic("esadmintest: the response writer does not support hijacking")
+	}
+	conn, _, err := hijacker.Hijack()
+	if err != nil {
+		panic("esadmintest: hijacking the connection: " + err.Error())
+	}
+	_ = conn.Close()
+	return true
 }
 
 func (s *Server) failing(op string) bool {
@@ -303,6 +334,9 @@ func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string)
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
 	switch r.Method {
 	case http.MethodPut:
+		if s.dropping(w, "snapshotCreate") {
+			return
+		}
 		if s.failing("snapshotCreate") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
 			return

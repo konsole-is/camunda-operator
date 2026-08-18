@@ -186,11 +186,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	// A write conflict at the terminal transition can restore an older Ready
 	// from the server. The terminal condition is staged again from the
-	// recorded outcome. SetStatusCondition makes the repeat a no-op. The
-	// claim on the cluster goes back here, after the terminal status was
-	// flushed and never before it. Release is a no-op when nothing is held.
+	// recorded outcome. SetStatusCondition makes the repeat a no-op.
+	//
+	// The claim on the cluster goes back here, after the terminal status
+	// was flushed and never before it. The claim follows the pause, not the
+	// phase. A backup that ended as ResumeFailed left exporting paused. Its
+	// claim is what keeps a sibling from backing up the paused cluster, so
+	// it keeps the Lease and holds. Deleting it resumes exporting in the
+	// finalizer, and only that release lets a sibling start.
 	if backup.Terminal() {
 		conditions.Stage(&backup, terminalReady(&backup))
+		if backup.Status.TerminalReason == v1.ReasonResumeFailed {
+			return ctrl.Result{}, nil
+		}
 		if err := r.releaseClaim(ctx, &backup); err != nil {
 			return ctrl.Result{}, err
 		}

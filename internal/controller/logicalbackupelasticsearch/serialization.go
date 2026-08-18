@@ -80,25 +80,48 @@ func claimant(backup *v1.LogicalBackupElasticsearch) logicalbackup.Claimant {
 }
 
 // claimCluster takes the claim on the cluster for the backup. It returns
-// the display name of the holder that blocks, or "" when the backup holds
-// the claim. It runs before the backup ID is allocated and flushed. A
-// re-entry after a failed flush finds itself as the holder and proceeds.
+// the waiting message of the holder that blocks, or "" when the backup
+// holds the claim. It runs before the backup ID is allocated and flushed. A
+// re-entry after a failed flush finds itself as the holder and proceeds. A
+// holder that ended as ResumeFailed keeps the cluster paused, and the
+// message says so. The user must delete or repair that backup. Waiting does
+// not resolve it.
 func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupElasticsearch) (string, error) {
+	cluster := backup.Spec.ClusterRef.Name
 	// Writes go through the client, reads through the API reader: the claim
 	// is never decided from the cache.
 	holder, err := logicalbackup.Claim(
-		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
+		ctx, r.Client, r.APIReader, backup.Namespace, cluster, claimant(backup),
 	)
 	if err != nil {
-		return "", fmt.Errorf("claiming CamundaCluster %s/%s: %w", backup.Namespace, backup.Spec.ClusterRef.Name, err)
+		return "", fmt.Errorf("claiming CamundaCluster %s/%s: %w", backup.Namespace, cluster, err)
 	}
 	if holder == "" {
 		return "", nil
 	}
-	if parsed, err := logicalbackup.ParseClaimant(holder); err == nil {
-		return parsed.Display(), nil
+
+	parsed, err := logicalbackup.ParseClaimant(holder)
+	if err != nil {
+		return fmt.Sprintf(
+			"%q holds CamundaCluster %s/%s; backups of one cluster run one at a time",
+			holder, backup.Namespace, cluster,
+		), nil
 	}
-	return holder, nil
+	paused, err := logicalbackup.HolderKeepsClusterPaused(ctx, r.APIReader, backup.Namespace, parsed)
+	if err != nil {
+		return "", err
+	}
+	if paused {
+		return fmt.Sprintf(
+			"backup %s ended without resuming the exporting of CamundaCluster %s/%s; "+
+				"the cluster is still paused and needs that backup's deletion or repair",
+			parsed.Display(), backup.Namespace, cluster,
+		), nil
+	}
+	return fmt.Sprintf(
+		"backup %s of CamundaCluster %s/%s holds the cluster; backups of one cluster run one at a time",
+		parsed.Display(), backup.Namespace, cluster,
+	), nil
 }
 
 // releaseClaim gives the claim on the cluster back. It is a no-op when the

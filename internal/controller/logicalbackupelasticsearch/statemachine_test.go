@@ -117,9 +117,9 @@ func TestRuntimeRequestConflictWithIntentFailsWithoutAdoption(t *testing.T) {
 	assert.Contains(t, backup.Status.FailureMessage, "not adopted")
 }
 
-// A runtime backup that exists under the ID before any intent was recorded
-// cannot be this backup's, because the intent is flushed one reconcile
-// before every request. It is not adopted, whatever its state.
+// The intent is flushed one reconcile before every request. A runtime
+// backup that exists under the ID before any intent was recorded therefore
+// cannot be this backup's. It is not adopted, whatever its state.
 func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 	for _, state := range []string{"IN_PROGRESS", "COMPLETED"} {
 		t.Run(state, func(t *testing.T) {
@@ -144,6 +144,39 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			assert.Nil(t, backup.Status.RuntimeAcceptedTime)
 		})
 	}
+}
+
+// The acceptance timestamp anchors the registration grace, so it must be
+// the time the 202 was observed, not the time before the request. A slow
+// request must not silently shorten the grace.
+func TestRuntimeAcceptanceIsStampedAfterTheRequestReturned(t *testing.T) {
+	const requestTakes = 300 * time.Millisecond
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(requestTakes)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"backupId": 1000, "message": "scheduled"}`))
+	}))
+	t.Cleanup(slow.Close)
+	mgmt, err := camundaadmin.New(camundaadmin.Binding{Endpoint: slow.URL, Version: "8.9.9"})
+	require.NoError(t, err)
+	r := &Reconciler{
+		EventRecorder: events.NewFakeRecorder(16),
+		options:       Options{RuntimeRegistrationGrace: time.Minute},
+	}
+	backup := runtimeBackup()
+	intent := metav1.Now()
+	backup.Status.RuntimeRequestedTime = &intent
+
+	beforeCall := time.Now()
+	_, err = r.requestRuntimeBackup(t.Context(), mgmt, backup, &backup.Status.Runtime)
+	require.NoError(t, err)
+
+	require.NotNil(t, backup.Status.RuntimeAcceptedTime)
+	accepted := backup.Status.RuntimeAcceptedTime.Time
+	assert.False(
+		t, accepted.Before(beforeCall.Add(requestTakes)),
+		"the grace starts when the 202 was observed, not before the request",
+	)
 }
 
 // The resume deadline bounds attempting, and the time inside an attempt

@@ -75,18 +75,15 @@ func (r *Reconciler) admit(
 	// The claim is the gate. The pre-checks above order the claimants and
 	// verify the references. Only the Lease decides who holds the cluster,
 	// and it is taken before the identity of the backup is written.
-	holder, err := r.claimCluster(ctx, backup)
+	blocked, err := r.claimCluster(ctx, backup)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if holder != "" {
+	if blocked != "" {
 		backup.Status.Phase = v1.LogicalBackupPending
 		conditions.Stage(backup, conditions.Failed(backup, &conditions.PreCheckFailure{
-			Reason: v1.ReasonBackupInProgress,
-			Message: fmt.Sprintf(
-				"backup %s of CamundaCluster %s/%s holds the cluster; backups of one cluster run one at a time",
-				holder, res.Cluster.Namespace, res.Cluster.Name,
-			),
+			Reason:  v1.ReasonBackupInProgress,
+			Message: blocked,
 		}))
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}

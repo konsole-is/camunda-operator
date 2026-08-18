@@ -63,9 +63,13 @@ func (r *Reconciler) finalize(
 		}
 	}
 
-	// The claim goes back with the artifacts. A backup whose flush failed
-	// between the claim and the ID can hold it without an ID, so this runs
-	// for every backup. It is a no-op when nothing is held.
+	// The claim goes back with the artifacts, and only now. For a backup
+	// that ended as ResumeFailed this is the one release. deleteArtifacts
+	// resumed exporting first, or held the deletion, so a sibling that
+	// starts after this release never meets a paused cluster. A backup
+	// whose flush failed between the claim and the ID can hold the claim
+	// without an ID, so this runs for every backup. It is a no-op when
+	// nothing is held.
 	if err := r.releaseClaim(ctx, backup); err != nil {
 		return ctrl.Result{}, err
 	}

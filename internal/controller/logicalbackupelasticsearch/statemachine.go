@@ -229,7 +229,6 @@ func (r *Reconciler) snapshotRecords(
 		r.failStep(backup, "SnapshotRecords", part, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
-	backup.Status.ElasticsearchUnreachableSince = nil
 
 	switch state {
 	case esadmin.SnapshotMissing:
@@ -258,6 +257,12 @@ func (r *Reconciler) snapshotRecords(
 	default:
 		r.failStep(backup, "SnapshotRecords", part, fmt.Errorf("snapshot %q ended in state %s", name, state))
 	}
+
+	// The unreachable timer is cleared only here, after every Elasticsearch
+	// call of this reconcile answered. A status query that succeeds while
+	// the snapshot creation stays unreachable must not reset the bound, or
+	// the step retries forever with exporting paused.
+	backup.Status.ElasticsearchUnreachableSince = nil
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
@@ -446,7 +451,11 @@ func (r *Reconciler) requestRuntimeBackup(
 	_, err := mgmt.StartRuntimeBackup(ctx, &id)
 	switch {
 	case err == nil:
-		backup.Status.RuntimeAcceptedTime = &now
+		// The acceptance is stamped after the call returned, not with the
+		// time before it. The registration grace starts here, and a slow
+		// request must not silently shorten it.
+		accepted := metav1.Now()
+		backup.Status.RuntimeAcceptedTime = &accepted
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")
 
