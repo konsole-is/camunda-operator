@@ -496,6 +496,53 @@ func (in *ObjectStorageConfig) BasePath() string {
 	return strings.Trim(block.basePath, "/")
 }
 
+// Location returns where the objects of the active storage block live, as one
+// string that changes when, and only when, a key written through this
+// contract would land somewhere else: the storage type, the bucket (or the
+// account and container), the base path, and the endpoint or region that
+// selects the service — endpoints normalized the way the clients use them,
+// so a trailing slash never reads as a retarget. Credentials and auth are
+// not part of it. Consumers
+// that pin the destination of an object record it, so a later retarget of
+// the contract cannot make them delete an unrelated object at the same key.
+// It is empty when the declared block is not set.
+func (in *ObjectStorageConfig) Location() string {
+	base := in.BasePath()
+	switch in.Spec.Type {
+	case ObjectStorageTypeS3:
+		if in.Spec.S3 == nil {
+			return ""
+		}
+		service := "region " + in.Spec.S3.Region
+		if endpoint := strings.TrimRight(in.Spec.S3.Endpoint, "/"); endpoint != "" {
+			service = "endpoint " + endpoint
+		}
+
+		return "s3://" + in.Spec.S3.BucketName + "/" + base + " (" + service + ")"
+	case ObjectStorageTypeGCS:
+		if in.Spec.GCS == nil {
+			return ""
+		}
+
+		return "gs://" + in.Spec.GCS.BucketName + "/" + base
+	case ObjectStorageTypeAzureBlob:
+		if in.Spec.AzureBlob == nil {
+			return ""
+		}
+		location := "azblob://" + in.Spec.AzureBlob.AccountName + "/" + in.Spec.AzureBlob.Container + "/" + base
+		// ServiceEndpoint trims trailing slashes, so the two spellings of one
+		// endpoint yield one location: what the clients reach is what the
+		// location records, and a slash is never mistaken for a retarget.
+		if endpoint := in.Spec.AzureBlob.ServiceEndpoint(); endpoint != "" {
+			location += " (endpoint " + endpoint + ")"
+		}
+
+		return location
+	}
+
+	return ""
+}
+
 // CredentialsSecret returns the name, namespace, and keys of the static
 // credentials Secret of the active storage block, or nil when the contract
 // uses workload identity. The returned keys are the Secret keys that must
