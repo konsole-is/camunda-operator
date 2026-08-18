@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -147,22 +148,48 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 	return err
 }
 
-// CreateSnapshot starts the snapshot name of indices in repo. A snapshot
-// that already exists under the same name is success, so a re-entrant caller
-// never double-starts.
+// Snapshot is what SnapshotStatus reports about one snapshot: its state and
+// the user metadata that its creation carried. The metadata is how a caller
+// tells its own snapshot from one that another actor created under the same
+// name.
+type Snapshot struct {
+	// State of the snapshot. SnapshotMissing means that no snapshot with
+	// the name exists; every other field is empty then.
+	State SnapshotState
+	// Metadata is the user metadata of the snapshot, as the creation
+	// request carried it. Elasticsearch stores it verbatim and returns it
+	// with the snapshot info.
+	Metadata map[string]string
+}
+
+// CreateSnapshot starts the snapshot name of indices in repo, carrying
+// metadata as the user metadata of the snapshot. A snapshot that already
+// exists under the same name AND the same metadata is success, so a
+// re-entrant caller never double-starts. An existing snapshot with other
+// metadata is another actor's, and the duplicate rejection comes back as an
+// error.
 //
 // indices must name at least one index. An empty list would send an empty
 // pattern, which selects nothing rather than everything: the snapshot would
 // succeed and hold no data.
-func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices []string) error {
+func (c *Client) CreateSnapshot(
+	ctx context.Context,
+	repo, name string,
+	indices []string,
+	metadata map[string]string,
+) error {
 	if len(indices) == 0 {
 		return fmt.Errorf("snapshot %q of repository %q names no index", name, repo)
 	}
 
-	body, err := json.Marshal(map[string]any{
+	request := map[string]any{
 		"indices":              strings.Join(indices, ","),
 		"include_global_state": false,
-	})
+	}
+	if len(metadata) > 0 {
+		request["metadata"] = metadata
+	}
+	body, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("encoding snapshot request: %w", err)
 	}
@@ -171,10 +198,12 @@ func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices 
 	if err != nil {
 		// Elasticsearch rejects a duplicate name with
 		// invalid_snapshot_name_exception or snapshot_name_already_in_use.
-		// Re-entry is not a failure: when the snapshot exists, the start
-		// already happened.
+		// Re-entry is not a failure, but only the caller's own earlier
+		// snapshot counts: the metadata must match.
 		if status == http.StatusBadRequest || status == http.StatusConflict {
-			if state, statusErr := c.SnapshotStatus(ctx, repo, name); statusErr == nil && state != SnapshotMissing {
+			if existing, statusErr := c.SnapshotStatus(ctx, repo, name); statusErr == nil &&
+				existing.State != SnapshotMissing &&
+				maps.Equal(existing.Metadata, metadata) {
 				return nil
 			}
 		}
@@ -184,36 +213,41 @@ func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices 
 	return nil
 }
 
-// SnapshotStatus reports the state of the snapshot name in repo. A snapshot
-// that does not exist is SnapshotMissing, not an error.
-func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (SnapshotState, error) {
+// SnapshotStatus reports the snapshot name in repo: its state and its user
+// metadata. A snapshot that does not exist is SnapshotMissing, not an
+// error.
+func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapshot, error) {
 	payload, status, err := c.do(ctx, http.MethodGet, snapshotPath(repo, name), nil)
 	if status == http.StatusNotFound {
 		// A 404 is how Elasticsearch reports an absent snapshot, but also an
 		// absent repository. Only the first is a state; a dropped repository
 		// must never read as "the snapshot is gone".
 		if errorType(payload) == "snapshot_missing_exception" {
-			return SnapshotMissing, nil
+			return Snapshot{State: SnapshotMissing}, nil
 		}
-		return "", err
+		return Snapshot{}, err
 	}
 	if err != nil {
-		return "", err
+		return Snapshot{}, err
 	}
 
 	var response struct {
 		Snapshots []struct {
-			State string `json:"state"`
+			State    string            `json:"state"`
+			Metadata map[string]string `json:"metadata"`
 		} `json:"snapshots"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
-		return "", fmt.Errorf("decoding snapshot status: %w", err)
+		return Snapshot{}, fmt.Errorf("decoding snapshot status: %w", err)
 	}
 	if len(response.Snapshots) == 0 {
-		return SnapshotMissing, nil
+		return Snapshot{State: SnapshotMissing}, nil
 	}
 
-	return SnapshotState(response.Snapshots[0].State), nil
+	return Snapshot{
+		State:    SnapshotState(response.Snapshots[0].State),
+		Metadata: response.Snapshots[0].Metadata,
+	}, nil
 }
 
 // DeleteSnapshot deletes the snapshot name from repo. A snapshot that does
