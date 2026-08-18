@@ -24,10 +24,15 @@ limitations under the License.
 // (/actuator/exporting/*, /actuator/backupHistory, /actuator/backupRuntime).
 // An unknown version is a constructor error, never a guess.
 //
-// Every method is idempotent from the caller's view: the backup state
-// machine re-enters after a crash, so "already done" is success and never an
-// error. Errors distinguish an unreachable endpoint (ErrUnreachable) from a
-// rejected call (ErrRejected, with the response body in the message).
+// The exporting calls and the deletes are idempotent from the caller's
+// view: the backup state machine re-enters after a crash, so "already done"
+// is success and never an error. The two backup starts are the exception.
+// A duplicate under the same or a higher id is ErrConflict, never success.
+// A duplicate is only "already done" when the existing backup is the
+// caller's own, and the client cannot know that. The caller decides from
+// its own recorded state. Errors distinguish an unreachable endpoint
+// (ErrUnreachable) from a rejected call (ErrRejected, with the response
+// body in the message).
 package camundaadmin
 
 import (
