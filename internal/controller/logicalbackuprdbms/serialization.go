@@ -38,7 +38,7 @@ import (
 func (r *LogicalBackupRDBMSReconciler) inProgress(backup *v1.LogicalBackupRDBMS) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
 		holds, err := logicalbackup.Holds(
-			ctx, r.Client, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
+			ctx, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
 		)
 		if err != nil {
 			return "", err
@@ -102,7 +102,7 @@ func (r *LogicalBackupRDBMSReconciler) claimCluster(
 	backup *v1.LogicalBackupRDBMS,
 ) (string, error) {
 	holder, err := logicalbackup.Claim(
-		ctx, r.Client, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
+		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
 	)
 	if err != nil {
 		return "", fmt.Errorf(
@@ -126,7 +126,7 @@ func (r *LogicalBackupRDBMSReconciler) releaseClaim(
 	backup *v1.LogicalBackupRDBMS,
 ) error {
 	err := logicalbackup.Release(
-		ctx, r.Client, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
+		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
 	)
 	if err != nil {
 		return fmt.Errorf(
