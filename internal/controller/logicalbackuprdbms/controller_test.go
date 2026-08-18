@@ -352,6 +352,44 @@ func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 // phase and Ready, the state of the sibling it may wait on, and who holds the
 // cluster's Lease. It annotates the assertions of the serialization specs, so
 // a failure explains itself.
+
+// leaseHolder returns the exact identity the claim Lease records in its
+// holder annotations, or the raw holderIdentity of a Lease that another
+// actor wrote, or "" when the Lease is absent.
+func leaseHolder(lease *coordinationv1.Lease) string {
+	annotations := lease.GetAnnotations()
+	kind, name, uid := annotations[logicalbackup.ClaimHolderKindAnnotation],
+		annotations[logicalbackup.ClaimHolderNameAnnotation],
+		annotations[logicalbackup.ClaimHolderUIDAnnotation]
+	if kind != "" && name != "" && uid != "" {
+		return logicalbackup.Claimant{Kind: kind, Name: name, UID: types.UID(uid)}.String()
+	}
+	if lease.Spec.HolderIdentity == nil {
+		return ""
+	}
+
+	return *lease.Spec.HolderIdentity
+}
+
+// staleLease writes the claim Lease of the cluster as a backup of this kind
+// that no longer exists would have left it: bounded holderIdentity plus the
+// exact identity in the holder annotations.
+func staleLease(w *world, holder logicalbackup.Claimant) *coordinationv1.Lease {
+	identity := holder.HolderIdentity()
+
+	return &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: logicalbackup.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
+			Annotations: map[string]string{
+				logicalbackup.ClaimHolderKindAnnotation: holder.Kind,
+				logicalbackup.ClaimHolderNameAnnotation: holder.Name,
+				logicalbackup.ClaimHolderUIDAnnotation:  string(holder.UID),
+			},
+		},
+		Spec: coordinationv1.LeaseSpec{HolderIdentity: &identity},
+	}
+}
+
 func gateState(w *world, sibling, waiting *v1.LogicalBackupRDBMS) string {
 	var latestSibling, latestWaiting v1.LogicalBackupRDBMS
 	_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(sibling), &latestSibling)
@@ -377,8 +415,8 @@ func gateState(w *world, sibling, waiting *v1.LogicalBackupRDBMS) string {
 		ctx, types.NamespacedName{
 			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
 		}, &lease,
-	); err == nil && lease.Spec.HolderIdentity != nil {
-		holder = *lease.Spec.HolderIdentity
+	); err == nil {
+		holder = leaseHolder(&lease)
 	}
 
 	return fmt.Sprintf(
@@ -601,7 +639,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}
 		var lease coordinationv1.Lease
 		Expect(k8sClient.Get(ctx, leaseKey, &lease)).To(Succeed())
-		Expect(*lease.Spec.HolderIdentity).To(Equal(claimant(first).String()))
+		Expect(leaseHolder(&lease)).To(Equal(claimant(first).String()))
 
 		By("finishing the first backup")
 		markJob(first, w, batchv1.JobComplete)
@@ -623,7 +661,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(second.Status.BackupID).NotTo(BeZero())
 			g.Expect(second.Status.Phase).To(Equal(v1.LogicalBackupRunning))
 			g.Expect(k8sClient.Get(ctx, leaseKey, &lease)).To(Succeed())
-			g.Expect(*lease.Spec.HolderIdentity).To(Equal(claimant(second).String()))
+			g.Expect(leaseHolder(&lease)).To(Equal(claimant(second).String()))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -673,13 +711,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 	// crash between the claim and the release never blocks the cluster.
 	It("takes over the Lease of a holder that no longer exists", func() {
 		w := createWorld()
-		holder := "LogicalBackupRDBMS/ghost/00000000-0000-0000-0000-000000000000"
-		lease := &coordinationv1.Lease{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: logicalbackup.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
-			},
-			Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder},
-		}
+		lease := staleLease(w, logicalbackup.Claimant{
+			Kind: "LogicalBackupRDBMS", Name: "ghost", UID: "00000000-0000-0000-0000-000000000000",
+		})
 		Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 
 		backup := createBackup(w)
@@ -688,7 +722,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
 			var current coordinationv1.Lease
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(lease), &current)).To(Succeed())
-			g.Expect(*current.Spec.HolderIdentity).To(Equal(claimant(backup).String()))
+			g.Expect(leaseHolder(&current)).To(Equal(claimant(backup).String()))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -701,7 +735,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Eventually(func(g Gomega) {
 			var current coordinationv1.Lease
 			g.Expect(k8sClient.Get(ctx, leaseKey, &current)).To(Succeed())
-			g.Expect(*current.Spec.HolderIdentity).To(Equal(claimant(backup).String()))
+			g.Expect(leaseHolder(&current)).To(Equal(claimant(backup).String()))
 		}, timeout, interval).Should(Succeed())
 
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
