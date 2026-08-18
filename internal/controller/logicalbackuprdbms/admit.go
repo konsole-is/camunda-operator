@@ -40,9 +40,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-// admit runs the full pre-checks and starts the backup when they pass. They
-// run only here: a backup that started already owns its resolved identity,
-// and re-checking mid-run would let a broken reference park it forever.
+// admit runs the full pre-checks and starts the backup when they pass. The
+// full pre-checks run only here. A backup that started already owns its
+// resolved identity, and a pre-check that runs again mid-run lets a broken
+// reference park it forever.
 func (r *LogicalBackupRDBMSReconciler) admit(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -78,8 +79,8 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 	}
 
 	// The claim is the gate. The pre-checks above order the claimants and
-	// verify the references. Only the Lease decides who holds the cluster,
-	// and it is taken before the identity of the backup is written.
+	// check the references. Only the Lease decides who holds the cluster.
+	// The backup takes the Lease before it writes its identity.
 	holder, err := r.claimCluster(ctx, backup)
 	if err != nil {
 		return settle, err
@@ -108,10 +109,10 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 	}
 	r.start(backup, precheck, highest, hash)
 
-	// The identity must be persisted before the Job exists: a crash between
-	// the two would otherwise allocate a second id against an immutable Job
-	// template. The deferred flush writes it; the requeue re-enters with it
-	// recorded.
+	// The identity must be in status before the Job exists. Otherwise a
+	// crash between the two allocates a second id against an immutable Job
+	// template. The deferred flush writes the identity, and the requeue
+	// re-enters with it recorded.
 	return shortly, nil
 }
 
@@ -119,11 +120,11 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 // backups of this kind that name the same cluster, terminal ones included, or
 // zero. It arbitrates the ID allocation against the siblings that this
 // controller can see. A clock that stepped backwards then cannot hand out an
-// ID that one of them holds. Nothing arbitrates the residual — the IDs of
-// deleted resources — for the dump: the Zeebe request carries no id, so the
-// cluster answers no conflict for it. That is why the dump key carries the
-// UID of the backup (components.DumpObjectKey): a reused id can never name
-// another backup's object.
+// ID that one of them holds. Nothing arbitrates the IDs of deleted resources
+// for the dump. The Zeebe request carries no id, so the cluster answers no
+// conflict for it. That is why the dump key carries the UID of the backup
+// (components.DumpObjectKey). A reused id can never name the object of
+// another backup.
 func (r *LogicalBackupRDBMSReconciler) highestSiblingBackupID(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -146,8 +147,8 @@ func (r *LogicalBackupRDBMSReconciler) highestSiblingBackupID(
 	return highest, nil
 }
 
-// parkPending records a pre-check failure: the documented Pending phase and
-// the Ready condition carrying the reason. Nothing watches most of the
+// parkPending records a pre-check failure as the documented Pending phase and
+// a Ready condition that carries the reason. Nothing watches most of the
 // checked references from here, so the reconcile comes back on a timer.
 func (r *LogicalBackupRDBMSReconciler) parkPending(
 	backup *v1.LogicalBackupRDBMS,
@@ -159,13 +160,13 @@ func (r *LogicalBackupRDBMSReconciler) parkPending(
 	return hold{after: r.opts.RetryInterval}
 }
 
-// clusterConverged requires the cluster to run the spec it declares: the
-// operator has reconciled the current generation and reports Ready for it.
-// A backup admitted against a desired spec that Zeebe does not run yet would
-// dump to the new backup store while the Zeebe backup, requested before the
-// rollout finishes, lands in the old one — a completed status for a split
-// restore point. This is a wait, not a user error, so it reports
-// Progressing.
+// clusterConverged requires the cluster to run the spec that it declares. The
+// operator reconciled the current generation and reports Ready for it. If the
+// controller admits a backup against a desired spec that Zeebe does not run
+// yet, the dump goes to the new backup store. The Zeebe backup, requested
+// before the rollout finishes, lands in the old one. A completed status then
+// describes a split restore point. This is a wait, not a user error, so it
+// reports Progressing.
 func clusterConverged(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
 	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
 	observed := cluster.Status.ObservedGeneration
@@ -190,9 +191,9 @@ func clusterConverged(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
 	}
 }
 
-// zeebeWorkload reads the live Zeebe StatefulSet of the cluster: the pod
-// template that says what Zeebe actually runs. A workload that is not
-// rendered yet is a wait, reported as Progressing.
+// zeebeWorkload reads the live Zeebe StatefulSet of the cluster. Its pod
+// template says what Zeebe runs. A workload that is not rendered yet is a
+// wait, reported as Progressing.
 func (r *LogicalBackupRDBMSReconciler) zeebeWorkload(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -219,13 +220,14 @@ func (r *LogicalBackupRDBMSReconciler) zeebeWorkload(
 	return &workload, nil, nil
 }
 
-// zeebeConfigHash reads the config hash the live Zeebe pod template carries:
-// the strongest observable identity of the configuration Zeebe actually
-// runs. Mutable referents — the DatabaseConfig, the DatabaseServerConfig —
-// enter that hash without bumping the cluster's generation, so the converged
-// generation alone cannot prove that Zeebe still runs the database that a
-// dump captures. The hash is pinned at start and required unchanged before
-// the Job and before the Zeebe request.
+// zeebeConfigHash reads the config hash that the live Zeebe pod template
+// carries. The hash is the strongest observable identity of the
+// configuration that Zeebe runs. Mutable referents, for example the
+// DatabaseConfig and the DatabaseServerConfig, enter that hash without a
+// bump of the cluster generation. So the converged generation alone cannot
+// prove that Zeebe still runs the database that a dump captures. The backup
+// pins the hash at start and requires it unchanged before the Job and before
+// the Zeebe request.
 func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -249,17 +251,17 @@ func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
 	return hash, nil, nil
 }
 
-// zeebeRunsDatabase requires the database that a dump would capture — the
-// DatabaseServerConfig host and port and the DatabaseConfig database name,
-// as resolved now — to be the one the live Zeebe pod template is configured
-// with. The pinned config hash proves only that Zeebe did not roll since
-// the start; it cannot tell that the referents changed and the cluster
-// controller has not rendered them yet. In that window the dump would read
-// the new referents while Zeebe still runs the old database, and a dump and
-// a Zeebe backup of two databases would report one restore point. The
-// template carries the URL Zeebe runs, so the two are compared directly.
-// A mismatch is a wait: the cluster rolls to the referenced database, or
-// the referents go back, and until then no dump starts.
+// zeebeRunsDatabase requires the database that a dump captures to be the one
+// that the live Zeebe pod template names. The database of the dump is the
+// DatabaseServerConfig host and port and the DatabaseConfig database name, as
+// resolved now. The pinned config hash proves only that Zeebe did not roll
+// since the start. It cannot tell that the referents changed while the
+// cluster controller did not render them yet. In that window the dump reads
+// the new referents while Zeebe still runs the old database. Then a dump and
+// a Zeebe backup of two databases report one restore point. The template
+// carries the URL that Zeebe runs, so the function compares the two directly.
+// A mismatch is a wait. No dump starts until the cluster rolls to the
+// referenced database or the referents go back.
 func (r *LogicalBackupRDBMSReconciler) zeebeRunsDatabase(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -314,9 +316,9 @@ func templateEnvValue(template *corev1.PodTemplateSpec, name string) (string, bo
 }
 
 // workloadUnchanged requires the live Zeebe workload to still carry the
-// config hash pinned at start. A changed hash means Zeebe rolled to another
-// configuration — for example a swapped database — and pairing the dump with
-// a Zeebe backup taken now would report an unusable restore point as
+// config hash pinned at start. A changed hash means that Zeebe rolled to
+// another configuration, for example a swapped database. A dump paired with
+// a Zeebe backup taken now then reports an unusable restore point as
 // complete.
 func (r *LogicalBackupRDBMSReconciler) workloadUnchanged(
 	ctx context.Context,
@@ -339,9 +341,9 @@ func (r *LogicalBackupRDBMSReconciler) workloadUnchanged(
 	return nil, nil
 }
 
-// checkManagement verifies the management binding is usable at admission, so
-// a backup never dumps gigabytes it cannot pair with a Zeebe backup
-// afterwards. The client is rebuilt when the step needs it.
+// checkManagement checks that the management binding is usable at admission,
+// so a backup never dumps gigabytes that it cannot pair with a Zeebe backup
+// afterwards. The step that needs the client builds it again.
 func (r *LogicalBackupRDBMSReconciler) checkManagement(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -358,9 +360,9 @@ func (r *LogicalBackupRDBMSReconciler) checkManagement(
 type dumpResolution struct {
 	cluster *v1.CamundaCluster
 	bucket  *v1.ObjectStorageConfig
-	// pod shapes the Job's pod; image runs its dump container. They come
-	// from different owners: the pod settings may be the backup's, the image
-	// is always the cluster's.
+	// pod shapes the pod of the Job, and image runs its dump container. They
+	// come from different owners. The pod settings can come from the backup,
+	// but the image always comes from the cluster.
 	pod          *v1.DumpPodSpec
 	image        string
 	account      string
@@ -370,10 +372,11 @@ type dumpResolution struct {
 	dbConfig     *v1.DatabaseConfig
 }
 
-// resolveDump resolves everything the dump Job renders from, one concern per
-// helper: the database chain, the server it runs on, where the credentials
-// are reachable, and the pod settings. Each helper reports a failure the
-// user must see or an error to retry; resolveDump composes them.
+// resolveDump resolves everything that the dump Job renders from, one concern
+// per helper. The concerns are the database chain, the server it runs on,
+// where the credentials are reachable, and the pod settings. Each helper
+// reports a failure that the user must see or an error to retry. resolveDump
+// composes them.
 func (r *LogicalBackupRDBMSReconciler) resolveDump(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -418,8 +421,8 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 	}, nil, nil
 }
 
-// resolveDatabaseConfig reads the DatabaseConfig the storage binding names
-// and requires the backup user a dump runs as.
+// resolveDatabaseConfig reads the DatabaseConfig that the storage binding
+// names and requires the backup user that a dump runs as.
 func (r *LogicalBackupRDBMSReconciler) resolveDatabaseConfig(
 	ctx context.Context,
 	storage *v1.SecondaryStorageConfig,
@@ -450,8 +453,8 @@ func (r *LogicalBackupRDBMSReconciler) resolveDatabaseConfig(
 }
 
 // resolveServer reads the DatabaseServerConfig of the database and requires
-// the major version its controller probed: the dump runs client tools of that
-// major, and guessing one risks a pg_dump older than the server.
+// the major version that its controller probed. The dump runs client tools of
+// that major. A guessed major risks a pg_dump that is older than the server.
 func (r *LogicalBackupRDBMSReconciler) resolveServer(
 	ctx context.Context,
 	dbConfig *v1.DatabaseConfig,
@@ -480,11 +483,12 @@ func (r *LogicalBackupRDBMSReconciler) resolveServer(
 	return &server, nil, nil
 }
 
-// serverProbedForCurrentSpec reports whether the version the server publishes
-// belongs to the spec it has now: Ready is True for the current generation
-// and a version is recorded. The controller keeps the last version while a
-// retargeted server is unreachable, so the version alone could be the old
-// server's; only a current Ready proves it is this one's.
+// serverProbedForCurrentSpec reports whether the version that the server
+// publishes belongs to the spec that it has now. That is the case when Ready
+// is True for the current generation and a version is recorded. The
+// controller keeps the last version while a retargeted server is unreachable,
+// so the version alone can belong to the old server. Only a current Ready
+// proves that it belongs to this one.
 func serverProbedForCurrentSpec(server *v1.DatabaseServerConfig) bool {
 	if server.Status.ServerVersion == "" {
 		return false
@@ -496,12 +500,13 @@ func serverProbedForCurrentSpec(server *v1.DatabaseServerConfig) bool {
 		ready.ObservedGeneration == server.Generation
 }
 
-// resolveCredentials locates the two Secrets the Job mounts as reachable from
-// the cluster namespace, following the CamundaCluster controller's rule: a
-// Secret in the cluster namespace is used where it is, one anywhere else
-// through the local copy that controller maintains. It returns the dump
-// credentials reference rewritten to the local location and the local name of
-// the bucket credentials — empty for workload identity.
+// resolveCredentials locates the two Secrets that the Job mounts, as reachable
+// from the cluster namespace. It obeys the rule of the CamundaCluster
+// controller. The Job uses a Secret in the cluster namespace where it is. It
+// reads a Secret anywhere else through the local copy that the CamundaCluster
+// controller maintains. resolveCredentials returns the dump credentials
+// reference rewritten to the local location, and the local name of the bucket
+// credentials. That name is empty for workload identity.
 func (r *LogicalBackupRDBMSReconciler) resolveCredentials(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -538,10 +543,10 @@ func (r *LogicalBackupRDBMSReconciler) resolveCredentials(
 	return dbSecret, bucketSecret, nil, nil
 }
 
-// checkLocalSecret verifies that the Secret at namespace/name carries keys,
-// mapping a miss to a pre-check failure with the given reason. purpose names
-// the credentials in the message, which also says who keeps the copy when the
-// Secret is one.
+// checkLocalSecret checks that the Secret at namespace/name carries keys and
+// maps a miss to a pre-check failure with the given reason. purpose names the
+// credentials in the message. The message also says who keeps the copy when
+// the Secret is one.
 func (r *LogicalBackupRDBMSReconciler) checkLocalSecret(
 	ctx context.Context,
 	namespace, name, reason, purpose string,
@@ -568,9 +573,9 @@ func (r *LogicalBackupRDBMSReconciler) checkLocalSecret(
 }
 
 // localSecretName resolves where a referenced Secret is reachable from the
-// cluster namespace, mirroring the rule of the CamundaCluster controller: the
-// source itself when it already lives there, its purpose-named copy
-// otherwise.
+// cluster namespace. It obeys the rule of the CamundaCluster controller. When
+// the source lives in the cluster namespace, the result is the source itself.
+// Otherwise the result is its purpose-named copy.
 func localSecretName(cluster *v1.CamundaCluster, namespace, name, purpose string) string {
 	if namespace == cluster.Namespace {
 		return name
@@ -587,11 +592,12 @@ type podResolution struct {
 	account  string
 }
 
-// resolvePod resolves the pod of the Job through the cluster's preset when it
-// names one: the pod settings — the backup's own block replacing the
-// cluster's as a whole, or the cluster's — the ServiceAccount, and the image,
-// which is always the cluster's: the Job runs under the cluster's
-// ServiceAccount, so the executable is the cluster owner's choice.
+// resolvePod resolves the pod of the Job through the preset of the cluster
+// when it names one. It resolves the pod settings, the ServiceAccount, and the
+// image. The pod settings are the backup's own block, which replaces the
+// cluster's as a whole, or else the cluster's block. The image is always the
+// cluster's. The Job runs under the ServiceAccount of the cluster, so the
+// executable is the choice of the cluster owner.
 func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -617,10 +623,10 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	}
 
 	settings, image := dumpBlock(merged, backup)
-	// The environment bound applies to the backup's own block only: the
-	// cluster's spec.backup.dump is its owner's policy inside their own
-	// boundary. The CRD schema enforces the envFrom half too; this is the
-	// second layer.
+	// The environment bound applies to the backup's own block only. The
+	// spec.backup.dump of the cluster is the policy of its owner inside
+	// their own boundary. The CRD schema enforces the envFrom half too, and
+	// this check is the second layer.
 	if backup != nil && backup.Spec.Dump != nil {
 		if reserved := components.ReservedEnv(backup.Spec.Dump); len(reserved) > 0 {
 			return nil, logicalbackup.InvalidReference(
@@ -645,9 +651,10 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	}, nil, nil
 }
 
-// dumpBlock returns the pod settings and the image of one backup's Job. The
-// settings are the backup's own block replacing the cluster's as a whole, or
-// the cluster's; the image is the cluster's or empty for the default.
+// dumpBlock returns the pod settings and the image of the Job of one backup.
+// The settings are the backup's own block, which replaces the cluster's as a
+// whole, or else the cluster's block. The image is the cluster's, or empty for
+// the default.
 func dumpBlock(merged v1.CamundaClusterSpec, backup *v1.LogicalBackupRDBMS) (*v1.DumpPodSpec, string) {
 	var cluster *v1.BackupDumpSpec
 	if merged.Backup != nil {
@@ -667,10 +674,11 @@ func dumpBlock(merged v1.CamundaClusterSpec, backup *v1.LogicalBackupRDBMS) (*v1
 	return nil, image
 }
 
-// start allocates the identity of the backup — after the highest id a
-// visible sibling holds, so a clock that stepped backwards cannot reuse one
-// — pins the bucket it writes through, and records the effective restore
-// size of the brokers. It only mutates status; the caller persists.
+// start allocates the identity of the backup, pins the bucket that it writes
+// through, and records the effective restore size of the brokers. The id
+// comes after the highest id that a visible sibling holds, so a clock that
+// stepped backwards cannot reuse one. start only mutates status. The caller
+// persists it.
 func (r *LogicalBackupRDBMSReconciler) start(
 	backup *v1.LogicalBackupRDBMS,
 	precheck *logicalbackup.PreCheckResult,

@@ -15,13 +15,13 @@ limitations under the License.
 */
 
 // Package deleteobject is the delete subcommand of camunda-operator-cli,
-// which the cleanup Job of a deleted backup runs: it removes one object from
-// the backup bucket and exits. It runs where the identity lives — under the
-// cluster ServiceAccount that the storage contract binds — so a bucket on
-// workload identity is cleaned by the identity that wrote it, never by the
-// manager's. The environment is its whole interface, the same UPLOAD_*
-// contract the upload subcommand reads; a key that does not exist is
-// success, so a retried Job is idempotent.
+// which the cleanup Job of a deleted backup runs. It removes one object from
+// the backup bucket and exits. It runs where the identity lives, under the
+// cluster ServiceAccount that the storage contract binds. The identity that
+// wrote a bucket on workload identity therefore also cleans it, and the
+// identity of the manager never does. The environment is its whole
+// interface, the same UPLOAD_* contract that the upload subcommand reads. A
+// key that does not exist is success, so a retried Job is idempotent.
 package deleteobject
 
 import (
@@ -42,7 +42,7 @@ type deleter interface {
 }
 
 // Run reads the environment, opens the bucket, and deletes the object. It is
-// the entry point of the subcommand; a non-nil error means a non-zero exit.
+// the entry point of the subcommand. A non-nil error means a non-zero exit.
 func Run(ctx context.Context) error {
 	return run(ctx, os.Getenv, openBucket)
 }

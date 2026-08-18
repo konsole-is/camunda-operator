@@ -43,7 +43,7 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 
 	// The controller adds its finalizer concurrently, so a plain update of
 	// the created object can lose to a conflict instead of meeting the CEL
-	// rule. mutate updates the live object; only the CEL rejection ends the
+	// rule. mutate updates the live object. Only the CEL rejection ends the
 	// retry.
 	mutate := func(backup *v1.LogicalBackupRDBMS, change func(*v1.LogicalBackupRDBMS)) error {
 		var current v1.LogicalBackupRDBMS
@@ -80,8 +80,8 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// The schema itself bounds a backup's extraEnvFrom: without a safe
-	// prefix a source could supply PGHOSTADDR and redirect the dump.
+	// The schema itself bounds the extraEnvFrom of a backup. Without a safe
+	// prefix, a source can supply PGHOSTADDR and redirect the dump.
 	It("rejects a backup extraEnvFrom source without a safe prefix", func() {
 		backup := valid()
 		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{

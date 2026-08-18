@@ -51,7 +51,7 @@ var (
 	reconciler    *LogicalBackupRDBMSReconciler
 )
 
-// fakeBucket records the deletes of the finalizer, standing in for the
+// fakeBucket records the deletes of the finalizer. It stands in for the
 // backup bucket.
 type fakeBucket struct {
 	mu      sync.Mutex
@@ -81,9 +81,9 @@ func TestLogicalBackupRDBMSController(t *testing.T) {
 	RunSpecs(t, "LogicalBackupRDBMS Controller Suite")
 }
 
-// The CamundaCluster controller is deliberately absent: the specs publish the
-// management binding and the credential copies themselves, so the backup
-// controller is tested against the contract, not the producer.
+// The CamundaCluster controller is deliberately absent. The specs publish the
+// management binding and the credential copies themselves, so the suite tests
+// the backup controller against the contract, not the producer.
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
@@ -101,7 +101,7 @@ var _ = BeforeSuite(func() {
 			CLIImage:      "ghcr.io/konsole-is/camunda-operator-cli:test",
 			RetryInterval: time.Second,
 			// Small graces, so the specs that outwait them stay fast. The
-			// windows the specs assert within must stay well inside these.
+			// windows that the specs assert within must stay well inside these.
 			MidRunGrace:       4 * time.Second,
 			RegistrationGrace: 4 * time.Second,
 			OpenBucket: func(

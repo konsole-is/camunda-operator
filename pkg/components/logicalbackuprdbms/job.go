@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // Package logicalbackuprdbms renders the Job that backs up the logical
-// database of a relational orchestration cluster: a pg_dump into a scratch
-// volume, then an upload of the archive to the backup bucket. The package is
-// pure: spec in, resources out, no API calls.
+// database of a relational orchestration cluster. The Job runs pg_dump into
+// a scratch volume, then uploads the archive to the backup bucket. The
+// package is pure: spec in, resources out, no API calls.
 package logicalbackuprdbms
 
 import (
@@ -49,73 +49,75 @@ const (
 	scratchVolumeName = "scratch"
 	// scratchMountPath is where both containers see the scratch volume.
 	scratchMountPath = "/scratch"
-	// DumpFileName is the file the dump is written to and uploaded from, and
-	// the last segment of the object key in the bucket; DumpObjectKey builds
-	// the whole key.
+	// DumpFileName is the file that pg_dump writes and that the upload reads.
+	// It is also the last segment of the object key in the bucket.
+	// DumpObjectKey builds the whole key.
 	DumpFileName = "camunda.dump"
 	// defaultBackoffLimit bounds the pod retries of the Job. A dump that
 	// fails three times needs a human, not a fourth pod.
 	defaultBackoffLimit = int32(3)
-	// DefaultActiveDeadlineSeconds bounds a Job whose dump block sets no
-	// deadline: 24 hours, room for a very large dump, never "forever". A pod
-	// that cannot start — an image that does not pull, a volume that does
-	// not bind — consumes no backoff, so without a deadline the Job would
-	// stay active for as long as the backup lived.
+	// DefaultActiveDeadlineSeconds is the deadline of a Job whose dump block
+	// sets none: 24 hours. The value is large so that a very large dump
+	// completes. It is not unbounded because a pod that cannot start uses no
+	// backoff. Examples are an image that does not pull and a volume that
+	// does not bind. Without a deadline, such a Job stays active as long as
+	// the backup lives.
 	DefaultActiveDeadlineSeconds = int64(24 * 60 * 60)
 	// postgresUID is the uid of the postgres user in the upstream image. It
-	// is also the fsGroup of the pod, so a PVC-backed scratch volume — which
-	// a storage class commonly hands over root-owned — is writable by
-	// pg_dump.
+	// is also the fsGroup of the pod. A storage class commonly hands over a
+	// PVC-backed scratch volume root-owned, and the fsGroup lets pg_dump
+	// write to it.
 	postgresUID = int64(999)
 	// operatorUID is the uid of the distroless nonroot user that the
 	// operator image runs as.
 	operatorUID = int64(65532)
-	// BackupUIDLabel carries the UID of the LogicalBackupRDBMS a Job works
-	// for. A reconcile checks it before it adopts a Job by name, so a
-	// leftover Job of a same-named backup that was deleted and recreated is
-	// never tracked as this one's.
+	// BackupUIDLabel carries the UID of the LogicalBackupRDBMS that a Job
+	// works for. A reconcile checks it before it adopts a Job by name. A
+	// leftover Job of a deleted and recreated backup with the same name is
+	// therefore never tracked as the Job of this backup.
 	BackupUIDLabel = "camunda.io/logical-backup-rdbms-uid"
 	// jobNameSuffix ends every dump Job name.
 	jobNameSuffix = "-dump"
 	// nameHashLength is the hex length of the hash that keeps a long name
-	// unique once it is truncated to a DNS label.
+	// unique after boundedName truncates it to a DNS label.
 	nameHashLength = 10
 )
 
 // DumpObjectKey returns the key of the dump of one backup in the bucket:
 // <basePath>/<namespace>/<cluster>/<id>/<uid>/camunda.dump. The backup id
-// groups the dump with the Zeebe backup that it pairs with; the UID of the
-// backup resource is what makes the key its own. Nothing arbitrates the id
-// of a dump against the ids of deleted backups — the Zeebe request carries
-// no id — so a clock that stepped backwards can allocate an id again. A key
-// of the id alone would then overwrite the dump that a deleted backup left
-// behind, and the finalizer would delete it as its own. With the UID in the
-// key a backup writes only its own object, and the finalizer deletes only
-// that.
+// groups the dump with the Zeebe backup that it pairs with. The UID of the
+// backup resource makes the key unique to this backup. Nothing arbitrates
+// the id of a dump against the ids of deleted backups, because the Zeebe
+// request carries no id. A clock that stepped backwards can therefore
+// allocate an id again. A key of the id alone then overwrites the dump that
+// a deleted backup left behind, and the finalizer deletes it as its own.
+// With the UID in the key, a backup writes only its own object, and the
+// finalizer deletes only that object.
 func DumpObjectKey(basePath, namespace, cluster string, id int64, uid types.UID) string {
 	return logicalbackup.ObjectKeyPrefix(basePath, namespace, cluster, id) + "/" + string(uid) + "/" + DumpFileName
 }
 
-// reservedEnvPrefixes start the environment variables a per-backup dump
-// block may not supply: everything libpq reads (PG*) and the whole upload
-// contract (UPLOAD_*). The rule is prefix-based, case-sensitive like libpq,
-// because a finite list cannot be: PGHOSTADDR redirects the connection even
-// when PGHOST is set, PGSERVICE and PGPASSFILE swap the identity, PGOPTIONS
-// injects server options — any PG* name is connection policy. The cluster's
-// own spec.backup.dump is not restricted: its owner sets policy inside their
-// own boundary, and no boundary is crossed there.
+// reservedEnvPrefixes start the environment variables that a per-backup
+// dump block must not supply: everything that libpq reads (PG*) and the
+// whole upload contract (UPLOAD_*). The rule is prefix-based and
+// case-sensitive like libpq, because a finite list cannot cover libpq.
+// PGHOSTADDR redirects the connection even when PGHOST is set. PGSERVICE
+// and PGPASSFILE swap the identity. PGOPTIONS injects server options. Any
+// PG* name is connection policy. The cluster's own spec.backup.dump is not
+// restricted. Its owner sets policy inside their own boundary, and no
+// boundary is crossed there.
 var reservedEnvPrefixes = []string{"PG", "UPLOAD_"}
 
 // The environment contract of the upload subcommand. The Job renders these
-// variables and cmd/upload reads them; they are the only interface between
-// the two.
+// variables and internal/cli/upload reads them. They are the only interface
+// between the two.
 const (
 	// EnvUploadFile is the path of the file to upload.
 	EnvUploadFile = "UPLOAD_FILE"
 	// EnvUploadKey is the object key the file is uploaded to.
 	EnvUploadKey = "UPLOAD_KEY"
-	// EnvUploadStorageName is the name of the ObjectStorageConfig, used in
-	// error messages.
+	// EnvUploadStorageName is the name of the ObjectStorageConfig. The
+	// subcommand uses it in error messages.
 	EnvUploadStorageName = "UPLOAD_STORAGE_NAME"
 	// EnvUploadStorageSpec is the ObjectStorageConfigSpec as JSON. The spec
 	// of the contract is the wire format, so the Job and the subcommand can
@@ -123,40 +125,41 @@ const (
 	EnvUploadStorageSpec = "UPLOAD_STORAGE_SPEC"
 	// EnvUploadCredentialKeys names the Secret keys of the contract's static
 	// credentials, comma-separated in the contract's own order. Each listed
-	// key arrives as its own EnvUploadCredentialPrefix<index> variable, and
-	// the subcommand rebuilds the Secret data from the pair — so the one
-	// mapping in objectstore.CredentialsFrom serves the upload too. Unset
-	// for workload identity.
+	// key arrives as its own EnvUploadCredentialPrefix<index> variable. The
+	// subcommand rebuilds the Secret data from the pair, so the one mapping
+	// in objectstore.CredentialsFrom serves the upload too. It is unset for
+	// workload identity.
 	EnvUploadCredentialKeys = "UPLOAD_CREDENTIAL_KEYS"
 	// EnvUploadCredentialPrefix prefixes the indexed credential values.
 	EnvUploadCredentialPrefix = "UPLOAD_CREDENTIAL_"
 )
 
 // JobInput is everything the Job of one backup renders from. The controller
-// resolves it; the builder only shapes it.
+// resolves it. The builder only shapes it.
 type JobInput struct {
 	// Backup is the LogicalBackupRDBMS the Job works for.
 	Backup *v1.LogicalBackupRDBMS
 	// ClusterName identifies the backed-up cluster. The Job runs in the
-	// namespace of the backup, which is the cluster's: the ServiceAccount
-	// and the credential copies live there.
+	// namespace of the backup, which is the namespace of the cluster. The
+	// ServiceAccount and the credential copies live there.
 	ClusterName string
-	// Dump shapes the pod: the backup's spec.dump when set, else the pod
-	// settings of the cluster's spec.backup.dump. Nil means defaults.
+	// Dump shapes the pod. It is the backup's spec.dump when that is set,
+	// otherwise the pod settings of the cluster's spec.backup.dump. Nil
+	// means defaults.
 	Dump *v1.DumpPodSpec
-	// PostgresImage runs the dump container: the cluster block's image, or
-	// empty for the default postgres:<ServerVersion>. It never comes from
-	// the backup — the Job runs under the cluster's ServiceAccount, so the
-	// executable is the cluster owner's choice.
+	// PostgresImage is the image of the dump container. It is the image of
+	// the cluster block, or empty for the default postgres:<ServerVersion>.
+	// It never comes from the backup. The Job runs under the cluster's
+	// ServiceAccount, so the executable is the choice of the cluster owner.
 	PostgresImage string
 	// Bucket is the backup bucket contract.
 	Bucket *v1.ObjectStorageConfig
 	// BucketSecretName is the credentials Secret of the bucket as reachable
-	// from the cluster namespace: the source Secret itself when it lives
-	// there, or its local copy otherwise. Empty means workload identity.
+	// from the cluster namespace. It is the source Secret itself when that
+	// lives there, otherwise its local copy. Empty means workload identity.
 	BucketSecretName string
-	// DBSecretName is the backup user of the database, reachable the same
-	// way, with DBUsernameKey and DBPasswordKey naming its keys.
+	// DBSecretName is the Secret of the backup user of the database,
+	// reachable the same way. DBUsernameKey and DBPasswordKey name its keys.
 	DBSecretName  string
 	DBUsernameKey string
 	DBPasswordKey string
@@ -172,18 +175,19 @@ type JobInput struct {
 	Database string
 	// ObjectKey is the full key of the dump in the bucket.
 	ObjectKey string
-	// CLIImage is the camunda-operator-cli image, whose upload subcommand
-	// streams the dump to the bucket. It is shipped separately from the
-	// manager; the manager receives it as --camunda-operator-cli-image.
+	// CLIImage is the camunda-operator-cli image. Its upload subcommand
+	// streams the dump to the bucket. The image ships separately from the
+	// manager, and the manager receives it as --camunda-operator-cli-image.
 	CLIImage string
 }
 
 // JobName returns the name of the Job of one backup. It derives from the
-// backup name alone: the Job lives in the backup's own namespace, where that
-// name is unique, so a reconcile that re-enters after a crash adopts the Job
-// it already created instead of creating a second one. A backup name may be
-// a full DNS subdomain while a Job name is a DNS label, so a long name is
-// truncated deterministically and kept unique by a hash of the whole name.
+// backup name alone. The Job lives in the backup's own namespace, where that
+// name is unique. A reconcile that re-enters after a crash therefore adopts
+// the Job that it already created instead of a second one. A backup name can
+// be a full DNS subdomain, but a Job name is a DNS label. boundedName
+// therefore truncates a long name deterministically and keeps it unique with
+// a hash of the whole name.
 func JobName(backup *v1.LogicalBackupRDBMS) string {
 	return boundedName(backup.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
 }
@@ -202,20 +206,20 @@ func boundedName(name string, limit int) string {
 	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
 }
 
-// JobBelongsTo reports whether job carries the identity of backup: the UID
-// label BuildJob stamps. A Job found by name with another UID is a leftover
-// of a deleted-and-recreated backup of the same name, or foreign, and must
-// not be adopted or deleted for this one.
+// JobBelongsTo reports whether job carries the identity of backup, that is
+// the UID label that BuildJob stamps. A Job found by name with another UID
+// is a leftover of a deleted and recreated backup of the same name, or a
+// foreign Job. The reconcile must not adopt or delete it for this backup.
 func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
 	return job.Labels[BackupUIDLabel] == string(backup.UID)
 }
 
-// ReservedEnv returns the names in a per-backup dump block's extraEnv that
-// the Job reserves for itself — any name under a reserved prefix — in the
-// order they appear, or nothing when the block is clean. The controller
-// rejects a per-backup block that names one at admission, with the names in
-// the message. Run it on the backup's own spec.dump, never on the cluster's
-// block.
+// ReservedEnv returns the names in the extraEnv of a per-backup dump block
+// that the Job reserves for itself, in the order they appear. A reserved
+// name is any name under a reserved prefix. It returns nothing when the
+// block is clean. The controller rejects a per-backup block that names one
+// at admission, with the names in the message. Callers run it on the
+// backup's own spec.dump, never on the cluster's block.
 func ReservedEnv(dump *v1.DumpPodSpec) []string {
 	if dump == nil {
 		return nil
@@ -242,12 +246,12 @@ func isReservedEnv(name string) bool {
 
 // UnsafeEnvFrom returns the extraEnvFrom sources of a per-backup dump block
 // whose prefix does not neutralize the keys of the referenced Secret or
-// ConfigMap, as "source <i>" descriptions. envFrom keys are chosen by
-// whoever writes the referenced object, so without a safe prefix a source
-// can supply PGHOSTADDR — which libpq prefers over the Job's own PGHOST,
-// redirecting the dump with the injected credentials. The CRD schema
-// enforces the same rule; this is the second layer. Run it on the backup's
-// own spec.dump, never on the cluster's block.
+// ConfigMap. It describes each source as "source <i>". The writer of the
+// referenced object chooses the envFrom keys. Without a safe prefix, a
+// source can therefore supply PGHOSTADDR, which libpq prefers over the Job's
+// own PGHOST, and redirect the dump with the injected credentials. The CRD
+// schema enforces the same rule. This function is the second layer. Callers
+// run it on the backup's own spec.dump, never on the cluster's block.
 func UnsafeEnvFrom(dump *v1.DumpPodSpec) []string {
 	if dump == nil {
 		return nil
@@ -263,9 +267,9 @@ func UnsafeEnvFrom(dump *v1.DumpPodSpec) []string {
 }
 
 // SafeEnvFromPrefix reports whether prefix guarantees that no key of an
-// envFrom source can land on a reserved name: it is non-empty, starts no
-// reserved prefix, and is no head of one — a prefix "P" plus a key "GHOST"
-// would spell PGHOST.
+// envFrom source can land on a reserved name. A safe prefix is non-empty,
+// starts with no reserved prefix, and is no head of one. For example, the
+// prefix "P" plus the key "GHOST" spells PGHOST.
 func SafeEnvFromPrefix(prefix string) bool {
 	if prefix == "" {
 		return false
@@ -280,10 +284,11 @@ func SafeEnvFromPrefix(prefix string) bool {
 }
 
 // BuildJob renders the Job that dumps the logical database and uploads the
-// archive. An initContainer runs pg_dump into the scratch volume; the main
+// archive. An initContainer runs pg_dump into the scratch volume. The main
 // container streams the file to the bucket, so the Job succeeds only when
-// the upload did. The two containers run in turn, and one resource block
-// sizes both: the pod's effective request is the maximum, not the sum.
+// the upload succeeded. The two containers run in turn, and one resource
+// block sizes both. The effective request of the pod is the maximum, not
+// the sum.
 func BuildJob(in JobInput) (*batchv1.Job, error) {
 	if in.CLIImage == "" {
 		return nil, fmt.Errorf("building the dump Job of %q: the camunda-operator-cli image is empty", in.Backup.Name)
@@ -308,8 +313,9 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		return nil, fmt.Errorf("encoding the bucket spec of %q: %w", in.Bucket.Name, err)
 	}
 
-	// Label values are DNS labels too; the owner label carries the bounded
-	// name, and the UID label carries the identity that never truncates.
+	// Label values are bounded like DNS labels. The owner label carries the
+	// bounded name, and the UID label carries the identity that never
+	// truncates.
 	managed := labels.Managed(
 		labels.LogicalBackupRDBMS(boundedName(in.Backup.Name, validation.LabelValueMaxLength)),
 		componentName,
@@ -317,7 +323,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	managed[labels.ClusterKey] = in.ClusterName
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
-	// The workload-identity pod label is operator-required: without it the
+	// The workload-identity pod label is operator-required. Without it, the
 	// Azure webhook injects no token, whatever the ServiceAccount carries.
 	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
 	podLabels := labels.Merge(dump.PodLabels, podManaged)
@@ -447,9 +453,9 @@ func uploadContainer(in JobInput, dump *v1.DumpPodSpec, spec string) corev1.Cont
 }
 
 // credentialEnv projects the static credentials of the bucket, key by key in
-// the contract's own order, so the subcommand rebuilds the Secret data and
-// hands it to the one mapping in objectstore.CredentialsFrom. Workload
-// identity projects nothing: the provider chain authenticates as the
+// the contract's own order. The subcommand rebuilds the Secret data from them
+// and hands it to the one mapping in objectstore.CredentialsFrom. Workload
+// identity projects nothing. The provider chain then authenticates as the
 // ServiceAccount of the pod.
 func credentialEnv(in JobInput) []corev1.EnvVar {
 	credentials := in.Bucket.CredentialsSecret()
@@ -471,11 +477,11 @@ func credentialEnv(in JobInput) []corev1.EnvVar {
 	return env
 }
 
-// mergeEnv combines the variables the Job sets with the extras of the dump
-// block, by name: the Job's own values always win, and a name appears once,
-// so a duplicate can neither redirect the dump nor make the apply fail on a
-// duplicate list-map key. Admission already rejects reserved names; this is
-// the second layer.
+// mergeEnv combines the variables that the Job sets with the extras of the
+// dump block, by name. The Job's own values always win, and a name appears
+// once. A duplicate can therefore neither redirect the dump nor make the
+// apply fail on a duplicate list-map key. Admission already rejects reserved
+// names. This function is the second layer.
 func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
 	merged := make([]corev1.EnvVar, 0, len(own)+len(extra))
 	merged = append(merged, own...)
@@ -489,10 +495,10 @@ func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
 	return merged
 }
 
-// scratchVolume returns the volume that holds the dump: an emptyDir bounded
-// by sizeLimit, or a generic ephemeral PersistentVolumeClaim when a storage
-// class is set, so a dump larger than the node's ephemeral storage still
-// fits.
+// scratchVolume returns the volume that holds the dump. It is an emptyDir
+// bounded by sizeLimit, or a generic ephemeral PersistentVolumeClaim when a
+// storage class is set. The claim lets a dump larger than the node's
+// ephemeral storage fit.
 func scratchVolume(dump *v1.DumpPodSpec) corev1.Volume {
 	scratch := corev1.Volume{Name: scratchVolumeName}
 
@@ -521,7 +527,7 @@ func scratchVolume(dump *v1.DumpPodSpec) corev1.Volume {
 }
 
 // containerSecurity is the restricted-profile security context of one
-// container, running as the given non-root uid.
+// container that runs as the given non-root uid.
 func containerSecurity(uid int64) *corev1.SecurityContext {
 	return &corev1.SecurityContext{
 		RunAsUser:                new(uid),

@@ -61,8 +61,8 @@ func trackedBackup() *v1.LogicalBackupRDBMS {
 // foreignUID marks a Job or pod of another backup in the fixtures.
 const foreignUID = "uid-of-someone-else"
 
-// ownJob is the Job of backup as BuildJob stamps it: named after the backup
-// and carrying its UID.
+// ownJob is the Job of backup as BuildJob stamps it, named after the backup
+// and with its UID.
 func ownJob(backup *v1.LogicalBackupRDBMS) *batchv1.Job {
 	return &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
 		Name: backup.Status.JobName, Namespace: backup.Namespace,
@@ -70,10 +70,10 @@ func ownJob(backup *v1.LogicalBackupRDBMS) *batchv1.Job {
 	}}
 }
 
-// TestDumpTrustsTheLiveViewOverAStaleCache pins the read-your-writes gap:
-// right after the apply, the informer cache may not hold the Job yet. A
-// cached NotFound alone must never terminally fail the backup while the live
-// view still sees the Job.
+// TestDumpTrustsTheLiveViewOverAStaleCache pins the read-your-writes gap.
+// Right after the apply, the informer cache can still miss the Job. A cached
+// NotFound alone must never terminally fail the backup while the live view
+// still sees the Job.
 func TestDumpTrustsTheLiveViewOverAStaleCache(t *testing.T) {
 	t.Parallel()
 
@@ -82,7 +82,7 @@ func TestDumpTrustsTheLiveViewOverAStaleCache(t *testing.T) {
 	job := ownJob(backup)
 
 	r := &LogicalBackupRDBMSReconciler{
-		// The cache lost the race: no Job. The live view has it.
+		// The cache lost the race and has no Job. The live view has it.
 		Client:    fake.NewClientBuilder().WithScheme(scheme).Build(),
 		APIReader: fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build(),
 		opts:      Options{RetryInterval: time.Second},
@@ -96,8 +96,8 @@ func TestDumpTrustsTheLiveViewOverAStaleCache(t *testing.T) {
 }
 
 // TestDumpFailsWhenTheJobIsGoneFromTheLiveView is the true hand-deletion
-// case: both views agree the Job is gone, so the dump cannot be trusted to
-// have uploaded.
+// case. Both views agree that the Job is gone, so the controller cannot
+// trust that the dump uploaded.
 func TestDumpFailsWhenTheJobIsGoneFromTheLiveView(t *testing.T) {
 	t.Parallel()
 
@@ -118,10 +118,10 @@ func TestDumpFailsWhenTheJobIsGoneFromTheLiveView(t *testing.T) {
 	assert.Equal(t, settle, wait)
 }
 
-// TestDumpNeverAdoptsAnotherBackupsJob pins the identity check: a Job under
-// this backup's name that carries another UID belongs to another backup —
-// tracking it would let this backup advance without a dump of its own, so it
-// is a hard failure naming the conflicting Job.
+// TestDumpNeverAdoptsAnotherBackupsJob pins the identity check. A Job under
+// this backup's name that carries another UID belongs to another backup. If
+// the controller tracks it, this backup advances without a dump of its own.
+// So it is a hard failure that names the conflicting Job.
 func TestDumpNeverAdoptsAnotherBackupsJob(t *testing.T) {
 	t.Parallel()
 
@@ -145,8 +145,8 @@ func TestDumpNeverAdoptsAnotherBackupsJob(t *testing.T) {
 }
 
 // TestStuckPodClassifiesWaitingStates pins which pod states count as stuck:
-// the waiting reasons the kubelet retries forever, and an unschedulable pod;
-// a plain Pending pod without either is still progressing.
+// the waiting reasons that the kubelet retries without end, and an
+// unschedulable pod. A plain Pending pod without either still progresses.
 func TestStuckPodClassifiesWaitingStates(t *testing.T) {
 	t.Parallel()
 

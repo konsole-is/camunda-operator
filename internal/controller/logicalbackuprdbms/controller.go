@@ -14,20 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package logicalbackuprdbms reconciles a LogicalBackupRDBMS: it runs the Job
+// Package logicalbackuprdbms reconciles a LogicalBackupRDBMS. It runs the Job
 // that dumps the logical database of a relational cluster to the backup
-// bucket, then requests one Zeebe backup — Camunda's own backup of its
-// primary storage — so the pair is a complete restore point.
+// bucket. Then it requests one Zeebe backup, which is Camunda's own backup of
+// its primary storage, so that the pair is a complete restore point.
 //
-// Admission and runtime are split. The full pre-checks — references, storage
-// type, serialization against other backups — run only until the backup
-// starts. A running backup re-resolves only what its current step needs, so
-// a reference that breaks mid-run cannot park it: it either finishes on what
-// it already holds, or terminalizes after a bounded grace.
+// Admission and runtime are split. The full pre-checks run only until the
+// backup starts: the references, the storage type, and the serialization
+// against other backups. A running backup re-resolves only what its current
+// step needs. A reference that breaks mid-run cannot park it. The backup
+// either finishes on what it already holds, or terminalizes after a bounded
+// grace.
 //
-// The files follow the steps: admit.go admits and starts a backup, dump.go
-// runs the dump Job, zeebebackup.go requests and polls the Zeebe backup,
-// serialization.go gates the backups of one cluster, finalizer.go cleans up.
+// The files follow the steps. admit.go admits and starts a backup. dump.go
+// runs the dump Job. zeebebackup.go requests and polls the Zeebe backup.
+// serialization.go gates the backups of one cluster. finalizer.go cleans up.
 // This file holds what every step shares: Reconcile, the terminal phases,
 // and the wiring.
 package logicalbackuprdbms
@@ -68,12 +69,13 @@ const (
 	// that nothing watches.
 	defaultRetryInterval = 30 * time.Second
 	// defaultMidRunGrace bounds how long a running backup waits on a
-	// dependency that stopped resolving before it fails. A broken reference
-	// parks one backup for this long at most, never forever — a parked
-	// non-terminal backup blocks every later backup of the cluster.
+	// dependency that stopped resolving before the backup fails. A broken
+	// reference parks one backup for this long at most. The bound exists
+	// because a parked non-terminal backup blocks every later backup of the
+	// cluster.
 	defaultMidRunGrace = 10 * time.Minute
 	// defaultRegistrationGrace bounds how long the Zeebe backup poll
-	// tolerates a backup the cluster does not report yet: the partitions
+	// tolerates a backup that the cluster does not report yet. The partitions
 	// register their parts asynchronously after the 202.
 	defaultRegistrationGrace = 2 * time.Minute
 
@@ -91,9 +93,9 @@ type ArtifactBucket interface {
 	Close()
 }
 
-// hold is the domain result of one reconcile step: how long to wait before
-// the next look, or nothing when watches carry the wake-up. Only Reconcile
-// turns it into a ctrl.Result.
+// hold is the domain result of one reconcile step. It says how long to wait
+// before the next look, or nothing when watches carry the wake-up. Only
+// Reconcile turns it into a ctrl.Result.
 type hold struct {
 	after time.Duration
 }
@@ -106,14 +108,14 @@ var (
 )
 
 // Options configures the reconciler at construction. Only CLIImage is
-// required; every other field has a default that fits production, and the
+// required. Every other field has a default that fits production, and the
 // tests set what they need to observe.
 type Options struct {
 	// CLIImage is the camunda-operator-cli image that the upload container
 	// of the dump Job runs. The manager passes --camunda-operator-cli-image.
 	CLIImage string
 	// OpenBucket opens the backup bucket for the finalizer. Nil means
-	// pkg/objectstore; tests point it at a local fake.
+	// pkg/objectstore. Tests point it at a local fake.
 	OpenBucket func(
 		ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
 	) (ArtifactBucket, error)
@@ -126,8 +128,8 @@ type Options struct {
 	RegistrationGrace time.Duration
 }
 
-// withDefaults fills the zero fields of o with the production defaults and
-// rejects an empty CLIImage: the Job builder could only guess an image.
+// withDefaults fills the zero fields of o with the production defaults. It
+// rejects an empty CLIImage because the Job builder cannot guess an image.
 func (o Options) withDefaults() (Options, error) {
 	if o.CLIImage == "" {
 		return o, errors.New("the camunda-operator-cli image is required")
@@ -181,12 +183,12 @@ type LogicalBackupRDBMSReconciler struct {
 // then the Zeebe backup of the cluster. It is the only function that builds
 // a ctrl.Result.
 //
-// The backup is read live, not from the cache: the step switch below is the
-// state machine's authority, and a requeue that arrives before the informer
-// caught up with the last flush must not re-enter a step that already ran.
-// Each branch is re-entrant on its own — the identity is persisted before
-// the Job exists, the Zeebe backup id before it is polled — so this is the
-// second layer, not the only one.
+// Reconcile reads the backup live, not from the cache. The step switch below
+// is the authority of the state machine. A requeue that arrives before the
+// informer caught up with the last flush must not re-enter a step that
+// already ran. Each branch is also re-entrant on its own: the identity is
+// persisted before the Job exists, and the Zeebe backup id before it is
+// polled. The live read is the second layer, not the only one.
 func (r *LogicalBackupRDBMSReconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request,
@@ -224,10 +226,10 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 
 	if backup.Terminal() {
 		// A conflict on the terminal flush can restore a stale Ready from
-		// the server; re-staging the terminal condition is idempotent and
-		// heals it on the next look. The claim on the cluster goes back
-		// here, after the terminal status was flushed and never before it.
-		// Release is a no-op when nothing is held.
+		// the server. stageTerminal is idempotent and heals it on the next
+		// look. The claim on the cluster goes back here, after the terminal
+		// status was flushed and never before it. Release is a no-op when
+		// nothing is held.
 		r.stageTerminal(&backup)
 		if err := r.releaseClaim(ctx, &backup); err != nil {
 			return ctrl.Result{}, err
@@ -271,10 +273,11 @@ func (r *LogicalBackupRDBMSReconciler) complete(backup *v1.LogicalBackupRDBMS) {
 }
 
 // fail terminalizes the backup with message. The message often carries an
-// external error — a management API body, a pod's waiting message, a Job
-// reason — whose size the controller cannot know, so it is bounded before it
-// reaches the free-form status field; the Ready condition it also feeds is
-// bounded by conditions itself.
+// external error whose size the controller cannot know, for example a
+// management API body, the waiting message of a pod, or a Job reason. So
+// fail bounds the message before it reaches the free-form status field. The
+// conditions package itself bounds the Ready condition that the message
+// also feeds.
 func (r *LogicalBackupRDBMSReconciler) fail(backup *v1.LogicalBackupRDBMS, message string) {
 	now := metav1.Now()
 	message = conditions.BoundMessage(message)
@@ -353,9 +356,9 @@ func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts O
 		Complete(r)
 }
 
-// clusterChanged passes the cluster events a waiting backup cares about: a
+// clusterChanged passes the cluster events that a waiting backup needs: a
 // spec change (suspend, references) or a change of the published management
-// binding. Bare status noise wakes nothing.
+// binding. Other status changes wake nothing.
 func clusterChanged() predicate.Predicate {
 	changed := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {

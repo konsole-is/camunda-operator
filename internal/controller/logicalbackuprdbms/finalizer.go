@@ -39,27 +39,29 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
-// errRepairable marks a cleanup failure the user can fix — a credentials
-// Secret that exists but lost a key, a failed cleanup Job. The finalizer
-// holds and polls for the repair instead of releasing or backing off.
+// errRepairable marks a cleanup failure that the user can repair. Examples
+// are a credentials Secret that exists but lost a key, or a failed cleanup
+// Job. The finalizer holds and polls for the repair. It does not release, and
+// it does not back off.
 var errRepairable = errors.New("cleanup is waiting for a repair")
 
-// errCleanupRunning means the cleanup Job of the backup runs and the object
-// delete waits for its result.
+// errCleanupRunning means that the cleanup Job of the backup runs and that
+// the object delete waits for its result.
 var errCleanupRunning = errors.New("the cleanup Job is running")
 
 // finalize removes the artifacts of a deleted backup: the Job and the dump
-// object, keyed strictly on this backup's own object key. Zeebe backups are
-// never touched: they belong to the continuous range that a point-in-time
-// restore consumes. The order matters: the Job goes first, and the object is
-// deleted only once the live API confirms the Job and its pods are gone, so a
-// terminating uploader cannot recreate the object after the delete. Transient
-// errors are returned, so the deletion retries; only when the dependency
-// chain is genuinely gone — the cluster, the pinned bucket, or its
-// credentials no longer exist — or when the pinned bucket now points
-// somewhere else does the finalizer release with an event that records what
-// was left behind, so a dead or retargeted contract never blocks deletion
-// forever and never deletes a stranger's object.
+// object. The dump object is keyed strictly on the object key of this backup.
+// It never touches Zeebe backups. They belong to the continuous range that a
+// point-in-time restore consumes. The order matters. The Job goes first. The
+// object is deleted only after the live API confirms that the Job and its
+// pods are gone. Then an uploader that still terminates cannot recreate the
+// object after the delete. A transient error is returned, so the deletion
+// retries. The finalizer releases in two cases only: when the dependency
+// chain is gone (the cluster, the pinned bucket, or its credentials no longer
+// exist), or when the pinned bucket now points somewhere else. In both cases
+// it records an event that names what it left behind. So a dead or
+// retargeted contract never blocks the deletion, and the finalizer never
+// deletes the object of a stranger.
 func (r *LogicalBackupRDBMSReconciler) finalize(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -73,8 +75,9 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 		return settle, err
 	}
 	if !gone {
-		// The Job or its pods are still terminating; the object must wait,
-		// or an upload still in flight could recreate it after the delete.
+		// The termination of the Job or its pods is not complete. The object
+		// must wait. If it does not wait, an upload that is still in flight
+		// can recreate it after the delete.
 		return hold{after: shortly.after}, nil
 	}
 
@@ -84,8 +87,9 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 			return hold{after: shortly.after}, nil
 		}
 		if errors.Is(err, errRepairable) {
-			// The user has to act; poll for the repair instead of backing off
-			// exponentially, so the deletion finishes soon after it lands.
+			// The user must act. The finalizer polls for the repair instead of
+			// an exponential backoff, so the deletion finishes soon after the
+			// repair lands.
 			return hold{after: r.opts.RetryInterval}, nil
 		}
 		if err != nil {
@@ -105,8 +109,8 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 		}
 	}
 
-	// The claim goes back before the finalizer does, also for a backup that
-	// claimed the cluster but never flushed an id.
+	// The claim is released before the finalizer is removed. This also holds
+	// for a backup that claimed the cluster but never flushed an id.
 	if err := r.releaseClaim(ctx, backup); err != nil {
 		return settle, err
 	}
@@ -114,15 +118,15 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 	return settle, r.releaseFinalizer(ctx, backup)
 }
 
-// deleteJob deletes the dump Job of the backup and reports whether it and
-// every pod of this backup are gone from the live API. The name is
+// deleteJob deletes the dump Job of the backup. It reports whether the Job
+// and every pod of this backup are gone from the live API. The Job name is
 // deterministic, so a crash that never recorded status.jobName still finds
-// it; the UID label decides whether it is this backup's — a Job of another
-// backup under the same name is left alone. The pods are always checked by
-// this backup's UID, whichever Job holds the name now: after a background
-// delete a foreign Job can take the name while this backup's uploader still
-// terminates, and that uploader must not be able to recreate the object after
-// the delete.
+// the Job. The UID label decides whether the Job belongs to this backup. A
+// Job of another backup under the same name is left alone. The pods are
+// always checked by the UID of this backup, whichever Job holds the name now.
+// After a background delete, a foreign Job can take the name while the
+// uploader of this backup still terminates. That uploader must not be able
+// to recreate the object after the delete.
 func (r *LogicalBackupRDBMSReconciler) deleteJob(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -136,11 +140,11 @@ func (r *LogicalBackupRDBMSReconciler) deleteJob(
 		return false, fmt.Errorf("reading the dump Job: %w", err)
 	case err == nil && components.JobBelongsTo(&job, backup):
 		if job.DeletionTimestamp.IsZero() {
-			// The observed UID is the delete's precondition, so the read and
-			// the delete are one step: a same-named stranger that lands in
-			// between answers Conflict and survives — the same pattern the
-			// generated Secrets use through SSA metadata.uid. NotFound and
-			// Conflict both mean "changed under us"; the requeue re-reads.
+			// The observed UID is the precondition of the delete, so the read
+			// and the delete are one step. A same-named stranger that lands in
+			// between answers Conflict and survives. The generated Secrets use
+			// the same pattern through SSA metadata.uid. NotFound and Conflict
+			// both mean that the object changed under us. The requeue re-reads.
 			if err := r.Delete(
 				ctx, &job,
 				client.PropagationPolicy(metav1.DeletePropagationBackground),
@@ -157,9 +161,9 @@ func (r *LogicalBackupRDBMSReconciler) deleteJob(
 }
 
 // podsGone reports whether no pod of this backup is left in the live API.
-// The Job's pod template carries the backup UID, so the check follows the
-// backup, not the Job name: a pod still terminating may still be uploading,
-// and a foreign pod under the same Job name never holds the deletion.
+// The pod template of the Job carries the backup UID, so the check follows
+// the backup, not the Job name. A pod that still terminates can still
+// upload. A foreign pod under the same Job name never holds the deletion.
 func (r *LogicalBackupRDBMSReconciler) podsGone(ctx context.Context, backup *v1.LogicalBackupRDBMS) (bool, error) {
 	pods, err := r.podsOf(ctx, backup)
 	if err != nil {
@@ -169,14 +173,15 @@ func (r *LogicalBackupRDBMSReconciler) podsGone(ctx context.Context, backup *v1.
 	return len(pods) == 0, nil
 }
 
-// deleteObject removes the dump from the pinned bucket — the one the backup
-// wrote through, and only while it still points where it did at the start.
-// It returns a non-empty reason when the object is left behind on purpose:
-// the dependency chain is genuinely gone (the cluster, the contract, or the
-// credentials Secret no longer exists), or the contract now points somewhere
-// else and a delete would hit a stranger's object at the same key. An error
-// means the failure is repairable or transient — a Secret missing a key, an
-// API hiccup — and the deletion retries until it is.
+// deleteObject removes the dump from the pinned bucket, the one that the
+// backup wrote through. It does so only while the bucket still points where
+// it did at the start. It returns a non-empty reason when it leaves the
+// object behind on purpose. That happens when the dependency chain is gone
+// (the cluster, the contract, or the credentials Secret no longer exists), or
+// when the contract now points somewhere else. In the second case a delete
+// hits the object of a stranger at the same key. An error means that the
+// failure is repairable or transient, for example a Secret that lacks a key
+// or an API hiccup. Then the deletion retries until it succeeds.
 func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -205,8 +210,8 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	}
 	if location := bucket.Location(); location != backup.Status.BucketLocation {
 		// The contract was retargeted under the object. The same key in the
-		// new location is a stranger's; leaving the old object is the safe
-		// failure.
+		// new location belongs to a stranger. To leave the old object is the
+		// safe failure.
 		return fmt.Sprintf(
 			"ObjectStorageConfig %q now points at %s, but the dump was written to %s; "+
 				"deleting there could hit an unrelated object",
@@ -215,11 +220,10 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	}
 
 	// Cleanup runs where the identity lives. A workload-identity bucket
-	// binds the CLUSTER ServiceAccount, which the manager does not have, so
-	// the delete runs as a Job under that ServiceAccount — the same identity
-	// surface that uploaded the object. A credentials-mode bucket is cleaned
-	// by the manager directly: it holds the Secret, no pod identity is
-	// involved.
+	// binds the CLUSTER ServiceAccount, which the manager does not have. So
+	// the delete runs as a Job under that ServiceAccount, the same identity
+	// surface that uploaded the object. The manager cleans a credentials-mode
+	// bucket directly. It holds the Secret, and no pod identity is involved.
 	credentials := bucket.CredentialsSecret()
 	if credentials == nil {
 		return r.cleanupWithJob(ctx, backup, &cluster, &bucket)
@@ -227,10 +231,11 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 
 	var creds *objectstore.Credentials
 	{
-		// The same rule the Job used: the source Secret when it lives in the
-		// cluster namespace, the local copy the CamundaCluster controller
-		// keeps otherwise. Either way the finalizer reads exactly the
-		// credentials the upload used.
+		// This is the rule that the Job used. When the source Secret lives in
+		// the cluster namespace, the finalizer reads it directly. Otherwise it
+		// reads the local copy that the CamundaCluster controller keeps.
+		// Either way the finalizer reads exactly the credentials that the
+		// upload used.
 		local := types.NamespacedName{
 			Namespace: cluster.Namespace,
 			Name: localSecretName(
@@ -250,10 +255,10 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 		}
 		parsed, err := objectstore.CredentialsFrom(&bucket, secret.Data)
 		if err != nil {
-			// The Secret exists but a configured key is missing: that is
-			// repairable, so the deletion is held and retried, not released
-			// — releasing would orphan the dump on an in-progress edit. The
-			// event makes the hold visible, so the user knows what to fix.
+			// The Secret exists but a configured key is missing. That is
+			// repairable, so the deletion is held and retried, not released.
+			// A release orphans the dump during an edit that is in progress.
+			// The event makes the hold visible, so the user knows what to fix.
 			r.EventRecorder.Eventf(
 				backup,
 				nil,
@@ -283,9 +288,9 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 	return "", nil
 }
 
-// releaseFinalizer removes the finalizer against the live object, retrying a
-// write conflict: the deletion itself updates the object concurrently, and
-// cleanup must not re-run over a resolvable conflict.
+// releaseFinalizer removes the finalizer against the live object and retries
+// a write conflict. The deletion itself updates the object concurrently, and
+// cleanup must not run again over a resolvable conflict.
 func (r *LogicalBackupRDBMSReconciler) releaseFinalizer(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -306,13 +311,14 @@ func (r *LogicalBackupRDBMSReconciler) releaseFinalizer(
 }
 
 // cleanupWithJob removes the dump object through a cleanup Job in the
-// backup's namespace, under the cluster ServiceAccount that the bucket's
-// workload identity is bound to. The Job's name is deterministic and its
-// creation is a create-only identity claim, like the dump Job's. A running
-// Job holds the delete (errCleanupRunning); a completed one is removed and
-// the cleanup counts as done; a failed one holds the deletion visibly
-// (errRepairable) with an event naming the Job — the user inspects it, and
-// deleting it retries with a fresh one.
+// namespace of the backup. The Job runs under the cluster ServiceAccount that
+// the workload identity of the bucket is bound to. The Job name is
+// deterministic, and its creation is a create-only identity claim, like the
+// dump Job. A running Job holds the delete (errCleanupRunning). A completed
+// Job is removed, and the cleanup counts as done. A failed Job holds the
+// deletion visibly (errRepairable) with an event that names the Job. The
+// user inspects the Job. When the user deletes it, the cleanup retries with
+// a fresh Job.
 func (r *LogicalBackupRDBMSReconciler) cleanupWithJob(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -361,8 +367,9 @@ func (r *LogicalBackupRDBMSReconciler) cleanupWithJob(
 	if err := controllerutil.SetControllerReference(backup, cleanup, r.Scheme); err != nil {
 		return "", fmt.Errorf("owning the cleanup Job: %w", err)
 	}
-	// Create-only, like every identity claim on a deterministic name; an
-	// AlreadyExists lost the race to a concurrent reconcile and re-reads.
+	// Create-only, like every identity claim on a deterministic name. An
+	// AlreadyExists lost the race to a concurrent reconcile, and the requeue
+	// re-reads.
 	if err := r.Create(ctx, cleanup); err != nil && !apierrors.IsAlreadyExists(err) {
 		return "", fmt.Errorf("creating the cleanup Job: %w", err)
 	}
@@ -371,7 +378,7 @@ func (r *LogicalBackupRDBMSReconciler) cleanupWithJob(
 }
 
 // watchCleanupJob maps the observed cleanup Job onto the deletion: done,
-// still running, or held on a failure the user must see.
+// still running, or held on a failure that the user must see.
 func (r *LogicalBackupRDBMSReconciler) watchCleanupJob(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -384,7 +391,7 @@ func (r *LogicalBackupRDBMSReconciler) watchCleanupJob(
 
 	switch status.Status {
 	case concepts.CompletionStatusCompleted:
-		// The object is gone; the Job served its purpose.
+		// The object is gone. The Job served its purpose.
 		if err := r.Delete(
 			ctx, job,
 			client.PropagationPolicy(metav1.DeletePropagationBackground),

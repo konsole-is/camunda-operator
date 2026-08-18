@@ -120,7 +120,7 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current validation state; the Ready condition
+                  Conditions represent the current validation state. The Ready condition
                   carries reasons Healthy, MissingSecret, or ConnectionFailed.
                 items:
                   description: Condition contains details for one aspect of the current
@@ -188,23 +188,23 @@ spec:
               probedAt:
                 description: |-
                   ProbedAt is when the operator last reached the server and read
-                  ServerVersion. The server is probed again when this is older than the
-                  probe interval, when the spec changed, or when the admin credentials
-                  Secret changed; a reconcile in between leaves it untouched.
+                  ServerVersion. The operator probes the server again when this is older
+                  than the probe interval, when the spec changed, or when the admin
+                  credentials Secret changed. A reconcile in between leaves it untouched.
                 format: date-time
                 type: string
               probedSecretVersion:
                 description: |-
                   ProbedSecretVersion is the resourceVersion of the admin credentials
-                  Secret the last probe used. A changed Secret is probed again before
-                  the interval, so rotated credentials are validated promptly.
+                  Secret that the last probe used. The operator probes a changed Secret
+                  again before the interval, so it validates rotated credentials promptly.
                 type: string
               serverVersion:
                 description: |-
-                  ServerVersion is the major version the server reported the last time
-                  the operator reached it, for example "17". A dump of a database on this
-                  server runs client tools of this major, so a backup waits until it is
-                  published.
+                  ServerVersion is the major version that the server reported the last
+                  time the operator reached it, for example "17". A dump of a database on
+                  this server runs client tools of this major, so a backup waits until
+                  the operator publishes it.
                 type: string
             type: object
         required:

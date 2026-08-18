@@ -35,10 +35,10 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 )
 
-// TestReleaseJobNeverDeletesAStranger pins the identity guard of the release:
-// a same-named Job of another backup — the deterministic name makes that
-// possible after a delete-and-recreate — survives the release, which just
-// clears the recorded name.
+// TestReleaseJobNeverDeletesAStranger pins the identity guard of the release.
+// A same-named Job of another backup survives the release, which only clears
+// the recorded name. The deterministic name makes such a Job possible after
+// a delete-and-recreate.
 func TestReleaseJobNeverDeletesAStranger(t *testing.T) {
 	t.Parallel()
 
@@ -94,10 +94,10 @@ func TestReleaseJobDeletesOwnJobWithItsUID(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(err), "our own Job is gone")
 }
 
-// TestFinalizerDeleteJobRetriesOnAPreconditionConflict pins the read→delete
-// atomicity of the finalizer: a Job replaced between the two answers
-// Conflict, the replacement survives, and the deletion retries with a fresh
-// read instead of failing or falling through.
+// TestFinalizerDeleteJobRetriesOnAPreconditionConflict pins the
+// read-then-delete atomicity of the finalizer. A Job replaced between the two
+// answers Conflict. The replacement survives, and the deletion retries with a
+// fresh read instead of a failure or a fall-through.
 func TestFinalizerDeleteJobRetriesOnAPreconditionConflict(t *testing.T) {
 	t.Parallel()
 
@@ -113,7 +113,7 @@ func TestFinalizerDeleteJobRetriesOnAPreconditionConflict(t *testing.T) {
 			Delete: func(
 				ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption,
 			) error {
-				// The stranger landed between the read and the delete: the
+				// The stranger landed between the read and the delete. The
 				// UID precondition no longer matches.
 				return apierrors.NewConflict(
 					batchv1.Resource("jobs"), obj.GetName(),
@@ -132,10 +132,10 @@ func TestFinalizerDeleteJobRetriesOnAPreconditionConflict(t *testing.T) {
 }
 
 // TestClaimJobNameNeverMutatesTheWinner pins the atomicity of the initial
-// Job creation: it is a create-only identity claim, so a same-named foreign
+// Job creation. It is a create-only identity claim. So a same-named foreign
 // Job that lands between the absence check and the create wins the name
-// untouched — labels and owner references intact — and the backup takes the
-// bounded foreign-Job failure instead of force-applying over it.
+// untouched, with its labels and owner references intact. The backup takes
+// the bounded foreign-Job failure instead of a forced apply over it.
 func TestClaimJobNameNeverMutatesTheWinner(t *testing.T) {
 	t.Parallel()
 
@@ -143,8 +143,9 @@ func TestClaimJobNameNeverMutatesTheWinner(t *testing.T) {
 	backup := trackedBackup()
 	backup.Status.JobName = ""
 
-	// The foreign winner, already in the store when the create runs: exactly
-	// the interleaving where it was created after the NotFound read.
+	// The foreign winner is already in the store when the create runs. That
+	// is exactly the interleaving where it was created after the NotFound
+	// read.
 	winner := ownJob(backup)
 	winner.Name = components.JobName(backup)
 	winner.UID = "winner-uid"

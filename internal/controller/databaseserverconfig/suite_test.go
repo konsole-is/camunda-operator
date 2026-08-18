@@ -62,8 +62,8 @@ var _ = BeforeSuite(func() {
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
-			// The real probe, counted: the specs prove a fresh probe is not
-			// repeated on every reconcile.
+			// The real probe, counted. The specs prove that the controller does
+			// not repeat a fresh probe on every reconcile.
 			probe: func(
 				ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
 			) (string, error) {

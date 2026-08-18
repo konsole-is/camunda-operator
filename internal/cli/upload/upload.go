@@ -15,10 +15,10 @@ limitations under the License.
 */
 
 // Package upload is the upload subcommand of camunda-operator-cli, which the
-// dump Job runs as its main container: it streams one file to the backup
-// bucket and exits. The environment is its whole interface, rendered by
-// pkg/components/logicalbackuprdbms and read here; the Job succeeds only when
-// the upload did.
+// dump Job runs as its main container. It streams one file to the backup
+// bucket and exits. The environment is its whole interface. It is rendered by
+// pkg/components/logicalbackuprdbms and read here. The Job succeeds only when
+// the upload succeeded.
 package upload
 
 import (
@@ -40,7 +40,7 @@ type uploader interface {
 }
 
 // Run reads the environment, opens the bucket, and uploads the file. It is
-// the entry point of the subcommand; a non-nil error means a non-zero exit.
+// the entry point of the subcommand. A non-nil error means a non-zero exit.
 func Run(ctx context.Context) error {
 	return run(ctx, os.Getenv, openBucket)
 }

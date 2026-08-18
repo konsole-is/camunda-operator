@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // camunda-operator-cli is the command-line companion of the operator. It is
-// built and shipped as its own image, separate from the manager: the
-// operator's Jobs run its subcommands as containers, and the manager learns
+// built and shipped as its own image, separate from the manager. The Jobs of
+// the operator run its subcommands as containers, and the manager learns
 // which image that is through --camunda-operator-cli-image.
 package main
 
@@ -31,8 +31,8 @@ import (
 )
 
 func main() {
-	// The signal handler cancels the context of every subcommand, so a
-	// terminated pod abandons its work instead of committing a partial
+	// The signal handler cancels the context of every subcommand. A
+	// terminated pod then abandons its work and does not commit a partial
 	// result.
 	if err := newRootCommand().ExecuteContext(ctrl.SetupSignalHandler()); err != nil {
 		os.Exit(1)
@@ -67,9 +67,9 @@ func newUploadCommand() *cobra.Command {
 }
 
 // newDeleteCommand removes one object from the backup bucket. The cleanup
-// Job of a deleted backup runs it under the cluster ServiceAccount, so a
-// bucket on workload identity is cleaned by the identity that wrote it. Its
-// whole interface is the same UPLOAD_* environment; a missing key is
+// Job of a deleted backup runs it under the cluster ServiceAccount, so the
+// identity that wrote a bucket on workload identity also cleans it. Its
+// whole interface is the same UPLOAD_* environment. A missing key is
 // success, so a retry is idempotent.
 func newDeleteCommand() *cobra.Command {
 	return &cobra.Command{

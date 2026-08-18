@@ -33,45 +33,46 @@ import (
 const cleanupNameSuffix = "-cleanup"
 
 // CleanupJobInput is everything the cleanup Job of one deleted backup renders
-// from. The finalizer resolves it; the builder only shapes it.
+// from. The finalizer resolves it. The builder only shapes it.
 type CleanupJobInput struct {
 	// Backup is the LogicalBackupRDBMS whose dump object is removed.
 	Backup *v1.LogicalBackupRDBMS
-	// ClusterName identifies the backed-up cluster; the Job runs in its
-	// namespace, which is the backup's.
+	// ClusterName identifies the backed-up cluster. The Job runs in the
+	// namespace of the cluster, which is the namespace of the backup.
 	ClusterName string
-	// Dump shapes the pod the way it shaped the dump Job's, so the cleanup
-	// runs on the same pod identity surface: labels, annotations,
+	// Dump shapes the pod the way it shaped the pod of the dump Job, so the
+	// cleanup runs on the same pod identity surface: labels, annotations,
 	// scheduling. Nil means defaults.
 	Dump *v1.DumpPodSpec
-	// Bucket is the backup bucket contract. It uses workload identity —
-	// a credentials-mode bucket is cleaned by the manager directly.
+	// Bucket is the backup bucket contract. It uses workload identity. The
+	// manager cleans a credentials-mode bucket directly.
 	Bucket *v1.ObjectStorageConfig
-	// ServiceAccountName is the cluster ServiceAccount that the storage
-	// contract's identity is bound to; the delete runs as it, like the
+	// ServiceAccountName is the cluster ServiceAccount that the identity of
+	// the storage contract is bound to. The delete runs as it, like the
 	// upload did.
 	ServiceAccountName string
 	// ObjectKey is the exact key of the dump to remove.
 	ObjectKey string
-	// CLIImage is the camunda-operator-cli image whose delete subcommand
+	// CLIImage is the camunda-operator-cli image. Its delete subcommand
 	// runs.
 	CLIImage string
 }
 
 // CleanupJobName returns the name of the cleanup Job of one backup. It
-// derives from the backup name alone, bounded like the dump Job's, so a
-// re-entering finalizer adopts the Job it already created.
+// derives from the backup name alone, bounded like the name of the dump Job.
+// A finalizer that re-enters therefore adopts the Job that it already
+// created.
 func CleanupJobName(backup *v1.LogicalBackupRDBMS) string {
 	return boundedName(backup.Name, validation.DNS1123LabelMaxLength-len(cleanupNameSuffix)) +
 		cleanupNameSuffix
 }
 
 // BuildCleanupJob renders the Job that removes the dump object of a deleted
-// backup where the identity lives: one camunda-operator-cli delete container
-// under the cluster ServiceAccount, with the same pod identity surface as
-// the dump Job — the workload-identity pod labels of the bucket and the pod
-// settings of the resolved dump block. The delete is idempotent, so the Job
-// may retry.
+// backup where the identity lives. The Job is one camunda-operator-cli
+// delete container under the cluster ServiceAccount. It has the same pod
+// identity surface as the dump Job: the workload-identity pod labels of the
+// bucket and the pod settings of the resolved dump block. The delete is
+// idempotent, so the Job can retry.
 func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 	if in.CLIImage == "" {
 		return nil, fmt.Errorf(

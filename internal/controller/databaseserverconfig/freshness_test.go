@@ -26,9 +26,9 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// TestProbeIsFresh pins when the recorded probe stands: a successful one
-// within the interval, for the current generation and Secret. Everything
-// else probes again.
+// TestProbeIsFresh pins when the recorded probe stands. It stands when it
+// succeeded within the interval for the current generation and Secret. In
+// every other case the controller probes again.
 func TestProbeIsFresh(t *testing.T) {
 	t.Parallel()
 

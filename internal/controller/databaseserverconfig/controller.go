@@ -45,19 +45,19 @@ const databaseServerConfigSecretRefsField = "databaseserverconfig.spec.secretRef
 
 const (
 	// connectionRetryInterval is the wait before the controller retries a
-	// server it could not reach. It cannot watch the external server, so a
-	// timed requeue is the only trigger.
+	// server that it did not reach. The controller cannot watch the external
+	// server, so a timed requeue is the only trigger.
 	connectionRetryInterval = 30 * time.Second
-	// probeInterval is how often a reachable server is probed again, so a
-	// major upgrade behind the same endpoint reaches status without a spec
-	// change.
+	// probeInterval is how often the controller probes a reachable server
+	// again. A major upgrade behind the same endpoint then reaches status
+	// without a spec change.
 	probeInterval = 10 * time.Minute
 )
 
 // DatabaseServerConfigReconciler validates DatabaseServerConfig contracts. It
 // checks the admin credentials Secret reference, reaches the server with those
-// credentials, and publishes the major version the server reports. It never
-// provisions anything.
+// credentials, and publishes the major version that the server reports. It
+// never provisions anything.
 type DatabaseServerConfigReconciler struct {
 	client.Client
 	// APIReader reads directly from the API server and bypasses the cache.
@@ -66,7 +66,7 @@ type DatabaseServerConfigReconciler struct {
 	Scheme    *runtime.Scheme
 
 	// probe reaches the server and reads its major version. Nil means
-	// probeServer; the tests count and stub it.
+	// probeServer. The tests count and stub it.
 	probe func(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error)
 }
 
@@ -76,9 +76,9 @@ type DatabaseServerConfigReconciler struct {
 
 // Reconcile validates the contract against the live server and maintains its
 // Ready condition and the probed status fields. It never creates or mutates
-// other resources. A reconcile that finds the last probe fresh writes nothing
-// new, so the status update is a no-op on the server and wakes no watch: the
-// probe cadence is the requeue, never a status-write loop.
+// other resources. If the last probe is fresh, the reconcile writes nothing
+// new. The status update is then a no-op on the server and wakes no watch.
+// The requeue sets the probe cadence, not a status-write loop.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.DatabaseServerConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
@@ -106,13 +106,14 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 }
 
 // validate runs the documented checks of the contract and returns the Ready
-// condition and when to look again: MissingSecret when the admin credentials
-// do not resolve, ConnectionFailed when the server does not answer them
-// (retried after connectionRetryInterval), Healthy once the server reported
-// its version — which validate records on cfg. A probe that is still fresh
-// for the current spec and Secret is not repeated: the recorded Ready stands
-// and the requeue is the remaining part of the interval. It returns an error
-// only for transient API failures.
+// condition and the time until the next check. If the admin credentials do
+// not resolve, the reason is MissingSecret. If the server does not answer
+// them, the reason is ConnectionFailed and the next check is after
+// connectionRetryInterval. When the server reports its version, the reason
+// is Healthy and validate records the version on cfg. If the probe is still
+// fresh for the current spec and Secret, validate does not repeat it. The
+// recorded Ready stands and the requeue is the remaining part of the
+// interval. It returns an error only for transient API failures.
 func (r *DatabaseServerConfigReconciler) validate(
 	ctx context.Context,
 	cfg *v1.DatabaseServerConfig,
@@ -164,11 +165,12 @@ func (r *DatabaseServerConfigReconciler) validate(
 }
 
 // probeIsFresh reports whether the recorded probe still stands for cfg as it
-// is now — a successful probe within the interval, taken for the current
-// spec generation with the current Secret — and how long it stands. Anything
-// else means the server is probed again: no probe yet, a failed one (which
-// records no ProbedAt), a stale one, a spec change since the last reconcile
-// (ObservedGeneration lags), or a changed Secret.
+// is now, and for how long. A probe stands when it succeeded within the
+// interval for the current spec generation and the current Secret. In every
+// other case the controller probes the server again. That is the case when
+// there is no probe yet, or the last probe failed (a failed probe records no
+// ProbedAt). It is also the case when the probe is stale, the spec changed
+// since the last reconcile (ObservedGeneration lags), or the Secret changed.
 func probeIsFresh(cfg *v1.DatabaseServerConfig, secretVersion string, now time.Time) (bool, time.Duration) {
 	ready := meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady)
 	if cfg.Status.ProbedAt == nil || ready == nil || ready.Status != metav1.ConditionTrue {
@@ -200,8 +202,8 @@ func (r *DatabaseServerConfigReconciler) probeServer(
 }
 
 // probe opens the admin connection to the server that cfg describes and reads
-// the major version it reports. Any failure means the server, as declared,
-// is not usable with these credentials.
+// the major version that it reports. Any failure means that the server, as
+// declared, is not usable with these credentials.
 func probe(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error) {
 	admin, err := pgbootstrap.Connect(ctx, pgbootstrap.Connection{
 		Host:          cfg.Spec.Host,
@@ -230,9 +232,9 @@ func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		return err
 	}
 
-	// Status-only updates of the contract — its own flushes above all — wake
-	// nothing: the controller reads the spec and the Secret, and its probe
-	// cadence is the requeue.
+	// Status-only updates of the contract wake nothing, its own flushes
+	// included. The controller reads the spec and the Secret, and the requeue
+	// sets its probe cadence.
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.DatabaseServerConfig{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(

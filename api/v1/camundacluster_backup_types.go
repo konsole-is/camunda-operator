@@ -87,28 +87,28 @@ type PrimaryStorageRetentionSpec struct {
 }
 
 // DumpPodSpec shapes the pod of the Job that dumps the logical database of a
-// relational cluster and uploads it to the backup bucket: everything a
-// backup may set per run. The pod runs the dump and the upload in turn, so
-// one resource block sizes both. It never names the image — see
-// BackupDumpSpec for why.
+// relational cluster and uploads it to the backup bucket. It holds everything
+// that a backup can set per run. The pod runs the dump and the upload in
+// turn, so one resource block sizes both. It never names the image. See
+// BackupDumpSpec for the reason.
 type DumpPodSpec struct {
 	// Resources are the CPU and memory of the dump pod.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// ExtraEnv are extra environment variables of the dump pod. In a
-	// LogicalBackupRDBMS's spec.dump, every name under PG or UPLOAD_ is
-	// reserved and rejected at admission: any PG* name is connection policy
-	// (libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, ...), and UPLOAD_* is
-	// the upload contract. In the cluster's own spec.backup.dump nothing is
-	// reserved — the cluster owner sets connection policy, PGSSLMODE
-	// included, inside their own boundary.
+	// ExtraEnv are extra environment variables of the dump pod. In the
+	// spec.dump of a LogicalBackupRDBMS, every name under PG or UPLOAD_ is
+	// reserved, and admission rejects it. Any PG* name is connection policy,
+	// because libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, and more.
+	// UPLOAD_* is the upload contract. In the spec.backup.dump of the
+	// cluster nothing is reserved. The cluster owner sets connection policy,
+	// PGSSLMODE included, inside their own boundary.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources of the dump pod, at most
-	// 8. In a LogicalBackupRDBMS's spec.dump every source needs a prefix
-	// that cannot spell a PG* or UPLOAD_* name, because the keys of the
-	// referenced object are chosen by whoever writes it; the cluster's own
-	// block carries no such bound.
+	// 8. In the spec.dump of a LogicalBackupRDBMS, every source needs a
+	// prefix that cannot spell a PG* or UPLOAD_* name. The reason is that the
+	// writer of the referenced object chooses its keys. The block of the
+	// cluster carries no such bound.
 	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
@@ -126,36 +126,38 @@ type DumpPodSpec struct {
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// ScratchVolume is where the dump is written before it is uploaded. When
 	// set, it replaces the block of a preset entirely (no merge). The dump
-	// pod runs with fsGroup 999, the postgres group, so a volume a storage
-	// class hands over root-owned is still writable by pg_dump.
+	// pod runs with fsGroup 999, the postgres group. So pg_dump can write to
+	// a volume that a storage class hands over root-owned.
 	// +optional
 	ScratchVolume *ScratchVolumeSpec `json:"scratchVolume,omitempty"`
-	// ActiveDeadlineSeconds bounds how long the dump Job may run before it
-	// is failed, counted from its start. Unset means 86400 (24 hours):
-	// room for a very large dump, never "forever" — a pod that cannot start
-	// consumes no retry, so without a deadline a broken Job would stay
-	// active for as long as the backup lived. The operator applies that
-	// default when it renders the Job, not the schema, so an unset value
-	// here still inherits a preset's. Set it lower to fail a stuck dump
-	// sooner, or higher for a dump you know takes longer.
+	// ActiveDeadlineSeconds is the number of seconds that the dump Job can
+	// run before it fails, counted from its start. When it is unset, the
+	// operator applies 86400 (24 hours) when it renders the Job. The schema
+	// does not apply the default, so an unset value inherits the value of a
+	// preset. The default is large so that a very large dump completes. It
+	// is not unbounded because a pod that cannot start uses no retry.
+	// Without a deadline, a broken Job stays active as long as the backup
+	// lives. A lower value fails a stuck dump sooner. A higher value gives a
+	// long dump the time it needs.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	ActiveDeadlineSeconds *int64 `json:"activeDeadlineSeconds,omitempty"`
 }
 
-// BackupDumpSpec is the cluster-level dump configuration: the pod settings a
-// backup may also set per run, plus the image that runs the dump. The image
-// is cluster-level policy on purpose: the Job runs under the cluster's
-// ServiceAccount, with the cluster's cloud identity and its database
-// credentials mounted, so which executable it runs is the cluster owner's
-// choice — never that of whoever may create a backup. A LogicalBackupRDBMS
-// replaces the pod settings as a whole and always inherits the image.
+// BackupDumpSpec is the cluster-level dump configuration. It holds the pod
+// settings that a backup can also set per run, plus the image that runs the
+// dump. The image is cluster-level policy on purpose. The Job runs under the
+// ServiceAccount of the cluster, with the cloud identity of the cluster and
+// its database credentials mounted. So the executable that the Job runs is
+// the choice of the cluster owner, never of the person who creates a backup.
+// A LogicalBackupRDBMS replaces the pod settings as a whole and always
+// inherits the image.
 type BackupDumpSpec struct {
 	DumpPodSpec `json:",inline"`
-	// PostgresImage is the full image reference of the dump container,
-	// replacing the default postgres:<major> of the upstream registry. Set
-	// it in an air-gapped installation, where the default reference cannot
-	// be pulled.
+	// PostgresImage is the full image reference of the dump container. It
+	// replaces the default postgres:<major> of the upstream registry. An
+	// air-gapped installation sets it, because the default reference cannot
+	// be pulled there.
 	// +optional
 	PostgresImage string `json:"postgresImage,omitempty"`
 }

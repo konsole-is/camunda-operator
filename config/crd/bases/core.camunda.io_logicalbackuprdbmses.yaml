@@ -33,14 +33,14 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          LogicalBackupRDBMS is one backup of a relational orchestration cluster: a
-          dump of the entire logical database, uploaded to the backup bucket, paired
-          with one Zeebe backup. Camunda calls the Zeebe log and snapshots its
-          "primary storage" and the exported relational data its "secondary
-          storage"; a Zeebe backup is Camunda's own backup of that primary storage
-          to the backup bucket, requested through the management API. A restore
-          reads the exporter position from the restored dump and picks the Zeebe
-          backups that match it, so the pair is a complete restore point.
+          LogicalBackupRDBMS is one backup of a relational orchestration cluster. It
+          is a dump of the entire logical database, uploaded to the backup bucket and
+          paired with one Zeebe backup. Camunda calls the Zeebe log and snapshots its
+          "primary storage" and the exported relational data its "secondary storage".
+          A Zeebe backup is Camunda's own backup of that primary storage to the
+          backup bucket, requested through the management API. A restore reads the
+          exporter position from the restored dump and picks the Zeebe backups that
+          match it. So the pair is a complete restore point.
         properties:
           apiVersion:
             description: |-
@@ -79,38 +79,40 @@ spec:
                 description: |-
                   Dump replaces the pod settings of the cluster's spec.backup.dump block
                   as a whole for this backup. Unset means the settings of the cluster.
-                  The two never merge. The image that runs the dump is not among them:
-                  the Job runs under the cluster's ServiceAccount, so the executable is
-                  the cluster owner's choice and always comes from the cluster block.
-                  The environment is bounded the same way: extraEnv may not name
-                  anything under PG or UPLOAD_, and every extraEnvFrom source needs a
-                  prefix that cannot spell such a name — libpq prefers PGHOSTADDR over
-                  the Job's own PGHOST, so an unbounded source could redirect the dump
-                  with the injected credentials. The cluster's own block carries no such
-                  bound: its owner sets policy inside their own boundary.
+                  The two never merge. The image that runs the dump is not among them.
+                  The Job runs under the cluster's ServiceAccount, so the executable is
+                  the choice of the cluster owner and always comes from the cluster
+                  block. The environment is bounded the same way. The extraEnv of a
+                  backup cannot name anything under PG or UPLOAD_. Every extraEnvFrom
+                  source needs a prefix that cannot spell such a name. libpq prefers
+                  PGHOSTADDR over the PGHOST of the Job, so an unbounded source can
+                  redirect the dump with the injected credentials. The cluster's own
+                  block carries no such bound. Its owner sets policy inside their own
+                  boundary.
                 properties:
                   activeDeadlineSeconds:
                     description: |-
-                      ActiveDeadlineSeconds bounds how long the dump Job may run before it
-                      is failed, counted from its start. Unset means 86400 (24 hours):
-                      room for a very large dump, never "forever" — a pod that cannot start
-                      consumes no retry, so without a deadline a broken Job would stay
-                      active for as long as the backup lived. The operator applies that
-                      default when it renders the Job, not the schema, so an unset value
-                      here still inherits a preset's. Set it lower to fail a stuck dump
-                      sooner, or higher for a dump you know takes longer.
+                      ActiveDeadlineSeconds is the number of seconds that the dump Job can
+                      run before it fails, counted from its start. When it is unset, the
+                      operator applies 86400 (24 hours) when it renders the Job. The schema
+                      does not apply the default, so an unset value inherits the value of a
+                      preset. The default is large so that a very large dump completes. It
+                      is not unbounded because a pod that cannot start uses no retry.
+                      Without a deadline, a broken Job stays active as long as the backup
+                      lives. A lower value fails a stuck dump sooner. A higher value gives a
+                      long dump the time it needs.
                     format: int64
                     minimum: 1
                     type: integer
                   extraEnv:
                     description: |-
-                      ExtraEnv are extra environment variables of the dump pod. In a
-                      LogicalBackupRDBMS's spec.dump, every name under PG or UPLOAD_ is
-                      reserved and rejected at admission: any PG* name is connection policy
-                      (libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, ...), and UPLOAD_* is
-                      the upload contract. In the cluster's own spec.backup.dump nothing is
-                      reserved — the cluster owner sets connection policy, PGSSLMODE
-                      included, inside their own boundary.
+                      ExtraEnv are extra environment variables of the dump pod. In the
+                      spec.dump of a LogicalBackupRDBMS, every name under PG or UPLOAD_ is
+                      reserved, and admission rejects it. Any PG* name is connection policy,
+                      because libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, and more.
+                      UPLOAD_* is the upload contract. In the spec.backup.dump of the
+                      cluster nothing is reserved. The cluster owner sets connection policy,
+                      PGSSLMODE included, inside their own boundary.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -270,10 +272,10 @@ spec:
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources of the dump pod, at most
-                      8. In a LogicalBackupRDBMS's spec.dump every source needs a prefix
-                      that cannot spell a PG* or UPLOAD_* name, because the keys of the
-                      referenced object are chosen by whoever writes it; the cluster's own
-                      block carries no such bound.
+                      8. In the spec.dump of a LogicalBackupRDBMS, every source needs a
+                      prefix that cannot spell a PG* or UPLOAD_* name. The reason is that the
+                      writer of the referenced object chooses its keys. The block of the
+                      cluster carries no such bound.
                     items:
                       description: EnvFromSource represents the source of a set of
                         ConfigMaps or Secrets
@@ -996,8 +998,8 @@ spec:
                     description: |-
                       ScratchVolume is where the dump is written before it is uploaded. When
                       set, it replaces the block of a preset entirely (no merge). The dump
-                      pod runs with fsGroup 999, the postgres group, so a volume a storage
-                      class hands over root-owned is still writable by pg_dump.
+                      pod runs with fsGroup 999, the postgres group. So pg_dump can write to
+                      a volume that a storage class hands over root-owned.
                     properties:
                       sizeLimit:
                         anyOf:
@@ -1037,31 +1039,31 @@ spec:
             properties:
               backupId:
                 description: |-
-                  BackupID identifies the dump object in the bucket. It is allocated
-                  once, when the backup leaves Pending.
+                  BackupID identifies the dump object in the bucket. The operator
+                  allocates it once, when the backup leaves Pending.
                 format: int64
                 type: integer
               bucketGeneration:
                 description: |-
-                  BucketGeneration is the generation of the pinned config when the
-                  backup started, for reference; BucketLocation is what decides whether
-                  deletion may run.
+                  BucketGeneration is the generation of the pinned ObjectStorageConfig
+                  when the backup started, for reference. BucketLocation decides whether
+                  deletion can run.
                 format: int64
                 type: integer
               bucketLocation:
                 description: |-
-                  BucketLocation pins where the object was written: the storage type,
-                  bucket, base path, and endpoint of the ObjectStorageConfig at the
-                  start, as ObjectStorageConfig.Location renders them. Deletion runs
-                  only while the contract still points there; a retargeted contract
-                  leaves the object behind instead of deleting a stranger's object at
-                  the same key.
+                  BucketLocation pins where the Job wrote the object. It holds the
+                  storage type, bucket, base path, and endpoint of the ObjectStorageConfig
+                  at the start, as ObjectStorageConfig.Location renders them. Deletion runs
+                  only while the contract still points there. A retargeted contract
+                  leaves the object behind. It does not delete the object of a stranger
+                  at the same key.
                 type: string
               bucketRef:
                 description: |-
-                  BucketRef pins the ObjectStorageConfig the dump was written through,
-                  so deletion cleans up against the bucket that actually holds the
-                  object, even after the cluster's backupStorageRef moved elsewhere.
+                  BucketRef pins the ObjectStorageConfig through which the Job wrote the
+                  dump. Deletion then cleans up against the bucket that holds the
+                  object, even after the backupStorageRef of the cluster moved elsewhere.
                 type: string
               completionTime:
                 description: CompletionTime is when the backup reached a terminal
@@ -1070,7 +1072,7 @@ spec:
                 type: string
               conditions:
                 description: |-
-                  Conditions represent the current state; the Ready condition carries
+                  Conditions represent the current state. The Ready condition carries
                   the phase as its reason and names a failing step in its message.
                 items:
                   description: Condition contains details for one aspect of the current
@@ -1132,29 +1134,30 @@ spec:
                 x-kubernetes-list-type: map
               failureMessage:
                 description: |-
-                  FailureMessage is why the backup failed, set with a Failed phase. The
-                  Ready condition carries the same message and is re-staged from this
-                  field, so a write conflict can never lose it.
+                  FailureMessage is why the backup failed. It is set with a Failed phase.
+                  The Ready condition carries the same message. The operator stages the
+                  condition again from this field, so a write conflict can never lose it.
                 type: string
               firstFailedAt:
                 description: |-
                   FirstFailedAt is when a dependency of the running backup first stopped
-                  resolving, or the management API first stopped answering. The mid-run
-                  grace is measured from it; it clears when the backup recovers.
+                  resolving, or the management API first stopped answering. The operator
+                  measures the mid-run grace from it. It clears when the backup recovers.
                 format: date-time
                 type: string
               jobName:
                 description: |-
                   JobName is the Job that dumps and uploads the database, while it
-                  exists. It clears once the dump is recorded and the Job released; a
-                  failed Job stays, and its name with it, until the backup is deleted.
+                  exists. It clears when the dump is recorded and the Job is released. A
+                  failed Job stays until the backup is deleted, and its name stays with
+                  it.
                 type: string
               objectKey:
                 description: |-
                   ObjectKey is the full key of the dump in the backup bucket:
                   <basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump, where
-                  uid is the UID of this resource. The UID keeps a reused backup id from
-                  ever naming another backup's dump.
+                  uid is the UID of this resource. Because of the UID, a reused backup
+                  id can never name the dump of another backup.
                 type: string
               observedGeneration:
                 description: ObservedGeneration is the last generation reconciled
@@ -1204,24 +1207,25 @@ spec:
                 type: object
               workloadConfigHash:
                 description: |-
-                  WorkloadConfigHash pins the configuration Zeebe ran when the backup
-                  started: the config hash of the live Zeebe pod template. The Zeebe
-                  backup is requested only while the hash is unchanged — a database
-                  swapped in between would pair the dump with a Zeebe backup of another
-                  configuration, and the cluster's generation alone cannot tell, because
-                  mutable referents enter the hash without bumping it.
+                  WorkloadConfigHash pins the configuration that Zeebe ran when the
+                  backup started. It is the config hash of the live Zeebe pod
+                  template. The operator requests the Zeebe backup only while the hash
+                  is unchanged. If a database is swapped in between, the dump pairs with
+                  a Zeebe backup of another configuration. The generation of the cluster
+                  alone cannot tell, because mutable referents enter the hash without a
+                  bump of the generation.
                 type: string
               zeebeBackupId:
                 description: |-
                   ZeebeBackupID is the id of the Zeebe backup that the cluster generated
-                  after the dump. Unset until that backup is requested.
+                  after the dump. It is unset until the operator requests that backup.
                 format: int64
                 type: integer
               zeebeBackupRequestedAt:
                 description: |-
-                  ZeebeBackupRequestedAt is when the Zeebe backup was requested. It
-                  bounds how long the poll tolerates a backup the cluster does not
-                  report yet.
+                  ZeebeBackupRequestedAt is when the operator requested the Zeebe
+                  backup. It bounds how long the poll tolerates a backup that the
+                  cluster does not report yet.
                 format: date-time
                 type: string
             type: object

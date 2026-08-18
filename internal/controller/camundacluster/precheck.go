@@ -37,7 +37,7 @@ import (
 
 // eventReasonDumpCredentials is recorded when the backup credentials of the
 // database do not resolve. Only dump Jobs consume them, so the cluster warns
-// instead of parking.
+// and does not park.
 const eventReasonDumpCredentials = "DumpCredentialsUnresolved"
 
 // mirroredSecrets are the copies of the referenced Secrets that live outside
@@ -252,7 +252,7 @@ func (res *resolver) resolveRDBMSStorage(
 	}
 
 	// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
-	// database, so its credentials get a local copy the same way: the
+	// database, so its credentials get a local copy in the same way. The
 	// backup controller consumes the copy and never writes one itself.
 	if err := res.mirrorDumpCredentials(ctx, dbConfig.Spec.BackupCredentialsSecretRef); err != nil {
 		return err
@@ -315,9 +315,9 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 // mirrorDumpCredentials copies the backup user of the database into the
 // dump-credentials mirror when it lives outside the cluster namespace. Only
 // dump Jobs consume it, so the cluster neither parks nor rolls its pods on
-// it: a reference that does not resolve is a Warning event here and a
-// pre-check failure on the backup that needs it, and the Secret is no hash
-// input. A nil reference means the database takes no dumps.
+// it. A reference that does not resolve is a Warning event here and a
+// pre-check failure on the backup that needs it. The Secret is no hash
+// input. A nil reference means that the database takes no dumps.
 func (res *resolver) mirrorDumpCredentials(
 	ctx context.Context,
 	ref *v1.CredentialsSecretRef,

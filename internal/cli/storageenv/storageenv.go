@@ -15,10 +15,11 @@ limitations under the License.
 */
 
 // Package storageenv reads the bucket half of the environment contract that
-// pkg/components/logicalbackuprdbms renders into the backup Jobs: the
-// ObjectStorageConfig spec as JSON and the projected static credentials. The
-// upload and delete subcommands of camunda-operator-cli both read it here, so
-// the two can never disagree with the Job or with each other.
+// pkg/components/logicalbackuprdbms renders into the backup Jobs. That half
+// is the ObjectStorageConfig spec as JSON and the projected static
+// credentials. The upload and delete subcommands of camunda-operator-cli both
+// read it here, so the two can never disagree with the Job or with each
+// other.
 package storageenv
 
 import (
@@ -33,8 +34,8 @@ import (
 )
 
 // Load reads the bucket contract and its credentials from the environment.
-// Workload identity projects no credentials and yields nil: the provider
-// chain authenticates as the ServiceAccount of the pod.
+// Workload identity projects no credentials and yields nil. The provider
+// chain then authenticates as the ServiceAccount of the pod.
 func Load(getenv func(string) string) (*v1.ObjectStorageConfig, *objectstore.Credentials, error) {
 	cfg := &v1.ObjectStorageConfig{}
 	cfg.Name = getenv(components.EnvUploadStorageName)
@@ -50,10 +51,11 @@ func Load(getenv func(string) string) (*v1.ObjectStorageConfig, *objectstore.Cre
 	return cfg, creds, nil
 }
 
-// credentials rebuilds the Secret data of the contract's static credentials
-// from the indexed environment the Job projected, and hands it to the one
-// mapping in objectstore.CredentialsFrom — the same call the operator makes,
-// so every storage type resolves here exactly as it does there.
+// credentials rebuilds the Secret data of the static credentials of the
+// contract from the indexed environment that the Job projected. It hands the
+// data to the one mapping in objectstore.CredentialsFrom, the same call that
+// the operator makes. Every storage type therefore resolves here exactly as
+// it does there.
 func credentials(
 	cfg *v1.ObjectStorageConfig,
 	getenv func(string) string,

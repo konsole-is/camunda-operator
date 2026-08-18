@@ -474,12 +474,13 @@ func secretSource(name, key string) *corev1.EnvVarSource {
 	}}
 }
 
-// RDBMSURL returns the JDBC URL that the orchestration cluster is configured
-// with for its relational secondary storage: the value the rendered pod
-// template carries under camundaconfig.KeyRDBMSURL. It is the one definition
-// of that value, so a consumer that reads it from a live template — the
-// RDBMS backup, to prove the dump targets the database Zeebe runs — compares
-// against the same rendering.
+// RDBMSURL returns the JDBC URL of the relational secondary storage that the
+// orchestration cluster is configured with. It is the value that the rendered
+// pod template carries under camundaconfig.KeyRDBMSURL. It is the one
+// definition of that value, so a consumer that reads it from a live template
+// compares against the same rendering. The RDBMS backup is such a consumer.
+// It reads the value to prove that the dump targets the database that Zeebe
+// runs.
 func RDBMSURL(host string, port int32, database string) string {
 	return jdbcPostgres + host + ":" + strconv.Itoa(int(port)) + "/" + database
 }

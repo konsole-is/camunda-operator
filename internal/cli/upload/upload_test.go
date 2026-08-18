@@ -34,7 +34,7 @@ import (
 )
 
 // dirBucket is a fileblob-backed bucket, so the round trip runs through the
-// same gocloud writer path the real stores use.
+// same gocloud writer path that the real stores use.
 type dirBucket struct {
 	dir    string
 	creds  *objectstore.Credentials
@@ -118,9 +118,9 @@ const gcsSpec = `{"type":"GCS","gcs":{"bucketName":"b",` +
 	`"auth":{"type":"credentials","credentials":{"secretRef":{"name":"s","namespace":"n",` +
 	`"key":"key.json"}}}}}`
 
-// TestRunResolvesGCSStaticKey proves the projection carries a whole service
-// account key file, not just flat string pairs: GCS is the storage type the
-// old per-type mapping could not serve.
+// TestRunResolvesGCSStaticKey proves that the projection carries a whole
+// service account key file, not only flat string pairs. GCS is the storage
+// type that the old per-type mapping did not serve.
 func TestRunResolvesGCSStaticKey(t *testing.T) {
 	t.Parallel()
 

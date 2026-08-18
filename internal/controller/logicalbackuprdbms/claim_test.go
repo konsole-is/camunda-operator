@@ -30,13 +30,13 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// TestClaimGateBreaksTheTieBreakDeadlock replays the interleaving the sibling
-// controller hit. B is the older backup by the tie-break, but A's reconcile
-// ran first: A claimed the Lease and its id flush failed, so A still shows no
-// id. Now B passes the tie-break (A is pending and younger) but the Lease
-// blocks it; A re-enters and the tie-break says B goes first. Without the
-// Holds pre-filter both wait forever. With it, exactly one — the holder —
-// proceeds to allocate.
+// TestClaimGateBreaksTheTieBreakDeadlock replays the interleaving that the
+// sibling controller hit. B is the older backup by the tie-break, but the
+// reconcile of A ran first. A claimed the Lease and its id flush failed, so A
+// still shows no id. Now B passes the tie-break (A is pending and younger),
+// but the Lease blocks it. A re-enters, and the tie-break says that B goes
+// first. Without the Holds pre-filter, both wait forever. With it, exactly
+// one, the holder, proceeds to allocate.
 func TestClaimGateBreaksTheTieBreakDeadlock(t *testing.T) {
 	t.Parallel()
 
@@ -61,13 +61,13 @@ func TestClaimGateBreaksTheTieBreakDeadlock(t *testing.T) {
 	r := &LogicalBackupRDBMSReconciler{Client: c, APIReader: c}
 	ctx := context.Background()
 
-	// A's reconcile ran first: it claimed the cluster. Its id flush failed,
-	// so the store still shows A without an id.
+	// The reconcile of A ran first, and it claimed the cluster. Its id flush
+	// failed, so the store still shows A without an id.
 	holder, err := r.claimCluster(ctx, a)
 	require.NoError(t, err)
 	assert.Empty(t, holder, "A holds the claim")
 
-	// B passes the tie-break (A is pending and younger) but the Lease blocks it.
+	// B passes the tie-break (A is pending and younger), but the Lease blocks it.
 	blocking, err := r.inProgress(b)(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, blocking, "the tie-break lets B through")
@@ -75,8 +75,8 @@ func TestClaimGateBreaksTheTieBreakDeadlock(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "LogicalBackupRDBMS/a", holder, "the Lease names the active holder; no takeover")
 
-	// A re-enters. The tie-break alone would send it behind B forever; the
-	// holder goes first.
+	// A re-enters. The tie-break alone sends it behind B forever. The holder
+	// goes first.
 	blocking, err = r.inProgress(a)(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, blocking, "the holder passes the pre-filter whatever the tie-break says")
@@ -84,7 +84,7 @@ func TestClaimGateBreaksTheTieBreakDeadlock(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, holder, "the claim is idempotent for its holder")
 
-	// And, for contrast, the tie-break alone: without the claim, B blocks A.
+	// For contrast, the tie-break alone: without the claim, B blocks A.
 	assert.True(t, blocks(b, a))
 	assert.False(t, blocks(a, b))
 }

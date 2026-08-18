@@ -16,7 +16,7 @@ limitations under the License.
 
 // Command helmcli exposes the camunda-operator-cli image as its own chart
 // value. The kubebuilder helm plugin projects the CAMUNDA_OPERATOR_CLI_IMAGE
-// environment variable of the manager as one entry of manager.env; this tool
+// environment variable of the manager as one entry of manager.env. This tool
 // runs right after the plugin and turns that entry into
 //
 //	manager:
@@ -26,11 +26,11 @@ limitations under the License.
 //
 // rendered as the --camunda-operator-cli-image argument of the manager, so
 // `--set manager.cliImage.tag=x` works exactly like `manager.image.tag`. It is
-// a step of `make helm-generate`, not a hand edit: the chart is still
-// regenerated from config/ every time. It fails loudly when the generated
-// chart does not have the shape it expects, so a plugin upgrade that changes
-// that shape breaks generation visibly instead of shipping a chart without
-// the value.
+// a step of `make helm-generate`, not a hand edit. The chart is still
+// regenerated from config/ every time. If the generated chart does not have
+// the shape that it expects, it fails loudly. A plugin upgrade that changes
+// that shape therefore breaks generation visibly and does not ship a chart
+// without the value.
 //
 // Usage: helmcli [chart-dir]
 //
@@ -45,11 +45,12 @@ import (
 	"strings"
 )
 
-// envName is the environment variable the plugin projected from
+// envName is the environment variable that the plugin projected from
 // config/manager/manager.yaml.
 const envName = "CAMUNDA_OPERATOR_CLI_IMAGE"
 
-// cliImageArg is the manager flag the chart renders instead of the variable.
+// cliImageArg is the manager flag that the chart renders instead of the
+// variable.
 const cliImageArg = "--camunda-operator-cli-image"
 
 func main() {
@@ -97,7 +98,8 @@ func run(dir string) error {
 }
 
 // rewriteValues removes the projected env entry from manager.env and adds the
-// cliImage block after the image block. It returns the image the entry named.
+// cliImage block after the image block. It returns the image that the entry
+// named.
 func rewriteValues(values string) (string, string, error) {
 	lines := strings.Split(values, "\n")
 
@@ -115,8 +117,8 @@ func rewriteValues(values string) (string, string, error) {
 		return "", "", err
 	}
 
-	// Drop the entry; an env list left empty becomes the literal empty list
-	// the plugin writes when there is none.
+	// Remove the entry. An env list that is then empty becomes the literal
+	// empty list that the plugin writes when there is none.
 	lines = append(lines[:entry], lines[entry+2:]...)
 	envLine := indexOf(lines, "  env:")
 	if envLine < 0 {
@@ -145,7 +147,7 @@ func rewriteValues(values string) (string, string, error) {
 }
 
 // rewriteTemplate renders the flag from the cliImage values, right after the
-// health probe argument the plugin keeps fixed.
+// health probe argument that the plugin keeps fixed.
 func rewriteTemplate(template string) (string, error) {
 	lines := strings.Split(template, "\n")
 	anchor := indexOf(lines, "- --health-probe-bind-address=")
@@ -164,10 +166,10 @@ func rewriteTemplate(template string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// splitImage separates repository and tag. A digest reference, a tagless
-// image, and an empty repository or tag are rejected: the chart exposes
-// exactly repository and tag, like the manager image, and "repo:" or ":tag"
-// would render an invalid image instead of failing the generation.
+// splitImage separates repository and tag. It rejects a digest reference, a
+// tagless image, and an empty repository or tag. The chart exposes exactly
+// repository and tag, like the manager image. "repo:" or ":tag" renders an
+// invalid image, and the generation must fail instead.
 func splitImage(image string) (string, string, error) {
 	colon := strings.LastIndex(image, ":")
 	if colon < 0 || strings.Contains(image[colon:], "/") || strings.Contains(image, "@") {
@@ -181,9 +183,10 @@ func splitImage(image string) (string, string, error) {
 	return repository, tag, nil
 }
 
-// indexOf returns the first line that starts with prefix after trimming
-// leading spaces — but only when the line's own indentation matches the
-// prefix's, so a nested key never matches a top-level anchor.
+// indexOf returns the first line that starts with prefix. A prefix without
+// indentation matches after the leading spaces of the line are trimmed. A
+// prefix with indentation matches only a line with the same indentation, so
+// a nested key never matches a top-level anchor.
 func indexOf(lines []string, prefix string) int {
 	trimmed := strings.TrimLeft(prefix, " ")
 	indent := len(prefix) - len(trimmed)

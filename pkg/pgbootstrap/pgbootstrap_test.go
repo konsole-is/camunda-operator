@@ -141,9 +141,9 @@ func TestPing(t *testing.T) {
 	assert.NoError(t, b.Ping(t.Context()))
 }
 
-// TestServerVersionReportsTheMajor pins the shape consumers depend on: the
-// major alone ("17"), which is what selects matching client tools — never
-// the full server_version_num.
+// TestServerVersionReportsTheMajor pins the shape that consumers depend on.
+// It is the major alone ("17"), which selects the matching client tools, and
+// not the full server_version_num.
 func TestServerVersionReportsTheMajor(t *testing.T) {
 	b := connect(t)
 
@@ -160,7 +160,7 @@ func TestMajorVersionParsesServerVersionNum(t *testing.T) {
 		"160009": "16",
 		"180000": "18",
 		"100023": "10",
-		// Before PostgreSQL 10 the major has two components: 9.6.24 is
+		// Before PostgreSQL 10 the major has two components. 9.6.24 is
 		// "90624", and its client tools are postgres:9.6, not postgres:9.
 		"90624": "9.6",
 		"90418": "9.4",

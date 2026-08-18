@@ -221,9 +221,9 @@ func TestJobGoldenAzureCredentials(t *testing.T) {
 	)
 }
 
-// TestJobGoldenAzureWorkloadIdentity pins the pod label the Azure webhook
-// needs: without azure.workload.identity/use on the pod, no token is
-// injected, whatever the ServiceAccount carries.
+// TestJobGoldenAzureWorkloadIdentity pins the pod label that the Azure
+// webhook needs. Without azure.workload.identity/use on the pod, the webhook
+// injects no token, whatever the ServiceAccount carries.
 func TestJobGoldenAzureWorkloadIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -277,10 +277,10 @@ func TestJobNameDerivesFromTheBackupAlone(t *testing.T) {
 	assert.Equal(t, "my-cluster-1748937221000-dump", JobName(backup()))
 }
 
-// TestLongBackupNamesRenderAValidJob pins the bounds: a backup name may be a
-// full DNS subdomain (253 characters), while the Job name and every label
-// value are DNS labels (63). Both are truncated deterministically and kept
-// unique by a hash of the full name.
+// TestLongBackupNamesRenderAValidJob pins the bounds. A backup name can be a
+// full DNS subdomain (253 characters), but the Job name and every label
+// value are DNS labels (63). The builder truncates both deterministically
+// and keeps them unique with a hash of the full name.
 func TestLongBackupNamesRenderAValidJob(t *testing.T) {
 	t.Parallel()
 
@@ -326,9 +326,10 @@ func TestJobBelongsToChecksTheUIDLabel(t *testing.T) {
 	assert.False(t, JobBelongsTo(&batchv1.Job{}, in.Backup), "no label means not ours")
 }
 
-// TestBuildJobEnvOfTheJobWins pins the precedence: an extra that names a
+// TestBuildJobEnvOfTheJobWins pins the precedence. An extra that names a
 // connection variable does not replace the Job's own, and no name appears
-// twice, so a duplicate can neither redirect the dump nor break the apply.
+// twice. A duplicate can therefore neither redirect the dump nor break the
+// apply.
 func TestBuildJobEnvOfTheJobWins(t *testing.T) {
 	t.Parallel()
 
@@ -356,8 +357,8 @@ func TestReservedEnvNamesTheOffenders(t *testing.T) {
 
 	assert.Nil(t, ReservedEnv(nil))
 	assert.Nil(t, ReservedEnv(&v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{{Name: "TZ"}, {Name: "XPG"}}}))
-	// The rule is prefix-based: names the Job never sets are connection
-	// policy too — PGHOSTADDR beats PGHOST inside libpq.
+	// The rule is prefix-based. Names that the Job never sets are connection
+	// policy too. PGHOSTADDR beats PGHOST inside libpq.
 	assert.Equal(
 		t,
 		[]string{"PGSSLMODE", "PGHOSTADDR", "UPLOAD_KEY", "PGOPTIONS"},
@@ -374,8 +375,9 @@ func TestSafeEnvFromPrefix(t *testing.T) {
 	for _, safe := range []string{"X_", "MY_", "EXTRA_", "GP", "PX"} {
 		assert.True(t, SafeEnvFromPrefix(safe), safe)
 	}
-	// Empty, a reserved head, or a head OF a reserved prefix: "P" plus a key
-	// "GHOST" would spell PGHOST, "UPLOAD" plus "_KEY" the upload contract.
+	// An empty prefix, a reserved head, or a head OF a reserved prefix is
+	// unsafe. "P" plus a key "GHOST" spells PGHOST, and "UPLOAD" plus "_KEY"
+	// spells the upload contract.
 	for _, unsafe := range []string{"", "P", "PG", "PGX", "U", "UPLOAD", "UPLOAD_", "UPLOAD_X"} {
 		assert.False(t, SafeEnvFromPrefix(unsafe), unsafe)
 	}
@@ -394,8 +396,9 @@ func TestUnsafeEnvFromNamesTheSources(t *testing.T) {
 	assert.Contains(t, unsafe[1], "source 2")
 }
 
-// TestBuildJobKeepsTheEnvFromPrefix proves the safe prefix survives to both
-// containers: it is what neutralizes the source's keys at runtime.
+// TestBuildJobKeepsTheEnvFromPrefix proves that the safe prefix survives to
+// both containers. The prefix is what neutralizes the keys of the source at
+// runtime.
 func TestBuildJobKeepsTheEnvFromPrefix(t *testing.T) {
 	t.Parallel()
 
@@ -461,19 +464,19 @@ func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {
 	require.Len(t, pod.Containers, 1)
 	assert.Equal(t, corev1.RestartPolicyNever, pod.RestartPolicy)
 
-	// A PVC-backed scratch volume is commonly root-owned; the fsGroup makes
+	// A PVC-backed scratch volume is commonly root-owned. The fsGroup makes
 	// the kubelet hand it to the postgres group, so pg_dump can write it.
 	require.NotNil(t, pod.SecurityContext.FSGroup)
 	assert.Equal(t, int64(999), *pod.SecurityContext.FSGroup)
 
-	// No override means the production default, never "forever".
+	// No override means the production default, which is finite.
 	require.NotNil(t, job.Spec.ActiveDeadlineSeconds)
 	assert.Equal(t, int64(24*60*60), *job.Spec.ActiveDeadlineSeconds)
 }
 
-// TestBuildJobTakesTheImageFromTheClusterOnly pins the policy boundary: the
-// pod settings may come from the backup, the image never does — a backup CR
-// cannot even express one (DumpPodSpec has no image field), and the Job
+// TestBuildJobTakesTheImageFromTheClusterOnly pins the policy boundary. The
+// pod settings can come from the backup, but the image never does. A backup
+// CR cannot express one, because DumpPodSpec has no image field. The Job
 // renders the cluster's image while the backup overrides every pod knob.
 func TestBuildJobTakesTheImageFromTheClusterOnly(t *testing.T) {
 	t.Parallel()
@@ -512,10 +515,10 @@ func TestBuildJobHonorsAnExplicitDeadline(t *testing.T) {
 	assert.Equal(t, int64(7200), *job.Spec.ActiveDeadlineSeconds)
 }
 
-// TestCleanupJobGolden pins the cleanup Job: the delete subcommand of the CLI
-// image, under the cluster ServiceAccount with the bucket's workload-identity
-// pod labels — the same identity surface as the dump Job — bounded by the
-// dump block's deadline.
+// TestCleanupJobGolden pins the cleanup Job. It runs the delete subcommand
+// of the CLI image under the cluster ServiceAccount, with the bucket's
+// workload-identity pod labels. That is the same identity surface as the
+// dump Job. The deadline of the dump block bounds it.
 func TestCleanupJobGolden(t *testing.T) {
 	t.Parallel()
 

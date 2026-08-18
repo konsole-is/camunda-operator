@@ -30,11 +30,11 @@ import (
 // inProgress is the fairness pre-filter of admission. It reports another
 // backup of this kind and the same cluster that goes first: a started
 // sibling, or the older pending one by the tie-break. It orders who tries
-// the claim first. The claim itself is the Lease that Claim takes, and only
-// the Lease decides who holds the cluster — across both backup kinds. A
-// backup that holds the claim already, on a re-entry after a failed flush,
-// goes first whatever the tie-break says. Otherwise the tie-break and the
-// claim block each other.
+// the claim first. The claim itself is the Lease that Claim takes. Only the
+// Lease decides who holds the cluster, across both backup kinds. A backup
+// that holds the claim already, on a re-entry after a failed flush, goes
+// first whatever the tie-break says. Otherwise the tie-break and the claim
+// block each other.
 func (r *LogicalBackupRDBMSReconciler) inProgress(backup *v1.LogicalBackupRDBMS) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
 		holds, err := logicalbackup.Holds(
@@ -71,8 +71,8 @@ func (r *LogicalBackupRDBMSReconciler) inProgress(backup *v1.LogicalBackupRDBMS)
 }
 
 // blocks reports whether other must run before backup. A sibling that holds
-// an id has begun work worth waiting for. Between two backups that have not
-// started, the older one goes first, and the smaller name breaks a tie in
+// an id started work that is worth the wait. Between two backups that did
+// not start, the older one goes first, and the smaller name breaks a tie in
 // the creation time. Both live in the namespace of the cluster, so the name
 // is unique among them. The order is total, so two waiting backups can never
 // deadlock on each other.
@@ -95,8 +95,8 @@ func claimant(backup *v1.LogicalBackupRDBMS) logicalbackup.Claimant {
 
 // claimCluster takes the claim on the cluster for the backup. It returns
 // the display name of the holder that blocks, or "" when the backup holds
-// the claim. It runs before the backup id is allocated and flushed. A
-// re-entry after a failed flush finds itself as the holder and proceeds.
+// the claim. It runs before the controller allocates and flushes the backup
+// id. A re-entry after a failed flush finds itself as the holder and proceeds.
 func (r *LogicalBackupRDBMSReconciler) claimCluster(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,

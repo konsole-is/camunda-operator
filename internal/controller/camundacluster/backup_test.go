@@ -422,8 +422,8 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 		})
 
 		// Only dump Jobs consume the backup user of the database, so a
-		// dangling reference must not park the whole cluster: it warns here
-		// and parks the backup that needs it, in its own pre-check.
+		// dangling reference must not park the whole cluster. The cluster
+		// warns here, and the backup that needs it parks in its own pre-check.
 		It("warns on dangling dump credentials instead of parking the cluster", func() {
 			ns := newNamespace()
 
@@ -492,8 +492,8 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 		})
 
 		// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
-		// database from the cluster namespace, so a Secret elsewhere needs the
-		// same local copy the other credentials get.
+		// database from the cluster namespace. A Secret elsewhere therefore
+		// needs the same local copy that the other credentials get.
 		It("copies cross-namespace dump credentials into the cluster namespace", func() {
 			ns := newNamespace()
 			remote := newNamespace()

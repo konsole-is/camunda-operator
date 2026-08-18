@@ -47,10 +47,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
-// world is the resolved fixture set of one spec: a relational cluster with a
-// published binding, its storage chain, and every Secret the backup needs.
-// Both credential Secrets live in the cluster namespace, so the backup reads
-// them directly; the spec for Secrets that live elsewhere stands in the copies.
+// world is the resolved fixture set of one spec. It holds a relational cluster
+// with a published binding, its storage chain, and every Secret that the
+// backup needs. Both credential Secrets live in the cluster namespace, so the
+// backup reads them directly. The spec for Secrets that live elsewhere stands
+// in the copies.
 type world struct {
 	namespace string
 	cluster   *v1.CamundaCluster
@@ -70,9 +71,8 @@ func newNamespace() string {
 }
 
 // createWorld builds a relational cluster whose management binding points at
-// the fake management API, with the credential copies the CamundaCluster
-// controller would have made. Mutators shape the cluster before it is
-// created.
+// the fake management API, with the credential copies that the CamundaCluster
+// controller makes. Mutators shape the cluster before it is created.
 func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	namespace := newNamespace()
 	suffix := utilrand.String(6)
@@ -93,7 +93,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 
 	// The probed version and the current Ready that the DatabaseServerConfig
-	// controller would publish after reaching the server.
+	// controller publishes after it reaches the server.
 	probeServer(server, "17", metav1.ConditionTrue, v1.ReasonHealthy)
 
 	dbCredentials := &corev1.Secret{
@@ -170,8 +170,8 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 	// The volume status, the binding, the converged Ready, and the Zeebe
-	// workload with its config hash that the CamundaCluster controller would
-	// publish and render.
+	// workload with its config hash that the CamundaCluster controller
+	// publishes and renders.
 	cluster.Status.Volumes = []v1.VolumeStatus{
 		{Name: "data-cc-0", Capacity: resource.MustParse("15Gi")},
 	}
@@ -180,7 +180,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	converge(cluster)
 
 	// The bucket credentials live in the cluster namespace, so the backup
-	// uses the source Secret directly — no copy is involved.
+	// uses the source Secret directly. No copy is involved.
 	bucketCredentials := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "minio-credentials", Namespace: namespace},
 		Data: map[string][]byte{
@@ -199,16 +199,18 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	}
 }
 
-// worldRDBMSURL is the relational storage URL that the world's Zeebe runs:
-// the DatabaseServerConfig host and port and the DatabaseConfig database
-// name of createWorld, rendered as the cluster controller renders them.
+// worldRDBMSURL is the relational storage URL that the Zeebe of the world
+// runs. It is built from the DatabaseServerConfig host and port and the
+// DatabaseConfig database name of createWorld, rendered as the cluster
+// controller renders them.
 var worldRDBMSURL = camundacluster.RDBMSURL("postgres.databases.svc", 5432, "camunda")
 
-// renderZeebe stands in for the CamundaCluster controller's rendering: the
-// Zeebe StatefulSet whose pod template carries the config hash of the
-// configuration Zeebe runs and the relational storage URL it runs against.
-// Changing the hash stands in for a rollout to another configuration, for
-// example a swapped database; the URL says which database that is.
+// renderZeebe stands in for the rendering of the CamundaCluster controller.
+// It creates the Zeebe StatefulSet. Its pod template carries the config hash
+// of the configuration that Zeebe runs and the relational storage URL that
+// Zeebe runs against. A change of the hash stands in for a rollout to another
+// configuration, for example a swapped database. The URL says which database
+// that is.
 func renderZeebe(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 	GinkgoHelper()
 	key := types.NamespacedName{
@@ -247,10 +249,10 @@ func renderZeebe(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// converge stands in for the CamundaCluster controller: it publishes the
+// converge stands in for the CamundaCluster controller. It publishes the
 // management binding and reports the cluster Ready for its current
-// generation, with status.observedGeneration caught up — the state a backup
-// is admitted against.
+// generation, with status.observedGeneration caught up. That is the state
+// that a backup is admitted against.
 func converge(cluster *v1.CamundaCluster) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -270,9 +272,9 @@ func converge(cluster *v1.CamundaCluster) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// probeServer stands in for the DatabaseServerConfig controller: it publishes
-// the probed version and a Ready condition observed at the server's current
-// generation.
+// probeServer stands in for the DatabaseServerConfig controller. It publishes
+// the probed version and a Ready condition observed at the current generation
+// of the server.
 func probeServer(
 	server *v1.DatabaseServerConfig, version string, status metav1.ConditionStatus, reason string,
 ) {
@@ -338,13 +340,13 @@ func expectPending(backup *v1.LogicalBackupRDBMS, reason string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// patchStatusUntilStable stands in for another writer of the backup's status
-// and makes the patch stick. The controller flushes the whole status it
-// staged from its last live read, and on a write conflict ocf re-applies that
-// staged status over a concurrent writer — by design, so a controller never
-// loses its own state. A patch that lands while a reconcile is in flight is
-// therefore overwritten. The helper patches, waits out one poll interval, and
-// requires that the patch survived; otherwise it patches again.
+// patchStatusUntilStable stands in for another writer of the status of the
+// backup and makes the patch stick. The controller flushes the whole status
+// that it staged from its last live read. On a write conflict, ocf applies
+// that staged status again over a concurrent writer. This is by design, so a
+// controller never loses its own state. As a result, a patch that lands while
+// a reconcile is in flight is overwritten. The helper patches, waits one poll
+// interval, and requires that the patch survived. Otherwise it patches again.
 func patchStatusUntilStable(
 	backup *v1.LogicalBackupRDBMS,
 	mutate func(*v1.LogicalBackupRDBMS),
@@ -363,7 +365,7 @@ func patchStatusUntilStable(
 	}, "40s", interval).Should(Succeed())
 }
 
-// unconvergeCluster bumps the cluster's generation without publishing a new
+// unconvergeCluster bumps the generation of the cluster and publishes no new
 // Ready for it, so admission parks every backup of the cluster.
 func unconvergeCluster(w *world) {
 	GinkgoHelper()
@@ -379,9 +381,10 @@ func unconvergeCluster(w *world) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// stageAdmitted hand-stages the state a backup is in right after admission
-// flushed its identity and before its Job exists — the gap a crash or a slow
-// requeue leaves — pinned to the bucket as it is now.
+// stageAdmitted hand-stages the state that a backup is in right after
+// admission flushed its identity and before its Job exists. That is the gap
+// that a crash or a slow requeue leaves. The state is pinned to the bucket as
+// it is now.
 func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 	GinkgoHelper()
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
@@ -402,8 +405,8 @@ func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 	)
 }
 
-// makeBucketWIF flips the world's bucket to workload identity, so the
-// manager holds no credentials for it and cleanup must run where the
+// makeBucketWIF flips the bucket of the world to workload identity. Then the
+// manager holds no credentials for it, and cleanup must run where the
 // identity lives.
 func makeBucketWIF(w *world) {
 	GinkgoHelper()
@@ -417,14 +420,14 @@ func makeBucketWIF(w *world) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// gateState describes why a waiting backup may not have started: its own
-// phase and Ready, the state of the sibling it may wait on, and who holds the
-// cluster's Lease. It annotates the assertions of the serialization specs, so
-// a failure explains itself.
+// gateState describes why a waiting backup did not start yet. It holds the
+// own phase and Ready of the backup and the state of the sibling that it can
+// wait on. It also names who holds the Lease of the cluster. It annotates the
+// assertions of the serialization specs, so a failure explains itself.
 
-// leaseHolder returns the exact identity the claim Lease records in its
-// holder annotations, or the raw holderIdentity of a Lease that another
-// actor wrote, or "" when the Lease is absent.
+// leaseHolder returns the exact identity that the claim Lease records in its
+// holder annotations. For a Lease that another actor wrote, it returns the
+// raw holderIdentity. When the Lease is absent, it returns "".
 func leaseHolder(lease *coordinationv1.Lease) string {
 	annotations := lease.GetAnnotations()
 	kind, name, uid := annotations[logicalbackup.ClaimHolderKindAnnotation],
@@ -440,9 +443,9 @@ func leaseHolder(lease *coordinationv1.Lease) string {
 	return *lease.Spec.HolderIdentity
 }
 
-// staleLease writes the claim Lease of the cluster as a backup of this kind
-// that no longer exists would have left it: bounded holderIdentity plus the
-// exact identity in the holder annotations.
+// staleLease writes the claim Lease of the cluster in the shape that a backup
+// of this kind leaves behind when it no longer exists. That shape is a bounded
+// holderIdentity plus the exact identity in the holder annotations.
 func staleLease(w *world, holder logicalbackup.Claimant) *coordinationv1.Lease {
 	identity := holder.HolderIdentity()
 
@@ -493,8 +496,9 @@ func gateState(w *world, sibling, waiting *v1.LogicalBackupRDBMS) string {
 	)
 }
 
-// podOfBackup builds a pod the way the Job controller would create it from
-// the dump Job's template: labeled with the Job name and the backup UID.
+// podOfBackup builds a pod the way the Job controller creates it from the
+// template of the dump Job. The pod is labeled with the Job name and the
+// backup UID.
 func podOfBackup(backup *v1.LogicalBackupRDBMS, job *batchv1.Job, suffix string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -531,7 +535,7 @@ func secretNameOfEnv(container corev1.Container, name string) string {
 	return ""
 }
 
-// markJob flips the Job of backup to the given terminal condition, standing
+// markJob flips the Job of backup to the given terminal condition. It stands
 // in for a kubelet that ran the pod.
 func markJob(backup *v1.LogicalBackupRDBMS, w *world, kind batchv1.JobConditionType) {
 	GinkgoHelper()
@@ -712,8 +716,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		second := createBackup(w)
 		expectPending(second, v1.ReasonBackupInProgress)
-		// The in-kind pre-filter names the started sibling; the Lease behind
-		// it is held by the same backup.
+		// The in-kind pre-filter names the started sibling. The same backup
+		// holds the Lease behind it.
 		Expect(readyCondition(second).Message).To(ContainSubstring(first.Name))
 		leaseKey := types.NamespacedName{
 			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
@@ -764,9 +768,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// The claim on a cluster is a Lease. A foreign holder — anything this
-	// operator did not write, or the other backup kind — blocks; a foreign
-	// identity is never taken over.
+	// The claim on a cluster is a Lease. A foreign holder blocks. A foreign
+	// holder is anything that this operator did not write, or the other
+	// backup kind. A foreign identity is never taken over.
 	It("waits behind a foreign Lease and never takes it over", func() {
 		w := createWorld()
 		holder := "someone-else"
@@ -788,8 +792,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "2s", interval).Should(Succeed())
 	})
 
-	// A holder that is gone no longer needs the claim: it is taken over, so a
-	// crash between the claim and the release never blocks the cluster.
+	// A holder that is gone no longer needs the claim. The claim is taken
+	// over, so a crash between the claim and the release never blocks the
+	// cluster.
 	It("takes over the Lease of a holder that no longer exists", func() {
 		w := createWorld()
 		lease := staleLease(w, logicalbackup.Claimant{
@@ -839,8 +844,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		expectPending(backup, v1.ReasonMissingSecret)
 	})
 
-	// The id is allocated after the highest one a visible sibling holds, so a
-	// clock that stepped backwards cannot reuse an id and overwrite its dump.
+	// The id is allocated after the highest one that a visible sibling holds.
+	// So a clock that stepped backwards cannot reuse an id and overwrite its
+	// dump.
 	It("allocates the backup id after the highest sibling id", func() {
 		w := createWorld()
 		first := createBackup(w)
@@ -876,8 +882,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// A message the management API reports is bounded before it reaches the
-	// free-form status field, so an oversized one cannot make the status
+	// A message that the management API reports is bounded before it reaches
+	// the free-form status field, so an oversized one cannot make the status
 	// unwritable.
 	It("bounds an oversized management failure reason in status", func() {
 		w := createWorld()
@@ -902,8 +908,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// P1: a backup admitted against a desired spec Zeebe does not run yet
-	// could pair a dump with a Zeebe backup of the previous configuration.
+	// A backup can be admitted against a desired spec that Zeebe does not
+	// run yet. Then it can pair a dump with a Zeebe backup of the previous
+	// configuration.
 	It("waits in Pending until the cluster has converged on its current spec, then starts", func() {
 		w := createWorld()
 		Eventually(func(g Gomega) {
@@ -929,8 +936,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// P1 at the Zeebe step: a spec change between the dump and the request
-	// means Zeebe may still be rolling; the request waits, then fails.
+	// At the Zeebe step: after a spec change between the dump and the
+	// request, Zeebe can still roll. The request waits, then fails.
 	It("fails when the cluster changed generation between the dump and the Zeebe backup", func() {
 		w := createWorld()
 		backup := createBackup(w)
@@ -956,9 +963,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "15s", interval).Should(Succeed())
 	})
 
-	// S1: the deadline default is applied by the operator, not the schema,
-	// so a cluster block that sets only the image still inherits a preset's
-	// deadline (the unit tests bypass API defaulting; this goes through it).
+	// The operator applies the deadline default, not the schema. So a
+	// cluster block that sets only the image still inherits the deadline of a
+	// preset. The unit tests bypass API defaulting. This spec goes through it.
 	It("keeps a preset's dump deadline when the cluster block sets only the image", func() {
 		preset := &v1.CamundaClusterPreset{
 			ObjectMeta: metav1.ObjectMeta{Name: "preset-" + utilrand.String(6)},
@@ -999,7 +1006,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 	})
 
 	// The DatabaseServerConfig controller keeps the last version while a
-	// retargeted server is unreachable; a new backup must not start on it.
+	// retargeted server is unreachable. A new backup must not start on it.
 	It("waits when the server was retargeted and the probe of the new spec failed", func() {
 		w := createWorld()
 		Eventually(func(g Gomega) {
@@ -1014,10 +1021,10 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(readyCondition(backup).Message).To(ContainSubstring("current spec"))
 	})
 
-	// F3 + round 9: a backup's dump block may not supply anything under the
-	// PG or UPLOAD_ prefixes — the rule is prefix-based, so names the Job
-	// never sets (PGOPTIONS, PGHOSTADDR) are covered too. PGSSLMODE stays
-	// available in the cluster's own block, where its owner sets policy.
+	// The dump block of a backup must not supply anything under
+	// the PG or UPLOAD_ prefixes. The rule is prefix-based, so names that the
+	// Job never sets (PGOPTIONS, PGHOSTADDR) are covered too. PGSSLMODE stays
+	// available in the own block of the cluster, where its owner sets policy.
 	It("rejects a backup dump block that sets a reserved environment variable", func() {
 		w := createWorld()
 		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
@@ -1053,7 +1060,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		// The binding is checked at admission, so a backup never dumps
-		// gigabytes it cannot pair with a Zeebe backup afterwards.
+		// gigabytes that it cannot pair with a Zeebe backup afterwards.
 		backup := createBackup(w)
 		expectPending(backup, v1.ReasonProgressing)
 
@@ -1105,9 +1112,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			}, &batchv1.Job{},
 		)).NotTo(Succeed())
 
-		// envtest runs no garbage collector, so a Job still present here
-		// would mean the finalizer relied on the owner reference instead of
-		// deleting it.
+		// envtest runs no garbage collector. If a Job is still present here,
+		// the finalizer relied on the owner reference instead of a delete.
 		By("deleting the Job itself")
 		var leftover batchv1.Job
 		Expect(k8sClient.Get(
@@ -1153,9 +1159,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		managementAPI.ConflictNextRuntimeStart(1)
 		backup := createBackup(w)
 
-		// The dump already succeeded; one bad answer must not discard it. The
-		// conflict is retried with backoff and the retry generates a fresh
-		// id — the id that conflicted is never adopted.
+		// The dump already succeeded. One bad answer must not discard it. The
+		// conflict is retried with backoff, and the retry generates a fresh
+		// id. The id that conflicted is never adopted.
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
@@ -1191,8 +1197,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(job.Spec.Template.Spec.InitContainers[0].Image).To(Equal("mirror.example/postgres:17.4"))
 	})
 
-	// The image is cluster-level policy: a backup that replaces the pod
-	// settings still runs the cluster's image.
+	// The image is cluster-level policy. A backup that replaces the pod
+	// settings still runs the image of the cluster.
 	It("keeps the cluster's dump image when the backup overrides the pod settings", func() {
 		w := createWorld(func(cluster *v1.CamundaCluster) {
 			cluster.Spec.Backup = &v1.ClusterBackupSpec{
@@ -1258,7 +1264,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		backup := createBackup(w)
 		jobOf(backup, w)
 
-		// Once the Job is tracked, the dump step needs no resolution; the
+		// Once the Job is tracked, the dump step needs no resolution. The
 		// missing cluster bites when the Zeebe step starts.
 		By("deleting the cluster, then finishing the dump")
 		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
@@ -1339,7 +1345,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		id := *backup.Status.ZeebeBackupID
 
 		// The partitions register their parts asynchronously after the 202,
-		// so a backup the cluster does not report yet is normal at first.
+		// so a backup that the cluster does not report yet is normal at first.
 		managementAPI.SetRuntimeState(id, string(camundaadmin.StateDoesNotExist), "")
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
@@ -1421,9 +1427,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		)
 	})
 
-	// S1 (round 6): the Job is rendered from a live read after admission's
-	// flush; the pinned invariants are re-checked right before, so a retarget
-	// in that gap never renders a Job that uploads elsewhere.
+	// The Job is rendered from a live read after the flush of
+	// admission. The pinned invariants are checked again right before, so a
+	// retarget in that gap never renders a Job that uploads elsewhere.
 	It("does not render the Job when the bucket was retargeted between admission and the Job", func() {
 		w := createWorld()
 		unconvergeCluster(w)
@@ -1478,9 +1484,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(envValueOf(job.Spec.Template.Spec.Containers[0], components.EnvUploadKey)).To(Equal(pinnedKey))
 	})
 
-	// Round 8 P1: the converged generation cannot tell a database swap —
-	// mutable referents enter the workload config hash without bumping it.
-	// The pinned hash can.
+	// The converged generation cannot tell a database swap.
+	// Mutable referents enter the workload config hash and do not bump the
+	// generation. The pinned hash can tell the swap.
 	It("fails when Zeebe rolled to another configuration between the dump and the Zeebe backup", func() {
 		w := createWorld()
 		backup := createBackup(w)
@@ -1503,10 +1509,11 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "15s", interval).Should(Succeed())
 	})
 
-	// Round 10 P1: the pinned hash proves Zeebe did not roll since the start,
-	// not that the referents the dump reads are the ones Zeebe runs. Between
-	// an edit of the DatabaseConfig and the cluster controller's rendering
-	// the two differ, and the template's own URL tells them apart.
+	// The pinned hash proves that Zeebe did not roll since the
+	// start. It does not prove that the referents that the dump reads are the
+	// ones that Zeebe runs. Between an edit of the DatabaseConfig and the
+	// rendering of the cluster controller, the two differ. The own URL of the
+	// template tells them apart.
 	It("waits at admission until Zeebe runs the database the dump would capture", func() {
 		w := createWorld()
 		By("Zeebe still runs the previous database while the DatabaseConfig names the next one")
@@ -1563,8 +1570,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		)).NotTo(Succeed(), "no Job was rendered against a database Zeebe does not run")
 	})
 
-	// P1: a pod that cannot start never fails its Job and consumes no retry;
-	// it must run through the bounded grace instead of holding the queue.
+	// A pod that cannot start never fails its Job and consumes no retry.
+	// It must run through the bounded grace. It must not hold the queue.
 	It("fails a dump whose pod is stuck in a non-progressing waiting state", func() {
 		w := createWorld()
 		backup := createBackup(w)
@@ -1590,7 +1597,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "15s", interval).Should(Succeed())
 	})
 
-	// P2: the Zeebe backup goes to the cluster's current backup store; a
+	// The Zeebe backup goes to the current backup store of the cluster. A
 	// retarget between the dump and the request breaks the restore point.
 	It("fails when the cluster's backup store was retargeted after the dump", func() {
 		w := createWorld()
@@ -1618,9 +1625,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "15s", interval).Should(Succeed())
 	})
 
-	// S2: the Job is released once the dump is recorded, so a PVC-backed
-	// scratch volume does not live as long as the backup; the backup itself
-	// is unaffected and deletion stays clean.
+	// The Job is released once the dump is recorded, so a PVC-backed
+	// scratch volume does not live as long as the backup. The backup itself
+	// is unaffected, and deletion stays clean.
 	It("releases the dump Job once the dump is recorded", func() {
 		w := createWorld()
 		backup := createBackup(w)
@@ -1652,8 +1659,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// F2: a management API that keeps rejecting the call is bounded like an
-	// unreachable one; a Running backup never parks forever.
+	// A management API that rejects the call again and again is bounded
+	// like an unreachable one. A Running backup never parks forever.
 	It("fails when the management API keeps rejecting the Zeebe backup request", func() {
 		w := createWorld()
 		managementAPI.FailNext("runtimeStart", 1000)
@@ -1670,7 +1677,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "15s", interval).Should(Succeed())
 	})
 
-	// F5: a retargeted bucket must never make the finalizer delete a
+	// A retargeted bucket must never make the finalizer delete a
 	// stranger's object at the same key.
 	It("leaves the object behind when the pinned bucket was retargeted", func() {
 		w := createWorld()
@@ -1706,8 +1713,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(bucket.Deleted()).NotTo(ContainElement(objectKey))
 	})
 
-	// F6: the object is deleted only once the Job and its pods are gone, so
-	// a terminating uploader cannot recreate it after the delete.
+	// The object is deleted only once the Job and its pods are gone. So
+	// an uploader that still terminates cannot recreate it after the delete.
 	It("waits for the Job's pods before deleting the object", func() {
 		w := createWorld()
 		backup := createBackup(w)
@@ -1719,8 +1726,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			objectKey = backup.Status.ObjectKey
 		}, timeout, interval).Should(Succeed())
 
-		// A pod of the Job, still around: envtest runs no kubelet, so it
-		// stays until it is deleted by hand.
+		// A pod of the Job that is still around. envtest runs no kubelet, so
+		// the pod stays until it is deleted by hand.
 		pod := podOfBackup(backup, job, "x1")
 		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 
@@ -1741,9 +1748,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// S1: a Secret that exists but lost a key is repairable; the deletion
-	// must hold, visibly, until it is repaired — only a missing Secret takes
-	// the best-effort release path.
+	// A Secret that exists but lost a key is repairable. The deletion
+	// must hold visibly until the Secret is repaired. Only a missing Secret
+	// takes the best-effort release path.
 	It("holds the deletion while the bucket credentials are broken, and finishes once repaired", func() {
 		w := createWorld()
 		backup := createBackup(w)
@@ -1791,10 +1798,10 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "20s", interval).Should(Succeed())
 	})
 
-	// P2 (round 5): after a background delete, a same-named foreign Job can
-	// take the name; the pod check follows this backup's UID, so its own
-	// terminating uploader still holds the deletion and a foreign pod never
-	// does.
+	// After a background delete, a same-named foreign Job can
+	// take the name. The pod check follows the UID of this backup, so its own
+	// uploader that still terminates holds the deletion, and a foreign pod
+	// never does.
 	It("holds deletion for its own pods even when a foreign Job took the name", func() {
 		w := createWorld()
 		backup := createBackup(w)
@@ -1854,9 +1861,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		).To(Succeed(), "the foreign Job is left alone")
 	})
 
-	// Round 8 P3: a workload-identity bucket binds the cluster
-	// ServiceAccount, which the manager does not have; cleanup runs where
-	// the identity lives — a Job under that ServiceAccount.
+	// A workload-identity bucket binds the cluster
+	// ServiceAccount, which the manager does not have. Cleanup runs where
+	// the identity lives, in a Job under that ServiceAccount.
 	It("cleans a workload-identity bucket through a Job under the cluster ServiceAccount", func() {
 		w := createWorld()
 		makeBucketWIF(w)

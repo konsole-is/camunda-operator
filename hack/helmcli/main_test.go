@@ -24,8 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// generatedValues is the shape kubebuilder's helm plugin (v4.13) writes for a
-// manager with one env var.
+// generatedValues is the shape that the kubebuilder helm plugin (v4.13) writes
+// for a manager with one env var.
 const generatedValues = `manager:
   replicas: 1
 
@@ -128,8 +128,8 @@ func TestSplitImage(t *testing.T) {
 	require.Error(t, err)
 	_, _, err = splitImage("ghcr.io/x/cli@sha256:abc")
 	require.Error(t, err)
-	// An empty repository or tag would render "repo:" or ":tag" into the
-	// chart, an invalid image, instead of failing here.
+	// An empty repository or tag renders "repo:" or ":tag" into the chart,
+	// an invalid image. It must fail here instead.
 	_, _, err = splitImage("ghcr.io/x/cli:")
 	require.Error(t, err)
 	_, _, err = splitImage(":1.2.3")

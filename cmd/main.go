@@ -72,7 +72,7 @@ func init() {
 }
 
 // cliImageEnv is the environment variable that defaults
-// --camunda-operator-cli-image; the packaging sets it to the published image.
+// --camunda-operator-cli-image. The packaging sets it to the published image.
 const cliImageEnv = "CAMUNDA_OPERATOR_CLI_IMAGE"
 
 // nolint:gocyclo
@@ -124,8 +124,8 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// The LogicalBackupRDBMS controller renders Jobs that run the CLI image;
-	// without one it could only guess, so the manager refuses to start.
+	// The LogicalBackupRDBMS controller renders Jobs that run the CLI image.
+	// Without one it can only guess, so the manager refuses to start.
 	if cliImage == "" {
 		setupLog.Error(
 			nil,
@@ -221,8 +221,8 @@ func main() {
 		Scheme: scheme,
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
-				// The operator only ever tracks its own Jobs; caching every
-				// Job in the cluster would waste memory on foreign workloads.
+				// The operator only tracks its own Jobs. A cache of every Job
+				// in the cluster wastes memory on foreign workloads.
 				&batchv1.Job{}: {
 					Label: k8slabels.SelectorFromSet(k8slabels.Set{
 						labels.ManagedByKey: labels.ManagedBy,

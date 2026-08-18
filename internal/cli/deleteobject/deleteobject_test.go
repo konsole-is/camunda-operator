@@ -48,8 +48,8 @@ func env(values map[string]string) func(string) string {
 	return func(key string) string { return values[key] }
 }
 
-// wifSpec is a workload-identity bucket: no credentials to project, the pod
-// identity is the whole authentication.
+// wifSpec is a workload-identity bucket. There are no credentials to
+// project, and the pod identity is the whole authentication.
 const wifSpec = `{"type":"S3","s3":{"bucketName":"b","region":"r",` +
 	`"auth":{"type":"workloadIdentity","workloadIdentity":{"roleArn":"arn:aws:iam::1:role/x"}}}}`
 
@@ -77,7 +77,7 @@ func TestRunDeletesExactlyTheKey(t *testing.T) {
 	assert.Nil(t, bucket.creds, "workload identity projects no credentials")
 	assert.Equal(t, "my-backup-config", bucket.config.Name)
 
-	// A second run deletes the same key again; the bucket treats a missing
+	// A second run deletes the same key again. The bucket treats a missing
 	// key as success, so the retry is idempotent end to end.
 	require.NoError(t, run(
 		context.Background(), env(map[string]string{

@@ -77,8 +77,8 @@ type Bootstrapper interface {
 	// Ping checks that the admin connection is alive.
 	Ping(ctx context.Context) error
 	// ServerVersion reads the major version of the server, for example "17".
-	// A dump must run client tools of at least the server's major, so the
-	// contract publishes it for the consumers that pick those tools.
+	// A dump must run client tools of at least the major of the server. The
+	// contract therefore publishes it for the consumers that pick those tools.
 	ServerVersion(ctx context.Context) (string, error)
 	// Close releases the admin connection.
 	Close()
@@ -384,10 +384,10 @@ func (b *bootstrapper) ServerVersion(ctx context.Context) (string, error) {
 
 // majorVersion extracts the major from a server_version_num value, in the
 // form that names the matching client tools. Since PostgreSQL 10 the number
-// is MMmmmm, the major followed by four digits of the minor, and the major
-// is everything before the last four digits ("170004" is "17"). Before 10
-// the number is MMmmpp and the major has two components: "90624" is
-// PostgreSQL 9.6.24, so the major is "9.6", never "9".
+// is MMmmmm, the major followed by four digits of the minor. The major is
+// then everything before the last four digits ("170004" is "17"). Before 10
+// the number is MMmmpp and the major has two components. "90624" is
+// PostgreSQL 9.6.24, so the major is "9.6", not "9".
 func majorVersion(num string) (string, error) {
 	for _, r := range num {
 		if r < '0' || r > '9' {
@@ -398,7 +398,7 @@ func majorVersion(num string) (string, error) {
 	case len(num) == 5:
 		minor := strings.TrimLeft(num[1:3], "0")
 		if minor == "" {
-			// 9.0.x is "900xx": an all-zero minor is still a minor.
+			// 9.0.x is "900xx". An all-zero minor is still a minor.
 			minor = "0"
 		}
 

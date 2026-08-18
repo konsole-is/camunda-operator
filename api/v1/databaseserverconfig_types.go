@@ -63,30 +63,30 @@ type DatabaseServerConfigSpec struct {
 	PITR *PITRCapability `json:"pitr,omitempty"`
 }
 
-// DatabaseServerConfigStatus is the observed validation state of the contract:
-// what the operator read from the server the last time it reached it.
+// DatabaseServerConfigStatus is the observed validation state of the contract.
+// It holds what the operator read from the server the last time it reached it.
 type DatabaseServerConfigStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// ServerVersion is the major version the server reported the last time
-	// the operator reached it, for example "17". A dump of a database on this
-	// server runs client tools of this major, so a backup waits until it is
-	// published.
+	// ServerVersion is the major version that the server reported the last
+	// time the operator reached it, for example "17". A dump of a database on
+	// this server runs client tools of this major, so a backup waits until
+	// the operator publishes it.
 	// +optional
 	ServerVersion string `json:"serverVersion,omitempty"`
 	// ProbedAt is when the operator last reached the server and read
-	// ServerVersion. The server is probed again when this is older than the
-	// probe interval, when the spec changed, or when the admin credentials
-	// Secret changed; a reconcile in between leaves it untouched.
+	// ServerVersion. The operator probes the server again when this is older
+	// than the probe interval, when the spec changed, or when the admin
+	// credentials Secret changed. A reconcile in between leaves it untouched.
 	// +optional
 	ProbedAt *metav1.Time `json:"probedAt,omitempty"`
 	// ProbedSecretVersion is the resourceVersion of the admin credentials
-	// Secret the last probe used. A changed Secret is probed again before
-	// the interval, so rotated credentials are validated promptly.
+	// Secret that the last probe used. The operator probes a changed Secret
+	// again before the interval, so it validates rotated credentials promptly.
 	// +optional
 	ProbedSecretVersion string `json:"probedSecretVersion,omitempty"`
-	// Conditions represent the current validation state; the Ready condition
+	// Conditions represent the current validation state. The Ready condition
 	// carries reasons Healthy, MissingSecret, or ConnectionFailed.
 	// +listType=map
 	// +listMapKey=type

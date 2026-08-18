@@ -36,12 +36,12 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/management"
 )
 
-// requestZeebeBackup is the step after the dump: it asks the cluster, through
-// its management API, for one Zeebe backup — Camunda's own backup of the
-// Zeebe log and snapshots (its "primary storage") to the backup bucket — and
-// polls it to completion. The cluster generates the id; the backup records
-// it before ever polling, so a re-entry polls and never requests a second
-// one.
+// requestZeebeBackup is the step after the dump. It asks the cluster, through
+// its management API, for one Zeebe backup, and polls it to completion. A
+// Zeebe backup is Camunda's own backup of the Zeebe log and snapshots (its
+// primary storage) to the backup bucket. The cluster generates the id. The
+// backup records the id before it polls, so a re-entry polls and never
+// requests a second one.
 func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -61,18 +61,19 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 		return settle, err
 	}
 
-	// The dump is durably recorded once this step runs, so its Job — and
-	// the scratch volume a PVC-backed dump holds — can go now instead of at
-	// the end of the backup's life.
+	// The dump is durably recorded once this step runs. So its Job can go
+	// now instead of at the end of the backup's life, together with the
+	// scratch volume that a PVC-backed dump holds.
 	if err := r.releaseJob(ctx, backup); err != nil {
 		return settle, err
 	}
 
 	if backup.Status.ZeebeBackupID == nil {
-		// The Zeebe backup goes to the cluster's current backup store; the
-		// pair is one restore point only if that is still the bucket the
-		// dump was written to — and only if Zeebe runs the spec that names
-		// it, not a rollout still in progress.
+		// The Zeebe backup goes to the current backup store of the cluster.
+		// The pair is one restore point only if that store is still the
+		// bucket that the dump was written to. It also requires that Zeebe
+		// runs the spec that names the bucket, not a rollout still in
+		// progress.
 		_, failure, err := r.pinnedBucket(ctx, backup, &cluster)
 		if err != nil {
 			return settle, err
@@ -81,8 +82,9 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 			failure = clusterConverged(&cluster)
 		}
 		if failure == nil {
-			// The generation alone cannot tell a database swap: mutable
-			// referents enter the workload config hash without bumping it.
+			// The generation alone cannot tell a database swap. Mutable
+			// referents enter the workload config hash without a bump of
+			// the generation.
 			failure, err = r.workloadUnchanged(ctx, backup, &cluster)
 			if err != nil {
 				return settle, err
@@ -108,16 +110,17 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 	return r.pollZeebeBackup(ctx, backup, &cluster, admin)
 }
 
-// releaseJob deletes the dump Job once the backup has recorded its result,
-// and clears status.jobName so the release runs once. The Job served its
-// purpose; keeping it — and its retained pod with a PVC-backed scratch
-// volume — for the life of the backup would hold storage for nothing. A
-// failed Job is not released: it stays for inspection until the backup is
-// deleted. Only this backup's own Job is deleted: the live Job must carry
-// the backup's UID label, and the delete carries that Job's UID as a
-// precondition, so a same-named stranger that appears between the read and
-// the delete survives — the precondition's conflict, like a missing or
-// foreign Job, just clears the name.
+// releaseJob deletes the dump Job once the backup recorded its result, and
+// clears status.jobName so that the release runs once. The Job served its
+// purpose. A Job that stays for the life of the backup holds storage for
+// nothing, because its retained pod keeps a PVC-backed scratch volume.
+// releaseJob does not release a failed Job. That Job stays for inspection
+// until the backup is deleted. releaseJob deletes only the own Job of this
+// backup. The live Job must carry the UID label of the backup, and the
+// delete carries the UID of that Job as a precondition. So a same-named
+// stranger that appears between the read and the delete survives. The
+// conflict of the precondition, like a missing or foreign Job, only clears
+// the name.
 func (r *LogicalBackupRDBMSReconciler) releaseJob(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -131,11 +134,11 @@ func (r *LogicalBackupRDBMSReconciler) releaseJob(
 	err := r.APIReader.Get(ctx, key, &job)
 	switch {
 	case apierrors.IsNotFound(err):
-		// Gone already; nothing to release.
+		// The Job is gone already. There is nothing to release.
 	case err != nil:
 		return fmt.Errorf("reading the dump Job to release it: %w", err)
 	case !components.JobBelongsTo(&job, backup):
-		// A stranger took the name; it is not ours to delete.
+		// A stranger took the name. It is not ours to delete.
 	default:
 		if err := r.Delete(
 			ctx, &job,
@@ -150,12 +153,12 @@ func (r *LogicalBackupRDBMSReconciler) releaseJob(
 	return nil
 }
 
-// pinnedBucket verifies that the cluster's backup store is still the bucket
-// the dump was, or will be, written through — the same contract, pointing at
-// the same location — and returns it. A retarget after admission would send
-// the dump or the Zeebe backup somewhere else, and the pair would not be one
-// restore point; the Job and the Zeebe request both check it right before
-// they act.
+// pinnedBucket checks that the backup store of the cluster is still the
+// bucket that the dump was, or will be, written through, and returns it.
+// Still the same bucket means the same contract that points at the same
+// location. A retarget after admission sends the dump or the Zeebe backup
+// somewhere else, and then the pair is not one restore point. The Job and
+// the Zeebe request both check the bucket right before they act.
 func (r *LogicalBackupRDBMSReconciler) pinnedBucket(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -203,17 +206,17 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 	id, err := admin.StartRuntimeBackup(ctx, nil)
 	switch {
 	case errors.Is(err, camundaadmin.ErrConflict):
-		// A conflict on the id the cluster just generated means a higher id
-		// landed in between; the next request generates a fresh one, so this
-		// is retried with backoff — and never resolved by adopting the backup
-		// that holds the id.
+		// A conflict on the id that the cluster just generated means that a
+		// higher id landed in between. The next request generates a fresh
+		// one, so the controller retries with backoff. It never adopts the
+		// backup that holds the id.
 		return settle, fmt.Errorf("requesting the Zeebe backup: %w", err)
 	case err != nil:
-		// Unreachable or rejected (a 503 through a restarting gateway, a
-		// 401): both run through the same bounded grace as any other mid-run
-		// failure. The dump already succeeded, so one bad answer must not
-		// discard it — but an API that never answers well again must
-		// terminalize the backup, not park it forever.
+		// Unreachable or rejected, for example a 503 through a gateway that
+		// restarts, or a 401. Both run through the same bounded grace as any
+		// other mid-run failure. The dump already succeeded, so one bad
+		// answer must not discard it. But an API that never answers well
+		// again must terminalize the backup, not park it without a bound.
 		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
 	r.recovered(backup)
@@ -223,15 +226,15 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 	backup.Status.ZeebeBackupRequestedAt = &now
 	conditions.Stage(backup, progressing(backup, "the Zeebe backup runs"))
 
-	// Persist the generated id before polling it: a crash here must re-enter
-	// polling, never request a second backup.
+	// The generated id must be persisted before the poll. A crash here must
+	// re-enter the poll, never request a second backup.
 	return shortly, nil
 }
 
 // pollZeebeBackup reads the state of the recorded backup and terminalizes on
-// a final answer. Right after the request the partitions register their
-// parts asynchronously, so a backup the cluster does not report yet is
-// normal within the registration grace — and fatal past it.
+// a final answer. Right after the request, the partitions register their
+// parts asynchronously. So a backup that the cluster does not report yet is
+// normal within the registration grace, and fatal past it.
 func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -240,7 +243,7 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 ) (hold, error) {
 	status, err := admin.RuntimeBackupStatus(ctx, *backup.Status.ZeebeBackupID)
 	if err != nil {
-		// Unreachable or rejected alike: bounded by the mid-run grace.
+		// Unreachable or rejected alike. The mid-run grace bounds both.
 		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
 	r.recovered(backup)
@@ -274,9 +277,10 @@ func (r *LogicalBackupRDBMSReconciler) pollZeebeBackup(
 }
 
 // managementFailure is the mid-run failure of a management API that does
-// not answer, or answers with an error, naming the endpoint so the terminal
-// message points somewhere. Both share ConnectionFailed: from the backup's
-// side the API is not usable, whichever way it fails.
+// not answer, or answers with an error. It names the endpoint so that the
+// terminal message points somewhere. Both cases share ConnectionFailed.
+// From the side of the backup, the API is not usable, whichever way it
+// fails.
 func managementFailure(cluster *v1.CamundaCluster, err error) *conditions.PreCheckFailure {
 	verb := "rejected the call"
 	if errors.Is(err, camundaadmin.ErrUnreachable) {

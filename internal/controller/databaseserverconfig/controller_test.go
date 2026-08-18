@@ -55,8 +55,8 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 	}
 
 	// adminSecret builds the referenced admin-creds Secret with the given keys.
-	// The values are the admin credentials of the shared container, so a
-	// complete Secret lets the probe reach the server.
+	// The values are the admin credentials of the shared container. A complete
+	// Secret therefore lets the probe reach the server.
 	adminSecret := func(keys ...string) *corev1.Secret {
 		pg, err := testPostgres()
 		Expect(err).NotTo(HaveOccurred())
@@ -74,8 +74,8 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		}
 	}
 
-	// pointAtServer aims the fixture at the shared PostgreSQL container, so
-	// the probe finds a live server behind the admin credentials.
+	// pointAtServer aims the fixture at the shared PostgreSQL container. The
+	// probe then finds a live server behind the admin credentials.
 	pointAtServer := func() {
 		pg, err := testPostgres()
 		Expect(err).NotTo(HaveOccurred())
@@ -145,8 +145,8 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, notFoundMessage())
 	})
 
-	// The fixture's host is a service that does not exist here, so a
-	// complete Secret alone is not enough anymore: Ready proves the server
+	// The host of the fixture is a service that does not exist here, so a
+	// complete Secret alone is not enough. Ready proves that the server
 	// answered, not that a Secret exists.
 	It("reports ConnectionFailed when the server does not answer", func() {
 		secret := adminSecret("username", "password")
@@ -199,9 +199,10 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		))
 	})
 
-	// A successful probe is not repeated on every reconcile: the status flush
-	// of a fresh probe writes nothing new, so it wakes no watch, and the
-	// interval is the cadence. A spec change or a Secret change probes again.
+	// The controller does not repeat a successful probe on every reconcile.
+	// The status flush of a fresh probe writes nothing new, so it wakes no
+	// watch, and the interval sets the cadence. A spec change or a Secret
+	// change probes again.
 	It("probes once per interval, and again on a spec or Secret change", func() {
 		pointAtServer()
 		secret := adminSecret("username", "password")
