@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/konsole-is/camunda-operator/internal/cli/deleteobject"
 	"github.com/konsole-is/camunda-operator/internal/cli/upload"
 )
 
@@ -47,6 +48,7 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 	root.AddCommand(newUploadCommand())
+	root.AddCommand(newDeleteCommand())
 
 	return root
 }
@@ -60,6 +62,22 @@ func newUploadCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return upload.Run(cmd.Context())
+		},
+	}
+}
+
+// newDeleteCommand removes one object from the backup bucket. The cleanup
+// Job of a deleted backup runs it under the cluster ServiceAccount, so a
+// bucket on workload identity is cleaned by the identity that wrote it. Its
+// whole interface is the same UPLOAD_* environment; a missing key is
+// success, so a retry is idempotent.
+func newDeleteCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete",
+		Short: "Delete an object from the backup bucket described by the UPLOAD_* environment",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return deleteobject.Run(cmd.Context())
 		},
 	}
 }

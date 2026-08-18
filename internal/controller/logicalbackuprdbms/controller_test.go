@@ -24,10 +24,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -166,12 +168,14 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	}
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-	// The volume status, the binding, and the converged Ready that the
-	// CamundaCluster controller would publish.
+	// The volume status, the binding, the converged Ready, and the Zeebe
+	// workload with its config hash that the CamundaCluster controller would
+	// publish and render.
 	cluster.Status.Volumes = []v1.VolumeStatus{
 		{Name: "data-cc-0", Capacity: resource.MustParse("15Gi")},
 	}
 	Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
+	renderZeebe(cluster, "hash-1")
 	converge(cluster)
 
 	// The bucket credentials live in the cluster namespace, so the backup
@@ -192,6 +196,43 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		server:    server,
 		bucket:    bucket,
 	}
+}
+
+// renderZeebe stands in for the CamundaCluster controller's rendering: the
+// Zeebe StatefulSet whose pod template carries the config hash of the
+// configuration Zeebe runs. Changing the hash stands in for a rollout to
+// another configuration, for example a swapped database.
+func renderZeebe(cluster *v1.CamundaCluster, hash string) {
+	GinkgoHelper()
+	key := types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+	}
+	Eventually(func(g Gomega) {
+		var workload appsv1.StatefulSet
+		err := k8sClient.Get(ctx, key, &workload)
+		if apierrors.IsNotFound(err) {
+			workload = appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+				Spec: appsv1.StatefulSetSpec{
+					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": key.Name}},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels:      map[string]string{"app": key.Name},
+							Annotations: map[string]string{camundacluster.ConfigHashAnnotation: hash},
+						},
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "zeebe", Image: "z"}}},
+					},
+				},
+			}
+			g.Expect(k8sClient.Create(ctx, &workload)).To(Succeed())
+
+			return
+		}
+		g.Expect(err).NotTo(HaveOccurred())
+		workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation] = hash
+		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // converge stands in for the CamundaCluster controller: it publishes the
@@ -341,11 +382,27 @@ func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 			b.Status.BucketRef = w.bucket.Name
 			b.Status.BucketGeneration = w.bucket.Generation
 			b.Status.BucketLocation = w.bucket.Location()
+			b.Status.WorkloadConfigHash = "hash-1"
 			b.Status.ObjectKey = logicalbackup.ObjectKeyPrefix(
 				w.bucket.BasePath(), w.namespace, w.cluster.Name, id,
 			) + "/" + components.DumpFileName
 		}, func(b *v1.LogicalBackupRDBMS) bool { return b.Status.BackupID == id },
 	)
+}
+
+// makeBucketWIF flips the world's bucket to workload identity, so the
+// manager holds no credentials for it and cleanup must run where the
+// identity lives.
+func makeBucketWIF(w *world) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
+		w.bucket.Spec.S3.Auth = v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::1:role/backup"},
+		}
+		g.Expect(k8sClient.Update(ctx, w.bucket)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // gateState describes why a waiting backup may not have started: its own
@@ -466,8 +523,14 @@ func secretNameOfEnv(container corev1.Container, name string) string {
 // in for a kubelet that ran the pod.
 func markJob(backup *v1.LogicalBackupRDBMS, w *world, kind batchv1.JobConditionType) {
 	GinkgoHelper()
+	markJobNamed(components.JobName(backup), w, kind)
+}
+
+// markJobNamed is markJob for any Job name, for example the cleanup Job.
+func markJobNamed(name string, w *world, kind batchv1.JobConditionType) {
+	GinkgoHelper()
 	var job batchv1.Job
-	key := types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}
+	key := types.NamespacedName{Namespace: w.namespace, Name: name}
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
@@ -1014,6 +1077,13 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("leaving the Zeebe backup alone")
 		Expect(managementAPI.RuntimeBackup(id)).NotTo(BeNil())
 
+		By("never creating a cleanup Job: the manager holds the credentials")
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{
+				Namespace: w.namespace, Name: components.CleanupJobName(backup),
+			}, &batchv1.Job{},
+		)).NotTo(Succeed())
+
 		// envtest runs no garbage collector, so a Job still present here
 		// would mean the finalizer relied on the owner reference instead of
 		// deleting it.
@@ -1387,6 +1457,31 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(envValueOf(job.Spec.Template.Spec.Containers[0], components.EnvUploadKey)).To(Equal(pinnedKey))
 	})
 
+	// Round 8 P1: the converged generation cannot tell a database swap —
+	// mutable referents enter the workload config hash without bumping it.
+	// The pinned hash can.
+	It("fails when Zeebe rolled to another configuration between the dump and the Zeebe backup", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		jobOf(backup, w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.WorkloadConfigHash).To(Equal("hash-1"), "the hash is pinned at start")
+		}, timeout, interval).Should(Succeed())
+
+		By("rolling the Zeebe workload to another configuration, still converged")
+		renderZeebe(w.cluster, "hash-2")
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-1"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-2"))
+			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
+		}, "15s", interval).Should(Succeed())
+	})
+
 	// P1: a pod that cannot start never fails its Job and consumes no retry;
 	// it must run through the bounded grace instead of holding the queue.
 	It("fails a dump whose pod is stuck in a non-progressing waiting state", func() {
@@ -1676,6 +1771,90 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(
 			k8sClient.Get(ctx, client.ObjectKeyFromObject(foreign), foreign),
 		).To(Succeed(), "the foreign Job is left alone")
+	})
+
+	// Round 8 P3: a workload-identity bucket binds the cluster
+	// ServiceAccount, which the manager does not have; cleanup runs where
+	// the identity lives — a Job under that ServiceAccount.
+	It("cleans a workload-identity bucket through a Job under the cluster ServiceAccount", func() {
+		w := createWorld()
+		makeBucketWIF(w)
+		backup := createBackup(w)
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		managementAPI.SetRuntimeState(
+			*backup.Status.ZeebeBackupID, string(camundaadmin.StateCompleted), "",
+		)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
+		}, timeout, interval).Should(Succeed())
+		objectKey := backup.Status.ObjectKey
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		By("creating the cleanup Job on the dump Job's identity surface")
+		var cleanup batchv1.Job
+		cleanupKey := types.NamespacedName{
+			Namespace: w.namespace, Name: components.CleanupJobName(backup),
+		}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, cleanupKey, &cleanup)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		pod := cleanup.Spec.Template.Spec
+		Expect(pod.ServiceAccountName).To(Equal(w.cluster.Name + "-camunda"))
+		Expect(pod.Containers[0].Image).To(Equal("ghcr.io/konsole-is/camunda-operator-cli:test"))
+		Expect(pod.Containers[0].Args).To(Equal([]string{"delete"}))
+		Expect(cleanup.Labels).To(HaveKeyWithValue(components.BackupUIDLabel, string(backup.UID)))
+		Expect(envValueOf(pod.Containers[0], components.EnvUploadKey)).To(Equal(objectKey))
+
+		By("releasing once the cleanup Job completes, without an in-manager delete")
+		markJobNamed(cleanup.Name, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Expect(bucket.Deleted()).NotTo(ContainElement(objectKey), "the manager never opened the bucket")
+	})
+
+	It("holds the deletion visibly while the cleanup Job fails", func() {
+		w := createWorld()
+		makeBucketWIF(w)
+		backup := createBackup(w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		cleanupKey := types.NamespacedName{
+			Namespace: w.namespace, Name: components.CleanupJobName(backup),
+		}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, cleanupKey, &batchv1.Job{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		markJobNamed(cleanupKey.Name, w, batchv1.JobFailed)
+
+		By("holding the finalizer and naming the failed Job")
+		Eventually(func(g Gomega) {
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(w.namespace))).To(Succeed())
+			notes := make([]string, 0, len(events.Items))
+			for _, event := range events.Items {
+				notes = append(notes, event.Reason+": "+event.Note)
+			}
+			g.Expect(notes).To(ContainElement(And(
+				HavePrefix("ArtifactCleanupFailed"), ContainSubstring(cleanupKey.Name),
+			)))
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+		}, "2s", interval).Should(Succeed())
 	})
 
 	It("releases the finalizer when the pinned bucket is gone", func() {

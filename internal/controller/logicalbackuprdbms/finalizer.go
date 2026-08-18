@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
+	ocfjob "github.com/sourcehawk/operator-component-framework/pkg/primitives/job"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,9 +40,13 @@ import (
 )
 
 // errRepairable marks a cleanup failure the user can fix — a credentials
-// Secret that exists but lost a key. The finalizer holds and polls for the
-// repair instead of releasing or backing off.
+// Secret that exists but lost a key, a failed cleanup Job. The finalizer
+// holds and polls for the repair instead of releasing or backing off.
 var errRepairable = errors.New("cleanup is waiting for a repair")
+
+// errCleanupRunning means the cleanup Job of the backup runs and the object
+// delete waits for its result.
+var errCleanupRunning = errors.New("the cleanup Job is running")
 
 // finalize removes the artifacts of a deleted backup: the Job and the dump
 // object, keyed strictly on this backup's own object key. Zeebe backups are
@@ -74,6 +80,9 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 
 	if backup.Status.ObjectKey != "" {
 		left, err := r.deleteObject(ctx, backup)
+		if errors.Is(err, errCleanupRunning) {
+			return hold{after: shortly.after}, nil
+		}
 		if errors.Is(err, errRepairable) {
 			// The user has to act; poll for the repair instead of backing off
 			// exponentially, so the deletion finishes soon after it lands.
@@ -205,8 +214,19 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 		), nil
 	}
 
+	// Cleanup runs where the identity lives. A workload-identity bucket
+	// binds the CLUSTER ServiceAccount, which the manager does not have, so
+	// the delete runs as a Job under that ServiceAccount — the same identity
+	// surface that uploaded the object. A credentials-mode bucket is cleaned
+	// by the manager directly: it holds the Secret, no pod identity is
+	// involved.
+	credentials := bucket.CredentialsSecret()
+	if credentials == nil {
+		return r.cleanupWithJob(ctx, backup, &cluster, &bucket)
+	}
+
 	var creds *objectstore.Credentials
-	if credentials := bucket.CredentialsSecret(); credentials != nil {
+	{
 		// The same rule the Job used: the source Secret when it lives in the
 		// cluster namespace, the local copy the CamundaCluster controller
 		// keeps otherwise. Either way the finalizer reads exactly the
@@ -283,4 +303,118 @@ func (r *LogicalBackupRDBMSReconciler) releaseFinalizer(
 
 		return r.Update(ctx, &current)
 	})
+}
+
+// cleanupWithJob removes the dump object through a cleanup Job in the
+// backup's namespace, under the cluster ServiceAccount that the bucket's
+// workload identity is bound to. The Job's name is deterministic and its
+// creation is a create-only identity claim, like the dump Job's. A running
+// Job holds the delete (errCleanupRunning); a completed one is removed and
+// the cleanup counts as done; a failed one holds the deletion visibly
+// (errRepairable) with an event naming the Job — the user inspects it, and
+// deleting it retries with a fresh one.
+func (r *LogicalBackupRDBMSReconciler) cleanupWithJob(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	cluster *v1.CamundaCluster,
+	bucket *v1.ObjectStorageConfig,
+) (string, error) {
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: components.CleanupJobName(backup)}
+
+	var job batchv1.Job
+	err := r.APIReader.Get(ctx, key, &job)
+	switch {
+	case err != nil && !apierrors.IsNotFound(err):
+		return "", fmt.Errorf("reading the cleanup Job: %w", err)
+	case err == nil && !components.JobBelongsTo(&job, backup):
+		r.cleanupEvent(backup, "Deletion is waiting: Job %s belongs to another backup", key)
+
+		return "", fmt.Errorf("%w: the cleanup Job name %s is taken by another backup", errRepairable, key)
+	case err == nil:
+		return r.watchCleanupJob(ctx, backup, &job)
+	}
+
+	pod, failure, err := r.resolvePod(ctx, cluster, backup)
+	if err != nil {
+		return "", err
+	}
+	if failure != nil {
+		r.cleanupEvent(
+			backup, "Deletion is waiting: the cleanup Job cannot be rendered: %s", failure.Message,
+		)
+
+		return "", fmt.Errorf("%w: %s", errRepairable, failure.Message)
+	}
+
+	cleanup, err := components.BuildCleanupJob(components.CleanupJobInput{
+		Backup:             backup,
+		ClusterName:        cluster.Name,
+		Dump:               pod.settings,
+		Bucket:             bucket,
+		ServiceAccountName: pod.account,
+		ObjectKey:          backup.Status.ObjectKey,
+		CLIImage:           r.opts.CLIImage,
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := controllerutil.SetControllerReference(backup, cleanup, r.Scheme); err != nil {
+		return "", fmt.Errorf("owning the cleanup Job: %w", err)
+	}
+	// Create-only, like every identity claim on a deterministic name; an
+	// AlreadyExists lost the race to a concurrent reconcile and re-reads.
+	if err := r.Create(ctx, cleanup); err != nil && !apierrors.IsAlreadyExists(err) {
+		return "", fmt.Errorf("creating the cleanup Job: %w", err)
+	}
+
+	return "", errCleanupRunning
+}
+
+// watchCleanupJob maps the observed cleanup Job onto the deletion: done,
+// still running, or held on a failure the user must see.
+func (r *LogicalBackupRDBMSReconciler) watchCleanupJob(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	job *batchv1.Job,
+) (string, error) {
+	status, err := ocfjob.DefaultConvergingStatusHandler(concepts.ConvergingOperationNone, job)
+	if err != nil {
+		return "", err
+	}
+
+	switch status.Status {
+	case concepts.CompletionStatusCompleted:
+		// The object is gone; the Job served its purpose.
+		if err := r.Delete(
+			ctx, job,
+			client.PropagationPolicy(metav1.DeletePropagationBackground),
+			client.Preconditions{UID: &job.UID},
+		); err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			return "", fmt.Errorf("removing the finished cleanup Job: %w", err)
+		}
+
+		return "", nil
+	case concepts.CompletionStatusFailing:
+		r.cleanupEvent(
+			backup,
+			"Deletion is waiting: the cleanup Job %s/%s failed (%s); inspect it, fix the cause, "+
+				"and delete the Job to retry",
+			job.Namespace, job.Name, status.Reason,
+		)
+
+		return "", fmt.Errorf(
+			"%w: the cleanup Job %s/%s failed", errRepairable, job.Namespace, job.Name,
+		)
+	}
+
+	return "", errCleanupRunning
+}
+
+// cleanupEvent records why the deletion is held, so the hold is visible.
+func (r *LogicalBackupRDBMSReconciler) cleanupEvent(
+	backup *v1.LogicalBackupRDBMS, format string, args ...any,
+) {
+	r.EventRecorder.Eventf(
+		backup, nil, corev1.EventTypeWarning, eventReasonCleanup, eventActionFinalize, format, args...,
+	)
 }

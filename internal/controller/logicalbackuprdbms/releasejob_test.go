@@ -19,15 +19,19 @@ package logicalbackuprdbms
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 )
 
@@ -41,7 +45,7 @@ func TestReleaseJobNeverDeletesAStranger(t *testing.T) {
 	scheme := dumpScheme(t)
 	backup := trackedBackup()
 	stranger := ownJob(backup)
-	stranger.Labels[components.BackupUIDLabel] = "uid-of-someone-else"
+	stranger.Labels[components.BackupUIDLabel] = foreignUID
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stranger).Build()
 	r := &LogicalBackupRDBMSReconciler{Client: c, APIReader: c}
@@ -51,7 +55,7 @@ func TestReleaseJobNeverDeletesAStranger(t *testing.T) {
 
 	var survived batchv1.Job
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(stranger), &survived))
-	assert.Equal(t, "uid-of-someone-else", survived.Labels[components.BackupUIDLabel])
+	assert.Equal(t, foreignUID, survived.Labels[components.BackupUIDLabel])
 }
 
 // TestReleaseJobDeletesOwnJobWithItsUID proves the happy path deletes exactly
@@ -125,4 +129,54 @@ func TestFinalizerDeleteJobRetriesOnAPreconditionConflict(t *testing.T) {
 
 	var survived batchv1.Job
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(own), &survived))
+}
+
+// TestClaimJobNameNeverMutatesTheWinner pins the atomicity of the initial
+// Job creation: it is a create-only identity claim, so a same-named foreign
+// Job that lands between the absence check and the create wins the name
+// untouched — labels and owner references intact — and the backup takes the
+// bounded foreign-Job failure instead of force-applying over it.
+func TestClaimJobNameNeverMutatesTheWinner(t *testing.T) {
+	t.Parallel()
+
+	scheme := dumpScheme(t)
+	backup := trackedBackup()
+	backup.Status.JobName = ""
+
+	// The foreign winner, already in the store when the create runs: exactly
+	// the interleaving where it was created after the NotFound read.
+	winner := ownJob(backup)
+	winner.Name = components.JobName(backup)
+	winner.UID = "winner-uid"
+	winner.Labels[components.BackupUIDLabel] = foreignUID
+	winner.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: "v1", Kind: "ConfigMap", Name: "someone", UID: "someone-uid",
+	}}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(winner).Build()
+	r := &LogicalBackupRDBMSReconciler{
+		Client:        c,
+		APIReader:     c,
+		EventRecorder: events.NewFakeRecorder(4),
+		opts:          Options{RetryInterval: time.Second},
+	}
+
+	ours := ownJob(backup)
+	ours.Name = winner.Name
+	wait, err := r.claimJobName(context.Background(), backup, ours)
+	require.NoError(t, err)
+	assert.Equal(t, settle, wait)
+	assert.Equal(t, v1.LogicalBackupFailed, backup.Status.Phase)
+	assert.Contains(t, backup.Status.FailureMessage, "belongs to another backup")
+
+	var survived batchv1.Job
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(winner), &survived))
+	assert.Equal(
+		t,
+		foreignUID,
+		survived.Labels[components.BackupUIDLabel],
+		"the winner's identity is untouched",
+	)
+	require.Len(t, survived.OwnerReferences, 1)
+	assert.Equal(t, "someone", survived.OwnerReferences[0].Name, "the winner's owner is untouched")
 }

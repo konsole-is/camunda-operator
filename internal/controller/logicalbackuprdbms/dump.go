@@ -156,12 +156,43 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 	if err := controllerutil.SetControllerReference(backup, job, r.Scheme); err != nil {
 		return settle, fmt.Errorf("owning the dump Job: %w", err)
 	}
-	//nolint:staticcheck // the repo applies through the deprecated client.Apply patch
-	if err := r.Patch(
-		ctx, job, client.Apply, client.FieldOwner(fieldManager), client.ForceOwnership,
-	); err != nil {
-		return settle, fmt.Errorf("applying the dump Job: %w", err)
+
+	return r.claimJobName(ctx, backup, job)
+}
+
+// claimJobName creates the Job as an identity claim: create-only, never SSA,
+// deviating from the repo's apply rule on purpose. A forced apply after a
+// NotFound is not atomic — a same-named Job that lands in between would have
+// its UID label and owner reference overwritten before adoption could check
+// them — while the API server makes a Create atomic, the same reasoning as
+// the cluster's claim Lease. AlreadyExists reads the winner and adopts it
+// only when it carries this backup's UID; a foreign winner is the existing
+// bounded failure.
+func (r *LogicalBackupRDBMSReconciler) claimJobName(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+	job *batchv1.Job,
+) (hold, error) {
+	err := r.Create(ctx, job)
+	switch {
+	case apierrors.IsAlreadyExists(err):
+		var winner batchv1.Job
+		if err := r.APIReader.Get(
+			ctx, types.NamespacedName{Namespace: job.Namespace, Name: job.Name}, &winner,
+		); err != nil {
+			if apierrors.IsNotFound(err) {
+				// Deleted again in between; the requeue re-enters the claim.
+				return hold{after: shortly.after}, nil
+			}
+
+			return settle, fmt.Errorf("reading the dump Job that won the name: %w", err)
+		}
+
+		return r.adopt(ctx, backup, &winner)
+	case err != nil:
+		return settle, fmt.Errorf("creating the dump Job: %w", err)
 	}
+
 	backup.Status.JobName = job.Name
 	conditions.Stage(backup, progressing(backup, "the dump Job runs"))
 
@@ -226,6 +257,9 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 	// written for.
 	if failure := clusterConverged(&cluster); failure != nil {
 		return nil, failure, nil
+	}
+	if failure, err := r.workloadUnchanged(ctx, backup, &cluster); err != nil || failure != nil {
+		return nil, failure, err
 	}
 	bucket, failure, err := r.pinnedBucket(ctx, backup, &cluster)
 	if err != nil || failure != nil {

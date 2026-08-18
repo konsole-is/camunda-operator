@@ -452,3 +452,55 @@ func TestBuildJobHonorsAnExplicitDeadline(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(7200), *job.Spec.ActiveDeadlineSeconds)
 }
+
+// TestCleanupJobGolden pins the cleanup Job: the delete subcommand of the CLI
+// image, under the cluster ServiceAccount with the bucket's workload-identity
+// pod labels — the same identity surface as the dump Job — bounded by the
+// dump block's deadline.
+func TestCleanupJobGolden(t *testing.T) {
+	t.Parallel()
+
+	in := CleanupJobInput{
+		Backup:      backup(),
+		ClusterName: "my-cluster",
+		Dump: &v1.DumpPodSpec{
+			PodAnnotations:        map[string]string{"sidecar.istio.io/inject": "false"},
+			ActiveDeadlineSeconds: new(int64(3600)),
+		},
+		Bucket: &v1.ObjectStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-backup-config"},
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeAzureBlob,
+				AzureBlob: &v1.AzureBlobStorage{
+					AccountName: "camundabackups",
+					Container:   "backups",
+					BasePath:    "clusters",
+					Auth: v1.AzureBlobStorageAuth{
+						Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
+					},
+				},
+			},
+		},
+		ServiceAccountName: "my-cluster-camunda",
+		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/camunda.dump",
+		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
+	}
+
+	golden.AssertYAML(
+		t, "testdata/golden/cleanup-job/job.yaml", cleanupPreview{in},
+		golden.WithScheme(goldenScheme(t)), golden.Update(*updateGolden),
+	)
+}
+
+// cleanupPreview adapts the built cleanup Job to the golden previewer.
+type cleanupPreview struct{ input CleanupJobInput }
+
+func (p cleanupPreview) Preview() (client.Object, error) { return BuildCleanupJob(p.input) }
+
+func TestBuildCleanupJobRejectsAnEmptyCLIImage(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildCleanupJob(CleanupJobInput{Backup: backup(), Bucket: s3Bucket(s3Credentials())})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "camunda-operator-cli image is empty")
+}

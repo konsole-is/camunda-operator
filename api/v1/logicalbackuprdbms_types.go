@@ -90,6 +90,14 @@ type LogicalBackupRDBMSStatus struct {
 	// report yet.
 	// +optional
 	ZeebeBackupRequestedAt *metav1.Time `json:"zeebeBackupRequestedAt,omitempty"`
+	// WorkloadConfigHash pins the configuration Zeebe ran when the backup
+	// started: the config hash of the live Zeebe pod template. The Zeebe
+	// backup is requested only while the hash is unchanged — a database
+	// swapped in between would pair the dump with a Zeebe backup of another
+	// configuration, and the cluster's generation alone cannot tell, because
+	// mutable referents enter the hash without bumping it.
+	// +optional
+	WorkloadConfigHash string `json:"workloadConfigHash,omitempty"`
 	// FirstFailedAt is when a dependency of the running backup first stopped
 	// resolving, or the management API first stopped answering. The mid-run
 	// grace is measured from it; it clears when the backup recovers.

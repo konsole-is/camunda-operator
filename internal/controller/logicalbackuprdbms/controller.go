@@ -60,8 +60,6 @@ import (
 )
 
 const (
-	// fieldManager owns the Job of a backup in Server-Side Apply.
-	fieldManager = "camunda-operator/backup"
 	// clusterKeyIndex indexes backups by the namespace/name of the cluster
 	// they reference, for the serialization pre-check and the cluster watch.
 	clusterKeyIndex = "logicalbackuprdbms.spec.clusterRef"

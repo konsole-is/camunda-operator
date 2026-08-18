@@ -80,6 +80,14 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 		if failure == nil {
 			failure = clusterConverged(&cluster)
 		}
+		if failure == nil {
+			// The generation alone cannot tell a database swap: mutable
+			// referents enter the workload config hash without bumping it.
+			failure, err = r.workloadUnchanged(ctx, backup, &cluster)
+			if err != nil {
+				return settle, err
+			}
+		}
 		if failure != nil {
 			return r.holdRunning(backup, failure)
 		}

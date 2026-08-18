@@ -292,7 +292,6 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	}
 
 	return &batchv1.Job{
-		// Server-Side Apply requires the type to be stated on the patch.
 		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      JobName(in.Backup),

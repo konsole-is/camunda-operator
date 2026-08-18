@@ -14,17 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package upload is the upload subcommand of camunda-operator-cli, which the
-// dump Job runs as its main container: it streams one file to the backup
-// bucket and exits. The environment is its whole interface, rendered by
-// pkg/components/logicalbackuprdbms and read here; the Job succeeds only when
-// the upload did.
-package upload
+// Package deleteobject is the delete subcommand of camunda-operator-cli,
+// which the cleanup Job of a deleted backup runs: it removes one object from
+// the backup bucket and exits. It runs where the identity lives — under the
+// cluster ServiceAccount that the storage contract binds — so a bucket on
+// workload identity is cleaned by the identity that wrote it, never by the
+// manager's. The environment is its whole interface, the same UPLOAD_*
+// contract the upload subcommand reads; a key that does not exist is
+// success, so a retried Job is idempotent.
+package deleteobject
 
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -33,13 +35,13 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
-// uploader is the slice of the bucket that the subcommand needs.
-type uploader interface {
-	Upload(ctx context.Context, key string, r io.Reader) error
+// deleter is the slice of the bucket that the subcommand needs.
+type deleter interface {
+	Delete(ctx context.Context, key string) error
 	Close()
 }
 
-// Run reads the environment, opens the bucket, and uploads the file. It is
+// Run reads the environment, opens the bucket, and deletes the object. It is
 // the entry point of the subcommand; a non-nil error means a non-zero exit.
 func Run(ctx context.Context) error {
 	return run(ctx, os.Getenv, openBucket)
@@ -48,14 +50,11 @@ func Run(ctx context.Context) error {
 func run(
 	ctx context.Context,
 	getenv func(string) string,
-	open func(ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials) (uploader, error),
+	open func(ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials) (deleter, error),
 ) error {
-	file := getenv(components.EnvUploadFile)
 	key := getenv(components.EnvUploadKey)
-	if file == "" || key == "" {
-		return fmt.Errorf(
-			"%s and %s must both be set", components.EnvUploadFile, components.EnvUploadKey,
-		)
+	if key == "" {
+		return fmt.Errorf("%s must be set", components.EnvUploadKey)
 	}
 
 	cfg, creds, err := storageenv.Load(getenv)
@@ -69,14 +68,8 @@ func run(
 	}
 	defer bucket.Close()
 
-	source, err := os.Open(file)
-	if err != nil {
-		return fmt.Errorf("opening the dump: %w", err)
-	}
-	defer func() { _ = source.Close() }()
-
-	if err := bucket.Upload(ctx, key, source); err != nil {
-		return fmt.Errorf("uploading the dump to %q: %w", key, err)
+	if err := bucket.Delete(ctx, key); err != nil {
+		return fmt.Errorf("deleting %q: %w", key, err)
 	}
 
 	return nil
@@ -86,6 +79,6 @@ func openBucket(
 	ctx context.Context,
 	cfg *v1.ObjectStorageConfig,
 	creds *objectstore.Credentials,
-) (uploader, error) {
+) (deleter, error) {
 	return objectstore.Open(ctx, cfg, creds)
 }

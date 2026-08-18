@@ -58,6 +58,9 @@ func trackedBackup() *v1.LogicalBackupRDBMS {
 	return backup
 }
 
+// foreignUID marks a Job or pod of another backup in the fixtures.
+const foreignUID = "uid-of-someone-else"
+
 // ownJob is the Job of backup as BuildJob stamps it: named after the backup
 // and carrying its UID.
 func ownJob(backup *v1.LogicalBackupRDBMS) *batchv1.Job {
@@ -125,7 +128,7 @@ func TestDumpNeverAdoptsAnotherBackupsJob(t *testing.T) {
 	scheme := dumpScheme(t)
 	backup := trackedBackup()
 	stranger := ownJob(backup)
-	stranger.Labels[components.BackupUIDLabel] = "uid-of-someone-else"
+	stranger.Labels[components.BackupUIDLabel] = foreignUID
 
 	r := &LogicalBackupRDBMSReconciler{
 		Client:        fake.NewClientBuilder().WithScheme(scheme).WithObjects(stranger).Build(),
