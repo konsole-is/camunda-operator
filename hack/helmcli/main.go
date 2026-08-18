@@ -164,16 +164,21 @@ func rewriteTemplate(template string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// splitImage separates repository and tag. A digest reference or a tagless
-// image is rejected: the chart exposes exactly repository and tag, like the
-// manager image.
+// splitImage separates repository and tag. A digest reference, a tagless
+// image, and an empty repository or tag are rejected: the chart exposes
+// exactly repository and tag, like the manager image, and "repo:" or ":tag"
+// would render an invalid image instead of failing the generation.
 func splitImage(image string) (string, string, error) {
 	colon := strings.LastIndex(image, ":")
 	if colon < 0 || strings.Contains(image[colon:], "/") || strings.Contains(image, "@") {
 		return "", "", fmt.Errorf("image %q must be <repository>:<tag>", image)
 	}
+	repository, tag := image[:colon], image[colon+1:]
+	if repository == "" || tag == "" {
+		return "", "", fmt.Errorf("image %q must be <repository>:<tag>, both non-empty", image)
+	}
 
-	return image[:colon], image[colon+1:], nil
+	return repository, tag, nil
 }
 
 // indexOf returns the first line that starts with prefix after trimming

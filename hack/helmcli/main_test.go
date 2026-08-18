@@ -128,4 +128,10 @@ func TestSplitImage(t *testing.T) {
 	require.Error(t, err)
 	_, _, err = splitImage("ghcr.io/x/cli@sha256:abc")
 	require.Error(t, err)
+	// An empty repository or tag would render "repo:" or ":tag" into the
+	// chart, an invalid image, instead of failing here.
+	_, _, err = splitImage("ghcr.io/x/cli:")
+	require.Error(t, err)
+	_, _, err = splitImage(":1.2.3")
+	require.Error(t, err)
 }
