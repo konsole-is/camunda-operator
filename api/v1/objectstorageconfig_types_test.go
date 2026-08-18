@@ -241,3 +241,77 @@ func TestServiceAccountSpecCreates(t *testing.T) {
 		})
 	}
 }
+
+// Location changes when, and only when, a key written through the contract
+// would land somewhere else; auth is not part of it.
+func TestLocationPinsWhereObjectsLive(t *testing.T) {
+	t.Parallel()
+
+	s3 := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeS3,
+		S3: &v1.S3Storage{
+			BucketName: "backups",
+			BasePath:   "/clusters/",
+			Endpoint:   "http://minio.minio.svc:9000",
+			Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+		},
+	}}
+	assert.Equal(t, "s3://backups/clusters (endpoint http://minio.minio.svc:9000)", s3.Location())
+
+	// The two spellings of one endpoint are one location: a trailing slash
+	// must never read as a retarget and strand a dump.
+	slashed := s3.DeepCopy()
+	slashed.Spec.S3.Endpoint = "http://minio.minio.svc:9000/"
+	assert.Equal(t, s3.Location(), slashed.Location())
+
+	rotated := s3.DeepCopy()
+	rotated.Spec.S3.Auth = v1.S3StorageAuth{
+		Type: v1.ObjectStorageAuthTypeCredentials,
+		Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
+			Name: "keys", Namespace: "ns", AccessKeyIDKey: "id", SecretAccessKeyKey: "key",
+		}},
+	}
+	assert.Equal(t, s3.Location(), rotated.Location(), "auth changes do not move the objects")
+
+	retargeted := s3.DeepCopy()
+	retargeted.Spec.S3.BucketName = "other"
+	assert.NotEqual(t, s3.Location(), retargeted.Location())
+
+	regional := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeS3,
+		S3: &v1.S3Storage{
+			BucketName: "backups",
+			Region:     "eu-west-1",
+			Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+		},
+	}}
+	assert.Equal(t, "s3://backups/ (region eu-west-1)", regional.Location())
+
+	gcs := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeGCS,
+		GCS: &v1.GCSStorage{
+			BucketName: "b",
+			BasePath:   "p",
+			Auth:       v1.GCSStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+		},
+	}}
+	assert.Equal(t, "gs://b/p", gcs.Location())
+
+	azure := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeAzureBlob,
+		AzureBlob: &v1.AzureBlobStorage{
+			AccountName: "acct", Container: "c", BasePath: "p",
+			Auth: v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+		},
+	}}
+	// Azure endpoints render through ServiceEndpoint: an unset endpoint, the
+	// explicit public one, and its slashed spelling are all one place, so
+	// they are one location.
+	assert.Equal(t, "azblob://acct/c/p (endpoint https://acct.blob.core.windows.net)", azure.Location())
+	explicit := azure.DeepCopy()
+	explicit.Spec.AzureBlob.Endpoint = "https://acct.blob.core.windows.net/"
+	assert.Equal(t, azure.Location(), explicit.Location())
+
+	mismatched := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{Type: v1.ObjectStorageTypeGCS}}
+	assert.Empty(t, mismatched.Location())
+}

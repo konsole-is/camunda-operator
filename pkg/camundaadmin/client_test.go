@@ -17,7 +17,11 @@ limitations under the License.
 package camundaadmin_test
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -129,15 +133,33 @@ func TestUnreachableEndpoint(t *testing.T) {
 	require.ErrorIs(t, err, camundaadmin.ErrUnreachable)
 }
 
-func TestStartHistoryBackupIsIdempotent(t *testing.T) {
+// The start answer names the scheduled snapshots. The documentation requires
+// the caller to persist them with the backup id, so the client returns them
+// instead of discarding the body.
+func TestStartHistoryBackupReturnsTheScheduledSnapshots(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
-	require.NoError(t, client.StartHistoryBackup(ctx, 42))
+	scheduled, err := client.StartHistoryBackup(ctx, 42)
+	require.NoError(t, err)
+	assert.Equal(t, []string{camundaadmintest.HistorySnapshotName(42)}, scheduled)
+	assert.Equal(t, 1, server.HistoryStarts(42))
+}
 
-	// A second start of the same id hits the duplicate rejection of the
-	// endpoint, and the client resolves it through the status: success.
-	require.NoError(t, client.StartHistoryBackup(ctx, 42))
+// A duplicate history start is a conflict, not success. The client cannot
+// know whether the existing backup is the caller's own with a lost response
+// or another actor's under a reused id. If the client resolved it as
+// success, it adopted a backup without ownership evidence. The caller
+// decides from its own recorded state, like it does for the runtime start.
+func TestStartHistoryBackupSurfacesTheDuplicateAsAConflict(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	_, err := client.StartHistoryBackup(ctx, 42)
+	require.NoError(t, err)
+
+	_, err = client.StartHistoryBackup(ctx, 42)
+	require.ErrorIs(t, err, camundaadmin.ErrConflict)
 	assert.Equal(t, 1, server.HistoryStarts(42))
 }
 
@@ -149,7 +171,8 @@ func TestHistoryBackupStatus(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, camundaadmin.StateDoesNotExist, status.State)
 
-	require.NoError(t, client.StartHistoryBackup(ctx, 42))
+	_, err = client.StartHistoryBackup(ctx, 42)
+	require.NoError(t, err)
 	server.SetHistoryState(42, "COMPLETED", "")
 
 	status, err = client.HistoryBackupStatus(ctx, 42)
@@ -256,4 +279,39 @@ func TestDeleteRuntimeBackupIsIdempotent(t *testing.T) {
 	// The id of a deleted backup is never reusable.
 	_, err = client.StartRuntimeBackup(ctx, &id)
 	require.ErrorIs(t, err, camundaadmin.ErrConflict)
+}
+
+// A rejection carries the response body so the operator can read why. A body
+// that is far larger than a condition allows must not travel whole into the
+// error, or every status flush that carries it is refused.
+func TestRejectedErrorBoundsTheBody(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 100_000))
+	}))
+	t.Cleanup(server.Close)
+	client, err := camundaadmin.New(camundaadmin.Binding{Endpoint: server.URL, Version: "8.9.9"})
+	require.NoError(t, err)
+
+	err = client.ResumeExporting(ctx)
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.Less(t, len(err.Error()), 2_000)
+	assert.Contains(t, err.Error(), "(truncated, 100000 bytes)")
+}
+
+func TestRejectedErrorKeepsASmallBodyWhole(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("  the exporter is not ready  "))
+	}))
+	t.Cleanup(server.Close)
+	client, err := camundaadmin.New(camundaadmin.Binding{Endpoint: server.URL, Version: "8.9.9"})
+	require.NoError(t, err)
+
+	err = client.ResumeExporting(ctx)
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.True(t, strings.HasSuffix(err.Error(), "returned 500: the exporter is not ready"), err.Error())
+	assert.NotContains(t, err.Error(), "truncated")
 }

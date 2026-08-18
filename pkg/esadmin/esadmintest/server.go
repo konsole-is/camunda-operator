@@ -50,6 +50,11 @@ type Snapshot struct {
 	State string
 	// Indices requested for the snapshot.
 	Indices string
+	// Metadata is the user metadata that the creation carried, decoded as
+	// encoding/json decodes into any. A snapshot seeded with
+	// SetSnapshotState has none, like one that another actor created;
+	// SetSnapshotMetadata gives it any, strings or not.
+	Metadata map[string]any
 }
 
 // Server fakes the Elasticsearch admin surface. Every exported method is
@@ -64,11 +69,13 @@ type Server struct {
 
 	snapshotCreates map[string]int
 	reloadCalls     int
+	statsCalls      int
 
 	// nodeFS drives _nodes/stats/fs, keyed by node name.
 	nodeFS map[string]nodeFS
 
 	failures map[string]int
+	drops    map[string]int
 
 	server *httptest.Server
 }
@@ -83,6 +90,7 @@ type nodeFS struct {
 func New() *Server {
 	s := newServer()
 	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+	s.server.Config.SetKeepAlivesEnabled(false)
 
 	return s
 }
@@ -94,6 +102,7 @@ func New() *Server {
 func NewTLS() *Server {
 	s := newServer()
 	s.server = httptest.NewTLSServer(http.HandlerFunc(s.handle))
+	s.server.Config.SetKeepAlivesEnabled(false)
 
 	return s
 }
@@ -106,6 +115,7 @@ func newServer() *Server {
 		snapshotCreates: map[string]int{},
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
 		failures:        map[string]int{},
+		drops:           map[string]int{},
 	}
 }
 
@@ -148,11 +158,31 @@ func (s *Server) RepositoryPuts(name string) int {
 }
 
 // SetSnapshotState sets the state of the snapshot repo/name, creating it
-// when absent.
+// when absent. An existing snapshot keeps its metadata: the knob drives the
+// state of a snapshot, whoever created it.
 func (s *Server) SetSnapshotState(repo, name, state string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if snapshot, ok := s.snapshots[repo+"/"+name]; ok {
+		snapshot.State = state
+		return
+	}
 	s.snapshots[repo+"/"+name] = &Snapshot{Repo: repo, Name: name, State: state}
+}
+
+// SetSnapshotMetadata sets the user metadata of the snapshot repo/name,
+// creating it in state SUCCESS when absent. The values can be any JSON
+// value, so a test can seed a snapshot that another actor created with
+// metadata this operator never writes: numbers, lists, or objects.
+func (s *Server) SetSnapshotMetadata(repo, name string, metadata map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot, ok := s.snapshots[repo+"/"+name]
+	if !ok {
+		snapshot = &Snapshot{Repo: repo, Name: name, State: "SUCCESS"}
+		s.snapshots[repo+"/"+name] = snapshot
+	}
+	snapshot.Metadata = metadata
 }
 
 // SnapshotExists reports whether the snapshot repo/name exists.
@@ -177,6 +207,15 @@ func (s *Server) ReloadCalls() int {
 	return s.reloadCalls
 }
 
+// StatsCalls reports how often _nodes/stats/fs was queried, injected
+// failures included. A test asserts with it that a caller does not probe the
+// statistics at a moment it must not.
+func (s *Server) StatsCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.statsCalls
+}
+
 // SetNodeFS sets what _nodes/stats/fs reports for the node name, adding the
 // node when absent. The fake starts with one node, node-0, so setting that
 // name replaces the default and any other name adds a node beside it.
@@ -193,6 +232,40 @@ func (s *Server) FailNext(op string, n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failures[op] = n
+}
+
+// DropNext makes the next n calls of op close the connection without any
+// response, the way a dropped route or a broken proxy does. The client of
+// pkg/esadmin reports such a call as ErrUnreachable. op takes the values of
+// FailNext, and every handler honors it. A fake can be reachable for one
+// operation and unreachable for another, for example a proxy that serves
+// GET and drops PUT.
+//
+// The fake serves without keep-alive, so every call opens its own
+// connection: the Go transport retries an idempotent request that fails on
+// a reused connection, and a drop that it retried away would be invisible.
+func (s *Server) DropNext(op string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.drops[op] = n
+}
+
+// dropping consumes one injected drop of op and closes the connection.
+func (s *Server) dropping(w http.ResponseWriter, op string) bool {
+	if s.drops[op] <= 0 {
+		return false
+	}
+	s.drops[op]--
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		panic("esadmintest: the response writer does not support hijacking")
+	}
+	conn, _, err := hijacker.Hijack()
+	if err != nil {
+		panic("esadmintest: hijacking the connection: " + err.Error())
+	}
+	_ = conn.Close()
+	return true
 }
 
 func (s *Server) failing(op string) bool {
@@ -221,6 +294,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == http.MethodPost && path == "_nodes/reload_secure_settings":
+		if s.dropping(w, "reload") {
+			return
+		}
 		if s.failing("reload") {
 			errorBody(w, http.StatusInternalServerError, "injected reload failure")
 			return
@@ -229,6 +305,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"nodes": map[string]any{}})
 
 	case r.Method == http.MethodGet && path == "_nodes/stats/fs":
+		s.statsCalls++
+		if s.dropping(w, "stats") {
+			return
+		}
 		if s.failing("stats") {
 			errorBody(w, http.StatusInternalServerError, "injected stats failure")
 			return
@@ -247,6 +327,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
 
 	case len(parts) == 2 && parts[0] == snapshotPath && r.Method == http.MethodPut:
+		if s.dropping(w, "repository") {
+			return
+		}
 		if s.failing("repository") {
 			errorBody(w, http.StatusInternalServerError, "injected repository failure")
 			return
@@ -292,6 +375,9 @@ func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string)
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
 	switch r.Method {
 	case http.MethodPut:
+		if s.dropping(w, "snapshotCreate") {
+			return
+		}
 		if s.failing("snapshotCreate") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
 			return
@@ -312,14 +398,21 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			return
 		}
 		var body struct {
-			Indices string `json:"indices"`
+			Indices  string         `json:"indices"`
+			Metadata map[string]any `json:"metadata"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		s.snapshots[key] = &Snapshot{Repo: parts[1], Name: parts[2], State: "IN_PROGRESS", Indices: body.Indices}
+		s.snapshots[key] = &Snapshot{
+			Repo: parts[1], Name: parts[2], State: "IN_PROGRESS",
+			Indices: body.Indices, Metadata: body.Metadata,
+		}
 		s.snapshotCreates[key]++
 		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
 	case http.MethodGet:
+		if s.dropping(w, "snapshotStatus") {
+			return
+		}
 		if s.failing("snapshotStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
@@ -339,11 +432,16 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"snapshots": []map[string]any{{"snapshot": snapshot.Name, "state": snapshot.State}},
-		})
+		info := map[string]any{"snapshot": snapshot.Name, "state": snapshot.State}
+		if len(snapshot.Metadata) > 0 {
+			info["metadata"] = snapshot.Metadata
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
 
 	case http.MethodDelete:
+		if s.dropping(w, "snapshotDelete") {
+			return
+		}
 		if s.failing("snapshotDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return

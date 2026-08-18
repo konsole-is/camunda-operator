@@ -1,0 +1,426 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: logicalbackupelasticsearches.core.camunda.io
+spec:
+  group: core.camunda.io
+  names:
+    kind: LogicalBackupElasticsearch
+    listKind: LogicalBackupElasticsearchList
+    plural: logicalbackupelasticsearches
+    shortNames:
+    - lbes
+    singular: logicalbackupelasticsearch
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.step
+      name: Step
+      type: string
+    - jsonPath: .status.backupId
+      name: Backup ID
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LogicalBackupElasticsearch is one backup of an Elasticsearch-backed
+          CamundaCluster. The backup is one coordinated set under one backup ID: the
+          web-application indices, the exported Zeebe record indices, and the Zeebe
+          partitions. It is taken hot, with exporting soft-paused. A restore reads a
+          completed backup by its backup ID and its recorded snapshot names. When you
+          delete the resource, a finalizer deletes the stored artifacts.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              spec identifies the cluster to back up. It is immutable: a backup is a
+              one-shot operation, retried by creating a new resource.
+            properties:
+              clusterRef:
+                description: |-
+                  ClusterRef references the CamundaCluster to back up, in the namespace
+                  of this backup. Its secondary storage must be Elasticsearch.
+                properties:
+                  name:
+                    description: Name of the CamundaCluster, in the namespace of this
+                      object.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - clusterRef
+            type: object
+            x-kubernetes-validations:
+            - message: 'spec is immutable: a backup is one-shot, retried by creating
+                a new resource'
+              rule: self == oldSelf
+          status:
+            description: status defines the observed state of the backup
+            properties:
+              backupId:
+                description: |-
+                  BackupID keys every part of the backup set: the web-application
+                  snapshots, the record snapshot, and the partition backup. A restore
+                  locates the set by it.
+                format: int64
+                type: integer
+              clusterUID:
+                description: |-
+                  ClusterUID pins the identity of the CamundaCluster that the backup
+                  started against. A cluster that is deleted and recreated under the
+                  same name is a different cluster. Its exporting was never paused by
+                  this backup, and its artifacts are not this backup's. Every
+                  management call after the start verifies the live cluster against
+                  this UID. A mismatch ends the backup without touching the
+                  replacement.
+                type: string
+              completionTime:
+                description: CompletionTime is when the backup reached a terminal
+                  phase.
+                format: date-time
+                type: string
+              conditions:
+                description: |-
+                  Conditions represent the current state. The Ready condition tracks the
+                  backup with the reasons Progressing, Completed, Failed, ResumeFailed,
+                  ClusterSuspended, BackupInProgress, StorageTypeMismatch,
+                  InvalidReference, MissingSecret, and ConnectionFailed.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureMessage:
+                description: |-
+                  FailureMessage names the failing step and its error. It is recorded
+                  when a step fails and exporting still has to be resumed. The reason
+                  then survives the resume and reaches the terminal condition.
+                type: string
+              history:
+                description: History is the backup of the web-application indices.
+                properties:
+                  failureReason:
+                    description: FailureReason is set when State is Failed.
+                    type: string
+                  state:
+                    description: State of this part.
+                    enum:
+                    - Pending
+                    - InProgress
+                    - Completed
+                    - Failed
+                    type: string
+                type: object
+              historyAcceptedTime:
+                description: |-
+                  HistoryAcceptedTime is when the cluster accepted the history backup
+                  request of this backup, as this controller observed it. It is the
+                  only evidence that the history backup under this ID is this backup's.
+                  A history backup that exists without it is not adopted: the step
+                  fails, and the finalizer does not delete its snapshots. A crash
+                  between the request and the write of this field fails the backup
+                  safely. It can leave a history backup under this ID in the cluster
+                  for the user to remove by hand.
+                format: date-time
+                type: string
+              historyRequestedTime:
+                description: |-
+                  HistoryRequestedTime is when the controller decided to request the
+                  backup of the web-application indices. It is written before the
+                  request is sent, so the intent survives a lost response or a restart.
+                  It proves that this backup meant to request, not that a history
+                  backup under its ID is its own.
+                format: date-time
+                type: string
+              historySnapshots:
+                description: |-
+                  HistorySnapshots names the Elasticsearch snapshots of the
+                  web-application indices. The names are recorded as soon as the
+                  management API names them: the scheduled names in the answer to the
+                  start, and the names in every status report. The finalizer and a
+                  restore can then locate the snapshots after the cluster is gone.
+                items:
+                  type: string
+                type: array
+              lastResumeAttemptTime:
+                description: |-
+                  LastResumeAttemptTime is when the last resume attempt ended. The gap
+                  from it to the start of the next attempt decides whether the deadline
+                  anchor slides. The time inside an attempt always counts.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
+              partitionsCount:
+                description: |-
+                  PartitionsCount is the partition count of the cluster when the backup
+                  started. A restore must match it.
+                format: int32
+                type: integer
+              phase:
+                description: Phase of the backup. Completed and Failed are terminal.
+                enum:
+                - Pending
+                - Running
+                - Completed
+                - Failed
+                type: string
+              records:
+                description: Records is the snapshot of the exported Zeebe record
+                  indices.
+                properties:
+                  failureReason:
+                    description: FailureReason is set when State is Failed.
+                    type: string
+                  state:
+                    description: State of this part.
+                    enum:
+                    - Pending
+                    - InProgress
+                    - Completed
+                    - Failed
+                    type: string
+                type: object
+              repository:
+                description: |-
+                  Repository pins the snapshot repository that every part of the set is
+                  written to. It is recorded when the backup starts. Every later step and
+                  the finalizer use the pinned name. A repository that changes on the
+                  storage contract mid-run can then neither split the set nor aim the
+                  deletion at the wrong repository.
+                type: string
+              resumeFailureMessage:
+                description: |-
+                  ResumeFailureMessage is the last error of resume-exporting when the
+                  procedure gave up on it. It stands beside FailureMessage, so a backup
+                  that failed a step and then failed to resume reports both.
+                type: string
+              resumeStartedTime:
+                description: |-
+                  ResumeStartedTime anchors the resume deadline. Only the accumulated
+                  time of active resume attempts counts against the deadline. A gap in
+                  which the procedure was parked slides the anchor forward and does not
+                  count, for example a suspended cluster or an unpublished binding. The
+                  anchor survives an operator restart.
+                format: date-time
+                type: string
+              runtime:
+                description: Runtime is the backup of the Zeebe partitions.
+                properties:
+                  failureReason:
+                    description: FailureReason is set when State is Failed.
+                    type: string
+                  state:
+                    description: State of this part.
+                    enum:
+                    - Pending
+                    - InProgress
+                    - Completed
+                    - Failed
+                    type: string
+                type: object
+              runtimeAcceptedTime:
+                description: |-
+                  RuntimeAcceptedTime is when the cluster accepted the request of this
+                  backup, as this controller observed it. It is the only evidence that
+                  the runtime backup under this ID is this backup's. A runtime backup
+                  that exists without it, after a lost response or because another
+                  actor won the ID, is not adopted. The step fails, and the finalizer
+                  leaves that runtime backup alone. A crash between the request and
+                  the write of this field fails the backup safely. It can leave such a
+                  runtime backup in the cluster for the user to remove by hand. The
+                  cluster registers the backup asynchronously and can report it absent
+                  for a moment after the acceptance. Within a registration grace after
+                  this time, an absent backup is polled. After the grace, an absent
+                  backup fails the step.
+                format: date-time
+                type: string
+              runtimeRequestedTime:
+                description: |-
+                  RuntimeRequestedTime is when the controller decided to request the
+                  runtime backup. It is written before the request is sent, so the
+                  intent survives a lost response or a restart. It proves that this
+                  backup meant to request, not that a runtime backup under its ID is
+                  its own.
+                format: date-time
+                type: string
+              step:
+                description: Step is the resume marker of the running procedure.
+                enum:
+                - PauseExporting
+                - BackupHistory
+                - SnapshotRecords
+                - BackupRuntime
+                - ResumeExporting
+                type: string
+              storage:
+                description: |-
+                  Storage pins the Elasticsearch destination of the set: the storage
+                  contract and the endpoint it named when the backup started. The
+                  repository name alone does not identify a cluster. A storage contract
+                  or endpoint that changes mid-run fails the step, and the finalizer
+                  never deletes against a different cluster.
+                properties:
+                  bucketLocation:
+                    description: |-
+                      BucketLocation is where that contract pointed: the storage type,
+                      bucket, base path, and endpoint. The steps write, and the finalizer
+                      deletes, only while the contract still points there.
+                    type: string
+                  bucketRef:
+                    description: |-
+                      BucketRef is the ObjectStorageConfig that the cluster backed up
+                      through when the backup started: its spec.backupStorageRef then. The
+                      runtime backup lands in that bucket.
+                    type: string
+                  endpoint:
+                    description: Endpoint is the Elasticsearch endpoint that the contract
+                      named.
+                    type: string
+                  secondaryStorageConfig:
+                    description: |-
+                      SecondaryStorageConfig is the name of the storage contract, in the
+                      namespace of the backup.
+                    type: string
+                required:
+                - bucketLocation
+                - bucketRef
+                - endpoint
+                - secondaryStorageConfig
+                type: object
+              storageSizes:
+                description: |-
+                  StorageSizes are the effective restore sizes, recorded best effort.
+                  They are computed when the backup starts. A value that was not
+                  available then is backfilled while exporting runs: before the pause,
+                  and after the resume. No value is backfilled while exporting is
+                  paused. A value that is absent can therefore still arrive later in
+                  the run.
+                properties:
+                  elasticsearch:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Elasticsearch is the effective restore size of one Elasticsearch data
+                      volume.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  zeebe:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: Zeebe is the effective restore size of one broker
+                      data volume.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
+              terminalReason:
+                description: |-
+                  TerminalReason is the Ready reason recorded at the terminal
+                  transition: Completed, Failed, or ResumeFailed. The controller
+                  re-stages the terminal condition from it when a write conflict
+                  restored an older one.
+                type: string
+              unreachableSince:
+                description: |-
+                  UnreachableSince is when a working step first found its endpoint
+                  unreachable. The endpoint is the management API or Elasticsearch,
+                  whichever the step calls. Exporting can be paused at every working
+                  step, so the retry is bounded. After the bound the step fails and the
+                  procedure resumes exporting. It clears once every call of a reconcile
+                  answered.
+                format: date-time
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

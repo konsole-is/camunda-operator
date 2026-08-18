@@ -37,6 +37,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrUnreachable and ErrRejected classify every failure of the client.
@@ -146,22 +147,78 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 	return err
 }
 
-// CreateSnapshot starts the snapshot name of indices in repo. A snapshot
-// that already exists under the same name is success, so a re-entrant caller
-// never double-starts.
+// Snapshot is what SnapshotStatus reports about one snapshot: its state and
+// the user metadata that its creation carried. The metadata is how a caller
+// tells its own snapshot from one that another actor created under the same
+// name.
+type Snapshot struct {
+	// State of the snapshot. SnapshotMissing means that no snapshot with
+	// the name exists; every other field is empty then.
+	State SnapshotState
+	// Metadata is the user metadata of the snapshot, as the creation
+	// request carried it. Elasticsearch stores any JSON value verbatim and
+	// returns it with the snapshot info, so the values are decoded as
+	// encoding/json decodes into any: a string, a float64, a bool, nil, a
+	// []any, or a map[string]any. A snapshot that this client created
+	// carries strings only; one that another actor created can carry
+	// anything. MetadataString reads one entry as a string.
+	Metadata map[string]any
+}
+
+// MetadataString returns the value under key in the metadata of the
+// snapshot when it is a string. It reports false for an absent key and for a
+// value of any other JSON type.
+func (s Snapshot) MetadataString(key string) (string, bool) {
+	value, ok := s.Metadata[key].(string)
+	return value, ok
+}
+
+// sameMetadata reports whether existing holds exactly the entries of want:
+// the same keys, each with the string value that want carries. Any entry
+// of another JSON type is a difference.
+func sameMetadata(existing map[string]any, want map[string]string) bool {
+	if len(existing) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got, ok := existing[key].(string); !ok || got != value {
+			return false
+		}
+	}
+
+	return true
+}
+
+// CreateSnapshot starts the snapshot name of indices in repo, carrying
+// metadata as the user metadata of the snapshot. A snapshot that already
+// exists under the same name AND the same metadata is success, so a
+// re-entrant caller never double-starts. An existing snapshot with other
+// metadata is another actor's, and the duplicate rejection comes back as an
+// error. The metadata is the ownership evidence of that rule. A caller that
+// carries none gets every duplicate rejection back as an error, because a
+// metadata-free snapshot under the name can be anyone's.
 //
 // indices must name at least one index. An empty list would send an empty
 // pattern, which selects nothing rather than everything: the snapshot would
 // succeed and hold no data.
-func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices []string) error {
+func (c *Client) CreateSnapshot(
+	ctx context.Context,
+	repo, name string,
+	indices []string,
+	metadata map[string]string,
+) error {
 	if len(indices) == 0 {
 		return fmt.Errorf("snapshot %q of repository %q names no index", name, repo)
 	}
 
-	body, err := json.Marshal(map[string]any{
+	request := map[string]any{
 		"indices":              strings.Join(indices, ","),
 		"include_global_state": false,
-	})
+	}
+	if len(metadata) > 0 {
+		request["metadata"] = metadata
+	}
+	body, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("encoding snapshot request: %w", err)
 	}
@@ -170,10 +227,14 @@ func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices 
 	if err != nil {
 		// Elasticsearch rejects a duplicate name with
 		// invalid_snapshot_name_exception or snapshot_name_already_in_use.
-		// Re-entry is not a failure: when the snapshot exists, the start
-		// already happened.
-		if status == http.StatusBadRequest || status == http.StatusConflict {
-			if state, statusErr := c.SnapshotStatus(ctx, repo, name); statusErr == nil && state != SnapshotMissing {
+		// Re-entry is not a failure, but only the caller's own earlier
+		// snapshot counts: the metadata must match, and there must be
+		// metadata to match. Without it, sameMetadata(nil, nil) adopted any
+		// metadata-free snapshot under the name.
+		if (status == http.StatusBadRequest || status == http.StatusConflict) && len(metadata) > 0 {
+			if existing, statusErr := c.SnapshotStatus(ctx, repo, name); statusErr == nil &&
+				existing.State != SnapshotMissing &&
+				sameMetadata(existing.Metadata, metadata) {
 				return nil
 			}
 		}
@@ -183,36 +244,41 @@ func (c *Client) CreateSnapshot(ctx context.Context, repo, name string, indices 
 	return nil
 }
 
-// SnapshotStatus reports the state of the snapshot name in repo. A snapshot
-// that does not exist is SnapshotMissing, not an error.
-func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (SnapshotState, error) {
+// SnapshotStatus reports the snapshot name in repo: its state and its user
+// metadata. A snapshot that does not exist is SnapshotMissing, not an
+// error.
+func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapshot, error) {
 	payload, status, err := c.do(ctx, http.MethodGet, snapshotPath(repo, name), nil)
 	if status == http.StatusNotFound {
 		// A 404 is how Elasticsearch reports an absent snapshot, but also an
 		// absent repository. Only the first is a state; a dropped repository
 		// must never read as "the snapshot is gone".
 		if errorType(payload) == "snapshot_missing_exception" {
-			return SnapshotMissing, nil
+			return Snapshot{State: SnapshotMissing}, nil
 		}
-		return "", err
+		return Snapshot{}, err
 	}
 	if err != nil {
-		return "", err
+		return Snapshot{}, err
 	}
 
 	var response struct {
 		Snapshots []struct {
-			State string `json:"state"`
+			State    string         `json:"state"`
+			Metadata map[string]any `json:"metadata"`
 		} `json:"snapshots"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
-		return "", fmt.Errorf("decoding snapshot status: %w", err)
+		return Snapshot{}, fmt.Errorf("decoding snapshot status: %w", err)
 	}
 	if len(response.Snapshots) == 0 {
-		return SnapshotMissing, nil
+		return Snapshot{State: SnapshotMissing}, nil
 	}
 
-	return SnapshotState(response.Snapshots[0].State), nil
+	return Snapshot{
+		State:    SnapshotState(response.Snapshots[0].State),
+		Metadata: response.Snapshots[0].Metadata,
+	}, nil
 }
 
 // DeleteSnapshot deletes the snapshot name from repo. A snapshot that does
@@ -330,9 +396,29 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return payload, resp.StatusCode, fmt.Errorf(
 			"%w: %s %s returned %d: %s",
-			ErrRejected, method, path, resp.StatusCode, strings.TrimSpace(string(payload)),
+			ErrRejected, method, path, resp.StatusCode, errorBody(payload),
 		)
 	}
 
 	return payload, resp.StatusCode, nil
+}
+
+// errorBodyLimit bounds how much of a rejected response body an error message
+// carries. The full body is still read and returned to the caller. Only the
+// message is bounded, so an error can land in a condition or an event without
+// exceeding their limits.
+const errorBodyLimit = 1 << 10
+
+// errorBody returns the trimmed body for an error message, cut to
+// errorBodyLimit bytes on a rune boundary and marked when cut.
+func errorBody(payload []byte) string {
+	body := strings.TrimSpace(string(payload))
+	if len(body) <= errorBodyLimit {
+		return body
+	}
+	cut := body[:errorBodyLimit]
+	for !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return fmt.Sprintf("%s... (truncated, %d bytes)", cut, len(body))
 }

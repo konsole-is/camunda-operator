@@ -24,10 +24,15 @@ limitations under the License.
 // (/actuator/exporting/*, /actuator/backupHistory, /actuator/backupRuntime).
 // An unknown version is a constructor error, never a guess.
 //
-// Every method is idempotent from the caller's view: the backup state
-// machine re-enters after a crash, so "already done" is success and never an
-// error. Errors distinguish an unreachable endpoint (ErrUnreachable) from a
-// rejected call (ErrRejected, with the response body in the message).
+// The exporting calls and the deletes are idempotent from the caller's
+// view: the backup state machine re-enters after a crash, so "already done"
+// is success and never an error. The two backup starts are the exception.
+// A duplicate under the same or a higher id is ErrConflict, never success.
+// A duplicate is only "already done" when the existing backup is the
+// caller's own, and the client cannot know that. The caller decides from
+// its own recorded state. Errors distinguish an unreachable endpoint
+// (ErrUnreachable) from a rejected call (ErrRejected, with the response
+// body in the message).
 package camundaadmin
 
 import (
@@ -41,6 +46,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrUnreachable, ErrRejected, and ErrConflict classify every failure of the
@@ -211,35 +217,52 @@ func (c *Client) exporting(ctx context.Context, path string) error {
 }
 
 // StartHistoryBackup starts the backup of the web-application indices under
-// id. A backup that already exists under the same id is success, so a
-// re-entrant caller never double-starts.
-func (c *Client) StartHistoryBackup(ctx context.Context, id int64) error {
+// id. It returns the names of the snapshots that the cluster scheduled. The
+// documentation requires the caller to persist the names with the backup id,
+// because a restore locates the snapshots by them. A backup that already
+// exists under the same id returns ErrConflict, like StartRuntimeBackup.
+// The client cannot know whether that backup is the caller's own from an
+// earlier request or another actor's under a reused id. If the client
+// resolved it as success, it adopted a backup without ownership evidence.
+// The caller therefore decides from its own recorded state.
+func (c *Client) StartHistoryBackup(ctx context.Context, id int64) ([]string, error) {
 	body, err := json.Marshal(map[string]int64{"backupId": id})
 	if err != nil {
-		return fmt.Errorf("encoding request: %w", err)
+		return nil, fmt.Errorf("encoding request: %w", err)
 	}
 
-	// The endpoint answers 200 and creates the snapshots asynchronously; the
-	// caller polls HistoryBackupStatus for the outcome.
-	_, status, err := c.do(ctx, http.MethodPost, "/actuator/backupHistory", body, http.StatusOK)
+	// The endpoint answers 200 with the scheduled snapshot names and creates
+	// the snapshots asynchronously. The caller polls HistoryBackupStatus for
+	// the outcome. A 200 is an acceptance whatever its body holds. A body
+	// that does not decode yields no names, and the status poll reports the
+	// names later. If the client returned an error here, the caller lost an
+	// acceptance that happened.
+	payload, status, err := c.do(ctx, http.MethodPost, "/actuator/backupHistory", body, http.StatusOK)
 	if err == nil {
-		return nil
+		var scheduled struct {
+			ScheduledSnapshots []string `json:"scheduledSnapshots"`
+		}
+		if json.Unmarshal(payload, &scheduled) != nil {
+			return nil, nil
+		}
+		return scheduled.ScheduledSnapshots, nil
 	}
 
-	// The endpoint answers 400 when the id already exists. Re-entry is not a
-	// failure: when the backup exists, the start already happened. 409 is
-	// tolerated because it is the conventional code for the same condition.
+	// The endpoint answers 400 when the id already exists. 409 is treated
+	// the same because it is the conventional code for the condition. Only
+	// an id that the cluster really holds is a conflict. Any other 400
+	// stays the rejection it is.
 	if status == http.StatusBadRequest || status == http.StatusConflict {
 		if existing, statusErr := c.HistoryBackupStatus(
 			ctx,
 			id,
 		); statusErr == nil &&
 			existing.State != StateDoesNotExist {
-			return nil
+			return nil, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 	}
 
-	return err
+	return nil, err
 }
 
 // HistoryBackupStatus reports the status of the history backup id. A backup
@@ -424,9 +447,29 @@ func (c *Client) do(
 	if resp.StatusCode != want {
 		return payload, resp.StatusCode, fmt.Errorf(
 			"%w: %s %s returned %d: %s",
-			ErrRejected, method, path, resp.StatusCode, strings.TrimSpace(string(payload)),
+			ErrRejected, method, path, resp.StatusCode, errorBody(payload),
 		)
 	}
 
 	return payload, resp.StatusCode, nil
+}
+
+// errorBodyLimit bounds how much of a rejected response body an error message
+// carries. The full body is still read and returned to the caller. Only the
+// message is bounded, so an error can land in a condition or an event without
+// exceeding their limits.
+const errorBodyLimit = 1 << 10
+
+// errorBody returns the trimmed body for an error message, cut to
+// errorBodyLimit bytes on a rune boundary and marked when cut.
+func errorBody(payload []byte) string {
+	body := strings.TrimSpace(string(payload))
+	if len(body) <= errorBodyLimit {
+		return body
+	}
+	cut := body[:errorBodyLimit]
+	for !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return fmt.Sprintf("%s... (truncated, %d bytes)", cut, len(body))
 }

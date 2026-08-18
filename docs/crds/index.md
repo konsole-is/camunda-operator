@@ -18,7 +18,7 @@ Each CRD has its own reference page following a common structure: purpose, contr
 | SecondaryStorageConfig | [secondarystorageconfig.md](secondarystorageconfig.md) | Namespaced | Active (validation) | Contract: secondary storage backend |
 | ObjectStorageConfig | [objectstorageconfig.md](objectstorageconfig.md) | Cluster | Active (validation) | Contract: bucket storage |
 | ManagementAuthConfig | [managementauthconfig.md](managementauthconfig.md) | Cluster | Active (validation) | Contract: Management Identity OIDC |
-| LogicalBackupElasticsearch | logicalbackupelasticsearch.md (lands with the backup epic) | Namespaced | Active | One coordinated Elasticsearch-path backup |
+| LogicalBackupElasticsearch | [logicalbackupelasticsearch.md](logicalbackupelasticsearch.md) | Namespaced | Active | One coordinated Elasticsearch-path backup |
 | LogicalBackupRDBMS | logicalbackuprdbms.md (lands with the backup epic) | Namespaced | Active | One database dump plus a primary-storage backup |
 | BackupSchedule | [backupschedule.md](backupschedule.md) | Namespaced | Active | Cron-driven creation of logical backups |
 | PointInTimeRestore | [pointintimerestore.md](pointintimerestore.md) | Namespaced | Active | RDBMS in-place PITR |

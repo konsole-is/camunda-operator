@@ -17,7 +17,11 @@ limitations under the License.
 package esadmin_test
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,12 +75,104 @@ func TestCreateSnapshotIsIdempotent(t *testing.T) {
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
 	indices := []string{"camunda_zeebe_records_backup_42"}
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices))
+	metadata := map[string]string{"camunda-operator/backup-uid": "uid-42"}
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices, metadata))
 
 	// A second create hits the duplicate rejection, and the client resolves
-	// it through the status: success.
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices))
+	// it through the status: the same metadata, so it is its own snapshot.
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices, metadata))
 	assert.Equal(t, 1, server.SnapshotCreates("repo", "records-42"))
+}
+
+// The duplicate resolution is bounded by ownership. A snapshot under the
+// same name with other metadata belongs to another actor. The duplicate
+// rejection must reach the caller instead of reading as success.
+func TestCreateSnapshotDoesNotResolveAForeignDuplicate(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	// A snapshot that another actor created: no metadata.
+	server.SetSnapshotState("repo", "records-42", "SUCCESS")
+
+	err := client.CreateSnapshot(
+		ctx, "repo", "records-42", []string{"idx"},
+		map[string]string{"camunda-operator/backup-uid": "uid-42"},
+	)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Equal(t, 0, server.SnapshotCreates("repo", "records-42"))
+}
+
+// The ownership evidence of the duplicate rule is the metadata. A caller
+// that carries none has no evidence, so an existing metadata-free snapshot
+// under the name is not adopted: sameMetadata(nil, nil) is true, and the
+// rule must not rest on it. The duplicate rejection reaches the caller.
+func TestCreateSnapshotWithoutMetadataDoesNotResolveADuplicate(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	// A snapshot that another actor created: no metadata.
+	server.SetSnapshotState("repo", "records-42", "SUCCESS")
+
+	err := client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, nil)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Equal(t, 0, server.SnapshotCreates("repo", "records-42"))
+}
+
+// The metadata travels with the snapshot. The creation carries it, and the
+// status returns it. A caller can therefore tell its own snapshot from a
+// foreign one under the same name.
+func TestSnapshotMetadataRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	client, _ := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	metadata := map[string]string{"camunda-operator/backup-uid": "uid-42"}
+
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, metadata))
+
+	snapshot, err := client.SnapshotStatus(ctx, "repo", "records-42")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"camunda-operator/backup-uid": "uid-42"}, snapshot.Metadata)
+	uid, ok := snapshot.MetadataString("camunda-operator/backup-uid")
+	assert.True(t, ok)
+	assert.Equal(t, "uid-42", uid)
+
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "plain", []string{"idx"}, nil))
+	plain, err := client.SnapshotStatus(ctx, "repo", "plain")
+	require.NoError(t, err)
+	assert.Empty(t, plain.Metadata)
+}
+
+// Elasticsearch accepts any JSON value as snapshot metadata. A snapshot that
+// another actor created can carry numbers, lists, or objects under the
+// deterministic name; the status must still decode, so a caller can see the
+// snapshot is not its own and leave it alone instead of failing on it forever.
+func TestSnapshotStatusDecodesForeignMetadataOfAnyType(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	server.SetSnapshotMetadata("repo", "records-42", map[string]any{
+		"retention-days":              float64(30),
+		"created-by":                  map[string]any{"tool": "curator", "tags": []any{"nightly"}},
+		"camunda-operator/backup-uid": float64(42),
+	})
+
+	snapshot, err := client.SnapshotStatus(ctx, "repo", "records-42")
+	require.NoError(t, err)
+	assert.Equal(t, esadmin.SnapshotSuccess, snapshot.State)
+	assert.Equal(t, float64(30), snapshot.Metadata["retention-days"])
+	_, ok := snapshot.MetadataString("camunda-operator/backup-uid")
+	assert.False(t, ok, "a non-string value under the ownership key is not an owner")
+	_, ok = snapshot.MetadataString("absent")
+	assert.False(t, ok)
+
+	// The duplicate resolution does not read a same-length metadata map of
+	// other types as its own either.
+	err = client.CreateSnapshot(
+		ctx, "repo", "records-42", []string{"idx"},
+		map[string]string{"a": "1", "b": "2", "camunda-operator/backup-uid": "42"},
+	)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Equal(t, 0, server.SnapshotCreates("repo", "records-42"))
 }
 
 func TestSnapshotStatus(t *testing.T) {
@@ -84,21 +180,21 @@ func TestSnapshotStatus(t *testing.T) {
 	client, server := newClient(t)
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
-	state, err := client.SnapshotStatus(ctx, "repo", "absent")
+	snapshot, err := client.SnapshotStatus(ctx, "repo", "absent")
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.SnapshotMissing, state)
+	assert.Equal(t, esadmin.SnapshotMissing, snapshot.State)
 
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}))
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, nil))
 
-	state, err = client.SnapshotStatus(ctx, "repo", "records-42")
+	snapshot, err = client.SnapshotStatus(ctx, "repo", "records-42")
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.SnapshotInProgress, state)
+	assert.Equal(t, esadmin.SnapshotInProgress, snapshot.State)
 
 	server.SetSnapshotState("repo", "records-42", "SUCCESS")
 
-	state, err = client.SnapshotStatus(ctx, "repo", "records-42")
+	snapshot, err = client.SnapshotStatus(ctx, "repo", "records-42")
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.SnapshotSuccess, state)
+	assert.Equal(t, esadmin.SnapshotSuccess, snapshot.State)
 }
 
 func TestDeleteSnapshotIsIdempotent(t *testing.T) {
@@ -106,7 +202,7 @@ func TestDeleteSnapshotIsIdempotent(t *testing.T) {
 	client, server := newClient(t)
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}))
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, nil))
 	require.NoError(t, client.DeleteSnapshot(ctx, "repo", "records-42"))
 	assert.False(t, server.SnapshotExists("repo", "records-42"))
 
@@ -235,9 +331,76 @@ func TestCreateSnapshotRejectsAnEmptyIndexList(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
-	err := client.CreateSnapshot(ctx, "repo", "records-42", nil)
+	err := client.CreateSnapshot(ctx, "repo", "records-42", nil, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "names no index")
 	assert.False(t, server.SnapshotExists("repo", "records-42"))
+}
+
+// A rejection carries the response body so the operator can read why. A body
+// that is far larger than a condition allows must not travel whole into the
+// error, or every status flush that carries it is refused.
+func TestRejectedErrorBoundsTheBody(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 100_000))
+	}))
+	t.Cleanup(server.Close)
+	client, err := esadmin.New(server.URL, "camunda", "secret", nil)
+	require.NoError(t, err)
+
+	err = client.ReloadSecureSettings(ctx)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Less(t, len(err.Error()), 2_000)
+	assert.Contains(t, err.Error(), "(truncated, 100000 bytes)")
+}
+
+func TestRejectedErrorKeepsASmallBodyWhole(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("  repository is missing  "))
+	}))
+	t.Cleanup(server.Close)
+	client, err := esadmin.New(server.URL, "camunda", "secret", nil)
+	require.NoError(t, err)
+
+	err = client.ReloadSecureSettings(ctx)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.True(t, strings.HasSuffix(err.Error(), "returned 500: repository is missing"), err.Error())
+	assert.NotContains(t, err.Error(), "truncated")
+}
+
+// DropNext covers every operation FailNext names, not only the snapshot
+// create: a fake that is unreachable for one operation and reachable for
+// another must be able to say so for any of them.
+func TestDropNextReachesEveryOperation(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+
+	server.DropNext("stats", 1)
+	_, _, err := client.MaxNodeFSTotalAndUsedBytes(ctx)
+	require.ErrorIs(t, err, esadmin.ErrUnreachable)
+	_, _, err = client.MaxNodeFSTotalAndUsedBytes(ctx)
+	require.NoError(t, err, "one drop, then reachable again")
+
+	server.DropNext("snapshotStatus", 1)
+	_, err = client.SnapshotStatus(ctx, "repo", "absent")
+	require.ErrorIs(t, err, esadmin.ErrUnreachable)
+
+	server.DropNext("snapshotDelete", 1)
+	require.ErrorIs(t, client.DeleteSnapshot(ctx, "repo", "absent"), esadmin.ErrUnreachable)
+
+	server.DropNext("reload", 1)
+	require.ErrorIs(t, client.ReloadSecureSettings(ctx), esadmin.ErrUnreachable)
+
+	server.DropNext("repository", 1)
+	require.ErrorIs(
+		t,
+		client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}),
+		esadmin.ErrUnreachable,
+	)
 }

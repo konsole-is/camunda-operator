@@ -127,7 +127,13 @@ func TestElasticsearchAdminRejectsAnEmptyCABundle(t *testing.T) {
 
 	admin, failure, err := secondarystorageconfig.ElasticsearchAdmin(t.Context(), reader, esContract(true))
 
-	require.Error(t, err)
+	// An unusable bundle is a state the user corrects, so it is a failure
+	// with a reason, not an error that a retry fixes.
+	require.NoError(t, err)
 	assert.Nil(t, admin)
-	assert.Nil(t, failure)
+	require.NotNil(t, failure)
+	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
+	assert.Contains(t, failure.Message, "my-ns/es-ca")
+	assert.Contains(t, failure.Message, `"ca.crt"`)
+	assert.Contains(t, failure.Message, "empty")
 }

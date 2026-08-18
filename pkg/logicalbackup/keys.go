@@ -55,6 +55,18 @@ func AllocateBackupID(at metav1.Time) int64 {
 	return at.UnixMilli()
 }
 
+// AllocateBackupIDAfter returns the identifier of a backup that starts at the
+// given time and must come after highest: the larger of AllocateBackupID(at)
+// and highest+1. A caller passes the highest id among the backups of the
+// same cluster that it can see. A clock that stepped backwards then cannot
+// hand out an id that one of them already holds. Ids that no visible backup
+// records stay with the cluster as the arbiter. Those are the backups of the
+// other kind and the backups whose resource is deleted. The cluster answers
+// a repeated or lower id with camundaadmin.ErrConflict.
+func AllocateBackupIDAfter(at metav1.Time, highest int64) int64 {
+	return max(AllocateBackupID(at), highest+1)
+}
+
 // ObjectKeyPrefix returns the key prefix of every object that the backup id
 // of the cluster namespace/name writes to the bucket:
 // <basePath>/<namespace>/<name>/<id>. An empty basePath means the bucket
