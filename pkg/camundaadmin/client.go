@@ -212,8 +212,11 @@ func (c *Client) exporting(ctx context.Context, path string) error {
 }
 
 // StartHistoryBackup starts the backup of the web-application indices under
-// id. A backup that already exists under the same id is success, so a
-// re-entrant caller never double-starts.
+// id. A backup that already exists under the same id returns ErrConflict,
+// like StartRuntimeBackup. The client cannot know whether that backup is
+// the caller's own from an earlier request or another actor's under a
+// reused id. Resolving it as success would adopt a backup without
+// ownership evidence, so the caller decides from its own recorded state.
 func (c *Client) StartHistoryBackup(ctx context.Context, id int64) error {
 	body, err := json.Marshal(map[string]int64{"backupId": id})
 	if err != nil {
@@ -227,16 +230,17 @@ func (c *Client) StartHistoryBackup(ctx context.Context, id int64) error {
 		return nil
 	}
 
-	// The endpoint answers 400 when the id already exists. Re-entry is not a
-	// failure: when the backup exists, the start already happened. 409 is
-	// tolerated because it is the conventional code for the same condition.
+	// The endpoint answers 400 when the id already exists. 409 is treated
+	// the same because it is the conventional code for the condition. Only
+	// an id that the cluster really holds is a conflict; any other 400
+	// stays the rejection it is.
 	if status == http.StatusBadRequest || status == http.StatusConflict {
 		if existing, statusErr := c.HistoryBackupStatus(
 			ctx,
 			id,
 		); statusErr == nil &&
 			existing.State != StateDoesNotExist {
-			return nil
+			return fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 	}
 
