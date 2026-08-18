@@ -245,7 +245,13 @@ func TestValidateSnapshotStorageOnAzureEndpoints(t *testing.T) {
 			auth := v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity}
 			err := ValidateSnapshotStorage(azureBucket(auth, endpoint))
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), endpoint)
+			// The message reaches a status condition, which every reader of
+			// the cluster can see. An endpoint carries a shared access
+			// signature or a password often enough that none of it may be
+			// echoed back. The contract names the endpoint; the message names
+			// the contract.
+			assert.NotContains(t, err.Error(), endpoint)
+			assert.Contains(t, err.Error(), "bucket")
 		})
 	}
 }

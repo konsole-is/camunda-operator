@@ -267,11 +267,17 @@ func ValidateSnapshotStorage(config *v1.ObjectStorageConfig) error {
 			break
 		}
 		if _, ok := azureEndpointSuffix(config.Spec.AzureBlob); !ok {
+			// The endpoint itself is never echoed back. This message reaches
+			// a status condition of the cluster, which every reader of the
+			// cluster can see, and an endpoint carries a shared access
+			// signature or a password often enough that none of it may go
+			// there. Naming the contract is enough to find the field.
 			return fmt.Errorf(
-				"ObjectStorageConfig %q names endpoint %q, which Elasticsearch cannot address: "+
+				"the endpoint of ObjectStorageConfig %q is one that Elasticsearch cannot address: "+
 					"an azure repository takes an endpoint suffix of the form "+
-					"https://<account>.blob.<suffix>, not an arbitrary URL",
-				config.Name, config.Spec.AzureBlob.Endpoint,
+					"https://<account>.blob.<suffix>, with no port, path, query, fragment, "+
+					"or credentials",
+				config.Name,
 			)
 		}
 
