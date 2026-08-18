@@ -398,6 +398,7 @@ func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 			b.Status.BucketGeneration = w.bucket.Generation
 			b.Status.BucketLocation = w.bucket.Location()
 			b.Status.WorkloadConfigHash = "hash-1"
+			b.Status.ClusterUID = w.cluster.UID
 			b.Status.ObjectKey = components.DumpObjectKey(
 				w.bucket.BasePath(), w.namespace, w.cluster.Name, id, b.UID,
 			)
@@ -1296,15 +1297,23 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, "15s", interval).Should(Succeed())
 	})
 
+	// A dependency that returns within the grace is a binding, a Secret, or a
+	// reachable API. It is never the cluster itself: a cluster created again
+	// under the same name is another cluster, and the pinned UID fails the
+	// backup (see the replaced-cluster spec).
 	It("holds a mid-run failure and recovers when the dependency returns", func() {
 		w := createWorld()
 		backup := createBackup(w)
 		jobOf(backup, w)
 
 		// Once the Job is tracked, the dump step needs no resolution. The
-		// missing cluster bites when the Zeebe step starts.
-		By("deleting the cluster, then finishing the dump")
-		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		// missing binding bites when the Zeebe step starts.
+		By("unpublishing the management binding, then finishing the dump")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster)).To(Succeed())
+			w.cluster.Status.Management = nil
+			g.Expect(k8sClient.Status().Update(ctx, w.cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 		markJob(backup, w, batchv1.JobComplete)
 
 		By("holding the backup within the grace, failure clock running")
@@ -1314,13 +1323,8 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.FirstFailedAt).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
-		By("bringing the cluster back within the grace")
-		revived := &v1.CamundaCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
-			Spec:       w.cluster.Spec,
-		}
-		Expect(k8sClient.Create(ctx, revived)).To(Succeed())
-		converge(revived)
+		By("publishing the binding again within the grace")
+		converge(w.cluster)
 
 		By("recovering: the failure clock clears and the backup completes")
 		Eventually(func(g Gomega) {
@@ -1494,6 +1498,37 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 				Namespace: w.namespace, Name: components.JobName(backup),
 			}, &job,
 		)).NotTo(Succeed(), "no Job was rendered against the moved bucket")
+	})
+
+	// A cluster that was deleted and created again under the same name is
+	// another cluster with other primary storage, and its config hash can
+	// match. The pinned UID tells the two apart, and the backup fails at
+	// once instead of pairing its dump with the Zeebe backup of a stranger.
+	It("fails when the cluster was replaced under the same name after admission", func() {
+		w := createWorld()
+		unconvergeCluster(w)
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+		stageAdmitted(w, backup)
+
+		By("pinning the UID of a cluster that no longer exists; the world's cluster is its replacement")
+		const gone = "uid-of-the-cluster-that-admitted-the-backup"
+		patchStatusUntilStable(
+			backup, func(b *v1.LogicalBackupRDBMS) { b.Status.ClusterUID = gone },
+			func(b *v1.LogicalBackupRDBMS) bool { return b.Status.ClusterUID == gone },
+		)
+		converge(w.cluster)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("was replaced"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring(string(w.cluster.UID)))
+		}, "20s", interval).Should(Succeed())
+		var job batchv1.Job
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{Namespace: w.namespace, Name: components.JobName(backup)}, &job,
+		)).NotTo(Succeed(), "no Job was rendered against the replacement cluster")
 	})
 
 	It("holds the Job while the cluster rolls out in the gap, then renders it against the pinned inputs", func() {

@@ -18,6 +18,7 @@ package logicalbackuprdbms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
@@ -124,6 +125,11 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 	backup *v1.LogicalBackupRDBMS,
 ) (hold, error) {
 	res, failure, err := r.resolveRunning(ctx, backup)
+	if errors.Is(err, errClusterReplaced) {
+		r.fail(backup, err.Error())
+
+		return settle, nil
+	}
 	if err != nil {
 		return settle, err
 	}
@@ -205,6 +211,45 @@ func (r *LogicalBackupRDBMSReconciler) claimJobName(
 	return hold{after: r.opts.RetryInterval}, nil
 }
 
+// errClusterReplaced reports that the cluster of a started backup is not the
+// cluster that admitted it. It is terminal: the old cluster is gone for good.
+var errClusterReplaced = errors.New("the CamundaCluster was replaced")
+
+// runningCluster reads the cluster of a started backup and checks that it is
+// the cluster that admitted the backup, by UID. A cluster that was deleted
+// and created again under the same name is another cluster with other
+// primary storage, whatever its config hash says. A gone cluster is a
+// mid-run failure that the grace bounds. A replaced cluster returns
+// errClusterReplaced, and the caller fails the backup at once.
+func (r *LogicalBackupRDBMSReconciler) runningCluster(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) (*v1.CamundaCluster, *conditions.PreCheckFailure, error) {
+	var cluster v1.CamundaCluster
+	if err := r.APIReader.Get(
+		ctx,
+		types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name},
+		&cluster,
+	); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, logicalbackup.InvalidReference(
+				"CamundaCluster %s/%s does not exist", backup.Namespace, backup.Spec.ClusterRef.Name,
+			), nil
+		}
+
+		return nil, nil, fmt.Errorf("reading the cluster: %w", err)
+	}
+	if backup.Status.ClusterUID != "" && cluster.UID != backup.Status.ClusterUID {
+		return nil, nil, fmt.Errorf(
+			"%w: CamundaCluster %s/%s admitted the backup with UID %s and now has UID %s, "+
+				"so the dump and the Zeebe backup would not pair",
+			errClusterReplaced, cluster.Namespace, cluster.Name, backup.Status.ClusterUID, cluster.UID,
+		)
+	}
+
+	return &cluster, nil, nil
+}
+
 // resolveRunning re-resolves what the Dumping step needs. It reuses the
 // admission resolution against the pinned bucket. It reports a failure that
 // the user must see. holdRunning bounds how long that failure can hold the
@@ -215,19 +260,9 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 ) (*dumpResolution, *conditions.PreCheckFailure, error) {
 	namespace := backup.Namespace
 
-	var cluster v1.CamundaCluster
-	if err := r.APIReader.Get(
-		ctx,
-		types.NamespacedName{Namespace: namespace, Name: backup.Spec.ClusterRef.Name},
-		&cluster,
-	); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference(
-				"CamundaCluster %s/%s does not exist", namespace, backup.Spec.ClusterRef.Name,
-			), nil
-		}
-
-		return nil, nil, fmt.Errorf("reading the cluster: %w", err)
+	cluster, failure, err := r.runningCluster(ctx, backup)
+	if err != nil || failure != nil {
+		return nil, failure, err
 	}
 
 	var storage v1.SecondaryStorageConfig
@@ -259,19 +294,19 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 	// Zeebe step finds out only afterwards. The object key was written for
 	// the pinned bucket, not for the current backupStorageRef of the
 	// cluster.
-	if failure := clusterConverged(&cluster); failure != nil {
+	if failure := clusterConverged(cluster); failure != nil {
 		return nil, failure, nil
 	}
-	if failure, err := r.workloadUnchanged(ctx, backup, &cluster); err != nil || failure != nil {
+	if failure, err := r.workloadUnchanged(ctx, backup, cluster); err != nil || failure != nil {
 		return nil, failure, err
 	}
-	bucket, failure, err := r.pinnedBucket(ctx, backup, &cluster)
+	bucket, failure, err := r.pinnedBucket(ctx, backup, cluster)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
 
 	return r.resolveDump(ctx, backup, &logicalbackup.PreCheckResult{
-		Cluster: &cluster,
+		Cluster: cluster,
 		Storage: &storage,
 		Bucket:  bucket,
 	})

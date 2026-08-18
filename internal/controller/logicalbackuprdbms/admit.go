@@ -723,6 +723,7 @@ func (r *LogicalBackupRDBMSReconciler) start(
 	backup.Status.BucketGeneration = precheck.Bucket.Generation
 	backup.Status.BucketLocation = precheck.Bucket.Location()
 	backup.Status.WorkloadConfigHash = workloadConfigHash
+	backup.Status.ClusterUID = cluster.UID
 	backup.Status.Step = v1.StepDumping
 	backup.Status.Phase = v1.LogicalBackupRunning
 

@@ -46,19 +46,17 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) (hold, error) {
-	var cluster v1.CamundaCluster
-	if err := r.APIReader.Get(
-		ctx,
-		types.NamespacedName{Namespace: backup.Namespace, Name: backup.Spec.ClusterRef.Name},
-		&cluster,
-	); err != nil {
-		if apierrors.IsNotFound(err) {
-			return r.holdRunning(backup, logicalbackup.InvalidReference(
-				"CamundaCluster %s/%s does not exist", backup.Namespace, backup.Spec.ClusterRef.Name,
-			))
-		}
+	cluster, failure, err := r.runningCluster(ctx, backup)
+	if errors.Is(err, errClusterReplaced) {
+		r.fail(backup, err.Error())
 
+		return settle, nil
+	}
+	if err != nil {
 		return settle, err
+	}
+	if failure != nil {
+		return r.holdRunning(backup, failure)
 	}
 
 	// The dump is durably recorded once this step runs. So its Job can go
@@ -74,18 +72,18 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 		// bucket that the dump was written to. It also requires that Zeebe
 		// runs the spec that names the bucket, not a rollout still in
 		// progress.
-		_, failure, err := r.pinnedBucket(ctx, backup, &cluster)
+		_, failure, err := r.pinnedBucket(ctx, backup, cluster)
 		if err != nil {
 			return settle, err
 		}
 		if failure == nil {
-			failure = clusterConverged(&cluster)
+			failure = clusterConverged(cluster)
 		}
 		if failure == nil {
 			// The generation alone cannot tell a database swap. Mutable
 			// referents enter the workload config hash without a bump of
 			// the generation.
-			failure, err = r.workloadUnchanged(ctx, backup, &cluster)
+			failure, err = r.workloadUnchanged(ctx, backup, cluster)
 			if err != nil {
 				return settle, err
 			}
@@ -95,7 +93,7 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 		}
 	}
 
-	admin, failure, err := management.NewClient(ctx, r.APIReader, &cluster)
+	admin, failure, err := management.NewClient(ctx, r.APIReader, cluster)
 	if err != nil {
 		return settle, err
 	}
@@ -104,10 +102,10 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 	}
 
 	if backup.Status.ZeebeBackupID == nil {
-		return r.startZeebeBackup(ctx, backup, &cluster, admin)
+		return r.startZeebeBackup(ctx, backup, cluster, admin)
 	}
 
-	return r.pollZeebeBackup(ctx, backup, &cluster, admin)
+	return r.pollZeebeBackup(ctx, backup, cluster, admin)
 }
 
 // releaseJob deletes the dump Job once the backup recorded its result, and

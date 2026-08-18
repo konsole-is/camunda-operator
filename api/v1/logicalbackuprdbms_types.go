@@ -18,6 +18,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // ReasonMissingCredentials means that the backup bucket uses static
@@ -116,6 +117,14 @@ type LogicalBackupRDBMSStatus struct {
 	// bump of the generation.
 	// +optional
 	WorkloadConfigHash string `json:"workloadConfigHash,omitempty"`
+	// ClusterUID pins the CamundaCluster that admitted the backup. The
+	// running steps resolve the cluster by name, and a cluster that was
+	// deleted and created again under the same name is another cluster with
+	// other primary storage, whatever its config hash says. A backup whose
+	// cluster changed UID fails, so a dump never pairs with the Zeebe backup
+	// of a replacement.
+	// +optional
+	ClusterUID types.UID `json:"clusterUID,omitempty"`
 	// FirstFailedAt is when a dependency of the running backup first stopped
 	// resolving, or the management API first stopped answering. The operator
 	// measures the mid-run grace from it. It clears when the backup recovers.

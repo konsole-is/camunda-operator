@@ -1078,6 +1078,15 @@ spec:
                   dump. Deletion then cleans up against the bucket that holds the
                   object, even after the backupStorageRef of the cluster moved elsewhere.
                 type: string
+              clusterUID:
+                description: |-
+                  ClusterUID pins the CamundaCluster that admitted the backup. The
+                  running steps resolve the cluster by name, and a cluster that was
+                  deleted and created again under the same name is another cluster with
+                  other primary storage, whatever its config hash says. A backup whose
+                  cluster changed UID fails, so a dump never pairs with the Zeebe backup
+                  of a replacement.
+                type: string
               completionTime:
                 description: CompletionTime is when the backup reached a terminal
                   phase.
