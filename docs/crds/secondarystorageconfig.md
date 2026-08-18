@@ -11,7 +11,7 @@ It lives in the consuming cluster's namespace: consumers resolve it by name in t
 | Role | Who |
 | --- | --- |
 | Producers | [ElasticsearchCluster](elasticsearchcluster.md) (always, via its `secondaryStorageConfig` output name), [Database](database.md) (optionally, as a `rdbms`-type contract), a composition layer above, or you, by hand |
-| Consumers | [CamundaCluster](camundacluster.md) (via `storageRef`), and the backup and restore controllers (Backup, [LogicalRestore](logicalrestore.md), [PointInTimeRestore](pointintimerestore.md)), which resolve it through the cluster's `storageRef` |
+| Consumers | [CamundaCluster](camundacluster.md) (via `storageRef`), and the backup and restore controllers ([LogicalBackupElasticsearch](logicalbackupelasticsearch.md), [LogicalBackupRDBMS](logicalbackuprdbms.md), [LogicalRestore](logicalrestore.md), [PointInTimeRestore](pointintimerestore.md)), which resolve it through the cluster's `storageRef` |
 
 !!! note "Scope note"
     Camunda 8.9 itself also accepts `opensearch` and `none` as secondary-storage types; this contract models only the backends the operator integrates with (`elasticsearch` and `rdbms`).
@@ -39,7 +39,8 @@ graph LR
     SSC -.->|databaseConfigRef| DBC[DatabaseConfig]
     SSC -.->|credentialsSecretRef| SEC[Secret]
     CC[CamundaCluster] -.->|storageRef| SSC
-    BK[Backup] -.->|resolves via storageRef| SSC
+    LBE[LogicalBackupElasticsearch] -.->|resolves via storageRef| SSC
+    LBR[LogicalBackupRDBMS] -.->|resolves via storageRef| SSC
 ```
 
 ## API reference
@@ -107,7 +108,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - [ElasticsearchCluster](elasticsearchcluster.md) — creates and refreshes this contract, named by its `secondaryStorageConfig` output field.
 - [Database](database.md) — optionally creates a `rdbms`-type contract wired to the [DatabaseConfig](databaseconfig.md) it produces.
 - [CamundaCluster](camundacluster.md) — consumes this contract via `storageRef`.
-- Backup, [LogicalRestore](logicalrestore.md), [PointInTimeRestore](pointintimerestore.md) — resolve this contract through the target cluster's `storageRef`.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md), [LogicalBackupRDBMS](logicalbackuprdbms.md), [LogicalRestore](logicalrestore.md), [PointInTimeRestore](pointintimerestore.md) — resolve this contract through the target cluster's `storageRef`.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
 

@@ -104,8 +104,9 @@ var webAppPaths = []string{"/operate/", "/tasklist/", "/admin/"}
 
 // newCluster returns the CamundaCluster of a flow: the 8.9 default topology
 // (one broker, one standalone gateway that hosts the web applications) on
-// the named storage binding, sized for a kind node.
-func newCluster(namespace, platform, storageRef string, connectors bool) *v1.CamundaCluster {
+// the named storage binding, sized for a kind node. backupRef names the
+// bucket contract of the backups, or is empty for a flow that takes none.
+func newCluster(namespace, platform, storageRef, backupRef string, connectors bool) *v1.CamundaCluster {
 	cluster := &v1.CamundaCluster{
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaCluster"},
 		ObjectMeta: metav1.ObjectMeta{Name: ccName, Namespace: namespace},
@@ -113,6 +114,7 @@ func newCluster(namespace, platform, storageRef string, connectors bool) *v1.Cam
 			PlatformConfigRef: platform,
 			Version:           ccVersion,
 			StorageRef:        storageRef,
+			BackupStorageRef:  backupRef,
 			Zeebe: &v1.ZeebeSpec{
 				WorkloadSpec: v1.WorkloadSpec{Resources: requests("1", "1.5Gi")},
 				StorageSize:  new(resource.MustParse("1Gi")),
@@ -164,9 +166,10 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 				StorageSize:            new(resource.MustParse(esStorageSize)),
 				Resources:              requests("500m", "1Gi"),
 				SecondaryStorageConfig: ccStorageConfig,
+				SnapshotStorageRef:     backupStorage,
 			},
 		}
-		cluster = newCluster(ccNamespace, ccPlatform, ccStorageConfig, true)
+		cluster = newCluster(ccNamespace, ccPlatform, ccStorageConfig, backupStorage, true)
 		// brokerClaim is the data volume of the single broker, as it was
 		// bound before suspension.
 		brokerClaim corev1.PersistentVolumeClaim
@@ -200,6 +203,7 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 	})
 
 	itRunsTheOrchestrationCluster(cluster)
+	itBacksUpTheElasticsearchCluster(cluster, esName, ccStorageConfig)
 
 	It("runs Operate standalone and folds it back into the gateway", func() {
 		operate := components.WorkloadName(cluster, components.ComponentOperate)
@@ -373,7 +377,7 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 				SecondaryStorageConfig: ccRDBMSStorageConfig,
 			},
 		}
-		cluster = newCluster(ccRDBMSNamespace, ccRDBMSPlatform, ccRDBMSStorageConfig, false)
+		cluster = newCluster(ccRDBMSNamespace, ccRDBMSPlatform, ccRDBMSStorageConfig, backupStorage, false)
 	)
 
 	BeforeAll(func() {
@@ -415,6 +419,7 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 	})
 
 	itRunsTheOrchestrationCluster(cluster)
+	itBacksUpTheRelationalCluster(cluster)
 })
 
 // itRunsTheOrchestrationCluster registers the specs that both flows share:

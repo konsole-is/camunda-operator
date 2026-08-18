@@ -88,6 +88,8 @@ nav:
           - DatabaseConfig: crds/databaseconfig.md
           - ManagementAuthConfig: crds/managementauthconfig.md
       - Backup & Restore:
+          - LogicalBackupElasticsearch: crds/logicalbackupelasticsearch.md
+          - LogicalBackupRDBMS: crds/logicalbackuprdbms.md
           - BackupSchedule: crds/backupschedule.md
           - LogicalRestore: crds/logicalrestore.md
           - PointInTimeRestore: crds/pointintimerestore.md

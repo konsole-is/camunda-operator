@@ -144,7 +144,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - [ManagementAuthConfig](managementauthconfig.md) — referenced via `managementAuthRef`; provides the Management Identity OIDC configuration Optimize authenticates with.
 - [SecondaryStorageConfig](secondarystorageconfig.md) — resolved indirectly through the referenced cluster's `storageRef`; provides the Elasticsearch endpoint and credentials Optimize reads from and writes to.
 - [CamundaManagementCluster](camundamanagementcluster.md) — produces the [ManagementAuthConfig](managementauthconfig.md) this CR consumes in self-managed installations.
-- Backup — while this CR is attached to a cluster, the cluster's Elasticsearch-path backups drive Optimize's backup actuator with the same backup ID, so Optimize's analytics data (`camunda_optimize_<backupId>_*` snapshots) is included in the backup set.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) — while this CR is attached to a cluster, the backup drives Optimize's backup actuator with the same backup ID, so Optimize's analytics data (`camunda_optimize_<backupId>_*` snapshots) is included in the backup set.
 - [LogicalRestore](logicalrestore.md) — restores the Optimize snapshots along with the rest of the set when the backup contains them.
 - Elasticsearch itself is an external system reached through the contract; the ECK-managed cluster behind it is documented on the [ElasticsearchCluster](elasticsearchcluster.md) page.
 

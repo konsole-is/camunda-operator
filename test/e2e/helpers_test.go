@@ -86,10 +86,12 @@ func dumpDiagnostics(testNamespace string) {
 		"events": {"get", "events", "-n", testNamespace, "--sort-by=.lastTimestamp"},
 		"resources": {
 			"get",
-			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs,camundaclusters",
+			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs," +
+				"camundaclusters,logicalbackupelasticsearches,logicalbackuprdbmses",
 			"-n", testNamespace,
 		},
-		"pods": {"describe", "pods", "-n", testNamespace},
+		"object storage contracts": {"get", "objectstorageconfigs", "-o", "wide"},
+		"pods":                     {"describe", "pods", "-n", testNamespace},
 		"workload logs": {
 			"logs", "-l", "camunda.io/cluster", "-n", testNamespace, "--all-containers", "--prefix", "--tail=200",
 		},

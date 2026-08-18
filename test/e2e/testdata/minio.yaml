@@ -1,0 +1,114 @@
+# A single MinIO server for the backup flows. It is the S3-compatible object
+# store that the ObjectStorageConfig of the suite points at. The credentials
+# Secret is both the root account of the server and the access-key pair that
+# the contract references. The data lives in an emptyDir: the server exists
+# for one suite run.
+#
+# The names here are mirrored by the constants of test/utils/minio.go. Keep
+# the two in step.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-credentials
+type: Opaque
+stringData:
+  accessKeyId: camundabackup
+  secretAccessKey: camunda-backup-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+          args: ["server", "/data", "--address", ":9000"]
+          ports:
+            - containerPort: 9000
+              name: api
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: accessKeyId
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: secretAccessKey
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: api
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+spec:
+  selector:
+    app: minio
+  ports:
+    - port: 9000
+      targetPort: api
+---
+# The bucket that every backup of the suite writes to. mc reads the server
+# address and the credentials from MC_HOST_local, which the kubelet builds
+# from the two variables above it. The credentials therefore stay in the
+# Secret and never appear in the pod spec.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bucket
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+          args: ["--config-dir", "/mc", "mb", "--ignore-existing", "local/camunda-backup"]
+          env:
+            - name: MINIO_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: accessKeyId
+            - name: MINIO_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: secretAccessKey
+            - name: MC_HOST_local
+              value: "http://$(MINIO_ACCESS_KEY_ID):$(MINIO_SECRET_ACCESS_KEY)@minio:9000"
+          volumeMounts:
+            - name: config
+              mountPath: /mc
+      volumes:
+        - name: config
+          emptyDir: {}

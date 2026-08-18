@@ -95,7 +95,7 @@ There are no admission rules beyond schema validation; reference and Secret exis
 - [SecondaryStorageConfig](secondarystorageconfig.md) — references this contract via `rdbms.databaseConfigRef` when the secondary storage type is `rdbms`; the reference resolves in the referencing contract's own namespace.
 - [Database](database.md) — creates this contract as output of bootstrapping the logical database and its users.
 - [CamundaManagementCluster](camundamanagementcluster.md) — consumes this contract via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` for its component databases.
-- Backup, [LogicalRestore](logicalrestore.md) — resolve this contract through the target cluster's storage chain and use `backupCredentialsSecretRef` for dump and restore operations.
+- [LogicalBackupRDBMS](logicalbackuprdbms.md), [LogicalRestore](logicalrestore.md) — resolve this contract through the target cluster's storage chain and use `backupCredentialsSecretRef` for dump and restore operations.
 - [PointInTimeRestore](pointintimerestore.md) — resolves this contract through the target cluster's storage chain; its restore-app Jobs use `credentialsSecretRef` (the application credentials) to read the exporter position from the restored database.
 
 See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.

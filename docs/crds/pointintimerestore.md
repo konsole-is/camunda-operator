@@ -4,7 +4,7 @@ A PointInTimeRestore aligns an RDBMS-backed orchestration cluster's Zeebe primar
 
 ## Purpose
 
-A PointInTimeRestore recovers a `CamundaCluster` whose secondary storage is an RDBMS to an arbitrary point in time — for example to undo a destructive operation — without needing a Backup CR.
+A PointInTimeRestore recovers a `CamundaCluster` whose secondary storage is an RDBMS to an arbitrary point in time — for example to undo a destructive operation — without needing a [LogicalBackupRDBMS](logicalbackuprdbms.md).
 It relies on two continuous mechanisms instead of discrete backups: WAL-based point-in-time recovery on the database server, performed outside this operator, and Zeebe's continuous primary-storage backups, aligned by this controller.
 The operator never restores the database server itself: PostgreSQL PITR requires host-level access to base backups and the WAL archive, and managed database services expose it only through provider APIs that belong to the cloud operator or composition layer above — this controller aligns primary storage only.
 You create it, or a composition layer above creates it as part of a managed recovery flow.

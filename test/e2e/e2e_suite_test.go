@@ -24,16 +24,23 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
 var (
 	// managerImage is the manager image to be built and loaded for testing.
 	managerImage = "example.com/camunda-operator:v0.0.1"
+	// cliImage is the camunda-operator-cli image to be built and loaded for
+	// testing. The manager requires it, and the backup Jobs run it, so the
+	// suite builds and loads it exactly like the manager image. The default
+	// of the Makefile names a published image that a Kind node cannot pull.
+	cliImage = "example.com/camunda-operator-cli:v0.0.1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
 	// shouldCleanupECK tracks whether the ECK operator was installed by this suite.
@@ -68,12 +75,23 @@ var _ = BeforeSuite(func() {
 	err = utils.LoadImageToKindClusterWithName(managerImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
 
+	By("building the camunda-operator-cli image")
+	cmd = exec.Command("make", "docker-build-cli", fmt.Sprintf("CLI_IMG=%s", cliImage))
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the camunda-operator-cli image")
+
+	By("loading the camunda-operator-cli image on Kind")
+	err = utils.LoadImageToKindClusterWithName(cliImage)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the camunda-operator-cli image into Kind")
+
 	setupCertManager()
 	setupECK()
 	deployManager()
+	setupMinIO()
 })
 
 var _ = AfterSuite(func() {
+	teardownMinIO()
 	undeployManager()
 	teardownECK()
 	teardownCertManager()
@@ -101,7 +119,11 @@ func deployManager() {
 	Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
 	By("deploying the controller-manager")
-	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
+	cmd = exec.Command(
+		"make", "deploy",
+		fmt.Sprintf("IMG=%s", managerImage),
+		fmt.Sprintf("CLI_IMG=%s", cliImage),
+	)
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 }
@@ -120,6 +142,33 @@ func undeployManager() {
 	By("removing manager namespace")
 	cmd = exec.Command("kubectl", "delete", "ns", namespace)
 	_, _ = utils.Run(cmd)
+}
+
+// setupMinIO deploys the object store of the backup flows and creates the
+// bucket contract that they write through. It runs after the manager, so the
+// CRD of the contract is installed.
+func setupMinIO() {
+	By("creating the MinIO namespace")
+	_, err := utils.Kubectl("create", "ns", minioNamespace)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create the MinIO namespace")
+
+	By("deploying MinIO and creating the bucket")
+	Expect(utils.InstallMinIO(minioNamespace)).To(Succeed(), "Failed to install MinIO")
+
+	By("creating the ObjectStorageConfig of the backup flows")
+	Expect(apply(backupObjectStorage())).To(Succeed(), "Failed to create the ObjectStorageConfig")
+	Eventually(func(g Gomega) {
+		expectReady(g, oscResource, backupStorage, "", v1.ReasonHealthy)
+	}, 2*time.Minute).Should(Succeed())
+}
+
+// teardownMinIO removes the bucket contract and the MinIO namespace. It runs
+// before the manager is undeployed, so the contract is removed while its CRD
+// is still served.
+func teardownMinIO() {
+	By("removing the ObjectStorageConfig and the MinIO namespace")
+	_, _ = utils.Kubectl("delete", oscResource, backupStorage, "--ignore-not-found")
+	_, _ = utils.Kubectl("delete", "ns", minioNamespace, "--wait=false")
 }
 
 // setupCertManager installs CertManager if needed for webhook tests.

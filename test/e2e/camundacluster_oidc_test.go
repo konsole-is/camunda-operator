@@ -168,7 +168,9 @@ var _ = Describe("CamundaCluster with OIDC", Ordered, func() {
 		By("creating the platform config")
 		Expect(apply(oidcPlatformConfig())).To(Succeed())
 
-		cluster = newCluster(ccOIDCNamespace, ccOIDCPlatform, ccOIDCStorageConfig, true)
+		// The OIDC flow takes no backups: the runner is short of CPU, and the
+		// backup path is proven on the basic-auth flows.
+		cluster = newCluster(ccOIDCNamespace, ccOIDCPlatform, ccOIDCStorageConfig, "", true)
 		// The redirect URI is derived from externalUrl, and the flow asserts
 		// it, so it points at the gateway Service of this cluster.
 		cluster.Spec.ExternalURL = fmt.Sprintf(
