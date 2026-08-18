@@ -50,6 +50,9 @@ type Server struct {
 
 	pauseCalls  int
 	resumeCalls int
+	// resumeAttempts counts every resume request, the injected failures
+	// included; resumeCalls counts the ones that resumed.
+	resumeAttempts int
 
 	conflictRuntimeStarts int
 
@@ -114,7 +117,15 @@ func (s *Server) PauseCalls() int {
 	return s.pauseCalls
 }
 
-// ResumeCalls reports the number of resume calls.
+// ResumeAttempts reports how often resume was requested, injected failures
+// included. A test paces itself on the retries of a caller with it.
+func (s *Server) ResumeAttempts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resumeAttempts
+}
+
+// ResumeCalls reports the number of resume calls that resumed exporting.
 func (s *Server) ResumeCalls() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -219,6 +230,7 @@ func (s *Server) handleExporting(w http.ResponseWriter, r *http.Request, operati
 		exportingEnvelope(w, http.StatusNoContent, "")
 
 	case "resume":
+		s.resumeAttempts++
 		if s.failing("resume") {
 			exportingEnvelope(w, http.StatusInternalServerError, "injected resume failure")
 			return
