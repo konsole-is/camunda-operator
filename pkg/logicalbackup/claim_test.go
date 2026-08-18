@@ -26,6 +26,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	apimachineryvalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -69,6 +70,16 @@ func holderResource(claimant logicalbackup.Claimant, phase v1.LogicalBackupPhase
 	if phase != "" {
 		_ = unstructured.SetNestedField(backup.Object, string(phase), "status", "phase")
 	}
+	return backup
+}
+
+// resumeFailedHolder fakes a backup that ended Failed with the Ready reason
+// ResumeFailed: terminal, and the cluster's exporting is still paused.
+func resumeFailedHolder(claimant logicalbackup.Claimant) client.Object {
+	backup := holderResource(claimant, v1.LogicalBackupFailed).(*unstructured.Unstructured)
+	_ = unstructured.SetNestedSlice(backup.Object, []any{
+		map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
+	}, "status", "conditions")
 	return backup
 }
 
@@ -359,6 +370,74 @@ func TestHolderOfAKindTheServerDoesNotServeIsInactive(t *testing.T) {
 	active, err := logicalbackup.HolderActive(t.Context(), c, claimNamespace, second)
 	require.NoError(t, err)
 	assert.False(t, active)
+}
+
+// A ResumeFailed holder ended with exporting still paused. Its claim is
+// what keeps a sibling from backing up a paused cluster, so it stays active:
+// it blocks, and it is never taken over.
+func TestAResumeFailedHolderBlocksAndIsNotTakenOver(t *testing.T) {
+	c := claimClient(t, resumeFailedHolder(first), holderResource(second, v1.LogicalBackupPending))
+	leaseHeldBy(t, c, first)
+
+	got, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+	require.NoError(t, err)
+	assert.Equal(t, first.String(), got, "the ResumeFailed holder blocks")
+	assert.Equal(t, first.String(), leaseHolder(t, c), "and was not taken over")
+
+	active, err := logicalbackup.HolderActive(t.Context(), c, claimNamespace, first)
+	require.NoError(t, err)
+	assert.True(t, active)
+
+	paused, err := logicalbackup.HolderKeepsClusterPaused(t.Context(), c, claimNamespace, first)
+	require.NoError(t, err)
+	assert.True(t, paused)
+}
+
+// HolderKeepsClusterPaused says no for every holder that is not a terminal
+// ResumeFailed backup: active ones, ordinary terminal ones, and gone ones.
+func TestHolderKeepsClusterPausedOnlyForResumeFailed(t *testing.T) {
+	tests := []struct {
+		name   string
+		object client.Object
+	}{
+		{"running", holderResource(first, v1.LogicalBackupRunning)},
+		{"completed", holderResource(first, v1.LogicalBackupCompleted)},
+		{"failed via the normal resume", holderResource(first, v1.LogicalBackupFailed)},
+		{"gone", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var objects []client.Object
+			if tt.object != nil {
+				objects = append(objects, tt.object)
+			}
+			c := claimClient(t, objects...)
+			paused, err := logicalbackup.HolderKeepsClusterPaused(t.Context(), c, claimNamespace, first)
+			require.NoError(t, err)
+			assert.False(t, paused)
+		})
+	}
+}
+
+// A long cluster name that is cut at a "." or "-" must not leave the
+// separator in front of the hash suffix. The result must stay a valid DNS
+// subdomain. Otherwise the Lease can never be created, and admission never
+// passes.
+func TestClaimLeaseNameOfADottedNameIsAValidDNSSubdomain(t *testing.T) {
+	// The head of "camunda-backup-" plus this name is cut at 244. That is
+	// exactly the "." of this name, so the cut lands on the separator.
+	dotted := strings.Repeat("a", 228) + "." + strings.Repeat("b", 200)
+
+	name := logicalbackup.ClaimLeaseName(dotted)
+
+	assert.LessOrEqual(t, len(name), 253)
+	assert.Empty(t, apimachineryvalidation.NameIsDNSSubdomain(name, false), "the Lease name is a valid DNS subdomain")
+	assert.Equal(t, name, logicalbackup.ClaimLeaseName(dotted))
+	assert.NotEqual(t, name, logicalbackup.ClaimLeaseName(dotted+"x"))
+
+	// A cut inside a run of separators trims them all.
+	messy := strings.Repeat("a", 220) + strings.Repeat(".", 24) + strings.Repeat("b", 100)
+	assert.Empty(t, apimachineryvalidation.NameIsDNSSubdomain(logicalbackup.ClaimLeaseName(messy), false))
 }
 
 func TestHolderActive(t *testing.T) {
