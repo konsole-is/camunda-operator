@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -58,8 +59,8 @@ func TestLookupOrNew(t *testing.T) {
 	t.Parallel()
 
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: "ns"},
-		Data:       map[string][]byte{"password": []byte("s3cret")},
+		ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: "ns", UID: types.UID("uid-1")},
+		Data:       map[string][]byte{"password": []byte("s3cret"), "empty": {}},
 	}
 	key := client.ObjectKey{Name: "creds", Namespace: "ns"}
 
@@ -87,20 +88,46 @@ func TestLookupOrNew(t *testing.T) {
 			reader: fake.NewClientBuilder().WithObjects(secret).Build(),
 			field:  "username",
 		},
+		{
+			name:   "empty field yields a new password",
+			reader: fake.NewClientBuilder().WithObjects(secret).Build(),
+			field:  "empty",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			value, err := LookupOrNew(context.Background(), tt.reader, key, tt.field)
+			password, err := LookupOrNew(context.Background(), tt.reader, key, tt.field)
 			require.NoError(t, err)
 			if tt.wantExisting {
-				assert.Equal(t, "s3cret", value)
+				assert.Equal(t, "s3cret", password.Value)
+				assert.Equal(
+					t, types.UID("uid-1"), password.SourceUID,
+					"a reused password must name the Secret it came from",
+				)
 				return
 			}
-			assert.Regexp(t, passwordPattern, value)
+			assert.Regexp(t, passwordPattern, password.Value)
+			assert.Empty(
+				t, password.SourceUID,
+				"a new password has no source object, so the apply must be free to create the Secret",
+			)
 		})
 	}
+}
+
+func TestPasswordPreconditionAnnotations(t *testing.T) {
+	t.Parallel()
+
+	reused := Password{Value: "s3cret", SourceUID: types.UID("uid-1")}
+	assert.Equal(
+		t,
+		map[string]string{PreconditionAnnotation: "uid-1"},
+		reused.PreconditionAnnotations(),
+	)
+
+	assert.Nil(t, Password{Value: "s3cret"}.PreconditionAnnotations())
 }
 
 func TestLookupOrNewReturnsTransientErrors(t *testing.T) {

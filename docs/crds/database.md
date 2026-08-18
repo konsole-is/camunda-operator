@@ -24,6 +24,8 @@ You create this CR directly, or a composition layer above may create it after pr
 6. If `spec.secondaryStorageConfig` is set, it creates a `SecondaryStorageConfig` with `type: rdbms` in `spec.targetNamespace`. This contract references that `DatabaseConfig`, and an orchestration cluster can then use the database as secondary storage. Omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler). If you clear the field later, the operator stops managing the contract. An existing contract stays in place until the `Database` is deleted. The bindings land in `targetNamespace` because consumers resolve them by name in their own namespace. Set it to the namespace of the consuming cluster.
 7. It reports status conditions and `status.observedGeneration`.
 
+The operator generates each role password once and keeps it stable across reconciles. To rotate one, delete its credential Secret: the operator generates a new password, sets it on the server, and publishes it.
+
 All created objects are applied with Server-Side Apply (SSA) under the per-component field manager `Database/bindings`.
 Deleting a `Database` removes the `DatabaseConfig`, the optional `SecondaryStorageConfig`, and the credential Secrets it created, but it never drops the logical database or the SQL users — data removal stays a deliberate, manual act.
 

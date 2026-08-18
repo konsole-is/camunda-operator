@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseconfig"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
@@ -89,9 +90,9 @@ type Bindings struct {
 	// BackupEnabled reports whether the backup user and Secret are managed.
 	BackupEnabled bool
 	// AppPassword is the resolved password of the application role.
-	AppPassword string
+	AppPassword credentials.Password
 	// BackupPassword is the resolved password of the backup role.
-	BackupPassword string
+	BackupPassword credentials.Password
 }
 
 // ResolveBindings applies the documented defaults to the binding names of db.
@@ -236,18 +237,26 @@ func bindingLabels(db *v1.Database) map[string]string {
 	return labels.Managed(labels.Database(db.Name), bindingsComponentLabel)
 }
 
-// credentialSecret builds the baseline for a published credential Secret.
-func credentialSecret(db *v1.Database, key types.NamespacedName, username, password string) *corev1.Secret {
+// credentialSecret builds the baseline for a published credential Secret. A
+// reused password carries its apply precondition onto the Secret, so a delete
+// of the Secret always rotates the password.
+func credentialSecret(
+	db *v1.Database,
+	key types.NamespacedName,
+	username string,
+	password credentials.Password,
+) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      key.Name,
-			Namespace: key.Namespace,
-			Labels:    bindingLabels(db),
+			Name:        key.Name,
+			Namespace:   key.Namespace,
+			Labels:      bindingLabels(db),
+			Annotations: password.PreconditionAnnotations(),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
 			CredentialUsernameKey: []byte(username),
-			CredentialPasswordKey: []byte(password),
+			CredentialPasswordKey: []byte(password.Value),
 		},
 	}
 }
