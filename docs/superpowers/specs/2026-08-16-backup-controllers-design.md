@@ -599,10 +599,19 @@ Pre-checks, in order, mirror `camundacluster/precheck.go`:
 3. Cluster is suspended: `ClusterSuspended`. Requeue.
 4. Resolve `storageRef`. Storage type does not match the kind: `StorageTypeMismatch`.
 5. Another backup of either kind for this cluster is not terminal: `BackupInProgress`. Stay in
-   `Pending`. Requeue.
+   `Pending`. Requeue. The claim is atomic on the API server: a `coordination.k8s.io` Lease
+   `camunda-backup-<cluster>` in the cluster namespace, holder `<Kind>/<Name>/<UID>`, created
+   before the backup id is allocated and released after the terminal status is flushed (and in
+   the finalizer). A pending backup that finds the Lease held waits and names the holder; a Lease
+   whose holder is gone, recreated (UID mismatch), or terminal is taken over. The in-kind
+   "oldest pending first" tie-break is a fairness pre-filter only — the Lease decides. (Amended
+   after Copilot found the sibling scan non-atomic under 4 concurrent reconciles and blind to a
+   pending sibling of the other kind.)
 
 Backup ID: the Unix timestamp in milliseconds (`UnixMilli` — one-second resolution collides across quick retries) at which the backup left `Pending`, recorded once in
-`status.backupId`. Object key layout in the bucket:
+`status.backupId`, arbitrated against the highest id of the visible siblings of the same kind
+(`AllocateBackupIDAfter`) so a clock rollback cannot reuse one; cross-kind and deleted-CR ids
+are arbitrated by Camunda's own 409. Object key layout in the bucket:
 `<basePath>/<cluster-namespace>/<cluster-name>/<backupId>/...`.
 
 Neither kind carries an owner reference to the cluster. Backups outlive the cluster.

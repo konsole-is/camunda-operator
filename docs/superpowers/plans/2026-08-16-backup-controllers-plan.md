@@ -48,7 +48,7 @@ PR2 and PR3 fan out after PR1. PR4 and PR5 fan out after PR2+PR3. PR6 needs the 
 | `logicalbackup-skeleton` | #65 | #68, #69, #70 | **AS SHIPPED in #74** — status vocabulary in `api/v1`: `v1.LogicalBackupPhase` (`LogicalBackupPending/Running/Completed/Failed`), shared `v1.Reason*` constants, `v1.ClusterRef`, `v1.LogicalBackupStorageSizes{Elasticsearch, Zeebe *resource.Quantity}`. Logic in `pkg/logicalbackup`: `PreCheck(ctx, PreCheckRequest{Reader client.Reader, Ref v1.ClusterRef, Namespace string, StorageType v1.SecondaryStorageType, InProgress func(ctx) (string, error)}) (*PreCheckResult, error)` returning `*conditions.PreCheckFailure`, `Waiting(err) bool`, `AllocateBackupID`, `ObjectKeyPrefix`, `Finalizer`, `ZeebeSize`/`ElasticsearchSize`/`RecordStorageSizes`. Schedule label is `labels.BackupScheduleKey` (NOT `logicalbackup.ScheduleLabel` — removed). Per-kind reasons are NOT here: PR4 declares `ResumeFailed`, PR5 declares `MissingCredentials`. | merged in PR1 |
 | `backup-kind-types` | #68, #69 | #70 | `v1.LogicalBackupElasticsearch` / `v1.LogicalBackupRDBMS` full types incl. `Status.Phase`, `Status.CompletionTime`; plurals `logicalbackupelasticsearches`/`logicalbackuprdbmses`, short names `lbes`/`lbrdbms` | PR6 branches after PR4+PR5 merge |
 
-The `logicalbackup-skeleton` row overrides the sketch in #65's issue text: the skeleton ships **complete in PR1** (pure functions, table-tested), so PR4/PR5 import a merged real package and no stub choreography is needed. Its row above records the shape as actually shipped and reviewed in PR #74 — three deviations from the original sketch were accepted (status vocabulary belongs in `api/v1` because it is CRD status surface needing deepcopy and enum markers; `PreCheck` takes a request struct with an injected `InProgress` because the backup kinds do not exist until PR4/PR5, so only a kind can list itself; per-kind reasons live next to their kind). **`InProgress` must list BOTH backup kinds** — spec §Shared skeleton serializes on "another backup of either kind", and that half is the caller's responsibility, so PR4 and PR5 each implement and test it.
+The `logicalbackup-skeleton` row overrides the sketch in #65's issue text: the skeleton ships **complete in PR1** (pure functions, table-tested), so PR4/PR5 import a merged real package and no stub choreography is needed. Its row above records the shape as actually shipped and reviewed in PR #74 — three deviations from the original sketch were accepted (status vocabulary belongs in `api/v1` because it is CRD status surface needing deepcopy and enum markers; `PreCheck` takes a request struct with an injected `InProgress` because the backup kinds do not exist until PR4/PR5, so only a kind can list itself; per-kind reasons live next to their kind). **Cross-kind serialization is the Lease claim in `pkg/logicalbackup/claim.go`** (2026-08-18 amendment): `InProgress` keeps only the in-kind pending tie-break as a fairness pre-filter; the Lease is what blocks, atomically, across both kinds. The `SiblingInProgress` seam and its cmd/main.go wiring are gone.
 
 ## Conventions
 
@@ -146,7 +146,7 @@ Implements spec §LogicalBackupElasticsearch (API + state machine + finalizer + 
 
 **Steps:**
 - [ ] TDD types + schema (immutable `clusterRef`, step enum, per-part status; reuse `v1.LogicalBackupPhase` and `v1.LogicalBackupStorageSizes` from PR1 — do not redeclare). Declare `ResumeFailed` here, next to this kind
-- [ ] Implement `PreCheckRequest.InProgress` listing **both** backup kinds (spec serializes on "another backup of either kind") and test the cross-kind case
+- [x] Serialize per cluster through the shared Lease claim (`pkg/logicalbackup/claim.go`: `Claim`/`Release`/`HolderActive`; replaces the `SiblingInProgress` seam — see the 2026-08-18 amendment in the spec) and test: two same-second pendings → one starts; stale holder taken over; finalizer releases
 - [ ] TDD the state machine against `camundaadmintest`/`esadmintest`: happy path; crash re-entry per step (no duplicate POST); failure-in-each-step → `ResumeExporting` → terminal; resume deadline → `ResumeFailed`; `BackupInProgress` serialization; pre-check reasons; empty binding holds `Pending`
 - [ ] TDD `RecordStorageSizes` wiring (cluster volumes + fake `_nodes/stats`)
 - [ ] TDD finalizer (delete by exact backupId; release when cluster gone)
@@ -166,7 +166,7 @@ Implements spec §LogicalBackupRDBMS (API + state machine + Job + upload subcomm
 
 **Steps:**
 - [ ] TDD types + schema (immutable `clusterRef`, `dump` whole-block override; reuse `v1.LogicalBackupPhase` / `v1.LogicalBackupStorageSizes`). Declare `MissingCredentials` here, next to this kind
-- [ ] Implement `PreCheckRequest.InProgress` listing **both** backup kinds and test the cross-kind case
+- [x] Serialize per cluster through the shared Lease claim (same helper as PR4; the seam is gone) and test the same three cases
 - [ ] TDD the Job builder goldens: initContainer `postgres:<major>` w/ `pg_dump -Fc`, upload main container, both auth shapes, scratch `emptyDir`/PVC, effective dump block (scheduling/resources/annotations), cluster SA
 - [ ] TDD `upload` subcommand against `fileblob`
 - [ ] TDD controller: Job SSA + tracking, `PrimaryBackup` via binding (records generated ID), `MissingSecret`/`MissingCredentials` pre-checks, `storageSizes.zeebe`
