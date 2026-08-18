@@ -237,6 +237,9 @@ func TestValidateSnapshotStorageOnAzureEndpoints(t *testing.T) {
 		"a plain host":              "https://blob.example.com",
 		"another account":           "https://other.blob.core.windows.net",
 		"an explicit port":          "https://camundabackups.blob.core.windows.net:8443",
+		"a query string":            "https://camundabackups.blob.core.windows.net?sv=2021-08-06&sig=abc",
+		"a fragment":                "https://camundabackups.blob.core.windows.net#frag",
+		"credentials in the URL":    "https://user:pass@camundabackups.blob.core.windows.net",
 	} {
 		t.Run("rejects "+name, func(t *testing.T) {
 			auth := v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity}

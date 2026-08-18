@@ -298,8 +298,18 @@ func azureEndpointSuffix(storage *v1.AzureBlobStorage) (string, bool) {
 		return defaultAzureEndpointSuffix, true
 	}
 
+	// Only the scheme and the host survive into the suffix, so an endpoint
+	// that carries anything else says something the suffix cannot. Dropping a
+	// port, a path, a query, a fragment, or credentials silently would leave
+	// the repository addressing a store the contract did not name.
 	endpoint, err := url.Parse(storage.ServiceEndpoint())
-	if err != nil || endpoint.Scheme != "https" || endpoint.Path != "" || endpoint.Port() != "" {
+	if err != nil ||
+		endpoint.Scheme != "https" ||
+		endpoint.Path != "" ||
+		endpoint.Port() != "" ||
+		endpoint.RawQuery != "" ||
+		endpoint.Fragment != "" ||
+		endpoint.User != nil {
 		return "", false
 	}
 
