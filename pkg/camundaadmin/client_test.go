@@ -133,15 +133,19 @@ func TestUnreachableEndpoint(t *testing.T) {
 	require.ErrorIs(t, err, camundaadmin.ErrUnreachable)
 }
 
-func TestStartHistoryBackupIsIdempotent(t *testing.T) {
+// A duplicate history start is a conflict, not success. The client cannot
+// know whether the existing backup is the caller's own with a lost response
+// or another actor's under a reused id. Resolving it as success would adopt
+// a backup without ownership evidence. The caller decides from its own
+// recorded state, like it does for the runtime start.
+func TestStartHistoryBackupSurfacesTheDuplicateAsAConflict(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
 	require.NoError(t, client.StartHistoryBackup(ctx, 42))
 
-	// A second start of the same id hits the duplicate rejection of the
-	// endpoint, and the client resolves it through the status: success.
-	require.NoError(t, client.StartHistoryBackup(ctx, 42))
+	err := client.StartHistoryBackup(ctx, 42)
+	require.ErrorIs(t, err, camundaadmin.ErrConflict)
 	assert.Equal(t, 1, server.HistoryStarts(42))
 }
 
