@@ -50,10 +50,11 @@ type Snapshot struct {
 	State string
 	// Indices requested for the snapshot.
 	Indices string
-	// Metadata is the user metadata that the creation carried. A snapshot
-	// seeded with SetSnapshotState has none, like one that another actor
-	// created.
-	Metadata map[string]string
+	// Metadata is the user metadata that the creation carried, decoded as
+	// encoding/json decodes into any. A snapshot seeded with
+	// SetSnapshotState has none, like one that another actor created;
+	// SetSnapshotMetadata gives it any, strings or not.
+	Metadata map[string]any
 }
 
 // Server fakes the Elasticsearch admin surface. Every exported method is
@@ -165,6 +166,21 @@ func (s *Server) SetSnapshotState(repo, name, state string) {
 		return
 	}
 	s.snapshots[repo+"/"+name] = &Snapshot{Repo: repo, Name: name, State: state}
+}
+
+// SetSnapshotMetadata sets the user metadata of the snapshot repo/name,
+// creating it in state SUCCESS when absent. The values can be any JSON
+// value, so a test can seed a snapshot that another actor created with
+// metadata this operator never writes: numbers, lists, or objects.
+func (s *Server) SetSnapshotMetadata(repo, name string, metadata map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot, ok := s.snapshots[repo+"/"+name]
+	if !ok {
+		snapshot = &Snapshot{Repo: repo, Name: name, State: "SUCCESS"}
+		s.snapshots[repo+"/"+name] = snapshot
+	}
+	snapshot.Metadata = metadata
 }
 
 // SnapshotExists reports whether the snapshot repo/name exists.
@@ -366,8 +382,8 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			return
 		}
 		var body struct {
-			Indices  string            `json:"indices"`
-			Metadata map[string]string `json:"metadata"`
+			Indices  string         `json:"indices"`
+			Metadata map[string]any `json:"metadata"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		s.snapshots[key] = &Snapshot{

@@ -19,6 +19,7 @@ package conditions
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,8 +42,8 @@ func TestReadyBoundsAnOversizedMessage(t *testing.T) {
 
 	cond := Ready(metav1.ConditionFalse, v1.ReasonFailed, message, 1)
 
-	assert.Less(t, len(cond.Message), MaxMessageLength+100)
-	assert.True(t, strings.HasPrefix(cond.Message, strings.Repeat("x", MaxMessageLength)))
+	assert.LessOrEqual(t, len(cond.Message), MaxMessageLength, "the bound is the whole result, marker included")
+	assert.True(t, strings.HasPrefix(cond.Message, strings.Repeat("x", MaxMessageLength-100)))
 	assert.True(
 		t,
 		strings.HasSuffix(cond.Message, "... (truncated, 100000 bytes)"),
@@ -59,7 +60,8 @@ func TestBoundMessageCutsOnARuneBoundary(t *testing.T) {
 
 	assert.Contains(t, bounded, "(truncated, ")
 	assert.True(t, strings.HasPrefix(message, strings.TrimSuffix(bounded, bounded[strings.LastIndex(bounded, "..."):])))
-	assert.Less(t, len(bounded), MaxMessageLength+100)
+	assert.True(t, utf8.ValidString(bounded))
+	assert.LessOrEqual(t, len(bounded), MaxMessageLength)
 }
 
 func TestBoundMessageKeepsAMessageWithinTheBound(t *testing.T) {
@@ -80,7 +82,7 @@ func TestStageBoundsAConditionBuiltElsewhere(t *testing.T) {
 	Stage(owner, oversized)
 
 	staged := (*owner.GetStatusConditions())[0]
-	assert.Less(t, len(staged.Message), MaxMessageLength+100)
+	assert.LessOrEqual(t, len(staged.Message), MaxMessageLength)
 	assert.Contains(t, staged.Message, "(truncated, ")
 	assert.Equal(t, int64(4), owner.Status.ObservedGeneration)
 }
