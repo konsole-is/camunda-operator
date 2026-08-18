@@ -34,6 +34,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
@@ -249,7 +250,9 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = componentClient
+		// The apply wrapper enforces the precondition of a reused admin
+		// password, so a delete of the admin Secret rotates it.
+		r.componentClient = credentials.NewApplyClient(componentClient)
 	}
 
 	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {

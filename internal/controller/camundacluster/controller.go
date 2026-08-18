@@ -237,7 +237,7 @@ func (r *CamundaClusterReconciler) buildComponents(
 	}
 
 	basic := components.ResolveAuth(in).Method == v1.AuthenticationMethodBasic
-	var password string
+	var password credentials.Password
 	if basic {
 		var err error
 		password, err = credentials.LookupOrNew(

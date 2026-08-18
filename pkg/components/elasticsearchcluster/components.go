@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
@@ -320,17 +321,26 @@ func usesServiceAccount(merged v1.ElasticsearchClusterSpec, storage *SnapshotSto
 // file-realm Secret with the Camunda user, the given password, and the Camunda
 // role, plus the Secret that defines that role. ECK consumes them through
 // spec.auth.fileRealm and spec.auth.roles.
-func CredentialsComponent(cluster *v1.ElasticsearchCluster, password string) (*component.Component, error) {
+//
+// A reused password carries its apply precondition onto the user Secret, so a
+// delete of that Secret always rotates the password. The controller must
+// reconcile the component through credentials.NewApplyClient for the
+// precondition to hold.
+func CredentialsComponent(
+	cluster *v1.ElasticsearchCluster,
+	password credentials.Password,
+) (*component.Component, error) {
 	userSecret, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      UserSecretName(cluster),
-			Namespace: cluster.Namespace,
-			Labels:    managedLabels(cluster),
+			Name:        UserSecretName(cluster),
+			Namespace:   cluster.Namespace,
+			Labels:      managedLabels(cluster),
+			Annotations: password.PreconditionAnnotations(),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
 			usernameKey: []byte(username),
-			PasswordKey: []byte(password),
+			PasswordKey: []byte(password.Value),
 			rolesKey:    []byte(userRole),
 		},
 	}).Build()

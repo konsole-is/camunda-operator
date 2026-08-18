@@ -541,9 +541,11 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	r.restMapper = mgr.GetRESTMapper()
 
 	if r.componentClient == nil {
-		// Uncached: see the componentClient field doc. The apply wrapper
+		// Uncached: see the componentClient field doc. The ECK apply wrapper
 		// sanitizes typed Elasticsearch patches down to the fields that the
-		// ECK CRD schema declares.
+		// ECK CRD schema declares. The credentials apply wrapper enforces the
+		// precondition of a reused password, so a delete of the user Secret
+		// rotates it.
 		componentClient, err := client.New(mgr.GetConfig(), client.Options{
 			Scheme: mgr.GetScheme(),
 			Mapper: mgr.GetRESTMapper(),
@@ -551,7 +553,9 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = eckelasticsearch.NewApplyClient(componentClient)
+		r.componentClient = credentials.NewApplyClient(
+			eckelasticsearch.NewApplyClient(componentClient),
+		)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(

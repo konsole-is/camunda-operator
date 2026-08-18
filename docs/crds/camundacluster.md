@@ -70,6 +70,7 @@ A standalone web application gets a Service of its own that exposes port `8080`.
 Camunda 8.9 seeds no user on its own. When the platform config selects basic authentication, the operator creates the initial admin user of the cluster.
 The credentials live in the Secret `<name>-camunda-admin` in the namespace of the CamundaCluster, under the keys `username` (`admin`) and `password`.
 The operator generates the password once and keeps it stable across reconciles. The password reaches the containers as a `secretKeyRef`, and the user is a member of the `admin` role.
+To rotate the password, delete the Secret: the operator generates a new one on the next reconcile, and never republishes the old one onto the new Secret.
 The connectors runtime authenticates against the cluster with the same user. The Secret reports the condition `AdminSecretReady`, and it takes part in `Ready`.
 
 ### OIDC authorization
