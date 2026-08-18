@@ -18,6 +18,7 @@ package logicalbackupelasticsearch
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -360,6 +361,8 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.management.Exporting()).To(Equal("running"))
 
 		final := currentBackup(backup)
+		Expect(final.Status.HistoryRequestedTime).NotTo(BeNil())
+		Expect(final.Status.HistoryAcceptedTime).NotTo(BeNil())
 		Expect(final.Status.PartitionsCount).To(Equal(int32(5)))
 		Expect(final.Status.Repository).To(Equal(r.repository))
 		Expect(final.Status.Storage).To(Equal(&v1.PinnedStorage{
@@ -899,6 +902,88 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
+	It("never adopts a history backup it did not see accepted, and never deletes its snapshots", func() {
+		r := newRig()
+		// The management API is unreachable through the pause, so the
+		// procedure holds there. Meanwhile a history backup appears under
+		// the backup's ID: another actor's, or a lost response. Nothing
+		// tells the two apart.
+		unreachable := r.management.URL()
+		r.management.Close()
+		r.management = camundaadmintest.New()
+		DeferCleanup(r.management.Close)
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Status.Management.Endpoint = unreachable
+			g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		backup := r.newBackup()
+		id := backupID(backup)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonConnectionFailed)
+
+		foreignSnapshot := fmt.Sprintf("camunda_webapps_%d_8.9_part_1_of_1", id)
+		r.management.SetHistoryState(id, "IN_PROGRESS", "")
+		r.search.SetSnapshotState(r.repository, foreignSnapshot, "SUCCESS")
+		r.publishBinding(3)
+
+		By("failing through resume without adopting")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("BackupHistory"),
+			ContainSubstring("did not see accepted"),
+			ContainSubstring("not adopted"),
+		))
+		Expect(final.Status.HistoryAcceptedTime).To(BeNil())
+		Expect(final.Status.HistorySnapshots).To(BeEmpty(), "foreign snapshot names are never recorded")
+		Expect(r.management.HistoryStarts(id)).To(BeZero())
+		Expect(r.management.Exporting()).To(Equal("running"))
+
+		By("leaving the foreign snapshots alone on deletion")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, foreignSnapshot)).To(BeTrue())
+	})
+
+	It("never adopts a records snapshot it did not create, and never deletes it", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		// While the history backup is still in progress, a snapshot appears
+		// under the deterministic records name: an ID reuse by a deleted or
+		// other-kind backup. It carries no metadata of this backup.
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		name := RecordsSnapshotName(id)
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		By("failing through resume without adopting")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("SnapshotRecords"),
+			ContainSubstring("did not create"),
+			ContainSubstring("not adopted"),
+		))
+		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(r.search.SnapshotCreates(r.repository, name)).To(BeZero())
+		Expect(r.management.Exporting()).To(Equal("running"))
+
+		By("leaving the foreign snapshot alone on deletion")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
+	})
+
 	It("never adopts a runtime backup it did not see accepted, and never deletes it", func() {
 		r := newRig()
 		backup := r.newBackup()
@@ -1387,10 +1472,11 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		siblingID := backupID(sibling)
 		Expect(r.leaseHolder()).To(Equal(claimant(currentBackup(sibling)).String()))
-		// The sibling pauses exporting again for its own run. Its pause is a
-		// new one, after the resume of the finalizer: the Consistently block
-		// above proved that the sibling never started while the holder
-		// lived, so the resume never fired inside a running sibling.
+		// The sibling pauses exporting again for its own run. Its pause is
+		// a new one, after the resume of the finalizer. The Consistently
+		// block above proved that the sibling never started while the
+		// holder lived. The resume therefore never fired inside a running
+		// sibling.
 		Eventually(func() int { return r.management.HistoryStarts(siblingID) }, timeout, interval).Should(Equal(1))
 		Expect(r.management.PauseCalls()).To(Equal(pausesBefore+1), "the sibling paused anew for its own run")
 		Expect(r.management.Exporting()).To(Equal("softPaused"))

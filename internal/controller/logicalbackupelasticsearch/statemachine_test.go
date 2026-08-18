@@ -146,6 +146,74 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 	}
 }
 
+// The history request mirrors the runtime one: the intent is recorded one
+// reconcile before the POST, and nothing is requested on that reconcile.
+func TestHistoryRequestRecordsTheIntentFirst(t *testing.T) {
+	r, mgmt, server := runtimeRig(t)
+	backup := runtimeBackup()
+
+	_, err := r.requestHistoryBackup(t.Context(), mgmt, backup)
+	require.NoError(t, err)
+
+	assert.Zero(t, server.HistoryStarts(testBackupID))
+	assert.NotNil(t, backup.Status.HistoryRequestedTime)
+	assert.Nil(t, backup.Status.HistoryAcceptedTime)
+}
+
+// A conflicting history start is never an acceptance. The existing backup
+// can be this backup's own with a lost response, or another actor's under a
+// reused ID, and nothing tells them apart. The step fails without adopting.
+func TestHistoryRequestConflictFailsWithoutAdoption(t *testing.T) {
+	r, mgmt, server := runtimeRig(t)
+	backup := runtimeBackup()
+	now := metav1.Now()
+	backup.Status.HistoryRequestedTime = &now
+	server.SetHistoryState(testBackupID, "IN_PROGRESS", "")
+
+	_, err := r.requestHistoryBackup(t.Context(), mgmt, backup)
+	require.NoError(t, err)
+
+	assert.Zero(t, server.HistoryStarts(testBackupID))
+	assert.Nil(t, backup.Status.HistoryAcceptedTime)
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Equal(t, v1.BackupPartFailed, backup.Status.History.State)
+	assert.Contains(t, backup.Status.FailureMessage, "not adopted")
+	assert.Contains(t, backup.Status.FailureMessage, "lost response, or one of another actor")
+}
+
+// The history acceptance is stamped after the POST returned its 200, and
+// the registration grace runs from it. Within the grace an absent backup is
+// polled. Past it the step fails.
+func TestHistoryRequestAcceptanceAndGrace(t *testing.T) {
+	r, mgmt, server := runtimeRig(t)
+	backup := runtimeBackup()
+	longAgo := metav1.NewTime(time.Now().Add(-time.Hour))
+	backup.Status.HistoryRequestedTime = &longAgo
+
+	beforeCall := time.Now()
+	_, err := r.requestHistoryBackup(t.Context(), mgmt, backup)
+	require.NoError(t, err)
+	assert.Equal(t, 1, server.HistoryStarts(testBackupID))
+	require.NotNil(t, backup.Status.HistoryAcceptedTime)
+	assert.False(t, backup.Status.HistoryAcceptedTime.Time.Before(beforeCall))
+	assert.Equal(t, v1.BackupPartInProgress, backup.Status.History.State)
+
+	// Within the grace, an absent backup is registration lag: poll.
+	_, err = r.requestHistoryBackup(t.Context(), mgmt, backup)
+	require.NoError(t, err)
+	assert.Equal(t, 1, server.HistoryStarts(testBackupID))
+	assert.Empty(t, backup.Status.FailureMessage)
+
+	// Past the grace, still absent: the step fails through resume.
+	expired := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+	backup.Status.HistoryAcceptedTime = &expired
+	_, err = r.requestHistoryBackup(t.Context(), mgmt, backup)
+	require.NoError(t, err)
+	assert.Equal(t, 1, server.HistoryStarts(testBackupID))
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Contains(t, backup.Status.FailureMessage, "holds no history backup 1000")
+}
+
 // The acceptance timestamp anchors the registration grace, so it must be
 // the time the 202 was observed, not the time before the request. A slow
 // request must not silently shorten the grace.

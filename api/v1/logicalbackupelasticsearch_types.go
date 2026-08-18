@@ -140,6 +140,23 @@ type LogicalBackupElasticsearchStatus struct {
 	// never deletes against a different cluster.
 	// +optional
 	Storage *PinnedStorage `json:"storage,omitempty"`
+	// HistoryRequestedTime is when the controller decided to request the
+	// backup of the web-application indices. It is written before the
+	// request is sent, so the intent survives a lost response or a restart.
+	// It proves that this backup meant to request, not that a history
+	// backup under its ID is its own.
+	// +optional
+	HistoryRequestedTime *metav1.Time `json:"historyRequestedTime,omitempty"`
+	// HistoryAcceptedTime is when the cluster accepted the history backup
+	// request of this backup, as this controller observed it. It is the
+	// only evidence that the history backup under this ID is this backup's.
+	// A history backup that exists without it is not adopted: the step
+	// fails, and the finalizer does not delete its snapshots. A crash
+	// between the request and the write of this field fails the backup
+	// safely. It can leave a history backup under this ID in the cluster
+	// for the user to remove by hand.
+	// +optional
+	HistoryAcceptedTime *metav1.Time `json:"historyAcceptedTime,omitempty"`
 	// RuntimeRequestedTime is when the controller decided to request the
 	// runtime backup. It is written before the request is sent, so the
 	// intent survives a lost response or a restart. It proves that this

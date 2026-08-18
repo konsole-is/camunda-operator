@@ -106,8 +106,9 @@ type Options struct {
 	// Elasticsearch endpoint while exporting is paused. Zero means ten
 	// minutes.
 	ElasticsearchUnreachableBound time.Duration
-	// RuntimeRegistrationGrace bounds how long an absent runtime backup is
-	// polled after its request was recorded. Zero means two minutes.
+	// RuntimeRegistrationGrace bounds how long an absent runtime or history
+	// backup is polled after its request was accepted. Zero means two
+	// minutes.
 	RuntimeRegistrationGrace time.Duration
 }
 

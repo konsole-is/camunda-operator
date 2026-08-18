@@ -142,43 +142,59 @@ func (r *Reconciler) deleteArtifacts(
 		return released, err
 	}
 
-	// The status can miss snapshot names when the resource died between the
-	// start of the history backup and the poll that records them. The
-	// cluster's own report closes that window. Every failure of that query
-	// holds the deletion: a release on an incomplete list leaks the
-	// snapshots that the list does not name. A backup that does not exist
-	// is a successful answer, so nothing legitimate is lost.
-	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
-	if err != nil {
-		return false, fmt.Errorf("querying the history backup %d: %w", backup.Status.BackupID, err)
-	}
-	recordHistorySnapshots(backup, status)
-	if status.State == camundaadmin.StateInProgress {
-		// The web applications keep creating snapshots until the backup is
-		// terminal, and the management API of Camunda 8.9 offers no way to
-		// cancel it. A deletion that ran now would remove the snapshots
-		// that exist and leave the ones still to come. The hold has no
-		// bound, like the hold on an in-progress runtime backup.
-		r.holdDeletion(backup, fmt.Sprintf(
-			"history backup %d is still in progress and cannot be cancelled", backup.Status.BackupID,
-		))
-		return false, nil
-	}
-
 	repository := backup.Status.Repository
 	if repository == "" {
 		repository = binding.BackupRepository
 	}
 
-	for _, name := range backup.Status.HistorySnapshots {
-		if err := es.DeleteSnapshot(ctx, repository, name); err != nil {
-			return false, fmt.Errorf("deleting snapshot %q: %w", name, err)
+	// Only a history backup whose request this backup saw accepted is its
+	// own. Without the acceptance, a history backup under this ID and its
+	// snapshots belong to another actor, or they are a lost-response orphan
+	// without ownership evidence. They stay.
+	if backup.Status.HistoryAcceptedTime != nil {
+		// The status can miss snapshot names when the resource died between
+		// the accepted start and the poll that records them. The cluster's
+		// own report closes that window. Every failure of that query holds
+		// the deletion: a release on an incomplete list leaks the snapshots
+		// that the list does not name. A backup that does not exist is a
+		// successful answer, so nothing legitimate is lost.
+		status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
+		if err != nil {
+			return false, fmt.Errorf("querying the history backup %d: %w", backup.Status.BackupID, err)
+		}
+		recordHistorySnapshots(backup, status)
+		if status.State == camundaadmin.StateInProgress {
+			// The web applications keep creating snapshots until the backup
+			// is terminal, and the management API of Camunda 8.9 offers no
+			// way to cancel it. A deletion that ran now would remove the
+			// snapshots that exist and leave the ones still to come. The
+			// hold has no bound, like the hold on an in-progress runtime
+			// backup.
+			r.holdDeletion(backup, fmt.Sprintf(
+				"history backup %d is still in progress and cannot be cancelled", backup.Status.BackupID,
+			))
+			return false, nil
+		}
+
+		for _, name := range backup.Status.HistorySnapshots {
+			if err := es.DeleteSnapshot(ctx, repository, name); err != nil {
+				return false, fmt.Errorf("deleting snapshot %q: %w", name, err)
+			}
 		}
 	}
 
+	// The records snapshot is deleted only when its metadata carries the
+	// UID of this backup. A snapshot under the deterministic name without
+	// it was created by someone else, and it stays.
 	records := RecordsSnapshotName(backup.Status.BackupID)
-	if err := es.DeleteSnapshot(ctx, repository, records); err != nil {
-		return false, fmt.Errorf("deleting snapshot %q: %w", records, err)
+	snapshot, err := es.SnapshotStatus(ctx, repository, records)
+	if err != nil {
+		return false, fmt.Errorf("querying snapshot %q: %w", records, err)
+	}
+	if snapshot.State != esadmin.SnapshotMissing && snapshotOwnedBy(snapshot, backup) {
+		if err := es.DeleteSnapshot(ctx, repository, records); err != nil {
+			return false, fmt.Errorf("deleting snapshot %q: %w", records, err)
+		}
 	}
 
 	// Only a runtime backup whose request this backup saw accepted is its

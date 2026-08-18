@@ -168,21 +168,22 @@ func (r *Reconciler) backupHistory(
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
+	if status.State == camundaadmin.StateDoesNotExist {
+		return r.requestHistoryBackup(ctx, mgmt, backup)
+	}
+
+	// A history backup under this ID exists. Only an accepted request of
+	// this backup, a 200 that this controller observed, proves that it is
+	// ours. Without that evidence the backup is not adopted. Its snapshot
+	// names are not recorded, and the finalizer will not delete them.
+	if backup.Status.HistoryAcceptedTime == nil {
+		r.failStep(backup, "BackupHistory", &backup.Status.History, unownedHistoryBackup(backup))
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
 	recordHistorySnapshots(backup, status)
 
 	switch status.State {
-	case camundaadmin.StateDoesNotExist:
-		if err := mgmt.StartHistoryBackup(ctx, backup.Status.BackupID); err != nil {
-			if errors.Is(err, camundaadmin.ErrUnreachable) {
-				return r.stageUnreachable(backup, err)
-			}
-
-			r.failStep(backup, "BackupHistory", &backup.Status.History, err)
-			return ctrl.Result{RequeueAfter: r.poll()}, nil
-		}
-		backup.Status.History = v1.BackupPart{State: v1.BackupPartInProgress}
-		r.stageProgress(backup, "The backup of the web-application indices started")
-
 	case camundaadmin.StateInProgress:
 		backup.Status.History = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the web-application indices is in progress")
@@ -194,6 +195,72 @@ func (r *Reconciler) backupHistory(
 
 	default:
 		r.failStep(backup, "BackupHistory", &backup.Status.History, errors.New(failureReason(status)))
+	}
+
+	return ctrl.Result{RequeueAfter: r.poll()}, nil
+}
+
+// unownedHistoryBackup is the failure of a history backup that exists under
+// the ID of this backup without an accepted request of this backup.
+func unownedHistoryBackup(backup *v1.LogicalBackupElasticsearch) error {
+	whose := "it belongs to another actor"
+	if backup.Status.HistoryRequestedTime != nil {
+		whose = "it can be the backup that this resource requested with a lost response, or one of another actor"
+	}
+	return fmt.Errorf(
+		"a history backup %d exists that this backup did not see accepted: %s; "+
+			"it is not adopted, and the finalizer will not delete its snapshots; remove it by hand if it is not wanted",
+		backup.Status.BackupID, whose,
+	)
+}
+
+// requestHistoryBackup drives an absent history backup to a request, the
+// same way requestRuntimeBackup drives the runtime one. The intent is
+// written one reconcile before the request. Only an observed 200 records
+// the acceptance, stamped after the call returned. A conflict is never an
+// acceptance: the cluster gives no token that tells this backup's
+// lost-response request from another actor's backup.
+func (r *Reconciler) requestHistoryBackup(
+	ctx context.Context,
+	mgmt *camundaadmin.Client,
+	backup *v1.LogicalBackupElasticsearch,
+) (ctrl.Result, error) {
+	part := &backup.Status.History
+	now := metav1.Now()
+	if backup.Status.HistoryRequestedTime == nil {
+		backup.Status.HistoryRequestedTime = &now
+		r.stageProgress(backup, "The backup of the web-application indices is requested")
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	if accepted := backup.Status.HistoryAcceptedTime; accepted != nil {
+		if now.Sub(accepted.Time) < r.runtimeRegistrationGrace() {
+			r.stageProgress(backup, "The backup of the web-application indices is registering")
+			return ctrl.Result{RequeueAfter: r.poll()}, nil
+		}
+		r.failStep(backup, "BackupHistory", part, fmt.Errorf(
+			"the cluster holds no history backup %d within %s of the accepted request",
+			backup.Status.BackupID, r.runtimeRegistrationGrace(),
+		))
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	err := mgmt.StartHistoryBackup(ctx, backup.Status.BackupID)
+	switch {
+	case err == nil:
+		accepted := metav1.Now()
+		backup.Status.HistoryAcceptedTime = &accepted
+		*part = v1.BackupPart{State: v1.BackupPartInProgress}
+		r.stageProgress(backup, "The backup of the web-application indices started")
+
+	case errors.Is(err, camundaadmin.ErrUnreachable):
+		return r.stageUnreachable(backup, err)
+
+	case errors.Is(err, camundaadmin.ErrConflict):
+		r.failStep(backup, "BackupHistory", part, fmt.Errorf("%w: %v", err, unownedHistoryBackup(backup)))
+
+	default:
+		r.failStep(backup, "BackupHistory", part, err)
 	}
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
@@ -220,7 +287,7 @@ func (r *Reconciler) snapshotRecords(
 	}
 
 	name := RecordsSnapshotName(backup.Status.BackupID)
-	state, err := es.SnapshotStatus(ctx, backup.Status.Repository, name)
+	snapshot, err := es.SnapshotStatus(ctx, backup.Status.Repository, name)
 	if err != nil {
 		if errors.Is(err, esadmin.ErrUnreachable) {
 			return r.stageElasticsearchUnreachable(backup, "SnapshotRecords", part, err)
@@ -230,10 +297,20 @@ func (r *Reconciler) snapshotRecords(
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
-	switch state {
+	// The name is deterministic per backup ID, and an ID can be reused. An
+	// existing snapshot is this backup's only when it carries the UID that
+	// this backup writes into the snapshot metadata. A name match with
+	// missing or foreign metadata is never adopted, and the finalizer will
+	// not delete it.
+	if snapshot.State != esadmin.SnapshotMissing && !snapshotOwnedBy(snapshot, backup) {
+		r.failStep(backup, "SnapshotRecords", part, unownedSnapshot(name))
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	switch snapshot.State {
 	case esadmin.SnapshotMissing:
 		if err := es.CreateSnapshot(
-			ctx, backup.Status.Repository, name, []string{zeebeRecordIndices},
+			ctx, backup.Status.Repository, name, []string{zeebeRecordIndices}, snapshotMetadata(backup),
 		); err != nil {
 			if errors.Is(err, esadmin.ErrUnreachable) {
 				return r.stageElasticsearchUnreachable(backup, "SnapshotRecords", part, err)
@@ -255,7 +332,9 @@ func (r *Reconciler) snapshotRecords(
 		r.stageProgress(backup, "Backing up the Zeebe partitions")
 
 	default:
-		r.failStep(backup, "SnapshotRecords", part, fmt.Errorf("snapshot %q ended in state %s", name, state))
+		r.failStep(backup, "SnapshotRecords", part, fmt.Errorf(
+			"snapshot %q ended in state %s", name, snapshot.State,
+		))
 	}
 
 	// The unreachable timer is cleared only here, after every Elasticsearch
@@ -265,6 +344,31 @@ func (r *Reconciler) snapshotRecords(
 	backup.Status.ElasticsearchUnreachableSince = nil
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
+}
+
+// snapshotOwnerUIDKey is the metadata key under which every snapshot that
+// this controller creates carries the UID of its backup resource.
+const snapshotOwnerUIDKey = "camunda-operator/backup-uid"
+
+// snapshotMetadata returns the user metadata of a snapshot of backup: the
+// UID that proves ownership when the deterministic name is met again.
+func snapshotMetadata(backup *v1.LogicalBackupElasticsearch) map[string]string {
+	return map[string]string{snapshotOwnerUIDKey: string(backup.UID)}
+}
+
+// snapshotOwnedBy reports whether the snapshot carries the UID of backup.
+func snapshotOwnedBy(snapshot esadmin.Snapshot, backup *v1.LogicalBackupElasticsearch) bool {
+	return snapshot.Metadata[snapshotOwnerUIDKey] == string(backup.UID)
+}
+
+// unownedSnapshot is the failure of a snapshot that exists under the name
+// of this backup without its UID in the metadata.
+func unownedSnapshot(name string) error {
+	return fmt.Errorf(
+		"a snapshot %q exists that this backup did not create: "+
+			"it is not adopted, and the finalizer will not delete it; remove it by hand if it is not wanted",
+		name,
+	)
 }
 
 // destination verifies that the cluster still writes to the destination

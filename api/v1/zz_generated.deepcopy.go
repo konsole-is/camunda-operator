@@ -1825,6 +1825,14 @@ func (in *LogicalBackupElasticsearchStatus) DeepCopyInto(out *LogicalBackupElast
 		*out = new(PinnedStorage)
 		**out = **in
 	}
+	if in.HistoryRequestedTime != nil {
+		in, out := &in.HistoryRequestedTime, &out.HistoryRequestedTime
+		*out = (*in).DeepCopy()
+	}
+	if in.HistoryAcceptedTime != nil {
+		in, out := &in.HistoryAcceptedTime, &out.HistoryAcceptedTime
+		*out = (*in).DeepCopy()
+	}
 	if in.RuntimeRequestedTime != nil {
 		in, out := &in.RuntimeRequestedTime, &out.RuntimeRequestedTime
 		*out = (*in).DeepCopy()
