@@ -34,7 +34,7 @@ const snapshotPath = "_snapshot"
 
 // Repository is the fake's record of one snapshot repository.
 type Repository struct {
-	// Type of the repository, s3 for everything this operator registers.
+	// Type of the repository: s3, gcs, or azure.
 	Type string
 	// Settings as registered.
 	Settings map[string]any

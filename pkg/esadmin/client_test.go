@@ -48,7 +48,8 @@ func TestEnsureSnapshotRepositoryConverges(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
-	cfg := esadmin.S3RepositoryConfig{
+	cfg := esadmin.RepositoryConfig{
+		Type:            esadmin.RepositoryTypeS3,
 		Bucket:          "camunda-backups",
 		BasePath:        "clusters/ns/name",
 		Endpoint:        "http://minio.minio.svc:9000",
@@ -72,7 +73,14 @@ func TestEnsureSnapshotRepositoryConverges(t *testing.T) {
 func TestCreateSnapshotIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 
 	indices := []string{"camunda_zeebe_records_backup_42"}
 	metadata := map[string]string{"camunda-operator/backup-uid": "uid-42"}
@@ -90,7 +98,14 @@ func TestCreateSnapshotIsIdempotent(t *testing.T) {
 func TestCreateSnapshotDoesNotResolveAForeignDuplicate(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 	// A snapshot that another actor created: no metadata.
 	server.SetSnapshotState("repo", "records-42", "SUCCESS")
 
@@ -109,7 +124,14 @@ func TestCreateSnapshotDoesNotResolveAForeignDuplicate(t *testing.T) {
 func TestCreateSnapshotWithoutMetadataDoesNotResolveADuplicate(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 	// A snapshot that another actor created: no metadata.
 	server.SetSnapshotState("repo", "records-42", "SUCCESS")
 
@@ -124,7 +146,14 @@ func TestCreateSnapshotWithoutMetadataDoesNotResolveADuplicate(t *testing.T) {
 func TestSnapshotMetadataRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	client, _ := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 	metadata := map[string]string{"camunda-operator/backup-uid": "uid-42"}
 
 	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, metadata))
@@ -149,7 +178,14 @@ func TestSnapshotMetadataRoundTrips(t *testing.T) {
 func TestSnapshotStatusDecodesForeignMetadataOfAnyType(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 	server.SetSnapshotMetadata("repo", "records-42", map[string]any{
 		"retention-days":              float64(30),
 		"created-by":                  map[string]any{"tool": "curator", "tags": []any{"nightly"}},
@@ -178,7 +214,14 @@ func TestSnapshotStatusDecodesForeignMetadataOfAnyType(t *testing.T) {
 func TestSnapshotStatus(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 
 	snapshot, err := client.SnapshotStatus(ctx, "repo", "absent")
 	require.NoError(t, err)
@@ -200,7 +243,14 @@ func TestSnapshotStatus(t *testing.T) {
 func TestDeleteSnapshotIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 
 	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, nil))
 	require.NoError(t, client.DeleteSnapshot(ctx, "repo", "records-42"))
@@ -249,7 +299,14 @@ func TestClientVerifiesTheFakesTLSCertificate(t *testing.T) {
 	client, err := esadmin.New(server.URL(), "camunda", "secret", server.CertificatePEM())
 	require.NoError(t, err)
 
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 	assert.NotNil(t, server.Repository("repo"))
 }
 
@@ -259,7 +316,11 @@ func TestPathSegmentsAreEscaped(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
-	err := client.EnsureSnapshotRepository(ctx, "prod/main", esadmin.S3RepositoryConfig{Bucket: "b"})
+	err := client.EnsureSnapshotRepository(
+		ctx,
+		"prod/main",
+		esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+	)
 	require.NoError(t, err)
 	assert.NotNil(t, server.Repository("prod/main"), "the name must arrive as one segment")
 	assert.Nil(t, server.Repository("main"))
@@ -306,7 +367,11 @@ func TestErrorClasses(t *testing.T) {
 	client, server := newClient(t)
 
 	server.FailNext("repository", 1)
-	err := client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"})
+	err := client.EnsureSnapshotRepository(
+		ctx,
+		"repo",
+		esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+	)
 	require.ErrorIs(t, err, esadmin.ErrRejected)
 	assert.Contains(t, err.Error(), "injected repository failure")
 
@@ -379,7 +444,14 @@ func TestRejectedErrorKeepsASmallBodyWhole(t *testing.T) {
 func TestDropNextReachesEveryOperation(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 
 	server.DropNext("stats", 1)
 	_, _, err := client.MaxNodeFSTotalAndUsedBytes(ctx)
@@ -400,7 +472,58 @@ func TestDropNextReachesEveryOperation(t *testing.T) {
 	server.DropNext("repository", 1)
 	require.ErrorIs(
 		t,
-		client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}),
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
 		esadmin.ErrUnreachable,
 	)
+}
+
+// The gcs repository names its bucket and its client; the credentials reach
+// the nodes through the keystore alone, so no setting carries them.
+func TestEnsureSnapshotRepositoryRegistersGCS(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	cfg := esadmin.RepositoryConfig{
+		Type:     esadmin.RepositoryTypeGCS,
+		Bucket:   "camunda-backups",
+		BasePath: "clusters/ns/name",
+	}
+
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "my-cluster", cfg))
+
+	repo := server.Repository("my-cluster")
+	require.NotNil(t, repo)
+	assert.Equal(t, "gcs", repo.Type)
+	assert.Equal(t, "camunda-backups", repo.Settings["bucket"])
+	assert.Equal(t, "clusters/ns/name", repo.Settings["base_path"])
+	assert.Equal(t, "default", repo.Settings["client"])
+}
+
+// The azure repository names its blob container under the container setting,
+// not bucket, and takes neither of the s3 endpoint settings: the service
+// endpoint of an azure client is node configuration, not repository
+// settings.
+func TestEnsureSnapshotRepositoryRegistersAzure(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	cfg := esadmin.RepositoryConfig{
+		Type:     esadmin.RepositoryTypeAzure,
+		Bucket:   "camunda-backups",
+		BasePath: "clusters/ns/name",
+	}
+
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "my-cluster", cfg))
+
+	repo := server.Repository("my-cluster")
+	require.NotNil(t, repo)
+	assert.Equal(t, "azure", repo.Type)
+	assert.Equal(t, "camunda-backups", repo.Settings["container"])
+	assert.Equal(t, "clusters/ns/name", repo.Settings["base_path"])
+	assert.Equal(t, "default", repo.Settings["client"])
+	assert.NotContains(t, repo.Settings, "bucket")
 }

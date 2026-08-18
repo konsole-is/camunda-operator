@@ -37,9 +37,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
-	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
-	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
@@ -84,10 +82,6 @@ const (
 	rolesSecretSuffix = "-es-roles"
 	// rolesFileKey is the key that ECK reads role definitions from.
 	rolesFileKey = "roles.yml"
-	// keystoreSecretSuffix appended to the CR name yields the name of the
-	// Secret that holds the bucket credentials of the node keystore.
-	keystoreSecretSuffix = "-es-snapshot-keystore"
-
 	// usernameKey is the key of the username in the user Secret.
 	usernameKey = "username"
 	// PasswordKey is the key of the password in the user Secret.
@@ -140,16 +134,6 @@ const camundaRole = `camunda:
         - manage
         - manage_ilm
 `
-
-// accessKeyKeystorePath and secretKeyKeystorePath are the keystore entries
-// that the s3 repository client reads its credentials from. Elasticsearch
-// accepts them nowhere else: the settings of a repository never carry
-// credentials. The client name is shared with the repository settings through
-// esadmin, so the two can never drift apart.
-var (
-	accessKeyKeystorePath = "s3.client." + esadmin.DefaultS3Client + ".access_key"
-	secretKeyKeystorePath = "s3.client." + esadmin.DefaultS3Client + ".secret_key"
-)
 
 const (
 	// ConditionCredentials is the condition type of the credentials
@@ -211,12 +195,6 @@ func RolesSecretName(cluster *v1.ElasticsearchCluster) string {
 	return cluster.Name + rolesSecretSuffix
 }
 
-// KeystoreSecretName returns the name of the Secret that carries the bucket
-// credentials into the keystore of every node.
-func KeystoreSecretName(cluster *v1.ElasticsearchCluster) string {
-	return cluster.Name + keystoreSecretSuffix
-}
-
 // RepositoryName returns the name of the snapshot repository that the operator
 // registers for the cluster. Consumers read it from the snapshotRepository
 // field of the published SecondaryStorageConfig rather than deriving it.
@@ -261,49 +239,6 @@ func ServiceAccountName(cluster *v1.ElasticsearchCluster, merged v1.Elasticsearc
 	}
 
 	return cluster.Name + serviceAccountSuffix
-}
-
-// SnapshotStorage is the resolved snapshot bucket of a cluster: the contract
-// that spec.snapshotStorageRef names, and the keys read from its Secret when
-// it holds static credentials. A nil SnapshotStorage means the spec names no
-// bucket, so the cluster takes no part in backups.
-type SnapshotStorage struct {
-	// Config is the referenced contract.
-	Config *v1.ObjectStorageConfig
-	// Credentials are the static keys of the bucket, or nil when the contract
-	// uses workload identity.
-	Credentials *objectstore.Credentials
-}
-
-// identityAnnotations returns the ServiceAccount annotations that bind the
-// identity of the bucket, or nil when there is no bucket or no identity.
-func (s *SnapshotStorage) identityAnnotations() map[string]string {
-	if s == nil {
-		return nil
-	}
-
-	return s.Config.WorkloadIdentityAnnotations()
-}
-
-// keystore reports whether the nodes need a keystore Secret: the bucket holds
-// static credentials, which Elasticsearch reads from the keystore alone.
-func (s *SnapshotStorage) keystore() bool {
-	return s != nil && s.Credentials != nil
-}
-
-// workloadIdentity reports whether the nodes authenticate against the bucket
-// as their ServiceAccount. It is true for every workload-identity bucket,
-// annotation or not: EKS Pod Identity and Workload Identity Federation bind
-// the ServiceAccount by name on the cloud side, so the account must exist and
-// be referenced even when there is nothing to annotate onto it.
-func (s *SnapshotStorage) workloadIdentity() bool {
-	return s != nil && s.Config != nil && s.Credentials == nil
-}
-
-// repository reports whether the cluster has a snapshot repository to
-// register and to publish.
-func (s *SnapshotStorage) repository() bool {
-	return s != nil && s.Config != nil
 }
 
 // usesServiceAccount reports whether the pods run under a named
@@ -366,42 +301,6 @@ func CredentialsComponent(
 		WithConditionType(ConditionCredentials).
 		WithResource(userSecret).
 		WithResource(rolesSecret).
-		Build()
-}
-
-// KeystoreComponent builds the keystore component: the Secret whose entries
-// ECK loads into the keystore of every node, holding the credentials of the
-// snapshot bucket. Elasticsearch reads the credentials of a repository from
-// the keystore alone, never from the settings of the repository. The component
-// is gated on a bucket with static credentials: with workload identity the
-// nodes authenticate through their ServiceAccount and the Secret is deleted.
-func KeystoreComponent(
-	cluster *v1.ElasticsearchCluster,
-	storage *SnapshotStorage,
-) (*component.Component, error) {
-	data := map[string][]byte{}
-	if storage.keystore() {
-		data[accessKeyKeystorePath] = []byte(storage.Credentials.AccessKeyID)
-		data[secretKeyKeystorePath] = []byte(storage.Credentials.SecretAccessKey)
-	}
-
-	keystoreSecret, err := secret.NewBuilder(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      KeystoreSecretName(cluster),
-			Namespace: cluster.Namespace,
-			Labels:    managedLabels(cluster),
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: data,
-	}).Build()
-	if err != nil {
-		return nil, err
-	}
-
-	return component.NewComponentBuilder().
-		WithName("keystore").
-		WithConditionType(ConditionKeystore).
-		WithResource(keystoreSecret, component.GatedBy(feature.NewBooleanGate(storage.keystore()))).
 		Build()
 }
 
@@ -596,7 +495,7 @@ func elasticsearchMutations(
 ) []eckelasticsearch.Mutation {
 	secureSettings := secureSettings(cluster, merged, storage)
 
-	return []eckelasticsearch.Mutation{
+	mutations := []eckelasticsearch.Mutation{
 		{
 			Name:    "SecureSettings",
 			Feature: feature.NewBooleanGate(len(secureSettings) > 0),
@@ -690,6 +589,8 @@ func elasticsearchMutations(
 			},
 		},
 	}
+
+	return append(mutations, snapshotStorageMutations(storage)...)
 }
 
 // secureSettings returns the keystore sources of the cluster: the Secret with

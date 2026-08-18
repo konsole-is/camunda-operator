@@ -48,12 +48,12 @@ var (
 	ErrRejected    = errors.New("call rejected by Elasticsearch")
 )
 
-// DefaultS3Client is the name of the S3 client configuration that the
-// repositories of this operator use. The node keystore entries
-// (s3.client.<name>.access_key, s3.client.<name>.secret_key) and the
-// repository settings must name the same client, so both sides build on this
-// constant.
-const DefaultS3Client = "default"
+// DefaultClientName is the name of the client configuration that the
+// repositories of this operator use, whatever their type. The node keystore
+// entries (s3.client.<name>.access_key, gcs.client.<name>.credentials_file,
+// azure.client.<name>.account, and the rest) and the repository settings must
+// name the same client, so both sides build on this constant.
+const DefaultClientName = "default"
 
 // SnapshotState is the state of one snapshot.
 type SnapshotState string
@@ -69,17 +69,36 @@ const (
 	SnapshotMissing    SnapshotState = "MISSING"
 )
 
-// S3RepositoryConfig is the settings block of an s3 snapshot repository. The
+// RepositoryType is the type of a snapshot repository, as Elasticsearch names
+// it in the type field of a registration.
+type RepositoryType string
+
+// The repository types that this operator registers, one per storage API of
+// the bucket contract.
+const (
+	RepositoryTypeS3    RepositoryType = "s3"
+	RepositoryTypeGCS   RepositoryType = "gcs"
+	RepositoryTypeAzure RepositoryType = "azure"
+)
+
+// RepositoryConfig is the settings block of one snapshot repository. The
 // bucket credentials are not here: Elasticsearch reads them from the node
-// keystore only.
-type S3RepositoryConfig struct {
-	// Bucket is the bucket name.
+// keystore only. Type selects which of the fields apply; a field that the
+// type does not use is ignored.
+type RepositoryConfig struct {
+	// Type of the repository.
+	Type RepositoryType
+	// Bucket is the bucket of an s3 or gcs repository, and the blob container
+	// of an azure one.
 	Bucket string
 	// BasePath is the key prefix of every snapshot in the repository.
 	BasePath string
-	// Endpoint is the URL of an S3-compatible store. Empty means AWS S3.
+	// Endpoint is the URL of an S3-compatible store, and applies to the s3
+	// type alone. Empty means AWS S3. An azure repository takes no endpoint:
+	// its service endpoint is node configuration, not a repository setting.
 	Endpoint string
-	// PathStyleAccess forces path-style bucket addressing.
+	// PathStyleAccess forces path-style bucket addressing, and applies to the
+	// s3 type alone.
 	PathStyleAccess bool
 }
 
@@ -120,25 +139,32 @@ func New(endpoint, user, pass string, ca []byte) (*Client, error) {
 	}, nil
 }
 
-// EnsureSnapshotRepository registers the s3 repository name with cfg,
-// converging with an idempotent PUT: registering an already registered
-// repository updates it in place.
-func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg S3RepositoryConfig) error {
-	settings := map[string]any{
-		"bucket": cfg.Bucket,
-		"client": DefaultS3Client,
-	}
+// EnsureSnapshotRepository registers the repository name with cfg, converging
+// with an idempotent PUT: registering an already registered repository
+// updates it in place.
+func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg RepositoryConfig) error {
+	settings := map[string]any{"client": DefaultClientName}
 	if cfg.BasePath != "" {
 		settings["base_path"] = cfg.BasePath
 	}
-	if cfg.Endpoint != "" {
-		settings["endpoint"] = cfg.Endpoint
-	}
-	if cfg.PathStyleAccess {
-		settings["path_style_access"] = true
+
+	// Azure names the same thing container; every other type names it bucket.
+	if cfg.Type == RepositoryTypeAzure {
+		settings["container"] = cfg.Bucket
+	} else {
+		settings["bucket"] = cfg.Bucket
 	}
 
-	body, err := json.Marshal(map[string]any{"type": "s3", "settings": settings})
+	if cfg.Type == RepositoryTypeS3 {
+		if cfg.Endpoint != "" {
+			settings["endpoint"] = cfg.Endpoint
+		}
+		if cfg.PathStyleAccess {
+			settings["path_style_access"] = true
+		}
+	}
+
+	body, err := json.Marshal(map[string]any{"type": string(cfg.Type), "settings": settings})
 	if err != nil {
 		return fmt.Errorf("encoding repository settings: %w", err)
 	}
