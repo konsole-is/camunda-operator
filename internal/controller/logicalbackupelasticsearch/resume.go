@@ -41,12 +41,22 @@ func (r *Reconciler) resumeExporting(
 	backup *v1.LogicalBackupElasticsearch,
 	cluster *v1.CamundaCluster,
 ) (ctrl.Result, error) {
-	now := metav1.Now()
-	r.chargeResumeAttempt(backup, now)
+	started := metav1.Now()
+	r.chargeResumeAttempt(backup, started)
 
-	if err := resumeOnce(ctx, r, cluster); err != nil {
-		if now.Sub(backup.Status.ResumeStartedTime.Time) > r.resumeDeadline() {
-			return r.giveUpOnResume(backup, now, err)
+	err := resumeOnce(ctx, r, cluster)
+
+	// The attempt is charged from its start to its end. The end is what the
+	// next attempt measures its gap from, and what the deadline is checked
+	// against, so the time inside the call counts. A client timeout of
+	// thirty seconds per attempt then exhausts a thirty-minute deadline in
+	// about thirty minutes, not in hours.
+	ended := metav1.Now()
+	backup.Status.LastResumeAttemptTime = &ended
+
+	if err != nil {
+		if ended.Sub(backup.Status.ResumeStartedTime.Time) > r.resumeDeadline() {
+			return r.giveUpOnResume(backup, ended, err)
 		}
 
 		reason := v1.ReasonFailed
@@ -63,26 +73,31 @@ func (r *Reconciler) resumeExporting(
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
-	r.finish(backup, now)
+	// Exporting runs again. The sizes that the pre-pause backfill missed
+	// are completed now, best effort, before the terminal phase is written.
+	r.backfillStorageSizes(ctx, backup, cluster)
+	r.finish(backup, ended)
 
 	return ctrl.Result{}, nil
 }
 
-// chargeResumeAttempt accounts one resume attempt against the deadline. The
-// deadline bounds attempting, not wall-clock time. Every gap between attempts
-// counts as at most one poll interval. A parked procedure or a slow reconcile
-// slides the anchor forward and does not consume the budget.
-func (r *Reconciler) chargeResumeAttempt(backup *v1.LogicalBackupElasticsearch, now metav1.Time) {
+// chargeResumeAttempt accounts the start of one resume attempt against the
+// deadline. The deadline bounds attempting, not wall-clock time. Every gap
+// between the end of one attempt and the start of the next counts as at
+// most one poll interval. A parked procedure or a slow reconcile slides the
+// anchor forward and does not consume the budget. The time inside an
+// attempt is never slid away: the caller records the end of the attempt in
+// LastResumeAttemptTime, so the next gap starts there.
+func (r *Reconciler) chargeResumeAttempt(backup *v1.LogicalBackupElasticsearch, started metav1.Time) {
 	if backup.Status.ResumeStartedTime == nil {
-		backup.Status.ResumeStartedTime = &now
+		backup.Status.ResumeStartedTime = &started
 	}
 	if last := backup.Status.LastResumeAttemptTime; last != nil {
-		if gap := now.Sub(last.Time); gap > r.poll() {
+		if gap := started.Sub(last.Time); gap > r.poll() {
 			slid := metav1.NewTime(backup.Status.ResumeStartedTime.Add(gap - r.poll()))
 			backup.Status.ResumeStartedTime = &slid
 		}
 	}
-	backup.Status.LastResumeAttemptTime = &now
 }
 
 // resumeOnce makes one resume call against the cluster.

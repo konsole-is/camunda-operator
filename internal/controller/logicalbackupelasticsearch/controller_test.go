@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -168,8 +169,9 @@ func (r *rig) publishBinding(partitions int32) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// leaseHolder returns the holder identity of the claim Lease of the rig's
-// cluster, or "" when there is none.
+// leaseHolder returns the exact identity of the holder of the claim Lease
+// of the rig's cluster. That is the Claimant from the annotations, or the
+// raw holderIdentity of a foreign Lease. Without a Lease it returns "".
 func (r *rig) leaseHolder() string {
 	GinkgoHelper()
 	var lease coordinationv1.Lease
@@ -182,6 +184,13 @@ func (r *rig) leaseHolder() string {
 		return ""
 	}
 	Expect(err).NotTo(HaveOccurred())
+	annotations := lease.GetAnnotations()
+	kind, name, uid := annotations[logicalbackup.ClaimHolderKindAnnotation],
+		annotations[logicalbackup.ClaimHolderNameAnnotation],
+		annotations[logicalbackup.ClaimHolderUIDAnnotation]
+	if kind != "" && name != "" && uid != "" {
+		return logicalbackup.Claimant{Kind: kind, Name: name, UID: types.UID(uid)}.String()
+	}
 	if lease.Spec.HolderIdentity == nil {
 		return ""
 	}
@@ -189,7 +198,7 @@ func (r *rig) leaseHolder() string {
 }
 
 // holdLease writes the claim Lease of the rig's cluster for the given holder
-// identity, as another actor would.
+// identity, as another actor would: no holder annotations.
 func (r *rig) holdLease(holder string) {
 	GinkgoHelper()
 	lease := &coordinationv1.Lease{
@@ -201,9 +210,10 @@ func (r *rig) holdLease(holder string) {
 	Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 }
 
-// setLeaseHolder rewrites the holder identity of the existing claim Lease
-// in one write, so no claimant finds the Lease absent in between.
-func (r *rig) setLeaseHolder(holder string) {
+// setLeaseHolder rewrites the existing claim Lease as one that the given
+// claimant holds, in one write, so no claimant finds the Lease absent in
+// between.
+func (r *rig) setLeaseHolder(holder logicalbackup.Claimant) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var lease coordinationv1.Lease
@@ -212,7 +222,13 @@ func (r *rig) setLeaseHolder(holder string) {
 				Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
 			}, &lease,
 		)).To(Succeed())
-		lease.Spec.HolderIdentity = &holder
+		identity := holder.HolderIdentity()
+		lease.Spec.HolderIdentity = &identity
+		lease.Annotations = map[string]string{
+			logicalbackup.ClaimHolderKindAnnotation: holder.Kind,
+			logicalbackup.ClaimHolderNameAnnotation: holder.Name,
+			logicalbackup.ClaimHolderUIDAnnotation:  string(holder.UID),
+		}
 		g.Expect(k8sClient.Update(ctx, &lease)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -637,7 +653,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.leaseHolder()).To(Equal("someone-else"))
 
 		By("taking over a Lease whose holder is a backup that no longer exists")
-		r.setLeaseHolder("LogicalBackupElasticsearch/deleted-long-ago/uid-of-the-past")
+		r.setLeaseHolder(logicalbackup.Claimant{
+			Kind: "LogicalBackupElasticsearch", Name: "deleted-long-ago", UID: "uid-of-the-past",
+		})
 		backupID(backup)
 		Expect(r.leaseHolder()).To(Equal(claimant(currentBackup(backup)).String()))
 	})
@@ -854,15 +872,16 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
-	It("continues a runtime backup whose request landed but whose response was lost", func() {
+	It("never adopts a runtime backup it did not see accepted, and never deletes it", func() {
 		r := newRig()
 		backup := r.newBackup()
 		id := backupID(backup)
 
-		// The cluster holds our ID already, as if an earlier request landed
-		// and its response was lost. It hides the backup for the two status
-		// queries that follow. The request that the controller sends then
-		// conflicts, and the check that follows finds the ID.
+		// The cluster holds our ID already: an earlier request whose
+		// response was lost, or another actor that won the ID. Nothing
+		// tells the two apart. It hides the backup for the two status
+		// queries that follow, so the intent is recorded and the request
+		// goes out and conflicts.
 		r.management.SetRuntimeState(id, "IN_PROGRESS", "")
 		r.management.HideRuntimeStatus(2)
 
@@ -874,14 +893,59 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}, timeout, interval).Should(Equal(1))
 		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
 
-		Eventually(func() v1.BackupPartState {
-			return currentBackup(backup).Status.Runtime.State
-		}, timeout, interval).Should(Equal(v1.BackupPartInProgress))
-		r.management.SetRuntimeState(id, "COMPLETED", "")
-
-		expectPhase(backup, v1.LogicalBackupCompleted)
+		By("failing through resume without adopting")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("BackupRuntime"),
+			ContainSubstring("not adopted"),
+			ContainSubstring("finalizer will not delete"),
+		))
+		Expect(final.Status.RuntimeRequestedTime).NotTo(BeNil())
+		Expect(final.Status.RuntimeAcceptedTime).To(BeNil())
+		Expect(final.Status.Runtime.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.RuntimeStarts(id)).To(BeZero())
-		Expect(currentBackup(backup).Status.RuntimeRequestedTime).NotTo(BeNil())
+		Expect(r.management.Exporting()).To(Equal("running"))
+
+		By("leaving that runtime backup alone on deletion")
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		runtime := r.management.RuntimeBackup(id)
+		Expect(runtime).NotTo(BeNil())
+		Expect(runtime.State).To(Equal("COMPLETED"), "the runtime backup that was not ours is still there")
+	})
+
+	It("does not probe Elasticsearch for sizes while exporting is paused", func() {
+		r := newRig()
+		// The size probe fails at start and stays failing, so the sizes are
+		// missing throughout. Once the pause step is behind, no reconcile
+		// asks Elasticsearch for statistics again until exporting runs.
+		r.search.FailNext("stats", 1000000)
+		r.management.FailNext("historyStart", 1)
+		// Resume keeps failing while the probe count is watched, so the
+		// procedure stays at ResumeExporting with exporting paused.
+		r.management.FailNext("resume", 1000000)
+
+		backup := r.newBackup()
+		id := backupID(backup)
+		// The window under test starts once resume attempts are under way,
+		// so no probe of an earlier step is still in flight, and it spans
+		// five more attempts.
+		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", 3))
+		before, attempts := r.search.StatsCalls(), r.management.ResumeAttempts()
+		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", attempts+5))
+		Expect(r.search.StatsCalls()).To(Equal(before), "no size probe between resume attempts")
+		Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepResumeExporting))
+		Expect(r.management.HistoryStarts(id)).To(BeZero())
+
+		By("backfilling once exporting runs again")
+		r.management.FailNext("resume", 0)
+		expectPhase(backup, v1.LogicalBackupFailed)
+		Expect(r.search.StatsCalls()).To(BeNumerically(">", before))
 	})
 
 	It("fails the records step through resume when the CA bundle is unusable", func() {

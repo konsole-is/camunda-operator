@@ -258,14 +258,21 @@ func (r *Reconciler) run(
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
-	r.backfillStorageSizes(ctx, backup, &cluster)
+	// The sizes are optional metadata. They are backfilled only while
+	// exporting still runs: before the pause, and again after the resume.
+	// Between the two, a black-holed Elasticsearch must not add its client
+	// timeout in front of every poll and every resume attempt.
+	if backup.Status.Step == v1.StepPauseExporting {
+		r.backfillStorageSizes(ctx, backup, &cluster)
+	}
 
 	return r.runStep(ctx, backup, &cluster)
 }
 
 // backfillStorageSizes fills the restore sizes that start did not compute. It
 // is best effort. A transient blip at start must not leave them empty
-// forever.
+// forever. It runs only while exporting runs: it is a metadata call, and it
+// must never stand between the cluster and its resume.
 func (r *Reconciler) backfillStorageSizes(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,

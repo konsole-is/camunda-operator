@@ -142,19 +142,23 @@ type LogicalBackupElasticsearchStatus struct {
 	Storage *PinnedStorage `json:"storage,omitempty"`
 	// RuntimeRequestedTime is when the controller decided to request the
 	// runtime backup. It is written before the request is sent, so the
-	// intent survives a lost response or a restart. With the intent
-	// recorded, a request is sent again until the cluster accepts it or
-	// reports the ID as held.
+	// intent survives a lost response or a restart. It proves that this
+	// backup meant to request, not that a runtime backup under its ID is
+	// its own.
 	// +optional
 	RuntimeRequestedTime *metav1.Time `json:"runtimeRequestedTime,omitempty"`
-	// RuntimeAcceptedTime is when the cluster first acknowledged the runtime
-	// backup: it accepted the request, or it reported the ID as held. The
+	// RuntimeAcceptedTime is when the cluster accepted the request of this
+	// backup, as this controller observed it. It is the only evidence that
+	// the runtime backup under this ID is this backup's. A runtime backup
+	// that exists without it, after a lost response or because another
+	// actor won the ID, is not adopted. The step fails, and the finalizer
+	// leaves that runtime backup alone. A crash between the request and
+	// the write of this field fails the backup safely. It can leave such a
+	// runtime backup in the cluster for the user to remove by hand. The
 	// cluster registers the backup asynchronously and can report it absent
-	// for a moment after that. Within a registration grace after this
-	// time, an absent backup is polled. After the grace, an absent backup
-	// fails the step: the ID is held by another actor, or the request was
-	// lost. Downtime between the intent and the request cannot consume the
-	// grace, because the grace starts here.
+	// for a moment after the acceptance. Within a registration grace after
+	// this time, an absent backup is polled. After the grace, an absent
+	// backup fails the step.
 	// +optional
 	RuntimeAcceptedTime *metav1.Time `json:"runtimeAcceptedTime,omitempty"`
 	// ElasticsearchUnreachableSince is when a step first found the
@@ -175,8 +179,9 @@ type LogicalBackupElasticsearchStatus struct {
 	// anchor survives an operator restart.
 	// +optional
 	ResumeStartedTime *metav1.Time `json:"resumeStartedTime,omitempty"`
-	// LastResumeAttemptTime is when resume was last attempted. The gap to the
-	// next attempt decides whether the deadline anchor slides.
+	// LastResumeAttemptTime is when the last resume attempt ended. The gap
+	// from it to the start of the next attempt decides whether the deadline
+	// anchor slides. The time inside an attempt always counts.
 	// +optional
 	LastResumeAttemptTime *metav1.Time `json:"lastResumeAttemptTime,omitempty"`
 	// TerminalReason is the Ready reason recorded at the terminal

@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
@@ -35,7 +37,7 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 	return func(ctx context.Context) (string, error) {
 		holds, err := logicalbackup.Holds(
 			ctx,
-			r.Client,
+			r.APIReader,
 			backup.Namespace,
 			backup.Spec.ClusterRef.Name,
 			claimant(backup),
@@ -50,7 +52,7 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 		cluster := clusterKey(backup)
 
 		var list v1.LogicalBackupElasticsearchList
-		if err := r.APIReader.List(ctx, &list); err != nil {
+		if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
 			return "", fmt.Errorf("listing LogicalBackupElasticsearch: %w", err)
 		}
 
@@ -82,7 +84,11 @@ func claimant(backup *v1.LogicalBackupElasticsearch) logicalbackup.Claimant {
 // the claim. It runs before the backup ID is allocated and flushed. A
 // re-entry after a failed flush finds itself as the holder and proceeds.
 func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupElasticsearch) (string, error) {
-	holder, err := logicalbackup.Claim(ctx, r.Client, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup))
+	// Writes go through the client, reads through the API reader: the claim
+	// is never decided from the cache.
+	holder, err := logicalbackup.Claim(
+		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
+	)
 	if err != nil {
 		return "", fmt.Errorf("claiming CamundaCluster %s/%s: %w", backup.Namespace, backup.Spec.ClusterRef.Name, err)
 	}
@@ -98,7 +104,9 @@ func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupE
 // releaseClaim gives the claim on the cluster back. It is a no-op when the
 // backup does not hold it.
 func (r *Reconciler) releaseClaim(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
-	err := logicalbackup.Release(ctx, r.Client, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup))
+	err := logicalbackup.Release(
+		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
+	)
 	if err != nil {
 		return fmt.Errorf("releasing CamundaCluster %s/%s: %w", backup.Namespace, backup.Spec.ClusterRef.Name, err)
 	}

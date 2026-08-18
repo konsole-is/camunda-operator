@@ -64,6 +64,7 @@ type Server struct {
 
 	snapshotCreates map[string]int
 	reloadCalls     int
+	statsCalls      int
 
 	// nodeFS drives _nodes/stats/fs, keyed by node name.
 	nodeFS map[string]nodeFS
@@ -177,6 +178,15 @@ func (s *Server) ReloadCalls() int {
 	return s.reloadCalls
 }
 
+// StatsCalls reports how often _nodes/stats/fs was queried, injected
+// failures included. A test asserts with it that a caller does not probe the
+// statistics at a moment it must not.
+func (s *Server) StatsCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.statsCalls
+}
+
 // SetNodeFS sets what _nodes/stats/fs reports for the node name, adding the
 // node when absent. The fake starts with one node, node-0, so setting that
 // name replaces the default and any other name adds a node beside it.
@@ -229,6 +239,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"nodes": map[string]any{}})
 
 	case r.Method == http.MethodGet && path == "_nodes/stats/fs":
+		s.statsCalls++
 		if s.failing("stats") {
 			errorBody(w, http.StatusInternalServerError, "injected stats failure")
 			return

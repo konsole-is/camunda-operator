@@ -17,6 +17,8 @@ limitations under the License.
 package logicalbackupelasticsearch
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -24,11 +26,15 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
 )
+
+// testBackupID is the backup ID of every unit-tested runtime request.
+const testBackupID int64 = 1_000
 
 // runtimeRig is a reconciler and a management fake for the runtime request
 // alone, without a manager. The request path is a pure function of the
@@ -46,9 +52,9 @@ func runtimeRig(t *testing.T) (*Reconciler, *camundaadmin.Client, *camundaadmint
 	return r, mgmt, server
 }
 
-func runtimeBackup(id int64) *v1.LogicalBackupElasticsearch {
+func runtimeBackup() *v1.LogicalBackupElasticsearch {
 	backup := &v1.LogicalBackupElasticsearch{}
-	backup.Status.BackupID = id
+	backup.Status.BackupID = testBackupID
 	backup.Status.Phase = v1.LogicalBackupRunning
 	backup.Status.Step = v1.StepBackupRuntime
 	backup.Status.Runtime = v1.BackupPart{State: v1.BackupPartPending}
@@ -60,7 +66,7 @@ func runtimeBackup(id int64) *v1.LogicalBackupElasticsearch {
 // not at the intent, or a normal registration lag looks expired.
 func TestRuntimeRequestGraceStartsAtTheAcceptance(t *testing.T) {
 	r, mgmt, server := runtimeRig(t)
-	backup := runtimeBackup(1_000)
+	backup := runtimeBackup()
 	longAgo := metav1.NewTime(time.Now().Add(-time.Hour))
 	backup.Status.RuntimeRequestedTime = &longAgo
 
@@ -89,12 +95,13 @@ func TestRuntimeRequestGraceStartsAtTheAcceptance(t *testing.T) {
 	assert.Equal(t, v1.BackupPartFailed, backup.Status.Runtime.State)
 }
 
-// The request went out and the cluster accepted it, but the response was
-// lost before the status flush. The next request conflicts. With the intent
-// recorded, the conflict is the acceptance, and the step goes on to poll.
-func TestRuntimeRequestConflictWithIntentIsAnAcceptance(t *testing.T) {
+// The request conflicts: the cluster holds the ID. With the intent recorded
+// that can be this backup's own request with a lost response, or another
+// actor's backup. Nothing tells them apart, so a conflict is never an
+// acceptance: the step fails without adopting, and says so.
+func TestRuntimeRequestConflictWithIntentFailsWithoutAdoption(t *testing.T) {
 	r, mgmt, server := runtimeRig(t)
-	backup := runtimeBackup(1_000)
+	backup := runtimeBackup()
 	now := metav1.Now()
 	backup.Status.RuntimeRequestedTime = &now
 	server.SetRuntimeState(1_000, "IN_PROGRESS", "")
@@ -103,16 +110,89 @@ func TestRuntimeRequestConflictWithIntentIsAnAcceptance(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Zero(t, server.RuntimeStarts(1_000))
-	assert.NotNil(t, backup.Status.RuntimeAcceptedTime)
-	assert.Equal(t, v1.StepBackupRuntime, backup.Status.Step)
-	assert.Empty(t, backup.Status.FailureMessage)
+	assert.Nil(t, backup.Status.RuntimeAcceptedTime)
+	assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+	assert.Equal(t, v1.BackupPartFailed, backup.Status.Runtime.State)
+	assert.Contains(t, backup.Status.FailureMessage, "lost response, or one of another actor")
+	assert.Contains(t, backup.Status.FailureMessage, "not adopted")
+}
+
+// A runtime backup that exists under the ID before any intent was recorded
+// cannot be this backup's, because the intent is flushed one reconcile
+// before every request. It is not adopted, whatever its state.
+func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
+	for _, state := range []string{"IN_PROGRESS", "COMPLETED"} {
+		t.Run(state, func(t *testing.T) {
+			r, mgmt, server := runtimeRig(t)
+			server.SetRuntimeState(1_000, state, "")
+			backup := runtimeBackup()
+			cluster := &v1.CamundaCluster{}
+			cluster.Status.Management = &v1.ManagementBinding{
+				Endpoint: server.URL(), Version: "8.9.9",
+				Auth: v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+			}
+			r.APIReader = fake.NewClientBuilder().Build()
+			_ = mgmt
+
+			_, err := r.backupRuntime(t.Context(), backup, cluster)
+			require.NoError(t, err)
+
+			assert.Equal(t, v1.StepResumeExporting, backup.Status.Step)
+			assert.Equal(t, v1.BackupPartFailed, backup.Status.Runtime.State)
+			assert.Contains(t, backup.Status.FailureMessage, "belongs to another actor")
+			assert.Contains(t, backup.Status.FailureMessage, "not adopted")
+			assert.Nil(t, backup.Status.RuntimeAcceptedTime)
+		})
+	}
+}
+
+// The resume deadline bounds attempting, and the time inside an attempt
+// counts. A slow endpoint that eats the client timeout on every attempt
+// exhausts a deadline in about the deadline, not in many times the deadline.
+func TestResumeDeadlineCountsTheTimeInsideAnAttempt(t *testing.T) {
+	const attempt = 300 * time.Millisecond
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(attempt)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("still not ready"))
+	}))
+	t.Cleanup(slow.Close)
+
+	r := &Reconciler{
+		APIReader:     fake.NewClientBuilder().Build(),
+		EventRecorder: events.NewFakeRecorder(16),
+		options:       Options{ResumeDeadline: time.Second, PollInterval: 50 * time.Millisecond},
+	}
+	cluster := &v1.CamundaCluster{}
+	cluster.Status.Management = &v1.ManagementBinding{
+		Endpoint: slow.URL, Version: "8.9.9",
+		Auth: v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+	}
+	backup := runtimeBackup()
+	backup.Status.Step = v1.StepResumeExporting
+
+	started := time.Now()
+	attempts := 0
+	for backup.Status.Phase != v1.LogicalBackupFailed {
+		_, err := r.resumeExporting(t.Context(), backup, cluster)
+		require.NoError(t, err)
+		attempts++
+		require.Less(t, attempts, 20, "the deadline never fired")
+		time.Sleep(r.poll())
+	}
+	elapsed := time.Since(started)
+
+	assert.Equal(t, v1.ReasonResumeFailed, backup.Status.TerminalReason)
+	// Four attempts of 300 ms plus three gaps of 50 ms pass one second.
+	assert.LessOrEqual(t, attempts, 5)
+	assert.Less(t, elapsed, 2*time.Second, "the deadline is exhausted in about the deadline")
 }
 
 // Without the intent recorded, the reconcile records it and requests
 // nothing. The intent must be durable before the request goes out.
 func TestRuntimeRequestRecordsTheIntentFirst(t *testing.T) {
 	r, mgmt, server := runtimeRig(t)
-	backup := runtimeBackup(1_000)
+	backup := runtimeBackup()
 
 	_, err := r.requestRuntimeBackup(t.Context(), mgmt, backup, &backup.Status.Runtime)
 	require.NoError(t, err)

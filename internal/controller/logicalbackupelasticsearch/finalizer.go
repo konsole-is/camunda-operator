@@ -177,6 +177,14 @@ func (r *Reconciler) deleteArtifacts(
 		return false, fmt.Errorf("deleting snapshot %q: %w", records, err)
 	}
 
+	// Only a runtime backup whose request this backup saw accepted is its
+	// own. A backup that never recorded the acceptance never owned one. A
+	// runtime backup under its ID, if any, belongs to another actor or is a
+	// lost-response orphan without ownership evidence. It stays.
+	if backup.Status.RuntimeAcceptedTime == nil {
+		return true, nil
+	}
+
 	if err := mgmt.DeleteRuntimeBackup(ctx, backup.Status.BackupID); err != nil {
 		// Any rejected delete holds the deletion. A backup that is still in
 		// progress is the documented case. Every rejection means that the

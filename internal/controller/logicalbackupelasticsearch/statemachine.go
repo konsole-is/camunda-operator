@@ -348,10 +348,22 @@ func (r *Reconciler) backupRuntime(
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
-	switch status.State {
-	case camundaadmin.StateDoesNotExist:
+	if status.State == camundaadmin.StateDoesNotExist {
 		return r.requestRuntimeBackup(ctx, mgmt, backup, part)
+	}
 
+	// A runtime backup under this ID exists. Only an accepted request of
+	// this backup, a 202 that this controller observed, proves that it is
+	// ours. Without that evidence the backup is not adopted. It belongs to
+	// another actor, or it is ours with a lost response, and the cluster
+	// gives no token to tell. The safe failure is to fail, never to adopt
+	// and later delete a backup that is not ours.
+	if backup.Status.RuntimeAcceptedTime == nil {
+		r.failStep(backup, "BackupRuntime", part, unownedRuntimeBackup(backup))
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
+	switch status.State {
 	case camundaadmin.StateInProgress:
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions is in progress")
@@ -368,20 +380,43 @@ func (r *Reconciler) backupRuntime(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
+// unownedRuntimeBackup is the failure of a runtime backup that exists under
+// the ID of this backup without an accepted request of this backup. The
+// message says what the user needs: whose it can be, that it is not
+// adopted, and that the finalizer leaves it alone.
+func unownedRuntimeBackup(backup *v1.LogicalBackupElasticsearch) error {
+	whose := "it belongs to another actor"
+	if backup.Status.RuntimeRequestedTime != nil {
+		whose = "it can be the backup that this resource requested with a lost response, or one of another actor"
+	}
+	return fmt.Errorf(
+		"a runtime backup %d exists that this backup did not see accepted: %s; "+
+			"it is not adopted, and the finalizer will not delete it; remove it by hand if it is not wanted",
+		backup.Status.BackupID, whose,
+	)
+}
+
 // requestRuntimeBackup drives an absent runtime backup to a request. The
 // start is not idempotent, so the intent is written to the status one
 // reconcile before the request. A crash or a lost response after the cluster
-// accepted the request then finds the intent, not a fresh ID.
+// accepted the request then finds the intent, not a fresh ID. It fails
+// safely instead of adopting.
 //
 // The cluster registers the backup asynchronously and can report it absent
-// for a moment after it accepted the request. A second request answers 409
-// then. Both answers mean that the cluster holds the ID now, and both record
-// the acceptance time. An absent backup with the acceptance recorded is
-// registration lag, and the step polls through the registration grace. The
-// grace starts at the acceptance, so downtime before the request cannot
-// consume it. Absent after the grace, the step fails: another actor took a
-// same-or-higher ID, or the request was lost. To adopt that backup points
-// this resource at the artifacts of someone else.
+// for a moment after it accepted the request. Only a 202 that this
+// controller observes records the acceptance time. An absent backup with
+// the acceptance recorded is registration lag, and the step polls through
+// the registration grace. The grace starts at the acceptance, so downtime
+// before the request cannot consume it. Absent after the grace, the step
+// fails.
+//
+// A 409 says that the cluster holds the same or a higher ID. It does not
+// say whose backup that is: this backup's with a lost response, or another
+// actor's that won the ID. The cluster gives no token to tell them apart,
+// so a 409 is never an acceptance and the step fails without adopting. A
+// crash between the request and the flush of the acceptance therefore
+// fails the backup safely. It can leave a runtime backup under this ID in
+// the cluster, for the user to remove by hand.
 func (r *Reconciler) requestRuntimeBackup(
 	ctx context.Context,
 	mgmt *camundaadmin.Client,
@@ -401,8 +436,7 @@ func (r *Reconciler) requestRuntimeBackup(
 			return ctrl.Result{RequeueAfter: r.poll()}, nil
 		}
 		r.failStep(backup, "BackupRuntime", part, fmt.Errorf(
-			"the cluster holds no runtime backup %d within %s of the request: "+
-				"the request was lost, or a backup with the same or a higher id already exists",
+			"the cluster holds no runtime backup %d within %s of the accepted request",
 			backup.Status.BackupID, r.runtimeRegistrationGrace(),
 		))
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
@@ -420,11 +454,7 @@ func (r *Reconciler) requestRuntimeBackup(
 		return r.stageUnreachable(backup, err)
 
 	case errors.Is(err, camundaadmin.ErrConflict):
-		// Held by this backup when an earlier request landed, or by another
-		// actor. The next status query tells: found continues, absent past
-		// the grace fails.
-		backup.Status.RuntimeAcceptedTime = &now
-		r.stageProgress(backup, "The cluster holds the backup ID; waiting for the runtime backup to register")
+		r.failStep(backup, "BackupRuntime", part, fmt.Errorf("%w: %v", err, unownedRuntimeBackup(backup)))
 
 	default:
 		r.failStep(backup, "BackupRuntime", part, err)
