@@ -2,6 +2,9 @@
 
 Deploys the Camunda management plane — Keycloak, Management Identity, Console, and Web Modeler — once per platform.
 
+!!! warning "Not implemented yet"
+    The operator does not implement this kind yet. This page describes the planned design.
+
 ## Purpose
 
 `CamundaManagementCluster` is a cluster-scoped CR that deploys the shared management plane: Management Identity (backed by Keycloak), Console, and Web Modeler.

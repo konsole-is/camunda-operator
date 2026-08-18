@@ -2,6 +2,9 @@
 
 Deploys an Optimize instance for one orchestration cluster and wires up the export pipeline it reads from.
 
+!!! warning "Not implemented yet"
+    The operator does not implement this kind yet. This page describes the planned design.
+
 ## Purpose
 
 `CamundaOptimize` runs Camunda Optimize as an extension attached to a `CamundaCluster`.

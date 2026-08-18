@@ -2,6 +2,9 @@
 
 A PointInTimeRestore aligns an RDBMS-backed orchestration cluster's Zeebe primary storage with a database that has already been restored to a timestamp, in place.
 
+!!! warning "Not implemented yet"
+    The operator does not implement this kind yet. This page describes the planned design.
+
 ## Purpose
 
 A PointInTimeRestore recovers a `CamundaCluster` whose secondary storage is an RDBMS to an arbitrary point in time — for example to undo a destructive operation — without needing a [LogicalBackupRDBMS](logicalbackuprdbms.md).

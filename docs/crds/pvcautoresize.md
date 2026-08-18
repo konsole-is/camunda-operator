@@ -2,6 +2,9 @@
 
 Manages topolvm pvc-autoresizer annotations on a cluster's PersistentVolumeClaims.
 
+!!! warning "Not implemented yet"
+    The operator does not implement this kind yet. This page describes the planned design.
+
 ## Purpose
 
 `PVCAutoResize` configures automatic volume expansion for the Zeebe and Elasticsearch PVCs belonging to one orchestration cluster.

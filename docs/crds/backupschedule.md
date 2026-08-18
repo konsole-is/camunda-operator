@@ -2,6 +2,9 @@
 
 A BackupSchedule creates logical backups of one orchestration cluster on a cron schedule.
 
+!!! warning "Not implemented yet"
+    The operator does not implement this kind yet. This page describes the planned design.
+
 ## Purpose
 
 A BackupSchedule creates the recurring backups of a `CamundaCluster` for you.

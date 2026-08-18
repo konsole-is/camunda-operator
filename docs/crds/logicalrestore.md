@@ -2,6 +2,9 @@
 
 A LogicalRestore restores a completed logical backup into a suspended target orchestration cluster.
 
+!!! warning "Not implemented yet"
+    The operator does not implement this kind yet. This page describes the planned design.
+
 ## Purpose
 
 A LogicalRestore rebuilds a `CamundaCluster`'s secondary storage and Zeebe partitions from a [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) or a [LogicalBackupRDBMS](logicalbackuprdbms.md), either on the same cluster or on a different one — for example to recover from data loss or to clone an environment.
