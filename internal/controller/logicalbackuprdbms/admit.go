@@ -43,11 +43,28 @@ import (
 // admit runs the full pre-checks and starts the backup when they pass. The
 // full pre-checks run only here. A backup that started already owns its
 // resolved identity, and a pre-check that runs again mid-run lets a broken
-// reference park it forever.
+// reference park it forever. A backup that leaves without a start holds no
+// claim: every park and every error releases the Lease when this backup
+// holds it.
 func (r *LogicalBackupRDBMSReconciler) admit(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
-) (hold, error) {
+) (_ hold, err error) {
+	// The backup can hold the Lease at any exit: from the claim below, or
+	// from a start whose status flush failed and lost the id. A held Lease
+	// with no id blocks every sibling until this backup passes its checks,
+	// and a park can last as long as the backup does. Release is a no-op for
+	// a backup that holds nothing.
+	started := false
+	defer func() {
+		if started {
+			return
+		}
+		if releaseErr := r.releaseClaim(ctx, backup); releaseErr != nil {
+			err = errors.Join(err, releaseErr)
+		}
+	}()
+
 	precheck, err := logicalbackup.PreCheck(ctx, logicalbackup.PreCheckRequest{
 		Reader:      r.APIReader,
 		Ref:         backup.Spec.ClusterRef,
@@ -108,6 +125,7 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 		return settle, err
 	}
 	r.start(backup, precheck, highest, hash)
+	started = true
 
 	// The identity must be in status before the Job exists. Otherwise a
 	// crash between the two allocates a second id against an immutable Job

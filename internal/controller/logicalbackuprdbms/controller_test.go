@@ -830,6 +830,35 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The claim comes before the last checks of admission and before the id
+	// flush. A park after the claim, or a re-entry after a failed flush that
+	// parks, must not keep the Lease. A held Lease with no id blocks every
+	// sibling for as long as the park lasts.
+	It("releases the Lease when the backup parks after the claim", func() {
+		w := createWorld()
+		renderZeebe(w.cluster, "", worldRDBMSURL)
+		backup := createBackup(w)
+		leaseKey := types.NamespacedName{
+			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+		}
+
+		expectPending(backup, v1.ReasonProgressing)
+		Expect(readyCondition(backup).Message).To(ContainSubstring("no config hash yet"))
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, leaseKey, &coordinationv1.Lease{})).NotTo(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("claiming and starting once the workload carries its hash")
+		renderZeebe(w.cluster, "hash-1", worldRDBMSURL)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			var current coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, leaseKey, &current)).To(Succeed())
+			g.Expect(leaseHolder(&current)).To(Equal(claimant(backup).String()))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("reports MissingSecret when the database has no backup credentials", func() {
 		w := createWorld()
 		Eventually(func(g Gomega) {
