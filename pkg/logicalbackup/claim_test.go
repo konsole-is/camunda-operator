@@ -77,9 +77,11 @@ func holderResource(claimant logicalbackup.Claimant, phase v1.LogicalBackupPhase
 // ResumeFailed: terminal, and the cluster's exporting is still paused.
 func resumeFailedHolder(claimant logicalbackup.Claimant) client.Object {
 	backup := holderResource(claimant, v1.LogicalBackupFailed).(*unstructured.Unstructured)
-	_ = unstructured.SetNestedSlice(backup.Object, []any{
-		map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
-	}, "status", "conditions")
+	_ = unstructured.SetNestedSlice(
+		backup.Object, []any{
+			map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
+		}, "status", "conditions",
+	)
 	return backup
 }
 
