@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -40,15 +41,27 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 		}
 	}
 
+	// The controller adds its finalizer concurrently, so a plain update of
+	// the created object can lose to a conflict instead of meeting the CEL
+	// rule. mutate updates the live object; only the CEL rejection ends the
+	// retry.
+	mutate := func(backup *v1.LogicalBackupRDBMS, change func(*v1.LogicalBackupRDBMS)) error {
+		var current v1.LogicalBackupRDBMS
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &current)).To(Succeed())
+		change(&current)
+		return k8sClient.Update(ctx, &current)
+	}
+
 	It("accepts the minimal example and rejects a spec change", func() {
 		backup := valid()
 		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 
-		backup.Spec.ClusterRef.Name = "another-cluster"
-		err := k8sClient.Update(ctx, backup)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("immutable"))
+		Eventually(func(g Gomega) {
+			err := mutate(backup, func(b *v1.LogicalBackupRDBMS) { b.Spec.ClusterRef.Name = "another-cluster" })
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring("immutable"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("rejects a spec.dump change too: a retry is a new CR", func() {
@@ -56,10 +69,15 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 
-		backup.Spec.Dump = &v1.DumpPodSpec{
-			PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
-		}
-		Expect(k8sClient.Update(ctx, backup)).To(HaveOccurred())
+		Eventually(func(g Gomega) {
+			err := mutate(backup, func(b *v1.LogicalBackupRDBMS) {
+				b.Spec.Dump = &v1.DumpPodSpec{
+					PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
+				}
+			})
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring("immutable"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// The schema itself bounds a backup's extraEnvFrom: without a safe
