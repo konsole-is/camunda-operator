@@ -192,10 +192,7 @@ func storageEnv(in Input) rendered {
 		db := in.Storage.RDBMS
 		r.env = append(
 			r.env,
-			camundaconfig.Var(
-				camundaconfig.KeyRDBMSURL,
-				jdbcPostgres+db.Host+":"+strconv.Itoa(int(db.Port))+"/"+db.Database,
-			),
+			camundaconfig.Var(camundaconfig.KeyRDBMSURL, RDBMSURL(db.Host, db.Port, db.Database)),
 			camundaconfig.VarFrom(
 				camundaconfig.KeyRDBMSUsername,
 				secretSource(db.Credentials.Name, db.Credentials.UsernameKey),
@@ -475,4 +472,14 @@ func secretSource(name, key string) *corev1.EnvVarSource {
 		LocalObjectReference: corev1.LocalObjectReference{Name: name},
 		Key:                  key,
 	}}
+}
+
+// RDBMSURL returns the JDBC URL that the orchestration cluster is configured
+// with for its relational secondary storage: the value the rendered pod
+// template carries under camundaconfig.KeyRDBMSURL. It is the one definition
+// of that value, so a consumer that reads it from a live template — the
+// RDBMS backup, to prove the dump targets the database Zeebe runs — compares
+// against the same rendering.
+func RDBMSURL(host string, port int32, database string) string {
+	return jdbcPostgres + host + ":" + strconv.Itoa(int(port)) + "/" + database
 }

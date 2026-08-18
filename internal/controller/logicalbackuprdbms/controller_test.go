@@ -40,6 +40,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -175,7 +176,7 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		{Name: "data-cc-0", Capacity: resource.MustParse("15Gi")},
 	}
 	Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
-	renderZeebe(cluster, "hash-1")
+	renderZeebe(cluster, "hash-1", worldRDBMSURL)
 	converge(cluster)
 
 	// The bucket credentials live in the cluster namespace, so the backup
@@ -198,15 +199,25 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	}
 }
 
+// worldRDBMSURL is the relational storage URL that the world's Zeebe runs:
+// the DatabaseServerConfig host and port and the DatabaseConfig database
+// name of createWorld, rendered as the cluster controller renders them.
+var worldRDBMSURL = camundacluster.RDBMSURL("postgres.databases.svc", 5432, "camunda")
+
 // renderZeebe stands in for the CamundaCluster controller's rendering: the
 // Zeebe StatefulSet whose pod template carries the config hash of the
-// configuration Zeebe runs. Changing the hash stands in for a rollout to
-// another configuration, for example a swapped database.
-func renderZeebe(cluster *v1.CamundaCluster, hash string) {
+// configuration Zeebe runs and the relational storage URL it runs against.
+// Changing the hash stands in for a rollout to another configuration, for
+// example a swapped database; the URL says which database that is.
+func renderZeebe(cluster *v1.CamundaCluster, hash, rdbmsURL string) {
 	GinkgoHelper()
 	key := types.NamespacedName{
 		Namespace: cluster.Namespace,
 		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+	}
+	container := corev1.Container{
+		Name: "zeebe", Image: "z",
+		Env: []corev1.EnvVar{camundaconfig.Var(camundaconfig.KeyRDBMSURL, rdbmsURL)},
 	}
 	Eventually(func(g Gomega) {
 		var workload appsv1.StatefulSet
@@ -221,7 +232,7 @@ func renderZeebe(cluster *v1.CamundaCluster, hash string) {
 							Labels:      map[string]string{"app": key.Name},
 							Annotations: map[string]string{camundacluster.ConfigHashAnnotation: hash},
 						},
-						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "zeebe", Image: "z"}}},
+						Spec: corev1.PodSpec{Containers: []corev1.Container{container}},
 					},
 				},
 			}
@@ -231,6 +242,7 @@ func renderZeebe(cluster *v1.CamundaCluster, hash string) {
 		}
 		g.Expect(err).NotTo(HaveOccurred())
 		workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation] = hash
+		workload.Spec.Template.Spec.Containers = []corev1.Container{container}
 		g.Expect(k8sClient.Update(ctx, &workload)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -1479,7 +1491,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("rolling the Zeebe workload to another configuration, still converged")
-		renderZeebe(w.cluster, "hash-2")
+		renderZeebe(w.cluster, "hash-2", worldRDBMSURL)
 
 		markJob(backup, w, batchv1.JobComplete)
 		Eventually(func(g Gomega) {
@@ -1489,6 +1501,66 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-2"))
 			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
 		}, "15s", interval).Should(Succeed())
+	})
+
+	// Round 10 P1: the pinned hash proves Zeebe did not roll since the start,
+	// not that the referents the dump reads are the ones Zeebe runs. Between
+	// an edit of the DatabaseConfig and the cluster controller's rendering
+	// the two differ, and the template's own URL tells them apart.
+	It("waits at admission until Zeebe runs the database the dump would capture", func() {
+		w := createWorld()
+		By("Zeebe still runs the previous database while the DatabaseConfig names the next one")
+		renderZeebe(w.cluster, "hash-1", camundacluster.RDBMSURL("postgres.databases.svc", 5432, "camunda-old"))
+		backup := createBackup(w)
+
+		expectPending(backup, v1.ReasonProgressing)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			ready := meta.FindStatusCondition(backup.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Message).To(SatisfyAll(
+				ContainSubstring("camunda-old"),
+				ContainSubstring("/camunda"),
+				ContainSubstring("waits until Zeebe runs"),
+			))
+			g.Expect(backup.Status.BackupID).
+				To(BeZero(), "no identity is allocated against a database Zeebe does not run")
+		}, timeout, interval).Should(Succeed())
+
+		By("starting once the cluster rolled to the referenced database")
+		renderZeebe(w.cluster, "hash-2", worldRDBMSURL)
+		jobOf(backup, w)
+	})
+
+	It("fails before the Job when the referents changed under an unrolled Zeebe, naming both databases", func() {
+		w := createWorld()
+		unconvergeCluster(w)
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+		stageAdmitted(w, backup)
+
+		By("renaming the database in the gap, before the cluster controller rendered it")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.dbConfig), w.dbConfig)).To(Succeed())
+			w.dbConfig.Spec.DatabaseName = "camunda-next"
+			g.Expect(k8sClient.Update(ctx, w.dbConfig)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		converge(w.cluster)
+
+		By("failing through the mid-run grace: the dump would read camunda-next while Zeebe runs camunda")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(SatisfyAll(
+				ContainSubstring("5432/camunda,"),
+				ContainSubstring("camunda-next"),
+			))
+		}, "20s", interval).Should(Succeed())
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{
+				Namespace: w.namespace, Name: components.JobName(backup),
+			}, &batchv1.Job{},
+		)).NotTo(Succeed(), "no Job was rendered against a database Zeebe does not run")
 	})
 
 	// P1: a pod that cannot start never fails its Job and consumes no retry;

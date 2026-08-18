@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -189,6 +190,35 @@ func clusterConverged(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
 	}
 }
 
+// zeebeWorkload reads the live Zeebe StatefulSet of the cluster: the pod
+// template that says what Zeebe actually runs. A workload that is not
+// rendered yet is a wait, reported as Progressing.
+func (r *LogicalBackupRDBMSReconciler) zeebeWorkload(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (*appsv1.StatefulSet, *conditions.PreCheckFailure, error) {
+	var workload appsv1.StatefulSet
+	key := types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
+	}
+	if err := r.APIReader.Get(ctx, key, &workload); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, &conditions.PreCheckFailure{
+				Reason: v1.ReasonProgressing,
+				Message: fmt.Sprintf(
+					"the Zeebe workload %s is not rendered yet; the backup needs the configuration "+
+						"it runs to pin", key,
+				),
+			}, nil
+		}
+
+		return nil, nil, fmt.Errorf("reading the Zeebe workload %s: %w", key, err)
+	}
+
+	return &workload, nil, nil
+}
+
 // zeebeConfigHash reads the config hash the live Zeebe pod template carries:
 // the strongest observable identity of the configuration Zeebe actually
 // runs. Mutable referents — the DatabaseConfig, the DatabaseServerConfig —
@@ -200,23 +230,9 @@ func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (string, *conditions.PreCheckFailure, error) {
-	var workload appsv1.StatefulSet
-	key := types.NamespacedName{
-		Namespace: cluster.Namespace,
-		Name:      camundacluster.WorkloadName(cluster, camundacluster.ComponentZeebe),
-	}
-	if err := r.APIReader.Get(ctx, key, &workload); err != nil {
-		if apierrors.IsNotFound(err) {
-			return "", &conditions.PreCheckFailure{
-				Reason: v1.ReasonProgressing,
-				Message: fmt.Sprintf(
-					"the Zeebe workload %s is not rendered yet; the backup needs the configuration "+
-						"it runs to pin", key,
-				),
-			}, nil
-		}
-
-		return "", nil, fmt.Errorf("reading the Zeebe workload %s: %w", key, err)
+	workload, failure, err := r.zeebeWorkload(ctx, cluster)
+	if err != nil || failure != nil {
+		return "", failure, err
 	}
 
 	hash := workload.Spec.Template.Annotations[camundacluster.ConfigHashAnnotation]
@@ -224,13 +240,77 @@ func (r *LogicalBackupRDBMSReconciler) zeebeConfigHash(
 		return "", &conditions.PreCheckFailure{
 			Reason: v1.ReasonProgressing,
 			Message: fmt.Sprintf(
-				"the Zeebe workload %s carries no config hash yet; the backup needs the "+
-					"configuration it runs to pin", key,
+				"the Zeebe workload %s/%s carries no config hash yet; the backup needs the "+
+					"configuration it runs to pin", workload.Namespace, workload.Name,
 			),
 		}, nil
 	}
 
 	return hash, nil, nil
+}
+
+// zeebeRunsDatabase requires the database that a dump would capture — the
+// DatabaseServerConfig host and port and the DatabaseConfig database name,
+// as resolved now — to be the one the live Zeebe pod template is configured
+// with. The pinned config hash proves only that Zeebe did not roll since
+// the start; it cannot tell that the referents changed and the cluster
+// controller has not rendered them yet. In that window the dump would read
+// the new referents while Zeebe still runs the old database, and a dump and
+// a Zeebe backup of two databases would report one restore point. The
+// template carries the URL Zeebe runs, so the two are compared directly.
+// A mismatch is a wait: the cluster rolls to the referenced database, or
+// the referents go back, and until then no dump starts.
+func (r *LogicalBackupRDBMSReconciler) zeebeRunsDatabase(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	server *v1.DatabaseServerConfig,
+	dbConfig *v1.DatabaseConfig,
+) (*conditions.PreCheckFailure, error) {
+	workload, failure, err := r.zeebeWorkload(ctx, cluster)
+	if err != nil || failure != nil {
+		return failure, err
+	}
+
+	running, ok := templateEnvValue(&workload.Spec.Template, camundaconfig.KeyRDBMSURL.Env())
+	if !ok {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"the Zeebe workload %s/%s carries no relational storage URL yet; the backup needs "+
+					"the database it runs to compare against", workload.Namespace, workload.Name,
+			),
+		}, nil
+	}
+
+	wanted := camundacluster.RDBMSURL(server.Spec.Host, server.Spec.Port, dbConfig.Spec.DatabaseName)
+	if running != wanted {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonProgressing,
+			Message: fmt.Sprintf(
+				"Zeebe of CamundaCluster %s/%s runs %s, but DatabaseConfig %s/%s and "+
+					"DatabaseServerConfig %s now resolve to %s; the dump waits until Zeebe runs "+
+					"the database it would capture",
+				cluster.Namespace, cluster.Name, running,
+				dbConfig.Namespace, dbConfig.Name, server.Name, wanted,
+			),
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// templateEnvValue returns the plain value of the environment variable name
+// on any container of the template, and whether one carries it as a value.
+func templateEnvValue(template *corev1.PodTemplateSpec, name string) (string, bool) {
+	for i := range template.Spec.Containers {
+		for _, env := range template.Spec.Containers[i].Env {
+			if env.Name == name && env.ValueFrom == nil {
+				return env.Value, true
+			}
+		}
+	}
+
+	return "", false
 }
 
 // workloadUnchanged requires the live Zeebe workload to still carry the
@@ -306,6 +386,10 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 
 	server, failure, err := r.resolveServer(ctx, dbConfig)
 	if err != nil || failure != nil {
+		return nil, failure, err
+	}
+
+	if failure, err := r.zeebeRunsDatabase(ctx, precheck.Cluster, server, dbConfig); err != nil || failure != nil {
 		return nil, failure, err
 	}
 
