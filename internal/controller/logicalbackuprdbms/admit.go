@@ -60,6 +60,9 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 		return settle, err
 	}
 
+	if failure := clusterConverged(precheck.Cluster); failure != nil {
+		return r.parkPending(backup, failure), nil
+	}
 	if _, failure, err := r.resolveDump(ctx, backup, precheck); err != nil || failure != nil {
 		if err != nil {
 			return settle, err
@@ -91,6 +94,37 @@ func (r *LogicalBackupRDBMSReconciler) parkPending(
 	conditions.Stage(backup, conditions.Failed(backup, failure))
 
 	return hold{after: r.opts.RetryInterval}
+}
+
+// clusterConverged requires the cluster to run the spec it declares: the
+// operator has reconciled the current generation and reports Ready for it.
+// A backup admitted against a desired spec that Zeebe does not run yet would
+// dump to the new backup store while the Zeebe backup, requested before the
+// rollout finishes, lands in the old one — a completed status for a split
+// restore point. This is a wait, not a user error, so it reports
+// Progressing.
+func clusterConverged(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
+	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+	observed := cluster.Status.ObservedGeneration
+	if observed == cluster.Generation && ready != nil &&
+		ready.Status == metav1.ConditionTrue && ready.ObservedGeneration == cluster.Generation {
+		return nil
+	}
+
+	readyState := "absent"
+	if ready != nil {
+		readyState = fmt.Sprintf("%s/%s at generation %d", ready.Status, ready.Reason, ready.ObservedGeneration)
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonProgressing,
+		Message: fmt.Sprintf(
+			"CamundaCluster %s/%s has not converged on its current spec (generation %d, observed %d, "+
+				"Ready %s); a backup taken now could pair a dump with a Zeebe backup of the previous "+
+				"configuration",
+			cluster.Namespace, cluster.Name, cluster.Generation, observed, readyState,
+		),
+	}
 }
 
 // checkManagement verifies the management binding is usable at admission, so

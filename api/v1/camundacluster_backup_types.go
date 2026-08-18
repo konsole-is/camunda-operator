@@ -124,13 +124,14 @@ type DumpPodSpec struct {
 	// +optional
 	ScratchVolume *ScratchVolumeSpec `json:"scratchVolume,omitempty"`
 	// ActiveDeadlineSeconds bounds how long the dump Job may run before it
-	// is failed, counted from its start. It defaults to 86400 (24 hours):
+	// is failed, counted from its start. Unset means 86400 (24 hours):
 	// room for a very large dump, never "forever" — a pod that cannot start
 	// consumes no retry, so without a deadline a broken Job would stay
-	// active for as long as the backup lived. Set it lower to fail a stuck
-	// dump sooner, or higher for a dump you know takes longer.
+	// active for as long as the backup lived. The operator applies that
+	// default when it renders the Job, not the schema, so an unset value
+	// here still inherits a preset's. Set it lower to fail a stuck dump
+	// sooner, or higher for a dump you know takes longer.
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:default=86400
 	// +optional
 	ActiveDeadlineSeconds *int64 `json:"activeDeadlineSeconds,omitempty"`
 }

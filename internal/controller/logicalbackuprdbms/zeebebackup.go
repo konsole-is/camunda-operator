@@ -70,10 +70,14 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 	if backup.Status.ZeebeBackupID == nil {
 		// The Zeebe backup goes to the cluster's current backup store; the
 		// pair is one restore point only if that is still the bucket the
-		// dump was written to.
+		// dump was written to — and only if Zeebe runs the spec that names
+		// it, not a rollout still in progress.
 		failure, err := r.bucketStillPinned(ctx, backup, &cluster)
 		if err != nil {
 			return settle, err
+		}
+		if failure == nil {
+			failure = clusterConverged(&cluster)
 		}
 		if failure != nil {
 			return r.holdRunning(backup, failure)

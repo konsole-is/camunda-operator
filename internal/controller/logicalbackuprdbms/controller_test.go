@@ -162,18 +162,13 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 	}
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-	// The binding and the volume status that the CamundaCluster controller
-	// would publish.
-	cluster.Status.Management = &v1.ManagementBinding{
-		Endpoint:   managementAPI.URL(),
-		Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
-		Version:    "8.9.9",
-		Partitions: 3,
-	}
+	// The volume status, the binding, and the converged Ready that the
+	// CamundaCluster controller would publish.
 	cluster.Status.Volumes = []v1.VolumeStatus{
 		{Name: "data-cc-0", Capacity: resource.MustParse("15Gi")},
 	}
 	Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
+	converge(cluster)
 
 	// The bucket credentials live in the cluster namespace, so the backup
 	// uses the source Secret directly — no copy is involved.
@@ -193,6 +188,29 @@ func createWorld(mutate ...func(*v1.CamundaCluster)) *world {
 		server:    server,
 		bucket:    bucket,
 	}
+}
+
+// converge stands in for the CamundaCluster controller: it publishes the
+// management binding and reports the cluster Ready for its current
+// generation, with status.observedGeneration caught up — the state a backup
+// is admitted against.
+func converge(cluster *v1.CamundaCluster) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
+		cluster.Status.Management = &v1.ManagementBinding{
+			Endpoint:   managementAPI.URL(),
+			Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+			Version:    "8.9.9",
+			Partitions: 3,
+		}
+		cluster.Status.ObservedGeneration = cluster.Generation
+		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy,
+			Message: "stand-in", ObservedGeneration: cluster.Generation,
+		})
+		g.Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // probeServer stands in for the DatabaseServerConfig controller: it publishes
@@ -494,6 +512,88 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		expectPending(backup, v1.ReasonMissingSecret)
 	})
 
+	// P1: a backup admitted against a desired spec Zeebe does not run yet
+	// could pair a dump with a Zeebe backup of the previous configuration.
+	It("waits in Pending until the cluster has converged on its current spec, then starts", func() {
+		w := createWorld()
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster)).To(Succeed())
+			if w.cluster.Spec.Backup == nil {
+				w.cluster.Spec.Backup = &v1.ClusterBackupSpec{}
+			}
+			w.cluster.Spec.Backup.Dump = &v1.BackupDumpSpec{
+				DumpPodSpec: v1.DumpPodSpec{PodLabels: map[string]string{"rollout": "pending"}},
+			}
+			g.Expect(k8sClient.Update(ctx, w.cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+		Expect(readyCondition(backup).Message).To(ContainSubstring("has not converged"))
+
+		By("starting once the operator reports the new generation Ready")
+		converge(w.cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// P1 at the Zeebe step: a spec change between the dump and the request
+	// means Zeebe may still be rolling; the request waits, then fails.
+	It("fails when the cluster changed generation between the dump and the Zeebe backup", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		jobOf(backup, w)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster)).To(Succeed())
+			if w.cluster.Spec.Backup == nil {
+				w.cluster.Spec.Backup = &v1.ClusterBackupSpec{}
+			}
+			w.cluster.Spec.Backup.Dump = &v1.BackupDumpSpec{
+				DumpPodSpec: v1.DumpPodSpec{PodLabels: map[string]string{"rollout": "started"}},
+			}
+			g.Expect(k8sClient.Update(ctx, w.cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("has not converged"))
+			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
+		}, "15s", interval).Should(Succeed())
+	})
+
+	// S1: the deadline default is applied by the operator, not the schema,
+	// so a cluster block that sets only the image still inherits a preset's
+	// deadline (the unit tests bypass API defaulting; this goes through it).
+	It("keeps a preset's dump deadline when the cluster block sets only the image", func() {
+		preset := &v1.CamundaClusterPreset{
+			ObjectMeta: metav1.ObjectMeta{Name: "preset-" + utilrand.String(6)},
+			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+				Backup: &v1.ClusterBackupSpec{Dump: &v1.BackupDumpSpec{
+					DumpPodSpec: v1.DumpPodSpec{ActiveDeadlineSeconds: new(int64(3600))},
+				}},
+			}},
+		}
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+		w := createWorld(func(cluster *v1.CamundaCluster) {
+			cluster.Spec.PresetRef = preset.Name
+			cluster.Spec.Backup = &v1.ClusterBackupSpec{
+				Dump: &v1.BackupDumpSpec{PostgresImage: "mirror.example/postgres:17.4"},
+			}
+		})
+		backup := createBackup(w)
+
+		job := jobOf(backup, w)
+		Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(3600)))
+		Expect(job.Spec.Template.Spec.InitContainers[0].Image).To(Equal("mirror.example/postgres:17.4"))
+	})
+
 	It("waits until the server has been probed for its version", func() {
 		w := createWorld()
 		Eventually(func(g Gomega) {
@@ -565,18 +665,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		expectPending(backup, v1.ReasonProgressing)
 
 		By("starting once the binding is published")
-		Eventually(func(g Gomega) {
-			g.Expect(
-				k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster),
-			).To(Succeed())
-			w.cluster.Status.Management = &v1.ManagementBinding{
-				Endpoint:   managementAPI.URL(),
-				Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
-				Version:    "8.9.9",
-				Partitions: 3,
-			}
-			g.Expect(k8sClient.Status().Update(ctx, w.cluster)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		converge(w.cluster)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.BackupID).NotTo(BeZero())
@@ -788,13 +877,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			Spec:       w.cluster.Spec,
 		}
 		Expect(k8sClient.Create(ctx, revived)).To(Succeed())
-		revived.Status.Management = &v1.ManagementBinding{
-			Endpoint:   managementAPI.URL(),
-			Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
-			Version:    "8.9.9",
-			Partitions: 3,
-		}
-		Expect(k8sClient.Status().Update(ctx, revived)).To(Succeed())
+		converge(revived)
 
 		By("recovering: the failure clock clears and the backup completes")
 		Eventually(func(g Gomega) {

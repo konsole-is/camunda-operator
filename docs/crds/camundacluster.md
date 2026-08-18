@@ -325,7 +325,7 @@ spec:
     dump:
       # object. Optional. CPU and memory of the dump pod.
       resources: {}
-      # integer. Optional, default: 86400 (24 hours). Seconds the dump Job may run before it is failed. There is always a deadline: a pod that cannot start consumes no retry, so an unbounded Job would stay active for as long as the backup lived.
+      # integer. Optional. Seconds the dump Job may run before it is failed. Unset means 86400 (24 hours), applied by the operator when it renders the Job — not by the schema — so an unset value still inherits a preset's. There is always a deadline: a pod that cannot start consumes no retry, so an unbounded Job would stay active for as long as the backup lived.
       activeDeadlineSeconds: 7200
       # string. Optional, default: postgres:<probed major of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag. Cluster-level policy only: the Job runs under the cluster's ServiceAccount, with its cloud identity and database credentials, so the executable is the cluster owner's choice — a LogicalBackupRDBMS always inherits it.
       postgresImage: ""
