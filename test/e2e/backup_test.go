@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	lbes "github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
@@ -347,7 +348,10 @@ func exporterPhases(cluster *v1.CamundaCluster) (map[string]string, error) {
 	)
 
 	out, err := utils.RunPod(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "curl-partitions", Namespace: cluster.Namespace},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "curl-partitions-" + utilrand.String(5),
+			Namespace: cluster.Namespace,
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
 				Name:  "curl",
