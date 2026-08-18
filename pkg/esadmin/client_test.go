@@ -115,12 +115,48 @@ func TestSnapshotMetadataRoundTrips(t *testing.T) {
 
 	snapshot, err := client.SnapshotStatus(ctx, "repo", "records-42")
 	require.NoError(t, err)
-	assert.Equal(t, metadata, snapshot.Metadata)
+	assert.Equal(t, map[string]any{"camunda-operator/backup-uid": "uid-42"}, snapshot.Metadata)
+	uid, ok := snapshot.MetadataString("camunda-operator/backup-uid")
+	assert.True(t, ok)
+	assert.Equal(t, "uid-42", uid)
 
 	require.NoError(t, client.CreateSnapshot(ctx, "repo", "plain", []string{"idx"}, nil))
 	plain, err := client.SnapshotStatus(ctx, "repo", "plain")
 	require.NoError(t, err)
 	assert.Empty(t, plain.Metadata)
+}
+
+// Elasticsearch accepts any JSON value as snapshot metadata. A snapshot that
+// another actor created can carry numbers, lists, or objects under the
+// deterministic name; the status must still decode, so a caller can see the
+// snapshot is not its own and leave it alone instead of failing on it forever.
+func TestSnapshotStatusDecodesForeignMetadataOfAnyType(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	server.SetSnapshotMetadata("repo", "records-42", map[string]any{
+		"retention-days":              float64(30),
+		"created-by":                  map[string]any{"tool": "curator", "tags": []any{"nightly"}},
+		"camunda-operator/backup-uid": float64(42),
+	})
+
+	snapshot, err := client.SnapshotStatus(ctx, "repo", "records-42")
+	require.NoError(t, err)
+	assert.Equal(t, esadmin.SnapshotSuccess, snapshot.State)
+	assert.Equal(t, float64(30), snapshot.Metadata["retention-days"])
+	_, ok := snapshot.MetadataString("camunda-operator/backup-uid")
+	assert.False(t, ok, "a non-string value under the ownership key is not an owner")
+	_, ok = snapshot.MetadataString("absent")
+	assert.False(t, ok)
+
+	// The duplicate resolution does not read a same-length metadata map of
+	// other types as its own either.
+	err = client.CreateSnapshot(
+		ctx, "repo", "records-42", []string{"idx"},
+		map[string]string{"a": "1", "b": "2", "camunda-operator/backup-uid": "42"},
+	)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Equal(t, 0, server.SnapshotCreates("repo", "records-42"))
 }
 
 func TestSnapshotStatus(t *testing.T) {

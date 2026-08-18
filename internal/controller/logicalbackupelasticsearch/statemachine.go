@@ -356,9 +356,13 @@ func snapshotMetadata(backup *v1.LogicalBackupElasticsearch) map[string]string {
 	return map[string]string{snapshotOwnerUIDKey: string(backup.UID)}
 }
 
-// snapshotOwnedBy reports whether the snapshot carries the UID of backup.
+// snapshotOwnedBy reports whether the snapshot carries the UID of backup. Only
+// the one entry decides: whatever else a foreign snapshot carries under
+// the name, of whatever JSON type, never makes it this backup's and never
+// keeps the finalizer from telling it apart.
 func snapshotOwnedBy(snapshot esadmin.Snapshot, backup *v1.LogicalBackupElasticsearch) bool {
-	return snapshot.Metadata[snapshotOwnerUIDKey] == string(backup.UID)
+	uid, ok := snapshot.MetadataString(snapshotOwnerUIDKey)
+	return ok && uid == string(backup.UID)
 }
 
 // unownedSnapshot is the failure of a snapshot that exists under the name

@@ -1083,6 +1083,44 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
 	})
 
+	It("tells a foreign records snapshot with metadata of any JSON type apart, and its deletion still finishes", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		// Elasticsearch stores any JSON value as snapshot metadata. A
+		// snapshot that another tool created under the deterministic name
+		// carries numbers and objects — never this backup's UID as a
+		// string. The status must decode, or the step and later the
+		// finalizer would fail on the decode forever.
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		name := RecordsSnapshotName(id)
+		r.search.SetSnapshotMetadata(r.repository, name, map[string]any{
+			"retention-days":    float64(30),
+			"created-by":        map[string]any{"tool": "curator"},
+			snapshotOwnerUIDKey: float64(7),
+		})
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		By("failing through resume without adopting")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("SnapshotRecords"),
+			ContainSubstring("did not create"),
+		))
+		Expect(r.search.SnapshotCreates(r.repository, name)).To(BeZero())
+		Expect(r.management.Exporting()).To(Equal("running"))
+
+		By("leaving the foreign snapshot alone on deletion, and finishing the deletion")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
+	})
+
 	It("never adopts a runtime backup it did not see accepted, and never deletes it", func() {
 		r := newRig()
 		backup := r.newBackup()

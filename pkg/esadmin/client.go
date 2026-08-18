@@ -33,7 +33,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -157,9 +156,37 @@ type Snapshot struct {
 	// the name exists; every other field is empty then.
 	State SnapshotState
 	// Metadata is the user metadata of the snapshot, as the creation
-	// request carried it. Elasticsearch stores it verbatim and returns it
-	// with the snapshot info.
-	Metadata map[string]string
+	// request carried it. Elasticsearch stores any JSON value verbatim and
+	// returns it with the snapshot info, so the values are decoded as
+	// encoding/json decodes into any: a string, a float64, a bool, nil, a
+	// []any, or a map[string]any. A snapshot that this client created
+	// carries strings only; one that another actor created can carry
+	// anything. MetadataString reads one entry as a string.
+	Metadata map[string]any
+}
+
+// MetadataString returns the value under key in the metadata of the
+// snapshot when it is a string. It reports false for an absent key and for a
+// value of any other JSON type.
+func (s Snapshot) MetadataString(key string) (string, bool) {
+	value, ok := s.Metadata[key].(string)
+	return value, ok
+}
+
+// sameMetadata reports whether existing holds exactly the entries of want:
+// the same keys, each with the string value that want carries. Any entry
+// of another JSON type is a difference.
+func sameMetadata(existing map[string]any, want map[string]string) bool {
+	if len(existing) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got, ok := existing[key].(string); !ok || got != value {
+			return false
+		}
+	}
+
+	return true
 }
 
 // CreateSnapshot starts the snapshot name of indices in repo, carrying
@@ -203,7 +230,7 @@ func (c *Client) CreateSnapshot(
 		if status == http.StatusBadRequest || status == http.StatusConflict {
 			if existing, statusErr := c.SnapshotStatus(ctx, repo, name); statusErr == nil &&
 				existing.State != SnapshotMissing &&
-				maps.Equal(existing.Metadata, metadata) {
+				sameMetadata(existing.Metadata, metadata) {
 				return nil
 			}
 		}
@@ -233,8 +260,8 @@ func (c *Client) SnapshotStatus(ctx context.Context, repo, name string) (Snapsho
 
 	var response struct {
 		Snapshots []struct {
-			State    string            `json:"state"`
-			Metadata map[string]string `json:"metadata"`
+			State    string         `json:"state"`
+			Metadata map[string]any `json:"metadata"`
 		} `json:"snapshots"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
