@@ -462,6 +462,12 @@ func mergeBackupDump(base, over *v1.BackupDumpSpec) *v1.BackupDumpSpec {
 	if over.ScratchVolume != nil {
 		base.ScratchVolume = over.ScratchVolume
 	}
+	if over.ActiveDeadlineSeconds != nil {
+		base.ActiveDeadlineSeconds = over.ActiveDeadlineSeconds
+	}
+	if over.PostgresImage != "" {
+		base.PostgresImage = over.PostgresImage
+	}
 
 	return base
 }

@@ -86,17 +86,39 @@ type PrimaryStorageRetentionSpec struct {
 	CleanupSchedule string `json:"cleanupSchedule,omitempty"`
 }
 
-// BackupDumpSpec configures the pod of the Job that dumps the logical
-// database of a relational cluster and uploads it to the backup bucket. The
-// pod runs the dump and the upload in turn, so one resource block sizes both.
-type BackupDumpSpec struct {
+// DumpPodSpec shapes the pod of the Job that dumps the logical database of a
+// relational cluster and uploads it to the backup bucket. It holds everything
+// that a backup can set per run. The pod runs the dump and the upload in
+// turn, so one resource block sizes both. It never names the image. See
+// BackupDumpSpec for the reason.
+type DumpPodSpec struct {
 	// Resources are the CPU and memory of the dump pod.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// ExtraEnv are extra environment variables of the dump pod.
+	// ExtraEnv are extra environment variables of the dump pod. In the
+	// spec.dump of a LogicalBackupRDBMS, every name under PG or UPLOAD_ is
+	// reserved, and admission rejects it. Any PG* name is connection policy,
+	// because libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, and more.
+	// UPLOAD_* is the upload contract. The variables of a backup reach the
+	// dump container only, never the container that uploads. Cloud SDKs
+	// read endpoint, proxy, and configuration variables from the
+	// environment, and a backup author must not steer where the dump goes.
+	// In the spec.backup.dump of the cluster nothing is reserved, and the
+	// variables reach every container. The cluster owner sets connection
+	// policy, PGSSLMODE included, inside their own boundary.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
-	// ExtraEnvFrom are extra environment sources of the dump pod.
+	// ExtraEnvFrom are extra environment sources of the dump pod, at most
+	// 8. The cap applies to every block that uses this type, the cluster
+	// and preset blocks included. It keeps the admission rule of a
+	// LogicalBackupRDBMS inside the cost budget of the API server. In the
+	// spec.dump of a LogicalBackupRDBMS, every source also needs a prefix
+	// that cannot spell a PG* or UPLOAD_* name. The reason is that the
+	// writer of the referenced object chooses its keys. Like ExtraEnv, the
+	// sources of a backup reach the dump container only. The block of the
+	// cluster has no prefix requirement, and its sources reach every
+	// container.
+	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
 	// PodLabels are extra labels of the dump pod.
@@ -112,14 +134,47 @@ type BackupDumpSpec struct {
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// ScratchVolume is where the dump is written before it is uploaded. When
-	// set, it replaces the block of a preset entirely (no merge).
+	// set, it replaces the block of a preset entirely (no merge). The dump
+	// pod runs with fsGroup 999, the postgres group. So pg_dump can write to
+	// a volume that a storage class hands over root-owned.
 	// +optional
 	ScratchVolume *ScratchVolumeSpec `json:"scratchVolume,omitempty"`
+	// ActiveDeadlineSeconds is the number of seconds that the dump Job can
+	// run before it fails, counted from its start. When it is unset, the
+	// operator applies 86400 (24 hours) when it renders the Job. The schema
+	// does not apply the default, so an unset value inherits the value of a
+	// preset. The default is large so that a very large dump completes. It
+	// is not unbounded because a pod that cannot start uses no retry.
+	// Without a deadline, a broken Job stays active as long as the backup
+	// lives. A lower value fails a stuck dump sooner. A higher value gives a
+	// long dump the time it needs.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	ActiveDeadlineSeconds *int64 `json:"activeDeadlineSeconds,omitempty"`
+}
+
+// BackupDumpSpec is the cluster-level dump configuration. It holds the pod
+// settings that a backup can also set per run, plus the image that runs the
+// dump. The image is cluster-level policy on purpose. The Job runs under the
+// ServiceAccount of the cluster, with the cloud identity of the cluster and
+// its database credentials mounted. So the executable that the Job runs is
+// the choice of the cluster owner, never of the person who creates a backup.
+// A LogicalBackupRDBMS replaces the pod settings as a whole and always
+// inherits the image.
+type BackupDumpSpec struct {
+	DumpPodSpec `json:",inline"`
+	// PostgresImage is the full image reference of the dump container. It
+	// replaces the default postgres:<major> of the upstream registry. An
+	// air-gapped installation sets it, because the default reference cannot
+	// be pulled there.
+	// +optional
+	PostgresImage string `json:"postgresImage,omitempty"`
 }
 
 // ScratchVolumeSpec sizes the volume that holds a database dump until it is
 // uploaded. An unset block is an emptyDir that the node bounds, which a large
 // database can exhaust.
+// +kubebuilder:validation:XValidation:rule="!has(self.storageClassName) || has(self.sizeLimit)",message="a scratch volume with a storage class needs a sizeLimit to request"
 type ScratchVolumeSpec struct {
 	// SizeLimit is the size of the emptyDir that holds the dump. Set it to
 	// the size the dump needs, with room to spare.

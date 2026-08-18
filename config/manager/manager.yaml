@@ -64,6 +64,13 @@ spec:
           - --leader-elect
           - --health-probe-bind-address=:8081
         image: controller:latest
+        env:
+          # The camunda-operator-cli image that the backup Jobs run. The
+          # manager reads it as the default of --camunda-operator-cli-image.
+          # `make build-installer CLI_IMG=...` stamps it, like IMG stamps the
+          # manager image above.
+          - name: CAMUNDA_OPERATOR_CLI_IMAGE
+            value: ghcr.io/konsole-is/camunda-operator-cli:latest
         name: manager
         ports: []
         securityContext:

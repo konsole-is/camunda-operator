@@ -1,5 +1,10 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+# Image URL of camunda-operator-cli, the companion image that the operator's
+# Jobs run. The manager receives it through --camunda-operator-cli-image;
+# build-installer and deploy stamp it into the manifests, helm-deploy into
+# the chart values.
+CLI_IMG ?= ghcr.io/konsole-is/camunda-operator-cli:latest
 
 # Recipes below expand IMG in the shell (e.g. $${IMG%:*}), which reads the
 # environment. Make exports command-line variables automatically but not this
@@ -7,6 +12,7 @@ IMG ?= controller:latest
 # reference. Exporting also keeps registry-with-port values like
 # localhost:5000/img:tag correct, since ${IMG%:*} strips only the final colon.
 export IMG
+export CLI_IMG
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -133,9 +139,13 @@ lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter c
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: build-cli
+build-cli: fmt vet ## Build the camunda-operator-cli binary.
+	go build -o bin/camunda-operator-cli ./cmd/camunda-operator-cli
+
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+run: manifests generate fmt vet ## Run a controller from your host. The backup Jobs it renders run CLI_IMG.
+	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG}
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -147,6 +157,14 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+.PHONY: docker-build-cli
+docker-build-cli: ## Build docker image with camunda-operator-cli.
+	$(CONTAINER_TOOL) build -t ${CLI_IMG} -f Dockerfile.cli .
+
+.PHONY: docker-push-cli
+docker-push-cli: ## Push docker image with camunda-operator-cli.
+	$(CONTAINER_TOOL) push ${CLI_IMG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -165,10 +183,20 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cross
 
+.PHONY: docker-buildx-cli
+docker-buildx-cli: ## Build and push docker image for camunda-operator-cli for cross-platform support
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile.cli > Dockerfile.cli.cross
+	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
+	$(CONTAINER_TOOL) buildx use camunda-operator-builder
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${CLI_IMG} -f Dockerfile.cli.cross .
+	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
+	rm Dockerfile.cli.cross
+
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	cd config/manager && "$(KUSTOMIZE)" edit set image ghcr.io/konsole-is/camunda-operator-cli=${CLI_IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 	"$(KUSTOMIZE)" build config/crd > dist/crds.yaml
 
@@ -191,6 +219,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	cd config/manager && "$(KUSTOMIZE)" edit set image ghcr.io/konsole-is/camunda-operator-cli=${CLI_IMG}
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply --server-side --force-conflicts -f -
 
 .PHONY: undeploy
@@ -314,8 +343,9 @@ install-helm: ## Install the pinned version of Helm if it is missing.
 	}
 
 .PHONY: helm-generate
-helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify an image with IMG.
+helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify images with IMG and CLI_IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
+	go run ./hack/helmcli "$(HELM_CHART_DIR)"
 
 ## Maximum gzipped rendered chart size in bytes before helm-verify fails.
 ## The real bound is the gzipped Helm release Secret against etcd's ~1MB object
@@ -361,12 +391,14 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	fi
 
 .PHONY: helm-deploy
-helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
+helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify images with IMG and CLI_IMG.
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
 		--set manager.image.repository=$${IMG%:*} \
 		--set manager.image.tag=$${IMG##*:} \
+		--set manager.cliImage.repository=$${CLI_IMG%:*} \
+		--set manager.cliImage.tag=$${CLI_IMG##*:} \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)

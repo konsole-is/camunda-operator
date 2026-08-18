@@ -16,6 +16,12 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods
+  verbs:
+  - list
+- apiGroups:
+  - ""
+  resources:
   - secrets
   - serviceaccounts
   - services
@@ -49,6 +55,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases
@@ -71,6 +89,7 @@ rules:
   - databases
   - elasticsearchclusters
   - logicalbackupelasticsearches
+  - logicalbackuprdbmses
   - logicalrestores
   - pointintimerestores
   - pvcautoresizes
@@ -93,6 +112,7 @@ rules:
   - databases/finalizers
   - elasticsearchclusters/finalizers
   - logicalbackupelasticsearches/finalizers
+  - logicalbackuprdbmses/finalizers
   - logicalrestores/finalizers
   - pointintimerestores/finalizers
   - pvcautoresizes/finalizers
@@ -111,6 +131,7 @@ rules:
   - databaseserverconfigs/status
   - elasticsearchclusters/status
   - logicalbackupelasticsearches/status
+  - logicalbackuprdbmses/status
   - logicalrestores/status
   - managementauthconfigs/status
   - objectstorageconfigs/status

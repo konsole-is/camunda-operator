@@ -1,0 +1,8 @@
+# Extra fields the images transformer rewrites, in addition to the container
+# image fields it knows by default. The manager learns the camunda-operator-cli
+# image through an environment variable, so that value must follow
+# `kustomize edit set image` too. Only values that name the configured image
+# are touched; other environment values are left as they are.
+images:
+- path: spec/template/spec/containers[]/env[]/value
+  kind: Deployment

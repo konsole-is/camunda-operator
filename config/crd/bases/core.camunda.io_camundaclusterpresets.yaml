@@ -1075,9 +1075,33 @@ spec:
                           Dump configures the Job that writes the logical database to the backup
                           bucket. A LogicalBackupRDBMS can replace this block as a whole.
                         properties:
+                          activeDeadlineSeconds:
+                            description: |-
+                              ActiveDeadlineSeconds is the number of seconds that the dump Job can
+                              run before it fails, counted from its start. When it is unset, the
+                              operator applies 86400 (24 hours) when it renders the Job. The schema
+                              does not apply the default, so an unset value inherits the value of a
+                              preset. The default is large so that a very large dump completes. It
+                              is not unbounded because a pod that cannot start uses no retry.
+                              Without a deadline, a broken Job stays active as long as the backup
+                              lives. A lower value fails a stuck dump sooner. A higher value gives a
+                              long dump the time it needs.
+                            format: int64
+                            minimum: 1
+                            type: integer
                           extraEnv:
-                            description: ExtraEnv are extra environment variables
-                              of the dump pod.
+                            description: |-
+                              ExtraEnv are extra environment variables of the dump pod. In the
+                              spec.dump of a LogicalBackupRDBMS, every name under PG or UPLOAD_ is
+                              reserved, and admission rejects it. Any PG* name is connection policy,
+                              because libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, and more.
+                              UPLOAD_* is the upload contract. The variables of a backup reach the
+                              dump container only, never the container that uploads. Cloud SDKs
+                              read endpoint, proxy, and configuration variables from the
+                              environment, and a backup author must not steer where the dump goes.
+                              In the spec.backup.dump of the cluster nothing is reserved, and the
+                              variables reach every container. The cluster owner sets connection
+                              policy, PGSSLMODE included, inside their own boundary.
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -1236,8 +1260,17 @@ spec:
                               type: object
                             type: array
                           extraEnvFrom:
-                            description: ExtraEnvFrom are extra environment sources
-                              of the dump pod.
+                            description: |-
+                              ExtraEnvFrom are extra environment sources of the dump pod, at most
+                              8. The cap applies to every block that uses this type, the cluster
+                              and preset blocks included. It keeps the admission rule of a
+                              LogicalBackupRDBMS inside the cost budget of the API server. In the
+                              spec.dump of a LogicalBackupRDBMS, every source also needs a prefix
+                              that cannot spell a PG* or UPLOAD_* name. The reason is that the
+                              writer of the referenced object chooses its keys. Like ExtraEnv, the
+                              sources of a backup reach the dump container only. The block of the
+                              cluster has no prefix requirement, and its sources reach every
+                              container.
                             items:
                               description: EnvFromSource represents the source of
                                 a set of ConfigMaps or Secrets
@@ -1284,6 +1317,7 @@ spec:
                                   type: object
                                   x-kubernetes-map-type: atomic
                               type: object
+                            maxItems: 8
                             type: array
                           podAnnotations:
                             additionalProperties:
@@ -1298,6 +1332,13 @@ spec:
                               type: string
                             description: PodLabels are extra labels of the dump pod.
                             type: object
+                          postgresImage:
+                            description: |-
+                              PostgresImage is the full image reference of the dump container. It
+                              replaces the default postgres:<major> of the upstream registry. An
+                              air-gapped installation sets it, because the default reference cannot
+                              be pulled there.
+                            type: string
                           resources:
                             description: Resources are the CPU and memory of the dump
                               pod.
@@ -1967,7 +2008,9 @@ spec:
                           scratchVolume:
                             description: |-
                               ScratchVolume is where the dump is written before it is uploaded. When
-                              set, it replaces the block of a preset entirely (no merge).
+                              set, it replaces the block of a preset entirely (no merge). The dump
+                              pod runs with fsGroup 999, the postgres group. So pg_dump can write to
+                              a volume that a storage class hands over root-owned.
                             properties:
                               sizeLimit:
                                 anyOf:
@@ -1985,6 +2028,10 @@ spec:
                                   the ephemeral storage of a node.
                                 type: string
                             type: object
+                            x-kubernetes-validations:
+                            - message: a scratch volume with a storage class needs
+                                a sizeLimit to request
+                              rule: '!has(self.storageClassName) || has(self.sizeLimit)'
                         type: object
                       primaryStorage:
                         description: |-

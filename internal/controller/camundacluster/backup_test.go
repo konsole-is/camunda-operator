@@ -21,7 +21,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
@@ -418,6 +421,133 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 			}, timeout, interval).Should(Succeed())
 		})
 
+		// Only dump Jobs consume the backup user of the database, so a
+		// dangling reference must not park the whole cluster. The cluster
+		// warns here, and the backup that needs it parks in its own pre-check.
+		It("warns on dangling dump credentials instead of parking the cluster", func() {
+			ns := newNamespace()
+
+			server := fixtures.DatabaseServerConfig()
+			Expect(k8sClient.Create(ctx, server)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+
+			createSecret(ns, "app-user", map[string]string{
+				"username": "camunda", "password": "app-secret",
+			})
+
+			dbConfig := fixtures.DatabaseConfig()
+			dbConfig.Namespace = ns
+			dbConfig.Spec.ServerRef = server.Name
+			dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
+				Name: "app-user", Namespace: ns,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+				Name: "gone-user", Namespace: ns,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+
+			storage := &v1.SecondaryStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: ns},
+				Spec: v1.SecondaryStorageConfigSpec{
+					Type:  v1.SecondaryStorageTypeRDBMS,
+					RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: dbConfig.Name},
+				},
+			}
+			Expect(k8sClient.Create(ctx, storage)).To(Succeed())
+
+			cluster := newCluster(ns, createPlatformConfig(), storage)
+			createCluster(cluster)
+
+			By("rendering the workloads: the pre-check did not park")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(
+					ctx, client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"},
+					&appsv1.StatefulSet{},
+				)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("warning about the unresolved dump credentials")
+			Eventually(func(g Gomega) {
+				var events eventsv1.EventList
+				g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+				reasons := make([]string, 0, len(events.Items))
+				for _, event := range events.Items {
+					reasons = append(reasons, event.Reason)
+				}
+				g.Expect(reasons).To(ContainElement("DumpCredentialsUnresolved"))
+			}, timeout, interval).Should(Succeed())
+
+			By("keeping no mirror for the unresolved reference")
+			var copied corev1.Secret
+			Expect(k8sClient.Get(
+				ctx, client.ObjectKey{
+					Namespace: ns,
+					Name: components.MirroredSecretName(
+						cluster, components.MirrorPurposeDumpCredentials,
+					),
+				}, &copied,
+			)).NotTo(Succeed())
+		})
+
+		// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
+		// database from the cluster namespace. A Secret elsewhere therefore
+		// needs the same local copy that the other credentials get.
+		It("copies cross-namespace dump credentials into the cluster namespace", func() {
+			ns := newNamespace()
+			remote := newNamespace()
+
+			server := fixtures.DatabaseServerConfig()
+			Expect(k8sClient.Create(ctx, server)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+
+			createSecret(ns, "app-user", map[string]string{
+				"username": "camunda", "password": "app-secret",
+			})
+			createSecret(remote, "backup-user", map[string]string{
+				"username": "backup", "password": "dump-secret",
+			})
+
+			dbConfig := fixtures.DatabaseConfig()
+			dbConfig.Namespace = ns
+			dbConfig.Spec.ServerRef = server.Name
+			dbConfig.Spec.CredentialsSecretRef = v1.CredentialsSecretRef{
+				Name: "app-user", Namespace: ns,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			dbConfig.Spec.BackupCredentialsSecretRef = &v1.CredentialsSecretRef{
+				Name: "backup-user", Namespace: remote,
+				UsernameKey: "username", PasswordKey: "password",
+			}
+			Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+
+			storage := &v1.SecondaryStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: ns},
+				Spec: v1.SecondaryStorageConfigSpec{
+					Type:  v1.SecondaryStorageTypeRDBMS,
+					RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: dbConfig.Name},
+				},
+			}
+			Expect(k8sClient.Create(ctx, storage)).To(Succeed())
+
+			cluster := newCluster(ns, createPlatformConfig(), storage)
+			createCluster(cluster)
+
+			Eventually(func(g Gomega) {
+				var copied corev1.Secret
+				key := client.ObjectKey{
+					Namespace: ns,
+					Name: components.MirroredSecretName(
+						cluster, components.MirrorPurposeDumpCredentials,
+					),
+				}
+				g.Expect(k8sClient.Get(ctx, key, &copied)).To(Succeed())
+				g.Expect(copied.Data).To(HaveKeyWithValue("username", []byte("backup")))
+				g.Expect(copied.Data).To(HaveKeyWithValue("password", []byte("dump-secret")))
+			}, timeout, interval).Should(Succeed())
+		})
+
 		It("reports MissingSecret when the credentials of the bucket are absent", func() {
 			ns := newNamespace()
 			binding := createBinding(ns, true)
@@ -472,10 +602,10 @@ var _ = Describe("CamundaCluster backup schema", func() {
 					CleanupSchedule: "PT1H",
 				},
 			},
-			Dump: &v1.BackupDumpSpec{
+			Dump: &v1.BackupDumpSpec{DumpPodSpec: v1.DumpPodSpec{
 				PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
 				ScratchVolume:  &v1.ScratchVolumeSpec{SizeLimit: new(resource.MustParse("50Gi"))},
-			},
+			}},
 		}
 
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())

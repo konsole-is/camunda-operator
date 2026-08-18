@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: dump
+    camunda.io/logical-backup-rdbms: my-cluster-1748937221000
+    camunda.io/logical-backup-rdbms-uid: 3f2a9c1e-7b4d-4e0a-9c6f-2d1b8a5e4c73
+  name: my-cluster-1748937221000-dump
+  namespace: my-cluster-ns
+spec:
+  activeDeadlineSeconds: 86400
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: camunda-operator
+        azure.workload.identity/use: "true"
+        camunda.io/cluster: my-cluster
+        camunda.io/component: dump
+        camunda.io/logical-backup-rdbms: my-cluster-1748937221000
+        camunda.io/logical-backup-rdbms-uid: 3f2a9c1e-7b4d-4e0a-9c6f-2d1b8a5e4c73
+    spec:
+      containers:
+      - args:
+        - upload
+        env:
+        - name: UPLOAD_FILE
+          value: /scratch/camunda.dump
+        - name: UPLOAD_KEY
+          value: clusters/my-cluster-ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump
+        - name: UPLOAD_STORAGE_NAME
+          value: my-backup-config
+        - name: UPLOAD_STORAGE_SPEC
+          value: '{"type":"AzureBlob","azureBlob":{"accountName":"camundabackups","container":"backups","basePath":"clusters","auth":{"type":"workloadIdentity"}}}'
+        image: ghcr.io/konsole-is/camunda-operator-cli:0.1.0
+        name: upload
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65532
+          runAsNonRoot: true
+          runAsUser: 65532
+        volumeMounts:
+        - mountPath: /scratch
+          name: scratch
+      initContainers:
+      - command:
+        - pg_dump
+        - --format=custom
+        - --no-password
+        - --file=/scratch/camunda.dump
+        env:
+        - name: PGHOST
+          value: postgres.databases.svc
+        - name: PGPORT
+          value: "5432"
+        - name: PGDATABASE
+          value: camunda
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: my-cluster-camunda-dump-credentials
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-camunda-dump-credentials
+        image: postgres:17
+        name: dump
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
+        volumeMounts:
+        - mountPath: /scratch
+          name: scratch
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: my-cluster-camunda
+      volumes:
+      - emptyDir: {}
+        name: scratch

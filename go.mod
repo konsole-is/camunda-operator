@@ -15,6 +15,7 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
 	github.com/sourcehawk/operator-component-framework v0.19.1
+	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
@@ -154,7 +155,6 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sourcehawk/go-crd-condition-metrics v1.1.0 // indirect
 	github.com/sourcehawk/go-prometheus-gaugevecset v1.1.0 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect

@@ -322,13 +322,17 @@ spec:
         window: "P7D"
         # string. Optional, default: PT1H. How often Zeebe looks for backups outside the window.
         cleanupSchedule: "PT1H"
-    # object. Optional. The pod of the Job that dumps the logical database. A LogicalBackupRDBMS can replace this block as a whole.
+    # object. Optional. The Job that dumps the logical database: the pod settings, which a LogicalBackupRDBMS can replace as a whole, and the image, which it cannot.
     dump:
       # object. Optional. CPU and memory of the dump pod.
       resources: {}
-      # []EnvVar. Optional. Extra environment variables of the dump pod.
+      # integer. Optional. Seconds the dump Job may run before it is failed. Unset means 86400 (24 hours), applied by the operator when it renders the Job — not by the schema — so an unset value still inherits a preset's. There is always a deadline: a pod that cannot start consumes no retry, so an unbounded Job would stay active for as long as the backup lived.
+      activeDeadlineSeconds: 7200
+      # string. Optional, default: postgres:<probed major of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag. Cluster-level policy only: the Job runs under the cluster's ServiceAccount, with its cloud identity and database credentials, so the executable is the cluster owner's choice — a LogicalBackupRDBMS always inherits it.
+      postgresImage: ""
+      # []EnvVar. Optional. Extra environment variables of the dump pod, in every container. Unrestricted here: the cluster owner sets connection policy (PGSSLMODE included) inside their own boundary. A LogicalBackupRDBMS's own dump block may not supply anything under the PG or UPLOAD_ prefixes, and its variables reach the dump container only.
       extraEnv: []
-      # []EnvFromSource. Optional. Extra environment sources of the dump pod.
+      # []EnvFromSource. Optional. Extra environment sources of the dump pod, in every container, at most 8. The cap applies here and in a LogicalBackupRDBMS. It keeps the prefix rule of a LogicalBackupRDBMS inside the cost budget of the API server. The sources of a LogicalBackupRDBMS reach the dump container only.
       extraEnvFrom: []
       # map[string]string. Optional. Extra labels of the dump pod.
       podLabels: {}
@@ -338,11 +342,11 @@ spec:
         sidecar.istio.io/inject: "false"
       # object. Optional. Scheduling constraints of the dump pod. Replaces the block of a preset entirely.
       scheduling: {}
-      # object. Optional. Where the dump is written before it is uploaded. Replaces the block of a preset entirely.
+      # object. Optional. Where the dump is written before it is uploaded. Replaces the block of a preset entirely. The dump pod runs with fsGroup 999 (the postgres group), so a PVC a storage class hands over root-owned is still writable.
       scratchVolume:
         # Quantity. Optional. Size of the emptyDir that holds the dump.
         sizeLimit: 50Gi
-        # string. Optional. When set, the scratch volume is a PersistentVolumeClaim of this class instead of an emptyDir.
+        # string. Optional. When set, the scratch volume is a PersistentVolumeClaim of this class instead of an emptyDir. Requires sizeLimit: a PVC needs an explicit size.
         storageClassName: "fast"
   # object. Optional. Monitoring integrations.
   monitoring:

@@ -21,7 +21,10 @@ The contract has a lightweight validation-only controller: it never provisions a
 
 1. The operator watches every `DatabaseServerConfig` and the Secret it references, and re-runs validation whenever either changes.
 2. It checks that the Secret named by `adminCredentialsSecretRef` exists and contains the configured `usernameKey` and `passwordKey`.
-3. It sets the `Ready` condition: `Healthy` when the checks pass, `MissingSecret` otherwise.
+3. It opens an admin connection to the server with those credentials and reads the major version the server reports (`SELECT current_setting('server_version_num')`), publishing it as `status.serverVersion` with `status.probedAt`. A reachable server is probed again every 10 minutes, so a major upgrade behind the same endpoint reaches status without a spec change, and sooner when the spec or the admin credentials Secret changes; a fresh probe is never repeated in between, and an unreachable server is retried every 30 seconds.
+4. It sets the `Ready` condition: `Healthy` when the server answered, `MissingSecret` when the credentials do not resolve, `ConnectionFailed` when the server does not answer them.
+
+`Ready=True` therefore means the server, as declared, is usable with these credentials — not merely that a Secret exists. Consumers that pick client tools by server major, such as a [LogicalBackupRDBMS](logicalbackuprdbms.md) dump, read `status.serverVersion` and wait until it is published.
 
 Consumers read the contract by name and never care who produced it.
 The `pitr` block is declarative capability information: it states that the server performs continuous WAL archiving with the given retention, so that `PointInTimeRestore` can validate a requested restore timestamp against it.
@@ -72,10 +75,16 @@ spec:
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
-| `Ready` | `Healthy` | The admin credentials Secret exists and has the required keys. |
+| `Ready` | `Healthy` | The server answered the admin credentials and reported its version. |
 | `Ready` | `MissingSecret` | The Secret named by `adminCredentialsSecretRef` is missing or lacks the configured keys. |
+| `Ready` | `ConnectionFailed` | The server did not answer the admin credentials; the message names the endpoint and the error. |
 
-The operator records the last reconciled generation in `status.observedGeneration`.
+| Field | Meaning |
+| --- | --- |
+| `status.serverVersion` | The major version the server reported the last time it was reached, for example `"17"`. It stays at the last known value while the server is unreachable. |
+| `status.probedAt` | When the server was last reached and `serverVersion` read. Untouched by reconciles that find the probe fresh. |
+| `status.probedSecretVersion` | The resourceVersion of the admin credentials Secret the last probe used; a changed Secret is probed again before the interval. |
+| `status.observedGeneration` | The last reconciled generation. |
 
 ## Validation
 

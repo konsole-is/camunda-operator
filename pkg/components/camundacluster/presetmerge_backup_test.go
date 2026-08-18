@@ -42,22 +42,26 @@ func backupPreset() *v1.CamundaClusterPresetSpec {
 				},
 			},
 			Dump: &v1.BackupDumpSpec{
-				Resources: &corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("1"),
-						corev1.ResourceMemory: resource.MustParse("2Gi"),
+				DumpPodSpec: v1.DumpPodSpec{
+					Resources: &corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
 					},
+					ExtraEnv: []corev1.EnvVar{{Name: "TZ", Value: "UTC"}, {Name: "KEEP", Value: "preset"}},
+					ExtraEnvFrom: []corev1.EnvFromSource{{
+						ConfigMapRef: &corev1.ConfigMapEnvSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "preset-cm"},
+						},
+					}},
+					PodLabels:             map[string]string{"team": "preset", "shared": "preset"},
+					PodAnnotations:        map[string]string{"note": "preset", "shared": "preset"},
+					Scheduling:            &v1.SchedulingSpec{Tolerations: []corev1.Toleration{{Key: "preset"}}},
+					ScratchVolume:         &v1.ScratchVolumeSpec{SizeLimit: new(resource.MustParse("50Gi"))},
+					ActiveDeadlineSeconds: new(int64(3600)),
 				},
-				ExtraEnv: []corev1.EnvVar{{Name: "TZ", Value: "UTC"}, {Name: "KEEP", Value: "preset"}},
-				ExtraEnvFrom: []corev1.EnvFromSource{{
-					ConfigMapRef: &corev1.ConfigMapEnvSource{
-						LocalObjectReference: corev1.LocalObjectReference{Name: "preset-cm"},
-					},
-				}},
-				PodLabels:      map[string]string{"team": "preset", "shared": "preset"},
-				PodAnnotations: map[string]string{"note": "preset", "shared": "preset"},
-				Scheduling:     &v1.SchedulingSpec{Tolerations: []corev1.Toleration{{Key: "preset"}}},
-				ScratchVolume:  &v1.ScratchVolumeSpec{SizeLimit: new(resource.MustParse("50Gi"))},
+				PostgresImage: "mirror.example/postgres:17",
 			},
 		},
 	}}
@@ -137,7 +141,7 @@ func TestMergePresetContinuousHasThreeStates(t *testing.T) {
 
 func TestMergePresetMergesTheDumpBlockLikeAWorkload(t *testing.T) {
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
-		Dump: &v1.BackupDumpSpec{
+		Dump: &v1.BackupDumpSpec{DumpPodSpec: v1.DumpPodSpec{
 			Resources: &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
 			},
@@ -149,13 +153,16 @@ func TestMergePresetMergesTheDumpBlockLikeAWorkload(t *testing.T) {
 			}},
 			PodLabels:      map[string]string{"shared": "cluster", "own": "cluster"},
 			PodAnnotations: map[string]string{"shared": "cluster"},
-		},
+		}},
 	}}
 
 	merged := MergePreset(spec, backupPreset())
 
 	dump := merged.Backup.Dump
 	require.NotNil(t, dump)
+	assert.Equal(t, "mirror.example/postgres:17", dump.PostgresImage, "an unset image keeps the preset's")
+	require.NotNil(t, dump.ActiveDeadlineSeconds)
+	assert.Equal(t, int64(3600), *dump.ActiveDeadlineSeconds, "an unset deadline keeps the preset's")
 	assert.Equal(t, "8Gi", dump.Resources.Requests.Memory().String(), "requests merge by resource name")
 	assert.Equal(t, "1", dump.Resources.Requests.Cpu().String(), "an unset request keeps the preset value")
 	assert.Equal(
@@ -176,14 +183,20 @@ func TestMergePresetMergesTheDumpBlockLikeAWorkload(t *testing.T) {
 func TestMergePresetReplacesTheDumpWholeBlocks(t *testing.T) {
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
 		Dump: &v1.BackupDumpSpec{
-			Scheduling:    &v1.SchedulingSpec{Tolerations: []corev1.Toleration{{Key: "cluster"}}},
-			ScratchVolume: &v1.ScratchVolumeSpec{StorageClassName: new("fast")},
+			DumpPodSpec: v1.DumpPodSpec{
+				Scheduling:            &v1.SchedulingSpec{Tolerations: []corev1.Toleration{{Key: "cluster"}}},
+				ScratchVolume:         &v1.ScratchVolumeSpec{StorageClassName: new("fast")},
+				ActiveDeadlineSeconds: new(int64(600)),
+			},
+			PostgresImage: "cluster.example/postgres:17.4",
 		},
 	}}
 
 	merged := MergePreset(spec, backupPreset())
 
 	dump := merged.Backup.Dump
+	assert.Equal(t, "cluster.example/postgres:17.4", dump.PostgresImage, "the cluster image wins")
+	assert.Equal(t, int64(600), *dump.ActiveDeadlineSeconds, "the cluster deadline wins")
 	require.Len(t, dump.Scheduling.Tolerations, 1)
 	assert.Equal(t, "cluster", dump.Scheduling.Tolerations[0].Key)
 	require.NotNil(t, dump.ScratchVolume)
@@ -199,7 +212,9 @@ func TestMergePresetLeavesTheBackupPresetUntouched(t *testing.T) {
 	preset := backupPreset()
 	spec := v1.CamundaClusterSpec{Backup: &v1.ClusterBackupSpec{
 		PrimaryStorage: &v1.PrimaryStorageBackupSpec{Schedule: "PT5M"},
-		Dump:           &v1.BackupDumpSpec{PodLabels: map[string]string{"team": "cluster"}},
+		Dump: &v1.BackupDumpSpec{
+			DumpPodSpec: v1.DumpPodSpec{PodLabels: map[string]string{"team": "cluster"}},
+		},
 	}}
 
 	_ = MergePreset(spec, preset)

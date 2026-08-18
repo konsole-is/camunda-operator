@@ -27,10 +27,14 @@ import (
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -46,9 +50,11 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseserverconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
+	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -66,8 +72,13 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+// cliImageEnv is the environment variable that defaults
+// --camunda-operator-cli-image. The packaging sets it to the published image.
+const cliImageEnv = "CAMUNDA_OPERATOR_CLI_IMAGE"
+
 // nolint:gocyclo
 func main() {
+	var cliImage string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -101,6 +112,11 @@ func main() {
 		&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers",
 	)
+	flag.StringVar(
+		&cliImage, "camunda-operator-cli-image", os.Getenv(cliImageEnv),
+		"The camunda-operator-cli image that the backup Jobs run for their upload container. "+
+			"Required. Defaults to the "+cliImageEnv+" environment variable.",
+	)
 	opts := zap.Options{
 		Development: true,
 	}
@@ -108,6 +124,18 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// The LogicalBackupRDBMS controller renders Jobs that run the CLI image.
+	// Without one it can only guess, so the manager refuses to start.
+	if cliImage == "" {
+		setupLog.Error(
+			nil,
+			"The camunda-operator-cli image is required: set --camunda-operator-cli-image "+
+				"or the "+cliImageEnv+" environment variable to the published image, "+
+				"for example ghcr.io/konsole-is/camunda-operator-cli:<version>",
+		)
+		os.Exit(1)
+	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -191,7 +219,18 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
+		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				// The operator only tracks its own Jobs. A cache of every Job
+				// in the cluster wastes memory on foreign workloads.
+				&batchv1.Job{}: {
+					Label: k8slabels.SelectorFromSet(k8slabels.Set{
+						labels.ManagedByKey: labels.ManagedBy,
+					}),
+				},
+			},
+		},
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
@@ -236,6 +275,14 @@ func main() {
 		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ElasticsearchCluster")
+		os.Exit(1)
+	}
+	if err := (&logicalbackuprdbms.LogicalBackupRDBMSReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr, logicalbackuprdbms.Options{CLIImage: cliImage}); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupRDBMS")
 		os.Exit(1)
 	}
 	if err := (&database.DatabaseReconciler{

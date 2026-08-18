@@ -18,6 +18,7 @@ package databaseserverconfig
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 )
 
@@ -42,6 +44,8 @@ var (
 	env       *testenv.Env
 	ctx       context.Context
 	k8sClient client.Client
+	// probes counts every server probe the controller ran.
+	probes atomic.Int64
 )
 
 func TestDatabaseServerConfigController(t *testing.T) {
@@ -58,6 +62,15 @@ var _ = BeforeSuite(func() {
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
+			// The real probe, counted. The specs prove that the controller does
+			// not repeat a fresh probe on every reconcile.
+			probe: func(
+				ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
+			) (string, error) {
+				probes.Add(1)
+
+				return probe(ctx, cfg, user, password)
+			},
 		}).SetupWithManager(mgr)
 	})
 

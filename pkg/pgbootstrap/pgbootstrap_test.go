@@ -141,6 +141,43 @@ func TestPing(t *testing.T) {
 	assert.NoError(t, b.Ping(t.Context()))
 }
 
+// TestServerVersionReportsTheMajor pins the shape that consumers depend on.
+// It is the major alone ("17"), which selects the matching client tools, and
+// not the full server_version_num.
+func TestServerVersionReportsTheMajor(t *testing.T) {
+	b := connect(t)
+
+	major, err := b.ServerVersion(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "17", major)
+}
+
+func TestMajorVersionParsesServerVersionNum(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"170004": "17",
+		"160009": "16",
+		"180000": "18",
+		"100023": "10",
+		// Before PostgreSQL 10 the major has two components. 9.6.24 is
+		// "90624", and its client tools are postgres:9.6, not postgres:9.
+		"90624": "9.6",
+		"90418": "9.4",
+		"90023": "9.0",
+	}
+	for num, want := range cases {
+		got, err := majorVersion(num)
+		require.NoError(t, err, num)
+		assert.Equal(t, want, got, num)
+	}
+
+	for _, num := range []string{"", "1700", "17.4", "17000a"} {
+		_, err := majorVersion(num)
+		require.Error(t, err, num)
+	}
+}
+
 func TestEnsureDatabaseRejectsInvalidIdentifier(t *testing.T) {
 	b := connect(t)
 	ctx := t.Context()

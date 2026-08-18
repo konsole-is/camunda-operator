@@ -1,0 +1,10 @@
+apiVersion: core.camunda.io/v1
+kind: LogicalBackupRDBMS
+metadata:
+  labels:
+    camunda.io/cluster: my-cluster
+  name: my-cluster-backup
+  namespace: my-cluster-ns
+spec:
+  clusterRef:
+    name: my-cluster
