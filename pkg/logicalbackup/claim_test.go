@@ -449,9 +449,11 @@ func TestATerminalReasonResumeFailedDecidesOverAStaleReadyCondition(t *testing.T
 	backup := holderResource(first, v1.LogicalBackupFailed).(*unstructured.Unstructured)
 	require.NoError(t, unstructured.SetNestedField(backup.Object, "ResumeFailed", "status", "terminalReason"))
 	// The stale Ready of an earlier write: still Progressing.
-	require.NoError(t, unstructured.SetNestedSlice(backup.Object, []any{
-		map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "Progressing"},
-	}, "status", "conditions"))
+	require.NoError(t, unstructured.SetNestedSlice(
+		backup.Object, []any{
+			map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "Progressing"},
+		}, "status", "conditions",
+	))
 	c := claimClient(t, backup, holderResource(second, v1.LogicalBackupPending))
 	leaseHeldBy(t, c, first)
 
@@ -474,9 +476,11 @@ func TestATerminalReasonResumeFailedDecidesOverAStaleReadyCondition(t *testing.T
 func TestATerminalReasonFailedIsInactiveDespiteAStaleResumeFailedReady(t *testing.T) {
 	backup := holderResource(first, v1.LogicalBackupFailed).(*unstructured.Unstructured)
 	require.NoError(t, unstructured.SetNestedField(backup.Object, "Failed", "status", "terminalReason"))
-	require.NoError(t, unstructured.SetNestedSlice(backup.Object, []any{
-		map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
-	}, "status", "conditions"))
+	require.NoError(t, unstructured.SetNestedSlice(
+		backup.Object, []any{
+			map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
+		}, "status", "conditions",
+	))
 	c := claimClient(t, backup)
 
 	active, err := logicalbackup.HolderActive(t.Context(), c, claimNamespace, first)
@@ -505,9 +509,11 @@ func TestAForeignLeaseSpellingOurIdentityIsNotSelf(t *testing.T) {
 	assert.Equal(t, first.String(), got, "it blocks even the claimant it spells")
 
 	var after coordinationv1.Lease
-	require.NoError(t, c.Get(t.Context(), client.ObjectKey{
-		Namespace: claimNamespace, Name: logicalbackup.ClaimLeaseName("prod"),
-	}, &after))
+	require.NoError(t, c.Get(
+		t.Context(), client.ObjectKey{
+			Namespace: claimNamespace, Name: logicalbackup.ClaimLeaseName("prod"),
+		}, &after,
+	))
 	assert.Empty(t, after.GetAnnotations(), "the foreign Lease was not taken over or rewritten")
 }
 
