@@ -1656,11 +1656,13 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			ctx, client.ObjectKey{Namespace: r.namespace, Name: "storage"}, &storage,
 		)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &storage)).To(Succeed())
-		r.management.SetHistoryState(id, "COMPLETED", "")
 
 		// The destination is verified on every poll of the history backup,
 		// so the loss is caught there, before the status of that backup is
-		// trusted.
+		// trusted. The history backup stays in progress until then. If the
+		// spec completed it now, it raced a reconcile that verified the
+		// destination before the delete and then saw the completed history.
+		// That reconcile fails one step later, in SnapshotRecords.
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
 		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupHistory"))
@@ -1894,8 +1896,11 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			cluster.Spec.BackupStorageRef = other.Name
 			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-		r.management.SetHistoryState(id, "COMPLETED", "")
 
+		// The history backup stays in progress until the step failed on
+		// the switch, for the same reason as in the storage-loss spec: a
+		// completed history races the reconcile that verified the old
+		// contract, and the failure then lands in SnapshotRecords.
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
 		Expect(final.Status.FailureMessage).To(SatisfyAll(
