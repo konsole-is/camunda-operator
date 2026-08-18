@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -77,7 +78,7 @@ func assertGoldens(t *testing.T, dir string, in Input) {
 	}
 
 	if ResolveAuth(in).Method == v1.AuthenticationMethodBasic {
-		admin, err := AdminSecretComponent(in.Cluster, true, goldenPassword)
+		admin, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: goldenPassword})
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "admin-secret.yaml"), admin,
@@ -321,7 +322,7 @@ func TestAdminSecretComponentCarriesThePassword(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureMinimal(t)
-	comp, err := AdminSecretComponent(in.Cluster, true, "s3cret")
+	comp, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: "s3cret"})
 	require.NoError(t, err)
 	assert.Equal(
 		t,
@@ -336,6 +337,27 @@ func TestAdminSecretComponentCarriesThePassword(t *testing.T) {
 	assert.Equal(t, "my-cluster-camunda-admin", secret.Name)
 	assert.Equal(t, []byte("admin"), secret.Data["username"])
 	assert.Equal(t, []byte("s3cret"), secret.Data["password"])
+	assert.Empty(t, secret.Annotations)
+}
+
+// A password that came from an existing Secret must bind its apply to that
+// Secret, or a delete between the read and the apply recreates the Secret with
+// the old password and the delete rotates nothing.
+func TestAdminSecretComponentCarriesTheApplyPrecondition(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureMinimal(t)
+	reused := credentials.Password{Value: "s3cret", SourceUID: "uid-1"}
+	comp, err := AdminSecretComponent(in.Cluster, true, reused)
+	require.NoError(t, err)
+
+	objects := previewObjects(t, comp)
+	require.Len(t, objects, 1)
+	assert.Equal(
+		t,
+		map[string]string{credentials.PreconditionAnnotation: "uid-1"},
+		objects[0].GetAnnotations(),
+	)
 }
 
 func TestBrokerClaimSelector(t *testing.T) {

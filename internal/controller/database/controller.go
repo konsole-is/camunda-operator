@@ -196,7 +196,7 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 		return fmt.Errorf("ensuring database %q: %w", name, err)
 	}
 
-	if err := b.EnsureUser(ctx, rb.AppUser, rb.AppPassword); err != nil {
+	if err := b.EnsureUser(ctx, rb.AppUser, rb.AppPassword.Value); err != nil {
 		return fmt.Errorf("ensuring application role %q: %w", rb.AppUser, err)
 	}
 	if err := b.GrantApplication(ctx, rb.AppUser, name); err != nil {
@@ -207,7 +207,7 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 		return nil
 	}
 
-	if err := b.EnsureBackupUser(ctx, rb.BackupUser, rb.BackupPassword, name); err != nil {
+	if err := b.EnsureBackupUser(ctx, rb.BackupUser, rb.BackupPassword.Value, name); err != nil {
 		return fmt.Errorf("ensuring backup role %q on %q: %w", rb.BackupUser, name, err)
 	}
 
@@ -385,7 +385,9 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = componentClient
+		// The apply wrapper enforces the precondition of a reused role
+		// password, so a delete of a credential Secret rotates it.
+		r.componentClient = credentials.NewApplyClient(componentClient)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(

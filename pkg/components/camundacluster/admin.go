@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -37,24 +38,30 @@ const adminComponentName = "admin-secret"
 // The component is gated on enabled (basic authentication): when disabled it
 // deletes the Secret and reports Disabled, so a switch to OIDC removes the
 // credentials. The controller reads or generates the password with
-// pkg/credentials and keeps it stable across reconciles; it passes an empty
+// pkg/credentials and keeps it stable across reconciles; it passes the zero
 // password when disabled. The component takes part in Ready only when
 // enabled.
+//
+// A reused password carries its apply precondition onto the Secret, so a
+// delete of the Secret always rotates the password. The controller must
+// reconcile the component through credentials.NewApplyClient for the
+// precondition to hold.
 func AdminSecretComponent(
 	cluster *v1.CamundaCluster,
 	enabled bool,
-	password string,
+	password credentials.Password,
 ) (*component.Component, error) {
 	admin, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      AdminSecretName(cluster),
-			Namespace: cluster.Namespace,
-			Labels:    labels.Managed(labels.Cluster(cluster.Name), adminComponentName),
+			Name:        AdminSecretName(cluster),
+			Namespace:   cluster.Namespace,
+			Labels:      labels.Managed(labels.Cluster(cluster.Name), adminComponentName),
+			Annotations: password.PreconditionAnnotations(),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
 			AdminUsernameKey: []byte(AdminUsername),
-			AdminPasswordKey: []byte(password),
+			AdminPasswordKey: []byte(password.Value),
 		},
 	}).Build()
 	if err != nil {

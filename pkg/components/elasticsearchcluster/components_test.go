@@ -34,6 +34,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
@@ -148,10 +149,10 @@ func assertElasticsearchClusterGoldens(
 	scheme := goldenScheme(t)
 	base := filepath.Join("testdata", "golden", dir)
 
-	credentials, err := CredentialsComponent(cluster, goldenPassword)
+	credentialsComp, err := CredentialsComponent(cluster, credentials.Password{Value: goldenPassword})
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
-		t, filepath.Join(base, "credentials.yaml"), credentials,
+		t, filepath.Join(base, "credentials.yaml"), credentialsComp,
 		golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
 
@@ -415,7 +416,7 @@ func TestCredentialsComponentCarriesThePassword(t *testing.T) {
 
 	cluster, _ := goldenMinimalElasticsearchCluster()
 
-	comp, err := CredentialsComponent(cluster, "s3cret")
+	comp, err := CredentialsComponent(cluster, credentials.Password{Value: "s3cret"})
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()
@@ -443,6 +444,44 @@ func TestCredentialsComponentCarriesThePassword(t *testing.T) {
 	assert.Contains(t, definition, "create_snapshot")
 	assert.Contains(t, definition, "monitor")
 	assert.NotContains(t, definition, "superuser")
+}
+
+// A password that came from an existing Secret must bind its apply to that
+// Secret, or a delete between the read and the apply recreates the Secret with
+// the old password and the delete rotates nothing. The role Secret holds no
+// credential and takes no precondition.
+func TestCredentialsComponentCarriesTheApplyPrecondition(t *testing.T) {
+	t.Parallel()
+
+	cluster, _ := goldenMinimalElasticsearchCluster()
+
+	reused := credentials.Password{Value: "s3cret", SourceUID: "uid-1"}
+	comp, err := CredentialsComponent(cluster, reused)
+	require.NoError(t, err)
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	annotations := map[string]map[string]string{}
+	for _, obj := range objects {
+		annotations[obj.GetName()] = obj.GetAnnotations()
+	}
+	assert.Equal(
+		t,
+		map[string]string{credentials.PreconditionAnnotation: "uid-1"},
+		annotations["my-cluster-es-es-user"],
+	)
+	assert.Empty(t, annotations["my-cluster-es-es-roles"])
+
+	// A new password has no source object, so the apply must be free to
+	// create the Secret.
+	fresh, err := CredentialsComponent(cluster, credentials.Password{Value: "s3cret"})
+	require.NoError(t, err)
+	objects, err = fresh.Preview()
+	require.NoError(t, err)
+	for _, obj := range objects {
+		assert.Empty(t, obj.GetAnnotations(), obj.GetName())
+	}
 }
 
 // User pod labels must not override the discovery labels that extensions
