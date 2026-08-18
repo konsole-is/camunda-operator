@@ -75,6 +75,23 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 		return r.parkPending(backup, failure), nil
 	}
 
+	// The claim is the gate. The pre-checks above order the claimants and
+	// verify the references. Only the Lease decides who holds the cluster,
+	// and it is taken before the identity of the backup is written.
+	holder, err := r.claimCluster(ctx, backup)
+	if err != nil {
+		return settle, err
+	}
+	if holder != "" {
+		return r.parkPending(backup, &conditions.PreCheckFailure{
+			Reason: v1.ReasonBackupInProgress,
+			Message: fmt.Sprintf(
+				"backup %s of CamundaCluster %s/%s holds the cluster; backups of one cluster run one at a time",
+				holder, precheck.Cluster.Namespace, precheck.Cluster.Name,
+			),
+		}), nil
+	}
+
 	highest, err := r.highestSiblingBackupID(ctx, backup)
 	if err != nil {
 		return settle, err

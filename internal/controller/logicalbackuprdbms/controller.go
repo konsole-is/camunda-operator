@@ -119,11 +119,6 @@ type Options struct {
 	OpenBucket func(
 		ctx context.Context, cfg *v1.ObjectStorageConfig, creds *objectstore.Credentials,
 	) (ArtifactBucket, error)
-	// SiblingInProgress reports a started, non-terminal backup of the other
-	// kind for the same cluster; pending siblings do not block. The manager
-	// wires the LogicalBackupElasticsearch controller in here; nil means no
-	// other kind is checked.
-	SiblingInProgress logicalbackup.SiblingInProgress
 	// RetryInterval overrides defaultRetryInterval. Zero means the default.
 	RetryInterval time.Duration
 	// MidRunGrace overrides defaultMidRunGrace. Zero means the default.
@@ -181,6 +176,7 @@ type LogicalBackupRDBMSReconciler struct {
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile drives one backup to a terminal phase: admission, the dump Job,
@@ -231,8 +227,13 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 	if backup.Terminal() {
 		// A conflict on the terminal flush can restore a stale Ready from
 		// the server; re-staging the terminal condition is idempotent and
-		// heals it on the next look.
+		// heals it on the next look. The claim on the cluster goes back
+		// here, after the terminal status was flushed and never before it.
+		// Release is a no-op when nothing is held.
 		r.stageTerminal(&backup)
+		if err := r.releaseClaim(ctx, &backup); err != nil {
+			return ctrl.Result{}, err
+		}
 
 		return ctrl.Result{}, nil
 	}

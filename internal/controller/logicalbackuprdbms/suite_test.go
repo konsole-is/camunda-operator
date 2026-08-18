@@ -25,7 +25,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -34,7 +33,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
-	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
@@ -52,22 +50,6 @@ var (
 	bucket        *fakeBucket
 	reconciler    *LogicalBackupRDBMSReconciler
 )
-
-// sibling is the mutex-guarded seam behind reconciler.SiblingInProgress: the
-// manager goroutine reads it while specs swap it, so a bare field write would
-// race.
-var (
-	siblingMu sync.Mutex
-	sibling   logicalbackup.SiblingInProgress
-)
-
-// setSibling swaps the sibling seam for one spec; call it again with nil to
-// restore.
-func setSibling(fn logicalbackup.SiblingInProgress) {
-	siblingMu.Lock()
-	defer siblingMu.Unlock()
-	sibling = fn
-}
 
 // fakeBucket records the deletes of the finalizer, standing in for the
 // backup bucket.
@@ -126,16 +108,6 @@ var _ = BeforeSuite(func() {
 				context.Context, *v1.ObjectStorageConfig, *objectstore.Credentials,
 			) (ArtifactBucket, error) {
 				return bucket, nil
-			},
-			SiblingInProgress: func(ctx context.Context, cluster types.NamespacedName) (string, error) {
-				siblingMu.Lock()
-				fn := sibling
-				siblingMu.Unlock()
-				if fn == nil {
-					return "", nil
-				}
-
-				return fn(ctx, cluster)
 			},
 		})
 	})

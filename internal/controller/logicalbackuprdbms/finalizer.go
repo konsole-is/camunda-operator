@@ -96,6 +96,12 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 		}
 	}
 
+	// The claim goes back before the finalizer does, also for a backup that
+	// claimed the cluster but never flushed an id.
+	if err := r.releaseClaim(ctx, backup); err != nil {
+		return settle, err
+	}
+
 	return settle, r.releaseFinalizer(ctx, backup)
 }
 

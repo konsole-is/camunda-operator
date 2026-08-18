@@ -17,7 +17,6 @@ limitations under the License.
 package logicalbackuprdbms
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	batchv1 "k8s.io/api/batch/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -481,6 +481,15 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		second := createBackup(w)
 		expectPending(second, v1.ReasonBackupInProgress)
+		// The in-kind pre-filter names the started sibling; the Lease behind
+		// it is held by the same backup.
+		Expect(readyCondition(second).Message).To(ContainSubstring(first.Name))
+		leaseKey := types.NamespacedName{
+			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+		}
+		var lease coordinationv1.Lease
+		Expect(k8sClient.Get(ctx, leaseKey, &lease)).To(Succeed())
+		Expect(*lease.Spec.HolderIdentity).To(Equal(claimant(first).String()))
 
 		By("finishing the first backup")
 		markJob(first, w, batchv1.JobComplete)
@@ -496,25 +505,97 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(first.Status.Phase).To(Equal(v1.LogicalBackupCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		By("letting the waiting backup start, so a done backup never deadlocks the queue")
+		By("letting the waiting backup claim and start, so a done backup never deadlocks the queue")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), second)).To(Succeed())
 			g.Expect(second.Status.BackupID).NotTo(BeZero())
 			g.Expect(second.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(k8sClient.Get(ctx, leaseKey, &lease)).To(Succeed())
+			g.Expect(*lease.Spec.HolderIdentity).To(Equal(claimant(second).String()))
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("consults the sibling kind through the seam", func() {
+	It("releases the Lease once the holder is terminal", func() {
 		w := createWorld()
-		// The seam contract reports only STARTED, non-terminal siblings; the
-		// fake stands in for one that already allocated its identity.
-		setSibling(func(context.Context, types.NamespacedName) (string, error) {
-			return "an-elasticsearch-backup", nil
-		})
-		DeferCleanup(func() { setSibling(nil) })
+		backup := createBackup(w)
+		leaseKey := types.NamespacedName{
+			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+		}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, leaseKey, &coordinationv1.Lease{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		markJob(backup, w, batchv1.JobFailed)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(k8sClient.Get(ctx, leaseKey, &coordinationv1.Lease{})).NotTo(Succeed())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The claim on a cluster is a Lease. A foreign holder — anything this
+	// operator did not write, or the other backup kind — blocks; a foreign
+	// identity is never taken over.
+	It("waits behind a foreign Lease and never takes it over", func() {
+		w := createWorld()
+		holder := "someone-else"
+		lease := &coordinationv1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: logicalbackup.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
+			},
+			Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder},
+		}
+		Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 
 		backup := createBackup(w)
 		expectPending(backup, v1.ReasonBackupInProgress)
+		Expect(readyCondition(backup).Message).To(ContainSubstring("someone-else"))
+		Consistently(func(g Gomega) {
+			var current coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(lease), &current)).To(Succeed())
+			g.Expect(*current.Spec.HolderIdentity).To(Equal("someone-else"))
+		}, "2s", interval).Should(Succeed())
+	})
+
+	// A holder that is gone no longer needs the claim: it is taken over, so a
+	// crash between the claim and the release never blocks the cluster.
+	It("takes over the Lease of a holder that no longer exists", func() {
+		w := createWorld()
+		holder := "LogicalBackupRDBMS/ghost/00000000-0000-0000-0000-000000000000"
+		lease := &coordinationv1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: logicalbackup.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
+			},
+			Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder},
+		}
+		Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+
+		backup := createBackup(w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			var current coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(lease), &current)).To(Succeed())
+			g.Expect(*current.Spec.HolderIdentity).To(Equal(claimant(backup).String()))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("releases the Lease when a running holder is deleted", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		leaseKey := types.NamespacedName{
+			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+		}
+		Eventually(func(g Gomega) {
+			var current coordinationv1.Lease
+			g.Expect(k8sClient.Get(ctx, leaseKey, &current)).To(Succeed())
+			g.Expect(*current.Spec.HolderIdentity).To(Equal(claimant(backup).String()))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, leaseKey, &coordinationv1.Lease{})).NotTo(Succeed())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("reports MissingSecret when the database has no backup credentials", func() {
