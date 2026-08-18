@@ -258,6 +258,12 @@ func TestLocationPinsWhereObjectsLive(t *testing.T) {
 	}}
 	assert.Equal(t, "s3://backups/clusters (endpoint http://minio.minio.svc:9000)", s3.Location())
 
+	// The two spellings of one endpoint are one location: a trailing slash
+	// must never read as a retarget and strand a dump.
+	slashed := s3.DeepCopy()
+	slashed.Spec.S3.Endpoint = "http://minio.minio.svc:9000/"
+	assert.Equal(t, s3.Location(), slashed.Location())
+
 	rotated := s3.DeepCopy()
 	rotated.Spec.S3.Auth = v1.S3StorageAuth{
 		Type: v1.ObjectStorageAuthTypeCredentials,
@@ -298,7 +304,13 @@ func TestLocationPinsWhereObjectsLive(t *testing.T) {
 			Auth: v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
 		},
 	}}
-	assert.Equal(t, "azblob://acct/c/p", azure.Location())
+	// Azure endpoints render through ServiceEndpoint: an unset endpoint, the
+	// explicit public one, and its slashed spelling are all one place, so
+	// they are one location.
+	assert.Equal(t, "azblob://acct/c/p (endpoint https://acct.blob.core.windows.net)", azure.Location())
+	explicit := azure.DeepCopy()
+	explicit.Spec.AzureBlob.Endpoint = "https://acct.blob.core.windows.net/"
+	assert.Equal(t, azure.Location(), explicit.Location())
 
 	mismatched := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{Type: v1.ObjectStorageTypeGCS}}
 	assert.Empty(t, mismatched.Location())

@@ -500,7 +500,9 @@ func (in *ObjectStorageConfig) BasePath() string {
 // string that changes when, and only when, a key written through this
 // contract would land somewhere else: the storage type, the bucket (or the
 // account and container), the base path, and the endpoint or region that
-// selects the service. Credentials and auth are not part of it. Consumers
+// selects the service — endpoints normalized the way the clients use them,
+// so a trailing slash never reads as a retarget. Credentials and auth are
+// not part of it. Consumers
 // that pin the destination of an object record it, so a later retarget of
 // the contract cannot make them delete an unrelated object at the same key.
 // It is empty when the declared block is not set.
@@ -512,8 +514,8 @@ func (in *ObjectStorageConfig) Location() string {
 			return ""
 		}
 		service := "region " + in.Spec.S3.Region
-		if in.Spec.S3.Endpoint != "" {
-			service = "endpoint " + in.Spec.S3.Endpoint
+		if endpoint := strings.TrimRight(in.Spec.S3.Endpoint, "/"); endpoint != "" {
+			service = "endpoint " + endpoint
 		}
 
 		return "s3://" + in.Spec.S3.BucketName + "/" + base + " (" + service + ")"
@@ -528,8 +530,11 @@ func (in *ObjectStorageConfig) Location() string {
 			return ""
 		}
 		location := "azblob://" + in.Spec.AzureBlob.AccountName + "/" + in.Spec.AzureBlob.Container + "/" + base
-		if in.Spec.AzureBlob.Endpoint != "" {
-			location += " (endpoint " + in.Spec.AzureBlob.Endpoint + ")"
+		// ServiceEndpoint trims trailing slashes, so the two spellings of one
+		// endpoint yield one location: what the clients reach is what the
+		// location records, and a slash is never mistaken for a retarget.
+		if endpoint := in.Spec.AzureBlob.ServiceEndpoint(); endpoint != "" {
+			location += " (endpoint " + endpoint + ")"
 		}
 
 		return location
