@@ -54,18 +54,21 @@ func (f *PreCheckFailure) Error() string { return f.Message }
 // size. 8 KiB keeps the message readable and far under the cap.
 const MaxMessageLength = 8 << 10
 
-// BoundMessage returns message cut to MaxMessageLength bytes on a rune
-// boundary, marked "(truncated, N bytes)" when it was cut. A message within
-// the bound comes back unchanged.
+// BoundMessage returns message when it is within MaxMessageLength bytes.
+// Otherwise it returns a prefix of message cut on a rune boundary, followed
+// by "... (truncated, N bytes)" with the original size — and the whole
+// result, marker included, is at most MaxMessageLength bytes, so a caller
+// can size a field to the constant.
 func BoundMessage(message string) string {
 	if len(message) <= MaxMessageLength {
 		return message
 	}
-	cut := message[:MaxMessageLength]
+	marker := fmt.Sprintf("... (truncated, %d bytes)", len(message))
+	cut := message[:MaxMessageLength-len(marker)]
 	for !utf8.ValidString(cut) {
 		cut = cut[:len(cut)-1]
 	}
-	return fmt.Sprintf("%s... (truncated, %d bytes)", cut, len(message))
+	return cut + marker
 }
 
 // Ready builds a Ready condition observed at the given generation. It sets no
