@@ -356,3 +356,35 @@ func TestRejectedErrorKeepsASmallBodyWhole(t *testing.T) {
 	assert.True(t, strings.HasSuffix(err.Error(), "returned 500: repository is missing"), err.Error())
 	assert.NotContains(t, err.Error(), "truncated")
 }
+
+// DropNext covers every operation FailNext names, not only the snapshot
+// create: a fake that is unreachable for one operation and reachable for
+// another must be able to say so for any of them.
+func TestDropNextReachesEveryOperation(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+
+	server.DropNext("stats", 1)
+	_, _, err := client.MaxNodeFSTotalAndUsedBytes(ctx)
+	require.ErrorIs(t, err, esadmin.ErrUnreachable)
+	_, _, err = client.MaxNodeFSTotalAndUsedBytes(ctx)
+	require.NoError(t, err, "one drop, then reachable again")
+
+	server.DropNext("snapshotStatus", 1)
+	_, err = client.SnapshotStatus(ctx, "repo", "absent")
+	require.ErrorIs(t, err, esadmin.ErrUnreachable)
+
+	server.DropNext("snapshotDelete", 1)
+	require.ErrorIs(t, client.DeleteSnapshot(ctx, "repo", "absent"), esadmin.ErrUnreachable)
+
+	server.DropNext("reload", 1)
+	require.ErrorIs(t, client.ReloadSecureSettings(ctx), esadmin.ErrUnreachable)
+
+	server.DropNext("repository", 1)
+	require.ErrorIs(
+		t,
+		client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}),
+		esadmin.ErrUnreachable,
+	)
+}

@@ -90,6 +90,7 @@ type nodeFS struct {
 func New() *Server {
 	s := newServer()
 	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
+	s.server.Config.SetKeepAlivesEnabled(false)
 
 	return s
 }
@@ -101,6 +102,7 @@ func New() *Server {
 func NewTLS() *Server {
 	s := newServer()
 	s.server = httptest.NewTLSServer(http.HandlerFunc(s.handle))
+	s.server.Config.SetKeepAlivesEnabled(false)
 
 	return s
 }
@@ -235,8 +237,13 @@ func (s *Server) FailNext(op string, n int) {
 // DropNext makes the next n calls of op close the connection without any
 // response, the way a dropped route or a broken proxy does. The client of
 // pkg/esadmin reports such a call as ErrUnreachable. op takes the values of
-// FailNext. A fake can be reachable for one operation and unreachable for
-// another, for example a proxy that serves GET and drops PUT.
+// FailNext, and every handler honors it. A fake can be reachable for one
+// operation and unreachable for another, for example a proxy that serves
+// GET and drops PUT.
+//
+// The fake serves without keep-alive, so every call opens its own
+// connection: the Go transport retries an idempotent request that fails on
+// a reused connection, and a drop that it retried away would be invisible.
 func (s *Server) DropNext(op string, n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -287,6 +294,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == http.MethodPost && path == "_nodes/reload_secure_settings":
+		if s.dropping(w, "reload") {
+			return
+		}
 		if s.failing("reload") {
 			errorBody(w, http.StatusInternalServerError, "injected reload failure")
 			return
@@ -296,6 +306,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	case r.Method == http.MethodGet && path == "_nodes/stats/fs":
 		s.statsCalls++
+		if s.dropping(w, "stats") {
+			return
+		}
 		if s.failing("stats") {
 			errorBody(w, http.StatusInternalServerError, "injected stats failure")
 			return
@@ -314,6 +327,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
 
 	case len(parts) == 2 && parts[0] == snapshotPath && r.Method == http.MethodPut:
+		if s.dropping(w, "repository") {
+			return
+		}
 		if s.failing("repository") {
 			errorBody(w, http.StatusInternalServerError, "injected repository failure")
 			return
@@ -394,6 +410,9 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
 	case http.MethodGet:
+		if s.dropping(w, "snapshotStatus") {
+			return
+		}
 		if s.failing("snapshotStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
@@ -420,6 +439,9 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 		writeJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
 
 	case http.MethodDelete:
+		if s.dropping(w, "snapshotDelete") {
+			return
+		}
 		if s.failing("snapshotDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return
