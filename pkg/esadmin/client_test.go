@@ -527,3 +527,22 @@ func TestEnsureSnapshotRepositoryRegistersAzure(t *testing.T) {
 	assert.Equal(t, "default", repo.Settings["client"])
 	assert.NotContains(t, repo.Settings, "bucket")
 }
+
+// The type and the bucket are what every repository needs, and the caller
+// supplies both. A config that carries neither reaches Elasticsearch as a
+// registration of type "", which it rejects with a message about the request
+// body rather than about the caller. Rejecting it here names the real fault.
+func TestEnsureSnapshotRepositoryRejectsAnIncompleteConfig(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	for name, cfg := range map[string]esadmin.RepositoryConfig{
+		"no type":   {Bucket: "camunda-backups"},
+		"no bucket": {Type: esadmin.RepositoryTypeS3},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Error(t, client.EnsureSnapshotRepository(ctx, "my-cluster", cfg))
+			assert.Nil(t, server.Repository("my-cluster"), "nothing reaches Elasticsearch")
+		})
+	}
+}

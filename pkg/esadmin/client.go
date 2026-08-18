@@ -143,6 +143,18 @@ func New(endpoint, user, pass string, ca []byte) (*Client, error) {
 // with an idempotent PUT: registering an already registered repository
 // updates it in place.
 func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg RepositoryConfig) error {
+	// The type and the bucket come from the caller, and Elasticsearch reports
+	// a missing one as a fault of the request body. Naming the field here
+	// keeps the diagnosis with the caller that left it empty.
+	switch cfg.Type {
+	case RepositoryTypeS3, RepositoryTypeGCS, RepositoryTypeAzure:
+	default:
+		return fmt.Errorf("repository %q: unknown repository type %q", name, cfg.Type)
+	}
+	if cfg.Bucket == "" {
+		return fmt.Errorf("repository %q: the bucket of a %s repository is empty", name, cfg.Type)
+	}
+
 	settings := map[string]any{"client": DefaultClientName}
 	if cfg.BasePath != "" {
 		settings["base_path"] = cfg.BasePath
