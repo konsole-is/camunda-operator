@@ -147,6 +147,14 @@ type JobInput struct {
 	// otherwise the pod settings of the cluster's spec.backup.dump. Nil
 	// means defaults.
 	Dump *v1.DumpPodSpec
+	// BackupOwnsDump reports that Dump is the backup's own spec.dump. Then
+	// its extraEnv and extraEnvFrom reach the dump container only. The
+	// upload container never takes environment from a backup. Cloud SDKs
+	// read endpoint, proxy, and configuration variables from the
+	// environment, so a backup author with no access to the bucket must not
+	// steer where the dump goes. The block of the cluster reaches every
+	// container: it is the policy of the cluster owner.
+	BackupOwnsDump bool
 	// PostgresImage is the image of the dump container. It is the image of
 	// the cluster block, or empty for the default postgres:<ServerVersion>.
 	// It never comes from the backup. The Job runs under the cluster's
@@ -440,10 +448,15 @@ func uploadContainer(in JobInput, dump *v1.DumpPodSpec, spec string) corev1.Cont
 		Name:            "upload",
 		Image:           in.CLIImage,
 		Args:            []string{"upload"},
-		Env:             mergeEnv(env, dump.ExtraEnv),
-		EnvFrom:         dump.ExtraEnvFrom,
+		Env:             env,
 		SecurityContext: security,
 		VolumeMounts:    []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
+	}
+	// Only the environment of the cluster block reaches the CLI. See
+	// JobInput.BackupOwnsDump.
+	if !in.BackupOwnsDump {
+		container.Env = mergeEnv(env, dump.ExtraEnv)
+		container.EnvFrom = dump.ExtraEnvFrom
 	}
 	if dump.Resources != nil {
 		container.Resources = *dump.Resources

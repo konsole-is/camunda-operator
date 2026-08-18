@@ -1253,11 +1253,15 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("platform-sa"))
 	})
 
-	It("honors the backup's own dump block over the cluster's", func() {
+	// The environment of the backup's own block reaches the dump container
+	// only. The upload container runs cloud SDKs that read endpoint and
+	// proxy variables, and a backup author must not steer the upload.
+	It("honors the backup's own dump block over the cluster's, outside the upload container", func() {
 		w := createWorld()
 		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
 			backup.Spec.Dump = &v1.DumpPodSpec{
 				PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
+				ExtraEnv:       []corev1.EnvVar{{Name: "AWS_ENDPOINT_URL", Value: "http://evil.example"}},
 			}
 		})
 
@@ -1265,6 +1269,10 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(job.Spec.Template.Annotations).To(
 			HaveKeyWithValue("sidecar.istio.io/inject", "false"),
 		)
+		dump := job.Spec.Template.Spec.InitContainers[0]
+		Expect(dump.Env).To(ContainElement(corev1.EnvVar{Name: "AWS_ENDPOINT_URL", Value: "http://evil.example"}))
+		upload := job.Spec.Template.Spec.Containers[0]
+		Expect(upload.Env).NotTo(ContainElement(HaveField("Name", "AWS_ENDPOINT_URL")))
 	})
 
 	It("fails a running backup whose dependency stays broken past the grace", func() {

@@ -44,6 +44,10 @@ type CleanupJobInput struct {
 	// cleanup runs on the same pod identity surface: labels, annotations,
 	// scheduling. Nil means defaults.
 	Dump *v1.DumpPodSpec
+	// BackupOwnsDump reports that Dump is the backup's own spec.dump. Then
+	// no environment of it reaches the delete container, for the reason
+	// that JobInput.BackupOwnsDump gives.
+	BackupOwnsDump bool
 	// Bucket is the backup bucket contract. It uses workload identity. The
 	// manager cleans a credentials-mode bucket directly.
 	Bucket *v1.ObjectStorageConfig
@@ -103,17 +107,21 @@ func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 	security := containerSecurity(operatorUID)
 	security.ReadOnlyRootFilesystem = new(true)
 
+	env := []corev1.EnvVar{
+		{Name: EnvUploadKey, Value: in.ObjectKey},
+		{Name: EnvUploadStorageName, Value: in.Bucket.Name},
+		{Name: EnvUploadStorageSpec, Value: string(spec)},
+	}
 	container := corev1.Container{
-		Name:  "delete",
-		Image: in.CLIImage,
-		Args:  []string{"delete"},
-		Env: mergeEnv([]corev1.EnvVar{
-			{Name: EnvUploadKey, Value: in.ObjectKey},
-			{Name: EnvUploadStorageName, Value: in.Bucket.Name},
-			{Name: EnvUploadStorageSpec, Value: string(spec)},
-		}, dump.ExtraEnv),
-		EnvFrom:         dump.ExtraEnvFrom,
+		Name:            "delete",
+		Image:           in.CLIImage,
+		Args:            []string{"delete"},
+		Env:             env,
 		SecurityContext: security,
+	}
+	if !in.BackupOwnsDump {
+		container.Env = mergeEnv(env, dump.ExtraEnv)
+		container.EnvFrom = dump.ExtraEnvFrom
 	}
 
 	template := corev1.PodTemplateSpec{

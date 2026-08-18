@@ -380,8 +380,10 @@ type dumpResolution struct {
 	bucket  *v1.ObjectStorageConfig
 	// pod shapes the pod of the Job, and image runs its dump container. They
 	// come from different owners. The pod settings can come from the backup,
-	// but the image always comes from the cluster.
+	// but the image always comes from the cluster. podOwned reports that
+	// they come from the backup.
 	pod          *v1.DumpPodSpec
+	podOwned     bool
 	image        string
 	account      string
 	bucketSecret string
@@ -430,6 +432,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 		cluster:      precheck.Cluster,
 		bucket:       precheck.Bucket,
 		pod:          pod.settings,
+		podOwned:     pod.owned,
 		image:        pod.image,
 		account:      pod.account,
 		bucketSecret: bucketSecret,
@@ -606,8 +609,11 @@ func localSecretName(cluster *v1.CamundaCluster, namespace, name, purpose string
 // the ServiceAccount of the Job.
 type podResolution struct {
 	settings *v1.DumpPodSpec
-	image    string
-	account  string
+	// owned reports that settings is the backup's own block. The builders
+	// keep its environment out of the CLI containers.
+	owned   bool
+	image   string
+	account string
 }
 
 // resolvePod resolves the pod of the Job through the preset of the cluster
@@ -640,7 +646,7 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 		merged = camundacluster.MergePreset(cluster.Spec, &preset.Spec)
 	}
 
-	settings, image := dumpBlock(merged, backup)
+	settings, owned, image := dumpBlock(merged, backup)
 	// The environment bound applies to the backup's own block only. The
 	// spec.backup.dump of the cluster is the policy of its owner inside
 	// their own boundary. The CRD schema enforces the envFrom half too, and
@@ -664,6 +670,7 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 
 	return &podResolution{
 		settings: settings,
+		owned:    owned,
 		image:    image,
 		account:  camundacluster.ServiceAccountName(cluster, camundacluster.NewEffective(merged)),
 	}, nil, nil
@@ -671,25 +678,27 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 
 // dumpBlock returns the pod settings and the image of the Job of one backup.
 // The settings are the backup's own block, which replaces the cluster's as a
-// whole, or else the cluster's block. The image is the cluster's, or empty for
-// the default.
-func dumpBlock(merged v1.CamundaClusterSpec, backup *v1.LogicalBackupRDBMS) (*v1.DumpPodSpec, string) {
+// whole, or else the cluster's block. owned reports the first case. The image
+// is the cluster's, or empty for the default.
+func dumpBlock(
+	merged v1.CamundaClusterSpec,
+	backup *v1.LogicalBackupRDBMS,
+) (settings *v1.DumpPodSpec, owned bool, image string) {
 	var cluster *v1.BackupDumpSpec
 	if merged.Backup != nil {
 		cluster = merged.Backup.Dump
 	}
-	image := ""
 	if cluster != nil {
 		image = cluster.PostgresImage
 	}
 	if backup != nil && backup.Spec.Dump != nil {
-		return backup.Spec.Dump, image
+		return backup.Spec.Dump, true, image
 	}
 	if cluster != nil {
-		return &cluster.DumpPodSpec, image
+		return &cluster.DumpPodSpec, false, image
 	}
 
-	return nil, image
+	return nil, false, image
 }
 
 // start allocates the identity of the backup, pins the bucket that it writes

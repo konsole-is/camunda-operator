@@ -356,6 +356,7 @@ func (r *LogicalBackupRDBMSReconciler) cleanupWithJob(
 		Backup:             backup,
 		ClusterName:        cluster.Name,
 		Dump:               pod.settings,
+		BackupOwnsDump:     pod.owned,
 		Bucket:             bucket,
 		ServiceAccountName: pod.account,
 		ObjectKey:          backup.Status.ObjectKey,

@@ -352,6 +352,63 @@ func TestBuildJobEnvOfTheJobWins(t *testing.T) {
 	assert.Equal(t, 1, countEnv(upload, EnvUploadKey))
 }
 
+// TestBuildJobKeepsBackupEnvOutOfTheUploadContainer pins the boundary of a
+// per-backup environment. Cloud SDKs read endpoint, proxy, and configuration
+// variables from the environment. A backup author must not steer where the
+// dump goes, so the backup's own block reaches the dump container only. The
+// cluster's block reaches every container.
+func TestBuildJobKeepsBackupEnvOutOfTheUploadContainer(t *testing.T) {
+	t.Parallel()
+
+	block := &v1.DumpPodSpec{
+		ExtraEnv: []corev1.EnvVar{{Name: "AWS_ENDPOINT_URL", Value: "http://evil.example"}},
+		ExtraEnvFrom: []corev1.EnvFromSource{{
+			Prefix:       "X_",
+			ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "extra"}},
+		}},
+	}
+
+	in := input()
+	in.Dump = block
+	in.BackupOwnsDump = true
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+	dump := job.Spec.Template.Spec.InitContainers[0]
+	upload := job.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "http://evil.example", envValue(dump, "AWS_ENDPOINT_URL"), "the dump container takes it")
+	assert.Len(t, dump.EnvFrom, 1)
+	assert.Equal(t, 0, countEnv(upload, "AWS_ENDPOINT_URL"), "the upload container never takes backup env")
+	assert.Empty(t, upload.EnvFrom, "nor its sources")
+
+	in.BackupOwnsDump = false
+	job, err = BuildJob(in)
+	require.NoError(t, err)
+	upload = job.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "http://evil.example", envValue(upload, "AWS_ENDPOINT_URL"), "the cluster block reaches the upload")
+	assert.Len(t, upload.EnvFrom, 1)
+}
+
+func TestBuildCleanupJobKeepsBackupEnvOutOfTheDeleteContainer(t *testing.T) {
+	t.Parallel()
+
+	block := &v1.DumpPodSpec{
+		ExtraEnv: []corev1.EnvVar{{Name: "AWS_ENDPOINT_URL", Value: "http://evil.example"}},
+	}
+	in := CleanupJobInput{
+		Backup: backup(), ClusterName: "my-cluster", Bucket: s3Bucket(s3Credentials()),
+		Dump: block, BackupOwnsDump: true, ObjectKey: testObjectKey,
+		CLIImage: "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
+	}
+	job, err := BuildCleanupJob(in)
+	require.NoError(t, err)
+	assert.Equal(t, 0, countEnv(job.Spec.Template.Spec.Containers[0], "AWS_ENDPOINT_URL"))
+
+	in.BackupOwnsDump = false
+	job, err = BuildCleanupJob(in)
+	require.NoError(t, err)
+	assert.Equal(t, "http://evil.example", envValue(job.Spec.Template.Spec.Containers[0], "AWS_ENDPOINT_URL"))
+}
+
 func TestReservedEnvNamesTheOffenders(t *testing.T) {
 	t.Parallel()
 

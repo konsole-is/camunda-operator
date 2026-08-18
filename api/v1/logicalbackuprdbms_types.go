@@ -60,9 +60,13 @@ type LogicalBackupRDBMSSpec struct {
 	// backup cannot name anything under PG or UPLOAD_. Every extraEnvFrom
 	// source needs a prefix that cannot spell such a name. libpq prefers
 	// PGHOSTADDR over the PGHOST of the Job, so an unbounded source can
-	// redirect the dump with the injected credentials. The cluster's own
-	// block has no prefix requirement. Its owner sets policy inside their
-	// own boundary.
+	// redirect the dump with the injected credentials. The environment of
+	// this block reaches the dump container only, never the container that
+	// uploads: cloud SDKs read endpoint, proxy, and configuration variables
+	// from the environment, and a backup must not steer where its dump
+	// goes. The cluster's own block has no prefix requirement, and its
+	// environment reaches every container. Its owner sets policy inside
+	// their own boundary.
 	// +kubebuilder:validation:XValidation:rule="!has(self.extraEnvFrom) || self.extraEnvFrom.all(s, has(s.prefix) && s.prefix != '' && !s.prefix.startsWith('PG') && !'PG'.startsWith(s.prefix) && !s.prefix.startsWith('UPLOAD_') && !'UPLOAD_'.startsWith(s.prefix))",message="every extraEnvFrom source of a backup needs a prefix, and one that cannot spell a PG* or UPLOAD_* name"
 	// +optional
 	Dump *DumpPodSpec `json:"dump,omitempty"`

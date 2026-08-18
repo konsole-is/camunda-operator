@@ -137,6 +137,7 @@ func (r *LogicalBackupRDBMSReconciler) createJob(
 		Backup:             backup,
 		ClusterName:        res.cluster.Name,
 		Dump:               res.pod,
+		BackupOwnsDump:     res.podOwned,
 		PostgresImage:      res.image,
 		Bucket:             res.bucket,
 		BucketSecretName:   res.bucketSecret,

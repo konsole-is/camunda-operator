@@ -86,9 +86,13 @@ spec:
                   backup cannot name anything under PG or UPLOAD_. Every extraEnvFrom
                   source needs a prefix that cannot spell such a name. libpq prefers
                   PGHOSTADDR over the PGHOST of the Job, so an unbounded source can
-                  redirect the dump with the injected credentials. The cluster's own
-                  block has no prefix requirement. Its owner sets policy inside their
-                  own boundary.
+                  redirect the dump with the injected credentials. The environment of
+                  this block reaches the dump container only, never the container that
+                  uploads: cloud SDKs read endpoint, proxy, and configuration variables
+                  from the environment, and a backup must not steer where its dump
+                  goes. The cluster's own block has no prefix requirement, and its
+                  environment reaches every container. Its owner sets policy inside
+                  their own boundary.
                 properties:
                   activeDeadlineSeconds:
                     description: |-
@@ -110,9 +114,13 @@ spec:
                       spec.dump of a LogicalBackupRDBMS, every name under PG or UPLOAD_ is
                       reserved, and admission rejects it. Any PG* name is connection policy,
                       because libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, and more.
-                      UPLOAD_* is the upload contract. In the spec.backup.dump of the
-                      cluster nothing is reserved. The cluster owner sets connection policy,
-                      PGSSLMODE included, inside their own boundary.
+                      UPLOAD_* is the upload contract. The variables of a backup reach the
+                      dump container only, never the container that uploads. Cloud SDKs
+                      read endpoint, proxy, and configuration variables from the
+                      environment, and a backup author must not steer where the dump goes.
+                      In the spec.backup.dump of the cluster nothing is reserved, and the
+                      variables reach every container. The cluster owner sets connection
+                      policy, PGSSLMODE included, inside their own boundary.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -277,8 +285,10 @@ spec:
                       LogicalBackupRDBMS inside the cost budget of the API server. In the
                       spec.dump of a LogicalBackupRDBMS, every source also needs a prefix
                       that cannot spell a PG* or UPLOAD_* name. The reason is that the
-                      writer of the referenced object chooses its keys. The block of the
-                      cluster has no prefix requirement.
+                      writer of the referenced object chooses its keys. Like ExtraEnv, the
+                      sources of a backup reach the dump container only. The block of the
+                      cluster has no prefix requirement, and its sources reach every
+                      container.
                     items:
                       description: EnvFromSource represents the source of a set of
                         ConfigMaps or Secrets

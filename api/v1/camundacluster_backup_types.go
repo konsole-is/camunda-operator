@@ -99,9 +99,13 @@ type DumpPodSpec struct {
 	// spec.dump of a LogicalBackupRDBMS, every name under PG or UPLOAD_ is
 	// reserved, and admission rejects it. Any PG* name is connection policy,
 	// because libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, and more.
-	// UPLOAD_* is the upload contract. In the spec.backup.dump of the
-	// cluster nothing is reserved. The cluster owner sets connection policy,
-	// PGSSLMODE included, inside their own boundary.
+	// UPLOAD_* is the upload contract. The variables of a backup reach the
+	// dump container only, never the container that uploads. Cloud SDKs
+	// read endpoint, proxy, and configuration variables from the
+	// environment, and a backup author must not steer where the dump goes.
+	// In the spec.backup.dump of the cluster nothing is reserved, and the
+	// variables reach every container. The cluster owner sets connection
+	// policy, PGSSLMODE included, inside their own boundary.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources of the dump pod, at most
@@ -110,8 +114,10 @@ type DumpPodSpec struct {
 	// LogicalBackupRDBMS inside the cost budget of the API server. In the
 	// spec.dump of a LogicalBackupRDBMS, every source also needs a prefix
 	// that cannot spell a PG* or UPLOAD_* name. The reason is that the
-	// writer of the referenced object chooses its keys. The block of the
-	// cluster has no prefix requirement.
+	// writer of the referenced object chooses its keys. Like ExtraEnv, the
+	// sources of a backup reach the dump container only. The block of the
+	// cluster has no prefix requirement, and its sources reach every
+	// container.
 	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
