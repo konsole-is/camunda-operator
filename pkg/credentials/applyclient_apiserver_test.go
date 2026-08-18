@@ -18,6 +18,8 @@ package credentials
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,7 +39,7 @@ import (
 func startAPIServer(t *testing.T) client.Client {
 	t.Helper()
 
-	control := &envtest.Environment{}
+	control := &envtest.Environment{BinaryAssetsDirectory: envtestBinaryDir(t)}
 	cfg, err := control.Start()
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, control.Stop()) })
@@ -142,4 +144,28 @@ func TestResourceVersionDoesNotRejectAResurrectingApply(t *testing.T) {
 
 	require.NoError(t, err, "the API server ignores resourceVersion on an apply that creates")
 	assert.NotEqual(t, created.UID, resurrect.UID, "the stale resourceVersion still created a new object")
+}
+
+// envtestBinaryDir mirrors the shared envtest bootstrap: the control-plane
+// binaries live in the first directory under bin/k8s at the repository root,
+// so the tests run without KUBEBUILDER_ASSETS in the environment. An empty
+// return leaves envtest to that variable.
+func envtestBinaryDir(t *testing.T) string {
+	t.Helper()
+
+	base := filepath.Join("..", "..", "bin", "k8s")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			abs, err := filepath.Abs(filepath.Join(base, entry.Name()))
+			require.NoError(t, err)
+
+			return abs
+		}
+	}
+
+	return ""
 }
