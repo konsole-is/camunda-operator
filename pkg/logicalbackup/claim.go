@@ -46,6 +46,11 @@ import (
 // A holder that is gone, replaced, or terminal no longer needs the claim. A
 // claimant that finds such a holder takes the Lease over, so a crash between
 // the claim and the release never blocks the cluster forever.
+//
+// Every function here writes through a client.Client and reads through a
+// separate client.Reader. The reader must read the API server directly.
+// A controller passes its uncached API reader, never the cached manager
+// client: a claim decided from a stale cache is no mutual exclusion.
 
 // claimLeasePrefix starts the name of every claim Lease.
 const claimLeasePrefix = "camunda-backup-"
@@ -53,20 +58,45 @@ const claimLeasePrefix = "camunda-backup-"
 // maxLeaseNameLength is the DNS subdomain bound of a Lease name.
 const maxLeaseNameLength = 253
 
+// maxHolderIdentityLength bounds the holderIdentity field of the Lease. The
+// API server of Kubernetes 1.36 accepts longer values. The field is a
+// display form here, and a documented bound keeps it readable and safe
+// against a stricter server. The exact identity lives in the annotations.
+const maxHolderIdentityLength = 128
+
+// The annotations of the claim Lease carry the exact identity of the
+// holder. holderIdentity is a bounded display form of the same, and every
+// decision about ownership and takeover reads the annotations, never the
+// display form.
+const (
+	// ClaimHolderKindAnnotation names the kind of the holder resource.
+	ClaimHolderKindAnnotation = "camunda.io/claim-holder-kind"
+	// ClaimHolderNameAnnotation names the holder resource.
+	ClaimHolderNameAnnotation = "camunda.io/claim-holder-name"
+	// ClaimHolderUIDAnnotation carries the UID of the holder resource.
+	ClaimHolderUIDAnnotation = "camunda.io/claim-holder-uid"
+)
+
 // ClaimLeaseName returns the name of the Lease that claims the cluster:
 // "camunda-backup-<cluster>". The name is deterministic, so every claimant of
 // one cluster meets on the same Lease. A cluster name that pushes the Lease
 // name past the DNS subdomain bound is cut and suffixed with a hash of the
 // full name. The result stays deterministic and unique.
 func ClaimLeaseName(cluster string) string {
-	name := claimLeasePrefix + cluster
-	if len(name) <= maxLeaseNameLength {
+	return boundName(claimLeasePrefix+cluster, maxLeaseNameLength)
+}
+
+// boundName returns name when it fits limit. A longer name is cut and
+// suffixed with "-" and a hash of the full name. The result stays
+// deterministic and tells two long names apart.
+func boundName(name string, limit int) string {
+	if len(name) <= limit {
 		return name
 	}
 	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(cluster))
+	_, _ = hash.Write([]byte(name))
 	suffix := fmt.Sprintf("-%08x", hash.Sum32())
-	return name[:maxLeaseNameLength-len(suffix)] + suffix
+	return name[:limit-len(suffix)] + suffix
 }
 
 // Claimant identifies the backup that holds or wants the claim: the kind of
@@ -83,8 +113,10 @@ type Claimant struct {
 	UID types.UID
 }
 
-// String returns the holder identity that the Lease records:
-// "<Kind>/<Name>/<UID>".
+// String returns the exact identity of the claimant: "<Kind>/<Name>/<UID>".
+// Claim returns it for the holder that blocks, and the Lease carries its
+// parts in the annotations. It is not the holderIdentity field, which is
+// bounded.
 func (c Claimant) String() string {
 	return c.Kind + "/" + c.Name + "/" + string(c.UID)
 }
@@ -94,8 +126,15 @@ func (c Claimant) Display() string {
 	return c.Kind + "/" + c.Name
 }
 
-// ParseClaimant reads a holder identity that String wrote. It rejects any
-// other shape, so a Lease that something else wrote is never mistaken for a
+// HolderIdentity returns the bounded display form that the Lease records in
+// spec.holderIdentity: "<Kind>/<Name>", cut with a hash suffix when it does
+// not fit maxHolderIdentityLength. It carries no UID and decides nothing.
+func (c Claimant) HolderIdentity() string {
+	return boundName(c.Display(), maxHolderIdentityLength)
+}
+
+// ParseClaimant reads an identity that String wrote. It rejects any other
+// shape, so a Lease that something else wrote is never mistaken for a
 // backup and never taken over.
 func ParseClaimant(holder string) (Claimant, error) {
 	parts := strings.Split(holder, "/")
@@ -113,13 +152,22 @@ func ParseClaimant(holder string) (Claimant, error) {
 //
 // A holder that HolderActive reports inactive is taken over. The Lease is
 // deleted with its UID and resourceVersion as preconditions, and the Create
-// is tried once more. A holder identity that ParseClaimant rejects blocks
-// without a takeover.
+// is tried once more. A Lease without the holder annotations is not one of
+// ours: it blocks without a takeover, and Claim returns its holderIdentity
+// as it is.
 //
-// Reads go through c. A stale read fails closed: the claimant waits one more
-// reconcile, it never takes a claim it does not hold.
-func Claim(ctx context.Context, c client.Client, namespace, cluster string, self Claimant) (string, error) {
-	holder, err := create(ctx, c, namespace, cluster, self)
+// Writes go through c. Every read goes through reader, which must read the
+// API server directly and never a cache: a mutual exclusion that decides
+// "held by me" or a takeover from a stale cache is no exclusion. The
+// resourceVersion that guards a takeover comes from that same read.
+func Claim(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, cluster string,
+	self Claimant,
+) (string, error) {
+	holder, err := create(ctx, c, reader, namespace, cluster, self)
 	if err != nil || holder == "" || holder == self.String() {
 		return holder, err
 	}
@@ -128,7 +176,7 @@ func Claim(ctx context.Context, c client.Client, namespace, cluster string, self
 	if parseErr != nil {
 		return holder, nil
 	}
-	active, err := HolderActive(ctx, c, namespace, claimant)
+	active, err := HolderActive(ctx, reader, namespace, claimant)
 	if err != nil {
 		return "", err
 	}
@@ -136,16 +184,22 @@ func Claim(ctx context.Context, c client.Client, namespace, cluster string, self
 		return holder, nil
 	}
 
-	if err := takeOver(ctx, c, namespace, cluster, holder); err != nil {
+	if err := takeOver(ctx, c, reader, namespace, cluster, claimant); err != nil {
 		return "", err
 	}
 
-	return create(ctx, c, namespace, cluster, self)
+	return create(ctx, c, reader, namespace, cluster, self)
 }
 
 // create tries to create the Lease for self. It returns "" when self holds
 // the Lease after the call, or the current holder identity.
-func create(ctx context.Context, c client.Client, namespace, cluster string, self Claimant) (string, error) {
+func create(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, cluster string,
+	self Claimant,
+) (string, error) {
 	for range 2 {
 		lease := newLease(namespace, cluster, self)
 		err := c.Create(ctx, lease)
@@ -156,7 +210,7 @@ func create(ctx context.Context, c client.Client, namespace, cluster string, sel
 			return "", fmt.Errorf("creating the claim Lease %s/%s: %w", namespace, lease.Name, err)
 		}
 
-		holder, found, err := currentHolder(ctx, c, namespace, cluster)
+		holder, found, err := currentHolder(ctx, reader, namespace, cluster)
 		if err != nil {
 			return "", err
 		}
@@ -178,6 +232,7 @@ func create(ctx context.Context, c client.Client, namespace, cluster string, sel
 // re-entering claimant asks this before it runs any ordering among the
 // pending backups. A backup that holds the claim goes first, whatever the
 // tie-break says. Otherwise the tie-break and the claim block each other.
+// reader must read the API server directly, like every read of the claim.
 func Holds(ctx context.Context, reader client.Reader, namespace, cluster string, self Claimant) (bool, error) {
 	holder, found, err := currentHolder(ctx, reader, namespace, cluster)
 	if err != nil {
@@ -186,42 +241,92 @@ func Holds(ctx context.Context, reader client.Reader, namespace, cluster string,
 	return found && holder == self.String(), nil
 }
 
-// unidentifiedHolder stands in for the holder of a Lease that records no
-// holder identity. Nothing of this operator writes such a Lease. It blocks
-// the claim, and ParseClaimant rejects it, so it is never taken over.
+// unidentifiedHolder stands in for the holder of a Lease that carries no
+// holder identity at all. Nothing of this operator writes such a Lease. It
+// blocks the claim, and ParseClaimant rejects it, so it is never taken over.
 const unidentifiedHolder = "unidentified holder"
 
-// currentHolder returns the holder identity of the Lease and whether the
-// Lease exists.
-func currentHolder(ctx context.Context, c client.Reader, namespace, cluster string) (string, bool, error) {
+// holderOf returns the identity of the holder that the Lease records. A
+// Lease with the three holder annotations is one of ours, and the identity
+// is the String of that Claimant. Any other Lease returns its holderIdentity
+// as it is, or unidentifiedHolder when it has none. Such a Lease is foreign.
+// It blocks, and takeOver never deletes it: only a Lease whose annotations
+// name the holder is taken over.
+func holderOf(lease *coordinationv1.Lease) string {
+	if claimant, ok := annotatedHolder(lease); ok {
+		return claimant.String()
+	}
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
+		return unidentifiedHolder
+	}
+	return *lease.Spec.HolderIdentity
+}
+
+// annotatedHolder reads the exact holder identity from the annotations of
+// the Lease. ok is false when any part is absent.
+func annotatedHolder(lease *coordinationv1.Lease) (Claimant, bool) {
+	annotations := lease.GetAnnotations()
+	claimant := Claimant{
+		Kind: annotations[ClaimHolderKindAnnotation],
+		Name: annotations[ClaimHolderNameAnnotation],
+		UID:  types.UID(annotations[ClaimHolderUIDAnnotation]),
+	}
+	if claimant.Kind == "" || claimant.Name == "" || claimant.UID == "" {
+		return Claimant{}, false
+	}
+	return claimant, true
+}
+
+// currentHolder returns the identity of the holder of the Lease and whether
+// the Lease exists.
+func currentHolder(ctx context.Context, reader client.Reader, namespace, cluster string) (string, bool, error) {
 	var lease coordinationv1.Lease
 	key := client.ObjectKey{Namespace: namespace, Name: ClaimLeaseName(cluster)}
-	if err := c.Get(ctx, key, &lease); err != nil {
+	if err := reader.Get(ctx, key, &lease); err != nil {
 		if apierrors.IsNotFound(err) {
 			return "", false, nil
 		}
 		return "", false, fmt.Errorf("reading the claim Lease %s: %w", key, err)
 	}
-	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
-		return unidentifiedHolder, true, nil
-	}
-	return *lease.Spec.HolderIdentity, true, nil
+	return holderOf(&lease), true, nil
 }
 
 // takeOver deletes the Lease while it still records holder. A Lease that
-// changed hands in between is left alone. The Delete carries the UID and the
-// resourceVersion of the Lease as preconditions. A conflict or a NotFound is
-// not an error.
-func takeOver(ctx context.Context, c client.Client, namespace, cluster, holder string) error {
+// changed hands in between is left alone.
+func takeOver(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, cluster string,
+	holder Claimant,
+) error {
+	if err := deleteHeldBy(ctx, c, reader, namespace, cluster, holder); err != nil {
+		return fmt.Errorf("taking over the claim Lease of cluster %s/%s: %w", namespace, cluster, err)
+	}
+	return nil
+}
+
+// deleteHeldBy deletes the claim Lease of the cluster while its annotations
+// still name holder. The Delete carries the UID and the resourceVersion of
+// the Lease as preconditions, both from the direct read through reader. A
+// Lease that is gone, that another holder has, or that changed in between
+// (a conflict on the preconditions) is left alone without an error.
+func deleteHeldBy(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, cluster string,
+	holder Claimant,
+) error {
 	var lease coordinationv1.Lease
 	key := client.ObjectKey{Namespace: namespace, Name: ClaimLeaseName(cluster)}
-	if err := c.Get(ctx, key, &lease); err != nil {
+	if err := reader.Get(ctx, key, &lease); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("reading the claim Lease %s: %w", key, err)
 	}
-	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != holder {
+	if recorded, ok := annotatedHolder(&lease); !ok || recorded != holder {
 		return nil
 	}
 
@@ -230,21 +335,27 @@ func takeOver(ctx context.Context, c client.Client, namespace, cluster, holder s
 		ResourceVersion: &lease.ResourceVersion,
 	})
 	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
-		return fmt.Errorf("taking over the claim Lease %s: %w", key, err)
+		return fmt.Errorf("deleting the claim Lease %s: %w", key, err)
 	}
 
 	return nil
 }
 
-// newLease builds the claim Lease of cluster for self.
+// newLease builds the claim Lease of cluster for self. The annotations
+// carry the exact identity; holderIdentity carries the bounded display form.
 func newLease(namespace, cluster string, self Claimant) *coordinationv1.Lease {
-	holder := self.String()
+	holder := self.HolderIdentity()
 	now := metav1.NowMicro()
 	return &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      ClaimLeaseName(cluster),
 			Labels:    labels.Managed(labels.Cluster(cluster), "backup-claim"),
+			Annotations: map[string]string{
+				ClaimHolderKindAnnotation: self.Kind,
+				ClaimHolderNameAnnotation: self.Name,
+				ClaimHolderUIDAnnotation:  string(self.UID),
+			},
 		},
 		Spec: coordinationv1.LeaseSpec{
 			HolderIdentity: &holder,
@@ -260,7 +371,9 @@ func newLease(namespace, cluster string, self Claimant) *coordinationv1.Lease {
 // means inactive too: no resource of that kind can exist. The phase
 // vocabulary is shared by both backup kinds. The check therefore reads the
 // resource without a typed client, and it works whichever kind this
-// operator has compiled in.
+// operator has compiled in. reader must read the API server directly: a
+// cached read of the holder can be behind, and a stale "gone" or a stale
+// phase would take a live claim over.
 func HolderActive(ctx context.Context, reader client.Reader, namespace string, holder Claimant) (bool, error) {
 	backup := &unstructured.Unstructured{}
 	backup.SetGroupVersionKind(v1.GroupVersion.WithKind(holder.Kind))
@@ -289,28 +402,17 @@ func HolderActive(ctx context.Context, reader client.Reader, namespace string, h
 // no-op when the Lease does not exist or another claimant holds it. A caller
 // can therefore release on every reconcile of a terminal backup and in its
 // finalizer. The Delete carries the UID and the resourceVersion of the
-// Lease as preconditions. A Lease that a takeover replaced in between is not
-// deleted by the old holder.
-func Release(ctx context.Context, c client.Client, namespace, cluster string, self Claimant) error {
-	var lease coordinationv1.Lease
-	key := client.ObjectKey{Namespace: namespace, Name: ClaimLeaseName(cluster)}
-	if err := c.Get(ctx, key, &lease); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("reading the claim Lease %s: %w", key, err)
+// Lease as preconditions, both from the direct read through reader. A Lease
+// that a takeover replaced in between is not deleted by the old holder.
+func Release(
+	ctx context.Context,
+	c client.Client,
+	reader client.Reader,
+	namespace, cluster string,
+	self Claimant,
+) error {
+	if err := deleteHeldBy(ctx, c, reader, namespace, cluster, self); err != nil {
+		return fmt.Errorf("releasing the claim Lease of cluster %s/%s: %w", namespace, cluster, err)
 	}
-	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != self.String() {
-		return nil
-	}
-
-	err := c.Delete(ctx, &lease, client.Preconditions{
-		UID:             &lease.UID,
-		ResourceVersion: &lease.ResourceVersion,
-	})
-	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
-		return fmt.Errorf("releasing the claim Lease %s: %w", key, err)
-	}
-
 	return nil
 }
