@@ -51,6 +51,8 @@ type Server struct {
 	pauseCalls  int
 	resumeCalls int
 
+	conflictRuntimeStarts int
+
 	history map[int64]*Backup
 	runtime map[int64]*Backup
 	// deletedRuntime holds the ids of deleted runtime backups. An id is never
@@ -172,6 +174,15 @@ func (s *Server) RuntimeBackup(id int64) *Backup {
 	return nil
 }
 
+// ConflictNextRuntimeStart answers the next n runtime-backup starts with a
+// conflict, the way a cluster does when a higher id landed between the
+// generation and the registration of one.
+func (s *Server) ConflictNextRuntimeStart(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.conflictRuntimeStarts = n
+}
+
 // FailNext makes the next n calls of op answer 500. op is one of "pause",
 // "resume", "historyStart", "historyStatus", "runtimeStart",
 // "runtimeStatus", "runtimeDelete".
@@ -271,50 +282,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case r.Method == http.MethodPost && path == "/backupRuntime":
-		if s.failing("runtimeStart") {
-			errorBody(w, http.StatusInternalServerError, "injected runtime start failure")
-			return
-		}
-		var id int64
-		if r.ContentLength != 0 {
-			id = decodeBackupID(r)
-			conflicts := func(existing int64) bool { return existing >= id }
-			conflicted := false
-			for existing := range s.runtime {
-				conflicted = conflicted || conflicts(existing)
-			}
-			// A deleted id conflicts too: ids are never reusable, even after
-			// the backup they named is gone.
-			for deleted := range s.deletedRuntime {
-				conflicted = conflicted || conflicts(deleted)
-			}
-			if conflicted {
-				errorBody(
-					w, http.StatusConflict,
-					"a backup with the same or higher ID already exists",
-				)
-				return
-			}
-		} else {
-			id = s.nextGeneratedID
-			s.nextGeneratedID++
-		}
-		s.runtime[id] = &Backup{ID: id, State: "IN_PROGRESS"}
-		s.runtimeStarts[id]++
-
-		// The cluster echoes an id of its own when one was supplied: the
-		// documented example answers a request for 100 with 1772011199310.
-		// The backup keys on the supplied id, so a client that trusts the
-		// echo loses track of its own snapshots.
-		echoed := id
-		if r.ContentLength != 0 {
-			echoed = s.nextGeneratedID
-			s.nextGeneratedID++
-		}
-		writeJSON(w, http.StatusAccepted, map[string]any{
-			"backupId": echoed,
-			"message":  "A backup has been scheduled",
-		})
+		s.handleRuntimeStart(w, r)
 
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/backupRuntime/"):
 		s.handleRuntimeStatus(w, path)
@@ -343,6 +311,60 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		errorBody(w, http.StatusNotFound, "unknown path "+r.URL.Path)
 	}
+}
+
+// handleRuntimeStart answers POST /backupRuntime: an explicit id conflicts
+// with any same-or-higher (or deleted) id; a nil id gets a generated one.
+func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
+	if s.failing("runtimeStart") {
+		errorBody(w, http.StatusInternalServerError, "injected runtime start failure")
+		return
+	}
+	var id int64
+	if r.ContentLength != 0 {
+		id = decodeBackupID(r)
+		conflicts := func(existing int64) bool { return existing >= id }
+		conflicted := false
+		for existing := range s.runtime {
+			conflicted = conflicted || conflicts(existing)
+		}
+		// A deleted id conflicts too: ids are never reusable, even after
+		// the backup they named is gone.
+		for deleted := range s.deletedRuntime {
+			conflicted = conflicted || conflicts(deleted)
+		}
+		if conflicted {
+			conflictBody(w)
+			return
+		}
+	} else {
+		// The injected conflict targets only cluster-generated ids: a higher
+		// id landing between the generation and the registration is the one
+		// conflict an id-less request can hit.
+		if s.conflictRuntimeStarts > 0 {
+			s.conflictRuntimeStarts--
+			conflictBody(w)
+			return
+		}
+		id = s.nextGeneratedID
+		s.nextGeneratedID++
+	}
+	s.runtime[id] = &Backup{ID: id, State: "IN_PROGRESS"}
+	s.runtimeStarts[id]++
+
+	// The cluster echoes an id of its own when one was supplied: the
+	// documented example answers a request for 100 with 1772011199310.
+	// The backup keys on the supplied id, so a client that trusts the
+	// echo loses track of its own snapshots.
+	echoed := id
+	if r.ContentLength != 0 {
+		echoed = s.nextGeneratedID
+		s.nextGeneratedID++
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"backupId": echoed,
+		"message":  "A backup has been scheduled",
+	})
 }
 
 // handleRuntimeStatus serves GET /backupRuntime/{id}. The caller holds the
@@ -391,6 +413,11 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func errorBody(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"message": message})
+}
+
+// conflictBody answers the 409 a cluster answers when an id is not usable.
+func conflictBody(w http.ResponseWriter) {
+	errorBody(w, http.StatusConflict, "a backup with the same or higher ID already exists")
 }
 
 // exportingEnvelope answers an exporting call the way Camunda 8.9 does: the

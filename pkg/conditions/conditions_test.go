@@ -43,7 +43,11 @@ func TestReadyBoundsAnOversizedMessage(t *testing.T) {
 
 	assert.Less(t, len(cond.Message), MaxMessageLength+100)
 	assert.True(t, strings.HasPrefix(cond.Message, strings.Repeat("x", MaxMessageLength)))
-	assert.True(t, strings.HasSuffix(cond.Message, "... (truncated, 100000 bytes)"), cond.Message[len(cond.Message)-40:])
+	assert.True(
+		t,
+		strings.HasSuffix(cond.Message, "... (truncated, 100000 bytes)"),
+		cond.Message[len(cond.Message)-40:],
+	)
 }
 
 func TestBoundMessageCutsOnARuneBoundary(t *testing.T) {
