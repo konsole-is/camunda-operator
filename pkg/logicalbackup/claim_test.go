@@ -442,6 +442,75 @@ func TestClaimLeaseNameOfADottedNameIsAValidDNSSubdomain(t *testing.T) {
 	assert.Empty(t, apimachineryvalidation.NameIsDNSSubdomain(logicalbackup.ClaimLeaseName(messy), false))
 }
 
+// A terminal-write conflict can persist phase and terminalReason while it
+// restores an older Ready condition. The recorded terminalReason decides,
+// so such a holder still counts as paused and its claim is never taken over.
+func TestATerminalReasonResumeFailedDecidesOverAStaleReadyCondition(t *testing.T) {
+	backup := holderResource(first, v1.LogicalBackupFailed).(*unstructured.Unstructured)
+	require.NoError(t, unstructured.SetNestedField(backup.Object, "ResumeFailed", "status", "terminalReason"))
+	// The stale Ready of an earlier write: still Progressing.
+	require.NoError(t, unstructured.SetNestedSlice(backup.Object, []any{
+		map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "Progressing"},
+	}, "status", "conditions"))
+	c := claimClient(t, backup, holderResource(second, v1.LogicalBackupPending))
+	leaseHeldBy(t, c, first)
+
+	active, err := logicalbackup.HolderActive(t.Context(), c, claimNamespace, first)
+	require.NoError(t, err)
+	assert.True(t, active, "the recorded terminal reason wins over the stale condition")
+
+	paused, err := logicalbackup.HolderKeepsClusterPaused(t.Context(), c, claimNamespace, first)
+	require.NoError(t, err)
+	assert.True(t, paused)
+
+	got, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+	require.NoError(t, err)
+	assert.Equal(t, first.String(), got)
+	assert.Equal(t, first.String(), leaseHolder(t, c), "not taken over")
+}
+
+// A terminalReason other than ResumeFailed decides too: the holder resumed
+// exporting, so it is inactive whatever a stale Ready condition says.
+func TestATerminalReasonFailedIsInactiveDespiteAStaleResumeFailedReady(t *testing.T) {
+	backup := holderResource(first, v1.LogicalBackupFailed).(*unstructured.Unstructured)
+	require.NoError(t, unstructured.SetNestedField(backup.Object, "Failed", "status", "terminalReason"))
+	require.NoError(t, unstructured.SetNestedSlice(backup.Object, []any{
+		map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
+	}, "status", "conditions"))
+	c := claimClient(t, backup)
+
+	active, err := logicalbackup.HolderActive(t.Context(), c, claimNamespace, first)
+	require.NoError(t, err)
+	assert.False(t, active)
+}
+
+// A foreign Lease whose unannotated holderIdentity happens to spell the
+// identity of this claimant is still foreign. It is never self, it blocks,
+// and it is never taken over.
+func TestAForeignLeaseSpellingOurIdentityIsNotSelf(t *testing.T) {
+	c := claimClient(t, holderResource(first, v1.LogicalBackupRunning))
+	var lease coordinationv1.Lease
+	lease.Namespace = claimNamespace
+	lease.Name = logicalbackup.ClaimLeaseName("prod")
+	holder := first.String()
+	lease.Spec.HolderIdentity = &holder
+	require.NoError(t, c.Create(t.Context(), &lease))
+
+	holds, err := logicalbackup.Holds(t.Context(), c, claimNamespace, "prod", first)
+	require.NoError(t, err)
+	assert.False(t, holds, "an unannotated Lease is never held by us")
+
+	got, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", first)
+	require.NoError(t, err)
+	assert.Equal(t, first.String(), got, "it blocks even the claimant it spells")
+
+	var after coordinationv1.Lease
+	require.NoError(t, c.Get(t.Context(), client.ObjectKey{
+		Namespace: claimNamespace, Name: logicalbackup.ClaimLeaseName("prod"),
+	}, &after))
+	assert.Empty(t, after.GetAnnotations(), "the foreign Lease was not taken over or rewritten")
+}
+
 func TestHolderActive(t *testing.T) {
 	tests := []struct {
 		name   string
