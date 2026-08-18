@@ -102,7 +102,10 @@ var _ = BeforeSuite(func() {
 			RetryInterval: time.Second,
 			// Small graces, so the specs that outwait them stay fast. The
 			// windows that the specs assert within must stay well inside these.
-			MidRunGrace:       4 * time.Second,
+			// The grace must exceed the settle budget of the harness: a
+			// hand-staged status waits 2 s per pass, and a spec can hold
+			// for 2 s more before it recovers the dependency.
+			MidRunGrace:       8 * time.Second,
 			RegistrationGrace: 4 * time.Second,
 			OpenBucket: func(
 				context.Context, *v1.ObjectStorageConfig, *objectstore.Credentials,

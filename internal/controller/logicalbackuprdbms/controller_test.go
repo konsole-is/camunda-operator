@@ -990,7 +990,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("has not converged"))
 			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
-		}, "15s", interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 	})
 
 	// The operator applies the deadline default, not the schema. So a
@@ -1294,7 +1294,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("stopped resolving"))
-		}, "15s", interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 	})
 
 	// A dependency that returns within the grace is a binding, a Secret, or a
@@ -1360,7 +1360,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("127.0.0.1:1"))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("not reachable"))
-		}, "15s", interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 	})
 
 	It("parks in Pending when the dump credentials Secret is gone", func() {
@@ -1542,7 +1542,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("holding: no Job while the cluster has not converged")
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
-			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning), backup.Status.FailureMessage)
 			g.Expect(backup.Status.JobName).To(BeEmpty())
 			g.Expect(k8sClient.Get(
 				ctx, types.NamespacedName{
@@ -1578,7 +1578,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-1"))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("hash-2"))
 			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
-		}, "15s", interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 	})
 
 	// The pinned hash proves that Zeebe did not roll since the
@@ -1666,7 +1666,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("CreateContainerConfigError"))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring(pod.Name))
-		}, "15s", interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 	})
 
 	// The Zeebe backup goes to the current backup store of the cluster. A
@@ -1694,7 +1694,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring(other.Name))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring(w.bucket.Name))
 			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
-		}, "15s", interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 	})
 
 	// The Job is released once the dump is recorded, so a PVC-backed
@@ -1746,7 +1746,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
 			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("rejected the call"))
 			g.Expect(backup.Status.ZeebeBackupID).To(BeNil())
-		}, "15s", interval).Should(Succeed())
+		}, "20s", interval).Should(Succeed())
 	})
 
 	// A retargeted bucket must never make the finalizer delete a
