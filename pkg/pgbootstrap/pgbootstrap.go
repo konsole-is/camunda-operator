@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -381,21 +382,26 @@ func (b *bootstrapper) ServerVersion(ctx context.Context) (string, error) {
 	return majorVersion(num)
 }
 
-// majorVersion extracts the major from a server_version_num value. Since
-// PostgreSQL 10 the number is MMmmmm — the major followed by four digits of
-// the minor — so the major is everything before the last four digits.
+// majorVersion extracts the major from a server_version_num value, in the
+// form that names the matching client tools. Since PostgreSQL 10 the number
+// is MMmmmm, the major followed by four digits of the minor, and the major
+// is everything before the last four digits ("170004" is "17"). Before 10
+// the number is MMmmpp and the major has two components: "90624" is
+// PostgreSQL 9.6.24, so the major is "9.6", never "9".
 func majorVersion(num string) (string, error) {
-	if len(num) <= 4 {
-		return "", fmt.Errorf("unexpected server_version_num %q", num)
-	}
-	major := num[:len(num)-4]
 	for _, r := range num {
 		if r < '0' || r > '9' {
 			return "", fmt.Errorf("unexpected server_version_num %q", num)
 		}
 	}
+	switch {
+	case len(num) == 5:
+		return num[:1] + "." + strings.TrimLeft(num[1:3], "0"), nil
+	case len(num) > 5:
+		return num[:len(num)-4], nil
+	}
 
-	return major, nil
+	return "", fmt.Errorf("unexpected server_version_num %q", num)
 }
 
 func (b *bootstrapper) Close() {

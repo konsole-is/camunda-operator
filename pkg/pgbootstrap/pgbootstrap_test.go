@@ -158,8 +158,12 @@ func TestMajorVersionParsesServerVersionNum(t *testing.T) {
 	cases := map[string]string{
 		"170004": "17",
 		"160009": "16",
-		"90624":  "9",
 		"180000": "18",
+		"100023": "10",
+		// Before PostgreSQL 10 the major has two components: 9.6.24 is
+		// "90624", and its client tools are postgres:9.6, not postgres:9.
+		"90624": "9.6",
+		"90418": "9.4",
 	}
 	for num, want := range cases {
 		got, err := majorVersion(num)
@@ -167,10 +171,10 @@ func TestMajorVersionParsesServerVersionNum(t *testing.T) {
 		assert.Equal(t, want, got, num)
 	}
 
-	_, err := majorVersion("")
-	require.Error(t, err)
-	_, err = majorVersion("17.4")
-	require.Error(t, err)
+	for _, num := range []string{"", "1700", "17.4", "17000a"} {
+		_, err := majorVersion(num)
+		require.Error(t, err, num)
+	}
 }
 
 func TestEnsureDatabaseRejectsInvalidIdentifier(t *testing.T) {
