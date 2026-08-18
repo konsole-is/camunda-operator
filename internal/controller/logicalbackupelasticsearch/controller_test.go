@@ -170,6 +170,32 @@ func (r *rig) publishBinding(partitions int32) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// publishBrokenBinding writes a management binding that no client can be
+// built from: basic auth naming a credentials Secret that does not exist.
+func (r *rig) publishBrokenBinding() {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var cluster v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+		cluster.Status.Management = &v1.ManagementBinding{
+			Endpoint: r.management.URL(),
+			Auth: v1.ManagementAuth{
+				Method: v1.ManagementAuthMethodBasic,
+				CredentialsSecretRef: &v1.CredentialsSecretRef{
+					Name:        "management-credentials-gone",
+					Namespace:   r.namespace,
+					UsernameKey: "username",
+					PasswordKey: "password",
+				},
+			},
+			Version:          "8.9.9",
+			Partitions:       3,
+			BackupRepository: r.repository,
+		}
+		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // currentCluster re-reads the rig's CamundaCluster.
 func currentCluster(r *rig) *v1.CamundaCluster {
 	GinkgoHelper()
@@ -1464,6 +1490,66 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			var gone v1.LogicalBackupElasticsearch
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
 		}, timeout, interval).Should(BeTrue())
+	})
+
+	It("holds a deletion that may leave exporting paused while the management client cannot be built", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		// Exporting is paused and the history backup ends, so nothing but
+		// the binding decides the deletion.
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		By("breaking the binding by construction: basic auth with a Secret that does not exist")
+		r.publishBrokenBinding()
+
+		By("holding the deletion instead of releasing the only thing that resumes exporting")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		expectEvent(backup, eventReasonDeleteHeld, corev1.EventTypeWarning)
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+			g.Expect(r.management.Exporting()).To(Equal("softPaused"))
+		}, "1s", interval).Should(Succeed())
+
+		By("resuming and releasing once the binding is usable again")
+		r.publishBinding(3)
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
+	It("releases a deletion of a backup that holds no pause while the management client cannot be built", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		expectPhase(backup, v1.LogicalBackupCompleted)
+		Expect(r.management.Exporting()).To(Equal("running"))
+
+		By("breaking the binding by construction, then deleting")
+		r.publishBrokenBinding()
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+
+		By("releasing without cleanup: nothing is paused, and the artifacts are not reachable")
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
 	})
 
 	It("resumes exporting before a mid-run deletion releases", func() {

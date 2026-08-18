@@ -150,10 +150,23 @@ func (r *Reconciler) deleteArtifacts(
 		return false, fmt.Errorf("building the management client: %w", err)
 	}
 	if failure != nil {
-		// A binding that is broken by construction stays broken: the
-		// credentials are gone, or the version is one this operator no
-		// longer drives. A deletion that holds on it pins the namespace
-		// forever.
+		// A binding that is broken by construction — the credentials Secret
+		// is gone, or the binding is unusable — is repaired by whoever
+		// publishes it, not by this deletion. What decides is the pause:
+		// a backup that can still hold exporting paused is the only thing
+		// that resumes it, and a deletion that released now would leave
+		// the cluster paused with nothing left to resume it, even after
+		// the credentials come back. That deletion holds, visibly, until
+		// the client can be built. A backup that cannot hold a pause has
+		// nothing to resume; its artifacts are not reachable, and it
+		// releases rather than pin the namespace forever.
+		if mayHoldExportingPaused(backup) {
+			r.holdDeletion(backup, fmt.Sprintf(
+				"exporting may still be paused by this backup and the management client cannot be built: %s",
+				failure.Message,
+			))
+			return false, nil
+		}
 		r.releaseWithoutCleanup(backup, failure.Message)
 		return true, nil
 	}
