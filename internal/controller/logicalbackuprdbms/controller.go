@@ -271,8 +271,14 @@ func (r *LogicalBackupRDBMSReconciler) complete(backup *v1.LogicalBackupRDBMS) {
 	)
 }
 
+// fail terminalizes the backup with message. The message often carries an
+// external error — a management API body, a pod's waiting message, a Job
+// reason — whose size the controller cannot know, so it is bounded before it
+// reaches the free-form status field; the Ready condition it also feeds is
+// bounded by conditions itself.
 func (r *LogicalBackupRDBMSReconciler) fail(backup *v1.LogicalBackupRDBMS, message string) {
 	now := metav1.Now()
+	message = conditions.BoundMessage(message)
 	backup.Status.Phase = v1.LogicalBackupFailed
 	backup.Status.CompletionTime = &now
 	backup.Status.FailureMessage = message

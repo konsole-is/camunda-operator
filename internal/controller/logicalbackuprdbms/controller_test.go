@@ -18,6 +18,9 @@ package logicalbackuprdbms
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,6 +40,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
@@ -510,6 +514,61 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		backup := createBackup(w)
 		expectPending(backup, v1.ReasonMissingSecret)
+	})
+
+	// The id is allocated after the highest one a visible sibling holds, so a
+	// clock that stepped backwards cannot reuse an id and overwrite its dump.
+	It("allocates the backup id after the highest sibling id", func() {
+		w := createWorld()
+		first := createBackup(w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
+			g.Expect(first.Status.BackupID).NotTo(BeZero())
+		}, timeout, interval).Should(Succeed())
+
+		By("standing in for a sibling that already holds an id a year ahead, done")
+		ahead := time.Now().Add(365 * 24 * time.Hour).UnixMilli()
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
+			now := metav1.Now()
+			first.Status.BackupID = ahead
+			first.Status.Phase = v1.LogicalBackupCompleted
+			first.Status.CompletionTime = &now
+			g.Expect(k8sClient.Status().Update(ctx, first)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		second := createBackup(w)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), second)).To(Succeed())
+			g.Expect(second.Status.BackupID).To(Equal(ahead + 1))
+			g.Expect(second.Status.ObjectKey).To(ContainSubstring(fmt.Sprintf("/%d/", ahead+1)))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A message the management API reports is bounded before it reaches the
+	// free-form status field, so an oversized one cannot make the status
+	// unwritable.
+	It("bounds an oversized management failure reason in status", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		markJob(backup, w, batchv1.JobComplete)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ZeebeBackupID).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		huge := strings.Repeat("x", 4*conditions.MaxMessageLength)
+		managementAPI.SetRuntimeState(*backup.Status.ZeebeBackupID, string(camundaadmin.StateFailed), huge)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(len(backup.Status.FailureMessage)).To(BeNumerically("<", conditions.MaxMessageLength+64))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("(truncated"))
+			condition := readyCondition(backup)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonFailed))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// P1: a backup admitted against a desired spec Zeebe does not run yet

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -74,13 +75,46 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 		return r.parkPending(backup, failure), nil
 	}
 
-	r.start(backup, precheck)
+	highest, err := r.highestSiblingBackupID(ctx, backup)
+	if err != nil {
+		return settle, err
+	}
+	r.start(backup, precheck, highest)
 
 	// The identity must be persisted before the Job exists: a crash between
 	// the two would otherwise allocate a second id against an immutable Job
 	// template. The deferred flush writes it; the requeue re-enters with it
 	// recorded.
 	return shortly, nil
+}
+
+// highestSiblingBackupID returns the highest backup ID among the other
+// backups of this kind that name the same cluster, terminal ones included, or
+// zero. It arbitrates the ID allocation against the siblings that this
+// controller can see. A clock that stepped backwards then cannot hand out an
+// ID that one of them holds. The residual stays with the cluster: the IDs of
+// the other backup kind and of deleted resources are arbitrated only by its
+// own conflict answer.
+func (r *LogicalBackupRDBMSReconciler) highestSiblingBackupID(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) (int64, error) {
+	var list v1.LogicalBackupRDBMSList
+	if err := r.APIReader.List(ctx, &list, client.InNamespace(backup.Namespace)); err != nil {
+		return 0, fmt.Errorf("listing LogicalBackupRDBMS: %w", err)
+	}
+
+	cluster := clusterKey(backup)
+	var highest int64
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.UID == backup.UID || clusterKey(other) != cluster {
+			continue
+		}
+		highest = max(highest, other.Status.BackupID)
+	}
+
+	return highest, nil
 }
 
 // parkPending records a pre-check failure: the documented Pending phase and
@@ -439,14 +473,16 @@ func dumpBlock(merged v1.CamundaClusterSpec, backup *v1.LogicalBackupRDBMS) (*v1
 	return nil, image
 }
 
-// start allocates the identity of the backup, pins the bucket it writes
-// through, and records the effective restore size of the brokers. It only
-// mutates status; the caller persists.
+// start allocates the identity of the backup — after the highest id a
+// visible sibling holds, so a clock that stepped backwards cannot reuse one
+// — pins the bucket it writes through, and records the effective restore
+// size of the brokers. It only mutates status; the caller persists.
 func (r *LogicalBackupRDBMSReconciler) start(
 	backup *v1.LogicalBackupRDBMS,
 	precheck *logicalbackup.PreCheckResult,
+	highestSiblingID int64,
 ) {
-	id := logicalbackup.AllocateBackupID(metav1.Now())
+	id := logicalbackup.AllocateBackupIDAfter(metav1.Now(), highestSiblingID)
 	cluster := precheck.Cluster
 
 	backup.Status.BackupID = id
