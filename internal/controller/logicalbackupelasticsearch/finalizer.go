@@ -39,9 +39,11 @@ import (
 )
 
 // finalize deletes the stored artifacts of the backup and releases the
-// finalizer. It deletes strictly by the backup's own ID. A non-terminal backup
-// resumes exporting first. A deleted resource must never leave the cluster
-// soft-paused with nothing left to resume it. When the artifacts are not
+// finalizer. It deletes strictly by the backup's own ID. A backup that can
+// hold exporting paused resumes it first: a running one, and one that ended
+// as ResumeFailed, the one terminal reason that keeps the cluster paused
+// (see mayHoldExportingPaused). A deleted resource must never leave the
+// cluster soft-paused with nothing left to resume it. When the artifacts are not
 // reachable anymore, the finalizer releases with an event instead of a
 // deletion that blocks forever. That is the case when the cluster or its
 // contracts are gone, or when a client can no longer be built by
