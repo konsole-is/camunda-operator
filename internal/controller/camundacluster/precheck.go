@@ -22,8 +22,10 @@ import (
 	"slices"
 	"strconv"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
@@ -33,6 +35,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
+// eventReasonDumpCredentials is recorded when the backup credentials of the
+// database do not resolve. Only dump Jobs consume them, so the cluster warns
+// and does not park.
+const eventReasonDumpCredentials = "DumpCredentialsUnresolved"
+
 // mirroredSecrets are the copies of the referenced Secrets that live outside
 // the cluster namespace: the copied keys and their data, by purpose.
 type mirroredSecrets map[string]map[string][]byte
@@ -41,11 +48,12 @@ type mirroredSecrets map[string]map[string][]byte
 // referenced object and the data of every Secret to mirror. Each resolve
 // method fills exactly one part of the render input.
 type resolver struct {
-	reader  client.Reader
-	scheme  *runtime.Scheme
-	cluster *v1.CamundaCluster
-	inputs  []string
-	mirrors mirroredSecrets
+	reader   client.Reader
+	scheme   *runtime.Scheme
+	cluster  *v1.CamundaCluster
+	recorder events.EventRecorder
+	inputs   []string
+	mirrors  mirroredSecrets
 }
 
 // preCheck resolves every reference of cluster into the render input, in the
@@ -64,7 +72,13 @@ func (r *CamundaClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (components.Input, mirroredSecrets, error) {
-	res := &resolver{reader: r.APIReader, scheme: r.Scheme, cluster: cluster, mirrors: mirroredSecrets{}}
+	res := &resolver{
+		reader:   r.APIReader,
+		scheme:   r.Scheme,
+		cluster:  cluster,
+		recorder: r.EventRecorder,
+		mirrors:  mirroredSecrets{},
+	}
 	in := components.Input{Cluster: cluster}
 
 	steps := []func(context.Context, *components.Input) error{
@@ -236,27 +250,18 @@ func (res *resolver) resolveRDBMSStorage(
 	if err := res.localizeCredentials(ctx, &creds, components.MirrorPurposeDBCredentials); err != nil {
 		return err
 	}
+
+	// The dump Job of a LogicalBackupRDBMS mounts the backup user of the
+	// database, so its credentials get a local copy in the same way. The
+	// backup controller consumes the copy and never writes one itself.
+	if err := res.mirrorDumpCredentials(ctx, dbConfig.Spec.BackupCredentialsSecretRef); err != nil {
+		return err
+	}
 	in.Storage.RDBMS = &components.RDBMSStorage{
 		Host:        server.Spec.Host,
 		Port:        server.Spec.Port,
 		Database:    dbConfig.Spec.DatabaseName,
 		Credentials: creds,
-	}
-
-	return nil
-}
-
-// resolveObjectStorage checks that the ObjectStorageConfigs that
-// spec.backupStorageRef and spec.documentStorageRef name exist. Nothing of
-// them is rendered yet, so they do not enter the input.
-func (res *resolver) resolveObjectStorage(ctx context.Context, _ *components.Input) error {
-	for _, ref := range []string{res.cluster.Spec.BackupStorageRef, res.cluster.Spec.DocumentStorageRef} {
-		if ref == "" {
-			continue
-		}
-		if err := res.exists(ctx, client.ObjectKey{Name: ref}, &v1.ObjectStorageConfig{}); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -303,6 +308,50 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 		return err
 	}
 	ref.Name, ref.Namespace = local.Name, local.Namespace
+
+	return nil
+}
+
+// mirrorDumpCredentials copies the backup user of the database into the
+// dump-credentials mirror when it lives outside the cluster namespace. Only
+// dump Jobs consume it, so the cluster neither parks nor rolls its pods on
+// it. A reference that does not resolve is a Warning event here and a
+// pre-check failure on the backup that needs it. The Secret is no hash
+// input. A nil reference means that the database takes no dumps.
+func (res *resolver) mirrorDumpCredentials(
+	ctx context.Context,
+	ref *v1.CredentialsSecretRef,
+) error {
+	if ref == nil {
+		return nil
+	}
+
+	key := client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}
+	secret, msg, err := secretref.Get(ctx, res.reader, key, ref.UsernameKey, ref.PasswordKey)
+	if err != nil {
+		return fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+	if msg != "" {
+		res.recorder.Eventf(
+			res.cluster,
+			nil,
+			corev1.EventTypeWarning,
+			eventReasonDumpCredentials,
+			eventActionReconcile,
+			"The dump credentials do not resolve, so backups of this cluster will park: %s",
+			msg,
+		)
+
+		return nil
+	}
+	if key.Namespace == res.cluster.Namespace {
+		return nil
+	}
+
+	res.mirrors[components.MirrorPurposeDumpCredentials] = map[string][]byte{
+		ref.UsernameKey: secret.Data[ref.UsernameKey],
+		ref.PasswordKey: secret.Data[ref.PasswordKey],
+	}
 
 	return nil
 }

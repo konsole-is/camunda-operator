@@ -2,7 +2,17 @@ resources:
 - manager.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# imagefields.yaml teaches the images transformer where the
+# camunda-operator-cli image lives: in the CAMUNDA_OPERATOR_CLI_IMAGE
+# environment variable of the manager, not in a container image field. With
+# it, `kustomize edit set image ghcr.io/konsole-is/camunda-operator-cli=...`
+# stamps the CLI image exactly like `controller=...` stamps the manager image.
+configurations:
+- imagefields.yaml
 images:
 - name: controller
   newName: controller
+  newTag: latest
+- name: ghcr.io/konsole-is/camunda-operator-cli
+  newName: ghcr.io/konsole-is/camunda-operator-cli
   newTag: latest

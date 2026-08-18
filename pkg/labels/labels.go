@@ -35,6 +35,13 @@ const (
 	ElasticsearchClusterKey = "camunda.io/elasticsearch-cluster"
 	// DatabaseKey names the owning Database.
 	DatabaseKey = "camunda.io/database"
+	// LogicalBackupElasticsearchKey names the owning
+	// LogicalBackupElasticsearch.
+	LogicalBackupElasticsearchKey = "camunda.io/logical-backup-elasticsearch"
+	// LogicalBackupRDBMSKey names the owning LogicalBackupRDBMS.
+	LogicalBackupRDBMSKey = "camunda.io/logical-backup-rdbms"
+	// BackupScheduleKey names the owning BackupSchedule.
+	BackupScheduleKey = "camunda.io/backup-schedule"
 	// ComponentKey names the role of a resource inside its owner, for example
 	// "elasticsearch" or "elasticsearch-exporter".
 	ComponentKey = "camunda.io/component"
@@ -67,6 +74,20 @@ func ElasticsearchCluster(name string) Owner { return Owner{Key: ElasticsearchCl
 // Database returns the Owner of resources that a Database with the given name
 // renders.
 func Database(name string) Owner { return Owner{Key: DatabaseKey, Name: name} }
+
+// LogicalBackupElasticsearch returns the Owner of resources that a
+// LogicalBackupElasticsearch with the given name renders.
+func LogicalBackupElasticsearch(name string) Owner {
+	return Owner{Key: LogicalBackupElasticsearchKey, Name: name}
+}
+
+// LogicalBackupRDBMS returns the Owner of resources that a LogicalBackupRDBMS
+// with the given name renders.
+func LogicalBackupRDBMS(name string) Owner { return Owner{Key: LogicalBackupRDBMSKey, Name: name} }
+
+// BackupSchedule returns the Owner of resources that a BackupSchedule with
+// the given name renders.
+func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: name} }
 
 // Managed returns the labels of a resource that the operator applies: the
 // owner, the component, and the operator as manager.

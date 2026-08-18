@@ -23,6 +23,8 @@ spec:
   auth:
     fileRealm:
     - secretName: my-cluster-es-es-user
+    roles:
+    - secretName: my-cluster-es-es-roles
   http:
     service:
       metadata: {}

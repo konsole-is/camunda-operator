@@ -88,8 +88,13 @@ func render(in Input, p Process) rendered {
 	}
 
 	r := storageEnv(in)
+	backup := backupEnv(in, p)
+	r.volumes = append(r.volumes, backup.volumes...)
+	r.mounts = append(r.mounts, backup.mounts...)
+
 	env := identityEnv(in, p)
 	env = append(env, r.env...)
+	env = append(env, backup.env...)
 	env = append(env, authEnv(in)...)
 	env = append(env, roleEnv(p)...)
 	env = append(env, userEnv(in, p)...)
@@ -187,10 +192,7 @@ func storageEnv(in Input) rendered {
 		db := in.Storage.RDBMS
 		r.env = append(
 			r.env,
-			camundaconfig.Var(
-				camundaconfig.KeyRDBMSURL,
-				jdbcPostgres+db.Host+":"+strconv.Itoa(int(db.Port))+"/"+db.Database,
-			),
+			camundaconfig.Var(camundaconfig.KeyRDBMSURL, RDBMSURL(db.Host, db.Port, db.Database)),
 			camundaconfig.VarFrom(
 				camundaconfig.KeyRDBMSUsername,
 				secretSource(db.Credentials.Name, db.Credentials.UsernameKey),
@@ -470,4 +472,15 @@ func secretSource(name, key string) *corev1.EnvVarSource {
 		LocalObjectReference: corev1.LocalObjectReference{Name: name},
 		Key:                  key,
 	}}
+}
+
+// RDBMSURL returns the JDBC URL of the relational secondary storage that the
+// orchestration cluster is configured with. It is the value that the rendered
+// pod template carries under camundaconfig.KeyRDBMSURL. It is the one
+// definition of that value, so a consumer that reads it from a live template
+// compares against the same rendering. The RDBMS backup is such a consumer.
+// It reads the value to prove that the dump targets the database that Zeebe
+// runs.
+func RDBMSURL(host string, port int32, database string) string {
+	return jdbcPostgres + host + ":" + strconv.Itoa(int(port)) + "/" + database
 }

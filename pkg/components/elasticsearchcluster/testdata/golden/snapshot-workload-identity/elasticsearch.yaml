@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/camunda
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: elasticsearch
+    camunda.io/elasticsearch-cluster: my-cluster-es
+  name: my-cluster-es-es
+  namespace: my-cluster-ns
+---
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: elasticsearch
+    camunda.io/elasticsearch-cluster: my-cluster-es
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  auth:
+    fileRealm:
+    - secretName: my-cluster-es-es-user
+    roles:
+    - secretName: my-cluster-es-es-roles
+  http:
+    service:
+      metadata: {}
+      spec: {}
+    tls:
+      certificate: {}
+      client: {}
+  monitoring:
+    logs: {}
+    metrics: {}
+  nodeSets:
+  - count: 3
+    name: default
+    podTemplate:
+      metadata:
+        labels:
+          camunda.io/component: elasticsearch
+          camunda.io/elasticsearch-cluster: my-cluster-es
+      spec:
+        containers: null
+        serviceAccountName: my-cluster-es-es
+    volumeClaimTemplates:
+    - metadata:
+        labels:
+          camunda.io/component: elasticsearch
+          camunda.io/elasticsearch-cluster: my-cluster-es
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 64Gi
+      status: {}
+  remoteClusterServer:
+    service:
+      metadata: {}
+      spec: {}
+  transport:
+    service:
+      metadata: {}
+      spec: {}
+    tls:
+      certificate: {}
+      certificateAuthorities: {}
+  updateStrategy:
+    changeBudget: {}
+  version: 9.2.4
+  volumeClaimDeletePolicy: DeleteOnScaledownAndClusterDeletion
+status:
+  conditions: null
+  inProgressOperations:
+    downscale:
+      lastUpdatedTime: null
+    upgrade:
+      lastUpdatedTime: null
+    upscale:
+      lastUpdatedTime: null

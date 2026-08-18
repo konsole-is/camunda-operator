@@ -18,11 +18,11 @@ Each CRD has its own reference page following a common structure: purpose, contr
 | SecondaryStorageConfig | [secondarystorageconfig.md](secondarystorageconfig.md) | Namespaced | Active (validation) | Contract: secondary storage backend |
 | ObjectStorageConfig | [objectstorageconfig.md](objectstorageconfig.md) | Cluster | Active (validation) | Contract: bucket storage |
 | ManagementAuthConfig | [managementauthconfig.md](managementauthconfig.md) | Cluster | Active (validation) | Contract: Management Identity OIDC |
-| Backup | [backup.md](backup.md) | Namespaced | Active | One backup operation |
-| BackupSchedule | [backupschedule.md](backupschedule.md) | Namespaced | Active | Cron-driven Backup creation |
-| BackupRetention | [backupretention.md](backupretention.md) | Namespaced | Active | Old-backup deletion |
+| LogicalBackupElasticsearch | [logicalbackupelasticsearch.md](logicalbackupelasticsearch.md) | Namespaced | Active | One coordinated Elasticsearch-path backup |
+| LogicalBackupRDBMS | [logicalbackuprdbms.md](logicalbackuprdbms.md) | Namespaced | Active | One database dump plus a Zeebe backup |
+| BackupSchedule | [backupschedule.md](backupschedule.md) | Namespaced | Active | Cron-driven creation of logical backups |
 | PointInTimeRestore | [pointintimerestore.md](pointintimerestore.md) | Namespaced | Active | RDBMS in-place PITR |
-| LogicalRestore | [logicalrestore.md](logicalrestore.md) | Namespaced | Active | Cross-cluster restore from a Backup |
+| LogicalRestore | [logicalrestore.md](logicalrestore.md) | Namespaced | Active | Cross-cluster restore from a logical backup |
 | CamundaOptimize | [camundaoptimize.md](camundaoptimize.md) | Namespaced | Active | Optimize deployment per cluster |
 | CamundaManagementCluster | [camundamanagementcluster.md](camundamanagementcluster.md) | Cluster | Active | Management plane (Console, Web Modeler, Identity) |
 | PVCAutoResize | [pvcautoresize.md](pvcautoresize.md) | Namespaced | Active | topolvm auto-resize annotations |
@@ -45,9 +45,9 @@ graph TD
     OSC[ObjectStorageConfig]
     MAC[ManagementAuthConfig]
     CC[CamundaCluster]
-    BK[Backup]
+    LBE[LogicalBackupElasticsearch]
+    LBR[LogicalBackupRDBMS]
     BKS[BackupSchedule]
-    BKR[BackupRetention]
     PITR[PointInTimeRestore]
     LR[LogicalRestore]
     OPT[CamundaOptimize]
@@ -67,12 +67,13 @@ graph TD
     CC -.->|platformConfigRef| PFC
     CC -.->|presetRef| CCP
 
-    BK -.->|clusterRef| CC
-    BKS -->|creates| BK
+    LBE -.->|clusterRef| CC
+    LBR -.->|clusterRef| CC
+    BKS -->|"creates the kind matching the storage type"| LBE
+    BKS -->|"creates the kind matching the storage type"| LBR
     BKS -.->|clusterRef| CC
-    BKR -.->|clusterRef| CC
     LR -.->|targetClusterRef| CC
-    LR -.->|backupRef| BK
+    LR -.->|backupRef| LBE
     PITR -.->|clusterRef| CC
 
     OPT -.->|clusterRef| CC
@@ -108,9 +109,9 @@ Controller implementation is fanned out in batches derived from the graph above:
 
 **Batch D (attach to clusters): everything that references a running cluster.**
 
-- Backup
+- LogicalBackupElasticsearch
+- LogicalBackupRDBMS
 - BackupSchedule
-- BackupRetention
 - LogicalRestore
 - PointInTimeRestore
 - CamundaOptimize

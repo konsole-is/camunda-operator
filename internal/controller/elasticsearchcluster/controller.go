@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -34,6 +36,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,6 +69,12 @@ const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 // about the size of the data volumes.
 const eventActionResize = "Resize"
 
+// defaultRetryInterval is how long the controller waits before it looks again
+// at something that no watch reports: a foreign ServiceAccount, and the
+// Secrets that ECK publishes once the cluster serves. Everything else the
+// pre-checks resolve is watched and re-enqueues on its own.
+const defaultRetryInterval = 30 * time.Second
+
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
 // the external ECK operator. It renders an ECK Elasticsearch CR, generates the
 // file-realm credentials, and publishes a SecondaryStorageConfig binding in
@@ -89,6 +98,21 @@ type ElasticsearchClusterReconciler struct {
 	// restMapper resolves whether the cluster serves the ServiceMonitor
 	// kind. SetupWithManager sets it from the manager.
 	restMapper meta.RESTMapper
+
+	// EndpointFor returns the Elasticsearch endpoint of a cluster. Nil means
+	// the in-cluster HTTPS Service that components.HTTPEndpoint names. Tests
+	// point it at a fake, because no Service resolves inside envtest.
+	EndpointFor func(*v1.ElasticsearchCluster) string
+
+	// RetryInterval overrides how long the controller waits on something no
+	// watch reports. Zero means defaultRetryInterval; tests shorten it.
+	RetryInterval time.Duration
+
+	// registeredRepositories remembers, per cluster, a fingerprint of the
+	// last repository registration that converged, so an unchanged repository
+	// is not re-verified on every reconcile. In-memory on purpose: a restart
+	// re-verifies each repository once.
+	registeredRepositories sync.Map
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
@@ -96,6 +120,7 @@ type ElasticsearchClusterReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusterpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=elasticsearch.k8s.elastic.co,resources=elasticsearches,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
@@ -135,10 +160,21 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}()
 
-	merged, err := r.preCheck(ctx, &cluster)
+	merged, storage, err := r.preCheck(ctx, &cluster)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
+		// The repository condition cannot be trusted through a failed
+		// pre-check: the bucket resolution it depends on just failed, and a
+		// True left standing would assert a registration nobody can verify.
+		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
+
+		// Only an unwatched failure needs a timer; everything else the
+		// pre-checks resolve re-enqueues through a watch.
+		var unwatched *conditions.UnwatchedPreCheckFailure
+		if errors.As(err, &unwatched) {
+			return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
@@ -149,7 +185,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	core, metrics, err := r.buildComponents(ctx, &cluster, merged)
+	core, metrics, err := r.buildComponents(ctx, &cluster, merged, storage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -159,13 +195,34 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	// condition and stays out of Ready, so a broken exporter never marks the
 	// cluster not ready and a disabled one never shows up on it.
 	reconcileErr := reconcileComponents(ctx, recCtx, comps)
-	conditions.Stage(&cluster, conditions.Aggregate(&cluster, core...))
+
+	// Registration runs after the components, because it needs the cluster
+	// that the elasticsearch component applies to be serving. A suspended
+	// cluster is deleted: there is nothing to register, nothing to assert,
+	// and the existing repository condition stays as the last known state.
+	retryRepository := false
+	if merged.Suspend {
+		conditions.Stage(&cluster, conditions.Aggregate(&cluster, core...))
+	} else {
+		repository := r.registerSnapshotRepository(ctx, &cluster, storage)
+		conditions.Stage(&cluster, readyWithRepository(&cluster, repository, core))
+		// Registration waits on the Secrets that ECK publishes, which no
+		// watch reports; every other failure retries on the next attempt of
+		// its own trigger.
+		retryRepository = repository.Type != "" &&
+			repository.Status != metav1.ConditionTrue &&
+			repository.Reason == v1.ReasonMissingSecret
+	}
 
 	volumes, err := r.dataVolumes(ctx, &cluster)
 	if err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
 	}
 	cluster.Status.Volumes = volumes.volumes
+
+	if retryRepository && reconcileErr == nil {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	}
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -178,31 +235,73 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 func (r *ElasticsearchClusterReconciler) preCheck(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
-) (v1.ElasticsearchClusterSpec, error) {
+) (v1.ElasticsearchClusterSpec, *components.SnapshotStorage, error) {
 	merged := cluster.Spec
 
 	if cluster.Spec.PresetRef != "" {
 		var preset v1.ElasticsearchClusterPreset
 		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &preset); err != nil {
 			if apierrors.IsNotFound(err) {
-				return merged, &conditions.PreCheckFailure{
+				return merged, nil, &conditions.PreCheckFailure{
 					Reason:  v1.ReasonInvalidReference,
 					Message: fmt.Sprintf("ElasticsearchClusterPreset %q not found", cluster.Spec.PresetRef),
 				}
 			}
-			return merged, fmt.Errorf("resolving preset %q: %w", cluster.Spec.PresetRef, err)
+			return merged, nil, fmt.Errorf("resolving preset %q: %w", cluster.Spec.PresetRef, err)
 		}
 		merged = components.MergePreset(cluster.Spec, &preset.Spec)
 	}
 
 	if err := components.ValidateMerged(merged); err != nil {
-		return merged, &conditions.PreCheckFailure{
+		return merged, nil, &conditions.PreCheckFailure{
 			Reason:  v1.ReasonInvalidReference,
 			Message: err.Error(),
 		}
 	}
 
-	return merged, nil
+	// A suspended cluster is deleted and its pods do not run, so neither the
+	// bucket nor the ServiceAccount is consulted: a Secret deleted during
+	// suspension must not flap Ready, which reports Suspended by design.
+	if merged.Suspend {
+		return merged, nil, nil
+	}
+
+	if err := r.checkServiceAccount(ctx, cluster, merged); err != nil {
+		return merged, nil, err
+	}
+
+	storage, err := r.resolveSnapshotStorage(ctx, merged)
+	if err != nil {
+		return merged, nil, err
+	}
+
+	return merged, storage, nil
+}
+
+// readyWithRepository derives Ready from the components and lets a failed
+// snapshot-repository registration override a True result. The repository is
+// not a component, so conditions.Aggregate cannot see it, and a cluster whose
+// backups cannot be written is not ready.
+func readyWithRepository(
+	cluster *v1.ElasticsearchCluster,
+	repository metav1.Condition,
+	core []*component.Component,
+) metav1.Condition {
+	ready := conditions.Aggregate(cluster, core...)
+	if repository.Type == "" {
+		// The cluster has no repository, now or any more. Drop a condition
+		// left over from a bucket that the spec used to reference, so status
+		// never asserts something the spec no longer asks for.
+		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
+		return ready
+	}
+
+	meta.SetStatusCondition(cluster.GetStatusConditions(), repository)
+	if repository.Status == metav1.ConditionTrue || ready.Status != metav1.ConditionTrue {
+		return ready
+	}
+
+	return conditions.Ready(metav1.ConditionFalse, repository.Reason, repository.Message, cluster.Generation)
 }
 
 // keepAppliedStorageSize guards against the shrinks that admission cannot
@@ -344,7 +443,15 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 	ctx context.Context,
 	cluster *v1.ElasticsearchCluster,
 	merged v1.ElasticsearchClusterSpec,
+	storage *components.SnapshotStorage,
 ) (core []*component.Component, metrics *component.Component, err error) {
+	// The contract publishes the repository name only once a registration has
+	// converged: a consumer that read the name earlier would snapshot against
+	// a repository that does not exist. The condition is the persisted record
+	// of that convergence, which also keeps the name through a suspension.
+	registered := meta.IsStatusConditionTrue(
+		cluster.Status.Conditions, components.ConditionSnapshotRepository,
+	)
 	password, err := credentials.LookupOrNew(
 		ctx, r.APIReader, client.ObjectKey{
 			Namespace: cluster.Namespace, Name: components.UserSecretName(cluster),
@@ -359,12 +466,17 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building credentials component: %w", err)
 	}
 
-	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged)
+	keystoreComp, err := components.KeystoreComponent(cluster, storage)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building keystore component: %w", err)
+	}
+
+	elasticsearchComp, err := components.ElasticsearchComponent(cluster, merged, storage)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building elasticsearch component: %w", err)
 	}
 
-	storageContractComp, err := components.StorageContractComponent(cluster, merged)
+	storageContractComp, err := components.StorageContractComponent(cluster, merged, storage, registered)
 	if err != nil {
 		return nil, nil, fmt.Errorf("building storage-contract component: %w", err)
 	}
@@ -374,7 +486,19 @@ func (r *ElasticsearchClusterReconciler) buildComponents(
 		return nil, nil, fmt.Errorf("building metrics component: %w", err)
 	}
 
-	return []*component.Component{credentialsComp, elasticsearchComp, storageContractComp}, metricsComp, nil
+	return []*component.Component{
+		credentialsComp, keystoreComp, elasticsearchComp, storageContractComp,
+	}, metricsComp, nil
+}
+
+// retryInterval returns the wait before an unwatched dependency is looked at
+// again.
+func (r *ElasticsearchClusterReconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -417,9 +541,11 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	r.restMapper = mgr.GetRESTMapper()
 
 	if r.componentClient == nil {
-		// Uncached: see the componentClient field doc. The apply wrapper
+		// Uncached: see the componentClient field doc. The ECK apply wrapper
 		// sanitizes typed Elasticsearch patches down to the fields that the
-		// ECK CRD schema declares.
+		// ECK CRD schema declares. The credentials apply wrapper enforces the
+		// precondition of a reused password, so a delete of the user Secret
+		// rotates it.
 		componentClient, err := client.New(mgr.GetConfig(), client.Options{
 			Scheme: mgr.GetScheme(),
 			Mapper: mgr.GetRESTMapper(),
@@ -427,7 +553,9 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = eckelasticsearch.NewApplyClient(componentClient)
+		r.componentClient = credentials.NewApplyClient(
+			eckelasticsearch.NewApplyClient(componentClient),
+		)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(
@@ -439,6 +567,10 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			return nil
 		},
 	); err != nil {
+		return err
+	}
+
+	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
 		return err
 	}
 
@@ -456,6 +588,8 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 				elasticsearchClusterPresetRefField, refindex.ObjectName,
 			),
 		).
+		Watches(&v1.ObjectStorageConfig{}, r.enqueueForSnapshotStorage()).
+		Watches(&corev1.Secret{}, r.enqueueForBucketSecret(), builder.OnlyMetadata).
 		Watches(&corev1.PersistentVolumeClaim{}, enqueueForDataClaim()).
 		Named("elasticsearchcluster").
 		Complete(r)

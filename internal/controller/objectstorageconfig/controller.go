@@ -22,33 +22,37 @@ import (
 	"context"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-// ObjectStorageConfigReconciler maintains the Ready condition of
-// ObjectStorageConfig contracts.
+// ObjectStorageConfigReconciler validates ObjectStorageConfig contracts and
+// maintains their Ready condition.
 type ObjectStorageConfigReconciler struct {
 	client.Client
-	// APIReader keeps the uniform reconciler shape of the five contract
-	// validation controllers, which cmd/main.go constructs identically. It is
-	// unused here because ObjectStorageConfig references no Secrets.
+	// APIReader reads directly from the API server and bypasses the cache.
+	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
-// Reconcile maintains the Ready condition and status.observedGeneration of the
-// contract. The CRD schema enforces every ObjectStorageConfig rule at
-// admission, and the contract references no other objects. Reconcile never
-// creates or mutates other resources.
+// Reconcile validates the credentials Secret of the contract, when it has
+// one, and maintains its Ready condition. It never creates or mutates other
+// resources.
 func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cfg v1.ObjectStorageConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
@@ -71,23 +75,49 @@ func (r *ObjectStorageConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 	)
 }
 
-// validate always reports Healthy. The CRD schema enforces every
-// ObjectStorageConfig rule at admission, and the contract references no other
-// objects.
-//
-//nolint:unparam // The error is always nil here. The signature is the uniform validate shape of the five contract validation controllers.
+// validate checks the static credentials Secret of the contract. The CRD
+// schema enforces every other rule at admission, and a workload-identity
+// contract references no Secrets.
 func (r *ObjectStorageConfigReconciler) validate(
-	_ context.Context,
+	ctx context.Context,
 	cfg *v1.ObjectStorageConfig,
 ) (metav1.Condition, error) {
+	creds := cfg.CredentialsSecret()
+	if creds == nil {
+		return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
+	}
+
+	msg, err := secretref.CheckKeys(
+		ctx, r.APIReader,
+		types.NamespacedName{Namespace: creds.Namespace, Name: creds.Name}, creds.Keys...,
+	)
+	if err != nil {
+		return metav1.Condition{}, err
+	}
+	if msg != "" {
+		return conditions.Ready(metav1.ConditionFalse, v1.ReasonMissingSecret, msg, cfg.Generation), nil
+	}
+
 	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
-// SetupWithManager registers the controller. The contract references no other
-// objects, so it needs no other watches or indexes.
+// SetupWithManager registers the controller, an index of contracts by their
+// credentials Secret, and a metadata-only Secret watch.
 func (r *ObjectStorageConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ObjectStorageConfig{}).
+		Watches(
+			&corev1.Secret{},
+			refindex.Enqueue(
+				mgr.GetClient(), &v1.ObjectStorageConfigList{},
+				refindex.ObjectStorageConfigSecretField, refindex.ObjectNamespacedName,
+			),
+			builder.OnlyMetadata,
+		).
 		Named("objectstorageconfig").
 		Complete(r)
 }

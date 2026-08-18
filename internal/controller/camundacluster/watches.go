@@ -34,6 +34,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
@@ -142,6 +143,12 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 			set.addList(ctx, r.Client, client.InNamespace(dbConfig.Namespace))
 		}
 
+		for _, bucket := range listByIndex[v1.ObjectStorageConfigList](
+			ctx, r.Client, refindex.ObjectStorageConfigSecretField, key,
+		).Items {
+			set.addList(ctx, r.Client, client.MatchingFields{objectStorageRefsField: bucket.Name})
+		}
+
 		return set.requests()
 	})
 }
@@ -243,7 +250,13 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = componentClient
+		// The apply wrapper enforces the precondition of a reused admin
+		// password, so a delete of the admin Secret rotates it.
+		r.componentClient = credentials.NewApplyClient(componentClient)
+	}
+
+	if err := refindex.EnsureObjectStorageConfigSecretIndex(mgr); err != nil {
+		return fmt.Errorf("registering the bucket credentials index: %w", err)
 	}
 
 	for field, indexer := range indexers {

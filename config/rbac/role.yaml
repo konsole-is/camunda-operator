@@ -7,19 +7,18 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - ""
-  resources:
   - persistentvolumeclaims
   verbs:
   - get
   - list
   - patch
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
 - apiGroups:
   - ""
   resources:
@@ -35,6 +34,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
   - apps
   resources:
   - deployments
@@ -48,10 +55,32 @@ rules:
   - update
   - watch
 - apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - core.camunda.io
   resources:
-  - backupretentions
-  - backups
   - backupschedules
   - camundaclusters
   - camundamanagementclusters
@@ -59,6 +88,8 @@ rules:
   - databaseconfigs
   - databases
   - elasticsearchclusters
+  - logicalbackupelasticsearches
+  - logicalbackuprdbmses
   - logicalrestores
   - pointintimerestores
   - pvcautoresizes
@@ -74,14 +105,14 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - backupretentions/finalizers
-  - backups/finalizers
   - backupschedules/finalizers
   - camundaclusters/finalizers
   - camundamanagementclusters/finalizers
   - camundaoptimizes/finalizers
   - databases/finalizers
   - elasticsearchclusters/finalizers
+  - logicalbackupelasticsearches/finalizers
+  - logicalbackuprdbmses/finalizers
   - logicalrestores/finalizers
   - pointintimerestores/finalizers
   - pvcautoresizes/finalizers
@@ -90,8 +121,6 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - backupretentions/status
-  - backups/status
   - backupschedules/status
   - camundaclusters/status
   - camundamanagementclusters/status
@@ -101,6 +130,8 @@ rules:
   - databases/status
   - databaseserverconfigs/status
   - elasticsearchclusters/status
+  - logicalbackupelasticsearches/status
+  - logicalbackuprdbmses/status
   - logicalrestores/status
   - managementauthconfigs/status
   - objectstorageconfigs/status

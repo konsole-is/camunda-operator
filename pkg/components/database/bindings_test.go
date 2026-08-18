@@ -24,11 +24,13 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -148,8 +150,8 @@ func TestDatabaseBindingsGolden(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rb := ResolveBindings(tt.db)
-			rb.AppPassword = "app-password"
-			rb.BackupPassword = "backup-password"
+			rb.AppPassword = credentials.Password{Value: "app-password"}
+			rb.BackupPassword = credentials.Password{Value: "backup-password"}
 
 			comp, err := BindingsComponent(tt.db, rb)
 			require.NoError(t, err)
@@ -167,7 +169,7 @@ func TestDatabaseBindingsGoldenBackupDisabled(t *testing.T) {
 	db.Spec.BackupCredentials = &v1.BackupCredentialsSpec{Disabled: true}
 
 	rb := ResolveBindings(db)
-	rb.AppPassword = "app-password"
+	rb.AppPassword = credentials.Password{Value: "app-password"}
 
 	comp, err := BindingsComponent(db, rb)
 	require.NoError(t, err)
@@ -176,4 +178,38 @@ func TestDatabaseBindingsGoldenBackupDisabled(t *testing.T) {
 		t, "testdata/golden/backup-disabled/bindings.yaml", comp,
 		golden.WithScheme(goldenScheme(t)), golden.Update(*update),
 	)
+}
+
+// A password that came from an existing Secret must bind its apply to that
+// Secret, or a delete between the read and the apply recreates the Secret with
+// the old password and the delete rotates nothing. Each credential Secret
+// carries the precondition of its own password.
+func TestCredentialSecretsCarryTheApplyPrecondition(t *testing.T) {
+	t.Parallel()
+
+	db := goldenDatabase()
+	rb := ResolveBindings(db)
+	rb.AppPassword = credentials.Password{Value: "app-password", SourceUID: "uid-app"}
+	rb.BackupPassword = credentials.Password{Value: "backup-password"}
+
+	comp, err := BindingsComponent(db, rb)
+	require.NoError(t, err)
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	annotations := map[string]map[string]string{}
+	for _, obj := range objects {
+		if _, ok := obj.(*corev1.Secret); ok {
+			annotations[obj.GetName()] = obj.GetAnnotations()
+		}
+	}
+	assert.Equal(
+		t,
+		map[string]string{credentials.PreconditionAnnotation: "uid-app"},
+		annotations[rb.AppSecret.Name],
+	)
+	// A new password has no source object, so the apply must be free to
+	// create the Secret.
+	assert.Empty(t, annotations[rb.BackupSecret.Name])
 }

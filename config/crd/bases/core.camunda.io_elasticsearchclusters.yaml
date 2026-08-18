@@ -1055,6 +1055,51 @@ spec:
                 maxLength: 253
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
+              secureSettings:
+                description: |-
+                  SecureSettings are Secrets that ECK loads into the keystore of every
+                  node. The operator adds the credentials of snapshotStorageRef to the
+                  keystore on its own, so this field is for everything else a keystore
+                  holds.
+                items:
+                  description: |-
+                    SecureSettingsSource references a Secret whose contents ECK loads into the
+                    keystore of every Elasticsearch node. Elasticsearch reads credentials from
+                    the keystore only, never from the settings of a snapshot repository.
+                  properties:
+                    entries:
+                      description: |-
+                        Entries projects single keys to keystore entries. An empty list loads
+                        every key of the Secret under its own name.
+                      items:
+                        description: |-
+                          SecureSettingEntry projects one key of a Secret to a named entry of the
+                          Elasticsearch keystore.
+                        properties:
+                          key:
+                            description: Key in the Secret.
+                            minLength: 1
+                            type: string
+                          path:
+                            description: |-
+                              Path is the keystore entry that the key becomes, for example
+                              s3.client.default.access_key.
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - path
+                        type: object
+                      type: array
+                    secretName:
+                      description: SecretName is the Secret, in the namespace of the
+                        ElasticsearchCluster.
+                      minLength: 1
+                      type: string
+                  required:
+                  - secretName
+                  type: object
+                type: array
               serviceAccount:
                 description: |-
                   ServiceAccount configures the Elasticsearch pods' ServiceAccount,
@@ -1066,9 +1111,43 @@ spec:
                     description: |-
                       Annotations to set on the ServiceAccount, typically workload-identity
                       annotations (IRSA, GCP Workload Identity, ...) granting the pods access
-                      to cloud resources such as the snapshot bucket used for backups.
+                      to cloud resources such as the snapshot bucket used for backups. A
+                      controller that resolves a bucket contract derives the annotation of
+                      that contract's identity as well; an annotation set here wins over the
+                      derived one on the same key.
                     type: object
+                  create:
+                    description: |-
+                      Create renders and owns the ServiceAccount. Defaults to true. False
+                      names one that already exists: the operator neither creates, annotates,
+                      nor owns it, and a ServiceAccount that is absent then fails the
+                      pre-check instead of leaving the pods unschedulable. The operator never
+                      adopts a foreign ServiceAccount, because an owned one is deleted with
+                      the resource.
+                    type: boolean
+                  name:
+                    description: |-
+                      Name of the ServiceAccount. Empty means the name that the controller
+                      derives from the name of the resource, which each CRD doc states. The
+                      name is part of the contract with the cloud provider: a workload
+                      identity that needs no annotation, such as EKS Pod Identity, binds the
+                      principal system:serviceaccount:<namespace>:<name>.
+                    maxLength: 253
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
                 type: object
+              snapshotStorageRef:
+                description: |-
+                  SnapshotStorageRef names a cluster-scoped ObjectStorageConfig that holds
+                  the bucket of the snapshot repository of this cluster. When it is set,
+                  the operator owns the whole Elasticsearch side of that bucket: it gives
+                  the nodes their credentials, registers the repository, and publishes the
+                  repository name in the SecondaryStorageConfig it produces. Backups of a
+                  CamundaCluster on this storage need it. The bucket must be the one that
+                  the CamundaCluster references as well.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
               storageClassName:
                 description: |-
                   StorageClassName is the StorageClass for the data volumes. Defaults to

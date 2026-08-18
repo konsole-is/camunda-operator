@@ -4,6 +4,16 @@ The operator is distributed as a Helm chart and a plain Kubernetes manifest, bot
 published with every release. Charts and images live in GitHub Container Registry
 and are signed with [cosign](https://docs.sigstore.dev/) keyless signatures.
 
+Every release ships two images: the controller manager
+(`ghcr.io/konsole-is/camunda-operator`) and its companion CLI
+(`ghcr.io/konsole-is/camunda-operator-cli`). The manager never runs the CLI
+itself; the Jobs it creates do — a `LogicalBackupRDBMS` dump uploads through
+it. The manager is told which CLI image to render into those Jobs through
+`--camunda-operator-cli-image`, and refuses to start without one. Both install
+paths below default it to the CLI image of the same release, so the only thing
+to make sure of is that your nodes can pull it — from a mirror too, if you
+mirror the manager image.
+
 **Requirements:** Kubernetes 1.30 or later, and Helm 3.8+ for the OCI registry
 (Helm 4.1.4 is pinned in `.tool-versions` and used by the chart and release
 workflows; `make install-helm` installs that same version when Helm is missing).
@@ -26,7 +36,7 @@ helm install camunda-operator \
   --create-namespace
 ```
 
-This installs the controller manager and all 19 custom resource definitions.
+This installs the controller manager and every custom resource definition. Server-side apply is required: the CamundaCluster CRDs are larger than the annotation that client-side apply writes.
 
 Replace `<version>` with a released version — for example `0.1.0`. Release tags
 are unprefixed SemVer, and the chart version, chart `appVersion`, and operator
@@ -48,6 +58,10 @@ helm install camunda-operator \
   --set rbacHelpers.enable=true
 ```
 
+- `manager.cliImage.repository` and `manager.cliImage.tag` name the
+  camunda-operator-cli image the operator's Jobs run. They default to the
+  release's own CLI image and work exactly like `manager.image.*`; point them at
+  your mirror when you mirror the manager image.
 - `prometheus.enable` installs a `ServiceMonitor`. It requires the
   prometheus-operator CRDs to already be present in the cluster.
 - `rbacHelpers.enable` installs convenience admin, editor, and viewer
@@ -62,7 +76,7 @@ helm install camunda-operator \
 Every release attaches a rendered manifest:
 
 ```bash
-kubectl apply -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/install.yaml
+kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/<version>/install.yaml
 ```
 
 This is **not** the same as the chart's defaults. `install.yaml` includes the
@@ -71,6 +85,10 @@ set the chart renders with `--set rbacHelpers.enable=true` (60 `ClusterRole`s
 total, versus 3 at the chart's defaults where `rbacHelpers.enable` is `false`).
 `install.yaml` also creates the `camunda-operator-system` `Namespace`, which the
 chart does not — Helm's `--create-namespace` handles that instead.
+
+The manifest pins the CLI image of the same release in the manager's
+`CAMUNDA_OPERATOR_CLI_IMAGE` environment variable. To use a mirror, edit that
+value before applying.
 
 ## Installing CRDs out of band
 
@@ -94,9 +112,9 @@ With `crd.enable=false`, CRD lifecycle is yours to manage: apply the updated
 
 ## Verifying signatures
 
-Both the chart and the operator image are signed with cosign keyless signatures
-tied to the release workflow's GitHub identity. There is no public key to
-distribute — verification checks the signing identity instead:
+The chart, the operator image, and the CLI image are signed with cosign keyless
+signatures tied to the release workflow's GitHub identity. There is no public
+key to distribute — verification checks the signing identity instead:
 
 ```bash
 cosign verify ghcr.io/konsole-is/charts/camunda-operator:<version> \
@@ -104,6 +122,10 @@ cosign verify ghcr.io/konsole-is/charts/camunda-operator:<version> \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 cosign verify ghcr.io/konsole-is/camunda-operator:<version> \
+  --certificate-identity-regexp '^https://github\.com/konsole-is/camunda-operator/\.github/workflows/release\.yml@refs/tags/.+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+cosign verify ghcr.io/konsole-is/camunda-operator-cli:<version> \
   --certificate-identity-regexp '^https://github\.com/konsole-is/camunda-operator/\.github/workflows/release\.yml@refs/tags/.+$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
@@ -156,9 +178,12 @@ extension that BSD and macOS `xargs` reject outright.
 ```bash
 git clone https://github.com/konsole-is/camunda-operator
 cd camunda-operator
-make helm-generate IMG=<registry>/camunda-operator:<tag>
-make helm-deploy   IMG=<registry>/camunda-operator:<tag>
+make docker-build docker-push         IMG=<registry>/camunda-operator:<tag>
+make docker-build-cli docker-push-cli CLI_IMG=<registry>/camunda-operator-cli:<tag>
+make helm-generate IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag>
+make helm-deploy   IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag>
 ```
 
 `make helm-generate` regenerates `dist/chart/` from `config/`; the chart is not
-checked into the repository.
+checked into the repository. `IMG` and `CLI_IMG` stamp the two images the same
+way: `make deploy` and `make build-installer` take both as well.

@@ -348,6 +348,14 @@ type CamundaClusterSpec struct {
 	// document storage.
 	// +optional
 	DocumentStorageRef string `json:"documentStorageRef,omitempty"`
+	// Backup configures how backups of this cluster behave: the schedule and
+	// the retention of the primary-storage backups that Zeebe takes, and the
+	// pod of the database dump Job. It is allowed in a preset, because it is
+	// policy; backupStorageRef, which says where backups go, is not. The
+	// block applies to a relational cluster: continuous and scheduled
+	// primary-storage backups and the dump Job exist only there.
+	// +optional
+	Backup *ClusterBackupSpec `json:"backup,omitempty"`
 	// Monitoring configures the monitoring integrations.
 	// +optional
 	Monitoring *ClusterMonitoringSpec `json:"monitoring,omitempty"`
@@ -372,6 +380,13 @@ type CamundaClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
+	// Management is the published address of the management API of this
+	// cluster. Extensions read it instead of rebuilding the Service name,
+	// the port, and the authentication from the internals of this
+	// controller. It is unset while the cluster is suspended, so a consumer
+	// sees an unreachable cluster instead of a stale endpoint.
+	// +optional
+	Management *ManagementBinding `json:"management,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason, or it is derived from the conditions of the components that the
 	// cluster needs. The per-process conditions (ZeebeReady, GatewayReady,

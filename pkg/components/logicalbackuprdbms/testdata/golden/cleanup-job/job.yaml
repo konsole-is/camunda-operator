@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: cleanup
+    camunda.io/logical-backup-rdbms: my-cluster-1748937221000
+    camunda.io/logical-backup-rdbms-uid: 3f2a9c1e-7b4d-4e0a-9c6f-2d1b8a5e4c73
+  name: my-cluster-1748937221000-cleanup
+  namespace: my-cluster-ns
+spec:
+  activeDeadlineSeconds: 3600
+  backoffLimit: 3
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+      labels:
+        app.kubernetes.io/managed-by: camunda-operator
+        azure.workload.identity/use: "true"
+        camunda.io/cluster: my-cluster
+        camunda.io/component: cleanup
+        camunda.io/logical-backup-rdbms: my-cluster-1748937221000
+        camunda.io/logical-backup-rdbms-uid: 3f2a9c1e-7b4d-4e0a-9c6f-2d1b8a5e4c73
+    spec:
+      containers:
+      - args:
+        - delete
+        env:
+        - name: UPLOAD_KEY
+          value: clusters/my-cluster-ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump
+        - name: UPLOAD_STORAGE_NAME
+          value: my-backup-config
+        - name: UPLOAD_STORAGE_SPEC
+          value: '{"type":"AzureBlob","azureBlob":{"accountName":"camundabackups","container":"backups","basePath":"clusters","auth":{"type":"workloadIdentity"}}}'
+        image: ghcr.io/konsole-is/camunda-operator-cli:0.1.0
+        name: delete
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 65532
+          runAsNonRoot: true
+          runAsUser: 65532
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: my-cluster-camunda

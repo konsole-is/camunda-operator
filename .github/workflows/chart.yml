@@ -45,7 +45,7 @@ jobs:
       - name: Install kind
         run: |
           VERSION=0.31.0
-          curl -fsSLo ./kind \
+          curl -fsSLo ./kind --retry 5 --retry-delay 10 --retry-all-errors \
             "https://kind.sigs.k8s.io/dl/v${VERSION}/kind-linux-$(go env GOARCH)"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
@@ -93,12 +93,12 @@ jobs:
       - name: Uninstall the chart
         run: make helm-uninstall
 
-      # crd.keep defaults to true, so CRDs must survive uninstall.
-      # The expected count (19) is also stated in README.md and
-      # docs/installation.md — all three must move together when a CRD is
-      # added or removed.
+      # crd.keep defaults to true, so CRDs must survive uninstall. The
+      # expected count is derived from the CRD bases in the checkout, so a
+      # PR that adds or removes a kind carries its own expectation.
       - name: Verify CRDs survived uninstall
         run: |
+          expected=$(ls config/crd/bases/*.yaml | wc -l)
           count=$(kubectl get crd -o name | grep -c 'core\.camunda\.io' || true)
-          echo "CRDs remaining: $count"
-          [ "$count" -eq 19 ] || { echo "expected 19 CRDs to be kept, found $count"; exit 1; }
+          echo "CRDs remaining: $count (expected $expected)"
+          [ "$count" -eq "$expected" ] || { echo "expected $expected CRDs to be kept, found $count"; exit 1; }

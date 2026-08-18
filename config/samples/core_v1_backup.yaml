@@ -1,9 +1,0 @@
-apiVersion: core.camunda.io/v1
-kind: Backup
-metadata:
-  labels:
-    app.kubernetes.io/name: camunda-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: backup-sample
-spec:
-  # TODO(user): Add fields here

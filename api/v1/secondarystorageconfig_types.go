@@ -48,6 +48,19 @@ type ElasticsearchStorage struct {
 	// valid with an https endpoint.
 	// +optional
 	CASecretRef *SecretKeyRef `json:"caSecretRef,omitempty"`
+	// SnapshotRepository names the snapshot repository, registered in this
+	// Elasticsearch cluster, that backups write to. An ElasticsearchCluster
+	// with a snapshotStorageRef registers the repository and fills this field
+	// in the contract it produces. Set it by hand for an Elasticsearch cluster
+	// that this operator does not manage, after you register the repository
+	// yourself. A cluster that takes backups needs it: without a repository
+	// name, the backup components have nowhere to write. The name is a URL
+	// path segment of the Elasticsearch API, so it is restricted to a
+	// conservative character set.
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	SnapshotRepository string `json:"snapshotRepository,omitempty"`
 }
 
 // RDBMSStorage holds relational database backend details.

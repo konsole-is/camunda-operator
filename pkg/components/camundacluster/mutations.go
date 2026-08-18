@@ -116,10 +116,10 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 		},
 		{
 			Name:    MutationServiceAccount,
-			Feature: feature.NewBooleanGate(e.ServiceAccount != nil),
+			Feature: feature.NewBooleanGate(usesServiceAccount(in)),
 			Mutate: func(m primitives.WorkloadMutator) error {
 				m.EditPodSpec(func(spec *editors.PodSpecEditor) error {
-					spec.SetServiceAccountName(ServiceAccountName(in.Cluster))
+					spec.SetServiceAccountName(ServiceAccountName(in.Cluster, in.Effective))
 					return nil
 				})
 				return nil

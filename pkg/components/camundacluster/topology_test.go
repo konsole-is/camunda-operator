@@ -212,5 +212,7 @@ func TestNames(t *testing.T) {
 	assert.Equal(t, "my-cluster-zeebe", WorkloadName(cluster, ComponentZeebe))
 	assert.Equal(t, "my-cluster-connectors", WorkloadName(cluster, ComponentConnectors))
 	assert.Equal(t, "my-cluster-camunda-admin", AdminSecretName(cluster))
-	assert.Equal(t, "my-cluster-camunda", ServiceAccountName(cluster))
+	assert.Equal(t, "my-cluster-camunda", ServiceAccountName(cluster, NewEffective(cluster.Spec)))
+	named := NewEffective(v1.CamundaClusterSpec{ServiceAccount: &v1.ServiceAccountSpec{Name: "camunda-prod"}})
+	assert.Equal(t, "camunda-prod", ServiceAccountName(cluster, named))
 }
