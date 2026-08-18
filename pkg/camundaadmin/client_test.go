@@ -17,7 +17,11 @@ limitations under the License.
 package camundaadmin_test
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -256,4 +260,39 @@ func TestDeleteRuntimeBackupIsIdempotent(t *testing.T) {
 	// The id of a deleted backup is never reusable.
 	_, err = client.StartRuntimeBackup(ctx, &id)
 	require.ErrorIs(t, err, camundaadmin.ErrConflict)
+}
+
+// A rejection carries the response body so the operator can read why. A body
+// that is far larger than a condition allows must not travel whole into the
+// error, or every status flush that carries it is refused.
+func TestRejectedErrorBoundsTheBody(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 100_000))
+	}))
+	t.Cleanup(server.Close)
+	client, err := camundaadmin.New(camundaadmin.Binding{Endpoint: server.URL, Version: "8.9.9"})
+	require.NoError(t, err)
+
+	err = client.ResumeExporting(ctx)
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.Less(t, len(err.Error()), 2_000)
+	assert.Contains(t, err.Error(), "(truncated, 100000 bytes)")
+}
+
+func TestRejectedErrorKeepsASmallBodyWhole(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("  the exporter is not ready  "))
+	}))
+	t.Cleanup(server.Close)
+	client, err := camundaadmin.New(camundaadmin.Binding{Endpoint: server.URL, Version: "8.9.9"})
+	require.NoError(t, err)
+
+	err = client.ResumeExporting(ctx)
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.True(t, strings.HasSuffix(err.Error(), "returned 500: the exporter is not ready"), err.Error())
+	assert.NotContains(t, err.Error(), "truncated")
 }
