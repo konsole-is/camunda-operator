@@ -63,6 +63,13 @@ func (r *Reconciler) finalize(
 		}
 	}
 
+	// The claim goes back with the artifacts. A backup whose flush failed
+	// between the claim and the ID can hold it without an ID, so this runs
+	// for every backup. It is a no-op when nothing is held.
+	if err := r.releaseClaim(ctx, backup); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	controllerutil.RemoveFinalizer(backup, logicalbackup.Finalizer)
 	if err := r.Update(ctx, backup); err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("removing the finalizer: %w", err)

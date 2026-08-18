@@ -142,6 +142,22 @@ func (r *Reconciler) backupHistory(
 		return result, err
 	}
 
+	// The web applications write into the repository that the cluster is
+	// configured with now. A destination that moved since the start puts
+	// the history snapshots outside the pinned set. The finalizer then
+	// deletes their names from the pinned repository and leaks them. The
+	// check runs before the status of an existing backup is trusted and
+	// before a start.
+	if storage, result, err := r.destination(
+		ctx,
+		backup,
+		cluster,
+		"BackupHistory",
+		&backup.Status.History,
+	); storage == nil {
+		return result, err
+	}
+
 	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
 	if err != nil {
 		if errors.Is(err, camundaadmin.ErrUnreachable) {
@@ -193,15 +209,12 @@ func (r *Reconciler) snapshotRecords(
 	cluster *v1.CamundaCluster,
 ) (ctrl.Result, error) {
 	part := &backup.Status.Records
-	if repointed := cluster.Status.Management.BackupRepository; repointed != backup.Status.Repository {
-		r.failStep(backup, "SnapshotRecords", part, fmt.Errorf(
-			"the cluster's snapshot repository changed from %q to %q mid-run; the set must stay in one repository",
-			backup.Status.Repository, repointed,
-		))
-		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	storage, result, err := r.destination(ctx, backup, cluster, "SnapshotRecords", part)
+	if storage == nil {
+		return result, err
 	}
 
-	es, result, err := r.elasticsearch(ctx, backup, cluster, "SnapshotRecords", part)
+	es, result, err := r.elasticsearch(ctx, backup, storage, "SnapshotRecords", part)
 	if es == nil {
 		return result, err
 	}
@@ -249,16 +262,28 @@ func (r *Reconciler) snapshotRecords(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// elasticsearch builds the Elasticsearch client for one running step. A
-// storage contract or a Secret that is gone mid-run fails the step through
-// resume. Only a transient read error comes back as an error.
-func (r *Reconciler) elasticsearch(
+// destination verifies that the cluster still writes to the destination
+// that the backup pinned at its start. That is the snapshot repository of
+// the binding, the storage contract, and its Elasticsearch endpoint. It returns
+// the resolved contract when everything matches. A destination that moved,
+// or a contract that is gone, fails the step through resume and returns a
+// nil contract with the result to return. Only a transient read of the
+// contract comes back as an error.
+func (r *Reconciler) destination(
 	ctx context.Context,
 	backup *v1.LogicalBackupElasticsearch,
 	cluster *v1.CamundaCluster,
 	step string,
 	part *v1.BackupPart,
-) (*esadmin.Client, ctrl.Result, error) {
+) (*v1.SecondaryStorageConfig, ctrl.Result, error) {
+	if repointed := cluster.Status.Management.BackupRepository; repointed != backup.Status.Repository {
+		r.failStep(backup, step, part, fmt.Errorf(
+			"the snapshot repository of the cluster changed from %q to %q mid-run; the set must stay in one repository",
+			backup.Status.Repository, repointed,
+		))
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
 	storage, err := r.resolveStorage(ctx, cluster)
 	if err != nil {
 		if !storageMissing(err) {
@@ -274,6 +299,20 @@ func (r *Reconciler) elasticsearch(
 		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
+	return storage, ctrl.Result{}, nil
+}
+
+// elasticsearch builds the Elasticsearch client of a verified storage
+// contract for one running step. A Secret that is gone or unusable mid-run
+// fails the step through resume. Only a transient read error comes back as
+// an error.
+func (r *Reconciler) elasticsearch(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	storage *v1.SecondaryStorageConfig,
+	step string,
+	part *v1.BackupPart,
+) (*esadmin.Client, ctrl.Result, error) {
 	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)
 	if err != nil {
 		return nil, ctrl.Result{}, err

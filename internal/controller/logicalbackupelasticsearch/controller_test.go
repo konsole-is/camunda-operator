@@ -24,7 +24,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +38,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
-	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
 // rig is everything one test needs: the fakes and the referenced resources of
@@ -163,6 +165,55 @@ func (r *rig) publishBinding(partitions int32) {
 			BackupRepository: r.repository,
 		}
 		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// leaseHolder returns the holder identity of the claim Lease of the rig's
+// cluster, or "" when there is none.
+func (r *rig) leaseHolder() string {
+	GinkgoHelper()
+	var lease coordinationv1.Lease
+	err := k8sClient.Get(
+		ctx, client.ObjectKey{
+			Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+		}, &lease,
+	)
+	if apierrors.IsNotFound(err) {
+		return ""
+	}
+	Expect(err).NotTo(HaveOccurred())
+	if lease.Spec.HolderIdentity == nil {
+		return ""
+	}
+	return *lease.Spec.HolderIdentity
+}
+
+// holdLease writes the claim Lease of the rig's cluster for the given holder
+// identity, as another actor would.
+func (r *rig) holdLease(holder string) {
+	GinkgoHelper()
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+		},
+		Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder},
+	}
+	Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+}
+
+// setLeaseHolder rewrites the holder identity of the existing claim Lease
+// in one write, so no claimant finds the Lease absent in between.
+func (r *rig) setLeaseHolder(holder string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var lease coordinationv1.Lease
+		g.Expect(k8sClient.Get(
+			ctx, client.ObjectKey{
+				Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+			}, &lease,
+		)).To(Succeed())
+		lease.Spec.HolderIdentity = &holder
+		g.Expect(k8sClient.Update(ctx, &lease)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -520,17 +571,43 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
-	It("serializes backups of one cluster", func() {
+	It("serializes two backups of one cluster on the claim Lease", func() {
 		r := newRig()
 
+		// Both are created within the same second. The tie-break orders
+		// them; the Lease decides. Exactly one holds it and starts, the
+		// other waits and names the holder.
 		first := r.newBackup()
-		id := backupID(first)
-
 		second := r.newBackup()
-		expectReady(second, metav1.ConditionFalse, v1.ReasonBackupInProgress)
-		Expect(currentBackup(second).Status.Phase).To(Equal(v1.LogicalBackupPending))
 
-		By("proceeding once the first backup finishes")
+		var holder, waiter *v1.LogicalBackupElasticsearch
+		Eventually(func(g Gomega) {
+			a, b := currentBackup(first), currentBackup(second)
+			started := 0
+			for _, candidate := range []*v1.LogicalBackupElasticsearch{a, b} {
+				if candidate.Status.BackupID != 0 {
+					started++
+					holder = candidate
+				}
+			}
+			g.Expect(started).To(Equal(1), "exactly one started")
+			waiter = a
+			if holder == a {
+				waiter = b
+			}
+		}, timeout, interval).Should(Succeed())
+		id := holder.Status.BackupID
+
+		Expect(r.leaseHolder()).To(Equal(claimant(holder).String()))
+		expectReady(waiter, metav1.ConditionFalse, v1.ReasonBackupInProgress)
+		// The pre-filter or the Lease names the holder; either way the
+		// waiter says who goes first.
+		ready := meta.FindStatusCondition(currentBackup(waiter).Status.Conditions, v1.ConditionReady)
+		Expect(ready.Message).To(ContainSubstring(holder.Name))
+		Expect(currentBackup(waiter).Status.Phase).To(Equal(v1.LogicalBackupPending))
+		Consistently(func() int64 { return currentBackup(waiter).Status.BackupID }, "1s", interval).Should(BeZero())
+
+		By("proceeding once the holder finishes and the Lease is gone")
 		r.management.SetHistoryState(id, "COMPLETED", "")
 		name := RecordsSnapshotName(id)
 		Eventually(func() int {
@@ -539,28 +616,55 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
 		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetRuntimeState(id, "COMPLETED", "")
-		expectPhase(first, v1.LogicalBackupCompleted)
+		expectPhase(holder, v1.LogicalBackupCompleted)
 
 		Eventually(func() v1.LogicalBackupPhase {
-			return currentBackup(second).Status.Phase
+			return currentBackup(waiter).Status.Phase
 		}, timeout, interval).Should(Equal(v1.LogicalBackupRunning))
+		Expect(r.leaseHolder()).To(Equal(claimant(currentBackup(waiter)).String()))
 	})
 
-	It("waits on a sibling backup of the other kind", func() {
+	It("waits on a claim that another holder took, and takes over a stale one", func() {
 		r := newRig()
-		key := refindex.NamespacedKey(r.namespace, r.cluster.Name)
-		// A started sibling: only those block, per the SiblingInProgress
-		// contract.
-		siblings.Store(key, "started-rdbms-backup-of-the-same-cluster")
-		DeferCleanup(func() { siblings.Delete(key) })
 
+		By("blocking on a Lease that is not ours: no takeover, only a wait that names it")
+		r.holdLease("someone-else")
 		backup := r.newBackup()
 		expectReady(backup, metav1.ConditionFalse, v1.ReasonBackupInProgress)
+		ready := meta.FindStatusCondition(currentBackup(backup).Status.Conditions, v1.ConditionReady)
+		Expect(ready.Message).To(ContainSubstring("someone-else"))
+		Consistently(func() int64 { return currentBackup(backup).Status.BackupID }, "1s", interval).Should(BeZero())
+		Expect(r.leaseHolder()).To(Equal("someone-else"))
 
-		siblings.Delete(key)
-		Eventually(func() v1.LogicalBackupPhase {
-			return currentBackup(backup).Status.Phase
-		}, timeout, interval).Should(Equal(v1.LogicalBackupRunning))
+		By("taking over a Lease whose holder is a backup that no longer exists")
+		r.setLeaseHolder("LogicalBackupElasticsearch/deleted-long-ago/uid-of-the-past")
+		backupID(backup)
+		Expect(r.leaseHolder()).To(Equal(claimant(currentBackup(backup)).String()))
+	})
+
+	It("releases the claim when the holder ends and when a running holder is deleted", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+		Expect(r.leaseHolder()).To(Equal(claimant(currentBackup(backup)).String()))
+
+		By("failing the backup fast, then finding the Lease gone")
+		r.management.SetHistoryState(id, "FAILED", "disk full")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		Eventually(r.leaseHolder, timeout, interval).Should(BeEmpty())
+
+		By("deleting a running backup, then finding the Lease gone with it")
+		running := r.newBackup()
+		runningID := backupID(running)
+		Eventually(func() int { return r.management.HistoryStarts(runningID) }, timeout, interval).Should(Equal(1))
+		Expect(r.leaseHolder()).To(Equal(claimant(currentBackup(running)).String()))
+		r.management.SetHistoryState(runningID, "COMPLETED", "")
+		Expect(k8sClient.Delete(ctx, running)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(running), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.leaseHolder()).To(BeEmpty())
 	})
 
 	It("stays Pending until the cluster publishes its binding", func() {
@@ -901,7 +1005,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 
-		By("deleting the storage contract before the records snapshot")
+		By("deleting the storage contract while the history backup runs")
 		var storage v1.SecondaryStorageConfig
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: r.namespace, Name: "storage"}, &storage,
@@ -909,31 +1013,93 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(k8sClient.Delete(ctx, &storage)).To(Succeed())
 		r.management.SetHistoryState(id, "COMPLETED", "")
 
+		// The destination is verified on every poll of the history backup,
+		// so the loss is caught there, before the status of that backup is
+		// trusted.
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
-		Expect(final.Status.FailureMessage).To(ContainSubstring("SnapshotRecords"))
-		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(final.Status.FailureMessage).To(ContainSubstring("BackupHistory"))
+		Expect(final.Status.History.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
 
-	It("fails the step when the repository is repointed mid-run", func() {
+	It("fails before the history backup starts when the repository is repointed after the pause", func() {
 		r := newRig()
+		// The management API is unreachable through the pause, so the
+		// procedure holds at PauseExporting with its destination pinned.
+		unreachable := r.management.URL()
+		r.management.Close()
+		r.management = camundaadmintest.New()
+		DeferCleanup(r.management.Close)
+		pinned := r.repository
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Status.Management.Endpoint = unreachable
+			g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
 		backup := r.newBackup()
 		id := backupID(backup)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonConnectionFailed)
+		Expect(currentBackup(backup).Status.Repository).To(Equal(pinned))
 
-		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
-
-		By("repointing the published repository before the records snapshot")
+		By("repointing the repository and bringing the management API back")
 		r.repository = "another-repository"
 		r.publishBinding(3)
-		r.management.SetHistoryState(id, "COMPLETED", "")
 
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
-		Expect(final.Status.FailureMessage).To(ContainSubstring("changed"))
-		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("BackupHistory"),
+			ContainSubstring(pinned),
+			ContainSubstring("another-repository"),
+		))
+		Expect(final.Status.History.State).To(Equal(v1.BackupPartFailed))
+		Expect(r.management.HistoryStarts(id)).To(BeZero(), "no history backup was started into the new repository")
 		Expect(r.management.Exporting()).To(Equal("running"))
 	})
+
+	It(
+		"fails a started history backup when the repository is repointed, and the finalizer touches the pinned one",
+		func() {
+			r := newRig()
+			pinned := r.repository
+			backup := r.newBackup()
+			id := backupID(backup)
+
+			Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+			Eventually(func() []string {
+				return currentBackup(backup).Status.HistorySnapshots
+			}, timeout, interval).ShouldNot(BeEmpty())
+			historySnapshot := currentBackup(backup).Status.HistorySnapshots[0]
+			// The web applications wrote the snapshot into the pinned repository.
+			r.search.SetSnapshotState(pinned, historySnapshot, "SUCCESS")
+
+			By("repointing the repository while the history backup runs")
+			r.repository = "another-repository"
+			r.publishBinding(3)
+			r.management.SetHistoryState(id, "COMPLETED", "")
+
+			expectPhase(backup, v1.LogicalBackupFailed)
+			final := currentBackup(backup)
+			Expect(final.Status.FailureMessage).To(SatisfyAll(
+				ContainSubstring("BackupHistory"),
+				ContainSubstring(pinned),
+				ContainSubstring("another-repository"),
+			))
+			Expect(final.Status.Repository).To(Equal(pinned))
+			Expect(r.management.Exporting()).To(Equal("running"))
+
+			By("deleting the backup: the finalizer removes the snapshot from the pinned repository")
+			Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+			Eventually(func() bool {
+				var gone v1.LogicalBackupElasticsearch
+				return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(r.search.SnapshotExists(pinned, historySnapshot)).To(BeFalse())
+		},
+	)
 
 	It("fails the step when the storage endpoint is repointed mid-run, and holds the deletion", func() {
 		r := newRig()
@@ -959,10 +1125,16 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		pointStorageAt(other.URL())
 		r.management.SetHistoryState(id, "COMPLETED", "")
 
+		// The destination is verified on every poll of the history backup,
+		// so the repoint is caught there, before anything is written to the
+		// other cluster.
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
-		Expect(final.Status.FailureMessage).To(ContainSubstring("endpoint"))
-		Expect(final.Status.Records.State).To(Equal(v1.BackupPartFailed))
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("BackupHistory"),
+			ContainSubstring("endpoint"),
+		))
+		Expect(final.Status.History.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
 		Expect(other.SnapshotCreates(r.repository, RecordsSnapshotName(id))).To(BeZero())
 

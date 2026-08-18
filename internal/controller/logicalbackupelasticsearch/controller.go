@@ -93,8 +93,7 @@ const (
 )
 
 // Options tunes a Reconciler. The zero value is the production configuration.
-// Tests set the fields to fit the procedure inside a test timeout and to fake
-// the sibling backup kind.
+// Tests set the fields to fit the procedure inside a test timeout.
 type Options struct {
 	// ResumeDeadline bounds the accumulated time of active resume attempts.
 	// After it, the phase goes Failed with reason ResumeFailed. Zero means
@@ -110,11 +109,6 @@ type Options struct {
 	// RuntimeRegistrationGrace bounds how long an absent runtime backup is
 	// polled after its request was recorded. Zero means two minutes.
 	RuntimeRegistrationGrace time.Duration
-	// SiblingInProgress reports a non-terminal backup of the same cluster
-	// that the other backup kind holds. With it, backups of one cluster run
-	// one at a time across kinds. Nil means that no other kind is checked.
-	// The manager wires it when both kinds are registered.
-	SiblingInProgress logicalbackup.SiblingInProgress
 }
 
 // Reconciler drives a LogicalBackupElasticsearch to a terminal phase.
@@ -145,6 +139,7 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile advances the backup by at most one step. The recorded step is
 // persisted before the next side effect, so a crash re-enters where it left
@@ -191,9 +186,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	// A write conflict at the terminal transition can restore an older Ready
 	// from the server. The terminal condition is staged again from the
-	// recorded outcome. SetStatusCondition makes the repeat a no-op.
+	// recorded outcome. SetStatusCondition makes the repeat a no-op. The
+	// claim on the cluster goes back here, after the terminal status was
+	// flushed and never before it. Release is a no-op when nothing is held.
 	if backup.Terminal() {
 		conditions.Stage(&backup, terminalReady(&backup))
+		if err := r.releaseClaim(ctx, &backup); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 

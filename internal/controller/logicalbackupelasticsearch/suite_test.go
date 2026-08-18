@@ -18,20 +18,17 @@ package logicalbackupelasticsearch
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/konsole-is/camunda-operator/internal/testenv"
-	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
 
 // timeout and interval bound the Eventually polling of every envtest
@@ -45,12 +42,6 @@ var (
 	env       *testenv.Env
 	ctx       context.Context
 	k8sClient client.Client
-
-	// siblings fakes the other backup kind. A test marks a cluster as held
-	// by a STARTED sibling backup, and the pre-checks must wait on it. The
-	// contract of SiblingInProgress reports only started siblings; a pending
-	// sibling never blocks. Keyed by namespace/name of the cluster.
-	siblings sync.Map
 )
 
 func TestLogicalBackupElasticsearchController(t *testing.T) {
@@ -78,12 +69,6 @@ var _ = BeforeSuite(func() {
 			// through several hidden status answers, stays inside it under
 			// a loaded machine.
 			RuntimeRegistrationGrace: 3 * time.Second,
-			SiblingInProgress: func(_ context.Context, cluster types.NamespacedName) (string, error) {
-				if held, ok := siblings.Load(refindex.NamespacedKey(cluster.Namespace, cluster.Name)); ok {
-					return held.(string), nil
-				}
-				return "", nil
-			},
 		}).SetupWithManager(mgr)
 	})
 

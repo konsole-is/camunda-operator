@@ -24,14 +24,29 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
-// inProgress reports another backup of the same cluster that blocks this
-// one. It checks this kind itself: a started sibling blocks unconditionally,
-// and between two pending backups the tie-break decides which starts first.
-// It then asks the sibling kind through SiblingInProgress when the manager
-// wires it. That callback reports only started siblings, so two pending
-// backups of different kinds cannot deadlock each other.
+// inProgress is the fairness pre-filter of admission. It reports another
+// backup of this kind and the same cluster that goes first: a started
+// sibling, or the older pending one by the tie-break. It orders who tries
+// the claim first. The claim itself is the Lease that Claim takes, and only
+// the Lease decides who holds the cluster. A backup that holds the claim
+// already, on a re-entry after a failed flush, goes first whatever the
+// tie-break says. Otherwise the tie-break and the claim block each other.
 func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
+		holds, err := logicalbackup.Holds(
+			ctx,
+			r.Client,
+			backup.Namespace,
+			backup.Spec.ClusterRef.Name,
+			claimant(backup),
+		)
+		if err != nil {
+			return "", err
+		}
+		if holds {
+			return "", nil
+		}
+
 		cluster := clusterKey(backup)
 
 		var list v1.LogicalBackupElasticsearchList
@@ -52,12 +67,42 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 			}
 		}
 
-		if r.options.SiblingInProgress == nil {
-			return "", nil
-		}
-
-		return r.options.SiblingInProgress(ctx, cluster)
+		return "", nil
 	}
+}
+
+// claimant is the identity under which the backup holds the claim on its
+// cluster.
+func claimant(backup *v1.LogicalBackupElasticsearch) logicalbackup.Claimant {
+	return logicalbackup.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
+}
+
+// claimCluster takes the claim on the cluster for the backup. It returns
+// the display name of the holder that blocks, or "" when the backup holds
+// the claim. It runs before the backup ID is allocated and flushed. A
+// re-entry after a failed flush finds itself as the holder and proceeds.
+func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupElasticsearch) (string, error) {
+	holder, err := logicalbackup.Claim(ctx, r.Client, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup))
+	if err != nil {
+		return "", fmt.Errorf("claiming CamundaCluster %s/%s: %w", backup.Namespace, backup.Spec.ClusterRef.Name, err)
+	}
+	if holder == "" {
+		return "", nil
+	}
+	if parsed, err := logicalbackup.ParseClaimant(holder); err == nil {
+		return parsed.Display(), nil
+	}
+	return holder, nil
+}
+
+// releaseClaim gives the claim on the cluster back. It is a no-op when the
+// backup does not hold it.
+func (r *Reconciler) releaseClaim(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
+	err := logicalbackup.Release(ctx, r.Client, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup))
+	if err != nil {
+		return fmt.Errorf("releasing CamundaCluster %s/%s: %w", backup.Namespace, backup.Spec.ClusterRef.Name, err)
+	}
+	return nil
 }
 
 // blocks reports whether other must run before backup. A sibling that holds
