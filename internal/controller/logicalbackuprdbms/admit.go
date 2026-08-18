@@ -118,9 +118,11 @@ func (r *LogicalBackupRDBMSReconciler) admit(
 // backups of this kind that name the same cluster, terminal ones included, or
 // zero. It arbitrates the ID allocation against the siblings that this
 // controller can see. A clock that stepped backwards then cannot hand out an
-// ID that one of them holds. The residual stays with the cluster: the IDs of
-// the other backup kind and of deleted resources are arbitrated only by its
-// own conflict answer.
+// ID that one of them holds. Nothing arbitrates the residual — the IDs of
+// deleted resources — for the dump: the Zeebe request carries no id, so the
+// cluster answers no conflict for it. That is why the dump key carries the
+// UID of the backup (components.DumpObjectKey): a reused id can never name
+// another backup's object.
 func (r *LogicalBackupRDBMSReconciler) highestSiblingBackupID(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -595,9 +597,9 @@ func (r *LogicalBackupRDBMSReconciler) start(
 	cluster := precheck.Cluster
 
 	backup.Status.BackupID = id
-	backup.Status.ObjectKey = logicalbackup.ObjectKeyPrefix(
-		precheck.Bucket.BasePath(), cluster.Namespace, cluster.Name, id,
-	) + "/" + components.DumpFileName
+	backup.Status.ObjectKey = components.DumpObjectKey(
+		precheck.Bucket.BasePath(), cluster.Namespace, cluster.Name, id, backup.UID,
+	)
 	backup.Status.BucketRef = precheck.Bucket.Name
 	backup.Status.BucketGeneration = precheck.Bucket.Generation
 	backup.Status.BucketLocation = precheck.Bucket.Location()

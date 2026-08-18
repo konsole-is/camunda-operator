@@ -112,7 +112,7 @@ func input() JobInput {
 		Host:               "postgres.databases.svc",
 		Port:               5432,
 		Database:           "camunda",
-		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/camunda.dump",
+		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump",
 		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
 	}
 }
@@ -536,7 +536,7 @@ func TestCleanupJobGolden(t *testing.T) {
 			},
 		},
 		ServiceAccountName: "my-cluster-camunda",
-		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/camunda.dump",
+		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump",
 		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
 	}
 
@@ -557,4 +557,14 @@ func TestBuildCleanupJobRejectsAnEmptyCLIImage(t *testing.T) {
 	_, err := BuildCleanupJob(CleanupJobInput{Backup: backup(), Bucket: s3Bucket(s3Credentials())})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "camunda-operator-cli image is empty")
+}
+
+func TestDumpObjectKeyCarriesTheIDAndTheUID(t *testing.T) {
+	t.Parallel()
+
+	key := DumpObjectKey("/clusters/", "ns", "my-cluster", 1748937221000, "2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10")
+
+	assert.Equal(t, "clusters/ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump", key)
+	assert.NotEqual(t, key, DumpObjectKey("/clusters/", "ns", "my-cluster", 1748937221000, "another-uid"),
+		"the same id from another backup names another object")
 }

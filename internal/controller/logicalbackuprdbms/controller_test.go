@@ -383,9 +383,9 @@ func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 			b.Status.BucketGeneration = w.bucket.Generation
 			b.Status.BucketLocation = w.bucket.Location()
 			b.Status.WorkloadConfigHash = "hash-1"
-			b.Status.ObjectKey = logicalbackup.ObjectKeyPrefix(
-				w.bucket.BasePath(), w.namespace, w.cluster.Name, id,
-			) + "/" + components.DumpFileName
+			b.Status.ObjectKey = components.DumpObjectKey(
+				w.bucket.BasePath(), w.namespace, w.cluster.Name, id, b.UID,
+			)
 		}, func(b *v1.LogicalBackupRDBMS) bool { return b.Status.BackupID == id },
 	)
 }
@@ -581,6 +581,12 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		By("pinning the bucket the backup writes through")
 		Expect(backup.Status.BucketRef).To(Equal(w.bucket.Name))
+
+		By("keying the dump on the id and on the UID, so a reused id never names another backup's dump")
+		Expect(backup.Status.ObjectKey).To(Equal(components.DumpObjectKey(
+			w.bucket.BasePath(), w.namespace, w.cluster.Name, backup.Status.BackupID, backup.UID,
+		)))
+		Expect(backup.Status.ObjectKey).To(HaveSuffix("/" + string(backup.UID) + "/camunda.dump"))
 
 		By("rendering the Job under the cluster ServiceAccount with the recorded key")
 		job := jobOf(backup, w)

@@ -32,10 +32,12 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
 const (
@@ -48,7 +50,8 @@ const (
 	// scratchMountPath is where both containers see the scratch volume.
 	scratchMountPath = "/scratch"
 	// DumpFileName is the file the dump is written to and uploaded from, and
-	// the last segment of the object key in the bucket.
+	// the last segment of the object key in the bucket; DumpObjectKey builds
+	// the whole key.
 	DumpFileName = "camunda.dump"
 	// defaultBackoffLimit bounds the pod retries of the Job. A dump that
 	// fails three times needs a human, not a fourth pod.
@@ -78,6 +81,20 @@ const (
 	// unique once it is truncated to a DNS label.
 	nameHashLength = 10
 )
+
+// DumpObjectKey returns the key of the dump of one backup in the bucket:
+// <basePath>/<namespace>/<cluster>/<id>/<uid>/camunda.dump. The backup id
+// groups the dump with the Zeebe backup that it pairs with; the UID of the
+// backup resource is what makes the key its own. Nothing arbitrates the id
+// of a dump against the ids of deleted backups — the Zeebe request carries
+// no id — so a clock that stepped backwards can allocate an id again. A key
+// of the id alone would then overwrite the dump that a deleted backup left
+// behind, and the finalizer would delete it as its own. With the UID in the
+// key a backup writes only its own object, and the finalizer deletes only
+// that.
+func DumpObjectKey(basePath, namespace, cluster string, id int64, uid types.UID) string {
+	return logicalbackup.ObjectKeyPrefix(basePath, namespace, cluster, id) + "/" + string(uid) + "/" + DumpFileName
+}
 
 // reservedEnvPrefixes start the environment variables a per-backup dump
 // block may not supply: everything libpq reads (PG*) and the whole upload

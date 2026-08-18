@@ -85,7 +85,10 @@ type LogicalBackupRDBMSStatus struct {
 	// failed Job stays, and its name with it, until the backup is deleted.
 	// +optional
 	JobName string `json:"jobName,omitempty"`
-	// ObjectKey is the full key of the dump in the backup bucket.
+	// ObjectKey is the full key of the dump in the backup bucket:
+	// <basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump, where
+	// uid is the UID of this resource. The UID keeps a reused backup id from
+	// ever naming another backup's dump.
 	// +optional
 	ObjectKey string `json:"objectKey,omitempty"`
 	// ZeebeBackupID is the id of the Zeebe backup that the cluster generated

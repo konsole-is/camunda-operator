@@ -31,7 +31,7 @@ spec:
         - name: UPLOAD_FILE
           value: /scratch/camunda.dump
         - name: UPLOAD_KEY
-          value: clusters/my-cluster-ns/my-cluster/1748937221000/camunda.dump
+          value: clusters/my-cluster-ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump
         - name: UPLOAD_STORAGE_NAME
           value: my-backup-config
         - name: UPLOAD_STORAGE_SPEC

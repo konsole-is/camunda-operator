@@ -1150,7 +1150,11 @@ spec:
                   failed Job stays, and its name with it, until the backup is deleted.
                 type: string
               objectKey:
-                description: ObjectKey is the full key of the dump in the backup bucket.
+                description: |-
+                  ObjectKey is the full key of the dump in the backup bucket:
+                  <basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump, where
+                  uid is the UID of this resource. The UID keeps a reused backup id from
+                  ever naming another backup's dump.
                 type: string
               observedGeneration:
                 description: ObservedGeneration is the last generation reconciled
