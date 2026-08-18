@@ -32,11 +32,11 @@ status: consumer-wave   # Phase 3: #68/#69 — user-reviewed PRs
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #65 | feat/backup-controllers--foundation | (removed) | #74 → feat/backup-controllers | self-merged |
-| #66 | feat/backup-controllers--es-snapshot-repository | .claude/worktrees/backup-controllers--es-snapshot-repository | #79 → feat/backup-controllers | self-merged |
-| #67 | feat/backup-controllers--cluster-backup-wiring | .claude/worktrees/backup-controllers--cluster-backup-wiring | #77 → feat/backup-controllers | self-merged |
+| #66 | feat/backup-controllers--es-snapshot-repository | (removed) | #79 → feat/backup-controllers | self-merged |
+| #67 | feat/backup-controllers--cluster-backup-wiring | (removed) | #77 → feat/backup-controllers | self-merged |
 | #68 | feat/backup-controllers--lbes-controller | .claude/worktrees/backup-controllers--lbes-controller | #84 → feat/backup-controllers | Copilot loop: round 6 fixed and pushed (head ee25b2f, CI green through fb2445f); round 7 NOT yet requested; user reviews when clean |
 | #69 | feat/backup-controllers--lbrdbms-controller | .claude/worktrees/backup-controllers--lbrdbms-controller | #85 → feat/backup-controllers | Copilot loop: round 6 fixed + commit E cherry-picked + reader wired (head ba53355; envtest suite NOT re-run after ba53355 — CI will); thread 3800224870 still OPEN (resolve: E landed); round 7 NOT yet requested; user reviews when clean |
-| flake fix | fix/backup-controllers--secret-regeneration-flakes | .claude/worktrees/backup-controllers--secret-flakes | (opening) → feat/backup-controllers | in progress: root-cause + fix the generated-Secret "regenerate on delete" flakes (elasticsearchcluster + camundacluster admin + database), all `credentials.LookupOrNew` callers; Copilot loop, self-merge, then merge feature branch into #84/#85 |
+| flake fix | fix/backup-controllers--secret-regeneration-flakes | (removed) | #87 → feat/backup-controllers | self-merged (3 Copilot rounds; SSA uid precondition via `credentials.Password`/`NewApplyClient`; database spec tightened — 3/10 repro there); feature branch merged into #84 (92a7216) and #85 (77f0bdb) |
 | #70 | feat/backup-controllers--backup-schedule | .claude/worktrees/backup-controllers--backup-schedule | → feat/backup-controllers | not-started |
 | #71 | test/backup-controllers--e2e-minio | .claude/worktrees/backup-controllers--e2e-minio | → feat/backup-controllers | not-started |
 
