@@ -35,6 +35,22 @@ func TestAllocateBackupID(t *testing.T) {
 // Camunda rejects an id that is not greater than every id the cluster already
 // holds, and the pre-checks do not prevent two backups from starting within
 // the same second. At second resolution those two would collide.
+func TestAllocateBackupIDAfterFollowsTheClockWhenItIsAhead(t *testing.T) {
+	at := metav1.NewTime(time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC))
+
+	assert.Equal(t, at.UnixMilli(), logicalbackup.AllocateBackupIDAfter(at, at.UnixMilli()-1))
+	assert.Equal(t, at.UnixMilli(), logicalbackup.AllocateBackupIDAfter(at, 0))
+}
+
+func TestAllocateBackupIDAfterStepsPastAHigherID(t *testing.T) {
+	// The clock stepped back: a sibling holds an id from later than now.
+	at := metav1.NewTime(time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC))
+	highest := at.UnixMilli() + 5_000
+
+	assert.Equal(t, highest+1, logicalbackup.AllocateBackupIDAfter(at, highest))
+	assert.Equal(t, at.UnixMilli()+1, logicalbackup.AllocateBackupIDAfter(at, at.UnixMilli()))
+}
+
 func TestAllocateBackupIDSeparatesBackupsWithinOneSecond(t *testing.T) {
 	base := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 
