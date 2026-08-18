@@ -67,10 +67,24 @@ func MinIOEndpoint(namespace string) string {
 	return "http://" + MinIOService + "." + namespace + ".svc:" + strconv.Itoa(MinIOPort)
 }
 
-// InstallMinIO applies the MinIO manifest into namespace and waits until the
-// server is rolled out and the bucket exists. It is safe to call again: the
-// apply converges, and the bucket Job ignores a bucket that is already there.
+// InstallMinIO applies the MinIO manifest into namespace and returns once the
+// server answers and MinIOBucket exists.
+//
+// Every call creates the bucket again. The server keeps its data in an
+// emptyDir, so a restarted pod comes back without the bucket. The bootstrap
+// Job of the first call stays Completed over that empty server. A caller that
+// waits on that old Job gets success against a bucket that is gone.
+//
+// This function therefore deletes the Job first. The delete cascades to its
+// pods and waits for them, so the new Job never adopts one.
 func InstallMinIO(namespace string) error {
+	if _, err := Kubectl(
+		"delete", "job/"+minioBucketJob,
+		"-n", namespace, "--ignore-not-found", "--cascade=foreground", "--wait=true",
+	); err != nil {
+		return err
+	}
+
 	if _, err := Kubectl("apply", "-n", namespace, "-f", minioManifest); err != nil {
 		return err
 	}
