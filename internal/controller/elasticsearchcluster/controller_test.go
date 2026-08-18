@@ -562,21 +562,27 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		// that changes nothing must keep the condition without a new PUT.
 		puts := elasticsearch.RepositoryPuts(cluster.Name)
 		Expect(puts).NotTo(BeZero())
-		var fetched v1.ElasticsearchCluster
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
-		fetched.Labels = map[string]string{"touched": "true"}
-		Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+		// The reconciler writes the cluster too, so the update re-reads on a
+		// conflict.
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			fetched.Labels = map[string]string{"touched": "true"}
+			g.Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
 			g.Expect(elasticsearch.RepositoryPuts(cluster.Name)).To(Equal(puts))
 		}, "2s", interval).Should(Succeed())
 
 		// A changed bucket re-registers: the fingerprint no longer matches.
-		var changed v1.ObjectStorageConfig
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: bucket.Name}, &changed)).To(Succeed())
-		changed.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
-		changed.Spec.S3.ForcePathStyle = true
-		Expect(k8sClient.Update(ctx, &changed)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var changed v1.ObjectStorageConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: bucket.Name}, &changed)).To(Succeed())
+			changed.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
+			changed.Spec.S3.ForcePathStyle = true
+			g.Expect(k8sClient.Update(ctx, &changed)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
 			g.Expect(elasticsearch.RepositoryPuts(cluster.Name)).To(BeNumerically(">", puts))
@@ -680,10 +686,12 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			)).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
-		var fetched v1.ElasticsearchCluster
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
-		fetched.Spec.SnapshotStorageRef = ""
-		Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			fetched.Spec.SnapshotStorageRef = ""
+			g.Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 
 		Eventually(func(g Gomega) {
 			var after v1.ElasticsearchCluster
