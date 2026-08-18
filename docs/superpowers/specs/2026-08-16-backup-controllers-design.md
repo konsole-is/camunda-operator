@@ -573,7 +573,7 @@ client:
 ```go
 PauseExporting(ctx, soft bool) error       // idempotent: already-paused is success
 ResumeExporting(ctx) error                 // idempotent: already-running is success
-StartHistoryBackup(ctx, id int64) error    // conflict with same id is success
+StartHistoryBackup(ctx, id int64) error    // duplicate id is ErrConflict, never success
 HistoryBackupStatus(ctx, id int64) (BackupStatus, error)
 StartRuntimeBackup(ctx, id *int64) (int64, error)   // nil id: cluster generates one (RDBMS)
 RuntimeBackupStatus(ctx, id int64) (BackupStatus, error)
@@ -582,7 +582,11 @@ DeleteRuntimeBackup(ctx, id int64) error   // finalizer; not-found is success
 
 `BackupStatus` is a typed state (in progress, completed, failed, incomplete) with the raw
 per-part details for the failure message. The idempotency notes are part of the contract: the
-state machine re-enters after a crash, so "already done" is success and never an error. Errors
+state machine re-enters after a crash, so "already done" is success for pause, resume, and
+delete. The two starts are the exception (amended in review round 8): a duplicate id comes back
+as `ErrConflict`, because a duplicate is only "already done" when the existing backup is OURS,
+which the client cannot know — the controller decides from its persisted intent and acceptance,
+and never adopts what it did not see accepted. Errors
 distinguish unreachable (maps to `ConnectionFailed`) from a rejected call (maps to `Failed` with
 the body in the message). Nothing else goes in until a consumer exists: no cluster topology, no
 actuator generics, no 8.10 surface.
