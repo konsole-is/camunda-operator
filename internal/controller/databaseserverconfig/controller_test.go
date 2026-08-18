@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -196,6 +197,61 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			namespace+"/"+serverConfig.Spec.AdminCredentialsSecretRef.Name,
 			serverConfig.Spec.AdminCredentialsSecretRef.PasswordKey,
 		))
+	})
+
+	// A successful probe is not repeated on every reconcile: the status flush
+	// of a fresh probe writes nothing new, so it wakes no watch, and the
+	// interval is the cadence. A spec change or a Secret change probes again.
+	It("probes once per interval, and again on a spec or Secret change", func() {
+		pointAtServer()
+		secret := adminSecret("username", "password")
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+		before := probes.Load()
+		createServerConfig()
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "Reached the server; it runs major version 17")
+
+		var got v1.DatabaseServerConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: serverConfig.Name}, &got)).To(Succeed())
+		probedAt := got.Status.ProbedAt.DeepCopy()
+		count := probes.Load()
+		Expect(count - before).To(Equal(int64(1)))
+
+		By("leaving probedAt and the probe count alone while the probe is fresh")
+		Consistently(func(g Gomega) {
+			var again v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: serverConfig.Name}, &again)).To(Succeed())
+			g.Expect(again.Status.ProbedAt.Equal(probedAt)).To(BeTrue())
+			g.Expect(probes.Load()).To(Equal(count))
+		}, "3s", interval).Should(Succeed())
+
+		By("probing again after a spec change")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: serverConfig.Name}, &got)).To(Succeed())
+			got.Spec.PITR = &v1.PITRCapability{Enabled: false}
+			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(probes.Load()).To(Equal(count + 1))
+			var again v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: serverConfig.Name}, &again)).To(Succeed())
+			g.Expect(again.Status.ProbedAt.After(probedAt.Time)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		By("probing again after the credentials Secret changes")
+		Eventually(func(g Gomega) {
+			var current corev1.Secret
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), &current)).To(Succeed())
+			if current.Annotations == nil {
+				current.Annotations = map[string]string{}
+			}
+			current.Annotations["rotated"] = "now"
+			g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(probes.Load()).To(Equal(count + 2))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("catches status.observedGeneration up to metadata.generation after a spec update", func() {

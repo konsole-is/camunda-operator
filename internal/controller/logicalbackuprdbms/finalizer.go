@@ -37,9 +37,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
-// jobNameLabel is the label the Job controller stamps on the pods of a Job.
-const jobNameLabel = "batch.kubernetes.io/job-name"
-
 // errRepairable marks a cleanup failure the user can fix — a credentials
 // Secret that exists but lost a key. The finalizer holds and polls for the
 // repair instead of releasing or backing off.
@@ -103,10 +100,14 @@ func (r *LogicalBackupRDBMSReconciler) finalize(
 }
 
 // deleteJob deletes the dump Job of the backup and reports whether it and
-// its pods are gone from the live API. The name is deterministic, so a crash
-// that never recorded status.jobName still finds it; the UID label decides
-// whether it is this backup's — a leftover Job of a same-named backup is left
-// alone and counts as gone for this one.
+// every pod of this backup are gone from the live API. The name is
+// deterministic, so a crash that never recorded status.jobName still finds
+// it; the UID label decides whether it is this backup's — a Job of another
+// backup under the same name is left alone. The pods are always checked by
+// this backup's UID, whichever Job holds the name now: after a background
+// delete a foreign Job can take the name while this backup's uploader still
+// terminates, and that uploader must not be able to recreate the object after
+// the delete.
 func (r *LogicalBackupRDBMSReconciler) deleteJob(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -116,38 +117,35 @@ func (r *LogicalBackupRDBMSReconciler) deleteJob(
 	var job batchv1.Job
 	err := r.APIReader.Get(ctx, key, &job)
 	switch {
-	case apierrors.IsNotFound(err):
-		return r.podsGone(ctx, key)
-	case err != nil:
+	case err != nil && !apierrors.IsNotFound(err):
 		return false, fmt.Errorf("reading the dump Job: %w", err)
-	case !components.JobBelongsTo(&job, backup):
-		return true, nil
-	}
-
-	if job.DeletionTimestamp.IsZero() {
-		propagation := metav1.DeletePropagationBackground
-		if err := r.Delete(
-			ctx, &job, &client.DeleteOptions{PropagationPolicy: &propagation},
-		); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("deleting the dump Job: %w", err)
+	case err == nil && components.JobBelongsTo(&job, backup):
+		if job.DeletionTimestamp.IsZero() {
+			propagation := metav1.DeletePropagationBackground
+			if err := r.Delete(
+				ctx, &job, &client.DeleteOptions{PropagationPolicy: &propagation},
+			); err != nil && !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("deleting the dump Job: %w", err)
+			}
 		}
+
+		return false, nil
 	}
 
-	return false, nil
+	return r.podsGone(ctx, backup)
 }
 
-// podsGone reports whether no pod of the Job is left in the live API. The
-// Job controller labels its pods with the Job name; a pod still terminating
-// may still be uploading.
-func (r *LogicalBackupRDBMSReconciler) podsGone(ctx context.Context, job types.NamespacedName) (bool, error) {
-	var pods corev1.PodList
-	if err := r.APIReader.List(
-		ctx, &pods, client.InNamespace(job.Namespace), client.MatchingLabels{jobNameLabel: job.Name},
-	); err != nil {
-		return false, fmt.Errorf("listing the pods of the dump Job: %w", err)
+// podsGone reports whether no pod of this backup is left in the live API.
+// The Job's pod template carries the backup UID, so the check follows the
+// backup, not the Job name: a pod still terminating may still be uploading,
+// and a foreign pod under the same Job name never holds the deletion.
+func (r *LogicalBackupRDBMSReconciler) podsGone(ctx context.Context, backup *v1.LogicalBackupRDBMS) (bool, error) {
+	pods, err := r.podsOf(ctx, backup)
+	if err != nil {
+		return false, err
 	}
 
-	return len(pods.Items) == 0, nil
+	return len(pods) == 0, nil
 }
 
 // deleteObject removes the dump from the pinned bucket — the one the backup

@@ -300,7 +300,7 @@ func (r *LogicalBackupRDBMSReconciler) trackJob(
 		return settle, nil
 	}
 
-	stuck, err := r.stuckPod(ctx, job)
+	stuck, err := r.stuckPod(ctx, backup)
 	if err != nil {
 		return settle, err
 	}
@@ -327,23 +327,38 @@ var stuckWaitingReasons = map[string]string{
 	"InvalidImageName":           v1.ReasonInvalidReference,
 }
 
-// stuckPod reports the first pod of job that cannot start — a container in a
-// non-progressing waiting state, or a pod the scheduler cannot place, for
-// example on a volume that never binds — as a mid-run failure naming the pod
-// and the reason, or nil when every pod progresses.
-func (r *LogicalBackupRDBMSReconciler) stuckPod(
+// podsOf lists the pods of this backup's dump Job in the live API, by the
+// backup UID the pod template carries.
+func (r *LogicalBackupRDBMSReconciler) podsOf(
 	ctx context.Context,
-	job *batchv1.Job,
-) (*conditions.PreCheckFailure, error) {
+	backup *v1.LogicalBackupRDBMS,
+) ([]corev1.Pod, error) {
 	var pods corev1.PodList
 	if err := r.APIReader.List(
-		ctx, &pods, client.InNamespace(job.Namespace), client.MatchingLabels{jobNameLabel: job.Name},
+		ctx, &pods, client.InNamespace(backup.Namespace),
+		client.MatchingLabels{components.BackupUIDLabel: string(backup.UID)},
 	); err != nil {
 		return nil, fmt.Errorf("listing the pods of the dump Job: %w", err)
 	}
 
-	for i := range pods.Items {
-		pod := &pods.Items[i]
+	return pods.Items, nil
+}
+
+// stuckPod reports the first pod of the backup's Job that cannot start — a
+// container in a non-progressing waiting state, or a pod the scheduler cannot
+// place, for example on a volume that never binds — as a mid-run failure
+// naming the pod and the reason, or nil when every pod progresses.
+func (r *LogicalBackupRDBMSReconciler) stuckPod(
+	ctx context.Context,
+	backup *v1.LogicalBackupRDBMS,
+) (*conditions.PreCheckFailure, error) {
+	pods, err := r.podsOf(ctx, backup)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range pods {
+		pod := &pods[i]
 		if pod.Status.Phase != corev1.PodPending && pod.Status.Phase != corev1.PodRunning {
 			continue
 		}

@@ -188,8 +188,16 @@ spec:
               probedAt:
                 description: |-
                   ProbedAt is when the operator last reached the server and read
-                  ServerVersion.
+                  ServerVersion. The server is probed again when this is older than the
+                  probe interval, when the spec changed, or when the admin credentials
+                  Secret changed; a reconcile in between leaves it untouched.
                 format: date-time
+                type: string
+              probedSecretVersion:
+                description: |-
+                  ProbedSecretVersion is the resourceVersion of the admin credentials
+                  Secret the last probe used. A changed Secret is probed again before
+                  the interval, so rotated credentials are validated promptly.
                 type: string
               serverVersion:
                 description: |-

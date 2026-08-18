@@ -148,10 +148,11 @@ func TestStuckPodClassifiesWaitingStates(t *testing.T) {
 	t.Parallel()
 
 	scheme := dumpScheme(t)
-	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "b-dump", Namespace: "ns"}}
+	backup := trackedBackup()
 	podOf := func(name string) *corev1.Pod {
 		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: "ns", Labels: map[string]string{jobNameLabel: job.Name},
+			Name: name, Namespace: backup.Namespace,
+			Labels: map[string]string{components.BackupUIDLabel: string(backup.UID)},
 		}, Status: corev1.PodStatus{Phase: corev1.PodPending}}
 	}
 
@@ -186,7 +187,7 @@ func TestStuckPodClassifiesWaitingStates(t *testing.T) {
 			r := &LogicalBackupRDBMSReconciler{
 				APIReader: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.pod).Build(),
 			}
-			failure, err := r.stuckPod(context.Background(), job)
+			failure, err := r.stuckPod(context.Background(), backup)
 			require.NoError(t, err)
 			if tc.reason == "" {
 				assert.Nil(t, failure)

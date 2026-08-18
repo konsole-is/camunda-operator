@@ -285,6 +285,21 @@ func expectPending(backup *v1.LogicalBackupRDBMS, reason string) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// podOfBackup builds a pod the way the Job controller would create it from
+// the dump Job's template: labeled with the Job name and the backup UID.
+func podOfBackup(backup *v1.LogicalBackupRDBMS, job *batchv1.Job, suffix string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: job.Name + "-" + suffix, Namespace: backup.Namespace,
+			Labels: map[string]string{
+				"batch.kubernetes.io/job-name": job.Name,
+				components.BackupUIDLabel:      string(backup.UID),
+			},
+		},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "upload", Image: "cli"}}},
+	}
+}
+
 // secretNameOfEnv returns the Secret a container's env variable reads from,
 // or the empty string when the variable is absent or not a secretKeyRef.
 func secretNameOfEnv(container corev1.Container, name string) string {
@@ -1087,13 +1102,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		backup := createBackup(w)
 		job := jobOf(backup, w)
 
-		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: job.Name + "-stuck", Namespace: w.namespace,
-				Labels: map[string]string{"batch.kubernetes.io/job-name": job.Name},
-			},
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "upload", Image: "cli"}}},
-		}
+		pod := podOfBackup(backup, job, "stuck")
 		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0)) })
 		pod.Status.Phase = corev1.PodPending
@@ -1244,13 +1253,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		// A pod of the Job, still around: envtest runs no kubelet, so it
 		// stays until it is deleted by hand.
-		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: job.Name + "-x1", Namespace: w.namespace,
-				Labels: map[string]string{"batch.kubernetes.io/job-name": job.Name},
-			},
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "upload", Image: "cli"}}},
-		}
+		pod := podOfBackup(backup, job, "x1")
 		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
@@ -1318,6 +1321,69 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
 			g.Expect(bucket.Deleted()).To(ContainElement(objectKey))
 		}, "20s", interval).Should(Succeed())
+	})
+
+	// P2 (round 5): after a background delete, a same-named foreign Job can
+	// take the name; the pod check follows this backup's UID, so its own
+	// terminating uploader still holds the deletion and a foreign pod never
+	// does.
+	It("holds deletion for its own pods even when a foreign Job took the name", func() {
+		w := createWorld()
+		backup := createBackup(w)
+		job := jobOf(backup, w)
+		var objectKey string
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
+			objectKey = backup.Status.ObjectKey
+		}, timeout, interval).Should(Succeed())
+
+		By("leaving this backup's uploader terminating while a foreign Job takes the name")
+		own := podOfBackup(backup, job, "own")
+		Expect(k8sClient.Create(ctx, own)).To(Succeed())
+		foreignPod := podOfBackup(backup, job, "foreign")
+		foreignPod.Labels[components.BackupUIDLabel] = "someone-else"
+		Expect(k8sClient.Create(ctx, foreignPod)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, foreignPod, client.GracePeriodSeconds(0)) })
+
+		propagation := metav1.DeletePropagationBackground
+		Expect(k8sClient.Delete(ctx, job, &client.DeleteOptions{PropagationPolicy: &propagation})).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(job), job)).NotTo(Succeed())
+		}, timeout, interval).Should(Succeed())
+		foreign := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: job.Name, Namespace: w.namespace,
+				Labels: map[string]string{components.BackupUIDLabel: "someone-else"},
+			},
+			Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyNever,
+				Containers:    []corev1.Container{{Name: "x", Image: "x"}},
+			}}},
+		}
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+		DeferCleanup(
+			func() { _ = k8sClient.Delete(ctx, foreign, &client.DeleteOptions{PropagationPolicy: &propagation}) },
+		)
+
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		By("holding the object while this backup's pod lives")
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(bucket.Deleted()).NotTo(ContainElement(objectKey))
+		}, "3s", interval).Should(Succeed())
+
+		By("deleting the object once it is gone; the foreign Job and pod never held it")
+		Expect(k8sClient.Delete(ctx, own, client.GracePeriodSeconds(0))).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(client.IgnoreNotFound(err)).To(Succeed())
+			g.Expect(bucket.Deleted()).To(ContainElement(objectKey))
+		}, timeout, interval).Should(Succeed())
+		Expect(
+			k8sClient.Get(ctx, client.ObjectKeyFromObject(foreign), foreign),
+		).To(Succeed(), "the foreign Job is left alone")
 	})
 
 	It("releases the finalizer when the pinned bucket is gone", func() {
