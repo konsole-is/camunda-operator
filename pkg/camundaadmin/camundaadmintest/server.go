@@ -69,6 +69,8 @@ type Server struct {
 	// for a backup that the fake holds. It fakes the registration lag of the
 	// real cluster after it accepted a start.
 	hiddenRuntimeStatus int
+	// hiddenHistoryStatus is the same for history status queries.
+	hiddenHistoryStatus int
 
 	nextGeneratedID int64
 
@@ -156,6 +158,15 @@ func (s *Server) HideRuntimeStatus(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.hiddenRuntimeStatus = n
+}
+
+// HideHistoryStatus makes the next n history status queries answer 404 for
+// a backup that exists, the way the web applications report an accepted
+// history backup absent while it registers.
+func (s *Server) HideHistoryStatus(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hiddenHistoryStatus = n
 }
 
 // SetHistoryState sets the state of the history backup id, creating it when
@@ -279,6 +290,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		id, _ := strconv.ParseInt(strings.TrimPrefix(path, "/backupHistory/"), 10, 64)
 		backup, ok := s.history[id]
+		if ok && s.hiddenHistoryStatus > 0 {
+			s.hiddenHistoryStatus--
+			ok = false
+		}
 		if !ok {
 			errorBody(w, http.StatusNotFound, "backup does not exist")
 			return
