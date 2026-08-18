@@ -1841,8 +1841,8 @@ func (in *LogicalBackupElasticsearchStatus) DeepCopyInto(out *LogicalBackupElast
 		in, out := &in.RuntimeAcceptedTime, &out.RuntimeAcceptedTime
 		*out = (*in).DeepCopy()
 	}
-	if in.ElasticsearchUnreachableSince != nil {
-		in, out := &in.ElasticsearchUnreachableSince, &out.ElasticsearchUnreachableSince
+	if in.UnreachableSince != nil {
+		in, out := &in.UnreachableSince, &out.UnreachableSince
 		*out = (*in).DeepCopy()
 	}
 	if in.ResumeStartedTime != nil {

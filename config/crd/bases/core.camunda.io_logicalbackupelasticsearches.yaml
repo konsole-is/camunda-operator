@@ -171,14 +171,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              elasticsearchUnreachableSince:
-                description: |-
-                  ElasticsearchUnreachableSince is when a step first found the
-                  Elasticsearch endpoint unreachable. Exporting is paused at those steps,
-                  so the retry is bounded. After the bound, the step fails and the
-                  procedure resumes exporting.
-                format: date-time
-                type: string
               failureMessage:
                 description: |-
                   FailureMessage names the failing step and its error. It is recorded
@@ -410,6 +402,15 @@ spec:
                   transition: Completed, Failed, or ResumeFailed. The controller
                   re-stages the terminal condition from it when a write conflict
                   restored an older one.
+                type: string
+              unreachableSince:
+                description: |-
+                  UnreachableSince is when a working step first found the endpoint it
+                  calls — the management API or Elasticsearch — unreachable. Exporting
+                  is paused, or may be, at every working step, so the retry is bounded:
+                  after the bound the step fails and the procedure resumes exporting.
+                  It clears once every call of a reconcile answered.
+                format: date-time
                 type: string
             type: object
         required:

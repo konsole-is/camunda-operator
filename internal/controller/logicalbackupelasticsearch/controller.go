@@ -71,10 +71,12 @@ const (
 	// the backup asynchronously and can report it absent for a moment.
 	// Within the grace the step polls; after it, the backup is missing.
 	defaultRuntimeRegistrationGrace = 2 * time.Minute
-	// elasticsearchUnreachableBound bounds the retry of an unreachable
-	// Elasticsearch endpoint at the steps that run with exporting paused.
-	// After it, the step fails and the procedure resumes exporting.
-	elasticsearchUnreachableBound = 10 * time.Minute
+	// unreachableBound bounds the retry of an unreachable endpoint — the
+	// management API or Elasticsearch — at the working steps, which run
+	// with exporting paused. After it, the step fails and the procedure
+	// resumes exporting; a black-holed backup route beside a healthy resume
+	// route must never leave the cluster paused for good.
+	unreachableBound = 10 * time.Minute
 	// concurrentReconciles bounds the parallel reconciles. Every step is a
 	// synchronous HTTP call. One black-holed endpoint must not block the
 	// polling and the finalizers of every other backup.
@@ -102,10 +104,10 @@ type Options struct {
 	// PollInterval paces the polling of a running backup. Zero means five
 	// seconds.
 	PollInterval time.Duration
-	// ElasticsearchUnreachableBound bounds the retry of an unreachable
-	// Elasticsearch endpoint while exporting is paused. Zero means ten
-	// minutes.
-	ElasticsearchUnreachableBound time.Duration
+	// UnreachableBound bounds the retry of an unreachable management API or
+	// Elasticsearch endpoint at the working steps, while exporting is
+	// paused. Zero means ten minutes.
+	UnreachableBound time.Duration
 	// RuntimeRegistrationGrace bounds how long an absent runtime or history
 	// backup is polled after its request was accepted. Zero means two
 	// minutes.
@@ -261,11 +263,11 @@ func (r *Reconciler) resumeDeadline() time.Duration {
 	return defaultResumeDeadline
 }
 
-func (r *Reconciler) elasticsearchUnreachableBound() time.Duration {
-	if r.options.ElasticsearchUnreachableBound > 0 {
-		return r.options.ElasticsearchUnreachableBound
+func (r *Reconciler) unreachableBound() time.Duration {
+	if r.options.UnreachableBound > 0 {
+		return r.options.UnreachableBound
 	}
-	return elasticsearchUnreachableBound
+	return unreachableBound
 }
 
 func (r *Reconciler) runtimeRegistrationGrace() time.Duration {

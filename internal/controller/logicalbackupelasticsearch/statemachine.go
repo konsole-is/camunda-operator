@@ -113,7 +113,9 @@ func (r *Reconciler) pauseExporting(
 
 	if err := mgmt.PauseExporting(ctx, true); err != nil {
 		if errors.Is(err, camundaadmin.ErrUnreachable) {
-			return r.stageUnreachable(backup, err)
+			// A lost answer can be a partial pause, so the retry is bounded
+			// here too.
+			return r.stageUnreachable(backup, "PauseExporting", nil, err)
 		}
 
 		// A rejection can be a partial pause: some partitions paused, some
@@ -121,6 +123,7 @@ func (r *Reconciler) pauseExporting(
 		r.failStep(backup, "PauseExporting", nil, err)
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
+	answered(backup)
 
 	backup.Status.Step = v1.StepBackupHistory
 	r.stageProgress(backup, "Exporting is soft-paused; backing up the web-application indices")
@@ -162,7 +165,7 @@ func (r *Reconciler) backupHistory(
 	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
 	if err != nil {
 		if errors.Is(err, camundaadmin.ErrUnreachable) {
-			return r.stageUnreachable(backup, err)
+			return r.stageUnreachable(backup, "BackupHistory", &backup.Status.History, err)
 		}
 
 		r.failStep(backup, "BackupHistory", &backup.Status.History, err)
@@ -172,6 +175,7 @@ func (r *Reconciler) backupHistory(
 	if status.State == camundaadmin.StateDoesNotExist {
 		return r.requestHistoryBackup(ctx, mgmt, backup)
 	}
+	answered(backup)
 
 	// A history backup under this ID exists. Only an accepted request of
 	// this backup, a 200 that this controller observed, proves that it is
@@ -255,7 +259,7 @@ func (r *Reconciler) requestHistoryBackup(
 		r.stageProgress(backup, "The backup of the web-application indices started")
 
 	case errors.Is(err, camundaadmin.ErrUnreachable):
-		return r.stageUnreachable(backup, err)
+		return r.stageUnreachable(backup, "BackupHistory", part, err)
 
 	case errors.Is(err, camundaadmin.ErrConflict):
 		r.failStep(backup, "BackupHistory", part, fmt.Errorf("%w: %v", err, unownedHistoryBackup(backup)))
@@ -291,7 +295,7 @@ func (r *Reconciler) snapshotRecords(
 	snapshot, err := es.SnapshotStatus(ctx, backup.Status.Repository, name)
 	if err != nil {
 		if errors.Is(err, esadmin.ErrUnreachable) {
-			return r.stageElasticsearchUnreachable(backup, "SnapshotRecords", part, err)
+			return r.stageUnreachable(backup, "SnapshotRecords", part, err)
 		}
 
 		r.failStep(backup, "SnapshotRecords", part, err)
@@ -314,7 +318,7 @@ func (r *Reconciler) snapshotRecords(
 			ctx, backup.Status.Repository, name, []string{zeebeRecordIndices}, snapshotMetadata(backup),
 		); err != nil {
 			if errors.Is(err, esadmin.ErrUnreachable) {
-				return r.stageElasticsearchUnreachable(backup, "SnapshotRecords", part, err)
+				return r.stageUnreachable(backup, "SnapshotRecords", part, err)
 			}
 
 			r.failStep(backup, "SnapshotRecords", part, err)
@@ -338,11 +342,7 @@ func (r *Reconciler) snapshotRecords(
 		))
 	}
 
-	// The unreachable timer is cleared only here, after every Elasticsearch
-	// call of this reconcile answered. A status query that succeeds while
-	// the snapshot creation stays unreachable must not reset the bound, or
-	// the step retries forever with exporting paused.
-	backup.Status.ElasticsearchUnreachableSince = nil
+	answered(backup)
 
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
@@ -472,7 +472,7 @@ func (r *Reconciler) backupRuntime(
 	status, err := mgmt.RuntimeBackupStatus(ctx, backup.Status.BackupID)
 	if err != nil {
 		if errors.Is(err, camundaadmin.ErrUnreachable) {
-			return r.stageUnreachable(backup, err)
+			return r.stageUnreachable(backup, "BackupRuntime", part, err)
 		}
 
 		r.failStep(backup, "BackupRuntime", part, err)
@@ -482,6 +482,7 @@ func (r *Reconciler) backupRuntime(
 	if status.State == camundaadmin.StateDoesNotExist {
 		return r.requestRuntimeBackup(ctx, mgmt, backup, part)
 	}
+	answered(backup)
 
 	// A runtime backup under this ID exists. Only an accepted request of
 	// this backup, a 202 that this controller observed, proves that it is
@@ -586,7 +587,7 @@ func (r *Reconciler) requestRuntimeBackup(
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")
 
 	case errors.Is(err, camundaadmin.ErrUnreachable):
-		return r.stageUnreachable(backup, err)
+		return r.stageUnreachable(backup, "BackupRuntime", part, err)
 
 	case errors.Is(err, camundaadmin.ErrConflict):
 		r.failStep(backup, "BackupRuntime", part, fmt.Errorf("%w: %v", err, unownedRuntimeBackup(backup)))
@@ -627,12 +628,34 @@ func (r *Reconciler) stageProgress(backup *v1.LogicalBackupElasticsearch, messag
 	))
 }
 
-// stageUnreachable keeps the step and retries. An unreachable endpoint is
-// transient, and nothing was started.
+// stageUnreachable retries an unreachable endpoint — the management API or
+// Elasticsearch — for a bounded time, keeping the step. Exporting is
+// paused, or may be, at every working step, so the retry cannot be
+// unbounded: a route that black-holes only the backup endpoint while
+// resume stays healthy would leave the cluster paused for good. After the
+// bound, the step fails through resume. The clock starts on the first
+// unreachable answer and clears through answered, once every call of a
+// reconcile answered.
 func (r *Reconciler) stageUnreachable(
 	backup *v1.LogicalBackupElasticsearch,
+	step string,
+	part *v1.BackupPart,
 	err error,
 ) (ctrl.Result, error) {
+	now := metav1.Now()
+	if backup.Status.UnreachableSince == nil {
+		backup.Status.UnreachableSince = &now
+	}
+	if now.Sub(backup.Status.UnreachableSince.Time) > r.unreachableBound() {
+		r.failStep(
+			backup,
+			step,
+			part,
+			fmt.Errorf("the endpoint stayed unreachable for %s: %w", r.unreachableBound(), err),
+		)
+		return ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
 	conditions.Stage(backup, conditions.Ready(
 		metav1.ConditionFalse,
 		v1.ReasonConnectionFailed,
@@ -643,27 +666,12 @@ func (r *Reconciler) stageUnreachable(
 	return ctrl.Result{RequeueAfter: r.poll()}, nil
 }
 
-// stageElasticsearchUnreachable retries an unreachable Elasticsearch endpoint
-// for a bounded time. Exporting is paused at the steps that call
-// Elasticsearch, so the retry cannot be unbounded: a healthy management API
-// must get to resume the cluster. After the bound, the step fails through
-// resume.
-func (r *Reconciler) stageElasticsearchUnreachable(
-	backup *v1.LogicalBackupElasticsearch,
-	step string,
-	part *v1.BackupPart,
-	err error,
-) (ctrl.Result, error) {
-	now := metav1.Now()
-	if backup.Status.ElasticsearchUnreachableSince == nil {
-		backup.Status.ElasticsearchUnreachableSince = &now
-	}
-	if now.Sub(backup.Status.ElasticsearchUnreachableSince.Time) > r.elasticsearchUnreachableBound() {
-		r.failStep(backup, step, part, fmt.Errorf("the Elasticsearch endpoint stayed unreachable: %w", err))
-		return ctrl.Result{RequeueAfter: r.poll()}, nil
-	}
-
-	return r.stageUnreachable(backup, err)
+// answered clears the unreachable clock. A step calls it only after every
+// call of the reconcile answered: an answer before a call that stays
+// unreachable must not reset the bound, or the step retries forever with
+// exporting paused.
+func answered(backup *v1.LogicalBackupElasticsearch) {
+	backup.Status.UnreachableSince = nil
 }
 
 // pinnedStorageMatches reports an error when the storage contract no longer

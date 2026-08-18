@@ -63,7 +63,7 @@ var _ = BeforeSuite(func() {
 			ResumeDeadline: 2 * time.Second,
 			// Short for the same reason. Only the unreachable-Elasticsearch
 			// test arranges an endpoint that stays down.
-			ElasticsearchUnreachableBound: 2 * time.Second,
+			UnreachableBound: 2 * time.Second,
 			// Short, so a fresh-id conflict fails inside the test timeout.
 			// Wide enough that the registration-lag test, which polls
 			// through several hidden status answers, stays inside it under

@@ -196,6 +196,41 @@ func (r *rig) publishBrokenBinding() {
 	}, timeout, interval).Should(Succeed())
 }
 
+// completeBackup drives the backup through the whole procedure against
+// the fakes and returns its id. It is the happy path in one call, for the
+// specs that start from a Completed backup.
+func completeBackup(r *rig, backup *v1.LogicalBackupElasticsearch) int64 {
+	GinkgoHelper()
+	id := backupID(backup)
+	Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+	r.management.SetHistoryState(id, "COMPLETED", "")
+	name := RecordsSnapshotName(id)
+	Eventually(func() int {
+		return r.search.SnapshotCreates(r.repository, name)
+	}, timeout, interval).Should(Equal(1))
+	r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+	Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+	r.management.SetRuntimeState(id, "COMPLETED", "")
+	expectPhase(backup, v1.LogicalBackupCompleted)
+
+	return id
+}
+
+// keepRegistrationGraceOpen stamps the history and runtime acceptance times
+// of a terminal backup ahead of now, so the registration grace measured
+// from them cannot elapse while the spec runs, whatever the load. A
+// terminal backup's status is not rewritten by the controller.
+func keepRegistrationGraceOpen(backup *v1.LogicalBackupElasticsearch) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		current := currentBackup(backup)
+		ahead := metav1.NewTime(time.Now().Add(time.Hour))
+		current.Status.HistoryAcceptedTime = &ahead
+		current.Status.RuntimeAcceptedTime = &ahead
+		g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // currentCluster re-reads the rig's CamundaCluster.
 func currentCluster(r *rig) *v1.CamundaCluster {
 	GinkgoHelper()
@@ -1315,6 +1350,100 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			g.Expect(current.Status.Step).To(Equal(v1.StepPauseExporting))
 			g.Expect(current.Status.Phase).To(Equal(v1.LogicalBackupRunning))
 		}, "1s", interval).Should(Succeed())
+	})
+
+	// Round 12 P2: a management API that stays unreachable mid-pause was
+	// retried without a bound. A route that black-holes only the backup
+	// endpoint while resume is healthy would have left the cluster paused
+	// for good; the bound routes the step through resume.
+	It("fails the step through resume when the management API stays unreachable mid-pause past the bound", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("losing the management API with exporting paused")
+		r.management.Close()
+
+		By("holding with ConnectionFailed within the bound, then failing the step through resume")
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonConnectionFailed)
+		Eventually(func(g Gomega) {
+			current := currentBackup(backup)
+			g.Expect(current.Status.Step).To(Equal(v1.StepResumeExporting))
+			g.Expect(current.Status.FailureMessage).To(SatisfyAll(
+				ContainSubstring("BackupHistory"),
+				ContainSubstring("stayed unreachable"),
+			))
+			g.Expect(current.Status.UnreachableSince).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("ending as ResumeFailed once the resume deadline passes against the same dead API")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+	})
+
+	// Round 12 P1: an accepted runtime or history backup registers
+	// asynchronously. A finalizer that read the unregistered answer as
+	// "nothing to delete" released while the backup could still register.
+	It("holds the deletion of an accepted runtime backup through the registration grace", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := completeBackup(r, backup)
+
+		By("deleting while the runtime backup answers as unregistered, inside the registration grace")
+		keepRegistrationGraceOpen(backup)
+		r.management.HideRuntimeStatus(1_000_000)
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		expectEvent(backup, eventReasonDeleteHeld, corev1.EventTypeWarning)
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+			g.Expect(r.management.RuntimeBackup(id)).
+				NotTo(BeNil(), "the runtime backup is not deleted while it registers")
+		}, "800ms", interval).Should(Succeed())
+
+		By("deleting it once it registers")
+		r.management.HideRuntimeStatus(0)
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.management.RuntimeBackup(id)).To(BeNil(), "the runtime backup was deleted")
+	})
+
+	It("holds the deletion of an accepted history backup through the registration grace", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := completeBackup(r, backup)
+		snapshots := currentBackup(backup).Status.HistorySnapshots
+		Expect(snapshots).NotTo(BeEmpty())
+		for _, snapshot := range snapshots {
+			r.search.SetSnapshotState(r.repository, snapshot, "SUCCESS")
+		}
+
+		By("deleting while the history backup answers as unregistered, inside the registration grace")
+		keepRegistrationGraceOpen(backup)
+		r.management.HideHistoryStatus(1_000_000)
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		expectEvent(backup, eventReasonDeleteHeld, corev1.EventTypeWarning)
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+			for _, snapshot := range snapshots {
+				g.Expect(r.search.SnapshotExists(r.repository, snapshot)).To(BeTrue())
+			}
+		}, "800ms", interval).Should(Succeed())
+
+		By("deleting its snapshots once it registers")
+		r.management.HideHistoryStatus(0)
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		for _, snapshot := range snapshots {
+			Expect(r.search.SnapshotExists(r.repository, snapshot)).To(BeFalse())
+		}
+		_ = id
 	})
 
 	It("keeps a deletion waiting while the cluster exists without a binding", func() {

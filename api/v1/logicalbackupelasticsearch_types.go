@@ -201,12 +201,13 @@ type LogicalBackupElasticsearchStatus struct {
 	// backup fails the step.
 	// +optional
 	RuntimeAcceptedTime *metav1.Time `json:"runtimeAcceptedTime,omitempty"`
-	// ElasticsearchUnreachableSince is when a step first found the
-	// Elasticsearch endpoint unreachable. Exporting is paused at those steps,
-	// so the retry is bounded. After the bound, the step fails and the
-	// procedure resumes exporting.
+	// UnreachableSince is when a working step first found the endpoint it
+	// calls — the management API or Elasticsearch — unreachable. Exporting
+	// is paused, or may be, at every working step, so the retry is bounded:
+	// after the bound the step fails and the procedure resumes exporting.
+	// It clears once every call of a reconcile answered.
 	// +optional
-	ElasticsearchUnreachableSince *metav1.Time `json:"elasticsearchUnreachableSince,omitempty"`
+	UnreachableSince *metav1.Time `json:"unreachableSince,omitempty"`
 	// FailureMessage names the failing step and its error. It is recorded
 	// when a step fails and exporting still has to be resumed, so the reason
 	// survives the resume and reaches the terminal condition.

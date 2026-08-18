@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -241,6 +243,38 @@ func (r *Reconciler) deleteArtifacts(
 		return true, nil
 	}
 
+	return r.deleteRuntimeBackup(ctx, backup, mgmt)
+}
+
+// deleteRuntimeBackup deletes the runtime backup that this backup owns. It
+// reports released=false when the deletion must wait: the backup is
+// accepted but not registered yet, or the cluster refuses the delete.
+func (r *Reconciler) deleteRuntimeBackup(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	mgmt *camundaadmin.Client,
+) (released bool, err error) {
+	// The partitions register an accepted backup asynchronously, and the
+	// delete of an unregistered one answers as if it never existed. A
+	// deletion that released on that answer would leave the finalizer gone
+	// while the backup registers after it. Within the registration grace of
+	// the acceptance the deletion waits; past it, the backup never
+	// registered and there is nothing to delete.
+	status, err := mgmt.RuntimeBackupStatus(ctx, backup.Status.BackupID)
+	if err != nil {
+		return false, fmt.Errorf("querying the runtime backup %d: %w", backup.Status.BackupID, err)
+	}
+	if status.State == camundaadmin.StateDoesNotExist {
+		if r.registering(backup.Status.RuntimeAcceptedTime) {
+			r.holdDeletion(backup, fmt.Sprintf(
+				"runtime backup %d was accepted and is not registered yet; the deletion waits for the registration grace",
+				backup.Status.BackupID,
+			))
+			return false, nil
+		}
+		return true, nil
+	}
+
 	if err := mgmt.DeleteRuntimeBackup(ctx, backup.Status.BackupID); err != nil {
 		// Any rejected delete holds the deletion. A backup that is still in
 		// progress is the documented case. Every rejection means that the
@@ -278,6 +312,18 @@ func (r *Reconciler) deleteHistorySnapshots(
 	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
 	if err != nil {
 		return false, fmt.Errorf("querying the history backup %d: %w", backup.Status.BackupID, err)
+	}
+	if status.State == camundaadmin.StateDoesNotExist && r.registering(backup.Status.HistoryAcceptedTime) {
+		// The web applications register an accepted backup asynchronously.
+		// A deletion that released now would leave the finalizer gone
+		// while the backup registers and writes its snapshots after it.
+		// The same grace as the state machine's bounds the wait; past it,
+		// the backup never registered and there is nothing to delete.
+		r.holdDeletion(backup, fmt.Sprintf(
+			"history backup %d was accepted and is not registered yet; the deletion waits for the registration grace",
+			backup.Status.BackupID,
+		))
+		return false, nil
 	}
 	if recordHistorySnapshots(backup, status) {
 		// Names the status did not hold yet are persisted before any
@@ -377,6 +423,12 @@ func mayHoldExportingPaused(backup *v1.LogicalBackupElasticsearch) bool {
 		return false
 	}
 	return !backup.Terminal() || backup.Status.TerminalReason == v1.ReasonResumeFailed
+}
+
+// registering reports whether an accepted backup can still be registering:
+// the acceptance is recorded and lies within the registration grace.
+func (r *Reconciler) registering(accepted *metav1.Time) bool {
+	return accepted != nil && time.Since(accepted.Time) < r.runtimeRegistrationGrace()
 }
 
 // holdDeletion records why the deletion waits. The user then sees the reason
