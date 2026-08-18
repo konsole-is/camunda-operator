@@ -285,6 +285,107 @@ func expectPending(backup *v1.LogicalBackupRDBMS, reason string) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// patchStatusUntilStable stands in for another writer of the backup's status
+// and makes the patch stick. The controller flushes the whole status it
+// staged from its last live read, and on a write conflict ocf re-applies that
+// staged status over a concurrent writer — by design, so a controller never
+// loses its own state. A patch that lands while a reconcile is in flight is
+// therefore overwritten. The helper patches, waits out one poll interval, and
+// requires that the patch survived; otherwise it patches again.
+func patchStatusUntilStable(
+	backup *v1.LogicalBackupRDBMS,
+	mutate func(*v1.LogicalBackupRDBMS),
+	stuck func(*v1.LogicalBackupRDBMS) bool,
+) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+		if !stuck(backup) {
+			mutate(backup)
+			g.Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
+		}
+		time.Sleep(2 * time.Second) // longer than the controller's poll interval
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+		g.Expect(stuck(backup)).To(BeTrue(), "the controller re-applied its own status over the patch")
+	}, "40s", interval).Should(Succeed())
+}
+
+// unconvergeCluster bumps the cluster's generation without publishing a new
+// Ready for it, so admission parks every backup of the cluster.
+func unconvergeCluster(w *world) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), w.cluster)).To(Succeed())
+		if w.cluster.Spec.Backup == nil {
+			w.cluster.Spec.Backup = &v1.ClusterBackupSpec{}
+		}
+		w.cluster.Spec.Backup.Dump = &v1.BackupDumpSpec{
+			DumpPodSpec: v1.DumpPodSpec{PodLabels: map[string]string{"rollout": utilrand.String(4)}},
+		}
+		g.Expect(k8sClient.Update(ctx, w.cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// stageAdmitted hand-stages the state a backup is in right after admission
+// flushed its identity and before its Job exists — the gap a crash or a slow
+// requeue leaves — pinned to the bucket as it is now.
+func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
+	GinkgoHelper()
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
+	id := time.Now().UnixMilli()
+	patchStatusUntilStable(
+		backup, func(b *v1.LogicalBackupRDBMS) {
+			b.Status.BackupID = id
+			b.Status.Phase = v1.LogicalBackupRunning
+			b.Status.Step = v1.StepDumping
+			b.Status.BucketRef = w.bucket.Name
+			b.Status.BucketGeneration = w.bucket.Generation
+			b.Status.BucketLocation = w.bucket.Location()
+			b.Status.ObjectKey = logicalbackup.ObjectKeyPrefix(
+				w.bucket.BasePath(), w.namespace, w.cluster.Name, id,
+			) + "/" + components.DumpFileName
+		}, func(b *v1.LogicalBackupRDBMS) bool { return b.Status.BackupID == id },
+	)
+}
+
+// gateState describes why a waiting backup may not have started: its own
+// phase and Ready, the state of the sibling it may wait on, and who holds the
+// cluster's Lease. It annotates the assertions of the serialization specs, so
+// a failure explains itself.
+func gateState(w *world, sibling, waiting *v1.LogicalBackupRDBMS) string {
+	var latestSibling, latestWaiting v1.LogicalBackupRDBMS
+	_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(sibling), &latestSibling)
+	_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(waiting), &latestWaiting)
+	describe := func(b *v1.LogicalBackupRDBMS) string {
+		reason, message := "-", "-"
+		if cond := readyCondition(b); cond != nil {
+			reason, message = cond.Reason, cond.Message
+		}
+
+		return fmt.Sprintf(
+			"%s: phase=%s backupId=%d Ready=%s (%s)",
+			b.Name,
+			b.Status.Phase,
+			b.Status.BackupID,
+			reason,
+			message,
+		)
+	}
+	holder := "<no Lease>"
+	var lease coordinationv1.Lease
+	if err := k8sClient.Get(
+		ctx, types.NamespacedName{
+			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+		}, &lease,
+	); err == nil && lease.Spec.HolderIdentity != nil {
+		holder = *lease.Spec.HolderIdentity
+	}
+
+	return fmt.Sprintf(
+		"waiting %s | sibling %s | Lease holder %s", describe(&latestWaiting), describe(&latestSibling), holder,
+	)
+}
+
 // podOfBackup builds a pod the way the Job controller would create it from
 // the dump Job's template: labeled with the Job name and the backup UID.
 func podOfBackup(backup *v1.LogicalBackupRDBMS, job *batchv1.Job, suffix string) *corev1.Pod {
@@ -298,6 +399,17 @@ func podOfBackup(backup *v1.LogicalBackupRDBMS, job *batchv1.Job, suffix string)
 		},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "upload", Image: "cli"}}},
 	}
+}
+
+// envValueOf returns the literal value of a container's env variable, or "".
+func envValueOf(container corev1.Container, name string) string {
+	for _, env := range container.Env {
+		if env.Name == name {
+			return env.Value
+		}
+	}
+
+	return ""
 }
 
 // secretNameOfEnv returns the Secret a container's env variable reads from,
@@ -622,21 +734,29 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 			g.Expect(first.Status.BackupID).NotTo(BeZero())
 		}, timeout, interval).Should(Succeed())
 
-		By("standing in for a sibling that already holds an id a year ahead, done")
-		ahead := time.Now().Add(365 * 24 * time.Hour).UnixMilli()
+		By("letting the first backup finish through the controller, so it is quiescent")
+		markJob(first, w, batchv1.JobFailed)
+		leaseKey := types.NamespacedName{
+			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+		}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())
-			now := metav1.Now()
-			first.Status.BackupID = ahead
-			first.Status.Phase = v1.LogicalBackupCompleted
-			first.Status.CompletionTime = &now
-			g.Expect(k8sClient.Status().Update(ctx, first)).To(Succeed())
+			g.Expect(first.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(k8sClient.Get(ctx, leaseKey, &coordinationv1.Lease{})).NotTo(Succeed())
 		}, timeout, interval).Should(Succeed())
+
+		By("standing in for a sibling that holds an id a year ahead")
+		ahead := time.Now().Add(365 * 24 * time.Hour).UnixMilli()
+		patchStatusUntilStable(
+			first,
+			func(b *v1.LogicalBackupRDBMS) { b.Status.BackupID = ahead },
+			func(b *v1.LogicalBackupRDBMS) bool { return b.Status.BackupID == ahead },
+		)
 
 		second := createBackup(w)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(second), second)).To(Succeed())
-			g.Expect(second.Status.BackupID).To(Equal(ahead + 1))
+			g.Expect(second.Status.BackupID).To(Equal(ahead+1), gateState(w, first, second))
 			g.Expect(second.Status.ObjectKey).To(ContainSubstring(fmt.Sprintf("/%d/", ahead+1)))
 		}, timeout, interval).Should(Succeed())
 	})
@@ -1174,6 +1294,63 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(secretNameOfEnv(upload, components.EnvUploadCredentialPrefix+"0")).To(
 			Equal(bucketMirror),
 		)
+	})
+
+	// S1 (round 6): the Job is rendered from a live read after admission's
+	// flush; the pinned invariants are re-checked right before, so a retarget
+	// in that gap never renders a Job that uploads elsewhere.
+	It("does not render the Job when the bucket was retargeted between admission and the Job", func() {
+		w := createWorld()
+		unconvergeCluster(w)
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+		stageAdmitted(w, backup)
+
+		By("retargeting the bucket in the gap, then letting the cluster converge")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.bucket), w.bucket)).To(Succeed())
+			w.bucket.Spec.S3.BucketName = "moved-elsewhere"
+			g.Expect(k8sClient.Update(ctx, w.bucket)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		converge(w.cluster)
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupFailed))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("moved-elsewhere"))
+			g.Expect(backup.Status.FailureMessage).To(ContainSubstring("camunda-backups"))
+		}, "20s", interval).Should(Succeed())
+		var job batchv1.Job
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{
+				Namespace: w.namespace, Name: components.JobName(backup),
+			}, &job,
+		)).NotTo(Succeed(), "no Job was rendered against the moved bucket")
+	})
+
+	It("holds the Job while the cluster rolls out in the gap, then renders it against the pinned inputs", func() {
+		w := createWorld()
+		unconvergeCluster(w)
+		backup := createBackup(w)
+		expectPending(backup, v1.ReasonProgressing)
+		stageAdmitted(w, backup)
+		pinnedKey := backup.Status.ObjectKey
+
+		By("holding: no Job while the cluster has not converged")
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)).To(Succeed())
+			g.Expect(backup.Status.Phase).To(Equal(v1.LogicalBackupRunning))
+			g.Expect(backup.Status.JobName).To(BeEmpty())
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: w.namespace, Name: components.JobName(backup),
+				}, &batchv1.Job{},
+			)).NotTo(Succeed())
+		}, "2s", interval).Should(Succeed())
+
+		converge(w.cluster)
+		job := jobOf(backup, w)
+		Expect(envValueOf(job.Spec.Template.Spec.Containers[0], components.EnvUploadKey)).To(Equal(pinnedKey))
 	})
 
 	// P1: a pod that cannot start never fails its Job and consumes no retry;

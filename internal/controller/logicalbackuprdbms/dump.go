@@ -217,25 +217,25 @@ func (r *LogicalBackupRDBMSReconciler) resolveRunning(
 		), nil
 	}
 
-	// The pinned bucket, not the cluster's current backupStorageRef: the
-	// object key was written through the pinned one.
-	var bucket v1.ObjectStorageConfig
-	if err := r.APIReader.Get(
-		ctx, types.NamespacedName{Name: backup.Status.BucketRef}, &bucket,
-	); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference(
-				"the pinned ObjectStorageConfig %q does not exist", backup.Status.BucketRef,
-			), nil
-		}
-
-		return nil, nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", backup.Status.BucketRef, err)
+	// The same invariants admission checked, right before the Job is
+	// rendered: between admission's flush and this reconcile the cluster
+	// may have started a rollout, or its backup store may have moved. A Job
+	// rendered then would dump the wrong database or upload elsewhere, and
+	// the Zeebe step would only find out afterwards. The pinned bucket, not
+	// the cluster's current backupStorageRef, is what the object key was
+	// written for.
+	if failure := clusterConverged(&cluster); failure != nil {
+		return nil, failure, nil
+	}
+	bucket, failure, err := r.pinnedBucket(ctx, backup, &cluster)
+	if err != nil || failure != nil {
+		return nil, failure, err
 	}
 
 	return r.resolveDump(ctx, backup, &logicalbackup.PreCheckResult{
 		Cluster: &cluster,
 		Storage: &storage,
-		Bucket:  &bucket,
+		Bucket:  bucket,
 	})
 }
 

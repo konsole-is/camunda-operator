@@ -72,7 +72,7 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 		// pair is one restore point only if that is still the bucket the
 		// dump was written to — and only if Zeebe runs the spec that names
 		// it, not a rollout still in progress.
-		failure, err := r.bucketStillPinned(ctx, backup, &cluster)
+		_, failure, err := r.pinnedBucket(ctx, backup, &cluster)
 		if err != nil {
 			return settle, err
 		}
@@ -126,19 +126,21 @@ func (r *LogicalBackupRDBMSReconciler) releaseJob(
 	return nil
 }
 
-// bucketStillPinned verifies that the cluster's backup store is still the
-// bucket the dump was written through — the same contract, pointing at the
-// same location. A retarget in between would send the Zeebe backup somewhere
-// else, and the reported pair would not be one restore point.
-func (r *LogicalBackupRDBMSReconciler) bucketStillPinned(
+// pinnedBucket verifies that the cluster's backup store is still the bucket
+// the dump was, or will be, written through — the same contract, pointing at
+// the same location — and returns it. A retarget after admission would send
+// the dump or the Zeebe backup somewhere else, and the pair would not be one
+// restore point; the Job and the Zeebe request both check it right before
+// they act.
+func (r *LogicalBackupRDBMSReconciler) pinnedBucket(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 	cluster *v1.CamundaCluster,
-) (*conditions.PreCheckFailure, error) {
+) (*v1.ObjectStorageConfig, *conditions.PreCheckFailure, error) {
 	if cluster.Spec.BackupStorageRef != backup.Status.BucketRef {
-		return logicalbackup.InvalidReference(
-			"CamundaCluster %s/%s now backs up through ObjectStorageConfig %q, but the dump was "+
-				"written through %q; the Zeebe backup would land in a different bucket",
+		return nil, logicalbackup.InvalidReference(
+			"CamundaCluster %s/%s now backs up through ObjectStorageConfig %q, but the backup was "+
+				"pinned to %q; a dump or a Zeebe backup taken now would land in a different bucket",
 			cluster.Namespace, cluster.Name, cluster.Spec.BackupStorageRef, backup.Status.BucketRef,
 		), nil
 	}
@@ -148,22 +150,22 @@ func (r *LogicalBackupRDBMSReconciler) bucketStillPinned(
 		ctx, types.NamespacedName{Name: backup.Status.BucketRef}, &bucket,
 	); err != nil {
 		if apierrors.IsNotFound(err) {
-			return logicalbackup.InvalidReference(
+			return nil, logicalbackup.InvalidReference(
 				"the pinned ObjectStorageConfig %q does not exist", backup.Status.BucketRef,
 			), nil
 		}
 
-		return nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", backup.Status.BucketRef, err)
+		return nil, nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", backup.Status.BucketRef, err)
 	}
 	if location := bucket.Location(); location != backup.Status.BucketLocation {
-		return logicalbackup.InvalidReference(
-			"ObjectStorageConfig %q now points at %s, but the dump was written to %s; the Zeebe "+
-				"backup would land in a different bucket",
+		return nil, logicalbackup.InvalidReference(
+			"ObjectStorageConfig %q now points at %s, but the backup was pinned to %s; a dump or a "+
+				"Zeebe backup taken now would land in a different bucket",
 			bucket.Name, location, backup.Status.BucketLocation,
 		), nil
 	}
 
-	return nil, nil
+	return &bucket, nil, nil
 }
 
 // startZeebeBackup requests the backup without an id and records the one the
