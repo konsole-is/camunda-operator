@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
@@ -59,6 +60,41 @@ var _ = Describe("LogicalBackupRDBMS schema", func() {
 			PodAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
 		}
 		Expect(k8sClient.Update(ctx, backup)).To(HaveOccurred())
+	})
+
+	// The schema itself bounds a backup's extraEnvFrom: without a safe
+	// prefix a source could supply PGHOSTADDR and redirect the dump.
+	It("rejects a backup extraEnvFrom source without a safe prefix", func() {
+		backup := valid()
+		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
+			},
+		}}}
+		err := k8sClient.Create(ctx, backup)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("prefix"))
+
+		backup = valid()
+		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
+			Prefix: "P",
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
+			},
+		}}}
+		Expect(k8sClient.Create(ctx, backup)).To(HaveOccurred(), "P plus GHOST would spell PGHOST")
+	})
+
+	It("accepts a backup extraEnvFrom source with a safe prefix", func() {
+		backup := valid()
+		backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
+			Prefix: "X_",
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
+			},
+		}}}
+		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, backup) })
 	})
 
 	It("requires the cluster name", func() {

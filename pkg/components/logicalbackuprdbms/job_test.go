@@ -350,12 +350,66 @@ func TestReservedEnvNamesTheOffenders(t *testing.T) {
 	t.Parallel()
 
 	assert.Nil(t, ReservedEnv(nil))
-	assert.Nil(t, ReservedEnv(&v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{{Name: "PGSSLMODE"}}}))
-	assert.Equal(t, []string{"PGPASSWORD", "UPLOAD_KEY"}, ReservedEnv(&v1.DumpPodSpec{
-		ExtraEnv: []corev1.EnvVar{
-			{Name: "PGSSLMODE"}, {Name: "PGPASSWORD"}, {Name: "UPLOAD_KEY"}, {Name: "PGPASSWORD"},
+	assert.Nil(t, ReservedEnv(&v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{{Name: "TZ"}, {Name: "XPG"}}}))
+	// The rule is prefix-based: names the Job never sets are connection
+	// policy too — PGHOSTADDR beats PGHOST inside libpq.
+	assert.Equal(
+		t,
+		[]string{"PGSSLMODE", "PGHOSTADDR", "UPLOAD_KEY", "PGOPTIONS"},
+		ReservedEnv(&v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
+			{Name: "PGSSLMODE"}, {Name: "PGHOSTADDR"}, {Name: "UPLOAD_KEY"},
+			{Name: "PGOPTIONS"}, {Name: "PGSSLMODE"},
+		}}),
+	)
+}
+
+func TestSafeEnvFromPrefix(t *testing.T) {
+	t.Parallel()
+
+	for _, safe := range []string{"X_", "MY_", "EXTRA_", "GP", "PX"} {
+		assert.True(t, SafeEnvFromPrefix(safe), safe)
+	}
+	// Empty, a reserved head, or a head OF a reserved prefix: "P" plus a key
+	// "GHOST" would spell PGHOST, "UPLOAD" plus "_KEY" the upload contract.
+	for _, unsafe := range []string{"", "P", "PG", "PGX", "U", "UPLOAD", "UPLOAD_", "UPLOAD_X"} {
+		assert.False(t, SafeEnvFromPrefix(unsafe), unsafe)
+	}
+}
+
+func TestUnsafeEnvFromNamesTheSources(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, UnsafeEnvFrom(nil))
+	assert.Nil(t, UnsafeEnvFrom(&v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{Prefix: "X_"}}}))
+	unsafe := UnsafeEnvFrom(&v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{
+		{Prefix: "X_"}, {}, {Prefix: "P"},
+	}})
+	require.Len(t, unsafe, 2)
+	assert.Contains(t, unsafe[0], "source 1")
+	assert.Contains(t, unsafe[1], "source 2")
+}
+
+// TestBuildJobKeepsTheEnvFromPrefix proves the safe prefix survives to both
+// containers: it is what neutralizes the source's keys at runtime.
+func TestBuildJobKeepsTheEnvFromPrefix(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Dump = &v1.DumpPodSpec{ExtraEnvFrom: []corev1.EnvFromSource{{
+		Prefix: "X_",
+		ConfigMapRef: &corev1.ConfigMapEnvSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "extras"},
 		},
-	}))
+	}}}
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	for _, container := range []corev1.Container{
+		job.Spec.Template.Spec.InitContainers[0], job.Spec.Template.Spec.Containers[0],
+	} {
+		require.Len(t, container.EnvFrom, 1, container.Name)
+		assert.Equal(t, "X_", container.EnvFrom[0].Prefix, container.Name)
+	}
 }
 
 func envValue(container corev1.Container, name string) string {

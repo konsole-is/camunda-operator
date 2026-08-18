@@ -531,13 +531,25 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	}
 
 	settings, image := dumpBlock(merged, backup)
-	if reserved := components.ReservedEnv(settings); len(reserved) > 0 {
-		return nil, logicalbackup.InvalidReference(
-			"the dump block sets %s in extraEnv; the Job reserves the connection variables "+
-				"(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, ...) and every UPLOAD_* variable "+
-				"for itself, so a dump cannot be redirected or run as someone else",
-			strings.Join(reserved, ", "),
-		), nil
+	// The environment bound applies to the backup's own block only: the
+	// cluster's spec.backup.dump is its owner's policy inside their own
+	// boundary. The CRD schema enforces the envFrom half too; this is the
+	// second layer.
+	if backup != nil && backup.Spec.Dump != nil {
+		if reserved := components.ReservedEnv(backup.Spec.Dump); len(reserved) > 0 {
+			return nil, logicalbackup.InvalidReference(
+				"the backup's dump block sets %s in extraEnv; every name under PG or UPLOAD_ is "+
+					"reserved, so a dump cannot be redirected or run as someone else",
+				strings.Join(reserved, ", "),
+			), nil
+		}
+		if unsafe := components.UnsafeEnvFrom(backup.Spec.Dump); len(unsafe) > 0 {
+			return nil, logicalbackup.InvalidReference(
+				"the backup's dump block has extraEnvFrom %s without a safe prefix; a source "+
+					"could otherwise supply PGHOSTADDR and redirect the dump",
+				strings.Join(unsafe, ", "),
+			), nil
+		}
 	}
 
 	return &podResolution{

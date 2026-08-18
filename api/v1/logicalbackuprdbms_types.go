@@ -55,6 +55,13 @@ type LogicalBackupRDBMSSpec struct {
 	// The two never merge. The image that runs the dump is not among them:
 	// the Job runs under the cluster's ServiceAccount, so the executable is
 	// the cluster owner's choice and always comes from the cluster block.
+	// The environment is bounded the same way: extraEnv may not name
+	// anything under PG or UPLOAD_, and every extraEnvFrom source needs a
+	// prefix that cannot spell such a name — libpq prefers PGHOSTADDR over
+	// the Job's own PGHOST, so an unbounded source could redirect the dump
+	// with the injected credentials. The cluster's own block carries no such
+	// bound: its owner sets policy inside their own boundary.
+	// +kubebuilder:validation:XValidation:rule="!has(self.extraEnvFrom) || self.extraEnvFrom.all(s, has(s.prefix) && s.prefix != '' && !s.prefix.startsWith('PG') && !'PG'.startsWith(s.prefix) && !s.prefix.startsWith('UPLOAD_') && !'UPLOAD_'.startsWith(s.prefix))",message="every extraEnvFrom source of a backup needs a prefix, and one that cannot spell a PG* or UPLOAD_* name"
 	// +optional
 	Dump *DumpPodSpec `json:"dump,omitempty"`
 }

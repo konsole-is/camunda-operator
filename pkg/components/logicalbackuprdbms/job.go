@@ -79,19 +79,15 @@ const (
 	nameHashLength = 10
 )
 
-// reservedEnvNames are the environment variables the Job sets to reach the
-// right database with the right identity. A dump block may not override
-// them: a user-set PGHOST or PGPASSWORD would redirect the dump or run it as
-// someone else. Everything else libpq reads, for example PGSSLMODE, stays
-// open to extraEnv.
-var reservedEnvNames = []string{
-	"PGHOST", "PGHOSTADDR", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD",
-	"PGPASSFILE", "PGSERVICE", "PGSERVICEFILE",
-}
-
-// reservedEnvPrefix is the prefix of the upload contract; every variable
-// under it belongs to the operator.
-const reservedEnvPrefix = "UPLOAD_"
+// reservedEnvPrefixes start the environment variables a per-backup dump
+// block may not supply: everything libpq reads (PG*) and the whole upload
+// contract (UPLOAD_*). The rule is prefix-based, case-sensitive like libpq,
+// because a finite list cannot be: PGHOSTADDR redirects the connection even
+// when PGHOST is set, PGSERVICE and PGPASSFILE swap the identity, PGOPTIONS
+// injects server options — any PG* name is connection policy. The cluster's
+// own spec.backup.dump is not restricted: its owner sets policy inside their
+// own boundary, and no boundary is crossed there.
+var reservedEnvPrefixes = []string{"PG", "UPLOAD_"}
 
 // The environment contract of the upload subcommand. The Job renders these
 // variables and cmd/upload reads them; they are the only interface between
@@ -197,10 +193,12 @@ func JobBelongsTo(job *batchv1.Job, backup *v1.LogicalBackupRDBMS) bool {
 	return job.Labels[BackupUIDLabel] == string(backup.UID)
 }
 
-// ReservedEnv returns the names in dump.extraEnv that the Job reserves for
-// itself, in the order they appear, or nothing when the block is clean. The
-// controller rejects a block that names one at admission, with the names in
-// the message.
+// ReservedEnv returns the names in a per-backup dump block's extraEnv that
+// the Job reserves for itself — any name under a reserved prefix — in the
+// order they appear, or nothing when the block is clean. The controller
+// rejects a per-backup block that names one at admission, with the names in
+// the message. Run it on the backup's own spec.dump, never on the cluster's
+// block.
 func ReservedEnv(dump *v1.DumpPodSpec) []string {
 	if dump == nil {
 		return nil
@@ -216,7 +214,52 @@ func ReservedEnv(dump *v1.DumpPodSpec) []string {
 }
 
 func isReservedEnv(name string) bool {
-	return slices.Contains(reservedEnvNames, name) || strings.HasPrefix(name, reservedEnvPrefix)
+	for _, prefix := range reservedEnvPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// UnsafeEnvFrom returns the extraEnvFrom sources of a per-backup dump block
+// whose prefix does not neutralize the keys of the referenced Secret or
+// ConfigMap, as "source <i>" descriptions. envFrom keys are chosen by
+// whoever writes the referenced object, so without a safe prefix a source
+// can supply PGHOSTADDR — which libpq prefers over the Job's own PGHOST,
+// redirecting the dump with the injected credentials. The CRD schema
+// enforces the same rule; this is the second layer. Run it on the backup's
+// own spec.dump, never on the cluster's block.
+func UnsafeEnvFrom(dump *v1.DumpPodSpec) []string {
+	if dump == nil {
+		return nil
+	}
+	var unsafe []string
+	for i, source := range dump.ExtraEnvFrom {
+		if !SafeEnvFromPrefix(source.Prefix) {
+			unsafe = append(unsafe, fmt.Sprintf("source %d (prefix %q)", i, source.Prefix))
+		}
+	}
+
+	return unsafe
+}
+
+// SafeEnvFromPrefix reports whether prefix guarantees that no key of an
+// envFrom source can land on a reserved name: it is non-empty, starts no
+// reserved prefix, and is no head of one — a prefix "P" plus a key "GHOST"
+// would spell PGHOST.
+func SafeEnvFromPrefix(prefix string) bool {
+	if prefix == "" {
+		return false
+	}
+	for _, reserved := range reservedEnvPrefixes {
+		if strings.HasPrefix(prefix, reserved) || strings.HasPrefix(reserved, prefix) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // BuildJob renders the Job that dumps the logical database and uploads the

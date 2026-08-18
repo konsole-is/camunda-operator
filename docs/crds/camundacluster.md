@@ -330,7 +330,7 @@ spec:
       activeDeadlineSeconds: 7200
       # string. Optional, default: postgres:<probed major of the DatabaseServerConfig>. The image that runs pg_dump. Set it to pin a mirror or an exact tag. Cluster-level policy only: the Job runs under the cluster's ServiceAccount, with its cloud identity and database credentials, so the executable is the cluster owner's choice — a LogicalBackupRDBMS always inherits it.
       postgresImage: ""
-      # []EnvVar. Optional. Extra environment variables of the dump pod. The connection variables the Job sets (PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, and their libpq siblings) and every UPLOAD_* variable are reserved; a backup that names one is rejected. Settings such as PGSSLMODE are allowed.
+      # []EnvVar. Optional. Extra environment variables of the dump pod. Unrestricted here: the cluster owner sets connection policy (PGSSLMODE included) inside their own boundary. A LogicalBackupRDBMS's own dump block may not supply anything under the PG or UPLOAD_ prefixes.
       extraEnv: []
       # []EnvFromSource. Optional. Extra environment sources of the dump pod.
       extraEnvFrom: []

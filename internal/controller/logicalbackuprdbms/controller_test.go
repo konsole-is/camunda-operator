@@ -996,19 +996,22 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(readyCondition(backup).Message).To(ContainSubstring("current spec"))
 	})
 
-	// F3: the Job reserves its connection and upload variables.
-	It("rejects a dump block that sets a reserved environment variable", func() {
+	// F3 + round 9: a backup's dump block may not supply anything under the
+	// PG or UPLOAD_ prefixes — the rule is prefix-based, so names the Job
+	// never sets (PGOPTIONS, PGHOSTADDR) are covered too. PGSSLMODE stays
+	// available in the cluster's own block, where its owner sets policy.
+	It("rejects a backup dump block that sets a reserved environment variable", func() {
 		w := createWorld()
 		backup := createBackup(w, func(backup *v1.LogicalBackupRDBMS) {
 			backup.Spec.Dump = &v1.DumpPodSpec{ExtraEnv: []corev1.EnvVar{
-				{Name: "PGSSLMODE", Value: "require"},
-				{Name: "PGPASSWORD", Value: "hijack"},
+				{Name: "TZ", Value: "UTC"},
+				{Name: "PGOPTIONS", Value: "-c synchronous_commit=off"},
 			}}
 		})
 
 		expectPending(backup, v1.ReasonInvalidReference)
-		Expect(readyCondition(backup).Message).To(ContainSubstring("PGPASSWORD"))
-		Expect(readyCondition(backup).Message).NotTo(ContainSubstring("PGSSLMODE"))
+		Expect(readyCondition(backup).Message).To(ContainSubstring("PGOPTIONS"))
+		Expect(readyCondition(backup).Message).NotTo(ContainSubstring("TZ"))
 	})
 
 	It("reports MissingCredentials until the bucket credentials resolve", func() {

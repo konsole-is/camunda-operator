@@ -95,14 +95,21 @@ type DumpPodSpec struct {
 	// Resources are the CPU and memory of the dump pod.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// ExtraEnv are extra environment variables of the dump pod. The
-	// connection variables the Job sets (PGHOST, PGPORT, PGDATABASE, PGUSER,
-	// PGPASSWORD, and their libpq siblings) and every UPLOAD_* variable are
-	// reserved; a backup that names one is rejected at admission. Settings
-	// such as PGSSLMODE are allowed.
+	// ExtraEnv are extra environment variables of the dump pod. In a
+	// LogicalBackupRDBMS's spec.dump, every name under PG or UPLOAD_ is
+	// reserved and rejected at admission: any PG* name is connection policy
+	// (libpq reads PGHOSTADDR, PGSERVICE, PGOPTIONS, ...), and UPLOAD_* is
+	// the upload contract. In the cluster's own spec.backup.dump nothing is
+	// reserved — the cluster owner sets connection policy, PGSSLMODE
+	// included, inside their own boundary.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
-	// ExtraEnvFrom are extra environment sources of the dump pod.
+	// ExtraEnvFrom are extra environment sources of the dump pod, at most
+	// 8. In a LogicalBackupRDBMS's spec.dump every source needs a prefix
+	// that cannot spell a PG* or UPLOAD_* name, because the keys of the
+	// referenced object are chosen by whoever writes it; the cluster's own
+	// block carries no such bound.
+	// +kubebuilder:validation:MaxItems=8
 	// +optional
 	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
 	// PodLabels are extra labels of the dump pod.
