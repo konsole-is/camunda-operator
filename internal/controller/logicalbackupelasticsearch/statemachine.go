@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -412,6 +413,14 @@ func (r *Reconciler) destination(
 		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
+	if err := r.pinnedBucketCurrent(ctx, backup, cluster); err != nil {
+		if !errors.Is(err, errBucketMoved) && !apierrors.IsNotFound(err) {
+			return nil, ctrl.Result{}, err
+		}
+		r.failStep(backup, step, part, err)
+		return nil, ctrl.Result{RequeueAfter: r.poll()}, nil
+	}
+
 	return storage, ctrl.Result{}, nil
 }
 
@@ -448,6 +457,15 @@ func (r *Reconciler) backupRuntime(
 	part := &backup.Status.Runtime
 	mgmt, result, err := r.management(ctx, backup, cluster, "BackupRuntime", part)
 	if mgmt == nil {
+		return result, err
+	}
+
+	// The partitions write into the backup store that the cluster is
+	// configured with now. A store that moved since the start puts the
+	// runtime backup outside the pinned set, and the finalizer's delete
+	// through the new store would miss it. The check runs before the
+	// status of an existing backup is trusted and before a start.
+	if storage, result, err := r.destination(ctx, backup, cluster, "BackupRuntime", part); storage == nil {
 		return result, err
 	}
 
@@ -674,11 +692,14 @@ func pinnedStorageMatches(backup *v1.LogicalBackupElasticsearch, storage *v1.Sec
 
 // recordHistorySnapshots merges the snapshot names that the cluster reports
 // into status, so they survive the cluster.
-func recordHistorySnapshots(backup *v1.LogicalBackupElasticsearch, status camundaadmin.BackupStatus) {
+func recordHistorySnapshots(backup *v1.LogicalBackupElasticsearch, status camundaadmin.BackupStatus) (added bool) {
 	for _, detail := range status.Details {
 		if detail.Name == "" || slices.Contains(backup.Status.HistorySnapshots, detail.Name) {
 			continue
 		}
 		backup.Status.HistorySnapshots = append(backup.Status.HistorySnapshots, detail.Name)
+		added = true
 	}
+
+	return added
 }

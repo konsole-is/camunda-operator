@@ -172,15 +172,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		}
 	}
 
-	rec := component.ReconcileContext{
-		Client:        r.Client,
-		Scheme:        r.Scheme,
-		EventRecorder: r.EventRecorder,
-		APIReader:     r.APIReader,
-		Owner:         &backup,
-	}
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
+		if flushErr := r.persistStatus(ctx, &backup); flushErr != nil {
 			err = errors.Join(err, flushErr)
 		}
 	}()
@@ -211,6 +204,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	return r.run(ctx, &backup)
+}
+
+// persistStatus writes the status of backup through the ocf flush: the one
+// status write of a reconcile. Reconcile defers it; the finalizer, which
+// runs before that defer is installed, calls it when it must make a status
+// fact durable before it acts on it.
+func (r *Reconciler) persistStatus(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
+	return component.FlushStatus(
+		ctx, component.ReconcileContext{
+			Client:        r.Client,
+			Scheme:        r.Scheme,
+			EventRecorder: r.EventRecorder,
+			APIReader:     r.APIReader,
+			Owner:         backup,
+		}, nil,
+	)
 }
 
 // terminalReady rebuilds the Ready condition of a terminal backup from the

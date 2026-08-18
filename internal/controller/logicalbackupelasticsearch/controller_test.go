@@ -402,6 +402,8 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(final.Status.Storage).To(Equal(&v1.PinnedStorage{
 			SecondaryStorageConfig: "storage",
 			Endpoint:               r.search.URL(),
+			BucketRef:              r.cluster.Spec.BackupStorageRef,
+			BucketLocation:         "s3://backups/ (region eu-west-1)",
 		}))
 		Expect(final.Status.CompletionTime).NotTo(BeNil())
 		Expect(final.Status.HistorySnapshots).NotTo(BeEmpty())
@@ -810,6 +812,11 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		snapshots := currentBackup(backup).Status.HistorySnapshots
 		Expect(snapshots).NotTo(BeEmpty())
+		// The web applications wrote the snapshots into the repository, so
+		// the deletion below has something to delete by name.
+		for _, snapshot := range snapshots {
+			r.search.SetSnapshotState(r.repository, snapshot, "SUCCESS")
+		}
 
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
 		Eventually(func() bool {
@@ -1544,6 +1551,105 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}, timeout, interval).Should(BeTrue())
 	})
 
+	// Round 10 P1: the runtime backup and the snapshot repository land in
+	// the cluster's backup bucket, which is as mutable as the Elasticsearch
+	// endpoint. The pin covers it, every step verifies it, and the
+	// finalizer never deletes through a bucket the set is not in.
+	It("fails the runtime step when the backup bucket is retargeted mid-run, and holds the deletion", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+
+		By("retargeting the bucket contract while the records snapshot runs")
+		pointBucketAt := func(bucketName string) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				var bucket v1.ObjectStorageConfig
+				g.Expect(k8sClient.Get(
+					ctx, client.ObjectKey{Name: r.cluster.Spec.BackupStorageRef}, &bucket,
+				)).To(Succeed())
+				bucket.Spec.S3.BucketName = bucketName
+				g.Expect(k8sClient.Update(ctx, &bucket)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+		}
+		pointBucketAt("backups-moved")
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+
+		By("failing before the runtime backup is requested, naming both locations")
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("s3://backups-moved/"),
+			ContainSubstring("s3://backups/"),
+		))
+		Expect(final.Status.Storage.BucketRef).To(Equal(r.cluster.Spec.BackupStorageRef))
+		Expect(final.Status.Storage.BucketLocation).To(HavePrefix("s3://backups/"))
+		Expect(r.management.RuntimeStarts(id)).To(BeZero(), "nothing is written into the moved bucket")
+		Expect(r.management.Exporting()).To(Equal("running"))
+
+		By("holding the deletion while the contract points elsewhere")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Consistently(func(g Gomega) {
+			var held v1.LogicalBackupElasticsearch
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &held)).To(Succeed())
+			g.Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
+		}, "1s", interval).Should(Succeed())
+
+		By("completing the deletion, artifacts included, once the contract points back")
+		pointBucketAt("backups")
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeFalse())
+	})
+
+	It("fails the step when the cluster switches to another backup bucket contract mid-run", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+
+		By("pointing the cluster at another contract")
+		other := &v1.ObjectStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "bucket-other-" + utilrand.String(8)},
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeS3,
+				S3: &v1.S3Storage{
+					BucketName: "backups-other",
+					Region:     "eu-west-1",
+					Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })
+		pinned := r.cluster.Spec.BackupStorageRef
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &cluster)).To(Succeed())
+			cluster.Spec.BackupStorageRef = other.Name
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		r.management.SetHistoryState(id, "COMPLETED", "")
+
+		expectPhase(backup, v1.LogicalBackupFailed)
+		final := currentBackup(backup)
+		Expect(final.Status.FailureMessage).To(SatisfyAll(
+			ContainSubstring("BackupHistory"),
+			ContainSubstring(other.Name),
+			ContainSubstring(pinned),
+		))
+		Expect(r.management.Exporting()).To(Equal("running"))
+	})
+
 	It("holds a deletion that may leave exporting paused while the management client cannot be built", func() {
 		r := newRig()
 		backup := r.newBackup()
@@ -1790,6 +1896,60 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
 		}, timeout, interval).Should(BeTrue())
 		Expect(r.search.SnapshotExists(r.repository, name)).To(BeFalse())
+	})
+
+	// Round 10 S1: the finalizer runs before the deferred status flush of
+	// Reconcile. A history snapshot name it discovers must be durable before
+	// the first delete, or a crash mid-way and a cluster gone by the next
+	// reconcile make the sweep read the old list and leak the name.
+	It("persists the history snapshot names it discovers before it deletes anything", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := backupID(backup)
+
+		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetHistoryState(id, "COMPLETED", "")
+		name := RecordsSnapshotName(id)
+		Eventually(func() int {
+			return r.search.SnapshotCreates(r.repository, name)
+		}, timeout, interval).Should(Equal(1))
+		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
+		Eventually(func() int { return r.management.RuntimeStarts(id) }, timeout, interval).Should(Equal(1))
+		r.management.SetRuntimeState(id, "COMPLETED", "")
+		expectPhase(backup, v1.LogicalBackupCompleted)
+		recorded := currentBackup(backup).Status.HistorySnapshots
+		Expect(recorded).NotTo(BeEmpty())
+		// The web applications wrote the snapshots into the repository.
+		for _, snapshot := range recorded {
+			r.search.SetSnapshotState(r.repository, snapshot, "SUCCESS")
+		}
+
+		By("forgetting the names, as a resource that died before recording them would have")
+		Eventually(func(g Gomega) {
+			current := currentBackup(backup)
+			current.Status.HistorySnapshots = nil
+			g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting while every snapshot delete is rejected: nothing goes, the names come back durably")
+		r.search.FailNext("snapshotDelete", 1000000)
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() []string {
+			return currentBackup(backup).Status.HistorySnapshots
+		}, timeout, interval).Should(ConsistOf(recorded), "the discovered names are persisted before the deletes")
+		for _, snapshot := range recorded {
+			Expect(r.search.SnapshotExists(r.repository, snapshot)).To(BeTrue())
+		}
+
+		By("deleting them once the deletes are served")
+		r.search.FailNext("snapshotDelete", 0)
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		for _, snapshot := range recorded {
+			Expect(r.search.SnapshotExists(r.repository, snapshot)).To(BeFalse())
+		}
 	})
 
 	It("re-stages the terminal condition when a conflict restored an older one", func() {

@@ -352,6 +352,17 @@ spec:
                   or endpoint that changes mid-run fails the step, and the finalizer
                   never deletes against a different cluster.
                 properties:
+                  bucketLocation:
+                    description: |-
+                      BucketLocation is where that contract pointed: the storage type,
+                      bucket, base path, and endpoint. The steps write, and the finalizer
+                      deletes, only while the contract still points there.
+                    type: string
+                  bucketRef:
+                    description: |-
+                      BucketRef is the ObjectStorageConfig the cluster backed up through
+                      when the backup started: its spec.backupStorageRef then.
+                    type: string
                   endpoint:
                     description: Endpoint is the Elasticsearch endpoint that the contract
                       named.
@@ -362,13 +373,18 @@ spec:
                       namespace of the backup.
                     type: string
                 required:
+                - bucketLocation
+                - bucketRef
                 - endpoint
                 - secondaryStorageConfig
                 type: object
               storageSizes:
                 description: |-
-                  StorageSizes are the effective restore sizes, recorded best effort when
-                  the backup starts.
+                  StorageSizes are the effective restore sizes, recorded best effort.
+                  They are computed when the backup starts; a value that was not
+                  available then is backfilled while exporting runs — before the pause,
+                  and after the resume — never while it is paused. A value that is
+                  absent can therefore still arrive later in the run.
                 properties:
                   elasticsearch:
                     anyOf:

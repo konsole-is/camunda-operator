@@ -213,6 +213,8 @@ func (r *Reconciler) start(
 	backup.Status.Storage = &v1.PinnedStorage{
 		SecondaryStorageConfig: res.Storage.Name,
 		Endpoint:               res.Storage.Spec.Elasticsearch.Endpoint,
+		BucketRef:              res.Bucket.Name,
+		BucketLocation:         res.Bucket.Location(),
 	}
 	backup.Status.Phase = v1.LogicalBackupRunning
 	backup.Status.Step = v1.StepPauseExporting
@@ -393,6 +395,52 @@ func (r *Reconciler) resolveStorage(
 	}
 
 	return &storage, nil
+}
+
+// errBucketMoved marks a cluster whose backup store is no longer the bucket
+// the backup pinned, at the location it pinned.
+var errBucketMoved = errors.New("the backup store moved")
+
+// pinnedBucketCurrent verifies that the cluster still backs up through the
+// ObjectStorageConfig the backup pinned at its start, and that the contract
+// still points at the pinned location. The snapshot repository and the
+// runtime backup land in that bucket, so a store that moved mid-run would
+// split the set, and a delete aimed through the new store would miss the
+// artifacts. It returns nil when the pin holds; an error wrapping
+// errBucketMoved, naming the change, when the cluster names another
+// contract or the contract points elsewhere; a NotFound when the pinned
+// contract is gone; any other error is a transient read. A backup that has
+// not started has no pin and passes.
+func (r *Reconciler) pinnedBucketCurrent(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	cluster *v1.CamundaCluster,
+) error {
+	pinned := backup.Status.Storage
+	if pinned == nil {
+		return nil
+	}
+	if cluster.Spec.BackupStorageRef != pinned.BucketRef {
+		return fmt.Errorf(
+			"%w: CamundaCluster %s/%s now backs up through ObjectStorageConfig %q, but the backup "+
+				"pinned %q; the set must land in one bucket",
+			errBucketMoved, cluster.Namespace, cluster.Name, cluster.Spec.BackupStorageRef, pinned.BucketRef,
+		)
+	}
+
+	var bucket v1.ObjectStorageConfig
+	if err := r.APIReader.Get(ctx, types.NamespacedName{Name: pinned.BucketRef}, &bucket); err != nil {
+		return fmt.Errorf("reading the pinned ObjectStorageConfig %q: %w", pinned.BucketRef, err)
+	}
+	if location := bucket.Location(); location != pinned.BucketLocation {
+		return fmt.Errorf(
+			"%w: ObjectStorageConfig %q now points at %s, but the backup pinned %s; the set must land "+
+				"in one bucket",
+			errBucketMoved, bucket.Name, location, pinned.BucketLocation,
+		)
+	}
+
+	return nil
 }
 
 // clusterKey returns the key of the referenced cluster.

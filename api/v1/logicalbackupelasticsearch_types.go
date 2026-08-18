@@ -69,14 +69,25 @@ type BackupPart struct {
 	FailureReason string `json:"failureReason,omitempty"`
 }
 
-// PinnedStorage is the Elasticsearch destination of a backup set, recorded
-// when the backup starts.
+// PinnedStorage is the destination of a backup set, recorded when the backup
+// starts: the Elasticsearch cluster the snapshots are taken on, and the
+// backup bucket the snapshot repository and the runtime backup land in.
+// Every step verifies it before it writes, and the finalizer before it
+// deletes, so a destination that moved mid-run splits no set and aims no
+// delete at the wrong place.
 type PinnedStorage struct {
 	// SecondaryStorageConfig is the name of the storage contract, in the
 	// namespace of the backup.
 	SecondaryStorageConfig string `json:"secondaryStorageConfig"`
 	// Endpoint is the Elasticsearch endpoint that the contract named.
 	Endpoint string `json:"endpoint"`
+	// BucketRef is the ObjectStorageConfig the cluster backed up through
+	// when the backup started: its spec.backupStorageRef then.
+	BucketRef string `json:"bucketRef"`
+	// BucketLocation is where that contract pointed: the storage type,
+	// bucket, base path, and endpoint. The steps write, and the finalizer
+	// deletes, only while the contract still points there.
+	BucketLocation string `json:"bucketLocation"`
 }
 
 // LogicalBackupElasticsearchSpec identifies the cluster to back up. The whole
@@ -107,8 +118,11 @@ type LogicalBackupElasticsearchStatus struct {
 	// started. A restore must match it.
 	// +optional
 	PartitionsCount int32 `json:"partitionsCount,omitempty"`
-	// StorageSizes are the effective restore sizes, recorded best effort when
-	// the backup starts.
+	// StorageSizes are the effective restore sizes, recorded best effort.
+	// They are computed when the backup starts; a value that was not
+	// available then is backfilled while exporting runs — before the pause,
+	// and after the resume — never while it is paused. A value that is
+	// absent can therefore still arrive later in the run.
 	// +optional
 	StorageSizes LogicalBackupStorageSizes `json:"storageSizes,omitempty"`
 	// History is the backup of the web-application indices.

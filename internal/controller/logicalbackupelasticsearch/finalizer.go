@@ -183,6 +183,22 @@ func (r *Reconciler) deleteArtifacts(
 		}
 	}
 
+	// The artifacts live in the pinned bucket. A pinned contract that is
+	// gone leaves nothing to delete through; one that points elsewhere
+	// would aim every delete at the wrong bucket, so the deletion holds
+	// until it points back, or the operator removes the finalizer by hand
+	// — the same rule as a moved Elasticsearch endpoint.
+	if err := r.pinnedBucketCurrent(ctx, backup, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			r.releaseWithoutCleanup(backup, err.Error())
+			return true, nil
+		}
+		if errors.Is(err, errBucketMoved) {
+			return false, fmt.Errorf("the pinned backup store no longer matches: %w", err)
+		}
+		return false, err
+	}
+
 	es, released, err := r.finalizerElasticsearch(ctx, backup, &cluster)
 	if es == nil {
 		return released, err
@@ -198,34 +214,8 @@ func (r *Reconciler) deleteArtifacts(
 	// snapshots belong to another actor, or they are a lost-response orphan
 	// without ownership evidence. They stay.
 	if backup.Status.HistoryAcceptedTime != nil {
-		// The status can miss snapshot names when the resource died between
-		// the accepted start and the poll that records them. The cluster's
-		// own report closes that window. Every failure of that query holds
-		// the deletion: a release on an incomplete list leaks the snapshots
-		// that the list does not name. A backup that does not exist is a
-		// successful answer, so nothing legitimate is lost.
-		status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
-		if err != nil {
-			return false, fmt.Errorf("querying the history backup %d: %w", backup.Status.BackupID, err)
-		}
-		recordHistorySnapshots(backup, status)
-		if status.State == camundaadmin.StateInProgress {
-			// The web applications keep creating snapshots until the backup
-			// is terminal, and the management API of Camunda 8.9 offers no
-			// way to cancel it. A deletion that ran now would remove the
-			// snapshots that exist and leave the ones still to come. The
-			// hold has no bound, like the hold on an in-progress runtime
-			// backup.
-			r.holdDeletion(backup, fmt.Sprintf(
-				"history backup %d is still in progress and cannot be cancelled", backup.Status.BackupID,
-			))
-			return false, nil
-		}
-
-		for _, name := range backup.Status.HistorySnapshots {
-			if err := es.DeleteSnapshot(ctx, repository, name); err != nil {
-				return false, fmt.Errorf("deleting snapshot %q: %w", name, err)
-			}
+		if released, err := r.deleteHistorySnapshots(ctx, backup, mgmt, es, repository); !released {
+			return false, err
 		}
 	}
 
@@ -263,6 +253,60 @@ func (r *Reconciler) deleteArtifacts(
 			return false, nil
 		}
 		return false, fmt.Errorf("deleting runtime backup %d: %w", backup.Status.BackupID, err)
+	}
+
+	return true, nil
+}
+
+// deleteHistorySnapshots deletes the snapshots of the history backup that
+// this backup owns. It reports released=false when the deletion must wait:
+// the names it discovered had to be persisted first, the history backup is
+// still in progress, or a query or a delete failed.
+func (r *Reconciler) deleteHistorySnapshots(
+	ctx context.Context,
+	backup *v1.LogicalBackupElasticsearch,
+	mgmt *camundaadmin.Client,
+	es *esadmin.Client,
+	repository string,
+) (released bool, err error) {
+	// The status can miss snapshot names when the resource died between
+	// the accepted start and the poll that records them. The cluster's
+	// own report closes that window. Every failure of that query holds
+	// the deletion: a release on an incomplete list leaks the snapshots
+	// that the list does not name. A backup that does not exist is a
+	// successful answer, so nothing legitimate is lost.
+	status, err := mgmt.HistoryBackupStatus(ctx, backup.Status.BackupID)
+	if err != nil {
+		return false, fmt.Errorf("querying the history backup %d: %w", backup.Status.BackupID, err)
+	}
+	if recordHistorySnapshots(backup, status) {
+		// Names the status did not hold yet are persisted before any
+		// delete. The finalizer runs before the deferred status flush
+		// of Reconcile, so an in-memory list dies with a crash mid-way
+		// through the deletes, and the sweep of a cluster gone by then
+		// would read the old list and leak the names found here.
+		if err := r.persistStatus(ctx, backup); err != nil {
+			return false, fmt.Errorf("recording the history snapshot names: %w", err)
+		}
+		return false, nil
+	}
+	if status.State == camundaadmin.StateInProgress {
+		// The web applications keep creating snapshots until the backup
+		// is terminal, and the management API of Camunda 8.9 offers no
+		// way to cancel it. A deletion that ran now would remove the
+		// snapshots that exist and leave the ones still to come. The
+		// hold has no bound, like the hold on an in-progress runtime
+		// backup.
+		r.holdDeletion(backup, fmt.Sprintf(
+			"history backup %d is still in progress and cannot be cancelled", backup.Status.BackupID,
+		))
+		return false, nil
+	}
+
+	for _, name := range backup.Status.HistorySnapshots {
+		if err := es.DeleteSnapshot(ctx, repository, name); err != nil {
+			return false, fmt.Errorf("deleting snapshot %q: %w", name, err)
+		}
 	}
 
 	return true, nil

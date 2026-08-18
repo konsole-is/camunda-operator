@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -126,12 +127,25 @@ func TestRuntimeBackupFoundWithoutIntentIsNotAdopted(t *testing.T) {
 			r, mgmt, server := runtimeRig(t)
 			server.SetRuntimeState(1_000, state, "")
 			backup := runtimeBackup()
-			cluster := &v1.CamundaCluster{}
+			// The step verifies the pinned destination before it trusts the
+			// runtime status, so the world holds the storage contract the
+			// cluster names; the backup pins nothing, so nothing mismatches.
+			storage := &v1.SecondaryStorageConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "ns"},
+				Spec: v1.SecondaryStorageConfigSpec{
+					Type:          v1.SecondaryStorageTypeElasticsearch,
+					Elasticsearch: &v1.ElasticsearchStorage{Endpoint: "https://es:9200"},
+				},
+			}
+			cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns"}}
+			cluster.Spec.StorageRef = storage.Name
 			cluster.Status.Management = &v1.ManagementBinding{
 				Endpoint: server.URL(), Version: "8.9.9",
 				Auth: v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
 			}
-			r.APIReader = fake.NewClientBuilder().Build()
+			s := runtime.NewScheme()
+			require.NoError(t, v1.AddToScheme(s))
+			r.APIReader = fake.NewClientBuilder().WithScheme(s).WithObjects(storage).Build()
 			_ = mgmt
 
 			_, err := r.backupRuntime(t.Context(), backup, cluster)
