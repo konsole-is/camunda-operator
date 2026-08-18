@@ -252,6 +252,7 @@ var _ = Describe("Database controller", func() {
 		appKey := types.NamespacedName{Namespace: namespace, Name: db.Name + "-credentials"}
 		var original corev1.Secret
 		Expect(k8sClient.Get(ctx, appKey, &original)).To(Succeed())
+		originalPassword := string(original.Data["password"])
 		Expect(k8sClient.Delete(ctx, &original)).To(Succeed())
 
 		var rotated string
@@ -260,6 +261,10 @@ var _ = Describe("Database controller", func() {
 			g.Expect(k8sClient.Get(ctx, appKey, &secret)).To(Succeed())
 			g.Expect(secret.UID).NotTo(Equal(original.UID))
 			g.Expect(secret.Data).To(HaveKey("password"))
+			// A reconcile that was in flight when the delete landed must not
+			// republish the old password onto a new object: the delete is the
+			// only rotation trigger the contract offers.
+			g.Expect(string(secret.Data["password"])).NotTo(Equal(originalPassword))
 			rotated = string(secret.Data["password"])
 		}, timeout, interval).Should(Succeed())
 
