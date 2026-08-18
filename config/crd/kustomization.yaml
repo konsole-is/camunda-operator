@@ -14,6 +14,7 @@ resources:
 - bases/core.camunda.io_objectstorageconfigs.yaml
 - bases/core.camunda.io_backupschedules.yaml
 - bases/core.camunda.io_pointintimerestores.yaml
+- bases/core.camunda.io_logicalbackupelasticsearches.yaml
 - bases/core.camunda.io_logicalrestores.yaml
 - bases/core.camunda.io_camundaoptimizes.yaml
 - bases/core.camunda.io_camundamanagementclusters.yaml
