@@ -40,6 +40,11 @@ import (
 // go test ./pkg/components/logicalbackuprdbms/ -run Golden -update-golden
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
+// testObjectKey is the dump key of the fixture backup: id 1748937221000
+// under the fixture cluster, then the backup UID, then the file.
+const testObjectKey = "clusters/my-cluster-ns/my-cluster/1748937221000/" +
+	"2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump"
+
 // jobPreview adapts the built Job to the golden previewer.
 type jobPreview struct{ input JobInput }
 
@@ -112,7 +117,7 @@ func input() JobInput {
 		Host:               "postgres.databases.svc",
 		Port:               5432,
 		Database:           "camunda",
-		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump",
+		ObjectKey:          testObjectKey,
 		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
 	}
 }
@@ -536,7 +541,7 @@ func TestCleanupJobGolden(t *testing.T) {
 			},
 		},
 		ServiceAccountName: "my-cluster-camunda",
-		ObjectKey:          "clusters/my-cluster-ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump",
+		ObjectKey:          testObjectKey,
 		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
 	}
 
@@ -565,6 +570,8 @@ func TestDumpObjectKeyCarriesTheIDAndTheUID(t *testing.T) {
 	key := DumpObjectKey("/clusters/", "ns", "my-cluster", 1748937221000, "2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10")
 
 	assert.Equal(t, "clusters/ns/my-cluster/1748937221000/2c8b0e6e-5f0a-4c25-9d5b-4d1d0f4b1a10/camunda.dump", key)
-	assert.NotEqual(t, key, DumpObjectKey("/clusters/", "ns", "my-cluster", 1748937221000, "another-uid"),
-		"the same id from another backup names another object")
+	assert.NotEqual(
+		t, key, DumpObjectKey("/clusters/", "ns", "my-cluster", 1748937221000, "another-uid"),
+		"the same id from another backup names another object",
+	)
 }
