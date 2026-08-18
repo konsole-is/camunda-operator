@@ -342,3 +342,73 @@ func TestPinnedStorageMatchesIgnoresATrailingSlash(t *testing.T) {
 	storage.Name = "another"
 	assert.ErrorContains(t, pinnedStorageMatches(backup, storage), "storage contract")
 }
+
+// Round 14 S1 and S2: the request paths never cleared the unreachable clock.
+// After an old outage the clock stayed set through reconciles that answered
+// in full. One isolated unreachable answer later then failed the step at
+// once instead of getting a fresh bound. Every branch after which every call of
+// the reconcile answered clears the clock. An unreachable start call keeps
+// it: an answer before a call that stays unreachable must not reset the
+// bound.
+func TestRequestPathsClearTheUnreachableClockOnceEveryCallAnswered(t *testing.T) {
+	stale := metav1.NewTime(time.Now().Add(-time.Minute))
+	unreachable := camundaadmintest.New()
+	unreachableURL := unreachable.URL()
+	unreachable.Close()
+	dead, err := camundaadmin.New(camundaadmin.Binding{Endpoint: unreachableURL, Version: "8.9.9"})
+	require.NoError(t, err)
+
+	t.Run("history", func(t *testing.T) {
+		r, mgmt, _ := runtimeRig(t)
+		backup := runtimeBackup()
+
+		backup.Status.UnreachableSince = &stale
+		_, err := r.requestHistoryBackup(t.Context(), mgmt, backup)
+		require.NoError(t, err)
+		assert.Nil(t, backup.Status.UnreachableSince, "the intent branch answered in full")
+
+		backup.Status.UnreachableSince = &stale
+		_, err = r.requestHistoryBackup(t.Context(), dead, backup)
+		require.NoError(t, err)
+		require.NotNil(t, backup.Status.UnreachableSince, "an unreachable start keeps the clock")
+		assert.True(t, backup.Status.UnreachableSince.Time.Equal(stale.Time), "and does not reset it")
+		assert.Nil(t, backup.Status.HistoryAcceptedTime)
+
+		_, err = r.requestHistoryBackup(t.Context(), mgmt, backup)
+		require.NoError(t, err)
+		require.NotNil(t, backup.Status.HistoryAcceptedTime)
+		assert.Nil(t, backup.Status.UnreachableSince, "an answered start clears the clock")
+
+		backup.Status.UnreachableSince = &stale
+		_, err = r.requestHistoryBackup(t.Context(), mgmt, backup)
+		require.NoError(t, err)
+		assert.Nil(t, backup.Status.UnreachableSince, "the registration poll answered in full")
+	})
+
+	t.Run("runtime", func(t *testing.T) {
+		r, mgmt, _ := runtimeRig(t)
+		backup := runtimeBackup()
+
+		backup.Status.UnreachableSince = &stale
+		_, err := r.requestRuntimeBackup(t.Context(), mgmt, backup, &backup.Status.Runtime)
+		require.NoError(t, err)
+		assert.Nil(t, backup.Status.UnreachableSince, "the intent branch answered in full")
+
+		backup.Status.UnreachableSince = &stale
+		_, err = r.requestRuntimeBackup(t.Context(), dead, backup, &backup.Status.Runtime)
+		require.NoError(t, err)
+		require.NotNil(t, backup.Status.UnreachableSince, "an unreachable start keeps the clock")
+		assert.True(t, backup.Status.UnreachableSince.Time.Equal(stale.Time), "and does not reset it")
+		assert.Nil(t, backup.Status.RuntimeAcceptedTime)
+
+		_, err = r.requestRuntimeBackup(t.Context(), mgmt, backup, &backup.Status.Runtime)
+		require.NoError(t, err)
+		require.NotNil(t, backup.Status.RuntimeAcceptedTime)
+		assert.Nil(t, backup.Status.UnreachableSince, "an answered start clears the clock")
+
+		backup.Status.UnreachableSince = &stale
+		_, err = r.requestRuntimeBackup(t.Context(), mgmt, backup, &backup.Status.Runtime)
+		require.NoError(t, err)
+		assert.Nil(t, backup.Status.UnreachableSince, "the registration poll answered in full")
+	})
+}

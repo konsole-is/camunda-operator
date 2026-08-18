@@ -455,7 +455,11 @@ func (r *Reconciler) holdDeletion(backup *v1.LogicalBackupElasticsearch, reason 
 // pinned storage. Those are the recorded history snapshots when their
 // backup was accepted, and the records snapshot when it carries the UID. It
 // is best effort for a cluster that no longer exists. An unreachable or
-// repointed storage abandons the sweep, and the caller releases anyway.
+// repointed storage abandons the sweep, and the caller releases anyway. The
+// storage is the Elasticsearch contract and endpoint, and the pinned bucket
+// contract. A bucket contract that points elsewhere aims every delete at
+// another bucket. The repository under the pinned name can be registered
+// against that bucket by then. The sweep then deletes nothing.
 func (r *Reconciler) sweepPinnedSnapshots(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
 	pinned := backup.Status.Storage
 	if pinned == nil {
@@ -468,6 +472,9 @@ func (r *Reconciler) sweepPinnedSnapshots(ctx context.Context, backup *v1.Logica
 		return fmt.Errorf("resolving the pinned SecondaryStorageConfig %q: %w", key.Name, err)
 	}
 	if err := pinnedStorageMatches(backup, storage); err != nil {
+		return err
+	}
+	if err := r.pinnedBucketLocationCurrent(ctx, pinned); err != nil {
 		return err
 	}
 	es, failure, err := secondarystorageconfig.ElasticsearchAdmin(ctx, r.APIReader, storage)

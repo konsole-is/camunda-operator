@@ -233,13 +233,20 @@ func (r *Reconciler) requestHistoryBackup(
 ) (ctrl.Result, error) {
 	part := &backup.Status.History
 	now := metav1.Now()
+	// The status query that led here answered. On the branches that make
+	// no further call, every call of this reconcile answered, and the
+	// unreachable clock clears. After the start call, only an answer of
+	// that call clears it. A stale clock from an old outage must not fail
+	// the step on the first isolated unreachable answer after it.
 	if backup.Status.HistoryRequestedTime == nil {
 		backup.Status.HistoryRequestedTime = &now
+		answered(backup)
 		r.stageProgress(backup, "The backup of the web-application indices is requested")
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
 	if accepted := backup.Status.HistoryAcceptedTime; accepted != nil {
+		answered(backup)
 		if now.Sub(accepted.Time) < r.runtimeRegistrationGrace() {
 			r.stageProgress(backup, "The backup of the web-application indices is registering")
 			return ctrl.Result{RequeueAfter: r.poll()}, nil
@@ -260,6 +267,7 @@ func (r *Reconciler) requestHistoryBackup(
 		// the finalizer then still knows which snapshots to sweep.
 		accepted := metav1.Now()
 		backup.Status.HistoryAcceptedTime = &accepted
+		answered(backup)
 		recordHistorySnapshotNames(backup, scheduled)
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the web-application indices started")
@@ -268,9 +276,11 @@ func (r *Reconciler) requestHistoryBackup(
 		return r.stageUnreachable(backup, "BackupHistory", part, err)
 
 	case errors.Is(err, camundaadmin.ErrConflict):
+		answered(backup)
 		r.failStep(backup, "BackupHistory", part, fmt.Errorf("%w: %v", err, unownedHistoryBackup(backup)))
 
 	default:
+		answered(backup)
 		r.failStep(backup, "BackupHistory", part, err)
 	}
 
@@ -563,13 +573,19 @@ func (r *Reconciler) requestRuntimeBackup(
 	part *v1.BackupPart,
 ) (ctrl.Result, error) {
 	now := metav1.Now()
+	// The unreachable clock clears on the same terms as in
+	// requestHistoryBackup. It clears on every branch after which every
+	// call of this reconcile answered. It never clears before an
+	// unreachable start call.
 	if backup.Status.RuntimeRequestedTime == nil {
 		backup.Status.RuntimeRequestedTime = &now
+		answered(backup)
 		r.stageProgress(backup, "The backup of the Zeebe partitions is requested")
 		return ctrl.Result{RequeueAfter: r.poll()}, nil
 	}
 
 	if accepted := backup.Status.RuntimeAcceptedTime; accepted != nil {
+		answered(backup)
 		if now.Sub(accepted.Time) < r.runtimeRegistrationGrace() {
 			r.stageProgress(backup, "The backup of the Zeebe partitions is registering")
 			return ctrl.Result{RequeueAfter: r.poll()}, nil
@@ -590,6 +606,7 @@ func (r *Reconciler) requestRuntimeBackup(
 		// request must not silently shorten it.
 		accepted := metav1.Now()
 		backup.Status.RuntimeAcceptedTime = &accepted
+		answered(backup)
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")
 
@@ -597,9 +614,11 @@ func (r *Reconciler) requestRuntimeBackup(
 		return r.stageUnreachable(backup, "BackupRuntime", part, err)
 
 	case errors.Is(err, camundaadmin.ErrConflict):
+		answered(backup)
 		r.failStep(backup, "BackupRuntime", part, fmt.Errorf("%w: %v", err, unownedRuntimeBackup(backup)))
 
 	default:
+		answered(backup)
 		r.failStep(backup, "BackupRuntime", part, err)
 	}
 

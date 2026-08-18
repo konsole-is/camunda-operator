@@ -432,6 +432,16 @@ func (r *Reconciler) pinnedBucketCurrent(
 		)
 	}
 
+	return r.pinnedBucketLocationCurrent(ctx, pinned)
+}
+
+// pinnedBucketLocationCurrent verifies that the pinned ObjectStorageConfig
+// still points at the pinned location. It is the part of pinnedBucketCurrent
+// that needs no cluster, so the sweep of a gone cluster verifies it too. It
+// returns an error that wraps errBucketMoved when the contract points
+// elsewhere. It returns a NotFound when the contract is gone. Any other read
+// error comes back as it is.
+func (r *Reconciler) pinnedBucketLocationCurrent(ctx context.Context, pinned *v1.PinnedStorage) error {
 	var bucket v1.ObjectStorageConfig
 	if err := r.APIReader.Get(ctx, types.NamespacedName{Name: pinned.BucketRef}, &bucket); err != nil {
 		return fmt.Errorf("reading the pinned ObjectStorageConfig %q: %w", pinned.BucketRef, err)

@@ -1151,6 +1151,43 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		expectEvent(backup, eventReasonReleased, corev1.EventTypeWarning)
 	})
 
+	// Round 14 P1: the sweep of a gone or replaced cluster verified the
+	// Elasticsearch contract and endpoint, but not the pinned bucket. The
+	// repository name can be registered against the new bucket by then. The
+	// sweep then aimed its deletes at the wrong storage, and the originals
+	// leaked.
+	It("abandons the sweep of a gone cluster when the pinned bucket contract points elsewhere", func() {
+		r := newRig()
+		backup := r.newBackup()
+		id := completeBackup(r, backup)
+		name := RecordsSnapshotName(id)
+		historySnapshot := currentBackup(backup).Status.HistorySnapshots[0]
+		r.search.SetSnapshotState(r.repository, historySnapshot, "SUCCESS")
+
+		By("retargeting the bucket contract, then deleting the cluster with nothing in its place")
+		Eventually(func(g Gomega) {
+			var bucket v1.ObjectStorageConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: r.cluster.Spec.BackupStorageRef}, &bucket)).To(Succeed())
+			bucket.Spec.S3.BucketName = "backups-moved"
+			g.Expect(k8sClient.Update(ctx, &bucket)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Expect(k8sClient.Delete(ctx, r.cluster)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.CamundaCluster
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(r.cluster), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+
+		By("deleting the backup: it releases, and no snapshot is deleted through the moved bucket")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		Eventually(func() bool {
+			var gone v1.LogicalBackupElasticsearch
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+		}, timeout, interval).Should(BeTrue())
+		Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue(), "the records snapshot stays")
+		Expect(r.search.SnapshotExists(r.repository, historySnapshot)).To(BeTrue(), "the history snapshot stays")
+		expectEvent(backup, eventReasonReleased, corev1.EventTypeWarning)
+	})
+
 	It("never adopts a history backup it did not see accepted, and never deletes its snapshots", func() {
 		r := newRig()
 		// The management API is unreachable through the pause, so the
