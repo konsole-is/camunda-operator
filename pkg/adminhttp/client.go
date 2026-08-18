@@ -49,9 +49,10 @@ const requestTimeout = 30 * time.Second
 const bodyLimit = 1 << 20
 
 // errorBodyLimit bounds how much of a rejected response body an error message
-// carries. The full body is still read and returned to the caller. Only the
-// message is bounded, so an error can land in a condition or an event without
-// exceeding their limits.
+// carries. Do still returns everything it read, up to bodyLimit, so a caller
+// that parses the body of a rejection sees more than its message does. Only
+// the message is bounded, so an error can land in a condition or an event
+// without exceeding their limits.
 const errorBodyLimit = 1 << 10
 
 // BasicAuth authenticates the calls of a client with HTTP basic auth. The
@@ -64,8 +65,9 @@ type BasicAuth struct {
 
 // Config builds a Client.
 type Config struct {
-	// Endpoint is the base URL of the API. A trailing slash is trimmed, so
-	// the path of a request always joins with exactly one.
+	// Endpoint is the base URL of the API, with or without a trailing
+	// slash. A trailing one is trimmed, so it never doubles the leading
+	// slash of a path.
 	Endpoint string
 	// Auth authenticates every request.
 	Auth BasicAuth
@@ -127,8 +129,9 @@ func New(cfg Config) (*Client, error) {
 type Request struct {
 	// Method is the HTTP method.
 	Method string
-	// Path is the path of the call, joined to the endpoint of the client. It
-	// carries the query string when the call has one.
+	// Path is the path of the call. It starts with a slash and is appended
+	// to the endpoint of the client as it stands. It carries the query
+	// string when the call has one.
 	Path string
 	// Body is the JSON request body, or nil for a call that sends none. A
 	// request that carries one is sent as application/json.
