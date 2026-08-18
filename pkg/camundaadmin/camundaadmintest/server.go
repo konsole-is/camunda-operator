@@ -169,6 +169,13 @@ func (s *Server) HideHistoryStatus(n int) {
 	s.hiddenHistoryStatus = n
 }
 
+// HistorySnapshotName is the name of the one snapshot that the fake schedules
+// for the history backup id. The start answer and the status report both
+// name it, the way the web applications name their snapshots.
+func HistorySnapshotName(id int64) string {
+	return "camunda_webapps_" + strconv.FormatInt(id, 10) + "_8.9_part_1_of_1"
+}
+
 // SetHistoryState sets the state of the history backup id, creating it when
 // absent.
 func (s *Server) SetHistoryState(id int64, state, failureReason string) {
@@ -279,9 +286,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		s.history[id] = &Backup{ID: id, State: "IN_PROGRESS"}
 		s.historyStarts[id]++
-		writeJSON(w, http.StatusOK, map[string]any{"scheduledSnapshots": []string{
-			"camunda_webapps_" + strconv.FormatInt(id, 10) + "_8.9_part_1_of_1",
-		}})
+		writeJSON(w, http.StatusOK, map[string]any{"scheduledSnapshots": []string{HistorySnapshotName(id)}})
 
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/backupHistory/"):
 		if s.failing("historyStatus") {
@@ -303,7 +308,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			"state":         backup.State,
 			"failureReason": backup.FailureReason,
 			"details": []map[string]any{{
-				"snapshotName": "camunda_webapps_" + strconv.FormatInt(id, 10) + "_8.9_part_1_of_1",
+				"snapshotName": HistorySnapshotName(id),
 				"state":        backup.State,
 			}},
 		})
