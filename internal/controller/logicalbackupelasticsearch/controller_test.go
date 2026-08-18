@@ -963,7 +963,13 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		By("failing terminally, with no call against the replacement")
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
-		Expect(final.Status.FailureMessage).To(ContainSubstring("replaced"))
+		// The reconciler reads the cluster live. Whether it observes the
+		// gap between the delete and the create, or only the replacement,
+		// is timing; both end the same way, and the message names which.
+		Expect(final.Status.FailureMessage).To(SatisfyAny(
+			ContainSubstring("replaced"), ContainSubstring("gone"),
+		))
+		Expect(final.Status.TerminalReason).To(Equal(v1.ReasonFailed))
 		Expect(replacement.PauseCalls()).To(BeZero())
 		Expect(replacement.ResumeAttempts()).To(BeZero())
 		Expect(replacement.HistoryStarts(id)).To(BeZero())
@@ -1144,43 +1150,46 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
 	})
 
-	It("tells a foreign records snapshot with metadata of any JSON type apart, and its deletion still finishes", func() {
-		r := newRig()
-		backup := r.newBackup()
-		id := backupID(backup)
+	It(
+		"tells a foreign records snapshot with metadata of any JSON type apart, and its deletion still finishes",
+		func() {
+			r := newRig()
+			backup := r.newBackup()
+			id := backupID(backup)
 
-		// Elasticsearch stores any JSON value as snapshot metadata. A
-		// snapshot that another tool created under the deterministic name
-		// carries numbers and objects — never this backup's UID as a
-		// string. The status must decode, or the step and later the
-		// finalizer would fail on the decode forever.
-		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
-		name := RecordsSnapshotName(id)
-		r.search.SetSnapshotMetadata(r.repository, name, map[string]any{
-			"retention-days":    float64(30),
-			"created-by":        map[string]any{"tool": "curator"},
-			snapshotOwnerUIDKey: float64(7),
-		})
-		r.management.SetHistoryState(id, "COMPLETED", "")
+			// Elasticsearch stores any JSON value as snapshot metadata. A
+			// snapshot that another tool created under the deterministic name
+			// carries numbers and objects — never this backup's UID as a
+			// string. The status must decode, or the step and later the
+			// finalizer would fail on the decode forever.
+			Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
+			name := RecordsSnapshotName(id)
+			r.search.SetSnapshotMetadata(r.repository, name, map[string]any{
+				"retention-days":    float64(30),
+				"created-by":        map[string]any{"tool": "curator"},
+				snapshotOwnerUIDKey: float64(7),
+			})
+			r.management.SetHistoryState(id, "COMPLETED", "")
 
-		By("failing through resume without adopting")
-		expectPhase(backup, v1.LogicalBackupFailed)
-		final := currentBackup(backup)
-		Expect(final.Status.FailureMessage).To(SatisfyAll(
-			ContainSubstring("SnapshotRecords"),
-			ContainSubstring("did not create"),
-		))
-		Expect(r.search.SnapshotCreates(r.repository, name)).To(BeZero())
-		Expect(r.management.Exporting()).To(Equal("running"))
+			By("failing through resume without adopting")
+			expectPhase(backup, v1.LogicalBackupFailed)
+			final := currentBackup(backup)
+			Expect(final.Status.FailureMessage).To(SatisfyAll(
+				ContainSubstring("SnapshotRecords"),
+				ContainSubstring("did not create"),
+			))
+			Expect(r.search.SnapshotCreates(r.repository, name)).To(BeZero())
+			Expect(r.management.Exporting()).To(Equal("running"))
 
-		By("leaving the foreign snapshot alone on deletion, and finishing the deletion")
-		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
-		Eventually(func() bool {
-			var gone v1.LogicalBackupElasticsearch
-			return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
-		}, timeout, interval).Should(BeTrue())
-		Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
-	})
+			By("leaving the foreign snapshot alone on deletion, and finishing the deletion")
+			Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+			Eventually(func() bool {
+				var gone v1.LogicalBackupElasticsearch
+				return k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &gone) != nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(r.search.SnapshotExists(r.repository, name)).To(BeTrue())
+		},
+	)
 
 	It("never adopts a runtime backup it did not see accepted, and never deletes it", func() {
 		r := newRig()
@@ -1451,9 +1460,14 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			r.search.SetSnapshotState(pinned, historySnapshot, "SUCCESS")
 
 			By("repointing the repository while the history backup runs")
+			// The history backup stays in progress until the step has
+			// failed on the repoint: the step verifies the destination
+			// before it trusts the status, so no reconcile can advance
+			// past BackupHistory in between. Completing it here would race
+			// a reconcile that read the old binding and then saw the
+			// completed history, failing one step later.
 			r.repository = "another-repository"
 			r.publishBinding(3)
-			r.management.SetHistoryState(id, "COMPLETED", "")
 
 			expectPhase(backup, v1.LogicalBackupFailed)
 			final := currentBackup(backup)
@@ -1466,6 +1480,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			Expect(r.management.Exporting()).To(Equal("running"))
 
 			By("deleting the backup: the finalizer removes the snapshot from the pinned repository")
+			// A deletion holds while the history backup is in progress; it
+			// ends now, so only the pinned repository decides the cleanup.
+			r.management.SetHistoryState(id, "COMPLETED", "")
 			Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
 			Eventually(func() bool {
 				var gone v1.LogicalBackupElasticsearch

@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 func TestStorageMissingSeparatesAGoneContractFromATransientRead(t *testing.T) {
@@ -62,4 +64,18 @@ func TestStorageMissingSeparatesAGoneContractFromATransientRead(t *testing.T) {
 			assert.Equal(t, tt.missing, storageMissing(tt.err))
 		})
 	}
+}
+
+func TestClusterReplacedComparesThePinnedUID(t *testing.T) {
+	t.Parallel()
+
+	backup := &v1.LogicalBackupElasticsearch{}
+	cluster := &v1.CamundaCluster{}
+	cluster.UID = "uid-1"
+
+	assert.False(t, clusterReplaced(backup, cluster), "no pin yet: nothing to compare against")
+	backup.Status.ClusterUID = "uid-1"
+	assert.False(t, clusterReplaced(backup, cluster))
+	cluster.UID = "uid-2"
+	assert.True(t, clusterReplaced(backup, cluster), "a same-named cluster with another UID is a replacement")
 }

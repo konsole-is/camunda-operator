@@ -206,18 +206,3 @@ func (r *Reconciler) failStep(
 		backup.Status.FailureMessage,
 	)
 }
-
-// partOf returns the backup part that the step drives, or nil for a step that
-// owns no part.
-func partOf(backup *v1.LogicalBackupElasticsearch, step v1.LogicalBackupElasticsearchStep) *v1.BackupPart {
-	switch step {
-	case v1.StepBackupHistory:
-		return &backup.Status.History
-	case v1.StepSnapshotRecords:
-		return &backup.Status.Records
-	case v1.StepBackupRuntime:
-		return &backup.Status.Runtime
-	default:
-		return nil
-	}
-}
