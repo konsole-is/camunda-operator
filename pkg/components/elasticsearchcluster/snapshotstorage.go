@@ -273,7 +273,7 @@ func azureEndpointSuffix(storage *v1.AzureBlobStorage) (string, bool) {
 	}
 
 	endpoint, err := url.Parse(storage.ServiceEndpoint())
-	if err != nil || endpoint.Scheme != "https" || endpoint.Path != "" {
+	if err != nil || endpoint.Scheme != "https" || endpoint.Path != "" || endpoint.Port() != "" {
 		return "", false
 	}
 
