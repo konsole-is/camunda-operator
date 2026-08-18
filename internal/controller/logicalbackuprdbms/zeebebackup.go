@@ -30,6 +30,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
+	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/management"
@@ -104,7 +105,11 @@ func (r *LogicalBackupRDBMSReconciler) requestZeebeBackup(
 // purpose; keeping it — and its retained pod with a PVC-backed scratch
 // volume — for the life of the backup would hold storage for nothing. A
 // failed Job is not released: it stays for inspection until the backup is
-// deleted.
+// deleted. Only this backup's own Job is deleted: the live Job must carry
+// the backup's UID label, and the delete carries that Job's UID as a
+// precondition, so a same-named stranger that appears between the read and
+// the delete survives — the precondition's conflict, like a missing or
+// foreign Job, just clears the name.
 func (r *LogicalBackupRDBMSReconciler) releaseJob(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
@@ -112,14 +117,25 @@ func (r *LogicalBackupRDBMSReconciler) releaseJob(
 	if backup.Status.JobName == "" {
 		return nil
 	}
-	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
-		Name: backup.Status.JobName, Namespace: backup.Namespace,
-	}}
-	propagation := metav1.DeletePropagationBackground
-	if err := r.Delete(
-		ctx, job, &client.DeleteOptions{PropagationPolicy: &propagation},
-	); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("releasing the dump Job: %w", err)
+	key := types.NamespacedName{Namespace: backup.Namespace, Name: backup.Status.JobName}
+
+	var job batchv1.Job
+	err := r.APIReader.Get(ctx, key, &job)
+	switch {
+	case apierrors.IsNotFound(err):
+		// Gone already; nothing to release.
+	case err != nil:
+		return fmt.Errorf("reading the dump Job to release it: %w", err)
+	case !components.JobBelongsTo(&job, backup):
+		// A stranger took the name; it is not ours to delete.
+	default:
+		if err := r.Delete(
+			ctx, &job,
+			client.PropagationPolicy(metav1.DeletePropagationBackground),
+			client.Preconditions{UID: &job.UID},
+		); err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			return fmt.Errorf("releasing the dump Job: %w", err)
+		}
 	}
 	backup.Status.JobName = ""
 

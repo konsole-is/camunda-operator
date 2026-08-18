@@ -9,7 +9,7 @@ Camunda calls the Zeebe log and snapshots its *primary storage* and the exported
 
 ## Purpose
 
-A LogicalBackupRDBMS captures a complete restore point of a `CamundaCluster` that stores its data in a relational database. The dump holds the exporter position, and the Zeebe backup taken right after it holds the matching Zeebe state; a restore reads the position from the restored dump and picks the Zeebe backups that pair with it. You create one by hand for a one-off backup; a [BackupSchedule](backupschedule.md) creates them on a cron schedule.
+A LogicalBackupRDBMS captures a complete restore point of a `CamundaCluster` that stores its data in a relational database. The dump holds the exporter position, and the Zeebe backup taken right after it holds the matching Zeebe state; a restore reads the position from the restored dump and picks the Zeebe backups that pair with it. You create one per backup you want taken.
 
 ## How it works
 
@@ -76,4 +76,3 @@ The spec is immutable: a backup is one operation, and a retry is a new CR.
 - [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; its management binding and `spec.backup.dump` drive the backup.
 - [DatabaseConfig](databaseconfig.md) / [DatabaseServerConfig](databaseserverconfig.md) — locate the database and the credentials of the dump; the server's probed `status.serverVersion` picks the client tools.
 - [ObjectStorageConfig](objectstorageconfig.md) — the bucket the dump is uploaded to, via the cluster's `backupStorageRef`.
-- [BackupSchedule](backupschedule.md) — creates these CRs on a cron schedule.

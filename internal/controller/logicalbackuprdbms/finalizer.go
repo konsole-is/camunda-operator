@@ -127,10 +127,16 @@ func (r *LogicalBackupRDBMSReconciler) deleteJob(
 		return false, fmt.Errorf("reading the dump Job: %w", err)
 	case err == nil && components.JobBelongsTo(&job, backup):
 		if job.DeletionTimestamp.IsZero() {
-			propagation := metav1.DeletePropagationBackground
+			// The observed UID is the delete's precondition, so the read and
+			// the delete are one step: a same-named stranger that lands in
+			// between answers Conflict and survives — the same pattern the
+			// generated Secrets use through SSA metadata.uid. NotFound and
+			// Conflict both mean "changed under us"; the requeue re-reads.
 			if err := r.Delete(
-				ctx, &job, &client.DeleteOptions{PropagationPolicy: &propagation},
-			); err != nil && !apierrors.IsNotFound(err) {
+				ctx, &job,
+				client.PropagationPolicy(metav1.DeletePropagationBackground),
+				client.Preconditions{UID: &job.UID},
+			); err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 				return false, fmt.Errorf("deleting the dump Job: %w", err)
 			}
 		}

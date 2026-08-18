@@ -1,0 +1,128 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package logicalbackuprdbms
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
+)
+
+// TestReleaseJobNeverDeletesAStranger pins the identity guard of the release:
+// a same-named Job of another backup — the deterministic name makes that
+// possible after a delete-and-recreate — survives the release, which just
+// clears the recorded name.
+func TestReleaseJobNeverDeletesAStranger(t *testing.T) {
+	t.Parallel()
+
+	scheme := dumpScheme(t)
+	backup := trackedBackup()
+	stranger := ownJob(backup)
+	stranger.Labels[components.BackupUIDLabel] = "uid-of-someone-else"
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stranger).Build()
+	r := &LogicalBackupRDBMSReconciler{Client: c, APIReader: c}
+
+	require.NoError(t, r.releaseJob(context.Background(), backup))
+	assert.Empty(t, backup.Status.JobName, "the name clears; there is nothing of ours to release")
+
+	var survived batchv1.Job
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(stranger), &survived))
+	assert.Equal(t, "uid-of-someone-else", survived.Labels[components.BackupUIDLabel])
+}
+
+// TestReleaseJobDeletesOwnJobWithItsUID proves the happy path deletes exactly
+// the observed Job, with its UID as the delete precondition.
+func TestReleaseJobDeletesOwnJobWithItsUID(t *testing.T) {
+	t.Parallel()
+
+	scheme := dumpScheme(t)
+	backup := trackedBackup()
+	own := ownJob(backup)
+	own.UID = "job-uid-1"
+
+	var preconditionUID string
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(own).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(
+				ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption,
+			) error {
+				options := &client.DeleteOptions{}
+				for _, opt := range opts {
+					opt.ApplyToDelete(options)
+				}
+				if options.Preconditions != nil && options.Preconditions.UID != nil {
+					preconditionUID = string(*options.Preconditions.UID)
+				}
+
+				return cl.Delete(ctx, obj, opts...)
+			},
+		}).Build()
+	r := &LogicalBackupRDBMSReconciler{Client: c, APIReader: c}
+
+	require.NoError(t, r.releaseJob(context.Background(), backup))
+	assert.Empty(t, backup.Status.JobName)
+	assert.Equal(t, "job-uid-1", preconditionUID, "the delete carries the observed UID")
+	err := c.Get(context.Background(), client.ObjectKeyFromObject(own), &batchv1.Job{})
+	assert.True(t, apierrors.IsNotFound(err), "our own Job is gone")
+}
+
+// TestFinalizerDeleteJobRetriesOnAPreconditionConflict pins the read→delete
+// atomicity of the finalizer: a Job replaced between the two answers
+// Conflict, the replacement survives, and the deletion retries with a fresh
+// read instead of failing or falling through.
+func TestFinalizerDeleteJobRetriesOnAPreconditionConflict(t *testing.T) {
+	t.Parallel()
+
+	scheme := dumpScheme(t)
+	backup := trackedBackup()
+	backup.Status.JobName = ""
+	own := ownJob(backup)
+	own.Name = components.JobName(backup)
+	own.UID = "job-uid-1"
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(own).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(
+				ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption,
+			) error {
+				// The stranger landed between the read and the delete: the
+				// UID precondition no longer matches.
+				return apierrors.NewConflict(
+					batchv1.Resource("jobs"), obj.GetName(),
+					assert.AnError,
+				)
+			},
+		}).Build()
+	r := &LogicalBackupRDBMSReconciler{Client: c, APIReader: c}
+
+	gone, err := r.deleteJob(context.Background(), backup)
+	require.NoError(t, err, "a conflict is a changed object, not a failure")
+	assert.False(t, gone, "the deletion retries with a fresh read")
+
+	var survived batchv1.Job
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(own), &survived))
+}
