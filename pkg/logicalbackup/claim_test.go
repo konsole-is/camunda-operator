@@ -26,6 +26,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -71,7 +72,28 @@ func holderResource(claimant logicalbackup.Claimant, phase v1.LogicalBackupPhase
 	return backup
 }
 
+// leaseHolder returns the exact identity that the Lease records in its
+// annotations. For a Lease without them it returns the holderIdentity
+// field. Without a Lease it returns "".
 func leaseHolder(t *testing.T, c client.Client) string {
+	t.Helper()
+	lease := readLease(t, c)
+	if lease == nil {
+		return ""
+	}
+	annotations := lease.GetAnnotations()
+	kind, name, uid := annotations[logicalbackup.ClaimHolderKindAnnotation],
+		annotations[logicalbackup.ClaimHolderNameAnnotation],
+		annotations[logicalbackup.ClaimHolderUIDAnnotation]
+	if kind != "" && name != "" && uid != "" {
+		return logicalbackup.Claimant{Kind: kind, Name: name, UID: types.UID(uid)}.String()
+	}
+	require.NotNil(t, lease.Spec.HolderIdentity)
+	return *lease.Spec.HolderIdentity
+}
+
+// readLease returns the claim Lease of cluster prod, or nil.
+func readLease(t *testing.T, c client.Client) *coordinationv1.Lease {
 	t.Helper()
 	var lease coordinationv1.Lease
 	err := c.Get(
@@ -80,11 +102,31 @@ func leaseHolder(t *testing.T, c client.Client) string {
 		}, &lease,
 	)
 	if apierrors.IsNotFound(err) {
-		return ""
+		return nil
 	}
 	require.NoError(t, err)
-	require.NotNil(t, lease.Spec.HolderIdentity)
-	return *lease.Spec.HolderIdentity
+	return &lease
+}
+
+// leaseHeldBy writes the claim Lease of cluster prod the way Claim writes
+// it for claimant, without going through Claim. It plays a claimant that
+// took the Lease earlier and then went away without a Release.
+func leaseHeldBy(t *testing.T, c client.Client, claimant logicalbackup.Claimant) {
+	t.Helper()
+	holder := claimant.HolderIdentity()
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: claimNamespace,
+			Name:      logicalbackup.ClaimLeaseName("prod"),
+			Annotations: map[string]string{
+				logicalbackup.ClaimHolderKindAnnotation: claimant.Kind,
+				logicalbackup.ClaimHolderNameAnnotation: claimant.Name,
+				logicalbackup.ClaimHolderUIDAnnotation:  string(claimant.UID),
+			},
+		},
+		Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder},
+	}
+	require.NoError(t, c.Create(t.Context(), lease))
 }
 
 func TestClaimLeaseNameIsDeterministicAndBounded(t *testing.T) {
@@ -116,12 +158,12 @@ func TestClaimantStringRoundTrips(t *testing.T) {
 func TestFirstClaimWinsAndTheSecondIsBlockedWithTheHolderNamed(t *testing.T) {
 	c := claimClient(t, holderResource(first, v1.LogicalBackupRunning), holderResource(second, ""))
 
-	holder, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", first)
+	holder, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", first)
 	require.NoError(t, err)
 	assert.Empty(t, holder)
 	assert.Equal(t, first.String(), leaseHolder(t, c))
 
-	holder, err = logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", second)
+	holder, err = logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
 	require.NoError(t, err)
 	assert.Equal(t, first.String(), holder)
 	assert.Equal(t, first.String(), leaseHolder(t, c), "the Lease still names the first claimant")
@@ -135,7 +177,7 @@ func TestReEntryByTheHolderIsIdempotent(t *testing.T) {
 	assert.False(t, holds, "nothing is held before the first claim")
 
 	for range 3 {
-		holder, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", first)
+		holder, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", first)
 		require.NoError(t, err)
 		assert.Empty(t, holder)
 	}
@@ -152,10 +194,10 @@ func TestReEntryByTheHolderIsIdempotent(t *testing.T) {
 func TestClaimsOfDifferentClustersDoNotMeet(t *testing.T) {
 	c := claimClient(t, holderResource(first, v1.LogicalBackupRunning), holderResource(second, v1.LogicalBackupRunning))
 
-	holder, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", first)
+	holder, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", first)
 	require.NoError(t, err)
 	assert.Empty(t, holder)
-	holder, err = logicalbackup.Claim(t.Context(), c, claimNamespace, "staging", second)
+	holder, err = logicalbackup.Claim(t.Context(), c, c, claimNamespace, "staging", second)
 	require.NoError(t, err)
 	assert.Empty(t, holder)
 }
@@ -191,14 +233,9 @@ func TestInactiveHoldersAreTakenOver(t *testing.T) {
 			c := claimClient(t, objects...)
 			// The first claimant took the Lease when it was active, then
 			// went the way the case describes without a Release.
-			var lease coordinationv1.Lease
-			lease.Namespace = claimNamespace
-			lease.Name = logicalbackup.ClaimLeaseName("prod")
-			holder := first.String()
-			lease.Spec.HolderIdentity = &holder
-			require.NoError(t, c.Create(t.Context(), &lease))
+			leaseHeldBy(t, c, first)
 
-			got, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", second)
+			got, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
 			require.NoError(t, err)
 			assert.Empty(t, got)
 			assert.Equal(t, second.String(), leaseHolder(t, c))
@@ -210,10 +247,10 @@ func TestActiveHoldersAreNotTakenOver(t *testing.T) {
 	for _, phase := range []v1.LogicalBackupPhase{"", v1.LogicalBackupPending, v1.LogicalBackupRunning} {
 		t.Run(string(phase), func(t *testing.T) {
 			c := claimClient(t, holderResource(first, phase), holderResource(second, v1.LogicalBackupPending))
-			_, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", first)
+			_, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", first)
 			require.NoError(t, err)
 
-			got, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", second)
+			got, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
 			require.NoError(t, err)
 			assert.Equal(t, first.String(), got)
 		})
@@ -221,33 +258,90 @@ func TestActiveHoldersAreNotTakenOver(t *testing.T) {
 }
 
 func TestALeaseThatIsNotOursBlocksWithoutATakeover(t *testing.T) {
-	c := claimClient(t, holderResource(second, v1.LogicalBackupPending))
-	var lease coordinationv1.Lease
-	lease.Namespace = claimNamespace
-	lease.Name = logicalbackup.ClaimLeaseName("prod")
-	holder := "someone-else"
-	lease.Spec.HolderIdentity = &holder
-	require.NoError(t, c.Create(t.Context(), &lease))
+	// A foreign Lease carries no holder annotations. Its holderIdentity can
+	// even have the shape of ours: without the annotations it is not ours,
+	// and it is never taken over.
+	for _, foreign := range []string{"someone-else", "LogicalBackupElasticsearch/nightly/uid-first"} {
+		t.Run(foreign, func(t *testing.T) {
+			c := claimClient(t, holderResource(second, v1.LogicalBackupPending))
+			var lease coordinationv1.Lease
+			lease.Namespace = claimNamespace
+			lease.Name = logicalbackup.ClaimLeaseName("prod")
+			holder := foreign
+			lease.Spec.HolderIdentity = &holder
+			require.NoError(t, c.Create(t.Context(), &lease))
 
-	got, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", second)
+			got, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+			require.NoError(t, err)
+			assert.Equal(t, foreign, got)
+			assert.Equal(t, foreign, leaseHolder(t, c))
+		})
+	}
+}
+
+// A CR name can be 253 characters. The identity of such a claimant does not
+// fit a bounded holderIdentity. The Lease carries the exact identity in its
+// annotations and a bounded display form in the field.
+func TestALongNamedClaimantClaimsReleasesAndIsTakenOver(t *testing.T) {
+	long := logicalbackup.Claimant{
+		Kind: "LogicalBackupElasticsearch", Name: strings.Repeat("n", 253), UID: types.UID("uid-long"),
+	}
+	c := claimClient(t, holderResource(long, v1.LogicalBackupRunning), holderResource(second, v1.LogicalBackupPending))
+
+	got, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", long)
 	require.NoError(t, err)
-	assert.Equal(t, "someone-else", got)
-	assert.Equal(t, "someone-else", leaseHolder(t, c))
+	assert.Empty(t, got)
+	lease := readLease(t, c)
+	require.NotNil(t, lease)
+	assert.LessOrEqual(t, len(*lease.Spec.HolderIdentity), 128)
+	assert.True(t, strings.HasPrefix(*lease.Spec.HolderIdentity, "LogicalBackupElasticsearch/nnn"))
+	assert.Equal(t, long.String(), leaseHolder(t, c))
+	assert.Equal(t, strings.Repeat("n", 253), lease.Annotations[logicalbackup.ClaimHolderNameAnnotation])
+
+	holds, err := logicalbackup.Holds(t.Context(), c, claimNamespace, "prod", long)
+	require.NoError(t, err)
+	assert.True(t, holds)
+	got, err = logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+	require.NoError(t, err)
+	assert.Equal(t, long.String(), got, "the second claimant is blocked by the exact identity")
+
+	require.NoError(t, logicalbackup.Release(t.Context(), c, c, claimNamespace, "prod", long))
+	assert.Empty(t, leaseHolder(t, c))
+
+	// Stale: the long-named holder is terminal now, and its Lease is left
+	// behind. The second claimant takes it over.
+	c = claimClient(t, holderResource(long, v1.LogicalBackupCompleted), holderResource(second, v1.LogicalBackupPending))
+	leaseHeldBy(t, c, long)
+	got, err = logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+	assert.Equal(t, second.String(), leaseHolder(t, c))
+}
+
+func TestHolderIdentityIsBounded(t *testing.T) {
+	short := logicalbackup.Claimant{Kind: "LogicalBackupRDBMS", Name: "adhoc", UID: "u"}
+	assert.Equal(t, "LogicalBackupRDBMS/adhoc", short.HolderIdentity())
+
+	long := logicalbackup.Claimant{Kind: "LogicalBackupRDBMS", Name: strings.Repeat("x", 253), UID: "u"}
+	assert.LessOrEqual(t, len(long.HolderIdentity()), 128)
+	assert.Equal(t, long.HolderIdentity(), long.HolderIdentity())
+	other := logicalbackup.Claimant{Kind: "LogicalBackupRDBMS", Name: strings.Repeat("x", 252) + "y", UID: "u"}
+	assert.NotEqual(t, long.HolderIdentity(), other.HolderIdentity())
 }
 
 func TestReleaseOnlyByTheHolder(t *testing.T) {
 	c := claimClient(t, holderResource(first, v1.LogicalBackupRunning), holderResource(second, v1.LogicalBackupPending))
-	_, err := logicalbackup.Claim(t.Context(), c, claimNamespace, "prod", first)
+	_, err := logicalbackup.Claim(t.Context(), c, c, claimNamespace, "prod", first)
 	require.NoError(t, err)
 
-	require.NoError(t, logicalbackup.Release(t.Context(), c, claimNamespace, "prod", second))
+	require.NoError(t, logicalbackup.Release(t.Context(), c, c, claimNamespace, "prod", second))
 	assert.Equal(t, first.String(), leaseHolder(t, c), "a non-holder release is a no-op")
 
-	require.NoError(t, logicalbackup.Release(t.Context(), c, claimNamespace, "prod", first))
+	require.NoError(t, logicalbackup.Release(t.Context(), c, c, claimNamespace, "prod", first))
 	assert.Empty(t, leaseHolder(t, c))
 
 	require.NoError(
-		t, logicalbackup.Release(t.Context(), c, claimNamespace, "prod", first),
+		t, logicalbackup.Release(t.Context(), c, c, claimNamespace, "prod", first),
 		"a release of a claim that is not held is a no-op",
 	)
 }
