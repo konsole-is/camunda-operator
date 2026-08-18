@@ -75,12 +75,52 @@ func TestCreateSnapshotIsIdempotent(t *testing.T) {
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
 	indices := []string{"camunda_zeebe_records_backup_42"}
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices))
+	metadata := map[string]string{"camunda-operator/backup-uid": "uid-42"}
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices, metadata))
 
 	// A second create hits the duplicate rejection, and the client resolves
-	// it through the status: success.
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices))
+	// it through the status: the same metadata, so it is its own snapshot.
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", indices, metadata))
 	assert.Equal(t, 1, server.SnapshotCreates("repo", "records-42"))
+}
+
+// The duplicate resolution is bounded by ownership. A snapshot under the
+// same name with other metadata belongs to another actor. The duplicate
+// rejection must reach the caller instead of reading as success.
+func TestCreateSnapshotDoesNotResolveAForeignDuplicate(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	// A snapshot that another actor created: no metadata.
+	server.SetSnapshotState("repo", "records-42", "SUCCESS")
+
+	err := client.CreateSnapshot(
+		ctx, "repo", "records-42", []string{"idx"},
+		map[string]string{"camunda-operator/backup-uid": "uid-42"},
+	)
+	require.ErrorIs(t, err, esadmin.ErrRejected)
+	assert.Equal(t, 0, server.SnapshotCreates("repo", "records-42"))
+}
+
+// The metadata travels with the snapshot. The creation carries it, and the
+// status returns it. A caller can therefore tell its own snapshot from a
+// foreign one under the same name.
+func TestSnapshotMetadataRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	client, _ := newClient(t)
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	metadata := map[string]string{"camunda-operator/backup-uid": "uid-42"}
+
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, metadata))
+
+	snapshot, err := client.SnapshotStatus(ctx, "repo", "records-42")
+	require.NoError(t, err)
+	assert.Equal(t, metadata, snapshot.Metadata)
+
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "plain", []string{"idx"}, nil))
+	plain, err := client.SnapshotStatus(ctx, "repo", "plain")
+	require.NoError(t, err)
+	assert.Empty(t, plain.Metadata)
 }
 
 func TestSnapshotStatus(t *testing.T) {
@@ -88,21 +128,21 @@ func TestSnapshotStatus(t *testing.T) {
 	client, server := newClient(t)
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
-	state, err := client.SnapshotStatus(ctx, "repo", "absent")
+	snapshot, err := client.SnapshotStatus(ctx, "repo", "absent")
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.SnapshotMissing, state)
+	assert.Equal(t, esadmin.SnapshotMissing, snapshot.State)
 
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}))
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, nil))
 
-	state, err = client.SnapshotStatus(ctx, "repo", "records-42")
+	snapshot, err = client.SnapshotStatus(ctx, "repo", "records-42")
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.SnapshotInProgress, state)
+	assert.Equal(t, esadmin.SnapshotInProgress, snapshot.State)
 
 	server.SetSnapshotState("repo", "records-42", "SUCCESS")
 
-	state, err = client.SnapshotStatus(ctx, "repo", "records-42")
+	snapshot, err = client.SnapshotStatus(ctx, "repo", "records-42")
 	require.NoError(t, err)
-	assert.Equal(t, esadmin.SnapshotSuccess, state)
+	assert.Equal(t, esadmin.SnapshotSuccess, snapshot.State)
 }
 
 func TestDeleteSnapshotIsIdempotent(t *testing.T) {
@@ -110,7 +150,7 @@ func TestDeleteSnapshotIsIdempotent(t *testing.T) {
 	client, server := newClient(t)
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
-	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}))
+	require.NoError(t, client.CreateSnapshot(ctx, "repo", "records-42", []string{"idx"}, nil))
 	require.NoError(t, client.DeleteSnapshot(ctx, "repo", "records-42"))
 	assert.False(t, server.SnapshotExists("repo", "records-42"))
 
@@ -239,7 +279,7 @@ func TestCreateSnapshotRejectsAnEmptyIndexList(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
 
-	err := client.CreateSnapshot(ctx, "repo", "records-42", nil)
+	err := client.CreateSnapshot(ctx, "repo", "records-42", nil, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "names no index")

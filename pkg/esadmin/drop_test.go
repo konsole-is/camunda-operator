@@ -23,10 +23,10 @@ func TestDroppedCallsAreUnreachableWhileOthersAreServed(t *testing.T) {
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
 
 	server.DropNext("snapshotCreate", 1)
-	err = client.CreateSnapshot(ctx, "repo", "snap", []string{"idx"})
+	err = client.CreateSnapshot(ctx, "repo", "snap", []string{"idx"}, nil)
 	require.ErrorIs(t, err, esadmin.ErrUnreachable)
 
 	_, err = client.SnapshotStatus(ctx, "repo", "snap")
 	require.NoError(t, err, "the status query is served while creates are dropped")
-	assert.NoError(t, client.CreateSnapshot(ctx, "repo", "snap", []string{"idx"}))
+	assert.NoError(t, client.CreateSnapshot(ctx, "repo", "snap", []string{"idx"}, nil))
 }

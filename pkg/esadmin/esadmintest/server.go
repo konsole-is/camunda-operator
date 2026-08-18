@@ -50,6 +50,10 @@ type Snapshot struct {
 	State string
 	// Indices requested for the snapshot.
 	Indices string
+	// Metadata is the user metadata that the creation carried. A snapshot
+	// seeded with SetSnapshotState has none, like one that another actor
+	// created.
+	Metadata map[string]string
 }
 
 // Server fakes the Elasticsearch admin surface. Every exported method is
@@ -151,10 +155,15 @@ func (s *Server) RepositoryPuts(name string) int {
 }
 
 // SetSnapshotState sets the state of the snapshot repo/name, creating it
-// when absent.
+// when absent. An existing snapshot keeps its metadata: the knob drives the
+// state of a snapshot, whoever created it.
 func (s *Server) SetSnapshotState(repo, name, state string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if snapshot, ok := s.snapshots[repo+"/"+name]; ok {
+		snapshot.State = state
+		return
+	}
 	s.snapshots[repo+"/"+name] = &Snapshot{Repo: repo, Name: name, State: state}
 }
 
@@ -357,10 +366,14 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			return
 		}
 		var body struct {
-			Indices string `json:"indices"`
+			Indices  string            `json:"indices"`
+			Metadata map[string]string `json:"metadata"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		s.snapshots[key] = &Snapshot{Repo: parts[1], Name: parts[2], State: "IN_PROGRESS", Indices: body.Indices}
+		s.snapshots[key] = &Snapshot{
+			Repo: parts[1], Name: parts[2], State: "IN_PROGRESS",
+			Indices: body.Indices, Metadata: body.Metadata,
+		}
 		s.snapshotCreates[key]++
 		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
@@ -384,9 +397,11 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"snapshots": []map[string]any{{"snapshot": snapshot.Name, "state": snapshot.State}},
-		})
+		info := map[string]any{"snapshot": snapshot.Name, "state": snapshot.State}
+		if len(snapshot.Metadata) > 0 {
+			info["metadata"] = snapshot.Metadata
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
 
 	case http.MethodDelete:
 		if s.failing("snapshotDelete") {
