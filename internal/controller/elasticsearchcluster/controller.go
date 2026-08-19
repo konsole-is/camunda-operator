@@ -70,10 +70,12 @@ const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 const eventActionResize = "Resize"
 
 // defaultRetryInterval is how long the controller waits before it looks again
-// at something that no watch reports: a foreign ServiceAccount, the Secrets
-// that ECK publishes once the cluster serves, and an Elasticsearch that does
-// not answer yet. None of the three is an object transition this controller
-// can watch for.
+// at something that no watch reports. Three things need it: a foreign
+// ServiceAccount, the Secrets that ECK publishes once the cluster serves, and
+// an Elasticsearch that does not answer yet. The first two are objects that
+// this controller does not own, so a watch on them needs an explicit mapping
+// back to the cluster, and nobody has wired one. An Elasticsearch that does
+// not answer is no object, so there is nothing to watch.
 const defaultRetryInterval = 30 * time.Second
 
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
