@@ -6,8 +6,10 @@ tracking_issue: #109
 feature_branch: feat/restore-controllers
 feature_worktree: .claude/worktrees/restore-controllers
 sub_pr_approval: autonomous for #110 and #113; manual for #111 and #112 (user reviews the controller PRs; keep them open once their review loops are clean)
+sub_pr_review_loop: on
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # Restore controllers — orchestration state
@@ -22,10 +24,10 @@ status: planning
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #110 | feat/restore-api-and-machinery | .claude/worktrees/restore-controllers--api | → feat/restore-controllers | not-started |
-| #111 | feat/logicalrestore-controller | .claude/worktrees/restore-controllers--logical | → feat/restore-controllers | not-started |
-| #112 | feat/pointintimerestore-controller | .claude/worktrees/restore-controllers--pitr | → feat/restore-controllers | not-started |
-| #113 | test/restore-e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started |
+| #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | → feat/restore-controllers | not-started |
+| #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | → feat/restore-controllers | not-started |
+| #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | → feat/restore-controllers | not-started |
+| #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started |
 
 ## Contracts (from the plan)
 
@@ -47,9 +49,7 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 ## Pending snapshot
 
-- Review and commit the implementation plan (`docs/superpowers/plans/2026-08-20-restore-controllers-plan.md`), drafted by a subagent.
-- Sync the plan's `## Contracts` and `## Conventions` into this file's Contracts table if the plan names more contracts.
-- Push `feat/restore-controllers` and invoke `feature-dev-workflow:developing-a-feature` to start Phase 1 (#110).
+- Phase 1 in flight: an Opus worker implements #110 in .claude/worktrees/restore-controllers--api. On its ready report: copilot review loop, two-stage orchestrator review, self-merge, close #110, lock the PR1 contracts, checkpoint, then fan out #111 and #112 in parallel.
 - User instructions (2026-08-20, AFK with full autonomy): run the Copilot review loop on every sub-PR. Self-merge #110 when clean. Keep #111 and #112 OPEN once their loops are clean — the user reviews the controller PRs personally. Hold #113 until #111 and #112 merge.
 - Token note: the user runs close to the Fable limit. Dispatch implementation subagents on `model: opus`.
 

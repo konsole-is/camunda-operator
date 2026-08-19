@@ -83,7 +83,7 @@ Read these before you argue with a task. Each was verified in the worktree.
 
 ---
 
-## PR1 — API types and the shared restore package (#110, branch `feat/restore-api-and-machinery`, worktree `.claude/worktrees/restore-controllers--api`)
+## PR1 — API types and the shared restore package (#110, branch `feat/restore-controllers--api-machinery`, worktree `.claude/worktrees/restore-controllers--api`)
 
 Implements the API sections of both CRD design docs, the spec's "restore Jobs mirror the live broker StatefulSet" decision, and the new `ValidatingDatabaseState` phase in the PointInTimeRestore documentation.
 
@@ -1101,7 +1101,7 @@ Before PR2 and PR3 fan out, run `feature-dev-workflow:reviewing-feature-progress
 
 ---
 
-## PR2 — The LogicalRestore controller (#111, branch `feat/logicalrestore-controller`, worktree `.claude/worktrees/restore-controllers--logical`)
+## PR2 — The LogicalRestore controller (#111, branch `feat/restore-controllers--logicalrestore`, worktree `.claude/worktrees/restore-controllers--logical`)
 
 Implements `docs/crds/logicalrestore.md` in full, on both secondary storage paths.
 
@@ -1350,7 +1350,7 @@ Open the PR with `Towards #111`. Run the review loop until clean. **Stop. Reques
 
 ---
 
-## PR3 — The PointInTimeRestore controller (#112, branch `feat/pointintimerestore-controller`, worktree `.claude/worktrees/restore-controllers--pitr`)
+## PR3 — The PointInTimeRestore controller (#112, branch `feat/restore-controllers--pointintimerestore`, worktree `.claude/worktrees/restore-controllers--pitr`)
 
 Implements `docs/crds/pointintimerestore.md` in full, including the `ValidatingDatabaseState` phase the spec added.
 
@@ -1532,7 +1532,7 @@ Run `feature-dev-workflow:reviewing-feature-progress` over the feature branch on
 
 ---
 
-## PR4 — The restore e2e suite (#113, branch `test/restore-e2e`, worktree `.claude/worktrees/restore-controllers--e2e`)
+## PR4 — The restore e2e suite (#113, branch `test/restore-controllers--e2e`, worktree `.claude/worktrees/restore-controllers--e2e`)
 
 Implements the spec's "e2e scope" decision.
 
