@@ -1,124 +1,116 @@
 # ManagementAuthConfig
 
-`ManagementAuthConfig` is the contract CRD that carries the Management Identity OIDC configuration — endpoints, client credentials, and audience — for components that live outside the orchestration cluster.
+`ManagementAuthConfig` is a cluster-scoped contract kind that carries the OIDC configuration of Management Identity: endpoints, a machine-to-machine client, and an audience. You create it, or another tool creates it for you.
 
-## Purpose
+Components outside the orchestration cluster authenticate against Management Identity, which is a separate identity system from the one inside the orchestration cluster. This kind carries the OIDC endpoints and the default machine-to-machine client those components need. The thing that runs Management Identity and the thing that uses it do not need to know each other.
 
-Components outside the orchestration cluster — Optimize, Console, Web Modeler — authenticate against Management Identity, which is a separate auth system from the orchestration cluster's own identity.
-This cluster-scoped contract CRD carries the OIDC endpoints and default machine-to-machine client credentials those components need to validate tokens and call each other within the management plane, decoupling the management plane's producer from its consumers, as described in the [architecture](../architecture.md).
+No kind in the operator consumes this contract yet. The operator validates it so that it is ready when the management plane kinds arrive. It never provisions anything from it.
 
 | Role | Who |
 | --- | --- |
-| Producers | [CamundaManagementCluster](camundamanagementcluster.md) (as output of reconciling the management plane, named by its `managementAuthConfig` output field, defaulting to the CR's name), a composition layer above (for example a SaaS control plane shipping it directly per environment, without a management cluster), or you, by hand |
-| Consumers | [CamundaOptimize](camundaoptimize.md) (via `managementAuthRef`) |
+| Producers | You, by hand, or another tool that runs Management Identity and creates the contract for you |
+| Consumers | None in the operator yet |
 
-!!! note "Deviation from the original proposal"
-    `authUrl` was added: the Camunda 8.9 Management Identity OIDC surface includes the authorization endpoint, which consumers need for browser login redirects.
+The smallest contract names the endpoints, the client, the audience, and the client secret:
 
-## How it works
-
-The contract has a lightweight validation-only controller: it never provisions anything.
-
-1. The operator watches every `ManagementAuthConfig` and the Secret it references, and re-runs validation whenever either changes.
-2. It checks that the Secret named by `clientSecretRef` exists and contains the configured `key`.
-3. It sets the `Ready` condition: `Healthy` when the check passes, `MissingSecret` otherwise.
-
-Consumers read the contract by name and never care who produced it: a `CamundaManagementCluster` refreshing its output and a manifest shipped by a composition layer above look identical to a consuming controller.
-Consumers use the OIDC endpoints to validate tokens and acquire machine-to-machine credentials for inter-component communication within the management plane.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ManagementAuthConfig
+metadata:
+  name: my-management-auth
+spec:
+  baseUrl: "https://identity.camunda.example.com"
+  issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
+  authUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
+  tokenUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
+  jwksUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
+  clientId: camunda-management
+  audience: camunda-management
+  clientSecretRef:
+    name: my-management-auth-secret
+    namespace: my-cluster-ns
+    key: client-secret
+```
 
 ```mermaid
 graph LR
-    CMC[CamundaManagementCluster] -->|creates| MAC[ManagementAuthConfig]
+    EXT["Management Identity (external)"] --> MAC[ManagementAuthConfig]
     MAC -.->|clientSecretRef| SEC[Secret]
-    OPT[CamundaOptimize] -.->|managementAuthRef| MAC
 ```
 
-## API reference
+## Validation checks
+
+The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
+
+- The operator makes sure that the Secret in `clientSecretRef` exists and holds the configured `key`.
+
+If the Secret or the key is missing, `Ready` is `False` with reason `MissingSecret`. The message names the Secret and the key.
+
+When you edit the contract or the referenced Secret, the operator validates the contract again.
+
+> **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
+
+## Status
+
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | The Secret exists and holds the configured key. | Nothing. |
+| `Ready` | `MissingSecret` | The Secret named by `clientSecretRef` is missing, or it lacks the configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
+
+`status.observedGeneration` is the last generation of the contract that the operator validated.
+
+## Spec reference
+
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: ManagementAuthConfig
 # Cluster-scoped: metadata has no namespace.
 metadata:
-  name: management-auth
+  name: my-management-auth
 spec:
   # string. Required. Base URL of the Management Identity service.
   baseUrl: "https://identity.camunda.example.com"
-  # string. Required. OIDC issuer URL used to validate tokens.
+  # string. Required. OIDC issuer URL that consumers use to validate tokens.
   issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
-  # string. Optional, default: issuerUrl. Issuer URL for in-cluster container-to-container communication.
+  # string. Optional, default: the value of issuerUrl. Issuer URL for traffic inside the Kubernetes cluster.
   issuerBackendUrl: "http://identity.camunda-management.svc.cluster.local/auth/realms/camunda-platform"
-  # string. Required. OIDC authorization endpoint used for browser login redirects.
+  # string. Required. OIDC authorization endpoint for browser login redirects.
   authUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
-  # string. Required. OIDC token endpoint used to acquire machine-to-machine tokens.
+  # string. Required. OIDC token endpoint for machine-to-machine tokens.
   tokenUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
-  # string. Required. JWKS endpoint used to fetch token signing keys.
+  # string. Required. JWKS endpoint that serves the token signing keys.
   jwksUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
   # string. Required. Default machine-to-machine client ID.
   clientId: camunda-management
   # string. Required. Audience expected in access tokens issued for this client.
   audience: camunda-management
-  # object. Required. Client secret for the machine-to-machine client.
+  # object. Required. Client secret of the machine-to-machine client.
   clientSecretRef:
-    # string. Required. Name of the Secret holding the client secret.
-    name: management-auth-secret
-    # string. Required. Namespace of the Secret (this CR is cluster-scoped, so there is no default).
-    namespace: camunda-system
-    # string. Required. Key in the Secret holding the client secret value.
+    # string. Required. Name of the Secret that holds the client secret.
+    name: my-management-auth-secret
+    # string. Required. Namespace of the Secret. This kind is cluster-scoped, so there is no default.
+    namespace: my-cluster-ns
+    # string. Required. Key in the Secret that holds the client secret.
     key: client-secret
 ```
 
-## Status
-
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `Ready` | `Healthy` | The client secret exists and has the required key. |
-| `Ready` | `MissingSecret` | The Secret named by `clientSecretRef` is missing or lacks the configured key. |
-
-The operator records the last reconciled generation in `status.observedGeneration`.
-
-## Validation
+### Validation rules
 
 - `spec.baseUrl`, `spec.issuerUrl`, `spec.issuerBackendUrl`, `spec.authUrl`, `spec.tokenUrl`, and `spec.jwksUrl` must be valid `http` or `https` URLs.
+- `spec.clientId`, `spec.audience`, and every field of `spec.clientSecretRef` must not be empty.
+- No field is immutable.
 
-## Relationships
+### A production-shaped example
 
-- [CamundaManagementCluster](camundamanagementcluster.md) — creates this contract as output of reconciling the management plane, named by its `managementAuthConfig` output field (default: the CR's name).
-- [CamundaOptimize](camundaoptimize.md) — consumes this contract via `managementAuthRef` to authenticate against Management Identity.
-- A composition layer above may ship this CR directly per environment; external actors are not documented here.
-
-See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
-
-## Examples
-
-A minimal manifest:
+A contract with a separate issuer URL for traffic inside the Kubernetes cluster:
 
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: ManagementAuthConfig
 metadata:
-  name: management-auth
-spec:
-  baseUrl: "https://identity.camunda.example.com"
-  issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
-  authUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
-  tokenUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
-  jwksUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
-  clientId: camunda-management
-  audience: camunda-management
-  clientSecretRef:
-    name: management-auth-secret
-    namespace: camunda-system
-    key: client-secret
-```
-
-A realistic manifest with a separate in-cluster issuer URL for backend traffic:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: ManagementAuthConfig
-metadata:
-  name: management-auth
+  name: my-management-auth
 spec:
   baseUrl: "https://identity.camunda.example.com"
   issuerUrl: "https://identity.camunda.example.com/auth/realms/camunda-platform"
@@ -129,7 +121,12 @@ spec:
   clientId: camunda-management
   audience: camunda-management
   clientSecretRef:
-    name: management-auth-secret
-    namespace: camunda-system
+    name: my-management-auth-secret
+    namespace: my-cluster-ns
     key: client-secret
 ```
+
+## Related
+
+- [Authentication guide](../guides/authentication.md): how authentication works in the operator.
+- [CamundaPlatformConfig](camundaplatformconfig.md): the contract that carries the identity configuration of an orchestration cluster.

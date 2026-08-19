@@ -185,6 +185,7 @@ func TestRepositoryConfigOfEachStorageType(t *testing.T) {
 			Type:     esadmin.RepositoryTypeS3,
 			Bucket:   "camunda-backups",
 			BasePath: "clusters/my-ns/my-cluster",
+			Region:   "eu-west-1",
 		}, s3,
 	)
 
@@ -211,6 +212,27 @@ func TestRepositoryConfigOfEachStorageType(t *testing.T) {
 			BasePath: "clusters/my-ns/my-cluster",
 		}, azure,
 	)
+}
+
+// A bucket that the contract addresses by endpoint and gives no region of
+// its own is registered with the placeholder region, which is what the
+// broker and the CLI send for the same bucket. Elasticsearch signs each
+// request for the region of the repository, so a repository that resolved a
+// different one would be rejected by a store that enforces the region.
+func TestRepositoryConfigOfAnEndpointWithoutARegion(t *testing.T) {
+	t.Parallel()
+
+	cluster := &v1.ElasticsearchCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "my-ns"},
+	}
+
+	bucket := s3Bucket(v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity})
+	bucket.Spec.S3.Region = ""
+	bucket.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
+
+	config := RepositoryConfig(cluster, &SnapshotStorage{Config: bucket})
+	assert.Equal(t, v1.PlaceholderS3Region, config.Region)
+	assert.Equal(t, "http://minio.minio.svc:9000", config.Endpoint)
 }
 
 // Elasticsearch addresses an azure account as https://<account>.blob.<suffix>

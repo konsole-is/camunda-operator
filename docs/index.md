@@ -1,15 +1,31 @@
 # Camunda Operator
 
-The Camunda Operator is the core Kubernetes operator for the Camunda platform: it manages the lifecycle of Camunda 8.9+ orchestration clusters and everything that attaches to them — storage backends, backup and restore, Optimize, PVC auto-resizing, and the management plane.
+A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters.
+You describe a cluster in one resource. The operator creates the workloads, wires the storage, and keeps the cluster healthy.
 
-It is the bottom layer of a three-operator stack. Cloud- and SaaS-level operators may sit above it and create this operator's custom resources, but this operator has zero knowledge of them and works standalone on any Kubernetes cluster.
+The operator also manages what a cluster needs around it: an Elasticsearch cluster through ECK, a logical database on a PostgreSQL server you provide, and backups to a bucket.
 
-## Where to go
+## Start here
 
-- [Architecture](architecture.md) — the extension model, how features connect to the core, and the support policy.
-- [Installation](installation.md) — installing the operator with Helm or plain manifests.
-- [CRD Overview](crds/index.md) — the full inventory of custom resource definitions, their dependency graph, and per-CRD reference documentation.
+- [Getting started](getting-started.md): from an empty cluster to a running Camunda cluster you can log in to.
+- [Installation](installation.md): Helm, plain manifests, signatures, upgrades.
+- [Architecture](architecture.md): how the resources relate and the rules the operator follows.
 
-## Installation
+## Guides
 
-See the [installation guide](installation.md) for Helm and manifest-based installation, signature verification, and upgrades.
+- [Secondary storage](guides/secondary-storage.md): Elasticsearch or PostgreSQL, and how each connects to a cluster.
+- [Authentication](guides/authentication.md): basic authentication, OIDC, administrators.
+- [Backup](guides/backup.md): set up a bucket and take backups.
+- [Operations](guides/operations.md): status, suspend, storage growth, password rotation, monitoring.
+
+## Reference
+
+- [CRD reference](crds/index.md): every custom resource with every field, condition, and rule.
+
+## Requirements
+
+- Kubernetes 1.30 or later.
+- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html). The operator does not start without the ECK CRDs.
+- A PostgreSQL server, if you use `Database`.
+
+The source is at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).

@@ -53,6 +53,7 @@ func TestEnsureSnapshotRepositoryConverges(t *testing.T) {
 		Bucket:          "camunda-backups",
 		BasePath:        "clusters/ns/name",
 		Endpoint:        "http://minio.minio.svc:9000",
+		Region:          "eu-west-1",
 		PathStyleAccess: true,
 	}
 
@@ -66,8 +67,28 @@ func TestEnsureSnapshotRepositoryConverges(t *testing.T) {
 	assert.Equal(t, "camunda-backups", repo.Settings["bucket"])
 	assert.Equal(t, "clusters/ns/name", repo.Settings["base_path"])
 	assert.Equal(t, "http://minio.minio.svc:9000", repo.Settings["endpoint"])
+	assert.Equal(t, "eu-west-1", repo.Settings["region"])
 	assert.Equal(t, true, repo.Settings["path_style_access"])
 	assert.Equal(t, "default", repo.Settings["client"])
+}
+
+// A repository registered without a region carries no region setting, so the
+// node keeps whatever its own client settings resolve. The caller decides
+// what an endpoint without a region signs for; this client never invents a
+// value of its own.
+func TestEnsureSnapshotRepositoryOmitsAnEmptyRegion(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+
+	require.NoError(t, client.EnsureSnapshotRepository(ctx, "my-cluster", esadmin.RepositoryConfig{
+		Type:     esadmin.RepositoryTypeS3,
+		Bucket:   "camunda-backups",
+		BasePath: "clusters/ns/name",
+	}))
+
+	repo := server.Repository("my-cluster")
+	require.NotNil(t, repo)
+	assert.NotContains(t, repo.Settings, "region")
 }
 
 func TestCreateSnapshotIsIdempotent(t *testing.T) {
@@ -482,7 +503,9 @@ func TestDropNextReachesEveryOperation(t *testing.T) {
 }
 
 // The gcs repository names its bucket and its client; the credentials reach
-// the nodes through the keystore alone, so no setting carries them.
+// the nodes through the keystore alone, so no setting carries them. The
+// region is a setting of the s3 type alone, and a gcs repository drops one
+// that the config carries.
 func TestEnsureSnapshotRepositoryRegistersGCS(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
@@ -491,6 +514,7 @@ func TestEnsureSnapshotRepositoryRegistersGCS(t *testing.T) {
 		Type:     esadmin.RepositoryTypeGCS,
 		Bucket:   "camunda-backups",
 		BasePath: "clusters/ns/name",
+		Region:   "eu-west-1",
 	}
 
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "my-cluster", cfg))
@@ -501,12 +525,13 @@ func TestEnsureSnapshotRepositoryRegistersGCS(t *testing.T) {
 	assert.Equal(t, "camunda-backups", repo.Settings["bucket"])
 	assert.Equal(t, "clusters/ns/name", repo.Settings["base_path"])
 	assert.Equal(t, "default", repo.Settings["client"])
+	assert.NotContains(t, repo.Settings, "region")
 }
 
 // The azure repository names its blob container under the container setting,
 // not bucket, and takes neither of the s3 endpoint settings: the service
 // endpoint of an azure client is node configuration, not repository
-// settings.
+// settings. It takes no region either.
 func TestEnsureSnapshotRepositoryRegistersAzure(t *testing.T) {
 	ctx := context.Background()
 	client, server := newClient(t)
@@ -515,6 +540,7 @@ func TestEnsureSnapshotRepositoryRegistersAzure(t *testing.T) {
 		Type:     esadmin.RepositoryTypeAzure,
 		Bucket:   "camunda-backups",
 		BasePath: "clusters/ns/name",
+		Region:   "eu-west-1",
 	}
 
 	require.NoError(t, client.EnsureSnapshotRepository(ctx, "my-cluster", cfg))
@@ -526,6 +552,7 @@ func TestEnsureSnapshotRepositoryRegistersAzure(t *testing.T) {
 	assert.Equal(t, "clusters/ns/name", repo.Settings["base_path"])
 	assert.Equal(t, "default", repo.Settings["client"])
 	assert.NotContains(t, repo.Settings, "bucket")
+	assert.NotContains(t, repo.Settings, "region")
 }
 
 // The type and the bucket are what every repository needs, and the caller

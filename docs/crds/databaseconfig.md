@@ -1,108 +1,74 @@
 # DatabaseConfig
 
-`DatabaseConfig` is the contract CRD that describes one logical database — its server, name, and application credentials — for the controllers and components that connect to it.
+`DatabaseConfig` is a namespaced contract kind that describes one logical database: its server, its name, and the application credentials. A `Database` creates it, or you create it by hand.
 
-## Purpose
+An orchestration cluster with a relational database as secondary storage needs to connect to one logical database. This kind carries the coordinates and the credentials of that database. The thing that created the database and the thing that connects to it do not need to know each other. The operator only validates the contract and reports the result on `Ready`. It never provisions anything from it.
 
-Several consumers need to connect to a specific logical database: an orchestration cluster using RDBMS secondary storage, the management plane's Keycloak, Identity, and Web Modeler databases, and the backup and restore controllers.
-This namespaced contract CRD carries the logical database's coordinates and credentials, decoupling whoever created the database from whoever connects to it, as described in the [architecture](../architecture.md).
-It lives in the consumer's namespace: consumers resolve it by name in their own namespace, and a producing [Database](database.md) creates it in its `targetNamespace`.
+The contract lives in the namespace of the consumer. A `SecondaryStorageConfig` finds it by name in its own namespace. The contract does not repeat the host and the port. Consumers read them from the `DatabaseServerConfig` named in `serverRef` and combine them with `databaseName` and the credentials.
 
 | Role | Who |
 | --- | --- |
-| Producers | [Database](database.md) (as output of bootstrapping a logical database, named by its `databaseConfig` output field), or you, by hand, for databases created outside the operator |
-| Consumers | [SecondaryStorageConfig](secondarystorageconfig.md) (via `rdbms.databaseConfigRef`, same-namespace), [CamundaManagementCluster](camundamanagementcluster.md) (via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef`, resolved in its target namespace), and the backup and restore controllers, which resolve it through the consuming cluster's storage chain |
+| Producers | [Database](database.md) (after it creates the logical database, named by its `databaseConfig` field), or you, by hand, for a database created outside the operator |
+| Consumers | [SecondaryStorageConfig](secondarystorageconfig.md) (through `rdbms.databaseConfigRef`), [CamundaCluster](camundacluster.md) (through its `storageRef` and that contract), [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the same chain, with `backupCredentialsSecretRef`) |
 
-## How it works
+The smallest contract names the server, the database, and the application credentials:
 
-The contract has a lightweight validation-only controller: it never provisions anything.
-
-1. The operator watches every `DatabaseConfig`, the [DatabaseServerConfig](databaseserverconfig.md) it references, and the Secrets it references, and re-runs validation whenever any of them change.
-2. It checks that the [DatabaseServerConfig](databaseserverconfig.md) named by `serverRef` exists.
-3. It checks that the Secret named by `credentialsSecretRef` — and by `backupCredentialsSecretRef`, when set — exists and contains the configured `usernameKey` and `passwordKey`.
-4. It sets the `Ready` condition: `Healthy` when all checks pass, `InvalidReference` or `MissingSecret` otherwise.
-
-Consumers read the contract by name and never care who produced it.
-Connection endpoints are deliberately not duplicated here: consumers resolve `serverRef` to the [DatabaseServerConfig](databaseserverconfig.md) for the engine, host, and port, then combine them with this contract's `databaseName` and credentials.
-
-!!! note "Security posture: Secret references cross namespaces"
-    `credentialsSecretRef` and `backupCredentialsSecretRef` carry an explicit namespace and may name a Secret in any namespace, and the validation controller reports precise existence and missing-key messages in status.
-    Anyone permitted to create or update this kind can therefore learn whether an arbitrary Secret exists and which keys it lacks — an accepted existence oracle, unchanged from when the contract was cluster-scoped.
-    Now that the kind is namespaced, namespace-level editors (not only cluster operators) may hold that permission; RBAC on this kind is the mitigation, so grant write access to it deliberately.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseConfig
+metadata:
+  name: my-camunda-db
+  namespace: my-cluster-ns
+spec:
+  serverRef: my-db-server
+  databaseName: camunda
+  credentialsSecretRef:
+    name: my-camunda-db-credentials
+    namespace: my-cluster-ns
+    usernameKey: username
+    passwordKey: password
+```
 
 ```mermaid
 graph LR
-    DB[Database] -->|creates| DBC[DatabaseConfig]
+    DB[Database] --> DBC[DatabaseConfig]
     DBC -.->|serverRef| DBSC[DatabaseServerConfig]
-    DBC -.->|credentialsSecretRef| SEC[Secret]
-    SSC["SecondaryStorageConfig (rdbms)"] -.->|databaseConfigRef| DBC
-    CMC[CamundaManagementCluster] -.->|"keycloakDbRef / identityDbRef / webModelerDbRef"| DBC
+    DBC -.->|credentialsSecretRef, backupCredentialsSecretRef| SEC[Secret]
+    SSC["SecondaryStorageConfig (rdbms)"] -.->|rdbms.databaseConfigRef| DBC
+    CC[CamundaCluster] -.->|through storageRef| DBC
+    LBR[LogicalBackupRDBMS] -.->|through the cluster storageRef| DBC
 ```
 
-## API reference
+## Validation checks
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: DatabaseConfig
-# Namespaced: consumers resolve this contract by name in their own namespace.
-metadata:
-  name: my-camunda-db
-  namespace: my-cluster-ns
-spec:
-  # string. Required. Name of the DatabaseServerConfig describing the server hosting this database.
-  serverRef: my-db-server
-  # string. Required. Name of the logical database on the server.
-  databaseName: camunda
-  # object. Required. Application user with read/write access to the database.
-  credentialsSecretRef:
-    # string. Required. Name of the Secret holding the application credentials.
-    name: my-camunda-db-credentials
-    # string. Required. Namespace of the Secret (always explicit; it never defaults to this CR's namespace).
-    namespace: my-cluster-ns
-    # string. Required. Key in the Secret holding the plaintext username.
-    usernameKey: username
-    # string. Required. Key in the Secret holding the plaintext password.
-    passwordKey: password
-  # object. Optional. Separate user with dump/restore privileges, used by the backup and restore controllers.
-  backupCredentialsSecretRef:
-    # string. Required. Name of the Secret holding the backup credentials.
-    name: my-camunda-db-backup-credentials
-    # string. Required. Namespace of the Secret (always explicit; it never defaults to this CR's namespace).
-    namespace: my-cluster-ns
-    # string. Required. Key in the Secret holding the plaintext username.
-    usernameKey: username
-    # string. Required. Key in the Secret holding the plaintext password.
-    passwordKey: password
-```
+The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
+
+- The operator makes sure that the [DatabaseServerConfig](databaseserverconfig.md) named in `serverRef` exists.
+- The operator makes sure that the Secret in `credentialsSecretRef` exists and holds `usernameKey` and `passwordKey`. If `backupCredentialsSecretRef` is set, it makes sure that this Secret exists and holds the same keys.
+
+If the `DatabaseServerConfig` is missing, `Ready` is `False` with reason `InvalidReference`. If a Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. The message names the missing object.
+
+When you edit the contract, a referenced Secret, or the referenced `DatabaseServerConfig`, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
+
+> **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
+
+## Backups
+
+A `LogicalBackupRDBMS` dumps the database with the user in `backupCredentialsSecretRef`. If the field is not set, the backup fails its pre-check with reason `MissingSecret`. Set it on every database you want to back up.
 
 ## Status
 
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `Ready` | `Healthy` | The referenced `DatabaseServerConfig` and all referenced Secrets exist with the required keys. |
-| `Ready` | `InvalidReference` | The `DatabaseServerConfig` named by `serverRef` does not exist. |
-| `Ready` | `MissingSecret` | A Secret named by `credentialsSecretRef` or `backupCredentialsSecretRef` is missing or lacks the configured keys. |
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | The `DatabaseServerConfig` and all referenced Secrets exist and hold the required keys. | Nothing. |
+| `Ready` | `InvalidReference` | The `DatabaseServerConfig` named by `serverRef` does not exist. | Create the `DatabaseServerConfig`, or fix the name. |
+| `Ready` | `MissingSecret` | A Secret named by `credentialsSecretRef` or `backupCredentialsSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
 
-The operator records the last reconciled generation in `status.observedGeneration`.
+`status.observedGeneration` is the last generation of the contract that the operator validated.
 
-## Validation
+## Spec reference
 
-There are no admission rules beyond schema validation; reference and Secret existence are checked continuously by the validation controller and surfaced as conditions.
-
-## Relationships
-
-- [DatabaseServerConfig](databaseserverconfig.md) — referenced via `serverRef` for the server's engine, host, port, and admin credentials.
-- [SecondaryStorageConfig](secondarystorageconfig.md) — references this contract via `rdbms.databaseConfigRef` when the secondary storage type is `rdbms`; the reference resolves in the referencing contract's own namespace.
-- [Database](database.md) — creates this contract as output of bootstrapping the logical database and its users.
-- [CamundaManagementCluster](camundamanagementcluster.md) — consumes this contract via `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` for its component databases.
-- [LogicalBackupRDBMS](logicalbackuprdbms.md), [LogicalRestore](logicalrestore.md) — resolve this contract through the target cluster's storage chain and use `backupCredentialsSecretRef` for dump and restore operations.
-- [PointInTimeRestore](pointintimerestore.md) — resolves this contract through the target cluster's storage chain; its restore-app Jobs use `credentialsSecretRef` (the application credentials) to read the exporter position from the restored database.
-
-See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
-
-## Examples
-
-A minimal manifest:
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -111,16 +77,41 @@ metadata:
   name: my-camunda-db
   namespace: my-cluster-ns
 spec:
+  # string. Required. Name of the DatabaseServerConfig that describes the server of this database.
   serverRef: my-db-server
+  # string. Required. Name of the logical database on the server.
   databaseName: camunda
+  # object. Required. Application user with read and write access to the database.
   credentialsSecretRef:
+    # string. Required. Name of the Secret that holds the application credentials.
     name: my-camunda-db-credentials
+    # string. Required. Namespace of the Secret. It never defaults to the namespace of this contract.
     namespace: my-cluster-ns
+    # string. Required. Key in the Secret that holds the username.
     usernameKey: username
+    # string. Required. Key in the Secret that holds the password.
+    passwordKey: password
+  # object. Optional. Separate user with dump and restore privileges. A LogicalBackupRDBMS needs it.
+  backupCredentialsSecretRef:
+    # string. Required. Name of the Secret that holds the backup credentials.
+    name: my-camunda-db-backup-credentials
+    # string. Required. Namespace of the Secret. It never defaults to the namespace of this contract.
+    namespace: my-cluster-ns
+    # string. Required. Key in the Secret that holds the username.
+    usernameKey: username
+    # string. Required. Key in the Secret that holds the password.
     passwordKey: password
 ```
 
-A realistic manifest with a dedicated backup user for dump and restore operations:
+### Validation rules
+
+- `spec.serverRef` and `spec.databaseName` must not be empty.
+- Every field of a Secret reference must not be empty.
+- No field is immutable.
+
+### A production-shaped example
+
+A contract with a separate backup user for database dumps:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -142,3 +133,14 @@ spec:
     usernameKey: username
     passwordKey: password
 ```
+
+## Related
+
+- [DatabaseServerConfig](databaseserverconfig.md): the server of this database, named by `serverRef`. It carries the engine, the host, and the port.
+- [Database](database.md): creates the logical database and its users, then creates this contract.
+- [SecondaryStorageConfig](secondarystorageconfig.md): a `rdbms` contract names this kind through `rdbms.databaseConfigRef`.
+- [CamundaCluster](camundacluster.md): connects to this database when its `storageRef` names a `rdbms` contract.
+- [LogicalBackupRDBMS](logicalbackuprdbms.md): dumps this database with `backupCredentialsSecretRef`.
+- [Secondary storage guide](../guides/secondary-storage.md): how to set up a relational database for a cluster.
+- [Backup guide](../guides/backup.md): how to back up a relational cluster.
+- [Getting started](../getting-started.md): the order in which you create the resources.
