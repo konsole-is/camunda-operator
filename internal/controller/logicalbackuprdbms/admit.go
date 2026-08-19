@@ -423,7 +423,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 		return nil, failure, err
 	}
 
-	pod, failure, err := r.resolvePod(ctx, precheck.Cluster, backup)
+	pod, failure, err := r.resolvePod(ctx, precheck.Cluster, backup, precheck.Bucket)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
@@ -617,15 +617,26 @@ type podResolution struct {
 }
 
 // resolvePod resolves the pod of the Job through the preset of the cluster
-// when it names one. It resolves the pod settings, the ServiceAccount, and the
-// image. The pod settings are the backup's own block, which replaces the
+// when it names one. It resolves the pod settings, the ServiceAccount, and
+// the image. The pod settings are the backup's own block, which replaces the
 // cluster's as a whole, or else the cluster's block. The image is always the
-// cluster's. The Job runs under the ServiceAccount of the cluster, so the
-// executable is the choice of the cluster owner.
+// cluster's: the Job runs with the credentials of the cluster, so the
+// executable stays the choice of the cluster owner.
+//
+// bucket is the backup bucket of the cluster. The Job names the account of
+// the cluster when that bucket binds one through workload identity, or when
+// the spec names one. Otherwise it names none and runs under the default
+// account of its namespace.
+//
+// That condition is narrower than the condition under which the cluster
+// renders the account, so it implies it. The Job can therefore only ever
+// name an account that exists, which is what the API server requires before
+// it creates the pod.
 func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	backup *v1.LogicalBackupRDBMS,
+	bucket *v1.ObjectStorageConfig,
 ) (*podResolution, *conditions.PreCheckFailure, error) {
 	merged := cluster.Spec
 	if cluster.Spec.PresetRef != "" {
@@ -672,7 +683,7 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 		settings: settings,
 		owned:    owned,
 		image:    image,
-		account:  camundacluster.ServiceAccountName(cluster, camundacluster.NewEffective(merged)),
+		account:  camundacluster.PodServiceAccountName(cluster, camundacluster.NewEffective(merged), bucket),
 	}, nil, nil
 }
 

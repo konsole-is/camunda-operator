@@ -509,6 +509,23 @@ func TestBuildJobRejectsAnEmptyCLIImage(t *testing.T) {
 	assert.Contains(t, err.Error(), "camunda-operator-cli image is empty")
 }
 
+// A cluster that renders no ServiceAccount gives the Job none. The pod then
+// carries no serviceAccountName and runs under the default account of its
+// namespace. A name that no account matches would make the API server refuse
+// the pod, which is how a backup of a cluster with static credentials came to
+// hang with no pod at all.
+func TestBuildJobRunsUnderTheDefaultAccountWithoutAName(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.ServiceAccountName = ""
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.Empty(t, job.Spec.Template.Spec.ServiceAccountName)
+}
+
 func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {
 	t.Parallel()
 
