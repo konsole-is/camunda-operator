@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/camunda
+    azure.workload.identity/client-id: 00000000-0000-0000-0000-000000000000
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/component: elasticsearch
@@ -41,12 +41,28 @@ spec:
     podTemplate:
       metadata:
         labels:
+          azure.workload.identity/use: "true"
           camunda.io/component: elasticsearch
           camunda.io/elasticsearch-cluster: my-cluster-es
       spec:
-        automountServiceAccountToken: true
-        containers: null
+        containers:
+        - env:
+          - name: AZURE_FEDERATED_TOKEN_FILE
+            value: /usr/share/elasticsearch/config/azure/tokens/azure-identity-token
+          name: elasticsearch
+          resources: {}
+          volumeMounts:
+          - mountPath: /usr/share/elasticsearch/config/azure/tokens
+            name: azure-identity-token
         serviceAccountName: my-cluster-es-es
+        volumes:
+        - name: azure-identity-token
+          projected:
+            sources:
+            - serviceAccountToken:
+                audience: api://AzureADTokenExchange
+                expirationSeconds: 3600
+                path: azure-identity-token
     volumeClaimTemplates:
     - metadata:
         labels:
@@ -64,6 +80,8 @@ spec:
     service:
       metadata: {}
       spec: {}
+  secureSettings:
+  - secretName: my-cluster-es-es-snapshot-keystore
   transport:
     service:
       metadata: {}

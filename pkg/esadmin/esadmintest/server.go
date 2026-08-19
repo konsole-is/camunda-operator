@@ -21,12 +21,11 @@ package esadmintest
 
 import (
 	"encoding/json"
-	"encoding/pem"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
+
+	"github.com/konsole-is/camunda-operator/pkg/adminhttp/adminhttptest"
 )
 
 // snapshotPath is the first path segment of every snapshot API call.
@@ -34,7 +33,7 @@ const snapshotPath = "_snapshot"
 
 // Repository is the fake's record of one snapshot repository.
 type Repository struct {
-	// Type of the repository, s3 for everything this operator registers.
+	// Type of the repository: s3, gcs, or azure.
 	Type string
 	// Settings as registered.
 	Settings map[string]any
@@ -59,8 +58,13 @@ type Snapshot struct {
 
 // Server fakes the Elasticsearch admin surface. Every exported method is
 // safe for concurrent use.
+//
+// The operations that the inherited FailNext and DropNext name are
+// "repository", "snapshotCreate", "snapshotStatus", "snapshotDelete",
+// "reload", and "stats". A failing operation answers 500; a dropped one
+// closes the connection.
 type Server struct {
-	mu sync.Mutex
+	adminhttptest.Fake
 
 	repos     map[string]*Repository
 	snapshots map[string]*Snapshot
@@ -73,11 +77,6 @@ type Server struct {
 
 	// nodeFS drives _nodes/stats/fs, keyed by node name.
 	nodeFS map[string]nodeFS
-
-	failures map[string]int
-	drops    map[string]int
-
-	server *httptest.Server
 }
 
 // nodeFS is the filesystem report of one node.
@@ -89,8 +88,7 @@ type nodeFS struct {
 // New starts the fake over plain HTTP. Close it with Close.
 func New() *Server {
 	s := newServer()
-	s.server = httptest.NewServer(http.HandlerFunc(s.handle))
-	s.server.Config.SetKeepAlivesEnabled(false)
+	s.Start(s.handle)
 
 	return s
 }
@@ -101,8 +99,7 @@ func New() *Server {
 // Close.
 func NewTLS() *Server {
 	s := newServer()
-	s.server = httptest.NewTLSServer(http.HandlerFunc(s.handle))
-	s.server.Config.SetKeepAlivesEnabled(false)
+	s.StartTLS(s.handle)
 
 	return s
 }
@@ -114,32 +111,13 @@ func newServer() *Server {
 		snapshots:       map[string]*Snapshot{},
 		snapshotCreates: map[string]int{},
 		nodeFS:          map[string]nodeFS{"node-0": {total: 100 << 30, used: 10 << 30}},
-		failures:        map[string]int{},
-		drops:           map[string]int{},
 	}
 }
-
-// CertificatePEM returns the PEM encoding of the certificate a NewTLS server
-// serves, which is its own CA: the certificate is self-signed.
-func (s *Server) CertificatePEM() []byte {
-	cert := s.server.Certificate()
-	if cert == nil {
-		return nil
-	}
-
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
-}
-
-// URL is the base URL of the fake.
-func (s *Server) URL() string { return s.server.URL }
-
-// Close stops the fake.
-func (s *Server) Close() { s.server.Close() }
 
 // Repository returns the registered repository name, or nil.
 func (s *Server) Repository(name string) *Repository {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	if r, ok := s.repos[name]; ok {
 		copied := *r
 		return &copied
@@ -152,8 +130,8 @@ func (s *Server) Repository(name string) *Repository {
 // the reconciles while Repository stays the same: that is what idempotence
 // looks like from the fake.
 func (s *Server) RepositoryPuts(name string) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.repositoryPuts[name]
 }
 
@@ -161,8 +139,8 @@ func (s *Server) RepositoryPuts(name string) int {
 // when absent. An existing snapshot keeps its metadata: the knob drives the
 // state of a snapshot, whoever created it.
 func (s *Server) SetSnapshotState(repo, name, state string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	if snapshot, ok := s.snapshots[repo+"/"+name]; ok {
 		snapshot.State = state
 		return
@@ -175,8 +153,8 @@ func (s *Server) SetSnapshotState(repo, name, state string) {
 // value, so a test can seed a snapshot that another actor created with
 // metadata this operator never writes: numbers, lists, or objects.
 func (s *Server) SetSnapshotMetadata(repo, name string, metadata map[string]any) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	snapshot, ok := s.snapshots[repo+"/"+name]
 	if !ok {
 		snapshot = &Snapshot{Repo: repo, Name: name, State: "SUCCESS"}
@@ -187,23 +165,23 @@ func (s *Server) SetSnapshotMetadata(repo, name string, metadata map[string]any)
 
 // SnapshotExists reports whether the snapshot repo/name exists.
 func (s *Server) SnapshotExists(repo, name string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	_, ok := s.snapshots[repo+"/"+name]
 	return ok
 }
 
 // SnapshotCreates reports how often a create of repo/name was accepted.
 func (s *Server) SnapshotCreates(repo, name string) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.snapshotCreates[repo+"/"+name]
 }
 
 // ReloadCalls reports the number of secure-settings reloads.
 func (s *Server) ReloadCalls() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.reloadCalls
 }
 
@@ -211,8 +189,8 @@ func (s *Server) ReloadCalls() int {
 // failures included. A test asserts with it that a caller does not probe the
 // statistics at a moment it must not.
 func (s *Server) StatsCalls() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	return s.statsCalls
 }
 
@@ -220,66 +198,12 @@ func (s *Server) StatsCalls() int {
 // node when absent. The fake starts with one node, node-0, so setting that
 // name replaces the default and any other name adds a node beside it.
 func (s *Server) SetNodeFS(name string, totalBytes, usedBytes int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
 	s.nodeFS[name] = nodeFS{total: totalBytes, used: usedBytes}
 }
 
-// FailNext makes the next n calls of op answer 500. op is one of
-// "repository", "snapshotCreate", "snapshotStatus", "snapshotDelete",
-// "reload", "stats".
-func (s *Server) FailNext(op string, n int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.failures[op] = n
-}
-
-// DropNext makes the next n calls of op close the connection without any
-// response, the way a dropped route or a broken proxy does. The client of
-// pkg/esadmin reports such a call as ErrUnreachable. op takes the values of
-// FailNext, and every handler honors it. A fake can be reachable for one
-// operation and unreachable for another, for example a proxy that serves
-// GET and drops PUT.
-//
-// The fake serves without keep-alive, so every call opens its own
-// connection: the Go transport retries an idempotent request that fails on
-// a reused connection, and a drop that it retried away would be invisible.
-func (s *Server) DropNext(op string, n int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.drops[op] = n
-}
-
-// dropping consumes one injected drop of op and closes the connection.
-func (s *Server) dropping(w http.ResponseWriter, op string) bool {
-	if s.drops[op] <= 0 {
-		return false
-	}
-	s.drops[op]--
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		panic("esadmintest: the response writer does not support hijacking")
-	}
-	conn, _, err := hijacker.Hijack()
-	if err != nil {
-		panic("esadmintest: hijacking the connection: " + err.Error())
-	}
-	_ = conn.Close()
-	return true
-}
-
-func (s *Server) failing(op string) bool {
-	if s.failures[op] > 0 {
-		s.failures[op]--
-		return true
-	}
-	return false
-}
-
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// Split the escaped form, then unescape each segment: an escaped slash
 	// inside a name must stay inside its segment, the way a real server
 	// routes.
@@ -294,22 +218,22 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == http.MethodPost && path == "_nodes/reload_secure_settings":
-		if s.dropping(w, "reload") {
+		if s.Dropping(w, "reload") {
 			return
 		}
-		if s.failing("reload") {
+		if s.Failing("reload") {
 			errorBody(w, http.StatusInternalServerError, "injected reload failure")
 			return
 		}
 		s.reloadCalls++
-		writeJSON(w, http.StatusOK, map[string]any{"nodes": map[string]any{}})
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": map[string]any{}})
 
 	case r.Method == http.MethodGet && path == "_nodes/stats/fs":
 		s.statsCalls++
-		if s.dropping(w, "stats") {
+		if s.Dropping(w, "stats") {
 			return
 		}
-		if s.failing("stats") {
+		if s.Failing("stats") {
 			errorBody(w, http.StatusInternalServerError, "injected stats failure")
 			return
 		}
@@ -324,13 +248,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				},
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
 
 	case len(parts) == 2 && parts[0] == snapshotPath && r.Method == http.MethodPut:
-		if s.dropping(w, "repository") {
+		if s.Dropping(w, "repository") {
 			return
 		}
-		if s.failing("repository") {
+		if s.Failing("repository") {
 			errorBody(w, http.StatusInternalServerError, "injected repository failure")
 			return
 		}
@@ -341,7 +265,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		s.repos[parts[1]] = &Repository{Type: body.Type, Settings: body.Settings}
 		s.repositoryPuts[parts[1]]++
-		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
 	case len(parts) == 3 && parts[0] == snapshotPath:
 		s.handleSnapshot(w, r, parts)
@@ -351,12 +275,6 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
 func errorBody(w http.ResponseWriter, status int, message string) {
 	errorBodyTyped(w, status, "exception", message)
 }
@@ -364,21 +282,20 @@ func errorBody(w http.ResponseWriter, status int, message string) {
 // errorBodyTyped writes the error shape of Elasticsearch:
 // {"error":{"type":...,"reason":...},"status":N}.
 func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string) {
-	writeJSON(w, status, map[string]any{
+	adminhttptest.WriteJSON(w, status, map[string]any{
 		"error":  map[string]string{"type": errorType, "reason": reason},
 		"status": status,
 	})
 }
 
 // handleSnapshot routes the per-snapshot requests: create, status, delete.
-// The caller holds the lock.
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []string) {
 	switch r.Method {
 	case http.MethodPut:
-		if s.dropping(w, "snapshotCreate") {
+		if s.Dropping(w, "snapshotCreate") {
 			return
 		}
-		if s.failing("snapshotCreate") {
+		if s.Failing("snapshotCreate") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot create failure")
 			return
 		}
@@ -407,13 +324,13 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			Indices: body.Indices, Metadata: body.Metadata,
 		}
 		s.snapshotCreates[key]++
-		writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"accepted": true})
 
 	case http.MethodGet:
-		if s.dropping(w, "snapshotStatus") {
+		if s.Dropping(w, "snapshotStatus") {
 			return
 		}
-		if s.failing("snapshotStatus") {
+		if s.Failing("snapshotStatus") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot status failure")
 			return
 		}
@@ -436,13 +353,13 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 		if len(snapshot.Metadata) > 0 {
 			info["metadata"] = snapshot.Metadata
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"snapshots": []map[string]any{info}})
 
 	case http.MethodDelete:
-		if s.dropping(w, "snapshotDelete") {
+		if s.Dropping(w, "snapshotDelete") {
 			return
 		}
-		if s.failing("snapshotDelete") {
+		if s.Failing("snapshotDelete") {
 			errorBody(w, http.StatusInternalServerError, "injected snapshot delete failure")
 			return
 		}
@@ -462,7 +379,7 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request, parts []
 			return
 		}
 		delete(s.snapshots, key)
-		writeJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 
 	default:
 		errorBody(w, http.StatusMethodNotAllowed, "unsupported method "+r.Method)

@@ -241,6 +241,80 @@ func s3BucketSpec(credentials *v1.S3Credentials) v1.ObjectStorageConfigSpec {
 	}
 }
 
+// gcsBucketSpec is the GCS counterpart of s3BucketSpec.
+func gcsBucketSpec(credentials *v1.GCSCredentials) v1.ObjectStorageConfigSpec {
+	auth := v1.GCSStorageAuth{
+		Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+		WorkloadIdentity: &v1.GCSWorkloadIdentity{ServiceAccountEmail: "camunda@example.iam.gserviceaccount.com"},
+	}
+	if credentials != nil {
+		auth = v1.GCSStorageAuth{Type: v1.ObjectStorageAuthTypeCredentials, Credentials: credentials}
+	}
+
+	return v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeGCS,
+		GCS: &v1.GCSStorage{
+			BucketName: "camunda-backups",
+			BasePath:   "clusters",
+			Auth:       auth,
+		},
+	}
+}
+
+// azureBucketSpec is the Azure counterpart of s3BucketSpec. An empty endpoint
+// means the public Azure endpoint of the account.
+func azureBucketSpec(endpoint string, credentials *v1.AzureBlobCredentials) v1.ObjectStorageConfigSpec {
+	auth := v1.AzureBlobStorageAuth{
+		Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+		WorkloadIdentity: &v1.AzureBlobWorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000000"},
+	}
+	if credentials != nil {
+		auth = v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeCredentials, Credentials: credentials}
+	}
+
+	return v1.ObjectStorageConfigSpec{
+		Type: v1.ObjectStorageTypeAzureBlob,
+		AzureBlob: &v1.AzureBlobStorage{
+			AccountName: "camundabackups",
+			Container:   "camunda-backups",
+			BasePath:    "clusters",
+			Endpoint:    endpoint,
+			Auth:        auth,
+		},
+	}
+}
+
+// servingClusterWithBucket creates a cluster that references the bucket and
+// whose ECK Secrets are in place, so the reconciler reaches the registration.
+func servingClusterWithBucket(bucket string) *v1.ElasticsearchCluster {
+	GinkgoHelper()
+	preset := createElasticsearchClusterPreset(smallClusterSpec())
+	cluster := validElasticsearchCluster()
+	cluster.Spec.PresetRef = preset.Name
+	cluster.Spec.SnapshotStorageRef = bucket
+	cluster.Namespace = newElasticsearchClusterNamespace()
+	createECKSecrets(cluster)
+	createElasticsearchCluster(cluster)
+
+	return cluster
+}
+
+// expectRepositoryRegistered waits for the cluster to report a healthy
+// snapshot repository.
+func expectRepositoryRegistered(cluster *v1.ElasticsearchCluster) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var fetched v1.ElasticsearchCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+		condition := meta.FindStatusCondition(
+			fetched.Status.Conditions, components.ConditionSnapshotRepository,
+		)
+		g.Expect(condition).NotTo(BeNil())
+		g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+	}, timeout, interval).Should(Succeed())
+}
+
 // createObjectStorageConfig creates a cluster-scoped bucket contract and
 // removes it after the test.
 func createObjectStorageConfig(spec v1.ObjectStorageConfigSpec) *v1.ObjectStorageConfig {
@@ -405,17 +479,15 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		)
 	})
 
-	// The operator registers an s3 repository. A bucket of another type is a
-	// valid contract that this path cannot serve, and saying so is better than
-	// registering a repository that does not match the bucket.
-	It("reports InvalidReference for a snapshot bucket that is not S3", func() {
-		bucket := createObjectStorageConfig(v1.ObjectStorageConfigSpec{
-			Type: v1.ObjectStorageTypeGCS,
-			GCS: &v1.GCSStorage{
-				BucketName: "camunda-backups",
-				Auth:       v1.GCSStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
-			},
-		})
+	// Elasticsearch addresses an azure account as https://<account>.blob.<suffix>
+	// and configures only the suffix, so an endpoint that does not reduce to
+	// one cannot be served. Saying so is better than registering a repository
+	// against the public endpoint of the account, which is a different store
+	// than the contract names.
+	It("reports InvalidReference for an azure endpoint that is not a suffix", func() {
+		bucket := createObjectStorageConfig(azureBucketSpec(
+			"http://azurite.azurite.svc:10000/devstoreaccount1", nil,
+		))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
@@ -424,7 +496,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		expectElasticsearchClusterReady(
 			cluster, metav1.ConditionFalse,
-			Equal(v1.ReasonInvalidReference), ContainSubstring("needs type S3"),
+			Equal(v1.ReasonInvalidReference), ContainSubstring("endpoint suffix"),
 		)
 	})
 
@@ -590,6 +662,42 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(refreshed).NotTo(BeNil())
 			g.Expect(refreshed.Settings).To(HaveKeyWithValue("endpoint", "http://minio.minio.svc:9000"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// A gcs bucket registers a gcs repository under the same per-cluster
+	// prefix. Its credentials never appear in the settings: Elasticsearch
+	// reads them from the node keystore alone, whatever the type.
+	It("registers a gcs repository for a gcs bucket", func() {
+		bucket := createObjectStorageConfig(gcsBucketSpec(nil))
+		cluster := servingClusterWithBucket(bucket.Name)
+
+		expectRepositoryRegistered(cluster)
+
+		repo := elasticsearch.Repository(cluster.Name)
+		Expect(repo).NotTo(BeNil())
+		Expect(repo.Type).To(Equal("gcs"))
+		Expect(repo.Settings).To(HaveKeyWithValue("bucket", "camunda-backups"))
+		Expect(repo.Settings).To(HaveKeyWithValue(
+			"base_path", "clusters/"+cluster.Namespace+"/"+cluster.Name,
+		))
+	})
+
+	// An azure repository addresses the blob container, and names it under
+	// the container setting rather than bucket.
+	It("registers an azure repository for an azure container", func() {
+		bucket := createObjectStorageConfig(azureBucketSpec("", nil))
+		cluster := servingClusterWithBucket(bucket.Name)
+
+		expectRepositoryRegistered(cluster)
+
+		repo := elasticsearch.Repository(cluster.Name)
+		Expect(repo).NotTo(BeNil())
+		Expect(repo.Type).To(Equal("azure"))
+		Expect(repo.Settings).To(HaveKeyWithValue("container", "camunda-backups"))
+		Expect(repo.Settings).To(HaveKeyWithValue(
+			"base_path", "clusters/"+cluster.Namespace+"/"+cluster.Name,
+		))
+		Expect(repo.Settings).NotTo(HaveKey("bucket"))
 	})
 
 	// The keystore Secret is rendered from the bucket's credentials Secret,

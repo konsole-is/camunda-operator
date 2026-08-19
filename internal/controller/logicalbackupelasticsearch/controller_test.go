@@ -141,7 +141,8 @@ func newRig() *rig {
 	// repository before any backup runs. The rig plays that part.
 	admin, err := esadmin.New(r.search.URL(), "elastic", "elastic-password", r.search.CertificatePEM())
 	Expect(err).NotTo(HaveOccurred())
-	Expect(admin.EnsureSnapshotRepository(ctx, r.repository, esadmin.S3RepositoryConfig{
+	Expect(admin.EnsureSnapshotRepository(ctx, r.repository, esadmin.RepositoryConfig{
+		Type:     esadmin.RepositoryTypeS3,
 		Bucket:   "backups",
 		BasePath: r.namespace + "/" + r.cluster.Name,
 	})).To(Succeed())
