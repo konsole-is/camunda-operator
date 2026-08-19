@@ -6,8 +6,10 @@ tracking_issue: #114
 feature_branch: feat/optimize-controller
 feature_worktree: .claude/worktrees/optimize-controller
 sub_pr_approval: autonomous
+sub_pr_review_loop: on
+sub_pr_target: feature-branch
 integration_pr:
-status: planning
+status: foundational-wave
 ---
 
 # CamundaOptimize controller — orchestration state
@@ -24,11 +26,11 @@ Strictly sequential; each PR needs the one before it.
 
 ## PRs / worktrees
 
-| Issue | Branch                  | Worktree path                                | PR (→ base)                        | Status      |
-| ----- | ----------------------- | -------------------------------------------- | ---------------------------------- | ----------- |
-| #115  | pr/optimize-api         | .claude/worktrees/optimize-controller--api   | → feat/optimize-controller         | not-started |
-| #116  | pr/optimize-controller  | .claude/worktrees/optimize-controller--ctrl  | → feat/optimize-controller         | not-started |
-| #117  | pr/optimize-e2e         | .claude/worktrees/optimize-controller--e2e   | → feat/optimize-controller         | not-started |
+| Issue | Branch                                   | Worktree path                                      | PR (→ base)                | Status      |
+| ----- | ---------------------------------------- | -------------------------------------------------- | -------------------------- | ----------- |
+| #115  | feat/optimize-controller--api-types      | .claude/worktrees/optimize-controller--api-types   | → feat/optimize-controller | in-progress |
+| #116  | feat/optimize-controller--reconciler     | .claude/worktrees/optimize-controller--reconciler  | → feat/optimize-controller | not-started |
+| #117  | test/optimize-controller--data-flow-e2e  | .claude/worktrees/optimize-controller--data-flow-e2e | → feat/optimize-controller | not-started |
 
 ## Contracts
 
