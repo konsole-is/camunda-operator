@@ -131,6 +131,16 @@ type Client struct {
 	api *adminhttp.Client
 }
 
+// checkVersion rejects a Camunda version that no endpoint set of this
+// package covers.
+func checkVersion(version string) error {
+	if !strings.HasPrefix(version, "8.9.") && version != "8.9" {
+		return fmt.Errorf("unsupported Camunda version %q: this client knows 8.9 only", version)
+	}
+
+	return nil
+}
+
 // New builds a client for the cluster that binding describes. It returns an
 // error when the endpoint is empty or the Camunda version is not one the
 // client knows.
@@ -139,8 +149,8 @@ func New(binding Binding) (*Client, error) {
 		return nil, errors.New("management binding has no endpoint")
 	}
 
-	if !strings.HasPrefix(binding.Version, "8.9.") && binding.Version != "8.9" {
-		return nil, fmt.Errorf("unsupported Camunda version %q: this client knows 8.9 only", binding.Version)
+	if err := checkVersion(binding.Version); err != nil {
+		return nil, err
 	}
 
 	api, err := adminhttp.New(adminhttp.Config{
