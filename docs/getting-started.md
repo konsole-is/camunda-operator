@@ -21,7 +21,7 @@ sudo sysctl -w vm.max_map_count=262144
 
 ## 1. Install the ECK operator
 
-The operator runs Elasticsearch through [Elastic Cloud on Kubernetes (ECK)](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html). Install ECK first. The operator does not start without the ECK CRDs, even when you do not use Elasticsearch.
+The operator runs Elasticsearch through [Elastic Cloud on Kubernetes (ECK)](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html). Install ECK first. The operator looks for the ECK CRDs when it starts. If you install ECK later, restart the operator. If you use only an RDBMS as secondary storage, you can skip this step.
 
 ```bash
 kubectl apply --server-side -f https://download.elastic.co/downloads/eck/3.5.0/crds.yaml

@@ -24,7 +24,7 @@ The [CRD reference](docs/crds/index.md) lists every kind with every field.
 ## Requirements
 
 - Kubernetes 1.30 or later.
-- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html). The operator watches ECK `Elasticsearch` resources and does not start without the ECK CRDs, even if you never create an `ElasticsearchCluster`. The operator does not install ECK.
+- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), if you use `ElasticsearchCluster`. The operator looks for the ECK CRDs when it starts. Install ECK before you create an `ElasticsearchCluster`, then restart the operator. The operator does not install ECK.
 - A PostgreSQL server, if you use `Database`. The operator does not run PostgreSQL.
 
 ## Install

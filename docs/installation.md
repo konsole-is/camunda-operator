@@ -8,7 +8,7 @@ The manager never runs the CLI itself. The Jobs that the operator creates run it
 
 - Kubernetes 1.30 or later.
 - Helm 3.8 or later, for the OCI registry.
-- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), version 3.5 or later. The manager watches ECK `Elasticsearch` resources and does not start without the ECK CRDs, even if you never create an `ElasticsearchCluster`.
+- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), version 3.5 or later, if you use `ElasticsearchCluster`. The manager looks for the ECK CRDs when it starts and watches ECK `Elasticsearch` resources only when it finds them. If you install ECK after the manager, restart the manager. Until then, every `ElasticsearchCluster` reports `Ready=False` with reason `ECKNotInstalled`.
 - A PostgreSQL server that a `DatabaseServerConfig` describes, if you use `Database`. The operator does not run PostgreSQL.
 
 ## Install with Helm

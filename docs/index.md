@@ -26,7 +26,7 @@ The operator also manages what a cluster needs around it: an Elasticsearch clust
 ## Requirements
 
 - Kubernetes 1.30 or later.
-- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html). The operator does not start without the ECK CRDs.
+- The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), if you use `ElasticsearchCluster`. Install ECK before you create one, then restart the operator.
 - A PostgreSQL server, if you use `Database`.
 
 The source is at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).
