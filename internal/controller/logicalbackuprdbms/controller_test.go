@@ -605,9 +605,14 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		)))
 		Expect(backup.Status.ObjectKey).To(HaveSuffix("/" + string(backup.UID) + "/camunda.dump"))
 
-		By("rendering the Job under the cluster ServiceAccount with the recorded key")
+		// The bucket of this cluster carries static credentials and the spec
+		// names no account, so the cluster renders none and its own pods run
+		// under the default account of the namespace. The Job runs there too.
+		// Naming the derived account here would be rejected by the API
+		// server, which refuses a pod whose ServiceAccount does not exist.
+		By("rendering the Job under no ServiceAccount, as the cluster workloads run")
 		job := jobOf(backup, w)
-		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal(w.cluster.Name + "-camunda"))
+		Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
 		Expect(job.OwnerReferences).NotTo(BeEmpty())
 
 		By("projecting the same-namespace bucket credentials Secret directly")
@@ -1252,6 +1257,33 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		job := jobOf(backup, w)
 		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("platform-sa"))
+	})
+
+	// The account of the Job follows the bucket that the Job writes to. A
+	// document bucket binds an identity for the pods of the cluster, and the
+	// dump never touches that bucket, so the Job needs no account here.
+	It("gives the Job no account when only the document bucket binds one", func() {
+		documents := &v1.ObjectStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "docs-" + utilrand.String(6)},
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeS3,
+				S3: &v1.S3Storage{
+					BucketName: "documents",
+					Region:     "eu-west-1",
+					Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, documents)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, documents) })
+
+		w := createWorld(func(cluster *v1.CamundaCluster) {
+			cluster.Spec.DocumentStorageRef = documents.Name
+		})
+		backup := createBackup(w)
+
+		job := jobOf(backup, w)
+		Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
 	})
 
 	// The environment of the backup's own block reaches the dump container
