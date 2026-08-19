@@ -8,7 +8,7 @@ Rules:
 - Then "## Status", "## Spec reference" (full YAML, then "### Validation rules", then one or more example H3s), and "## Related".
 - Write for a person who uses the operator. Describe outcomes and the names a user types or waits on, not reconcile steps or internal mechanics.
 - Simplified Technical English: short sentences, active voice, can/will/must, no semicolons, no em-dashes, no contractions.
-- The API group is core.camunda.io/v1. Names in examples: cluster `my-cluster` in namespace `my-cluster-ns`, derived names `my-cluster-es`, `my-cluster-backup`, config kinds `my-storage-config`, `my-db-server`, `my-platform-config`, `my-backup-bucket`.
+- The API group is core.camunda.io/v1. Names in examples: cluster `my-cluster` in namespace `my-cluster-ns`, derived names `my-cluster-es`, `my-cluster-backup`, config kinds `my-storage-config`, `my-db-server`, `my-platform-config`, `my-backup-bucket`. In this template the placeholder resource is `my-cluster-example`. Replace it with the derived name of your kind.
 - Verify every field, default, and condition against api/v1 and internal/controller before you write it.
 -->
 
