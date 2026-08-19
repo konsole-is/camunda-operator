@@ -91,6 +91,36 @@ A restore-application Job against a throwaway `emptyDir` volume would exercise t
 check itself before the PVC deletion. Rejected: the probe downloads and restores a full backup only
 to discard it, which is slow and expensive on every restore. The SQL precheck is one query.
 
+## Decision: restore Jobs mirror the live broker StatefulSet
+
+The restore-application Jobs do not re-render the broker configuration. The controller reads the
+target's live broker StatefulSet — it still exists while the cluster is suspended — and copies the
+broker container's environment, volume mounts, and resources into the Job pods. The restore
+application then always runs with the configuration the brokers themselves use, and the two cannot
+drift.
+
+The Job pods also copy the broker pods' labels and topology spread constraints. With
+`WaitForFirstConsumer` storage classes, the first pod that binds a PVC pins its zone. Because the
+restore Jobs spread like broker pods, the recreated PVCs land in zones that the brokers can
+schedule into after the restore.
+
+This decision adapts the restore-mode mechanism of Camunda's SaaS operator, which mirrors the
+broker container into an init container on the StatefulSet itself. That operator owns the cluster
+spec, so it can flip the StatefulSet into a restore mode and roll it back. This operator does not
+own the cluster spec, so it copies from the StatefulSet instead of rewriting it. The copy buys the
+same two properties (configuration mirroring and scheduler-correct PVC zones) without a restore
+mode on `CamundaCluster` and without the quorum-sensitive exit that a restore-mode StatefulSet
+needs.
+
+## Layering note: suspend orchestration belongs to the composition layer
+
+Camunda's SaaS operator wraps the restore in a spec-writing pipeline: it suspends the cluster,
+locks the spec against concurrent writers, records the prior state for its abort path, and resumes
+the cluster afterward. In this stack, that whole role belongs to `camunda-cloud-operator`'s future
+recovery flow, because that layer owns the `CamundaCluster` spec. The restore CRs in this operator
+are the mechanism that such a pipeline drives. They stay safe without one: the suspend validation
+holds the restore in `Pending` until the owner has suspended the cluster.
+
 ## Decision: e2e scope
 
 - `LogicalRestore`: a full round trip on both secondary storage paths, in the existing kind + MinIO
@@ -123,6 +153,9 @@ cost is not justified now. If it becomes justified, it is a follow-up issue, not
 - The Elasticsearch path deletes the target's Camunda indices before the snapshot restore. A restore
   that fails between the delete and the snapshot restore leaves secondary storage empty until a
   retry succeeds. The backup itself stays intact, so the retry path is safe.
-- Camunda's restore application is a one-shot app that this operator has not run before. Its
-  configuration must mirror the broker configuration exactly. The version matrix tests and the e2e
-  round trip carry this risk.
+- Camunda's restore application is a one-shot app that this operator has not run before. The Job
+  pods copy their configuration from the live broker StatefulSet, which removes the drift risk, but
+  the copy itself is new code. The version matrix tests and the e2e round trip carry this risk.
+- The copy from the live StatefulSet makes the restore depend on the StatefulSet's presence. A
+  cluster whose StatefulSet was deleted cannot restore until the CamundaCluster controller applies
+  it again. The suspend semantics keep the StatefulSet in place, so this is an edge, not a flow.
