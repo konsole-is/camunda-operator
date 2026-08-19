@@ -617,11 +617,11 @@ type podResolution struct {
 }
 
 // resolvePod resolves the pod of the Job through the preset of the cluster
-// when it names one. It resolves the pod settings, the ServiceAccount, and the
-// image. The pod settings are the backup's own block, which replaces the
+// when it names one. It resolves the pod settings, the ServiceAccount, and
+// the image. The pod settings are the backup's own block, which replaces the
 // cluster's as a whole, or else the cluster's block. The image is always the
-// cluster's. The Job runs under the ServiceAccount of the cluster, so the
-// executable is the choice of the cluster owner.
+// cluster's: the Job runs with the credentials of the cluster, so the
+// executable stays the choice of the cluster owner.
 //
 // bucket is the backup bucket of the cluster. It joins the document bucket in
 // the one rule that answers which account the pods of the cluster run under,

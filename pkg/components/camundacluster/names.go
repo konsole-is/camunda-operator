@@ -112,8 +112,9 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 
 // PodServiceAccountName returns the ServiceAccount that the pods of the
 // cluster run under, or the empty string when they run under the default
-// account of their namespace. buckets are every ObjectStorageConfig the
-// cluster references: the backup bucket, the document bucket, or neither.
+// account of their namespace. The buckets parameter holds every
+// ObjectStorageConfig that the cluster references: the backup bucket, the
+// document bucket, or neither.
 //
 // The pods need a named account only when something binds one: the spec asks
 // for one, or a referenced bucket authenticates through workload identity.
