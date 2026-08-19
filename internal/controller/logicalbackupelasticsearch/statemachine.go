@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,21 +31,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/management"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
-
-// zeebeRecordIndices is the index pattern of the exported Zeebe record
-// indices. It is the default prefix of the exporter. The operator configures
-// no other prefix, so the default is the pattern.
-const zeebeRecordIndices = "zeebe-record*"
-
-// RecordsSnapshotName returns the name of the Elasticsearch snapshot that
-// holds the exported Zeebe record indices of the backup id. LogicalRestore
-// locates the snapshot by the same rule.
-func RecordsSnapshotName(id int64) string {
-	return "camunda_zeebe_records_backup_" + strconv.FormatInt(id, 10)
-}
 
 // runStep executes the step that status.step records. It advances at most one
 // step, so every transition is persisted before the next side effect. Every
@@ -307,7 +295,7 @@ func (r *Reconciler) snapshotRecords(
 		return result, err
 	}
 
-	name := RecordsSnapshotName(backup.Status.BackupID)
+	name := logicalbackup.RecordsSnapshotName(backup.Status.BackupID)
 	snapshot, err := es.SnapshotStatus(ctx, backup.Status.Repository, name)
 	if err != nil {
 		if errors.Is(err, esadmin.ErrUnreachable) {
@@ -331,7 +319,7 @@ func (r *Reconciler) snapshotRecords(
 	switch snapshot.State {
 	case esadmin.SnapshotMissing:
 		if err := es.CreateSnapshot(
-			ctx, backup.Status.Repository, name, []string{zeebeRecordIndices}, snapshotMetadata(backup),
+			ctx, backup.Status.Repository, name, []string{logicalbackup.ZeebeRecordIndices}, snapshotMetadata(backup),
 		); err != nil {
 			if errors.Is(err, esadmin.ErrUnreachable) {
 				return r.stageUnreachable(backup, "SnapshotRecords", part, err)

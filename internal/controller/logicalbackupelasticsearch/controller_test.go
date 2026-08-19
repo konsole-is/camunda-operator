@@ -205,7 +205,7 @@ func completeBackup(r *rig, backup *v1.LogicalBackupElasticsearch) int64 {
 	id := backupID(backup)
 	Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 	r.management.SetHistoryState(id, "COMPLETED", "")
-	name := RecordsSnapshotName(id)
+	name := logicalbackup.RecordsSnapshotName(id)
 	Eventually(func() int {
 		return r.search.SnapshotCreates(r.repository, name)
 	}, timeout, interval).Should(Equal(1))
@@ -414,7 +414,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		r.management.SetHistoryState(id, "COMPLETED", "")
 
 		By("snapshotting the exported record indices")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -485,7 +485,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -540,7 +540,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -731,7 +731,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		By("proceeding once the holder finishes and the Lease is gone")
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -888,7 +888,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -963,7 +963,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
 
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -988,7 +988,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -1016,7 +1016,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -1157,7 +1157,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -1212,7 +1212,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		r := newRig()
 		backup := r.newBackup()
 		id := completeBackup(r, backup)
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		historySnapshot := currentBackup(backup).Status.HistorySnapshots[0]
 		r.search.SetSnapshotState(r.repository, historySnapshot, "SUCCESS")
 
@@ -1297,7 +1297,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		// under the deterministic records name: an ID reuse by a deleted or
 		// other-kind backup. It carries no metadata of this backup.
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		r.search.SetSnapshotState(r.repository, name, "SUCCESS")
 		r.management.SetHistoryState(id, "COMPLETED", "")
 
@@ -1335,7 +1335,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			// backup as a string. The status must decode. If it does not,
 			// the step and later the finalizer fail on the decode forever.
 			Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
-			name := RecordsSnapshotName(id)
+			name := logicalbackup.RecordsSnapshotName(id)
 			r.search.SetSnapshotMetadata(r.repository, name, map[string]any{
 				"retention-days":    float64(30),
 				"created-by":        map[string]any{"tool": "curator"},
@@ -1378,7 +1378,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -1635,7 +1635,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		By("continuing where it parked once the binding is back")
 		r.publishBinding(3)
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -1803,7 +1803,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		))
 		Expect(final.Status.History.State).To(Equal(v1.BackupPartFailed))
 		Expect(r.management.Exporting()).To(Equal("running"))
-		Expect(other.SnapshotCreates(r.repository, RecordsSnapshotName(id))).To(BeZero())
+		Expect(other.SnapshotCreates(r.repository, logicalbackup.RecordsSnapshotName(id))).To(BeZero())
 
 		By("holding the deletion while the contract points elsewhere")
 		// The failure has landed, so the history can complete now. The
@@ -1836,7 +1836,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -1965,7 +1965,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -1994,7 +1994,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -2028,7 +2028,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -2147,7 +2147,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -2186,7 +2186,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))
@@ -2236,7 +2236,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		Eventually(func() int { return r.management.HistoryStarts(id) }, timeout, interval).Should(Equal(1))
 		r.management.SetHistoryState(id, "COMPLETED", "")
-		name := RecordsSnapshotName(id)
+		name := logicalbackup.RecordsSnapshotName(id)
 		Eventually(func() int {
 			return r.search.SnapshotCreates(r.repository, name)
 		}, timeout, interval).Should(Equal(1))

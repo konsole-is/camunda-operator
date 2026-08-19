@@ -227,7 +227,7 @@ func (r *Reconciler) deleteArtifacts(
 	// The records snapshot is deleted only when its metadata carries the
 	// UID of this backup. A snapshot under the deterministic name without
 	// it was created by someone else, and it stays.
-	records := RecordsSnapshotName(backup.Status.BackupID)
+	records := logicalbackup.RecordsSnapshotName(backup.Status.BackupID)
 	snapshot, err := es.SnapshotStatus(ctx, repository, records)
 	if err != nil {
 		return false, fmt.Errorf("querying snapshot %q: %w", records, err)
@@ -496,7 +496,7 @@ func (r *Reconciler) sweepPinnedSnapshots(ctx context.Context, backup *v1.Logica
 		}
 	}
 
-	records := RecordsSnapshotName(backup.Status.BackupID)
+	records := logicalbackup.RecordsSnapshotName(backup.Status.BackupID)
 	snapshot, err := es.SnapshotStatus(ctx, repository, records)
 	if err != nil {
 		return fmt.Errorf("querying snapshot %q: %w", records, err)
