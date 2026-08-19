@@ -17,7 +17,9 @@ limitations under the License.
 package elasticsearchcluster
 
 import (
+	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"strings"
 
@@ -96,69 +98,167 @@ func (s *SnapshotStorage) repository() bool {
 	return s != nil && s.Config != nil
 }
 
-// storageType returns the storage API of the bucket, or the empty string when
-// there is no bucket. A contract whose declared type and block disagree also
-// yields the empty string: it names no bucket, and every switch below is safe
-// to read the block of whatever type this returns. The pre-check rejects such
-// a contract long before the components are built.
-func (s *SnapshotStorage) storageType() v1.ObjectStorageType {
+// identityMechanism is how the nodes prove who they are to the bucket. It is
+// a property of the cloud, not of the storage type: S3 and GCS both read the
+// projected ServiceAccount token of the pod, while Azure reads a federated
+// token that this operator projects itself.
+type identityMechanism int
+
+const (
+	// identityFromKeystore means the nodes authenticate with static
+	// credentials, which Elasticsearch reads from the keystore.
+	identityFromKeystore identityMechanism = iota
+	// identityFromServiceAccountToken means the nodes authenticate as their
+	// ServiceAccount, through the token that ECK must be told to mount.
+	identityFromServiceAccountToken
+	// identityFromFederatedToken means the nodes authenticate with a token
+	// projected under the configuration directory of Elasticsearch.
+	identityFromFederatedToken
+)
+
+// snapshotRepository is the Elasticsearch side of the active storage block,
+// reduced to what every renderer in this file reads. One switch builds it, in
+// resolve; nothing else here dispatches on the storage type. Adding a storage
+// type is a case in that switch and nothing more.
+//
+// This mirrors the activeBlock of ObjectStorageConfig, which reduces the same
+// three blocks one layer down for the same reason.
+type snapshotRepository struct {
+	// repositoryType is the type of the Elasticsearch repository.
+	repositoryType esadmin.RepositoryType
+	// bucket is the bucket of the repository, or the blob container of an
+	// azure one.
+	bucket string
+	// endpoint and pathStyle are repository settings of the s3 type alone.
+	endpoint  string
+	pathStyle bool
+	// keystore holds the entries that the repository client reads, keyed by
+	// the setting each one carries.
+	keystore map[string][]byte
+	// nodeConfig holds the client settings that the keystore does not take,
+	// for elasticsearch.yml. Only azure has any.
+	nodeConfig map[string]any
+	// identity is how the nodes prove who they are to the bucket.
+	identity identityMechanism
+}
+
+// resolve reduces the contract and its credentials to the repository that
+// this cluster registers, or reports why it cannot.
+//
+// It is the one place that dispatches on the storage type, and it is also
+// what ValidateSnapshotStorage answers with. A bucket the pre-check accepts
+// is therefore a bucket every renderer here can render, by construction
+// rather than by two switches agreeing.
+func (s *SnapshotStorage) resolve() (*snapshotRepository, error) {
 	if s == nil || s.Config == nil {
-		return ""
+		return nil, errors.New("the cluster references no bucket")
 	}
 
 	spec := s.Config.Spec
+	repo := &snapshotRepository{
+		keystore: map[string][]byte{},
+		identity: identityFromServiceAccountToken,
+	}
+	if s.Credentials != nil {
+		repo.identity = identityFromKeystore
+	}
+
 	switch spec.Type {
 	case v1.ObjectStorageTypeS3:
 		if spec.S3 == nil {
-			return ""
+			break
 		}
+		repo.repositoryType = esadmin.RepositoryTypeS3
+		repo.bucket = spec.S3.BucketName
+		repo.endpoint = spec.S3.Endpoint
+		repo.pathStyle = spec.S3.ForcePathStyle
+		if s.Credentials != nil {
+			repo.keystore[accessKeyKeystorePath] = []byte(s.Credentials.AccessKeyID)
+			repo.keystore[secretKeyKeystorePath] = []byte(s.Credentials.SecretAccessKey)
+		}
+
+		return repo, nil
 
 	case v1.ObjectStorageTypeGCS:
 		if spec.GCS == nil {
-			return ""
+			break
 		}
+		repo.repositoryType = esadmin.RepositoryTypeGCS
+		repo.bucket = spec.GCS.BucketName
+		if s.Credentials != nil {
+			repo.keystore[credentialsFileKeystorePath] = s.Credentials.ServiceAccountJSON
+		}
+
+		return repo, nil
 
 	case v1.ObjectStorageTypeAzureBlob:
 		if spec.AzureBlob == nil {
-			return ""
+			break
 		}
+		repo.repositoryType = esadmin.RepositoryTypeAzure
+		repo.bucket = spec.AzureBlob.Container
+
+		// The account is the one mandatory setting of an azure client, and
+		// the keystore is the only place that takes it, so it is there under
+		// every authentication choice. The key is what workload identity
+		// replaces: left out, the Azure SDK takes the identity of the pod.
+		repo.keystore[accountKeystorePath] = []byte(spec.AzureBlob.AccountName)
+		if s.Credentials != nil {
+			repo.keystore[accountKeyKeystorePath] = []byte(s.Credentials.AccountKey)
+		} else {
+			repo.identity = identityFromFederatedToken
+		}
+
+		suffix, ok := azureEndpointSuffix(spec.AzureBlob)
+		if !ok {
+			// The endpoint itself is never echoed back. This message reaches
+			// a status condition of the cluster, which every reader of the
+			// cluster can see, and an endpoint carries a shared access
+			// signature or a password often enough that none of it may go
+			// there. Naming the contract is enough to find the field.
+			return nil, fmt.Errorf(
+				"the endpoint of ObjectStorageConfig %q is one that Elasticsearch cannot address: "+
+					"an azure repository takes an endpoint suffix of the form "+
+					"https://<account>.blob.<suffix>, with no port, path, query, fragment, "+
+					"or credentials",
+				s.Config.Name,
+			)
+		}
+		// The default suffix needs no setting at all.
+		if suffix != defaultAzureEndpointSuffix {
+			repo.nodeConfig = map[string]any{azureEndpointSuffixSetting: suffix}
+		}
+
+		return repo, nil
 	}
 
-	return spec.Type
+	return nil, fmt.Errorf(
+		"ObjectStorageConfig %q declares type %s without the matching block",
+		s.Config.Name, spec.Type,
+	)
+}
+
+// repositoryOrNil resolves the bucket and drops the reason it could not. The
+// renderers use it: a bucket that does not resolve renders nothing, and the
+// pre-check has already reported why to the user.
+func (s *SnapshotStorage) repositoryOrNil() *snapshotRepository {
+	repo, err := s.resolve()
+	if err != nil {
+		return nil
+	}
+
+	return repo
 }
 
 // keystoreEntries returns the keystore entries that the repository client of
 // the bucket needs, keyed by the setting each one carries.
-//
-// What lands here differs by storage type, and not only by whether the
-// contract holds static credentials. An azure client takes its storage
-// account from the keystore under every authentication choice: the account is
-// the one mandatory setting of the client, and without it the repository
-// plugin does not find the client at all. S3 and GCS name their bucket in the
-// repository settings instead, so a workload-identity bucket of either type
-// needs no keystore.
 func (s *SnapshotStorage) keystoreEntries() map[string][]byte {
-	entries := map[string][]byte{}
-	switch s.storageType() {
-	case v1.ObjectStorageTypeS3:
-		if s.Credentials != nil {
-			entries[accessKeyKeystorePath] = []byte(s.Credentials.AccessKeyID)
-			entries[secretKeyKeystorePath] = []byte(s.Credentials.SecretAccessKey)
-		}
-
-	case v1.ObjectStorageTypeGCS:
-		if s.Credentials != nil {
-			entries[credentialsFileKeystorePath] = s.Credentials.ServiceAccountJSON
-		}
-
-	case v1.ObjectStorageTypeAzureBlob:
-		entries[accountKeystorePath] = []byte(s.Config.Spec.AzureBlob.AccountName)
-		if s.Credentials != nil {
-			entries[accountKeyKeystorePath] = []byte(s.Credentials.AccountKey)
-		}
+	repo := s.repositoryOrNil()
+	if repo == nil {
+		return map[string][]byte{}
 	}
 
-	return entries
+	return repo.keystore
 }
 
 // keystore reports whether the nodes need a keystore Secret.
@@ -208,86 +308,40 @@ func KeystoreComponent(
 // the same contract never share a repository. The credentials are not part of
 // it: they reach the nodes through the keystore.
 //
-// The result is meaningful only for a bucket that ValidateSnapshotStorage
-// accepts.
+// A bucket that does not resolve yields the zero value, which esadmin
+// rejects before it reaches Elasticsearch.
 func RepositoryConfig(
 	cluster *v1.ElasticsearchCluster,
 	storage *SnapshotStorage,
 ) esadmin.RepositoryConfig {
-	storageType := storage.storageType()
-	if storageType == "" {
+	repo := storage.repositoryOrNil()
+	if repo == nil {
 		return esadmin.RepositoryConfig{}
 	}
 
-	config := storage.Config
-	cfg := esadmin.RepositoryConfig{
-		BasePath: logicalbackup.ClusterPrefix(config.BasePath(), cluster.Namespace, cluster.Name),
+	return esadmin.RepositoryConfig{
+		Type:            repo.repositoryType,
+		Bucket:          repo.bucket,
+		BasePath:        logicalbackup.ClusterPrefix(storage.Config.BasePath(), cluster.Namespace, cluster.Name),
+		Endpoint:        repo.endpoint,
+		PathStyleAccess: repo.pathStyle,
 	}
-
-	switch storageType {
-	case v1.ObjectStorageTypeS3:
-		cfg.Type = esadmin.RepositoryTypeS3
-		cfg.Bucket = config.Spec.S3.BucketName
-		cfg.Endpoint = config.Spec.S3.Endpoint
-		cfg.PathStyleAccess = config.Spec.S3.ForcePathStyle
-
-	case v1.ObjectStorageTypeGCS:
-		cfg.Type = esadmin.RepositoryTypeGCS
-		cfg.Bucket = config.Spec.GCS.BucketName
-
-	case v1.ObjectStorageTypeAzureBlob:
-		cfg.Type = esadmin.RepositoryTypeAzure
-		cfg.Bucket = config.Spec.AzureBlob.Container
-	}
-
-	return cfg
 }
 
 // ValidateSnapshotStorage reports why a bucket cannot back the snapshot
 // repository of a cluster, or nil when it can. The caller turns the message
 // into a pre-check failure on the cluster.
 //
-// Every storage type of the contract is served. What can still fail is an
-// azure container whose endpoint Elasticsearch cannot express: see
-// azureEndpointSuffix.
+// Every storage type of the contract is served. What can still fail is a
+// contract whose declared type and block disagree, and an azure container
+// whose endpoint Elasticsearch cannot express: see azureEndpointSuffix.
+//
+// It answers with resolve, so the pre-check can never accept a bucket that
+// the renderers cannot render.
 func ValidateSnapshotStorage(config *v1.ObjectStorageConfig) error {
-	switch config.Spec.Type {
-	case v1.ObjectStorageTypeS3:
-		if config.Spec.S3 != nil {
-			return nil
-		}
+	_, err := (&SnapshotStorage{Config: config}).resolve()
 
-	case v1.ObjectStorageTypeGCS:
-		if config.Spec.GCS != nil {
-			return nil
-		}
-
-	case v1.ObjectStorageTypeAzureBlob:
-		if config.Spec.AzureBlob == nil {
-			break
-		}
-		if _, ok := azureEndpointSuffix(config.Spec.AzureBlob); !ok {
-			// The endpoint itself is never echoed back. This message reaches
-			// a status condition of the cluster, which every reader of the
-			// cluster can see, and an endpoint carries a shared access
-			// signature or a password often enough that none of it may go
-			// there. Naming the contract is enough to find the field.
-			return fmt.Errorf(
-				"the endpoint of ObjectStorageConfig %q is one that Elasticsearch cannot address: "+
-					"an azure repository takes an endpoint suffix of the form "+
-					"https://<account>.blob.<suffix>, with no port, path, query, fragment, "+
-					"or credentials",
-				config.Name,
-			)
-		}
-
-		return nil
-	}
-
-	return fmt.Errorf(
-		"ObjectStorageConfig %q declares type %s without the matching block",
-		config.Name, config.Spec.Type,
-	)
+	return err
 }
 
 // azureEndpointSuffix reduces the service endpoint of an azure container to
@@ -345,16 +399,17 @@ const (
 var azureEndpointSuffixSetting = "azure.client." + esadmin.DefaultClientName + ".endpoint_suffix"
 
 // snapshotStorageMutations returns the mutations that the snapshot bucket adds
-// to the ECK CR. Each one is gated on the storage type and the authentication
-// choice that needs it; a cluster with no bucket gets none of them.
+// to the ECK CR. Each one is gated on what the resolved repository needs; a
+// cluster with no bucket, or one whose bucket does not resolve, gets none of
+// them.
+//
+// The gates read the identity mechanism, not the storage type. S3 and GCS
+// share a branch here because they share a mechanism, which is the reason,
+// rather than because neither of them is Azure.
 func snapshotStorageMutations(storage *SnapshotStorage) []eckelasticsearch.Mutation {
-	azure := storage.storageType() == v1.ObjectStorageTypeAzureBlob
-
-	endpointSuffix := ""
-	if azure {
-		if suffix, ok := azureEndpointSuffix(storage.Config.Spec.AzureBlob); ok {
-			endpointSuffix = suffix
-		}
+	repo := storage.repositoryOrNil()
+	if repo == nil {
+		return nil
 	}
 
 	return []eckelasticsearch.Mutation{
@@ -364,7 +419,7 @@ func snapshotStorageMutations(storage *SnapshotStorage) []eckelasticsearch.Mutat
 			// projected token of the pod. Azure is not here: it projects a
 			// token of its own below, with the audience that Entra ID expects.
 			Name:    "ServiceAccountToken",
-			Feature: feature.NewBooleanGate(storage.workloadIdentity() && !azure),
+			Feature: feature.NewBooleanGate(repo.identity == identityFromServiceAccountToken),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
 					automount := true
@@ -376,7 +431,7 @@ func snapshotStorageMutations(storage *SnapshotStorage) []eckelasticsearch.Mutat
 		},
 		{
 			Name:    "AzureWorkloadIdentity",
-			Feature: feature.NewBooleanGate(azure && storage.workloadIdentity()),
+			Feature: feature.NewBooleanGate(repo.identity == identityFromFederatedToken),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
 					template := &es.Spec.NodeSets[0].PodTemplate
@@ -419,17 +474,17 @@ func snapshotStorageMutations(storage *SnapshotStorage) []eckelasticsearch.Mutat
 			},
 		},
 		{
-			// The default suffix needs no setting, so a contract that names
-			// the public Azure endpoint leaves the node configuration empty.
-			Name:    "AzureEndpointSuffix",
-			Feature: feature.NewBooleanGate(endpointSuffix != "" && endpointSuffix != defaultAzureEndpointSuffix),
+			// Only the settings that the keystore does not take land here, and
+			// a client whose settings are all default needs none of them.
+			Name:    "NodeConfig",
+			Feature: feature.NewBooleanGate(len(repo.nodeConfig) > 0),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
 					nodeSet := &es.Spec.NodeSets[0]
 					if nodeSet.Config == nil {
 						nodeSet.Config = &commonv1.Config{Data: map[string]any{}}
 					}
-					nodeSet.Config.Data[azureEndpointSuffixSetting] = endpointSuffix
+					maps.Copy(nodeSet.Config.Data, repo.nodeConfig)
 					return nil
 				})
 				return nil
