@@ -10,6 +10,7 @@ The operator also manages what a cluster needs around it: an Elasticsearch clust
 - [Getting started](getting-started.md): from an empty cluster to a running Camunda cluster you can log in to.
 - [Installation](installation.md): Helm, plain manifests, signatures, upgrades.
 - [Architecture](architecture.md): how the resources relate and the rules the operator follows.
+- [Use the API types from Go](go-api.md): the Go module for programs that create or read the CRs.
 
 ## Guides
 

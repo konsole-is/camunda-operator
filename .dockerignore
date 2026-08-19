@@ -7,5 +7,5 @@
 **/*_test.go
 
 # Re-include Go module files
-!go.mod
-!go.sum
+!**/go.mod
+!**/go.sum

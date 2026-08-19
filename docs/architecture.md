@@ -136,6 +136,10 @@ The operator applies every resource that it manages with Server-Side Apply. Each
 
 The operator writes the status of a resource once per reconcile, through the status subresource.
 
+## The api module
+
+The CRD types under `api/` are the Go module `github.com/konsole-is/camunda-operator/api`. The operators above import this module to create and read the CRs. The module depends on `k8s.io/api`, `k8s.io/apimachinery`, and the standard library only. It never imports `pkg/`, `internal/`, ocf, or controller-runtime. The test `api/v1/module_test.go` enforces this rule. See [Use the API types from Go](go-api.md) for the version scheme.
+
 ## Support policy
 
 - **Camunda 8.9 and later.** The operator targets the unified orchestration cluster that Camunda 8.9 introduced. It does not render earlier topologies.

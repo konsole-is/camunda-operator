@@ -22,7 +22,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Running Tests
+      - name: Check that go.mod and go.sum are tidy in every module
         run: |
-          go mod tidy
-          make test
+          make tidy
+          git diff --exit-code -- go.mod go.sum api/go.mod api/go.sum
+
+      - name: Running Tests
+        run: make test

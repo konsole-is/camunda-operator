@@ -8,6 +8,7 @@ repository: architecture, project rules, and the skills to load before you write
 **Single-group layout (default):**
 ```
 cmd/main.go                    Manager entry (registers controllers/webhooks)
+api/go.mod                     The api module; consumers import it without the operator's dependencies
 api/<version>/*_types.go       CRD schemas (+kubebuilder markers)
 api/<version>/zz_generated.*   Auto-generated (DO NOT EDIT)
 internal/controller/*          Reconciliation logic
@@ -305,8 +306,18 @@ hand edit. `dist/chart/Chart.yaml` and `dist/chart/README.md` are preserved by
 `--force` and *are* hand-maintained — these two are the only `dist/` files
 checked into this repository (`.gitignore` excludes the rest of `dist/**/*`).
 
-**Releasing:** publishing a GitHub Release on an unprefixed SemVer tag (`0.1.0`)
-triggers `.github/workflows/release.yml`, which pushes the chart to
+**Two Go modules:** the root module and `api/`. A `./...` pattern never crosses
+a module boundary, so the Makefile runs every Go tool once per module through
+the `MODULES` variable (`vet`, `test`, `lint`, `fmt`, `tidy`, `generate`,
+`manifests`). The root `go.mod` requires the api module and replaces it with
+`./api`, so local builds always use the on-disk copy.
+
+**Releasing:** before the release, run `make api-version VERSION=<version>`
+and merge the `go.mod` change. This pins the api module version that consumers
+of the root module get. The release workflow fails if the pin does not match
+the tag. Then publishing a GitHub Release on an unprefixed SemVer tag (`0.1.0`)
+triggers `.github/workflows/release.yml`, which pushes the Go tags
+`api/v0.1.0` and `v0.1.0` at the release commit, pushes the chart to
 `oci://ghcr.io/konsole-is/charts`, pushes the amd64/arm64 manager image to
 `ghcr.io/konsole-is/camunda-operator` and the CLI image to
 `ghcr.io/konsole-is/camunda-operator-cli`, signs all three with cosign keyless,

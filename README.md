@@ -43,11 +43,28 @@ The [installation guide](docs/installation.md) covers plain manifests, signature
 
 [Getting started](docs/getting-started.md) takes you from an empty namespace to a running cluster you can log in to. It takes about 15 minutes on a local cluster.
 
+## Use the API types from Go
+
+The CRD types are a Go module of their own, with `k8s.io/api` and
+`k8s.io/apimachinery` as their only dependencies:
+
+```bash
+go get github.com/konsole-is/camunda-operator/api@v<version>
+```
+
+```go
+import camundav1 "github.com/konsole-is/camunda-operator/api/v1"
+```
+
+See [Use the API types from Go](docs/go-api.md) for the version scheme and the
+root module.
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
 - [Installation](docs/installation.md)
 - [Architecture](docs/architecture.md): how the resources relate and how the operator is built
+- [Use the API types from Go](docs/go-api.md): the api module for programs that create or read the CRs
 - Guides: [secondary storage](docs/guides/secondary-storage.md), [authentication](docs/guides/authentication.md), [backup](docs/guides/backup.md), [operations](docs/guides/operations.md)
 - [CRD reference](docs/crds/index.md)
 
