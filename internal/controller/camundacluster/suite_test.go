@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,10 +30,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
@@ -46,6 +49,15 @@ var (
 	ctx       context.Context
 	k8sClient client.Client
 )
+
+// userAPIEndpoint is where the reconciler under test calls the user API of
+// every cluster. The rotation tests point it at a fake; the default never
+// answers, and no other test dials it.
+var userAPIEndpoint atomic.Value
+
+func init() {
+	userAPIEndpoint.Store("http://127.0.0.1:1")
+}
 
 func TestCamundaClusterController(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -89,6 +101,10 @@ var _ = BeforeSuite(func() {
 			// The unwatched pre-check must come back within the Eventually
 			// window of the tests.
 			RetryInterval: time.Second,
+			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
+				endpoint, _ := userAPIEndpoint.Load().(string)
+				return endpoint
+			},
 		}).SetupWithManager(mgr)
 	})
 

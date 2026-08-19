@@ -30,9 +30,13 @@ import (
 // adminUser is the seeded administrator that the rotation flow updates.
 var adminUser = camundaadmin.User{Username: "admin", Name: "admin", Email: "admin@localhost"}
 
+// currentPassword is the password every test seeds the fake with and
+// authenticates the client with.
+const currentPassword = "old-password"
+
 // newUserClient builds a user client against a fresh fake that holds the
-// admin user with the given password.
-func newUserClient(t *testing.T, currentPassword string) (*camundaadmin.UserClient, *camundaadmintest.UserAPI) {
+// admin user with currentPassword.
+func newUserClient(t *testing.T) (*camundaadmin.UserClient, *camundaadmintest.UserAPI) {
 	t.Helper()
 
 	server := camundaadmintest.NewUserAPI()
@@ -84,7 +88,7 @@ func TestNewUserClientRequiresAnEndpoint(t *testing.T) {
 }
 
 func TestUpdateUserPasswordSetsThePassword(t *testing.T) {
-	client, server := newUserClient(t, "old-password")
+	client, server := newUserClient(t)
 
 	err := client.UpdateUserPassword(context.Background(), adminUser, "new-password")
 	require.NoError(t, err)
@@ -96,17 +100,17 @@ func TestUpdateUserPasswordSetsThePassword(t *testing.T) {
 }
 
 func TestUpdateUserPasswordRejectsAnEmptyPassword(t *testing.T) {
-	client, server := newUserClient(t, "old-password")
+	client, server := newUserClient(t)
 
 	err := client.UpdateUserPassword(context.Background(), adminUser, "")
 	require.Error(t, err)
 
 	assert.Equal(t, 0, server.UpdateCalls())
-	assert.Equal(t, "old-password", server.Password("admin"))
+	assert.Equal(t, currentPassword, server.Password("admin"))
 }
 
 func TestUpdateUserPasswordReportsARejectedCall(t *testing.T) {
-	client, server := newUserClient(t, "old-password")
+	client, server := newUserClient(t)
 	server.SetUser(adminUser.Username, adminUser.Name, adminUser.Email, "changed-out-of-band")
 
 	err := client.UpdateUserPassword(context.Background(), adminUser, "new-password")
@@ -117,11 +121,11 @@ func TestUpdateUserPasswordReportsARejectedCall(t *testing.T) {
 }
 
 func TestUpdateUserPasswordReportsAnUnreachableEndpoint(t *testing.T) {
-	client, server := newUserClient(t, "old-password")
+	client, server := newUserClient(t)
 	server.DropNext("updateUser", 1)
 
 	err := client.UpdateUserPassword(context.Background(), adminUser, "new-password")
 	require.ErrorIs(t, err, camundaadmin.ErrUnreachable)
 
-	assert.Equal(t, "old-password", server.Password("admin"))
+	assert.Equal(t, currentPassword, server.Password("admin"))
 }

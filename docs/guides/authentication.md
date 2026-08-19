@@ -20,9 +20,22 @@ kubectl get secret my-cluster-camunda-admin -n my-cluster-ns -o go-template='{{.
 
 ### Rotate the password
 
-To get a new password, delete the Secret. The operator creates a new Secret with a new password on the next reconcile.
+Set `spec.auth.basic.passwordRotation` on the `CamundaCluster` to a value that differs from the last one, for example a date:
 
-> **Caution:** The orchestration cluster creates the `admin` user once, at first start, and does not change its password from the configuration after that. After you delete the Secret, the new password works only after you set it on the `admin` user in the Admin web application. Then restart the connectors Deployment `<name>-connectors`, so that it reads the new password.
+```yaml
+spec:
+  auth:
+    basic:
+      passwordRotation: "2026-08"
+```
+
+The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly.
+
+If the call fails, the Secret keeps the active password and `AdminSecretReady` reports why: `ConnectionFailed` when the cluster does not answer, `Rejected` when it refuses the credentials. The operator retries until the call succeeds. A `Rejected` rotation usually means that somebody changed the password in the Admin web application. Set the password from the Secret on the `admin` user there, and the next retry succeeds.
+
+> **Caution:** Between the update of the user and the restart of the connectors pods, a connectors call with the old password is rejected. Plan a rotation outside of peak hours.
+
+A deleted Secret still gets a new password, but the `admin` user keeps the old one: the orchestration cluster creates the user once, at first start. You then set the new password on the user in the Admin web application yourself and restart the connectors Deployment. Prefer `passwordRotation`.
 
 A minimal platform config for basic authentication:
 

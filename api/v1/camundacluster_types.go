@@ -55,6 +55,13 @@ const (
 	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 )
 
+// ReasonRejected on AdminSecretReady means that the orchestration cluster
+// answered a password rotation with an error; the message carries the
+// response. The usual cause is an admin password that changed outside the
+// operator. The operator retries. To recover, set the password from the
+// admin Secret on the admin user in the Admin web application.
+const ReasonRejected = "Rejected"
+
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
 type ComponentMode string
