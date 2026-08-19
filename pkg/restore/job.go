@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -75,6 +76,19 @@ type JobInput struct {
 	Args []string
 }
 
+// isNil reports whether obj holds no object. An interface that carries a typed
+// nil pointer is not equal to nil, and every read of its name panics the same
+// way an untyped nil does.
+func isNil(obj client.Object) bool {
+	if obj == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(obj)
+
+	return value.Kind() == reflect.Ptr && value.IsNil()
+}
+
 // JobName returns the name of the restore Job of one broker. It derives from
 // the restore name and the ordinal alone, so a reconcile that re-enters after
 // a crash adopts the Job it already created. A restore name can be a full DNS
@@ -111,6 +125,11 @@ func boundedName(name string, limit int) string {
 func BuildJob(in JobInput) (*batchv1.Job, error) {
 	if in.Target == nil || in.Target.Broker == nil {
 		return nil, fmt.Errorf("building the restore Job of broker %d: the target is empty", in.Ordinal)
+	}
+	if isNil(in.Owner) || in.OwnerLabel.Key == "" || in.OwnerLabel.Name == "" {
+		return nil, fmt.Errorf(
+			"building the restore Job of broker %d: the input names no owner", in.Ordinal,
+		)
 	}
 	if in.Ordinal < 0 || in.Ordinal >= in.Target.Brokers {
 		return nil, fmt.Errorf(

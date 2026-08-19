@@ -315,6 +315,64 @@ func TestBuildJobIsOwnedByTheRestore(t *testing.T) {
 	assert.Equal(t, "my-cluster-restore-restore-0", job.Name)
 }
 
+// BuildJob runs inside a reconcile. A panic there takes the whole manager
+// down with every other controller, so an input that names no owner is an
+// error like an input that names no target.
+func TestBuildJobRejectsAnInputWithoutAnOwner(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		mutate func(*JobInput)
+		text   string
+	}{
+		"no target": {
+			mutate: func(in *JobInput) { in.Target = nil },
+			text:   "target",
+		},
+		"no broker container": {
+			mutate: func(in *JobInput) { in.Target.Broker = nil },
+			text:   "target",
+		},
+		"no owner": {
+			mutate: func(in *JobInput) { in.Owner = nil },
+			text:   "owner",
+		},
+		"a typed nil owner": {
+			mutate: func(in *JobInput) { in.Owner = (*v1.LogicalRestore)(nil) },
+			text:   "owner",
+		},
+		"no owner label": {
+			mutate: func(in *JobInput) { in.OwnerLabel = labels.Owner{} },
+			text:   "owner",
+		},
+		"an owner label without a name": {
+			mutate: func(in *JobInput) { in.OwnerLabel = labels.Owner{Key: labels.LogicalRestoreKey} },
+			text:   "owner",
+		},
+		"an ordinal beyond the broker count": {
+			mutate: func(in *JobInput) { in.Ordinal = 3 },
+			text:   "3 brokers",
+		},
+		"a negative ordinal": {
+			mutate: func(in *JobInput) { in.Ordinal = -1 },
+			text:   "3 brokers",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := logicalInput()
+			tc.mutate(&in)
+
+			job, err := BuildJob(in)
+			require.Error(t, err)
+			assert.Nil(t, job)
+			assert.Contains(t, err.Error(), tc.text)
+		})
+	}
+}
+
 // A restore name can be a full DNS subdomain, but a Job name is a DNS label.
 // A long name truncates deterministically and stays unique through a hash of
 // the whole name.
