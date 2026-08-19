@@ -10,17 +10,11 @@ Use it when you want the operator to own the Elasticsearch cluster, its credenti
 
 ## What it does
 
-The operator creates these resources from an `ElasticsearchCluster` named `<name>`:
+From an `ElasticsearchCluster` named `<name>`, the operator creates an ECK `Elasticsearch` resource named `<name>`, and ECK runs the nodes. The operator creates a user `camunda` for the orchestration cluster and publishes everything a consumer needs in the `SecondaryStorageConfig` named in `spec.secondaryStorageConfig`, in the same namespace: the HTTPS endpoint, a reference to the user Secret `<name>-es-user` (keys `username` and `password`), the CA of the self-signed certificate, and `snapshotRepository` once a repository is registered.
 
-- The ECK `Elasticsearch` resource `<name>`. ECK creates the HTTPS Service `<name>-es-http` on port 9200 and the CA Secret `<name>-es-http-certs-public` from it.
-- The Secret `<name>-es-user` with the keys `username`, `password`, and `roles`. The username is `camunda`. The password is generated once.
-- The Secret `<name>-es-roles` with the role `camunda`. The role grants the cluster and index privileges that Camunda needs for indices, templates, lifecycle policies, pipelines, and snapshots, including snapshot deletion. It does not grant repository registration.
-- The `SecondaryStorageConfig` `<spec.secondaryStorageConfig>` in the same namespace, with `type: elasticsearch`. It carries the endpoint `https://<name>-es-http.<namespace>.svc:9200`, a reference to `<name>-es-user`, a `caSecretRef` to `<name>-es-http-certs-public`, and `snapshotRepository` once the repository is registered.
-- The ServiceAccount `<name>-es`, or the name in `spec.serviceAccount.name`. It exists when `spec.serviceAccount` is set, or when `spec.snapshotStorageRef` names a bucket that uses workload identity. The Elasticsearch pods run under it.
-- The Secret `<name>-es-snapshot-keystore` when the snapshot bucket needs keystore entries. See **Snapshot repository**.
-- When `spec.monitoring.serviceMonitor.enabled` is `true`: the `elasticsearch_exporter` Deployment `<name>-es-exporter`, the Service `<name>-es-metrics` on port `9114`, and a ServiceMonitor when the Kubernetes cluster serves that kind.
+The Elasticsearch pods and their data volumes carry the labels `camunda.io/elasticsearch-cluster: <name>` and `camunda.io/component: elasticsearch`.
 
-Every resource the operator applies carries the labels `camunda.io/elasticsearch-cluster: <name>`, `camunda.io/component: elasticsearch`, and `app.kubernetes.io/managed-by: camunda-operator`. The Elasticsearch pods and their data volumes carry the first two labels. The exporter resources carry `camunda.io/component: elasticsearch-exporter`.
+When `spec.monitoring.serviceMonitor.enabled` is `true`, the operator also runs the Prometheus `elasticsearch_exporter` next to the cluster, because Elasticsearch serves no Prometheus endpoint itself, and creates a ServiceMonitor for it when the Kubernetes cluster serves that kind.
 
 ```mermaid
 graph LR
@@ -34,7 +28,7 @@ graph LR
 
 **Preset.** If `spec.presetRef` names an `ElasticsearchClusterPreset`, the preset is the baseline. A field set on the `ElasticsearchCluster` replaces the value of the preset for that field. The `scheduling` and `monitoring` blocks are replaced as a whole, never merged field by field. An edit of the preset reaches every cluster that references it.
 
-**Deletion.** Deletion removes the ECK resource, the Secrets, the `SecondaryStorageConfig`, the owned ServiceAccount, and the exporter resources. The data volumes obey `spec.persistentVolumeClaimRetentionPolicy.whenDeleted`. With `Delete`, ECK removes them with the cluster. With `Retain`, the volumes stay and a later cluster with the same name reattaches them.
+**Deletion.** Deletion removes everything the operator created: the ECK resource, the Secrets, the `SecondaryStorageConfig`, and the exporter. The data volumes obey `spec.persistentVolumeClaimRetentionPolicy.whenDeleted`. With `Delete`, ECK removes them with the cluster. With `Retain`, the volumes stay and a later cluster with the same name reattaches them.
 
 **Suspend.** With `spec.suspend: true`, the operator deletes the ECK resource and keeps the data volumes. `Ready` is `True` with reason `Suspended`. The exporter stops as well, and `MetricsReady` reports `Suspended`. When you set `spec.suspend` back to `false`, the operator recreates the resource and ECK reattaches the volumes.
 
@@ -44,7 +38,7 @@ graph LR
 
 **Storage growth.** You can increase `spec.storageSize` at any time. You cannot decrease it. Admission rejects a lower inline value. If a preset lowers the size under a running cluster, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. To get a smaller volume, delete and recreate the cluster.
 
-**Snapshot repository.** Set `spec.snapshotStorageRef` to an `ObjectStorageConfig` to take part in backups. The operator registers the snapshot repository `<name>` in Elasticsearch with the base path `<basePath>/<namespace>/<name>`, where `<basePath>` comes from the bucket. The bucket must be the same one that the `CamundaCluster` references in its `backupStorageRef`. The operator writes the bucket credentials to the node keystore for you, for `S3`, `GCS`, and `AzureBlob` buckets. For an `AzureBlob` bucket, the endpoint must reduce to an endpoint suffix (`https://<account>.blob.<suffix>`), or `Ready` reports `InvalidReference`. `SnapshotRepositoryReady` reports the registration, and the `SecondaryStorageConfig` carries `snapshotRepository` only after the registration succeeds.
+**Snapshot repository.** Set `spec.snapshotStorageRef` to an `ObjectStorageConfig` to take part in backups. The operator registers the snapshot repository `<name>` in Elasticsearch with the base path `<basePath>/<namespace>/<name>`, where `<basePath>` comes from the bucket. The bucket must be the same one that the `CamundaCluster` references in its `backupStorageRef`. The operator gives the nodes the credentials or the workload identity of the bucket. For an `AzureBlob` bucket, the endpoint must reduce to an endpoint suffix (`https://<account>.blob.<suffix>`), or `Ready` reports `InvalidReference`. `SnapshotRepositoryReady` reports the registration, and the `SecondaryStorageConfig` carries `snapshotRepository` only after the registration succeeds.
 
 ## Spec
 

@@ -17,13 +17,9 @@ Before you create a backup, make sure that:
 
 ## What it does
 
-The operator creates and writes these from a `LogicalBackupRDBMS` named `<name>`:
+A `LogicalBackupRDBMS` named `<name>` runs the Job `<name>-dump` in its namespace, under the ServiceAccount of the cluster. The Job runs `pg_dump` of the whole logical database and uploads the file to the bucket of the cluster's `backupStorageRef`, under the prefix of the cluster. `status.objectKey` records the key. When the upload is done, the operator requests one Zeebe backup of the primary storage through the management API. Camunda generates its ID and writes it to the same bucket. `status.zeebeBackupId` records the ID.
 
-- The Job `<name>-dump` in the namespace of the backup. Its init container `dump` runs `pg_dump --format=custom` of the whole logical database into a scratch volume. Its container `upload` runs the `camunda-operator-cli` image and streams the file to the bucket. The pod runs under the ServiceAccount of the cluster, with `fsGroup` 999. The Job retries a failed pod three times.
-- The dump object `<basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump` in the bucket of `backupStorageRef`. `<uid>` is the UID of this resource. `status.objectKey` records the full key.
-- One Zeebe backup, requested after the dump. Camunda generates its ID and writes it to the same bucket. `status.zeebeBackupId` records the ID.
-
-The Job and its pod carry the labels `camunda.io/logical-backup-rdbms: <name>`, `camunda.io/logical-backup-rdbms-uid: <uid>`, `camunda.io/cluster: <cluster>`, `camunda.io/component: dump`, and `app.kubernetes.io/managed-by: camunda-operator`.
+The Job and its pod carry the label `camunda.io/cluster: <cluster>`.
 
 ```mermaid
 graph LR
@@ -38,17 +34,17 @@ graph LR
     OSC -.-> BUCKET
 ```
 
-**Pod settings.** The dump pod takes its settings from `spec.backup.dump` of the cluster: resources, `extraEnv`, `extraEnvFrom`, labels, annotations, scheduling, the scratch volume, and `activeDeadlineSeconds`. If this resource sets `spec.dump`, that block replaces the cluster block as a whole. The two never merge. The image of the `dump` container always comes from the cluster: `spec.backup.dump.postgresImage`, or `postgres:<serverVersion>` by default. The `extraEnv` and `extraEnvFrom` of this resource reach the `dump` container only, never the `upload` container.
+**Pod settings.** The dump pod takes its settings from `spec.backup.dump` of the cluster. If this resource sets `spec.dump`, that block replaces the cluster block as a whole. The two never merge. The image that runs `pg_dump` always comes from the cluster: `spec.backup.dump.postgresImage`, or `postgres:<serverVersion>` by default. The `extraEnv` and `extraEnvFrom` of this resource reach the container that runs `pg_dump` only, never the container that uploads.
 
 **One at a time.** The operator runs one backup of a cluster at a time, across both backup kinds. A second backup waits in `Pending` with reason `BackupInProgress` and names the backup that runs.
 
-**Time limits.** The dump Job fails after `activeDeadlineSeconds`, 24 hours by default. If a dependency stops resolving during the run, for example a deleted Secret, an image that does not pull, or a management API that does not answer, the backup waits 10 minutes for it to recover. After that, the backup fails. If Camunda has accepted the Zeebe backup but does not report it, the backup waits 2 minutes for the registration.
+**Time limits.** The dump Job fails after `activeDeadlineSeconds`, 24 hours by default. If a dependency stops resolving during the run, for example a deleted Secret, an image that does not pull, or a management API that does not answer, the backup waits 10 minutes for it to recover. After that, the backup fails.
 
-**Changes.** The backup records the bucket, its location, and the configuration that Zeebe runs when it starts. If the cluster changes its backup storage, or Zeebe rolls to another configuration during the run, the backup waits with reason `InvalidReference`. If the change is not reverted within 10 minutes, the backup fails. If you delete and recreate the cluster under the same name during the run, the backup fails at once. A backup on a cluster that has not converged on its current spec waits with reason `Progressing`.
+**Changes.** Do not change the backup storage of the cluster, or roll the cluster, while a backup runs. The backup waits 10 minutes with reason `InvalidReference` for the change to be reverted, then fails, because a dump and a Zeebe backup taken under different configurations do not form one restore point. A backup on a cluster that is still rolling out waits with reason `Progressing` before it starts. If you delete and recreate the cluster under the same name during the run, the backup fails at once.
 
 **Missing references.** If the cluster, its `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` does not exist, `Ready` reports `InvalidReference`. If the `DatabaseConfig` has no `backupCredentialsSecretRef`, or that Secret does not exist, the reason is `MissingSecret`. If the bucket uses static credentials and they do not resolve, the reason is `MissingCredentials`.
 
-**Deletion.** When you delete the backup, the operator deletes a Job that still runs, waits until its pods are gone, and then deletes the dump object. It never deletes Zeebe backups. If the bucket uses workload identity, the cleanup runs as the Job `<name>-cleanup` under the ServiceAccount of the cluster. A failed cleanup Job holds the deletion and records an `ArtifactCleanupFailed` event. Inspect the Job, correct the cause, and delete the Job to retry. If the cluster, the pinned bucket, or its credentials are gone, or the bucket now points at another location, the operator leaves the object and releases the resource. The event says what it left behind.
+**Deletion.** When you delete the backup, the operator deletes a Job that still runs, waits until its pods are gone, and then deletes the dump object. It never deletes Zeebe backups. If the bucket uses workload identity, the cleanup runs as the Job `<name>-cleanup` under the ServiceAccount of the cluster. A failed cleanup Job holds the deletion and records an event that names the Job. Read its logs, correct the cause, and delete the Job to retry. If the cluster, the bucket, or its credentials are gone, or the bucket now points at another location, the operator leaves the object and releases the resource. The event says what it left behind.
 
 ## Spec
 

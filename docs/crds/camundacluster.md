@@ -19,17 +19,13 @@ Camunda 8.9 ships the orchestration cluster as one binary. Zeebe, the gateway, a
 - `operate`, `tasklist`, and `admin` each run `Standalone` (their own Deployment) or `Embedded`. The default is `Embedded`. An embedded web application runs inside the gateway when the gateway is standalone, otherwise inside the brokers.
 - `connectors` is a separate runtime. When enabled, it is always its own Deployment.
 
-### Resources the operator creates
+### Endpoints and labels
 
-Every resource carries the labels `camunda.io/cluster: <name>`, `camunda.io/component: <component>`, and `app.kubernetes.io/managed-by: camunda-operator`. The component values are `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
+Each enabled process gets a workload and a Service named `<name>-<component>`. The gateway Service (`<name>-zeebe` when the gateway is `Embedded`) serves gRPC on port `26500` and HTTP on port `8080`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`.
 
-- A workload and a Service per enabled process, both named `<name>-<component>`: `<name>-zeebe` (headless), `<name>-gateway`, `<name>-operate`, `<name>-tasklist`, `<name>-admin`, and `<name>-connectors`.
-- The gateway Service exposes the gRPC API on port `26500` and the HTTP API on port `8080`. When the gateway is `Embedded`, the `<name>-zeebe` Service exposes these ports instead. The HTTP port serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`.
-- A standalone web application Service exposes port `8080`. Every unified process exposes the management port `9600` for health and metrics. Connectors expose port `8080` only.
-- The ServiceAccount `<name>-camunda` (or `spec.serviceAccount.name`), when `spec.serviceAccount` is set or a referenced bucket uses workload identity.
-- The Secret `<name>-camunda-admin` with the keys `username` (`admin`) and `password`, under basic authentication.
-- One Secret `<name>-camunda-<purpose>` per referenced Secret that lives in another namespace. The purposes are `license`, `oidc-client`, `auth-client`, `es-credentials`, `es-ca`, `db-credentials`, `backup-credentials`, and `dump-credentials`. The containers read the copy. A change to the source Secret updates the copy and rolls the pods.
-- One ServiceMonitor per process, named like the workload, when `spec.monitoring.serviceMonitor.enabled` is true. It scrapes `/actuator/prometheus` on port `9600` of a unified process and on port `8080` of connectors. On a Kubernetes cluster without the `ServiceMonitor` kind, the operator creates none and reports no error.
+Every resource carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, where the component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
+
+When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one ServiceMonitor per process. On a Kubernetes cluster without the `ServiceMonitor` kind it creates none and reports no error.
 
 ```mermaid
 graph LR
@@ -43,7 +39,7 @@ graph LR
     IDP["Identity provider (external)"] -.-> PFC
 ```
 
-**Authentication.** Under basic authentication the operator creates the admin user `admin` and stores the password in the Secret `<name>-camunda-admin`. Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator. A cluster whose only administrator is a client still shows the setup page in the browser, so list a user too. The [authentication guide](../guides/authentication.md) explains both methods.
+**Authentication.** Under basic authentication the operator creates the admin user `admin` and stores the password in the Secret `<name>-camunda-admin` (keys `username` and `password`). Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator. A cluster whose only administrator is a client still shows the setup page in the browser, so list a user too. The [authentication guide](../guides/authentication.md) explains both methods.
 
 **Password rotation.** The operator generates the admin password once and keeps it stable. To get a new password, delete the Secret `<name>-camunda-admin`. The operator writes a new Secret with a new password. The orchestration cluster does not change the password of the existing `admin` user from its configuration, so set the new password on the user in the Admin web application, then restart the connectors Deployment. The [operations guide](../guides/operations.md) has the steps.
 
@@ -55,9 +51,9 @@ graph LR
 
 **Missing references.** The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
-**Changes.** A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods without a restart of the operator. The pod templates carry the annotation `camunda.io/config-hash`.
+**Changes.** A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. A referenced Secret in another namespace is copied into the namespace of the cluster, and the copy follows the source.
 
-**Storage growth.** When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The StatefulSet keeps the original claim template and carries the new size in the annotation `camunda.io/requested-storage-size`. The operator never shrinks a volume: a smaller size from a preset is ignored with the Warning event `StorageShrinkIgnored`.
+**Storage growth.** When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume: a smaller size from a preset is ignored with the Warning event `StorageShrinkIgnored`.
 
 **JVM options.** Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process.
 
@@ -65,7 +61,7 @@ graph LR
 
 **Backups.** Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket, under the prefix `<basePath>/<namespace>/<name>` on S3 and GCS, so two clusters never share a prefix. Azure Blob has no prefix: every cluster needs an `ObjectStorageConfig` with its own container, and a second cluster on the same Azure contract reports `InvalidReference`. On the Elasticsearch path the storage contract must carry `elasticsearch.snapshotRepository`, or the cluster reports `InvalidReference`. On the RDBMS path `spec.backup.primaryStorage` configures the backup scheduler of Zeebe with the defaults `schedule: PT1H`, `checkpointInterval: PT15M`, `retention.window: P7D`, and `retention.cleanupSchedule: PT1H`. `continuous` defaults to true unless the schedule is `none`. The [backup guide](../guides/backup.md) covers the backup kinds.
 
-**Workload identity.** The operator derives the identity annotation of every referenced bucket onto the ServiceAccount: `eks.amazonaws.com/role-arn` for S3, `iam.gke.io/gcp-service-account` for GCS, and `azure.workload.identity/client-id` for Azure Blob. Azure also adds the pod label `azure.workload.identity/use: "true"`. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and the cloud side binds the principal `system:serviceaccount:<namespace>:<name>-camunda` itself. Two buckets that name different identities of one cloud report `InvalidReference`. With `serviceAccount.create: false` the operator does not create the ServiceAccount and reports `InvalidReference` while it is absent.
+**Workload identity.** The pods run under the ServiceAccount `<name>-camunda`, or `spec.serviceAccount.name`. When a referenced bucket carries a workload identity, the operator puts the matching annotation on that ServiceAccount ([ObjectStorageConfig](objectstorageconfig.md) lists them). An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and the cloud side binds the principal `system:serviceaccount:<namespace>:<name>-camunda` itself. Two buckets that name different identities of one cloud report `InvalidReference`. With `serviceAccount.create: false` the operator does not create the ServiceAccount and reports `InvalidReference` while it is absent.
 
 ## Spec
 

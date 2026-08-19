@@ -131,7 +131,7 @@ Keep `-XX:+ExitOnOutOfMemoryError` in the value. The operator sets it, and your 
 
 Set `spec.monitoring.serviceMonitor.enabled: true` to let a Prometheus operator scrape the cluster. The operator creates one ServiceMonitor per process, named like the workload. It scrapes `/actuator/prometheus` on port `9600` of a unified process and on port `8080` of connectors. On a Kubernetes cluster without the `ServiceMonitor` kind, the operator creates none and reports no error.
 
-An `ElasticsearchCluster` with the same flag runs the `elasticsearch_exporter` Deployment `<name>-es-exporter` and the Service `<name>-es-metrics` on port `9114`. The exporter reports its state in the `MetricsReady` condition. This condition is not part of `Ready`, so a broken exporter never marks the cluster not ready.
+An `ElasticsearchCluster` with the same flag runs the Prometheus `elasticsearch_exporter` next to the cluster and a ServiceMonitor for it. The exporter reports its state in the `MetricsReady` condition. This condition is not part of `Ready`, so a broken exporter never marks the cluster not ready.
 
 ## Find the resources of a cluster
 

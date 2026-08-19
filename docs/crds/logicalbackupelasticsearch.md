@@ -16,13 +16,9 @@ Before you create a backup, make sure that:
 
 ## What it does
 
-The operator writes these artifacts from a `LogicalBackupElasticsearch`:
+A `LogicalBackupElasticsearch` writes one set of artifacts under one backup ID: the snapshots of the web-application indices and of the exported Zeebe record indices, in the snapshot repository of the cluster, and the Zeebe partition backup, in the bucket of the cluster's `backupStorageRef`. The status records the ID, the repository, and the snapshot names.
 
-- The snapshots of the web-application indices, in the snapshot repository `status.repository`. Camunda names them, and the operator records the names in `status.historySnapshots`.
-- The snapshot `camunda_zeebe_records_backup_<backupId>` of the indices `zeebe-record*`, in the same repository. The snapshot carries the UID of this backup in its metadata.
-- The Zeebe partition backup under `<backupId>`, in the bucket of the `backupStorageRef` of the cluster. Camunda writes it under the prefix `<basePath>/<namespace>/<cluster>/`.
-
-The operator creates no Kubernetes resources from this kind. It calls the management API of the cluster and the Elasticsearch API of the storage contract.
+The operator creates no Kubernetes resources from this kind. It calls the management API of the cluster and the Elasticsearch API of the `SecondaryStorageConfig`.
 
 ```mermaid
 graph LR
@@ -39,13 +35,13 @@ graph LR
 
 **One at a time.** The operator runs one backup of a cluster at a time, across both backup kinds. A second backup waits in `Pending` with reason `BackupInProgress` and names the backup that runs.
 
-**Time limits.** If the management API or Elasticsearch is unreachable during a step, the backup retries for 10 minutes. After that, the step fails and the backup resumes exporting. If Camunda has accepted a history or partition backup but does not report it, the backup waits 2 minutes for the registration. The resume of exporting is retried for 30 minutes. After that, the backup ends as `Failed` with reason `ResumeFailed`, and exporting stays paused. While the cluster is suspended, the backup waits, and the time does not count.
+**Time limits.** If the management API or Elasticsearch is unreachable during a step, the backup retries for 10 minutes. After that, the step fails and the backup resumes exporting. The resume of exporting is retried for 30 minutes. After that, the backup ends as `Failed` with reason `ResumeFailed`, and exporting stays paused. While the cluster is suspended, the backup waits, and the time does not count.
 
-**Changes.** The backup records the storage contract, the Elasticsearch endpoint, the repository, and the bucket when it starts. If one of them changes during the run, the backup fails. The message names the recorded and the current value. If you delete the cluster during the run, or delete and recreate it under the same name, the backup ends as `Failed` without a call to the new cluster.
+**Changes.** Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value. If you delete the cluster during the run, or delete and recreate it under the same name, the backup ends as `Failed` without a call to the new cluster.
 
 **Missing references.** If the cluster, its `SecondaryStorageConfig`, or its `ObjectStorageConfig` does not exist, `Ready` reports `InvalidReference`. If the cluster publishes no `snapshotRepository`, the reason is `InvalidReference` as well. If `status.management` of the cluster names a credentials Secret that does not exist, the reason is `MissingSecret`.
 
-**Deletion.** When you delete the backup, the operator deletes the snapshots and the partition backup that this backup wrote. If the backup still runs, or ended as `ResumeFailed`, the operator resumes exporting first. It deletes only snapshots and backups that it can prove are its own. A history backup that Camunda still reports as in progress holds the deletion until it ends. If the cluster is suspended, the deletion waits with a `DeletionWaiting` event until the cluster runs again. If the cluster or the pinned `ObjectStorageConfig` is gone, the operator releases the resource without cleanup and records an `ArtifactsUnreachable` event.
+**Deletion.** When you delete the backup, the operator deletes the snapshots and the partition backup that this backup wrote. If the backup still runs, or ended as `ResumeFailed`, the operator resumes exporting first. It deletes only snapshots and backups that are its own. A history backup that Camunda still reports as in progress holds the deletion until it ends. If the cluster is suspended, the deletion waits until the cluster runs again. If the cluster or the bucket is gone, the operator releases the resource without cleanup and records an event that says so.
 
 ## Spec
 

@@ -10,20 +10,11 @@ A `Database` is cluster-scoped. The server and the logical database are separate
 
 ## What it does
 
-On the server, the operator creates these objects from a `Database` with `spec.databaseName: <databaseName>`:
+On the server, the operator creates the logical database `spec.databaseName` and two SQL roles with generated passwords. The application role, named like the database, owns it. The backup role, named `<databaseName>_backup`, can read every table, including tables created later, and has the rights that a restore needs. It is never the owner. Set `spec.backupCredentials.disabled: true` to skip the backup role. Only these roles can connect to the database.
 
-- The logical database `<databaseName>`, without the default `CONNECT` privilege of `PUBLIC`. Only granted roles can connect.
-- The application role `<databaseName>` with a generated password. It owns the database and has all privileges on it, so schema migrations work.
-- The backup role `<databaseName>_backup` with a generated password, unless `spec.backupCredentials.disabled` is `true`. If that name is longer than 63 characters, the role is `<first 47 characters of databaseName>_<first 8 hex characters of the SHA-256 of databaseName>_backup`. The role can connect and create objects in schema `public`. It can read and write the existing tables and sequences there, and read the tables that the application role creates later. It is never the owner.
+In Kubernetes, in `spec.targetNamespace`, the operator writes one credential Secret per role (keys `username` and `password`) and a `DatabaseConfig` that names the server, the database, and both Secrets. When `spec.secondaryStorageConfig` is set, it also writes a `SecondaryStorageConfig` of `type: rdbms` that references the `DatabaseConfig`, so an orchestration cluster in that namespace can use the database as secondary storage. The Spec below gives the default names.
 
-In Kubernetes, the operator creates these resources in `spec.targetNamespace`:
-
-- The Secret `<name>-credentials`, or the name in `spec.applicationCredentials.secretName`, with the keys `username` and `password` of the application role.
-- The Secret `<name>-backup-credentials`, or the name in `spec.backupCredentials.secretName`, with the keys `username` and `password` of the backup role. It exists unless `spec.backupCredentials.disabled` is `true`.
-- The `DatabaseConfig` `<name>`, or the name in `spec.databaseConfig`. It carries `serverRef`, `databaseName`, the application credentials Secret, and the backup credentials Secret when one exists.
-- The `SecondaryStorageConfig` `<spec.secondaryStorageConfig>` with `type: rdbms`, only when that field is set. It references the `DatabaseConfig`. An orchestration cluster in that namespace can reference it through `storageRef`.
-
-Every resource carries the labels `camunda.io/database: <name>`, `camunda.io/component: database`, and `app.kubernetes.io/managed-by: camunda-operator`.
+Every resource carries the label `camunda.io/database: <name>`.
 
 ```mermaid
 graph TD
