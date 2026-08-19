@@ -98,10 +98,13 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 	return cluster.Name + adminSecretSuffix
 }
 
-// ServiceAccountName returns the name of the ServiceAccount of every
-// workload pod: the name that the spec sets, or the name derived from the
-// cluster otherwise. It is the principal that a workload identity without an
-// annotation binds, so it is part of the contract with the cloud provider.
+// ServiceAccountName returns the name that the ServiceAccount of the cluster
+// carries: the name the spec sets, or the name derived from the cluster. It
+// never answers whether the cluster has one. A caller that needs the account
+// a pod or a Job runs under asks PodServiceAccountName.
+//
+// It is the principal that a workload identity without an annotation binds,
+// so it is part of the contract with the cloud provider.
 func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 	if e.ServiceAccount != nil && e.ServiceAccount.Name != "" {
 		return e.ServiceAccount.Name
@@ -121,8 +124,11 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 // With static credentials nothing does. The credentials arrive in a Secret,
 // so the pods carry no cloud identity and the operator renders no account.
 //
-// Every consumer asks this function rather than ServiceAccountName, which
-// names the account whether or not one exists. A Job that names an account
+// A consumer that needs the account a pod or a Job runs under asks this
+// function. ServiceAccountName answers a different question: the name the
+// account carries when the cluster has one. The site that names the
+// ServiceAccount resource keeps using it. So does any site that is already
+// gated on whether the cluster renders one. A Job that names an account
 // that the cluster never rendered is rejected by the API server, and its pod
 // is never created.
 func PodServiceAccountName(cluster *v1.CamundaCluster, e Effective, buckets ...*v1.ObjectStorageConfig) string {
