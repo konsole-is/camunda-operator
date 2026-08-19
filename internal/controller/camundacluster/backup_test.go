@@ -59,6 +59,37 @@ func createBucket(roleARN string) *v1.ObjectStorageConfig {
 	return bucket
 }
 
+// createStaticBucket creates an S3 ObjectStorageConfig that authenticates
+// with the static keys of the named Secret, and registers its deletion. The
+// keys reach the pods in a Secret, so a cluster on this bucket carries no
+// cloud identity.
+func createStaticBucket(secretNamespace, secretName string) *v1.ObjectStorageConfig {
+	GinkgoHelper()
+	bucket := &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3: &v1.S3Storage{
+				BucketName: "camunda-backups",
+				Endpoint:   "http://minio.minio.svc:9000",
+				Auth: v1.S3StorageAuth{
+					Type: v1.ObjectStorageAuthTypeCredentials,
+					Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
+						Name:               secretName,
+						Namespace:          secretNamespace,
+						AccessKeyIDKey:     "accessKeyId",
+						SecretAccessKeyKey: "secretAccessKey",
+					}},
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, bucket)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, bucket) })
+
+	return bucket
+}
+
 // setSnapshotRepository puts a snapshot repository name on the storage
 // contract, which an Elasticsearch cluster that takes backups needs.
 func setSnapshotRepository(binding *v1.SecondaryStorageConfig, name string) {
@@ -78,6 +109,18 @@ func expectBinding(cluster *v1.CamundaCluster, match func(Gomega, *v1.Management
 		var latest v1.CamundaCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
 		match(g, latest.Status.Management)
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectPublishedAccount polls until the cluster publishes name as the
+// ServiceAccount its pods run under. An empty name is a cluster whose pods
+// run under the default account of the namespace.
+func expectPublishedAccount(cluster *v1.CamundaCluster, name string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		g.Expect(latest.Status.ServiceAccountName).To(Equal(name))
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -176,6 +219,73 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				g.Expect(published).NotTo(BeNil())
 				g.Expect(published.BackupRepository).To(Equal("repository-of-this-contract"))
 			})
+		})
+	})
+
+	// A consumer that renders a pod against the cluster reads this field.
+	// Rebuilding the rule from the spec and every bucket the cluster
+	// references is what shipped a dump Job that named an account the
+	// cluster never rendered.
+	Describe("the published ServiceAccount", func() {
+		It("names the account of the spec", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+			createCluster(cluster)
+
+			expectPublishedAccount(cluster, "platform-sa")
+		})
+
+		// A workload-identity bucket binds the account by name on the cloud
+		// side, so the cluster renders one even though the spec asks for
+		// none.
+		It("names the derived account of a workload-identity bucket", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			setSnapshotRepository(binding, "my-repository")
+			cluster := newCluster(ns, createPlatformConfig(), binding)
+			cluster.Spec.BackupStorageRef = createBucket("arn:aws:iam::123456789012:role/camunda").Name
+			createCluster(cluster)
+
+			expectPublishedAccount(cluster, cluster.Name+"-camunda")
+		})
+
+		// Static keys reach the pods in a Secret, so the pods carry no cloud
+		// identity and the operator renders no account. A consumer that named
+		// one here would name an account that does not exist.
+		It("is empty for a bucket with static credentials", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			setSnapshotRepository(binding, "my-repository")
+			keys := createSecret(ns, "minio-keys", map[string]string{
+				"accessKeyId": "minio", "secretAccessKey": "minio123",
+			})
+			cluster := newCluster(ns, createPlatformConfig(), binding)
+			cluster.Spec.BackupStorageRef = createStaticBucket(ns, keys.Name).Name
+			createCluster(cluster)
+
+			// The binding proves the cluster reconciled. Without it an empty
+			// account would also match a status that was never written.
+			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
+				g.Expect(published).NotTo(BeNil())
+			})
+			expectPublishedAccount(cluster, "")
+		})
+
+		// The account outlives a suspension: the ServiceAccount stays, and a
+		// cleanup Job of a deleted backup still needs the identity it holds.
+		It("stays published while the cluster is suspended", func() {
+			ns := newNamespace()
+			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+			createCluster(cluster)
+			expectPublishedAccount(cluster, "platform-sa")
+
+			updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = true })
+			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
+				g.Expect(published).To(BeNil())
+			})
+			expectPublishedAccount(cluster, "platform-sa")
 		})
 	})
 
@@ -380,30 +490,8 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				"accessKeyId": "minio", "secretAccessKey": "minio123",
 			})
 
-			bucket := &v1.ObjectStorageConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "osc-" + utilrand.String(8)},
-				Spec: v1.ObjectStorageConfigSpec{
-					Type: v1.ObjectStorageTypeS3,
-					S3: &v1.S3Storage{
-						BucketName: "camunda-backups",
-						Endpoint:   "http://minio.minio.svc:9000",
-						Auth: v1.S3StorageAuth{
-							Type: v1.ObjectStorageAuthTypeCredentials,
-							Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
-								Name:               "minio-keys",
-								Namespace:          "default",
-								AccessKeyIDKey:     "accessKeyId",
-								SecretAccessKeyKey: "secretAccessKey",
-							}},
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, bucket)).To(Succeed())
-			DeferCleanup(func() { _ = k8sClient.Delete(ctx, bucket) })
-
 			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = bucket.Name
+			cluster.Spec.BackupStorageRef = createStaticBucket("default", "minio-keys").Name
 			createCluster(cluster)
 
 			Eventually(func(g Gomega) {
