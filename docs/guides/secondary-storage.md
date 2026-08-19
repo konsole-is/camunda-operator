@@ -28,15 +28,15 @@ Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the c
     apiVersion: core.camunda.io/v1
     kind: ElasticsearchCluster
     metadata:
-     name: my-cluster-es
-     namespace: my-cluster-ns
+      name: my-cluster-es
+      namespace: my-cluster-ns
     spec:
-     version: "9.2.4"
-     replicas: 1
-     storageSize: "1Gi"
-     resources:
-       requests: { cpu: "500m", memory: "1Gi" }
-     secondaryStorageConfig: "my-storage-config"
+      version: "9.2.4"
+      replicas: 1
+      storageSize: "1Gi"
+      resources:
+        requests: { cpu: "500m", memory: "1Gi" }
+      secondaryStorageConfig: "my-storage-config"
     ```
 
 2. Wait until the `ElasticsearchCluster` is `Ready` with reason `Healthy`.
@@ -69,12 +69,12 @@ Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the c
     apiVersion: core.camunda.io/v1
     kind: CamundaCluster
     metadata:
-     name: my-cluster
-     namespace: my-cluster-ns
+      name: my-cluster
+      namespace: my-cluster-ns
     spec:
-     version: "8.9.9"
-     platformConfigRef: "my-platform-config"
-     storageRef: "my-storage-config"
+      version: "8.9.9"
+      platformConfigRef: "my-platform-config"
+      storageRef: "my-storage-config"
     ```
 
 ```mermaid
@@ -104,12 +104,12 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
     apiVersion: v1
     kind: Secret
     metadata:
-     name: my-db-server-admin-credentials
-     namespace: my-cluster-ns
+      name: my-db-server-admin-credentials
+      namespace: my-cluster-ns
     type: Opaque
     stringData:
-     username: postgres
-     password: change-me
+      username: postgres
+      password: change-me
     ```
 
 2. Create a `DatabaseServerConfig`. It is cluster-scoped and describes the server and the admin credentials.
@@ -118,16 +118,16 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
     apiVersion: core.camunda.io/v1
     kind: DatabaseServerConfig
     metadata:
-     name: my-db-server
+      name: my-db-server
     spec:
-     engine: postgres
-     host: "postgres.my-cluster-ns.svc"
-     port: 5432
-     adminCredentialsSecretRef:
-       name: my-db-server-admin-credentials
-       namespace: my-cluster-ns
-       usernameKey: username
-       passwordKey: password
+      engine: postgres
+      host: "postgres.my-cluster-ns.svc"
+      port: 5432
+      adminCredentialsSecretRef:
+        name: my-db-server-admin-credentials
+        namespace: my-cluster-ns
+        usernameKey: username
+        passwordKey: password
     ```
 
 3. Wait until the `DatabaseServerConfig` is `Ready` with reason `Healthy`. The operator connects to the server with the admin credentials and reports the major version:
@@ -161,12 +161,12 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
     apiVersion: core.camunda.io/v1
     kind: Database
     metadata:
-     name: my-camunda-db
+      name: my-camunda-db
     spec:
-     serverRef: "my-db-server"
-     databaseName: "camunda"
-     targetNamespace: "my-cluster-ns"
-     secondaryStorageConfig: "my-storage-config"
+      serverRef: "my-db-server"
+      databaseName: "camunda"
+      targetNamespace: "my-cluster-ns"
+      secondaryStorageConfig: "my-storage-config"
     ```
 
 5. Wait until the `Database` is `Ready` with reason `Healthy`.
