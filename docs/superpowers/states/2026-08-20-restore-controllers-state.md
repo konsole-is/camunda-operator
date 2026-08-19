@@ -24,7 +24,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | → feat/restore-controllers | not-started |
+| #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | → feat/restore-controllers | in-progress |
 | #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | → feat/restore-controllers | not-started |
 | #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | → feat/restore-controllers | not-started |
 | #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started |
