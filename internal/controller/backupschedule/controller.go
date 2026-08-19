@@ -20,18 +20,49 @@ limitations under the License.
 // spec.retained. It owns nothing it creates: the backups carry no owner
 // reference, so they outlive the schedule on purpose, and their own finalizer
 // removes the stored artifacts when the pruning deletes them.
+//
+// A trigger fires at most one backup, and a skipped trigger is consumed, not
+// retried: the next backup runs at the next trigger, which is what a human
+// reads from the cron expression. The skips are events; the Ready condition
+// only says whether the references resolve.
 package backupschedule
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/robfig/cron/v3"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+)
+
+const (
+	eventReasonTriggerSkipped  = "TriggerSkipped"
+	eventReasonBackupCreated   = "BackupCreated"
+	eventReasonBackupPruned    = "BackupPruned"
+	eventReasonRetentionWindow = "RetentionWindowExceeded"
+	eventActionSchedule        = "Schedule"
+	eventActionPrune           = "Prune"
 )
 
 // Options configures the reconciler at construction. Every field has a
@@ -73,16 +104,305 @@ type BackupScheduleReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;camundaclusterpresets,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
-// Reconcile consumes the due trigger of the schedule, if there is one, and
-// prunes the terminal backups of the schedule beyond spec.retained.
+// Reconcile consumes the due trigger of the schedule, if one is due, and
+// prunes the terminal backups of the schedule beyond spec.retained. It then
+// requeues at the next trigger, so a schedule needs no watch to fire; the
+// watches on the backup kinds only make the pruning react to a phase change
+// without waiting for that requeue.
 func (r *BackupScheduleReconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request,
 ) (_ ctrl.Result, err error) {
-	return ctrl.Result{}, nil
+	var schedule v1.BackupSchedule
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &schedule); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// The schedule holds no finalizer: its backups deliberately outlive it,
+	// and nothing else needs cleanup.
+	if !schedule.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	rec := component.ReconcileContext{
+		Client:        r.Client,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
+		APIReader:     r.APIReader,
+		Owner:         &schedule,
+	}
+	defer func() {
+		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
+			err = errors.Join(err, flushErr)
+		}
+	}()
+
+	sched, parseErr := parseCron(schedule.Spec.Schedule)
+	if parseErr != nil {
+		// The schema pattern admits a five-field shape with out-of-range
+		// values, for example minute 99. Only a spec change heals this, and
+		// the For watch delivers it.
+		conditions.Stage(&schedule, conditions.Ready(
+			metav1.ConditionFalse,
+			v1.ReasonInvalidReference,
+			fmt.Sprintf("spec.schedule %q is not a valid cron expression: %v", schedule.Spec.Schedule, parseErr),
+			schedule.Generation,
+		))
+
+		return ctrl.Result{}, nil
+	}
+
+	res, failure, err := r.resolve(ctx, &schedule)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if failure != nil {
+		conditions.Stage(&schedule, conditions.Failed(&schedule, failure))
+	} else {
+		conditions.Stage(&schedule, conditions.Ready(
+			metav1.ConditionTrue,
+			v1.ReasonHealthy,
+			"the schedule can run its backups",
+			schedule.Generation,
+		))
+	}
+
+	now := r.opts.Now()
+	due, next := dueTrigger(sched, schedule.Status.LastScheduleTime, schedule.CreationTimestamp.Time, now)
+	if due != nil {
+		if err := r.trigger(ctx, &schedule, res, failure, sched, *due); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if err := r.prune(ctx, &schedule); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{RequeueAfter: next.Sub(now)}, nil
 }
 
-// SetupWithManager applies opts and registers the controller.
+// resolved is what one look at the references answers: the cluster to back up
+// and the storage type that selects the backup kind. Deeper checks stay with
+// the backup kinds, whose pre-checks re-resolve everything they need; a
+// schedule that resolves this much reports Healthy.
+type resolved struct {
+	cluster     *v1.CamundaCluster
+	storageType v1.SecondaryStorageType
+}
+
+// resolve reads the cluster and its storage contract, live. A reference that
+// does not resolve is a pre-check failure with the Ready reason
+// InvalidReference; any other error is a transient API failure.
+func (r *BackupScheduleReconciler) resolve(
+	ctx context.Context,
+	schedule *v1.BackupSchedule,
+) (*resolved, *conditions.PreCheckFailure, error) {
+	namespace := schedule.Namespace
+	ref := schedule.Spec.ClusterRef.Name
+
+	var cluster v1.CamundaCluster
+	if err := r.APIReader.Get(ctx, types.NamespacedName{Name: ref, Namespace: namespace}, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, logicalbackup.InvalidReference(
+				"CamundaCluster %s/%s does not exist", namespace, ref,
+			), nil
+		}
+
+		return nil, nil, fmt.Errorf("reading CamundaCluster %s/%s: %w", namespace, ref, err)
+	}
+
+	if cluster.Spec.BackupStorageRef == "" {
+		return nil, logicalbackup.InvalidReference(
+			"CamundaCluster %s/%s has no spec.backupStorageRef, so a backup has nowhere to write",
+			namespace, ref,
+		), nil
+	}
+
+	if cluster.Spec.StorageRef == "" {
+		return nil, logicalbackup.InvalidReference(
+			"CamundaCluster %s/%s has no spec.storageRef", namespace, ref,
+		), nil
+	}
+
+	storageName := types.NamespacedName{Name: cluster.Spec.StorageRef, Namespace: namespace}
+	var storage v1.SecondaryStorageConfig
+	if err := r.APIReader.Get(ctx, storageName, &storage); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, logicalbackup.InvalidReference(
+				"SecondaryStorageConfig %s does not exist", storageName,
+			), nil
+		}
+
+		return nil, nil, fmt.Errorf("reading SecondaryStorageConfig %s: %w", storageName, err)
+	}
+
+	return &resolved{cluster: &cluster, storageType: storage.Spec.Type}, nil, nil
+}
+
+// trigger consumes the due trigger: it creates the backup, or it skips with
+// an event when the cluster is suspended or a backup of the schedule has not
+// finished. Every path below records the trigger as consumed, except a
+// transient error, which leaves it due so the retry takes it again. The
+// backup name repeats the trigger time, so a retry after a crash lands on
+// AlreadyExists instead of a second backup.
+func (r *BackupScheduleReconciler) trigger(
+	ctx context.Context,
+	schedule *v1.BackupSchedule,
+	res *resolved,
+	failure *conditions.PreCheckFailure,
+	sched cron.Schedule,
+	due time.Time,
+) error {
+	consumed := metav1.NewTime(due)
+
+	// A reference that does not resolve is already on the Ready condition;
+	// the trigger is skipped without a second signal.
+	if failure != nil {
+		schedule.Status.LastScheduleTime = &consumed
+
+		return nil
+	}
+
+	if res.cluster.Spec.Suspend {
+		schedule.Status.LastScheduleTime = &consumed
+		r.EventRecorder.Eventf(
+			schedule,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonTriggerSkipped,
+			eventActionSchedule,
+			"Skipped the trigger at %s: CamundaCluster %q is suspended",
+			due.Format(time.RFC3339),
+			res.cluster.Name,
+		)
+
+		return nil
+	}
+
+	items, err := r.scheduledBackups(ctx, schedule)
+	if err != nil {
+		return err
+	}
+	if running := nonTerminal(items); running != "" {
+		schedule.Status.LastScheduleTime = &consumed
+		r.EventRecorder.Eventf(
+			schedule,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonTriggerSkipped,
+			eventActionSchedule,
+			"Skipped the trigger at %s: backup %q has not finished",
+			due.Format(time.RFC3339),
+			running,
+		)
+
+		return nil
+	}
+
+	if res.storageType == v1.SecondaryStorageTypeRDBMS {
+		r.warnRetentionWindow(ctx, schedule, res.cluster, sched, due)
+	}
+
+	backup, kind := newBackup(schedule, res.storageType, due)
+	if err := r.Create(ctx, backup); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("creating %s %q: %w", kind, backup.GetName(), err)
+	}
+
+	schedule.Status.LastScheduleTime = &consumed
+	schedule.Status.LastBackupName = backup.GetName()
+	r.EventRecorder.Eventf(
+		schedule,
+		nil,
+		corev1.EventTypeNormal,
+		eventReasonBackupCreated,
+		eventActionSchedule,
+		"Created %s %q",
+		kind,
+		backup.GetName(),
+	)
+
+	return nil
+}
+
+// newBackup builds the backup of one trigger: the kind that matches the
+// storage type, named <schedule>-<unix-timestamp> of the trigger, labeled
+// with the cluster and the schedule, and without an owner reference, so
+// deleting the schedule never deletes it.
+func newBackup(
+	schedule *v1.BackupSchedule,
+	storageType v1.SecondaryStorageType,
+	due time.Time,
+) (client.Object, string) {
+	objectMeta := metav1.ObjectMeta{
+		Name:      schedule.Name + "-" + strconv.FormatInt(due.Unix(), 10),
+		Namespace: schedule.Namespace,
+		Labels: map[string]string{
+			labels.ClusterKey:        schedule.Spec.ClusterRef.Name,
+			labels.BackupScheduleKey: schedule.Name,
+		},
+	}
+
+	if storageType == v1.SecondaryStorageTypeElasticsearch {
+		backup := &v1.LogicalBackupElasticsearch{
+			ObjectMeta: objectMeta,
+			Spec:       v1.LogicalBackupElasticsearchSpec{ClusterRef: schedule.Spec.ClusterRef},
+		}
+
+		return backup, backup.GetKind()
+	}
+
+	backup := &v1.LogicalBackupRDBMS{
+		ObjectMeta: objectMeta,
+		Spec:       v1.LogicalBackupRDBMSSpec{ClusterRef: schedule.Spec.ClusterRef},
+	}
+
+	return backup, backup.GetKind()
+}
+
+// warnRetentionWindow warns, best effort, when the retained completed dumps
+// of the schedule outlive the primary-storage retention window of the
+// cluster: those dumps can no longer be restored, because Zeebe deleted the
+// primary-storage backups they pair with. The policy comes from the merged
+// preset the way the cluster renders it. A preset that does not resolve
+// warns about nothing; the cluster controller already reports it.
+func (r *BackupScheduleReconciler) warnRetentionWindow(
+	ctx context.Context,
+	schedule *v1.BackupSchedule,
+	cluster *v1.CamundaCluster,
+	sched cron.Schedule,
+	due time.Time,
+) {
+	var preset *v1.CamundaClusterPresetSpec
+	if cluster.Spec.PresetRef != "" {
+		var obj v1.CamundaClusterPreset
+		if err := r.APIReader.Get(ctx, types.NamespacedName{Name: cluster.Spec.PresetRef}, &obj); err != nil {
+			return
+		}
+		preset = &obj.Spec
+	}
+
+	policy := components.NewEffective(components.MergePreset(cluster.Spec, preset)).PrimaryStorageBackup()
+	completed, _ := retainedBounds(schedule.Spec)
+	message := retentionWindowWarning(completed, triggerInterval(sched, due), policy)
+	if message == "" {
+		return
+	}
+
+	r.EventRecorder.Eventf(
+		schedule,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonRetentionWindow,
+		eventActionSchedule,
+		"%s",
+		message,
+	)
+}
+
+// SetupWithManager applies opts and registers the controller: the schedules,
+// and both backup kinds so a phase change prunes without waiting for the
+// requeue at the next trigger.
 func (r *BackupScheduleReconciler) SetupWithManager(mgr ctrl.Manager, opts Options) error {
 	r.opts = opts.withDefaults()
 	if r.EventRecorder == nil {
@@ -91,6 +411,58 @@ func (r *BackupScheduleReconciler) SetupWithManager(mgr ctrl.Manager, opts Optio
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.BackupSchedule{}).
+		Watches(
+			&v1.LogicalBackupElasticsearch{},
+			enqueueSchedule(),
+			builder.WithPredicates(phaseChanged()),
+		).
+		Watches(
+			&v1.LogicalBackupRDBMS{},
+			enqueueSchedule(),
+			builder.WithPredicates(phaseChanged()),
+		).
 		Named("backupschedule").
 		Complete(r)
+}
+
+// enqueueSchedule maps a backup event to the schedule its label names. A
+// backup without the label is manual and wakes nothing.
+func enqueueSchedule() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []ctrl.Request {
+		name := obj.GetLabels()[labels.BackupScheduleKey]
+		if name == "" {
+			return nil
+		}
+
+		return []ctrl.Request{{
+			NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: name},
+		}}
+	})
+}
+
+// phaseChanged passes the backup events the schedule reacts to: a phase
+// change, which moves the overlap check and the pruning. The schedule
+// created the backup itself and the requeue covers everything else, so
+// creations and deletions wake nothing.
+func phaseChanged() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return backupPhase(e.ObjectOld) != backupPhase(e.ObjectNew)
+		},
+	}
+}
+
+// backupPhase reads the phase of either backup kind.
+func backupPhase(obj client.Object) v1.LogicalBackupPhase {
+	switch backup := obj.(type) {
+	case *v1.LogicalBackupElasticsearch:
+		return backup.Status.Phase
+	case *v1.LogicalBackupRDBMS:
+		return backup.Status.Phase
+	}
+
+	return ""
 }

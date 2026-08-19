@@ -169,29 +169,39 @@ func (e Effective) workload(component string) (v1.WorkloadSpec, bool) {
 	return v1.WorkloadSpec{}, true
 }
 
-// primaryStorageBackup is the resolved primary-storage backup policy: every
-// field with its documented default applied, so the renderer never repeats a
-// default.
-type primaryStorageBackup struct {
-	continuous         bool
-	schedule           string
-	checkpointInterval string
-	retentionWindow    string
-	cleanupSchedule    string
+// PrimaryStorageBackupPolicy is the resolved primary-storage backup policy:
+// every field with its documented default applied, so a consumer never
+// repeats a default. The renderer reads it, and the BackupSchedule controller
+// reads it to compare its own retention against the window of the cluster.
+type PrimaryStorageBackupPolicy struct {
+	// Continuous reports whether Zeebe holds every log segment until it is
+	// backed up.
+	Continuous bool
+	// Schedule is the interval of the Zeebe backup scheduler, or ScheduleNone.
+	Schedule string
+	// CheckpointInterval is the granularity of a point-in-time restore, as an
+	// ISO 8601 duration.
+	CheckpointInterval string
+	// RetentionWindow is how far back the primary-storage backups stay
+	// available, as an ISO 8601 duration of days and time.
+	RetentionWindow string
+	// CleanupSchedule is the interval at which Zeebe prunes backups outside
+	// the window, or ScheduleNone, which never prunes.
+	CleanupSchedule string
 }
 
-// primaryStorageBackup returns the primary-storage backup policy with the
+// PrimaryStorageBackup returns the primary-storage backup policy with the
 // documented defaults applied. Continuous defaults to true only when a
 // schedule takes backups: continuous mode holds every log segment until a
 // backup runs, so with a schedule of none it would fill the disks and back
 // up nothing. An explicit continuous with a schedule of none is rejected by
 // ValidateMerged.
-func (e Effective) primaryStorageBackup() primaryStorageBackup {
-	resolved := primaryStorageBackup{
-		schedule:           defaultBackupSchedule,
-		checkpointInterval: defaultBackupCheckpointInterval,
-		retentionWindow:    defaultBackupRetentionWindow,
-		cleanupSchedule:    defaultBackupCleanupSchedule,
+func (e Effective) PrimaryStorageBackup() PrimaryStorageBackupPolicy {
+	resolved := PrimaryStorageBackupPolicy{
+		Schedule:           defaultBackupSchedule,
+		CheckpointInterval: defaultBackupCheckpointInterval,
+		RetentionWindow:    defaultBackupRetentionWindow,
+		CleanupSchedule:    defaultBackupCleanupSchedule,
 	}
 
 	ps := &v1.PrimaryStorageBackupSpec{}
@@ -200,23 +210,23 @@ func (e Effective) primaryStorageBackup() primaryStorageBackup {
 	}
 
 	if ps.Schedule != "" {
-		resolved.schedule = ps.Schedule
+		resolved.Schedule = ps.Schedule
 	}
-	resolved.continuous = resolved.schedule != scheduleNone
+	resolved.Continuous = resolved.Schedule != ScheduleNone
 	if ps.Continuous != nil {
-		resolved.continuous = *ps.Continuous
+		resolved.Continuous = *ps.Continuous
 	}
 	if ps.CheckpointInterval != "" {
-		resolved.checkpointInterval = ps.CheckpointInterval
+		resolved.CheckpointInterval = ps.CheckpointInterval
 	}
 	if ps.Retention == nil {
 		return resolved
 	}
 	if ps.Retention.Window != "" {
-		resolved.retentionWindow = ps.Retention.Window
+		resolved.RetentionWindow = ps.Retention.Window
 	}
 	if ps.Retention.CleanupSchedule != "" {
-		resolved.cleanupSchedule = ps.Retention.CleanupSchedule
+		resolved.CleanupSchedule = ps.Retention.CleanupSchedule
 	}
 
 	return resolved
