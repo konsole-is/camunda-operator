@@ -47,8 +47,9 @@ var stuckWaitingReasons = map[string]string{
 // pre-check failure that names the pod, the container, and the waiting
 // reason. Such a pod has a container in a non-progressing waiting state, or
 // the scheduler cannot place it, for example on a volume that never binds.
-// what names the work the pod does, for example "the dump Job", and it goes
-// into the message. Stuck returns nil when every pod progresses.
+// The what argument names the work that the pod does, for example "the dump
+// Job". It goes into the message. Stuck returns nil when every pod
+// progresses.
 //
 // The reader must be uncached. A pod that just entered a waiting state is the
 // reason to call this at all.

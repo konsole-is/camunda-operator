@@ -40,9 +40,10 @@ type Progress struct {
 	Done bool
 	// Message says what the step waits for. It reaches the Ready condition.
 	Message string
-	// Recreated names every claim that the restore already deleted, the
-	// recorded list grown by this call. The caller writes it to status before
-	// it acts again.
+	// Recreated names every claim whose old volume is gone: the ones this
+	// call deleted, and the ones it found already absent. It is the recorded
+	// list of the input, grown by this call. The caller writes it to status
+	// before it acts again, and a recorded name is never deleted.
 	Recreated []string
 }
 
@@ -63,8 +64,9 @@ type ClaimInput struct {
 	Target *Target
 	// Size is the storage request of every recreated claim.
 	Size resource.Quantity
-	// Recreated names the claims that the restore already deleted, as status
-	// records them. A recorded name is never deleted again.
+	// Recreated names the claims whose old volume is already gone, as status
+	// records them. A recorded name is never deleted, so the empty volume
+	// that took its place survives a reconcile that re-enters.
 	Recreated []string
 	// FieldManager applies the claims: the field manager of the calling
 	// restore kind.
@@ -178,7 +180,7 @@ func RecreateClaims(
 			// A pod of the cluster still holds the volume, so the kubelet keeps
 			// it alive. Suspending the cluster releases it.
 			progress.hold(fmt.Sprintf(
-				"the broker volume %s is still terminating; a pod of the cluster holds it", name,
+				"the broker volume %s is still terminating because a pod of the cluster holds it", name,
 			))
 		default:
 			claim := in.Target.BuildClaim(int32(ordinal), in.Size)
