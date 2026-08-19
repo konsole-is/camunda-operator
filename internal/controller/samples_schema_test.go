@@ -44,6 +44,8 @@ var implementedKindSamples = []string{
 	"core_v1_camundaplatformconfig.yaml",
 	"core_v1_camundacluster.yaml",
 	"core_v1_camundaclusterpreset.yaml",
+	"core_v1_logicalrestore.yaml",
+	"core_v1_pointintimerestore.yaml",
 }
 
 var _ = Describe("config/samples", func() {

@@ -4,6 +4,11 @@ metadata:
   labels:
     app.kubernetes.io/name: camunda-operator
     app.kubernetes.io/managed-by: kustomize
-  name: logicalrestore-sample
+    camunda.io/cluster: camundacluster-sample
+  name: camundacluster-sample-restore
 spec:
-  # TODO(user): Add fields here
+  backupRef:
+    kind: LogicalBackupElasticsearch
+    name: camundacluster-sample-backup
+  targetClusterRef:
+    name: camundacluster-sample

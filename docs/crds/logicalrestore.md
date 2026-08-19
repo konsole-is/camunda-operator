@@ -1,105 +1,22 @@
 # LogicalRestore
 
-A LogicalRestore restores a completed logical backup into a suspended target orchestration cluster.
+`LogicalRestore` restores one completed logical backup into a suspended `CamundaCluster`. You create it, or a recovery flow above the operator creates it for you.
+
+The target can be the cluster the backup came from, or another cluster that reads the same backup bucket. This is how you recover from data loss and how you clone an environment. For a relational cluster that you roll back in place to a point in time, use [PointInTimeRestore](pointintimerestore.md) instead.
+
+One resource is one restore. The spec is immutable, and the restore runs once. To retry a failed restore, create a new resource. `kubectl get lr` lists the restores with their phase, backup, and target.
 
 !!! warning "Not implemented yet"
     The operator does not implement this kind yet. This page describes the planned design.
 
-## Purpose
+Before you create a restore, make sure that:
 
-A LogicalRestore rebuilds a `CamundaCluster`'s secondary storage and Zeebe partitions from a [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) or a [LogicalBackupRDBMS](logicalbackuprdbms.md), either on the same cluster or on a different one — for example to recover from data loss or to clone an environment.
-You create it, or a composition layer above creates it as part of a managed recovery flow.
-It works for both secondary storage types; for timestamp-precise in-place recovery of an RDBMS-backed cluster, use [PointInTimeRestore](pointintimerestore.md) instead.
+- The referenced backup is `Completed`.
+- The target `CamundaCluster` has `spec.suspend: true` and reports the `Suspended` condition.
+- The target `spec.backupStorageRef` names the same `ObjectStorageConfig` the backup wrote to.
+- The backup and the target cluster live in the namespace of the restore.
 
-## How it works
-
-The operator drives the restore through the phases in `status.phase`; each phase must complete before the next starts.
-
-1. Validate that the target cluster is suspended (`spec.suspend: true` and the `Suspended` condition reported on the `CamundaCluster`). The restore controller only ever reads the suspend field — it never writes it. The `suspend` field is owned by you or by the composition layer above, which is responsible for suspending the cluster before creating the LogicalRestore and for unsuspending it after completion. A running target keeps the restore in `Pending` with `Ready: ClusterNotSuspended`.
-2. Validate that the referenced backup exists and has `status.phase: Completed`. Any other state keeps the restore in `Pending` with `Ready: InvalidReference`.
-3. Enter `ValidatingCompatibility`: read the backup's source storage type and backup ID, resolve the target cluster's `storageRef`, and check compatibility. The secondary storage types must match, the target's Zeebe partition count must equal the partition count in the backup, and the Camunda versions must satisfy the storage-type-specific rule below. Incompatibility moves the restore to `Failed` with `Ready: IncompatibleTarget`.
-4. Enter `RestoringSecondaryStorage`:
-    - Elasticsearch: delete the existing Camunda indices in the target's Elasticsearch — excluding the `camunda-optimize*` indices when the backup contains no Optimize snapshots; when it does, the Optimize indices are deleted and restored like the rest — then restore every snapshot of the backup (the web-application parts, the Zeebe record snapshot, and the Optimize snapshots when present) directly through the Elasticsearch snapshot API. Camunda exposes no restore endpoint, so the operator talks to Elasticsearch itself using the credentials from the target's `SecondaryStorageConfig`. The index and component templates survive because they were seeded when the target cluster first started.
-    - RDBMS: create a Job that downloads the dump from the backup bucket and runs `pg_restore` with `--clean --if-exists` against the target's logical database — replacing any existing schema and data in the target logical database — resolved via the target's `storageRef` → `SecondaryStorageConfig` → `DatabaseConfig` and authenticated with its `backupCredentialsSecretRef`. All Jobs this controller creates are applied with Server-Side Apply (SSA) under the field manager `camunda-operator/logicalrestore`.
-5. Enter `RestoringPrimaryStorage`: ensure the target's Zeebe data volumes are empty — the operator deletes and recreates the Zeebe PVCs, because Camunda's restore application refuses a non-empty data directory — then run the restore application (`bin/restore`, the Camunda distribution's one-shot Spring Boot app) once per broker as a Job with the same broker configuration (node ID, cluster size, replication factor, partition count) the broker will use. On the Elasticsearch path it runs with `--backupId=<status.backupId of the backup>`; on the RDBMS path it runs without arguments and aligns itself by reading the exporter position from the restored database, restoring the newest matching checkpoint from the primary-storage backup store.
-6. Report `Completed`. You or the composition layer unsuspend the target cluster; on start, an RDBMS-backed cluster re-exports any events between the database's position and the restored checkpoint, bringing secondary storage up to date.
-
-**Version compatibility rule.** Elasticsearch-backed backups must be restored with the exact Camunda version they were taken with — the version is embedded in every snapshot name. RDBMS-backed backups may be restored with the same version or up to one minor newer (a backup taken with 8.9.x restores with 8.9.x or 8.10.x). Camunda's `--allow-version-mismatch` escape hatch is deliberately not exposed in this API.
-
-**Cross-cluster restores.** The target cluster's `backupStorageRef` must point at a bucket containing the source backup's artifacts — for a cross-cluster restore this means the source cluster's backup bucket, or a replica of it. The operator resolves all restore inputs from the backup's recorded location, never from the source cluster, so the source cluster may no longer exist.
-
-```mermaid
-graph TD
-    LR[LogicalRestore] -.->|backupRef| LBE[LogicalBackupElasticsearch]
-    LR -.->|backupRef| LBR[LogicalBackupRDBMS]
-    LR -.->|targetClusterRef, reads suspend| CC[CamundaCluster]
-    CC -.->|storageRef| SSC[SecondaryStorageConfig]
-    LR -->|"type: rdbms"| J[pg_restore Job]
-    LR -->|per broker| RJ[restore app Jobs]
-    LR -.->|"type: elasticsearch"| ES["Elasticsearch snapshot API (external)"]
-```
-
-!!! note "Deviation from the original proposal"
-    The proposal said the Elasticsearch path "restores from ES snapshots via Camunda's snapshot APIs". Verified against Camunda 8.9: no Camunda component exposes a restore endpoint — snapshot restore is performed directly against Elasticsearch, and Zeebe partitions are restored by Camunda's standalone restore application run against empty data directories, not through a management API. The version and partition-count compatibility rules above come from the verified 8.9 restore documentation and were not spelled out in the proposal.
-
-## API reference
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: LogicalRestore
-metadata:
-  name: my-cluster-restore
-  namespace: my-cluster-ns
-spec:
-  # object. Required. Reference to the completed logical backup to restore
-  # from, in the namespace of this CR.
-  backupRef:
-    # string. Required. Kind of the backup: LogicalBackupElasticsearch or
-    # LogicalBackupRDBMS.
-    kind: LogicalBackupElasticsearch
-    # string. Required. Name of the backup.
-    name: my-cluster-backup-001
-  # object. Required. Cluster to restore into, in the namespace of this CR.
-  # It can differ from the source cluster of the backup.
-  targetClusterRef:
-    # string. Required. Name of the target CamundaCluster.
-    name: my-cluster-restored
-```
-
-## Status
-
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `Ready` | `Completed` | The restore finished; the target can be unsuspended. |
-| `Ready` | `Progressing` | A restore phase is running. |
-| `Ready` | `ClusterNotSuspended` | The target cluster is not suspended; the restore waits in `Pending`. |
-| `Ready` | `InvalidReference` | The backup or the target cluster does not exist, or the backup is not completed. |
-| `Ready` | `IncompatibleTarget` | Storage type, partition count, or version compatibility failed. |
-| `Ready` | `Failed` | A restore phase failed; the message names the failing step. |
-
-`status.phase` tracks the long-running operation: `Pending | ValidatingCompatibility | RestoringSecondaryStorage | RestoringPrimaryStorage | Completed | Failed`.
-
-The operator records the last reconciled generation in `status.observedGeneration`.
-
-## Validation
-
-- `spec` is immutable after creation: a restore is a one-shot operation, retried by creating a new CR.
-- `backupRef` and `targetClusterRef` name resources in the namespace of this CR. Neither crosses a namespace. The operator reads the Secrets of the target cluster and runs Jobs in its namespace. Both references therefore stay inside the RBAC boundary of the CR. The logical backup kinds follow the same rule for their `clusterRef`.
-- Suspension, backup completeness, and target compatibility are validated at reconcile time (steps 1–3 above) because they depend on live cluster state.
-
-## Relationships
-
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md), [LogicalBackupRDBMS](logicalbackuprdbms.md) — referenced via `backupRef`. The backup provides the artifacts and the backup ID.
-- [PointInTimeRestore](pointintimerestore.md) — the in-place, timestamp-precise alternative for PITR-enabled RDBMS clusters.
-- [CamundaCluster](camundacluster.md) — referenced via `targetClusterRef`; must be suspended by its owner for the duration of the restore.
-- [SecondaryStorageConfig](secondarystorageconfig.md) — resolved via the target's `storageRef` for storage type and credentials.
-- [DatabaseConfig](databaseconfig.md) — resolved on the RDBMS path for the target logical database and backup credentials.
-- [ObjectStorageConfig](objectstorageconfig.md) — resolved via the target's `backupStorageRef`; must contain the backup's artifacts.
-- [CamundaOptimize](camundaoptimize.md) — when the backup contains Optimize snapshots, the target's Optimize indices are deleted and restored along with the rest of the set; otherwise they are left untouched.
-
-## Examples
-
-A minimal manifest:
+The smallest restore names the backup and the target:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -110,12 +27,127 @@ metadata:
 spec:
   backupRef:
     kind: LogicalBackupElasticsearch
-    name: my-cluster-backup-001
+    name: my-cluster-backup
   targetClusterRef:
     name: my-cluster
 ```
 
-A realistic manifest, restoring a backup of `my-cluster` into a freshly created replacement cluster:
+```mermaid
+graph LR
+    LR[LogicalRestore] -.->|backupRef| LB[LogicalBackupElasticsearch<br/>or LogicalBackupRDBMS]
+    LR -.->|targetClusterRef| CC[CamundaCluster]
+    CC -.->|storageRef| SSC[SecondaryStorageConfig]
+    CC -.->|backupStorageRef| OSC[ObjectStorageConfig]
+    LR -->|snapshot restore| ES["Elasticsearch (external)"]
+    LR -->|pg_restore Job| DB["Database (external)"]
+    LR -->|restore Job per broker| PVC[Broker data volumes]
+```
+
+## Suspend
+
+The operator only reads `spec.suspend` of the target. It never writes it. You suspend the cluster before you create the restore, and you unsuspend it after the restore is `Completed`. A running target holds the restore in `Pending` with reason `ClusterNotSuspended`, and the operator touches no data.
+
+## Phases
+
+`status.phase` is the resume marker. A restore that re-enters after an operator restart continues at the recorded phase.
+
+| Phase | What happens |
+| --- | --- |
+| `Pending` | The restore waits. The target still runs, or the backup is not `Completed`. |
+| `ValidatingCompatibility` | The operator compares the backup against the target. |
+| `RestoringSecondaryStorage` | The operator writes the backup into the target's secondary storage. |
+| `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the restore application on them. |
+| `Completed` | The restore finished. You can unsuspend the target. |
+| `Failed` | A phase failed. `status.failureMessage` names it. |
+
+## Compatibility
+
+The restore fails with reason `IncompatibleTarget` when the target cannot hold the backup:
+
+- The secondary storage type of the target differs from the type of the backup.
+- The Zeebe partition count of the target differs from `status.partitionsCount` of the backup.
+- The `spec.backupStorageRef` of the target names another bucket than the one the backup wrote to. The restore reads the artifacts of the backup through the bucket of the target, so another bucket cannot hold them.
+- The Camunda versions break the version rule below.
+
+**Version rule.** An Elasticsearch backup restores only with the exact Camunda version it was taken with, because that version is part of every snapshot name. A relational backup restores with the same version, or with one minor version newer. A backup taken with 8.9.x restores with 8.9.x or 8.10.x. The backup records its version in `status.version`, and a backup that recorded none cannot restore.
+
+## Secondary storage
+
+On the Elasticsearch path the operator deletes the Camunda indices of the target and restores every snapshot of the backup through the Elasticsearch snapshot API. Camunda exposes no restore endpoint, so the operator talks to Elasticsearch itself with the credentials of the target's `SecondaryStorageConfig`. It registers its own snapshot repository on the Elasticsearch of the target, derived from the bucket the backup pinned and the repository prefix the backup recorded. This is what makes a restore into a second cluster work. The index and component templates survive, because the target cluster created them when it first started.
+
+The operator deletes the Optimize indices only when the backup holds Optimize snapshots. A backup without them cannot put them back.
+
+On the relational path the operator runs one Job that downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists` against the logical database of the target. This replaces the schema and the data of that database.
+
+## Primary storage
+
+The Camunda restore application refuses a non-empty data directory, so the operator deletes the broker data volumes of the target and creates them again. The new volume takes the effective restore size that the backup recorded in `status.storageSizes.zeebe`. When the backup recorded none, it takes the size of the claim template of the broker StatefulSet. Everything else comes from that claim template: the storage class, the access modes, and the labels.
+
+The volumes belong to the broker StatefulSet, not to the restore. Deleting the restore never deletes a broker volume.
+
+The operator then runs the Camunda restore application once per broker, as a Job. The Jobs copy their configuration from the live broker StatefulSet of the target, so the restore application always runs with the configuration the brokers run with. A cluster whose broker StatefulSet was deleted cannot restore until its own controller applies it again.
+
+## Deletion
+
+When you delete the restore, the operator deletes the Jobs it created. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind. A backup that a restore read stays untouched, and you can delete it while the restore still runs. The restore pins the backup ID and the storage type in its status when it starts.
+
+## Status
+
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
+| `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the target cluster. |
+| `Ready` | `ClusterNotSuspended` | The target cluster runs. | Set `spec.suspend: true` on the cluster. |
+| `Ready` | `InvalidReference` | The backup or the target does not exist, the backup is not `Completed`, or the broker StatefulSet is gone. | Correct the reference that the message names. |
+| `Ready` | `IncompatibleTarget` | The target cannot hold this backup. | Read the message. Restore into a cluster that matches. |
+| `Ready` | `MissingSecret` | A credentials Secret of the target is missing or lacks a key. | Create the Secret that the message names. |
+| `Ready` | `ConnectionFailed` | Elasticsearch or the database rejects the operator. | Correct the endpoint or the credentials. |
+| `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
+
+The status also records what the restore pinned and what it did:
+
+- `status.backupId` and `status.storageType` are the backup the restore reads. They are pinned when the restore starts.
+- `status.targetClusterUID` pins the identity of the target cluster.
+- `status.brokers` is the broker count that the operator read off the broker StatefulSet.
+- `status.repository` and `status.restoredSnapshots` record the Elasticsearch restore.
+- `status.secondaryJobName` names the `pg_restore` Job while it exists.
+- `status.primaryJobNames` names the per-broker restore Jobs, in broker order.
+- `status.recreatedClaims` names the broker data volumes that the operator deleted and created again.
+- `status.completionTime` is when the restore reached `Completed` or `Failed`.
+- `status.observedGeneration` is the last generation the operator reconciled.
+
+## Spec reference
+
+Every field, with its type and whether it is required:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: LogicalRestore
+metadata:
+  name: my-cluster-restore
+  namespace: my-cluster-ns
+spec:
+  # object. Required. The completed backup to restore from.
+  backupRef:
+    # string. Required. Kind of the backup: LogicalBackupElasticsearch or
+    # LogicalBackupRDBMS.
+    kind: LogicalBackupElasticsearch
+    # string. Required. Name of the backup, in this namespace.
+    name: my-cluster-backup
+  # object. Required. The cluster to restore into.
+  targetClusterRef:
+    # string. Required. Name of the CamundaCluster, in this namespace.
+    name: my-cluster
+```
+
+### Validation rules
+
+- `spec` is immutable. A restore runs once, and you retry it with a new resource.
+- `spec.backupRef.kind` is `LogicalBackupElasticsearch` or `LogicalBackupRDBMS`.
+- Both references name resources in the namespace of the restore. Neither crosses a namespace. The operator reads the Secrets of the target and runs Jobs in that namespace, so both references stay inside the RBAC boundary of the restore.
+- The suspend state, the state of the backup, and the compatibility of the target depend on live cluster state. The operator checks them at reconcile time.
+
+### Restore into a replacement cluster
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -128,7 +160,19 @@ metadata:
 spec:
   backupRef:
     kind: LogicalBackupElasticsearch
-    name: my-cluster-backup-001
+    name: my-cluster-backup
   targetClusterRef:
     name: my-cluster-restored
 ```
+
+The replacement cluster must run the same Camunda version, hold the same partition count, and point `spec.backupStorageRef` at the bucket that holds the artifacts of the backup.
+
+## Related
+
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): referenced through `backupRef`. The backup holds the artifacts, the backup ID, and the Camunda version.
+- [PointInTimeRestore](pointintimerestore.md): the in-place alternative for a relational cluster that you roll back to a point in time.
+- [CamundaCluster](camundacluster.md): referenced through `targetClusterRef`. You suspend it for the whole restore.
+- [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the target, for the storage type and the credentials.
+- [DatabaseConfig](databaseconfig.md): resolved on the relational path, for the logical database and the backup credentials.
+- [ObjectStorageConfig](objectstorageconfig.md): resolved through the `backupStorageRef` of the target. It must hold the artifacts of the backup.
+- [CamundaOptimize](camundaoptimize.md): the Optimize indices of the target are restored only when the backup holds Optimize snapshots.
