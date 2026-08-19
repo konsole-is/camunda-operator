@@ -1,94 +1,66 @@
 # Architecture
 
-The Camunda Operator manages Camunda 8.9+ orchestration clusters and the features that attach to them.
-This page describes the design principles behind its API surface: how the core cluster resource stays small, how every other capability connects to it, and what the operator does and does not take responsibility for.
+This page explains how the resources of the operator relate, and the rules that shape its API.
+Read it when you want to understand why a feature is its own resource, or how to extend the operator.
 
-## The extension model
+## One small core, many attachments
 
-The core principle: **features attach to workloads; workloads don't know about features.**
+`CamundaCluster` describes the orchestration cluster and nothing else.
+Every other capability is its own kind with its own controller. A backup, for example, is a `LogicalBackupElasticsearch` that names the cluster in `clusterRef`. The cluster does not know that the backup exists.
 
-```mermaid
-graph LR
-    CC[CamundaCluster] -->|creates| WL["Workloads (external)"]
-    F1[CamundaOptimize] -.->|attaches to| CC
-    F2[PVCAutoResize] -.->|attaches to| CC
-    F3[LogicalBackupElasticsearch] -.->|attaches to| CC
-```
+This is the core rule of the operator: **features attach to workloads. Workloads do not know about features.**
 
-`CamundaCluster` describes the orchestration cluster — the Camunda workload set — and nothing else.
-Every other capability is its own CRD with its own controller that discovers the cluster and augments it from the outside.
-The `CamundaCluster` controller has no plugin interfaces, no sub-reconcilers for extensions, and no code dependencies on any extension controller.
-A failure in an extension never blocks cluster reconciliation, and extensions can be created, updated, or deleted independently of the cluster's lifecycle.
+The rule has three consequences that you can rely on:
 
-This mirrors how the Kubernetes ecosystem itself works.
-cert-manager writes Secrets; the HorizontalPodAutoscaler patches replicas on a Deployment.
-Neither goes through a central coordinator: controllers attach themselves to resources and extend them in small, well-scoped ways.
+- The `CamundaCluster` controller has no plugin interface and no code dependency on any other controller.
+- A failure in an attached feature never blocks the reconciliation of the cluster.
+- You can create, change, or delete an attached feature without a change to the cluster.
 
-To make discovery possible, the operator labels every resource it creates with the name of its owner under a key per owning kind — `camunda.io/cluster` for a `CamundaCluster`, `camunda.io/elasticsearch-cluster` for an `ElasticsearchCluster`, `camunda.io/database` for a `Database` — with `camunda.io/component` (the resource's role) and `app.kubernetes.io/managed-by: camunda-operator`.
-One key per kind keeps two owners of different kinds with the same name apart. Pods and volumes that another operator runs from the operator's template (the Elasticsearch pods that ECK manages) carry the owner and component labels but not the manager label. `pkg/labels` is the one place that defines these keys.
-Extensions find workloads through these labels or reference the cluster directly via `clusterRef`.
+This is how the Kubernetes ecosystem itself works. cert-manager writes Secrets. The HorizontalPodAutoscaler patches replicas on a Deployment. Neither goes through a central coordinator.
 
-## How features connect
+## How a feature finds its workloads
 
-Features connect to the core through three mechanisms.
+The operator labels every resource that it creates:
 
-### 1. Explicit inputs for immutable concerns (before creation)
+| Label | Value |
+| --- | --- |
+| `camunda.io/cluster` | the name of the owning `CamundaCluster` |
+| `camunda.io/elasticsearch-cluster` | the name of the owning `ElasticsearchCluster` |
+| `camunda.io/database` | the name of the owning `Database` |
+| `camunda.io/component` | the role of the resource, for example `zeebe`, `gateway`, `elasticsearch` |
+| `app.kubernetes.io/managed-by` | `camunda-operator` |
 
-Some configuration must be known before a resource is created because it cannot be changed afterward.
-The primary example is storage class names on StatefulSet PVC templates: `spec.zeebe.storageClassName` must be set when the `CamundaCluster` is created.
+One label key per owning kind keeps two owners of different kinds with the same name apart.
+A feature finds the workloads of a cluster through these labels, or reads the cluster directly through `clusterRef`.
 
-```mermaid
-graph LR
-    SC["StorageClass (external)"]
-    CC[CamundaCluster] -.->|storageClassName| SC
-    CC -->|creates| WL["Workloads (external)"]
-```
+When a feature needs to call the cluster, it reads `status.management` of the `CamundaCluster`. That field publishes the address of the management API, so the feature does not rebuild Service names and ports.
 
-The `CamundaCluster` takes a storage class name — the same field you would set to `standard` or `gp3` — and does not care where that StorageClass came from.
-A composition layer above may provision a special-purpose StorageClass (for example an encrypted one) before creating the cluster, but that is a prerequisite sequencing concern of the layer above, never of this operator.
+## Contracts carry connection details
 
-### 2. `clusterRef` and SSA patching for runtime concerns (after creation)
+Controllers pass connection details to each other through contract kinds, never through direct references to each other:
 
-Extensions reference a `CamundaCluster` via `clusterRef` to read its spec — for example which components are active — and optionally patch fields back onto it using Server-Side Apply (SSA).
+| Contract | Carries |
+| --- | --- |
+| `SecondaryStorageConfig` | where the secondary storage of a cluster is and how to authenticate |
+| `DatabaseServerConfig` | a database server, its admin credentials, and its point-in-time-recovery capability |
+| `DatabaseConfig` | one logical database and its credentials |
+| `ObjectStorageConfig` | one bucket and how to authenticate to it |
+| `ManagementAuthConfig` | the OIDC configuration of Management Identity |
 
-```mermaid
-graph LR
-    CC[CamundaCluster] -->|creates| WL["Workloads (external)"]
-    OPT[CamundaOptimize] -.->|"SSA patch via clusterRef"| CC
-    PAR[PVCAutoResize] -.->|"SSA patch via clusterRef"| WL
-```
+The resource that provides a backend writes the contract. The resource that uses the backend reads it by name.
+An `ElasticsearchCluster` writes a `SecondaryStorageConfig`. A `Database` writes a `DatabaseConfig`. A `CamundaCluster` reads the `SecondaryStorageConfig` in `storageRef` and does not know who wrote it.
 
-Each patching extension owns a dedicated SSA field manager, so its writes are tracked and removed cleanly when the extension is deleted, and no two controllers fight over the same fields.
-For example, `CamundaOptimize` patches exporter configuration onto the cluster spec, and `PVCAutoResize` patches resize annotations onto live PVCs.
+Because the consumer reads only the contract, you can also write a contract by hand, or let another tool write it. An Elasticsearch cluster that the operator does not manage, or a bucket that Crossplane provisions, looks the same to the consumer.
 
-To react to changes on the referenced cluster, extension controllers set up a watch on `CamundaCluster` with a mapping function that resolves back to the referencing CR.
-A field indexer on `.spec.clusterRef.name` makes this an O(1) lookup — the same pattern Ingress controllers use to watch Services.
-The extension controller never reconciles the `CamundaCluster` itself; the watch is only a trigger to re-reconcile its own CR with the latest cluster state.
+Every contract has a validation controller. It checks that the referenced Secrets and resources exist, and for a database server that the server answers. It reports the result on `Ready`. It never provisions anything.
 
-### 3. Contract CRDs for data passing
+## Some inputs must be known before creation
 
-Controllers pass structured data to each other through contract CRDs rather than direct references or shared fields.
+A few settings cannot change after a resource exists, because Kubernetes does not allow the change. The storage class of the broker volumes is one: a StatefulSet cannot change the storage class of its volume claim template.
 
-```mermaid
-graph LR
-    ESC[ElasticsearchCluster] -->|creates| SSC[SecondaryStorageConfig]
-    DB[Database] -->|creates| DBC[DatabaseConfig]
-    CC[CamundaCluster] -.->|storageRef| SSC
-    CC -.->|backupStorageRef| OSC[ObjectStorageConfig]
-    DBC2["SecondaryStorageConfig (rdbms)"] -.->|databaseConfigRef| DBC
-```
+These settings are plain fields on the resource, set before creation. `spec.zeebe.storageClassName` takes a StorageClass name. The operator does not care where the StorageClass came from.
 
-Each contract CRD — `SecondaryStorageConfig`, `ObjectStorageConfig`, `DatabaseServerConfig`, `DatabaseConfig`, `ManagementAuthConfig` — is a typed interface that carries connection details, credential references, and configuration.
-The producing controller creates the contract CR; the consuming controller reads it via a named reference.
-This decouples producer and consumer completely: the operator reads an `ObjectStorageConfig` without knowing whether it was created by a composition layer above, a Crossplane composite, or you applying a manifest by hand.
-
-Contract CRDs have lightweight validation-only controllers that check referenced secrets and CRs exist and surface the result as status conditions.
-They never provision anything.
-
-## CRD overview
-
-The operator's 19 CRDs and how they relate.
-Solid arrows mean "creates/provisions"; dotted arrows mean "reads/references/patches".
+## The resource map
 
 ```mermaid
 graph TD
@@ -103,21 +75,21 @@ graph TD
     OSC[ObjectStorageConfig]
     MAC[ManagementAuthConfig]
     CC[CamundaCluster]
-    WL["Workloads (external)"]
+    WL["Workloads"]
     LBE[LogicalBackupElasticsearch]
     LBR[LogicalBackupRDBMS]
-    BKS[BackupSchedule]
-    PITR[PointInTimeRestore]
-    LR[LogicalRestore]
-    OPT[CamundaOptimize]
-    CMC[CamundaManagementCluster]
-    PAR[PVCAutoResize]
+    ECK["Elasticsearch (ECK, external)"]
+    PG["PostgreSQL server (external)"]
+    BUCKET["Bucket (external)"]
 
     ESC -.->|presetRef| ESCP
+    ESC -->|creates| ECK
     ESC -->|creates| SSC
+    ESC -.->|snapshotStorageRef| OSC
     DB -->|creates| DBC
     DB -->|"creates (optional)"| SSC
     DB -.->|serverRef| DBSC
+    DB -.->|SQL| PG
     DBC -.->|serverRef| DBSC
     SSC -.->|databaseConfigRef| DBC
 
@@ -126,33 +98,46 @@ graph TD
     CC -.->|storageRef| SSC
     CC -.->|"backupStorageRef / documentStorageRef"| OSC
     CC -->|creates| WL
+    OSC -.-> BUCKET
 
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
-    BKS -->|"creates the kind matching the storage type"| LBE
-    BKS -->|"creates the kind matching the storage type"| LBR
-    BKS -.->|clusterRef| CC
-    PITR -.->|clusterRef| CC
-    LR -.->|targetClusterRef| CC
-    LR -.->|backupRef| LBE
-
-    OPT -.->|clusterRef| CC
-    OPT -.->|managementAuthRef| MAC
-    CMC -->|creates| MAC
-    CMC -.->|"keycloakDbRef / identityDbRef / webModelerDbRef"| DBC
-    CMC -.->|platformConfigRef| PFC
-
-    PAR -.->|clusterRef| CC
 ```
 
-See the [CRD Overview](crds/index.md) for the full inventory, the reconciler dependency graph, and per-CRD reference documentation.
+Solid arrows mean "creates". Dotted arrows mean "references".
+`ManagementAuthConfig` has no consumer in the operator yet. The [CRD reference](crds/index.md) lists every kind.
 
-## Deployment context
+## Status conventions
 
-This operator is the bottom layer of a three-operator stack.
-A cloud operator (managing cloud infrastructure such as buckets, database servers, and encrypted volumes) and a SaaS operator (managing platform extensions such as ingress and monitoring) may run above it: they create CRs of this operator — a composition layer above may create a `CamundaCluster`, contract CRs, or extension CRs — but this operator has zero knowledge of them, takes no code dependency on them, and works standalone on any Kubernetes cluster.
+Every kind with a controller reports conditions, and every one has an aggregate `Ready` condition. `status.observedGeneration` records the last generation the controller reconciled.
+
+A kind that runs workloads also reports one condition per component, named `<Component>Ready`, for example `ZeebeReady`. `Ready` takes its reason and message from the component that needs attention. When every component is healthy, the reason is `Healthy`.
+
+The reasons you will see most:
+
+| Reason | Meaning |
+| --- | --- |
+| `Healthy` | Everything the resource needs is in place. |
+| `Creating`, `Updating`, `Scaling` | The workloads roll out. |
+| `Failing` | A workload does not reach the desired state. |
+| `Degraded`, `Down` | Some or no replicas are ready past a grace period. For Elasticsearch: yellow or red health. |
+| `Suspended` | `spec.suspend` is true. `Ready` is `True`, because the resource is in its desired state. |
+| `Disabled` | The component is not part of the current topology. This is not an error. |
+| `InvalidReference` | A referenced resource does not exist, or the merged configuration is invalid. The message names it. |
+| `MissingSecret` | A referenced Secret or key does not exist. The message names it. |
+| `ConnectionFailed` | An external system did not answer. |
+| `Error` | The controller hit an error. The message carries it. |
+
+The operator checks references at reconcile time, not at admission. You can create resources in any order. A resource waits with `InvalidReference` or `MissingSecret` until its references exist.
+
+## How the operator writes
+
+The operator applies every resource that it manages with Server-Side Apply. Each controller owns only the fields that it sets. A field that you set by hand on a managed resource stays until the operator needs that field.
+
+The operator writes the status of a resource once per reconcile, through the status subresource.
 
 ## Support policy
 
-- **Camunda 8.9+ only.** The operator targets the unified orchestration-cluster architecture introduced with Camunda 8.9. There is no version-conditional rendering and no support for earlier component topologies.
-- **Minor releases are the test matrix.** The operator is tested against Camunda minor releases; features that land in a patch release are treated as part of the next minor.
+- **Camunda 8.9 and later.** The operator targets the unified orchestration cluster that Camunda 8.9 introduced. It does not render earlier topologies.
+- **Minor releases are the test matrix.** The operator is tested against Camunda minor releases. A feature that lands in a patch release is treated as part of the next minor.
+- **Elasticsearch through ECK, PostgreSQL for databases.** `ElasticsearchCluster` requires the ECK operator. `Database` bootstraps PostgreSQL servers.

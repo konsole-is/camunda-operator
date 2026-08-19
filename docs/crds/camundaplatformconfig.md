@@ -1,54 +1,40 @@
 # CamundaPlatformConfig
 
-Cluster-scoped, environment-wide platform settings — identity provider, license, and image registry — shared by every orchestration cluster that references it.
+`CamundaPlatformConfig` is a cluster-scoped resource that holds the settings every orchestration cluster of an environment shares. You create it, or another tool creates it for you.
 
 ## Purpose
 
-`CamundaPlatformConfig` holds the settings that are identical across all orchestration clusters in an environment: how users and clients authenticate (basic or OIDC), the Camunda license, and the container registry images are pulled from.
-You create one per environment (or a composition layer above creates it), and each [CamundaCluster](camundacluster.md) references it by name via `platformConfigRef`, so the configuration is defined once instead of being repeated on every cluster.
-The auth block is provider-agnostic: the OIDC fields follow the standard OIDC discovery vocabulary and work with Keycloak, Auth0, Entra ID, Okta, or any OIDC-compliant identity provider.
+The settings that are the same for every orchestration cluster live here: how users and clients authenticate (basic or OIDC), the Camunda license, and the registry that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once.
 
-## How it works
+The OIDC fields follow the OIDC discovery vocabulary. They work with Keycloak, Auth0, Entra ID, Okta, or any other OIDC-compliant identity provider.
 
-The `CamundaPlatformConfig` controller only validates; it never provisions anything.
-Consumption happens in the consuming controllers: the CamundaCluster controller resolves this CR by name and renders its values into workload configuration.
+## What it does
 
-1. The operator validates that `auth.oidc.clientSecretRef` and `licenseSecretRef` (when set) point to existing Secrets containing the named keys.
-2. If a referenced Secret or key is missing, the operator sets `Ready` to `False` with reason `MissingSecret` and names the offending reference in the condition message.
-3. Otherwise the operator sets `Ready` to `True` and records `status.observedGeneration`.
-
-Consuming controllers watch this CR: when you change it, the change propagates at runtime to every referencing CamundaCluster without an operator restart.
-The CamundaCluster controller renders the auth fields into the orchestration cluster's `camunda.security.authentication.*` configuration (`method: basic | oidc` and the `camunda.security.authentication.oidc.*` properties in Camunda 8.9), so an endpoint or registry change rolls out as an ordinary workload update.
-The OIDC client credentials defined here are environment-wide defaults; a [CamundaClusterPreset](camundaclusterpreset.md) baseline or a per-cluster `auth` block on the [CamundaCluster](camundacluster.md) overrides them for individual clusters.
-
-### How a token becomes a caller
-
-`usernameClaim` and `clientIdClaim` name the claims that identify the caller behind an access token. They describe the tokens of one identity provider, so every cluster that trusts that provider reads the same claims, and they live here and not on a cluster.
-
-The orchestration cluster resolves a token in this order (`TokenClaimsConverter.java`):
-
-1. If the token holds the client id claim, the caller is a machine client with that id.
-2. If not, and the token holds the username claim, the caller is a person with that username.
-3. If the token holds neither claim, the request is refused.
-
-The claim only says who the caller is. It grants nothing. The `spec.auth.admin` block of a [CamundaCluster](camundacluster.md) is what makes a caller an administrator.
-
-!!! warning "Do not set a client id claim that persons also carry"
-    A token that holds the client id claim always becomes a machine client, even when a person signed in. Some providers put a client identifier in every token they issue, `azp` in Keycloak for example. If one OIDC client serves both the browser login and the machine callers, pick a claim that the provider adds to machine tokens only. Camunda gives the same advice.
+The operator creates no resources from this kind. It makes sure that the referenced Secrets exist and carry the named keys, and reports the result in `Ready`. Every `CamundaCluster` that references this resource reads its values and renders them into the workloads.
 
 ```mermaid
 graph LR
     CC[CamundaCluster] -.->|platformConfigRef| PFC[CamundaPlatformConfig]
-    PFC -.->|validates| SEC["OIDC client + license Secrets"]
-    CMC[CamundaManagementCluster] -.->|auth defaults| PFC
+    CCP[CamundaClusterPreset] -.->|auth baseline| CC
+    PFC -.->|clientSecretRef, licenseSecretRef| SEC["Secrets"]
+    PFC -.->|issuerUrl| IDP["Identity provider (external)"]
 ```
 
-!!! note "Deviation from the original proposal"
-    The proposal had an `issuerBackendUrl` field for split-horizon setups, where the issuer is reachable at a different URL from inside the Kubernetes cluster.
-    Camunda 8.9 has no property for a backend issuer URL: `camunda.security.authentication.oidc.*` carries `issuer-uri`, `jwk-set-uri`, `token-uri`, `authorization-uri`, and `redirect-uri` (`OidcAuthenticationConfiguration.java:33-61`), so the field is dropped.
-    In a split-horizon setup, keep `issuerUrl` equal to the issuer claim of the tokens, and set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
+**Changes.** When you change this resource or one of its Secrets, every referencing cluster rolls its pods with the new values. No operator restart is needed.
 
-## API reference
+**Missing references.** When a referenced Secret or key is missing, `Ready` is `False` with reason `MissingSecret`, and the message names the reference.
+
+**Override order.** The OIDC client credentials here are the defaults of the environment. A [CamundaClusterPreset](camundaclusterpreset.md) `auth` block overrides them for its clusters, and the `auth` block of a `CamundaCluster` overrides both. The authentication method and the identity provider connection always come from this resource.
+
+**Claims.** `usernameClaim` and `clientIdClaim` name the claims that identify a caller. A token that holds the client id claim is a machine client. A token without it is a person, identified by the username claim. The claim identifies a caller and grants nothing: the `spec.auth.admin` block of a `CamundaCluster` makes a caller an administrator.
+
+> **Caution:** Do not set a `clientIdClaim` that the tokens of persons also carry. A token with that claim always becomes a machine client, even after a browser login. Some providers put a client identifier in every token, for example `azp` in Keycloak. Pick a claim that the provider adds to machine tokens only.
+
+**Split horizon.** When the identity provider is reachable at a different URL from inside the Kubernetes cluster, keep `issuerUrl` equal to the issuer claim of the tokens. Set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
+
+The [authentication guide](../guides/authentication.md) explains the setup of both methods.
+
+## Spec
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -57,70 +43,70 @@ metadata:
   # Cluster-scoped: no namespace.
   name: my-platform-config
 spec:
-  # object. Optional, default: basic authentication. Authentication settings for orchestration clusters.
+  # object. Optional, default: basic authentication. Authentication settings of every orchestration cluster.
   auth:
-    # string. Optional, default: basic. Authentication method, one of: basic | oidc.
+    # string (basic | oidc). Optional, default: basic. The authentication method.
     method: oidc
-    # object. Required when method is oidc. External identity provider connection.
+    # object. Required when method is oidc, forbidden when method is basic. The identity provider connection.
     oidc:
-      # string. Required. Issuer URL of the identity provider; endpoints are resolved from its OIDC discovery document unless overridden below.
+      # string. Required. Issuer URL of the identity provider. The endpoints come from its discovery document unless the fields below override them. Must be an http or https URL.
       issuerUrl: "https://login.example.com/realms/camunda"
-      # string. Optional. Explicit JWKS endpoint; overrides the value from OIDC discovery.
+      # string. Optional. Explicit JWKS endpoint. Overrides the value from discovery.
       jwksUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/certs"
-      # string. Optional. Explicit token endpoint; overrides the value from OIDC discovery.
+      # string. Optional. Explicit token endpoint. Overrides the value from discovery.
       tokenUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/token"
-      # string. Optional. Explicit authorization endpoint; overrides the value from OIDC discovery.
+      # string. Optional. Explicit authorization endpoint. Overrides the value from discovery.
       authUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/auth"
-      # string. Required. Default OIDC client ID shared by all clusters unless overridden per preset or per cluster.
+      # string. Required. Default OIDC client ID of every cluster, unless a preset or a cluster overrides it.
       clientId: "camunda-orchestration"
-      # string. Optional, default: the clientId. Audience validated in access tokens.
+      # string. Optional, default: the clientId. Audience that access tokens must carry.
       audience: "camunda-orchestration"
       # string. Optional, default: sub. Token claim that holds the username of a person.
       usernameClaim: "preferred_username"
-      # string. Optional, default: unset. Token claim that holds the id of a machine client. Without it every token becomes a person.
+      # string. Optional, default: unset. Token claim that holds the id of a machine client. Unset means every token is a person.
       clientIdClaim: "client_id"
-      # object. Required. Secret holding the default OIDC client secret.
+      # object. Required. Secret key that holds the default OIDC client secret.
       clientSecretRef:
         # string. Required. Name of the Secret.
         name: "oidc-credentials"
-        # string. Required. Namespace of the Secret (this CR is cluster-scoped, so there is no namespace to default to).
+        # string. Required. Namespace of the Secret. This resource has no namespace to default to.
         namespace: "camunda-system"
-        # string. Required. Key inside the Secret.
+        # string. Required. Key in the Secret.
         key: "client-secret"
-  # object. Optional. Secret holding the Camunda license key; without it, clusters run in unlicensed non-production mode.
+  # object. Optional. Secret key that holds the Camunda license key. Without it, clusters run in unlicensed non-production mode.
   licenseSecretRef:
     # string. Required. Name of the Secret.
     name: "camunda-license"
     # string. Required. Namespace of the Secret.
     namespace: "camunda-system"
-    # string. Required. Key inside the Secret.
+    # string. Required. Key in the Secret.
     key: "license-key"
-  # string. Optional, default: the upstream Camunda registry. Registry prefix put in front of the image repositories camunda/camunda and camunda/connectors-bundle, for example registry.example.com/camunda/camunda:8.9.9.
+  # string. Optional, default: the upstream Camunda registry. Registry prefix of the images camunda/camunda and camunda/connectors-bundle, for example registry.example.com/camunda/camunda:8.9.9.
   imageRegistry: "registry.example.com"
 ```
 
 ## Status
 
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `Ready` | `Healthy` | All referenced Secrets exist and contain the required keys. |
-| `Ready` | `MissingSecret` | A Secret named by `clientSecretRef` or `licenseSecretRef` is missing, or lacks the named key. |
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | Every referenced Secret exists and carries the named key. | Nothing. |
+| `Ready` | `MissingSecret` | The Secret named by `clientSecretRef` or `licenseSecretRef` is missing, or lacks the named key. | Create the Secret with the named key. The message names the reference. |
 
-The operator records the last reconciled generation in `status.observedGeneration`.
+`status.observedGeneration` is the last generation the operator reconciled.
 
 ## Validation
 
-- `spec.auth.oidc` is required when `spec.auth.method` is `oidc` and rejected when the method is `basic`.
-- Within `spec.auth.oidc`, `issuerUrl`, `clientId`, and `clientSecretRef` are required.
-- Secret existence is a controller-time check surfaced through conditions, not an admission rule, because Secrets may be created or rotated after this CR.
+- `spec.auth.oidc` is required when `spec.auth.method` is `oidc`, and forbidden when the method is `basic`.
+- In `spec.auth.oidc`, `issuerUrl`, `clientId`, and `clientSecretRef` are required.
+- `issuerUrl` must be an http or https URL. `jwksUrl`, `tokenUrl`, and `authUrl` must be empty or an http or https URL.
+- Secret existence is checked at reconcile time, not at admission, so you can create or rotate Secrets after this resource.
 
-## Relationships
+## Related
 
-- [CamundaCluster](camundacluster.md) — references this CR via `platformConfigRef` and re-renders workloads when it changes.
-- [CamundaClusterPreset](camundaclusterpreset.md) — a preset baseline may override the default OIDC client credentials for clusters using that preset.
-- [CamundaManagementCluster](camundamanagementcluster.md) — the management plane resolves its auth defaults from this CR and may override them in its own spec.
-
-A composition layer above may create this CR instead of a human platform operator; consumers resolve it by name either way.
+- [CamundaCluster](camundacluster.md): references this resource through `platformConfigRef` and rolls its pods when it changes.
+- [CamundaClusterPreset](camundaclusterpreset.md): its `auth` block overrides the default OIDC client credentials for the clusters that use the preset.
+- [Getting started](../getting-started.md): where this resource fits in the order of creation.
+- [Authentication guide](../guides/authentication.md): how to set up basic and OIDC authentication.
 
 ## Examples
 
@@ -150,6 +136,8 @@ spec:
       issuerUrl: "https://login.example.com/realms/camunda"
       clientId: "camunda-orchestration"
       audience: "camunda-orchestration"
+      usernameClaim: "preferred_username"
+      clientIdClaim: "client_id"
       clientSecretRef:
         name: "oidc-credentials"
         namespace: "camunda-system"

@@ -1,45 +1,51 @@
 # Database
 
-Bootstraps a logical database and its users on an existing PostgreSQL server using plain SQL.
+`Database` creates a logical database and its users on an existing PostgreSQL server, and publishes the connection details. You create it, or another tool creates it for you.
 
 ## Purpose
 
-`Database` is a cluster-scoped CRD that creates a logical database and application users inside an existing PostgreSQL server — cloud-managed (RDS, Cloud SQL, Aurora PostgreSQL) or self-hosted — and publishes the result as a `DatabaseConfig` contract CRD.
-The controller only issues standard SQL (`CREATE DATABASE`, `CREATE USER`) through the admin credentials of the referenced `DatabaseServerConfig`; it needs network access to the server and nothing else — no cloud APIs, no provisioning tools.
-Splitting the server (`DatabaseServerConfig`) from the logical database (`Database`) lets many logical databases share one server instance: the orchestration cluster's secondary storage and the management plane's Keycloak, Identity, and Web Modeler databases can all live on a single server.
-You create this CR directly, or a composition layer above may create it after provisioning the server.
+An orchestration cluster can use an RDBMS as secondary storage. `Database` bootstraps a logical database on a PostgreSQL server that you already run, cloud-managed or self-hosted. It uses plain SQL with the admin credentials of a `DatabaseServerConfig`. It needs network access to the server and nothing else. It calls no cloud API and creates no server.
 
-!!! note "Scope: PostgreSQL only (recorded deviation)"
-    Camunda 8.9 itself supports PostgreSQL, Amazon Aurora PostgreSQL, MariaDB, MySQL, Microsoft SQL Server, and Oracle as RDBMS secondary storage (verified against the 8.9 RDBMS support policy and the camunda/camunda `db/` schema tree, which ships vendor schemas for all six plus dev-only H2).
-    This operator's `Database` controller deliberately bootstraps PostgreSQL-compatible servers only in its initial scope, matching the `DatabaseServerConfig` `engine: postgres` enum; the enum may widen in later versions.
-    Note also that Optimize requires Elasticsearch or OpenSearch — an orchestration cluster running on RDBMS secondary storage cannot attach a `CamundaOptimize`.
+A `Database` is cluster-scoped. The server and the logical database are separate kinds, so many logical databases can share one server. A `Database` can bootstrap any logical database, not only secondary storage. This kind serves PostgreSQL-compatible servers only. If you want Elasticsearch as secondary storage, use [ElasticsearchCluster](elasticsearchcluster.md) instead.
 
-## How it works
+## What it does
 
-1. The operator resolves `spec.serverRef` to a `DatabaseServerConfig` and reads the server's connection details and admin credentials Secret.
-2. It connects to the server and creates the logical database named `spec.databaseName` if it does not exist; all SQL is idempotent, so re-runs are safe. It also revokes the default `CONNECT` privilege of `PUBLIC` on that database, so only granted roles can connect.
-3. It creates the application user with a generated password. This user is a SQL role with the name of `spec.databaseName`. The operator grants it full privileges on the logical database and makes it the owner, so schema migrations work. It writes the credentials to the Secret that `spec.applicationCredentials` names (keys `username` and `password`).
-4. Unless `spec.backupCredentials.disabled` is `true`, it creates a separate backup user. This user is a SQL role named `<databaseName>_backup`. If that name is longer than the 63-character identifier limit of PostgreSQL, the role is named `<first 47 characters of databaseName>_<first 8 hex characters of the SHA-256 of databaseName>_backup`. Two long names that share a prefix then never share a backup role. The operator grants the backup user read access on all tables in the database for dumps, including tables created later (through `ALTER DEFAULT PRIVILEGES`). It also grants the DDL and write rights that a restore needs. The backup role gets `CONNECT`, `USAGE` and `CREATE` on schema `public`, read and write on the existing tables and sequences, and `SELECT` on the tables that the application role creates later. It is never the database owner. The operator writes its credentials to the Secret that `spec.backupCredentials.secretName` names.
-5. It creates and keeps current a `DatabaseConfig` named `spec.databaseConfig` in `spec.targetNamespace`, wiring in the `serverRef`, the `databaseName`, the application credentials Secret, and the backup credentials Secret when one exists.
-6. If `spec.secondaryStorageConfig` is set, it creates a `SecondaryStorageConfig` with `type: rdbms` in `spec.targetNamespace`. This contract references that `DatabaseConfig`, and an orchestration cluster can then use the database as secondary storage. Omit the field for databases that are not secondary storage (Keycloak, Identity, Web Modeler). If you clear the field later, the operator stops managing the contract. An existing contract stays in place until the `Database` is deleted. The bindings land in `targetNamespace` because consumers resolve them by name in their own namespace. Set it to the namespace of the consuming cluster.
-7. It reports status conditions and `status.observedGeneration`.
+On the server, the operator creates these objects from a `Database` with `spec.databaseName: <databaseName>`:
 
-The operator generates each role password once and keeps it stable across reconciles. To rotate one, delete its credential Secret: the operator generates a new password, sets it on the server, and publishes it.
+- The logical database `<databaseName>`, without the default `CONNECT` privilege of `PUBLIC`. Only granted roles can connect.
+- The application role `<databaseName>` with a generated password. It owns the database and has all privileges on it, so schema migrations work.
+- The backup role `<databaseName>_backup` with a generated password, unless `spec.backupCredentials.disabled` is `true`. If that name is longer than 63 characters, the role is `<first 47 characters of databaseName>_<first 8 hex characters of the SHA-256 of databaseName>_backup`. The role can connect and create objects in schema `public`. It can read and write the existing tables and sequences there, and read the tables that the application role creates later. It is never the owner.
 
-All created objects are applied with Server-Side Apply (SSA) under the per-component field manager `Database/bindings`.
-Deleting a `Database` removes the `DatabaseConfig`, the optional `SecondaryStorageConfig`, and the credential Secrets it created, but it never drops the logical database or the SQL users — data removal stays a deliberate, manual act.
+In Kubernetes, the operator creates these resources in `spec.targetNamespace`:
+
+- The Secret `<name>-credentials`, or the name in `spec.applicationCredentials.secretName`, with the keys `username` and `password` of the application role.
+- The Secret `<name>-backup-credentials`, or the name in `spec.backupCredentials.secretName`, with the keys `username` and `password` of the backup role. It exists unless `spec.backupCredentials.disabled` is `true`.
+- The `DatabaseConfig` `<name>`, or the name in `spec.databaseConfig`. It carries `serverRef`, `databaseName`, the application credentials Secret, and the backup credentials Secret when one exists.
+- The `SecondaryStorageConfig` `<spec.secondaryStorageConfig>` with `type: rdbms`, only when that field is set. It references the `DatabaseConfig`. An orchestration cluster in that namespace can reference it through `storageRef`.
+
+Every resource carries the labels `camunda.io/database: <name>`, `camunda.io/component: database`, and `app.kubernetes.io/managed-by: camunda-operator`.
 
 ```mermaid
 graph TD
-    DB[Database] -.->|"serverRef (admin credentials)"| DBSC[DatabaseServerConfig]
+    DB[Database] -.->|serverRef| DBSC[DatabaseServerConfig]
     DB -->|creates| SEC["Credential Secrets"]
     DB -->|creates| DBC[DatabaseConfig]
     DB -->|"creates (optional)"| SSC["SecondaryStorageConfig (type rdbms)"]
-    DB -->|SQL: CREATE DATABASE / CREATE USER| PG["PostgreSQL server (external)"]
+    DB -->|SQL| PG["PostgreSQL server (external)"]
     CC[CamundaCluster] -.->|storageRef| SSC
 ```
 
-## API reference
+**Deletion.** Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the credential Secrets. The operator never drops the logical database or the SQL users. Data removal is a manual act on the server.
+
+**Password rotation.** The operator generates each password once and keeps it. To rotate one, delete its credential Secret. The operator generates a new password, sets it on the server, and publishes a new Secret.
+
+**Missing references.** If `spec.serverRef` names no `DatabaseServerConfig`, `Ready` is `False` with reason `InvalidReference`. If the admin credentials Secret of the server is missing or lacks a key, the reason is `MissingSecret`. If the server does not answer or rejects the admin credentials, the reason is `ConnectionFailed` and the operator retries every 30 seconds.
+
+**Uniqueness.** One `Database` owns one pair of `serverRef` and `databaseName`. If a second `Database` claims the same pair, the oldest one wins. On an equal creation timestamp, the smaller name wins. The loser reports `InvalidReference`, runs no SQL, and publishes nothing.
+
+**Changes.** All SQL is idempotent, so every reconcile can run it again. If you clear `spec.secondaryStorageConfig`, the existing `SecondaryStorageConfig` stays until you delete the `Database`.
+
+## Spec
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -47,65 +53,62 @@ kind: Database
 metadata:
   name: my-camunda-db
 spec:
-  # string. Required. Name of the cluster-scoped DatabaseServerConfig describing the server to create the database in.
+  # string. Required. Name of the cluster-scoped DatabaseServerConfig that describes the server.
   serverRef: "my-db-server"
-  # string. Required. Name of the logical database to create; must be unique per server (see Validation).
+  # string. Required. Name of the logical database to create. It must be unique per server.
   databaseName: "camunda"
-  # string. Required. Namespace where the created DatabaseConfig, SecondaryStorageConfig, and credential Secrets are placed (each Secret's namespace can be overridden per Secret); set it to the consuming cluster's namespace, since consumers resolve the bindings by name in their own namespace.
+  # string. Required. Namespace of the DatabaseConfig, the SecondaryStorageConfig, and the credential Secrets. Set it to the namespace of the CamundaCluster that uses them.
   targetNamespace: "my-cluster-ns"
-  # object. Optional. The application credentials Secret, always created (keys: username, password).
+  # object. Optional. The application credentials Secret (keys: username, password). It is always created.
   applicationCredentials:
-    # string. Optional, default: <CR name>-credentials. Name of the application credentials Secret.
+    # string. Optional, default: <name>-credentials. Name of the Secret.
     secretName: "my-camunda-db-app"
-    # string. Optional, default: spec.targetNamespace. Namespace for the application credentials Secret.
+    # string. Optional, default: spec.targetNamespace. Namespace of the Secret.
     secretNamespace: "my-cluster-ns"
-  # object. Optional. The backup credentials Secret, created unless disabled (keys: username, password).
+  # object. Optional. The backup credentials Secret (keys: username, password). It is created unless disabled.
   backupCredentials:
-    # boolean. Optional, default: false. Skip creating the backup user and Secret.
+    # boolean. Optional, default: false. With true, the operator creates no backup user and no backup Secret.
     disabled: false
-    # string. Optional, default: <CR name>-backup-credentials. Name of the backup credentials Secret.
+    # string. Optional, default: <name>-backup-credentials. Name of the Secret.
     secretName: "my-camunda-db-backup"
-    # string. Optional, default: spec.targetNamespace. Namespace for the backup credentials Secret.
+    # string. Optional, default: spec.targetNamespace. Namespace of the Secret.
     secretNamespace: "my-cluster-ns"
-  # string. Optional, default: the CR name. Name of the DatabaseConfig the operator creates in spec.targetNamespace.
+  # string. Optional, default: the name of this resource. Name of the DatabaseConfig that the operator creates in spec.targetNamespace.
   databaseConfig: "my-camunda-db"
-  # string. Optional. If set, the operator also creates a SecondaryStorageConfig of type rdbms with this name in spec.targetNamespace, wired to the DatabaseConfig; omit for databases not used as Camunda secondary storage.
+  # string. Optional. When set, the operator creates a SecondaryStorageConfig of type rdbms with this name in spec.targetNamespace. Omit it for a database that is not secondary storage.
   secondaryStorageConfig: "my-storage-config"
 ```
 
-!!! note "Deviation from the original proposal"
-    The proposal made `targetNamespace` optional, defaulting to the operator namespace.
-    Since the binding contracts became namespaced, consumers resolve them by name in their own namespace, so an operator-namespace default would place the bindings where no consumer can ever find them; the field is therefore required with no default.
-
 ## Status
 
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `Ready` | `InvalidReference` | `spec.serverRef` does not resolve to an existing `DatabaseServerConfig`. Or another `Database`, named in the message, already claims the same `serverRef` and `databaseName`. The oldest `Database` wins; on an equal creation timestamp the lexicographically smaller name wins. The loser runs no SQL and publishes no bindings. |
-| `Ready` | `MissingSecret` | The server's admin credentials Secret is missing or lacks the expected keys. |
-| `Ready` | `ConnectionFailed` | The server is unreachable or the admin credentials are rejected. The controller retries every 30 seconds, because it cannot watch the server. |
-| `Ready` | any component status | The pre-checks passed. `Ready` takes the status and the reason of the `BindingsReady` component condition, and its message names the component. The reason is a component framework status, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. |
-| `BindingsReady` | component status | The operational detail of the component framework for the published bindings. |
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig`. Or another `Database`, named in the message, owns the same `serverRef` and `databaseName`. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the duplicate. |
+| `Ready` | `MissingSecret` | The admin credentials Secret of the server is missing or lacks a key. | Create the Secret with the keys that the `DatabaseServerConfig` names. |
+| `Ready` | `ConnectionFailed` | The server does not answer, or it rejects the admin credentials. The operator retries every 30 seconds. | Make sure that the operator can reach the server and that the admin credentials are correct. |
+| `Ready` | component status | The pre-checks passed. `Ready` takes the status and reason of `BindingsReady`, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the message of `BindingsReady`. |
+| `BindingsReady` | component status | The detail of the published Secrets, `DatabaseConfig`, and `SecondaryStorageConfig`. | Read the message when it is not `True`. |
 
-The operator records the last reconciled generation in `status.observedGeneration`.
+`status.observedGeneration` is the last generation that the operator reconciled.
 
 ## Validation
 
-- Uniqueness of `serverRef` plus `databaseName` is enforced by the controller, not by admission: see the `InvalidReference` reason above.
 - `spec.databaseName` must match `^[a-z_][a-z0-9_]{0,62}$`: a lowercase PostgreSQL identifier of at most 63 characters.
-- `spec.targetNamespace` must be a valid namespace name (an RFC 1123 label, at most 63 characters).
+- `spec.targetNamespace` must be a valid namespace name of at most 63 characters.
 - `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
+- The uniqueness of `serverRef` plus `databaseName` is enforced by the operator, not by admission. See `InvalidReference` above.
 
-## Relationships
+## Related
 
-- [ElasticsearchCluster](elasticsearchcluster.md) — the peer storage backend controller for Elasticsearch secondary storage; an orchestration cluster uses one or the other.
-- [DatabaseServerConfig](databaseserverconfig.md) — referenced via `serverRef` for connection details and admin credentials.
-- [DatabaseConfig](databaseconfig.md) — created and kept current by this controller under the name in `spec.databaseConfig`, in `spec.targetNamespace`.
-- [SecondaryStorageConfig](secondarystorageconfig.md) — optionally created with `type: rdbms` under the name in `spec.secondaryStorageConfig`, in `spec.targetNamespace`; a [CamundaCluster](camundacluster.md) in that namespace consumes it via its `storageRef`.
-- [CamundaManagementCluster](camundamanagementcluster.md) — its `keycloakDbRef`, `identityDbRef`, and `webModelerDbRef` consume [DatabaseConfig](databaseconfig.md) CRs typically produced by `Database` resources.
-- [PointInTimeRestore](pointintimerestore.md) — its dedicated-server validation counts the `Database` CRs sharing a `serverRef`; point-in-time restore requires the server to host exactly one.
-
-The PostgreSQL server itself is external: cloud-managed or self-hosted, it is provisioned outside this operator and described by the [DatabaseServerConfig](databaseserverconfig.md).
+- [DatabaseServerConfig](databaseserverconfig.md): the server that `spec.serverRef` names, with its admin credentials.
+- [DatabaseConfig](databaseconfig.md): the contract that this kind creates under `spec.databaseConfig`.
+- [SecondaryStorageConfig](secondarystorageconfig.md): the contract that this kind creates under `spec.secondaryStorageConfig`.
+- [CamundaCluster](camundacluster.md): references the `SecondaryStorageConfig` through `storageRef`.
+- [ElasticsearchCluster](elasticsearchcluster.md): the other secondary storage kind. An orchestration cluster uses one or the other.
+- [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect secondary storage.
+- [Backup guide](../guides/backup.md): how the backup role takes part in database dumps.
+- [Operations guide](../guides/operations.md): rotate credentials and other day-two tasks.
+- [Getting started](../getting-started.md): the first cluster, end to end.
 
 ## Examples
 

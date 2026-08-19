@@ -7,6 +7,7 @@ edit_uri: edit/main/docs/
 # docs/superpowers/ is internal working material and never published.
 exclude_docs: |
   superpowers/
+  crds/TEMPLATE.md
 
 theme:
   name: material
@@ -69,15 +70,21 @@ plugins:
 
 nav:
   - Home: index.md
+  - Getting started: getting-started.md
   - Installation: installation.md
   - Architecture: architecture.md
-  - CRDs:
+  - Guides:
+      - Secondary storage: guides/secondary-storage.md
+      - Authentication: guides/authentication.md
+      - Backup: guides/backup.md
+      - Operations: guides/operations.md
+  - CRD reference:
       - Overview: crds/index.md
       - Cluster:
           - CamundaCluster: crds/camundacluster.md
           - CamundaPlatformConfig: crds/camundaplatformconfig.md
           - CamundaClusterPreset: crds/camundaclusterpreset.md
-      - Storage:
+      - Storage backends:
           - ElasticsearchCluster: crds/elasticsearchcluster.md
           - ElasticsearchClusterPreset: crds/elasticsearchclusterpreset.md
           - Database: crds/database.md
@@ -87,13 +94,6 @@ nav:
           - DatabaseServerConfig: crds/databaseserverconfig.md
           - DatabaseConfig: crds/databaseconfig.md
           - ManagementAuthConfig: crds/managementauthconfig.md
-      - Backup & Restore:
+      - Backup:
           - LogicalBackupElasticsearch: crds/logicalbackupelasticsearch.md
           - LogicalBackupRDBMS: crds/logicalbackuprdbms.md
-          - BackupSchedule: crds/backupschedule.md
-          - LogicalRestore: crds/logicalrestore.md
-          - PointInTimeRestore: crds/pointintimerestore.md
-      - Management & Extensions:
-          - CamundaOptimize: crds/camundaoptimize.md
-          - CamundaManagementCluster: crds/camundamanagementcluster.md
-          - PVCAutoResize: crds/pvcautoresize.md

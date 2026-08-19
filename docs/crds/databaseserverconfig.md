@@ -1,44 +1,45 @@
 # DatabaseServerConfig
 
-`DatabaseServerConfig` is the contract CRD that describes a database server — engine, endpoint, admin credentials, and point-in-time-recovery capability — for controllers that bootstrap databases on it or validate its declared capabilities.
+`DatabaseServerConfig` is a cluster-scoped contract kind that describes one database server: engine, host, port, and admin credentials. You create it, or another tool creates it for you.
 
 ## Purpose
 
-The operator bootstraps logical databases on existing database servers but never provisions the servers themselves.
-This cluster-scoped contract CRD carries the server's connection details and an admin user with permission to create databases and roles, decoupling whoever runs the server from the controllers that use it, as described in the [architecture](../architecture.md).
+The operator creates logical databases on a database server that already exists. It never provisions the server. This kind carries the connection details of the server and an admin user that can create databases and roles. The thing that runs the server and the thing that uses it do not need to know each other. The operator validates the contract, probes the server, and reports the result on `Ready`. It never provisions anything from it.
 
 | Role | Who |
 | --- | --- |
-| Producers | A composition layer above (for example a cloud operator that provisions a managed database server), or you, by hand, for self-managed servers |
-| Consumers | [Database](database.md) (via `serverRef`, to bootstrap logical databases and users), [DatabaseConfig](databaseconfig.md) (via `serverRef`, to anchor a logical database to its server), and [PointInTimeRestore](pointintimerestore.md) (validates the server's `pitr` capability) |
+| Producers | You, by hand, or another tool that provisions the server and creates the contract for you |
+| Consumers | [Database](database.md) (through `serverRef`, to create logical databases and users), [DatabaseConfig](databaseconfig.md) (through `serverRef`, to name the server of a logical database), [LogicalBackupRDBMS](logicalbackuprdbms.md) (reads `status.serverVersion` to pick the dump tools) |
 
-!!! note "Deviation from the original proposal"
-    The proposal listed `engine: postgres | oracle | mariadb`; Camunda 8.9 supports PostgreSQL, Oracle, MariaDB, MySQL, and Microsoft SQL Server as production RDBMS secondary storage (H2 is development-only), but the `Database` controller's SQL bootstrap is postgres-scoped, so the enum is deliberately `postgres`-only for now and may widen as bootstrap support grows.
+## What it does
 
-## How it works
+The operator creates no resources from this kind. It validates the contract, probes the server, and writes the result to `status`.
 
-The contract has a lightweight validation-only controller: it never provisions anything.
-
-1. The operator watches every `DatabaseServerConfig` and the Secret it references, and re-runs validation whenever either changes.
-2. It checks that the Secret named by `adminCredentialsSecretRef` exists and contains the configured `usernameKey` and `passwordKey`.
-3. It opens an admin connection to the server with those credentials and reads the major version the server reports (`SELECT current_setting('server_version_num')`), publishing it as `status.serverVersion` with `status.probedAt`. A reachable server is probed again every 10 minutes, so a major upgrade behind the same endpoint reaches status without a spec change, and sooner when the spec or the admin credentials Secret changes; a fresh probe is never repeated in between, and an unreachable server is retried every 30 seconds.
-4. It sets the `Ready` condition: `Healthy` when the server answered, `MissingSecret` when the credentials do not resolve, `ConnectionFailed` when the server does not answer them.
-
-`Ready=True` therefore means the server, as declared, is usable with these credentials — not merely that a Secret exists. Consumers that pick client tools by server major, such as a [LogicalBackupRDBMS](logicalbackuprdbms.md) dump, read `status.serverVersion` and wait until it is published.
-
-Consumers read the contract by name and never care who produced it.
-The `pitr` block is declarative capability information: it states that the server performs continuous WAL archiving with the given retention, so that `PointInTimeRestore` can validate a requested restore timestamp against it.
+- The operator makes sure that the Secret in `adminCredentialsSecretRef` exists and holds `usernameKey` and `passwordKey`.
+- The operator connects to the server with the admin credentials and reads the major version the server reports. It publishes it as `status.serverVersion` and records the time in `status.probedAt`.
+- `Ready` is `True` only when the server answered the admin credentials. It means the server is usable as declared, not only that a Secret exists.
 
 ```mermaid
 graph LR
-    COMP["Composition layer (external)"] -->|creates| DBSC[DatabaseServerConfig]
+    EXT["Server provisioner (external)"] --> DBSC[DatabaseServerConfig]
     DBSC -.->|adminCredentialsSecretRef| SEC[Secret]
+    DBSC -.->|probes| PG["PostgreSQL server (external)"]
     DB[Database] -.->|serverRef| DBSC
     DBC[DatabaseConfig] -.->|serverRef| DBSC
-    PITR[PointInTimeRestore] -.->|validates pitr capability| DBSC
+    LBR[LogicalBackupRDBMS] -.->|status.serverVersion| DBSC
 ```
 
-## API reference
+**Probe intervals.** A reachable server is probed again every 10 minutes. A major upgrade behind the same endpoint therefore reaches `status` without a change to the spec. An unreachable server is probed again every 30 seconds. Each probe times out after 30 seconds. A change to the spec or to the admin credentials Secret causes a new probe at once.
+
+**Missing references.** If the Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the server does not answer, `Ready` is `False` with reason `ConnectionFailed`, and the message names the host, the port, and the error. `status.serverVersion` keeps the last known value while the server is unreachable.
+
+**Password rotation.** When you change the admin credentials Secret, the operator probes the server again with the new credentials before the next interval. A backup that needs `status.serverVersion` waits until the operator publishes it.
+
+**Point-in-time recovery.** The `pitr` block is a declaration. It states that the server archives WAL for the given number of days. No kind in the operator reads it yet.
+
+> **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
+
+## Spec
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -47,59 +48,61 @@ kind: DatabaseServerConfig
 metadata:
   name: my-db-server
 spec:
-  # string enum: postgres. Required. Database engine of the server; postgres-only for now, may widen later.
+  # string enum: postgres. Required. Database engine of the server. Only postgres is supported.
   engine: postgres
-  # string. Required. Hostname the server is reachable at.
+  # string. Required. Host name at which the server is reachable.
   host: "my-db-server.abc123.us-east-1.rds.amazonaws.com"
-  # integer. Required. Port the server listens on (1-65535).
+  # integer. Required. Port the server listens on, from 1 to 65535.
   port: 5432
-  # object. Required. Admin user with permission to create databases and roles; used by the Database controller to bootstrap.
+  # object. Required. Admin user that can create databases and roles. A Database uses it to create logical databases.
   adminCredentialsSecretRef:
-    # string. Required. Name of the Secret holding the admin credentials.
+    # string. Required. Name of the Secret that holds the admin credentials.
     name: my-db-server-admin-credentials
-    # string. Required. Namespace of the Secret (this CR is cluster-scoped, so there is no default).
-    namespace: camunda-system
-    # string. Required. Key in the Secret holding the plaintext username.
+    # string. Required. Namespace of the Secret. This kind is cluster-scoped, so there is no default.
+    namespace: my-cluster-ns
+    # string. Required. Key in the Secret that holds the username.
     usernameKey: username
-    # string. Required. Key in the Secret holding the plaintext password.
+    # string. Required. Key in the Secret that holds the password.
     passwordKey: password
-  # object. Optional. Point-in-time-recovery capability of the server.
+  # object. Optional. Point-in-time-recovery capability of the server. No kind in the operator reads it yet.
   pitr:
-    # boolean. Optional, default: false. Whether the server performs continuous WAL archiving for point-in-time recovery.
+    # boolean. Optional, default: false. Whether the server archives WAL for point-in-time recovery.
     enabled: true
-    # integer. Required when enabled is true. How many days into the past a point-in-time restore can target.
+    # integer. Required when enabled is true, at least 1. How many days into the past a point-in-time restore can target.
     retentionPeriodDays: 7
 ```
 
 ## Status
 
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `Ready` | `Healthy` | The server answered the admin credentials and reported its version. |
-| `Ready` | `MissingSecret` | The Secret named by `adminCredentialsSecretRef` is missing or lacks the configured keys. |
-| `Ready` | `ConnectionFailed` | The server did not answer the admin credentials; the message names the endpoint and the error. |
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | The server answered the admin credentials and reported its version. | Nothing. |
+| `Ready` | `MissingSecret` | The Secret named by `adminCredentialsSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
+| `Ready` | `ConnectionFailed` | The server did not answer the admin credentials. The message names the host, the port, and the error. | Make sure that the host and port are correct, the server is up, the network allows the connection, and the credentials are valid. The operator tries again every 30 seconds. |
 
 | Field | Meaning |
 | --- | --- |
-| `status.serverVersion` | The major version the server reported the last time it was reached, for example `"17"`. It stays at the last known value while the server is unreachable. |
-| `status.probedAt` | When the server was last reached and `serverVersion` read. Untouched by reconciles that find the probe fresh. |
-| `status.probedSecretVersion` | The resourceVersion of the admin credentials Secret the last probe used; a changed Secret is probed again before the interval. |
-| `status.observedGeneration` | The last reconciled generation. |
+| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. |
+| `status.probedAt` | When the operator last reached the server and read `serverVersion`. |
+| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. |
+| `status.observedGeneration` | The last generation of the contract that the operator validated. |
 
 ## Validation
 
-- `spec.engine` must be `postgres` (the only supported engine for now).
-- `spec.port` must be between 1 and 65535.
-- `spec.pitr.enabled: true` requires `spec.pitr.retentionPeriodDays` of at least 1.
+- `spec.engine` must be `postgres`.
+- `spec.host` must not be empty.
+- `spec.port` must be from 1 to 65535.
+- If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and at least 1.
+- No field is immutable.
 
-## Relationships
+## Related
 
-- [DatabaseConfig](databaseconfig.md) — references this contract via `serverRef` to anchor a logical database to its server.
-- [Database](database.md) — references this contract via `serverRef` and uses the admin credentials to bootstrap logical databases and users.
-- [PointInTimeRestore](pointintimerestore.md) — validates its requested timestamp against this contract's `pitr` capability, resolved through the target cluster's storage chain; it never uses the admin credentials.
-- A composition layer above may create this CR alongside the server it provisions; external actors are not documented here.
-
-See the [CRD overview](index.md) for where this contract sits in the reconciler dependency graph.
+- [DatabaseConfig](databaseconfig.md): names this server through `serverRef` for one logical database.
+- [Database](database.md): creates logical databases and users on this server with the admin credentials.
+- [LogicalBackupRDBMS](logicalbackuprdbms.md): reads `status.serverVersion` to run dump tools of the same major version.
+- [Secondary storage guide](../guides/secondary-storage.md): how to set up a relational database for a cluster.
+- [Backup guide](../guides/backup.md): how a database dump uses the server version.
+- [Getting started](../getting-started.md): the order in which you create the resources.
 
 ## Examples
 
@@ -116,12 +119,12 @@ spec:
   port: 5432
   adminCredentialsSecretRef:
     name: my-db-server-admin-credentials
-    namespace: camunda-system
+    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
 ```
 
-A realistic manifest for a managed PostgreSQL server with point-in-time recovery enabled:
+A realistic manifest for a managed PostgreSQL server that archives WAL for 7 days:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -134,7 +137,7 @@ spec:
   port: 5432
   adminCredentialsSecretRef:
     name: my-db-server-admin-credentials
-    namespace: camunda-system
+    namespace: my-cluster-ns
     usernameKey: username
     passwordKey: password
   pitr:
