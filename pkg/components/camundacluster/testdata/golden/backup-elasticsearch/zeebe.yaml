@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: a0b387b7866d3805
+        camunda.io/config-hash: d5dd0759789b3569
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: zeebe
@@ -68,6 +68,8 @@ spec:
           value: camunda-backups
         - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_BASEPATH
           value: clusters/my-cluster-ns/my-cluster
+        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_REGION
+          value: us-east-1
         - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_S3_ENDPOINT
           value: http://minio.minio.svc:9000
         - name: AWS_REQUEST_CHECKSUM_CALCULATION
