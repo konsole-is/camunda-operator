@@ -50,6 +50,8 @@ graph LR
 
 ## API reference
 
+`clusterRef` is the same type as on the backup kinds: a name in the namespace of this CR. `webapp` and `importer` are the same workload block as the per-process sections of [CamundaCluster](camundacluster.md), and `monitoring.serviceMonitor` is the same block as on the other kinds that run workloads. There is no `platformConfigRef`: the image registry and the license come from the platform config of the referenced cluster.
+
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: CamundaOptimize
@@ -57,14 +59,14 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
+  # string. Required. Optimize version to deploy, as a full semantic version. Its minor must match the cluster's.
+  version: "8.9.0"
   # string. Required. Name of the cluster-scoped ManagementAuthConfig providing Management Identity OIDC settings.
   managementAuthRef: "management-auth"
-  # object. Required. Reference to the CamundaCluster this Optimize instance attaches to.
+  # object. Required. Reference to the CamundaCluster this Optimize instance attaches to, in this CR's namespace.
   clusterRef:
     # string. Required. Name of the CamundaCluster.
     name: my-cluster
-    # string. Optional, default: this CR's namespace. Namespace of the CamundaCluster.
-    namespace: my-cluster-ns
   # object. Optional. The Optimize webapp deployment.
   webapp:
     # integer. Optional, default: 1. Number of webapp replicas; webapp replicas run with data import disabled.
@@ -130,6 +132,7 @@ spec:
 | `Ready` | `InvalidReference` | The `clusterRef`, `managementAuthRef`, or the cluster's `storageRef` chain could not be resolved. |
 | `Ready` | `UnsupportedStorageType` | The cluster's `storageRef` resolves to a `SecondaryStorageConfig` of type `rdbms`; Optimize supports only Elasticsearch/OpenSearch secondary storage. |
 | `Ready` | `MissingSecret` | A referenced secret (Management Identity client secret or Elasticsearch credentials) does not exist or lacks the required key. |
+| `Ready` | `VersionMismatch` | The major and minor of `spec.version` differ from those of the referenced cluster's effective version; Camunda supports Optimize only on a matching minor. |
 | `WebappReady` | `Healthy` / `Progressing` | State of the Optimize webapp Deployment. |
 | `ImporterReady` | `Healthy` / `Progressing` | State of the Optimize importer Deployment. |
 
@@ -138,8 +141,10 @@ The operator records the last reconciled generation in `status.observedGeneratio
 ## Validation
 
 - `spec.importer.replicas` must be `1`: Optimize supports at most one active importer per instance, and running more causes data inconsistencies.
+- `spec.version` must be a full semantic version such as `8.9.0`. Optimize has its own patch line, so a two-segment version or an inherited cluster version is rejected.
 - `spec.managementAuthRef` and `spec.clusterRef.name` must be non-empty.
 - Cross-resource: the referenced cluster's `storageRef` must resolve to a `SecondaryStorageConfig` of type `elasticsearch`; a cluster on RDBMS secondary storage is rejected at reconcile time and surfaced as `Ready=False` with reason `UnsupportedStorageType`, because Optimize does not support RDBMS backends.
+- Cross-resource: the major and minor of `spec.version` must equal those of the referenced cluster's effective version; a difference is surfaced as `Ready=False` with reason `VersionMismatch`.
 
 ## Relationships
 
@@ -162,6 +167,7 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
+  version: "8.9.0"
   managementAuthRef: "management-auth"
   clusterRef:
     name: my-cluster
@@ -176,10 +182,10 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
+  version: "8.9.0"
   managementAuthRef: "management-auth"
   clusterRef:
     name: my-cluster
-    namespace: my-cluster-ns
   webapp:
     replicas: 2
     resources:
