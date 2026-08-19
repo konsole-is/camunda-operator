@@ -130,6 +130,8 @@ status:
     backupRepository: my-cluster
 ```
 
+`status.serviceAccountName` is the ServiceAccount that the pods run under. It is empty when they run under the default account of the namespace. A backup Job runs under the same account.
+
 `status.volumes` lists every bound broker volume, sorted by name, with its `name` and the `capacity` that it reports. `status.observedGeneration` is the last generation the operator reconciled.
 
 ## Spec reference

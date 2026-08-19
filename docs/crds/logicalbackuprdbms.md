@@ -13,7 +13,7 @@ Before you create a backup, make sure that:
 - The `DatabaseServerConfig` is `Ready` and has `status.serverVersion`.
 - The backup lives in the namespace of the cluster.
 
-A `LogicalBackupRDBMS` named `<name>` runs the Job `<name>-dump` in its namespace, under the ServiceAccount of the cluster. The Job runs `pg_dump` of the whole logical database and uploads the file to the bucket of the cluster's `backupStorageRef`, under the prefix of the cluster. `status.objectKey` records the key. When the upload is done, the operator requests one Zeebe backup of the primary storage through the management API. Camunda generates its ID and writes it to the same bucket. `status.zeebeBackupId` records the ID.
+A `LogicalBackupRDBMS` named `<name>` runs the Job `<name>-dump` in its namespace, under the ServiceAccount that the cluster publishes in `status.serviceAccountName`. The Job runs `pg_dump` of the whole logical database and uploads the file to the bucket of the cluster's `backupStorageRef`, under the prefix of the cluster. `status.objectKey` records the key. When the upload is done, the operator requests one Zeebe backup of the primary storage through the management API. Camunda generates its ID and writes it to the same bucket. `status.zeebeBackupId` records the ID.
 
 The Job and its pod carry the label `camunda.io/cluster: <cluster>`.
 

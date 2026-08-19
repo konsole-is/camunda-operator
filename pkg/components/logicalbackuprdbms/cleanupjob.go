@@ -51,9 +51,10 @@ type CleanupJobInput struct {
 	// Bucket is the backup bucket contract. It uses workload identity. The
 	// manager cleans a credentials-mode bucket directly.
 	Bucket *v1.ObjectStorageConfig
-	// ServiceAccountName is the cluster ServiceAccount that the identity of
-	// the storage contract is bound to. The delete runs as it, like the
-	// upload did.
+	// ServiceAccountName is the ServiceAccount that the cluster publishes.
+	// The identity of the storage contract is bound to it, and the delete
+	// runs as it, like the upload did. Empty means the default account of
+	// the namespace.
 	ServiceAccountName string
 	// ObjectKey is the exact key of the dump to remove.
 	ObjectKey string

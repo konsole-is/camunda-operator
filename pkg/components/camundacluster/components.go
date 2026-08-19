@@ -227,7 +227,7 @@ func monitoringGate(in Input) component.ResourceOption {
 // name the pods use is the documented principal and must exist and be
 // referenced whenever a workload-identity bucket is.
 func usesServiceAccount(in Input) bool {
-	return PodServiceAccountName(in.Cluster, in.Effective, in.Backup, in.Documents) != ""
+	return PodServiceAccountName(in) != ""
 }
 
 // bucketUsesWorkloadIdentity reports whether the pods authenticate against

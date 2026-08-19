@@ -17,8 +17,6 @@ limitations under the License.
 package camundacluster
 
 import (
-	"slices"
-
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
@@ -115,35 +113,27 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 
 // PodServiceAccountName returns the ServiceAccount that the pods of the
 // cluster run under, or the empty string when they run under the default
-// account of their namespace. The buckets parameter holds every
-// ObjectStorageConfig that the cluster references: the backup bucket, the
-// document bucket, or neither. A caller that passes fewer buckets asks a
-// narrower condition, so it never names an account that the full set of
-// buckets leaves unnamed.
+// account of their namespace.
 //
 // The pods need a named account only when something binds one: the spec asks
 // for one, or a referenced bucket authenticates through workload identity.
 // With static credentials nothing does. The credentials arrive in a Secret,
 // so the pods carry no cloud identity and the operator renders no account.
 //
-// A consumer that needs the account a pod or a Job runs under asks this
-// function. ServiceAccountName answers a different question: the name the
-// account carries when the cluster has one. The site that names the
-// ServiceAccount resource keeps using it. So does any site that is already
-// gated on whether the cluster renders one. A Job that names an account
-// that the cluster never rendered is rejected by the API server, and its pod
-// is never created.
-func PodServiceAccountName(cluster *v1.CamundaCluster, e Effective, buckets ...*v1.ObjectStorageConfig) string {
-	if e.ServiceAccount == nil && !anyBucketUsesWorkloadIdentity(buckets) {
+// It takes the whole Input, so a bucket that a later spec adds reaches this
+// rule through the field the controller already fills. A consumer outside
+// this package never asks it: the controller publishes the answer on
+// status.serviceAccountName, and the consumer reads that field.
+//
+// ServiceAccountName answers a different question: the name the account
+// carries when the cluster has one. The site that names the ServiceAccount
+// resource keeps using it. So does any site that is already gated on whether
+// the cluster renders one.
+func PodServiceAccountName(in Input) string {
+	if in.Effective.ServiceAccount == nil &&
+		!bucketUsesWorkloadIdentity(in.Backup) && !bucketUsesWorkloadIdentity(in.Documents) {
 		return ""
 	}
 
-	return ServiceAccountName(cluster, e)
-}
-
-// anyBucketUsesWorkloadIdentity reports whether any of the buckets makes the
-// pods authenticate as their ServiceAccount. A nil bucket is one the cluster
-// does not reference.
-func anyBucketUsesWorkloadIdentity(buckets []*v1.ObjectStorageConfig) bool {
-	return slices.ContainsFunc(buckets, bucketUsesWorkloadIdentity)
+	return ServiceAccountName(in.Cluster, in.Effective)
 }
