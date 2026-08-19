@@ -596,6 +596,65 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// Nothing reports that Elasticsearch started answering: it is not an
+	// object, so no watch fires for it. A registration that failed to reach
+	// the cluster must therefore come back on a requeue the controller asks
+	// for itself, or the cluster stays not ready until something unrelated
+	// happens to write its status.
+	It("registers again after a registration that could not reach the cluster", func() {
+		bucket := createObjectStorageConfig(s3BucketSpec(nil))
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.SnapshotStorageRef = bucket.Name
+		cluster.Namespace = newElasticsearchClusterNamespace()
+		createECKSecrets(cluster)
+		createElasticsearchCluster(cluster)
+
+		By("waiting until registration converged and every watch is quiet")
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			condition := meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+		}, timeout, interval).Should(Succeed())
+
+		// Four attempts fail. That outlasts the reconciles that the
+		// controller's own status write triggers: the second failure writes
+		// the same condition, so nothing enqueues the cluster again.
+		elasticsearch.DropNext("repository", 4)
+
+		By("changing the bucket once, so the next reconcile really registers")
+		Eventually(func(g Gomega) {
+			var changed v1.ObjectStorageConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: bucket.Name}, &changed)).To(Succeed())
+			changed.Spec.S3.Endpoint = "http://minio.minio.svc:9000"
+			changed.Spec.S3.ForcePathStyle = true
+			g.Expect(k8sClient.Update(ctx, &changed)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("waiting for it to register on its own, with nothing else written")
+		Eventually(func(g Gomega) {
+			var fetched v1.ElasticsearchCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
+			condition := meta.FindStatusCondition(
+				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonHealthy))
+
+			registered := elasticsearch.Repository(cluster.Name)
+			g.Expect(registered).NotTo(BeNil())
+			g.Expect(registered.Settings).To(
+				HaveKeyWithValue("endpoint", "http://minio.minio.svc:9000"),
+			)
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("registers the snapshot repository and converges it idempotently", func() {
 		bucket := createObjectStorageConfig(s3BucketSpec(nil))
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
