@@ -202,9 +202,10 @@ func backupEnv(in Input, p Process) rendered {
 // endpoint routes every request, and it builds no client when it finds none.
 // The broker builds that client while it validates its configuration, so a
 // store with no region stops the broker at startup. SigningRegion answers
-// with the placeholder for such a contract, and with nothing for a bucket
-// that is AWS S3 itself, where the region chain of the pod is a legitimate
-// source.
+// with the region of the contract, or with the placeholder for a contract
+// that carries an endpoint and no region. It answers with nothing only for a
+// contract that carries neither, which the CRD does not admit, and no region
+// variable is rendered then.
 func s3Env(in Input, s3 *v1.S3Storage) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupStore, backupStoreS3),

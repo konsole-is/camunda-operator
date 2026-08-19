@@ -238,8 +238,9 @@ func openS3(ctx context.Context, spec *v1.S3Storage, creds *Credentials) (*Bucke
 	var opts []func(*awsconfig.LoadOptions) error
 	// The SDK requires a region even when a custom endpoint routes every
 	// request, and SigningRegion answers with the placeholder for a contract
-	// that gives none. It answers with nothing for a bucket that is AWS S3
-	// itself, which the CRD admits only with a region of its own.
+	// that carries an endpoint and no region. It answers with nothing only
+	// for a contract that carries neither, which the CRD does not admit. The
+	// region chain of the pod resolves the region then.
 	if region := spec.SigningRegion(); region != "" {
 		opts = append(opts, awsconfig.WithRegion(region))
 	}
