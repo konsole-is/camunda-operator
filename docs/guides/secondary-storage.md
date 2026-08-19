@@ -24,48 +24,58 @@ Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the c
 
 1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes.
 
-   ```yaml
-   apiVersion: core.camunda.io/v1
-   kind: ElasticsearchCluster
-   metadata:
-     name: my-cluster-es
-     namespace: my-cluster-ns
-   spec:
-     version: "9.2.4"
-     replicas: 1
-     storageSize: "1Gi"
-     resources:
-       requests: { cpu: "500m", memory: "1Gi" }
-     secondaryStorageConfig: "my-storage-config"
-   ```
+    ```yaml
+    apiVersion: core.camunda.io/v1
+    kind: ElasticsearchCluster
+    metadata:
+      name: my-cluster-es
+      namespace: my-cluster-ns
+    spec:
+      version: "9.2.4"
+      replicas: 1
+      storageSize: "1Gi"
+      resources:
+        requests: { cpu: "500m", memory: "1Gi" }
+      secondaryStorageConfig: "my-storage-config"
+    ```
 
 2. Wait until the `ElasticsearchCluster` is `Ready` with reason `Healthy`.
 
-   ```bash
-   kubectl get elasticsearchcluster my-cluster-es -n my-cluster-ns -w
-   ```
+    ```bash
+    kubectl wait elasticsearchcluster/my-cluster-es -n my-cluster-ns --for=condition=Ready --timeout=15m
+    ```
 
-   The first start takes some minutes while ECK pulls the image and forms the cluster. If `Ready` stays `False`, read the message of the `Ready` condition with `kubectl describe`.
+    The first start takes some minutes while ECK pulls the image and forms the cluster. When it is done, the status reads:
+
+    ```yaml
+    status:
+      conditions:
+        - type: Ready
+          status: "True"
+          reason: Healthy
+    ```
+
+    If `Ready` stays `False`, read the message of the `Ready` condition with `kubectl get elasticsearchcluster my-cluster-es -n my-cluster-ns -o yaml`.
 
 3. Make sure that the `SecondaryStorageConfig` `my-storage-config` exists in the same namespace and is `Ready` with reason `Healthy`. The operator created it for you.
 
-   ```bash
-   kubectl get secondarystorageconfig my-storage-config -n my-cluster-ns
-   ```
+    ```bash
+    kubectl get secondarystorageconfig my-storage-config -n my-cluster-ns
+    ```
 
 4. Point the `CamundaCluster` at it with `spec.storageRef: my-storage-config`. The `CamundaCluster` must be in the same namespace as the `SecondaryStorageConfig`, because `storageRef` is a name without a namespace.
 
-   ```yaml
-   apiVersion: core.camunda.io/v1
-   kind: CamundaCluster
-   metadata:
-     name: my-cluster
-     namespace: my-cluster-ns
-   spec:
-     version: "8.9.9"
-     platformConfigRef: "my-platform-config"
-     storageRef: "my-storage-config"
-   ```
+    ```yaml
+    apiVersion: core.camunda.io/v1
+    kind: CamundaCluster
+    metadata:
+      name: my-cluster
+      namespace: my-cluster-ns
+    spec:
+      version: "8.9.9"
+      platformConfigRef: "my-platform-config"
+      storageRef: "my-storage-config"
+    ```
 
 ```mermaid
 graph LR
@@ -90,71 +100,99 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
 
 1. Create a Secret with the admin credentials. It can live in any namespace. The `DatabaseServerConfig` names the namespace.
 
-   ```yaml
-   apiVersion: v1
-   kind: Secret
-   metadata:
-     name: my-db-server-admin-credentials
-     namespace: my-cluster-ns
-   type: Opaque
-   stringData:
-     username: postgres
-     password: change-me
-   ```
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: my-db-server-admin-credentials
+      namespace: my-cluster-ns
+    type: Opaque
+    stringData:
+      username: postgres
+      password: change-me
+    ```
 
 2. Create a `DatabaseServerConfig`. It is cluster-scoped and describes the server and the admin credentials.
 
-   ```yaml
-   apiVersion: core.camunda.io/v1
-   kind: DatabaseServerConfig
-   metadata:
-     name: my-db-server
-   spec:
-     engine: postgres
-     host: "postgres.my-cluster-ns.svc"
-     port: 5432
-     adminCredentialsSecretRef:
-       name: my-db-server-admin-credentials
-       namespace: my-cluster-ns
-       usernameKey: username
-       passwordKey: password
-   ```
+    ```yaml
+    apiVersion: core.camunda.io/v1
+    kind: DatabaseServerConfig
+    metadata:
+      name: my-db-server
+    spec:
+      engine: postgres
+      host: "postgres.my-cluster-ns.svc"
+      port: 5432
+      adminCredentialsSecretRef:
+        name: my-db-server-admin-credentials
+        namespace: my-cluster-ns
+        usernameKey: username
+        passwordKey: password
+    ```
 
-3. Wait until the `DatabaseServerConfig` is `Ready` with reason `Healthy`. The operator connects to the server with the admin credentials and reports the major version in `status.serverVersion`.
+3. Wait until the `DatabaseServerConfig` is `Ready` with reason `Healthy`. The operator connects to the server with the admin credentials and reports the major version:
 
-   ```bash
-   kubectl get databaseserverconfig my-db-server -o jsonpath='{.status.serverVersion}'
-   ```
+    ```yaml
+    status:
+      serverVersion: "17"
+      conditions:
+        - type: Ready
+          status: "True"
+          reason: Healthy
+          message: Reached the server; it runs major version 17
+    ```
 
-   If the reason is `ConnectionFailed`, the operator cannot reach the server, or the server rejects the credentials. The message names the endpoint and the error. If the reason is `MissingSecret`, the Secret or one of its keys does not exist.
+    If the operator cannot reach the server, or the server rejects the credentials, the reason is `ConnectionFailed` and the message names the endpoint and the error:
+
+    ```yaml
+    status:
+      conditions:
+        - type: Ready
+          status: "False"
+          reason: ConnectionFailed
+          message: "Connecting to postgres.my-cluster-ns.svc:5432: failed to connect: password authentication failed for user \"postgres\""
+    ```
+
+    If the reason is `MissingSecret`, the Secret or one of its keys does not exist.
 
 4. Create a `Database`. Set `secondaryStorageConfig` to the name of the contract you want. Set `targetNamespace` to the namespace of the `CamundaCluster`, because the cluster resolves the contract in its own namespace.
 
-   ```yaml
-   apiVersion: core.camunda.io/v1
-   kind: Database
-   metadata:
-     name: my-camunda-db
-   spec:
-     serverRef: "my-db-server"
-     databaseName: "camunda"
-     targetNamespace: "my-cluster-ns"
-     secondaryStorageConfig: "my-storage-config"
-   ```
+    ```yaml
+    apiVersion: core.camunda.io/v1
+    kind: Database
+    metadata:
+      name: my-camunda-db
+    spec:
+      serverRef: "my-db-server"
+      databaseName: "camunda"
+      targetNamespace: "my-cluster-ns"
+      secondaryStorageConfig: "my-storage-config"
+    ```
 
 5. Wait until the `Database` is `Ready` with reason `Healthy`.
 
-   ```bash
-   kubectl get database my-camunda-db -w
-   ```
+    ```bash
+    kubectl wait database/my-camunda-db --for=condition=Ready --timeout=5m
+    ```
 
 6. Make sure that the `DatabaseConfig` `my-camunda-db` and the `SecondaryStorageConfig` `my-storage-config` exist in `my-cluster-ns` and are `Ready` with reason `Healthy`. The `Database` created both. The `SecondaryStorageConfig` has `type: rdbms` and references the `DatabaseConfig`.
 
-   ```bash
-   kubectl get databaseconfig,secondarystorageconfig -n my-cluster-ns
-   ```
+    ```bash
+    kubectl get databaseconfig,secondarystorageconfig -n my-cluster-ns
+    ```
 
-7. Point the `CamundaCluster` at the contract with `spec.storageRef: my-storage-config`, as in step 4 of the Elasticsearch procedure.
+7. Point the `CamundaCluster` at the contract, as in step 4 of the Elasticsearch procedure:
+
+    ```yaml
+    apiVersion: core.camunda.io/v1
+    kind: CamundaCluster
+    metadata:
+      name: my-cluster
+      namespace: my-cluster-ns
+    spec:
+      # ... version, platformConfigRef, and the rest of your cluster
+      storageRef: my-storage-config
+    ```
 
 ```mermaid
 graph LR
@@ -171,7 +209,14 @@ What the `Database` creates on the server and in the cluster:
 
 - The logical database `camunda`.
 - The application role `camunda`. It owns the database. Its credentials are in the Secret `my-camunda-db-credentials` in `my-cluster-ns`, keys `username` and `password`.
-- The backup role `camunda_backup`. It can read every table and run a restore. Its credentials are in the Secret `my-camunda-db-backup-credentials`. If you do not want this role, set `spec.backupCredentials.disabled: true`.
+- The backup role `camunda_backup`. It can read every table and run a restore. Its credentials are in the Secret `my-camunda-db-backup-credentials`. If you do not want this role, turn it off on the `Database`:
+
+    ```yaml
+    spec:
+      backupCredentials:
+        disabled: true
+    ```
+
 - The `DatabaseConfig` `my-camunda-db` in `my-cluster-ns`. It references the server, the database name, and both credential Secrets.
 - The `SecondaryStorageConfig` `my-storage-config` in `my-cluster-ns`, with `type: rdbms` and `rdbms.databaseConfigRef: my-camunda-db`.
 
@@ -185,7 +230,7 @@ For all fields, see [DatabaseServerConfig](../crds/databaseserverconfig.md), [Da
 
 If you already run Elasticsearch or a PostgreSQL database that the operator does not manage, write the contracts by hand. The `CamundaCluster` does not know who created them.
 
-For Elasticsearch, write a `SecondaryStorageConfig` with `type: elasticsearch`. Create the Secret with the username and password first. If the endpoint serves a certificate that the orchestration cluster does not trust by default, set `caSecretRef` as well.
+For Elasticsearch, write a `SecondaryStorageConfig` with `type: elasticsearch`. Create the Secret with the username and password first. If the endpoint serves a certificate that the orchestration cluster does not trust by default, name the CA Secret as well.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -202,6 +247,11 @@ spec:
       namespace: my-cluster-ns
       usernameKey: username
       passwordKey: password
+    # Only when the certificate of the endpoint is not trusted by default.
+    caSecretRef:
+      name: my-elasticsearch-ca
+      namespace: my-cluster-ns
+      key: ca.crt
 ```
 
 For PostgreSQL, write a `DatabaseServerConfig` for the server, a `DatabaseConfig` for the database, and a `SecondaryStorageConfig` with `type: rdbms`. Create the database, the application role, and the credentials Secret on your side first. The `DatabaseServerConfig` still needs admin credentials, because the operator validates it by a connection to the server.
@@ -232,7 +282,7 @@ spec:
     databaseConfigRef: my-camunda-db
 ```
 
-The reference pages list every field: [SecondaryStorageConfig](../crds/secondarystorageconfig.md), [DatabaseConfig](../crds/databaseconfig.md), and [DatabaseServerConfig](../crds/databaseserverconfig.md). A backup of a hand-written Elasticsearch contract needs `snapshotRepository` set by hand, after you register the repository yourself. A backup of a hand-written `DatabaseConfig` needs `backupCredentialsSecretRef`.
+The reference pages list every field: [SecondaryStorageConfig](../crds/secondarystorageconfig.md), [DatabaseConfig](../crds/databaseconfig.md), and [DatabaseServerConfig](../crds/databaseserverconfig.md). A backup of a hand-written Elasticsearch contract needs `elasticsearch.snapshotRepository` set by hand, after you register the repository yourself. A backup of a hand-written `DatabaseConfig` needs `backupCredentialsSecretRef`. The [backup guide](./backup.md) shows both.
 
 ## Related
 

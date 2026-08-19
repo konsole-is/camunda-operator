@@ -65,7 +65,7 @@ root module.
 - [Installation](docs/installation.md)
 - [Architecture](docs/architecture.md): how the resources relate and how the operator is built
 - [Use the API types from Go](docs/go-api.md): the api module for programs that create or read the CRs
-- Guides: [secondary storage](docs/guides/secondary-storage.md), [authentication](docs/guides/authentication.md), [backup](docs/guides/backup.md), [operations](docs/guides/operations.md)
+- Guides: [presets](docs/guides/presets.md), [secondary storage](docs/guides/secondary-storage.md), [authentication](docs/guides/authentication.md), [backup](docs/guides/backup.md), [operations](docs/guides/operations.md)
 - [CRD reference](docs/crds/index.md)
 
 ## Development
