@@ -513,3 +513,76 @@ func TestPodLabelsDoNotOverrideDiscoveryLabels(t *testing.T) {
 	assert.Equal(t, "elasticsearch", labels["camunda.io/component"])
 	assert.Equal(t, "platform", labels["team"])
 }
+
+// A GCS bucket with a static key carries the whole service-account JSON into
+// one keystore entry. Elasticsearch reads it as a file, which is why the entry
+// holds the document rather than a pair of keys.
+func TestElasticsearchClusterGoldenSnapshotGCSCredentials(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster.Spec.SnapshotStorageRef = goldenBucketName
+	config := gcsBucket(v1.GCSStorageAuth{
+		Type: v1.ObjectStorageAuthTypeCredentials,
+		Credentials: &v1.GCSCredentials{
+			SecretRef: v1.SecretKeyRef{Name: "gcs-key", Namespace: "camunda", Key: "key.json"},
+		},
+	})
+	config.Name = goldenBucketName
+	storage := &SnapshotStorage{
+		Config: config,
+		Credentials: &objectstore.Credentials{
+			ServiceAccountJSON: []byte(`{"type":"service_account","project_id":"camunda"}`),
+		},
+	}
+
+	assertElasticsearchClusterGoldens(
+		t, "snapshot-gcs-credentials", cluster, MergePreset(cluster.Spec, preset), storage,
+	)
+}
+
+// An Azure container with a static key carries the storage account next to it:
+// the account is the one mandatory setting of an azure client, and the
+// keystore is the only place that takes it.
+func TestElasticsearchClusterGoldenSnapshotAzureCredentials(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster.Spec.SnapshotStorageRef = goldenBucketName
+	config := azureBucket(v1.AzureBlobStorageAuth{
+		Type: v1.ObjectStorageAuthTypeCredentials,
+		Credentials: &v1.AzureBlobCredentials{
+			SecretRef: v1.SecretKeyRef{Name: "azure-key", Namespace: "camunda", Key: "accountKey"},
+		},
+	}, "")
+	config.Name = goldenBucketName
+	storage := &SnapshotStorage{
+		Config:      config,
+		Credentials: &objectstore.Credentials{AccountKey: "azure-account-key"},
+	}
+
+	assertElasticsearchClusterGoldens(
+		t, "snapshot-azure-credentials", cluster, MergePreset(cluster.Spec, preset), storage,
+	)
+}
+
+// Azure workload identity is the widest rendering of a snapshot bucket: the
+// keystore still holds the account, the pods carry the label that the Azure
+// webhook needs, and the federated token is projected under the configuration
+// directory of Elasticsearch, which reads it from nowhere else.
+func TestElasticsearchClusterGoldenSnapshotAzureWorkloadIdentity(t *testing.T) {
+	t.Parallel()
+
+	cluster, preset := goldenMinimalElasticsearchCluster()
+	cluster.Spec.SnapshotStorageRef = goldenBucketName
+	config := azureBucket(v1.AzureBlobStorageAuth{
+		Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+		WorkloadIdentity: &v1.AzureBlobWorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000000"},
+	}, "")
+	config.Name = goldenBucketName
+
+	assertElasticsearchClusterGoldens(
+		t, "snapshot-azure-workload-identity", cluster,
+		MergePreset(cluster.Spec, preset), &SnapshotStorage{Config: config},
+	)
+}

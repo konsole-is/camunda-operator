@@ -20,7 +20,14 @@ func TestDroppedCallsAreUnreachableWhileOthersAreServed(t *testing.T) {
 	t.Cleanup(server.Close)
 	client, err := esadmin.New(server.URL(), "camunda", "secret", nil)
 	require.NoError(t, err)
-	require.NoError(t, client.EnsureSnapshotRepository(ctx, "repo", esadmin.S3RepositoryConfig{Bucket: "b"}))
+	require.NoError(
+		t,
+		client.EnsureSnapshotRepository(
+			ctx,
+			"repo",
+			esadmin.RepositoryConfig{Type: esadmin.RepositoryTypeS3, Bucket: "b"},
+		),
+	)
 
 	server.DropNext("snapshotCreate", 1)
 	err = client.CreateSnapshot(ctx, "repo", "snap", []string{"idx"}, nil)

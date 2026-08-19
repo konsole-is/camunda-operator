@@ -37,7 +37,6 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
-	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
@@ -89,16 +88,14 @@ func (r *ElasticsearchClusterReconciler) resolveSnapshotStorage(
 	}
 
 	// Elasticsearch registers a repository per storage type, and the operator
-	// implements the s3 one. A GCS or Azure bucket is a valid contract that
-	// this path cannot use, so it fails the reference rather than registering
-	// something that does not match the bucket.
-	if config.Spec.Type != v1.ObjectStorageTypeS3 || config.Spec.S3 == nil {
+	// serves all three types of the contract. What it cannot serve is a bucket
+	// whose settings Elasticsearch has no way to express, and that fails the
+	// reference rather than registering something that does not match the
+	// bucket.
+	if err := components.ValidateSnapshotStorage(&config); err != nil {
 		return nil, &conditions.PreCheckFailure{
-			Reason: v1.ReasonInvalidReference,
-			Message: fmt.Sprintf(
-				"ObjectStorageConfig %q is of type %s; a snapshot repository needs type %s",
-				config.Name, config.Spec.Type, v1.ObjectStorageTypeS3,
-			),
+			Reason:  v1.ReasonInvalidReference,
+			Message: err.Error(),
 		}
 	}
 
@@ -184,12 +181,7 @@ func (r *ElasticsearchClusterReconciler) registerSnapshotRepository(
 	}
 
 	name := components.RepositoryName(cluster)
-	config := esadmin.S3RepositoryConfig{
-		Bucket:          storage.Config.Spec.S3.BucketName,
-		BasePath:        logicalbackup.ClusterPrefix(storage.Config.BasePath(), cluster.Namespace, cluster.Name),
-		Endpoint:        storage.Config.Spec.S3.Endpoint,
-		PathStyleAccess: storage.Config.Spec.S3.ForcePathStyle,
-	}
+	config := components.RepositoryConfig(cluster, storage)
 
 	fingerprint := fmt.Sprintf("%s|%+v", name, config)
 	key := client.ObjectKeyFromObject(cluster)
