@@ -58,10 +58,11 @@ func pod(name string) *corev1.Pod {
 	}
 }
 
-func waiting(name, container, reason, message string) *corev1.Pod {
+// waiting is a pod whose only container sits in the given waiting state.
+func waiting(name, reason, message string) *corev1.Pod {
 	p := pod(name)
 	p.Status.ContainerStatuses = []corev1.ContainerStatus{{
-		Name:  container,
+		Name:  "upload",
 		State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason, Message: message}},
 	}}
 
@@ -88,7 +89,7 @@ func TestStuckClassifiesWaitingStates(t *testing.T) {
 		Reason: corev1.PodReasonUnschedulable, Message: "unbound immediate PersistentVolumeClaims",
 	}}
 
-	succeeded := waiting("done", "upload", "ImagePullBackOff", "stale status")
+	succeeded := waiting("done", "ImagePullBackOff", "stale status")
 	succeeded.Status.Phase = corev1.PodSucceeded
 
 	cases := map[string]struct {
@@ -97,27 +98,27 @@ func TestStuckClassifiesWaitingStates(t *testing.T) {
 		text   string
 	}{
 		"config error": {
-			pod:    waiting("config", "upload", "CreateContainerConfigError", "secret not found"),
+			pod:    waiting("config", "CreateContainerConfigError", "secret not found"),
 			reason: v1.ReasonMissingSecret,
 			text:   "CreateContainerConfigError",
 		},
 		"container error": {
-			pod:    waiting("container", "upload", "CreateContainerError", "mount failed"),
+			pod:    waiting("container", "CreateContainerError", "mount failed"),
 			reason: v1.ReasonMissingSecret,
 			text:   "CreateContainerError",
 		},
 		"image pull error": {
-			pod:    waiting("pull", "upload", "ErrImagePull", "manifest unknown"),
+			pod:    waiting("pull", "ErrImagePull", "manifest unknown"),
 			reason: v1.ReasonInvalidReference,
 			text:   "ErrImagePull",
 		},
 		"image pull backoff": {
-			pod:    waiting("backoff", "upload", "ImagePullBackOff", "back-off pulling"),
+			pod:    waiting("backoff", "ImagePullBackOff", "back-off pulling"),
 			reason: v1.ReasonInvalidReference,
 			text:   "ImagePullBackOff",
 		},
 		"invalid image name": {
-			pod:    waiting("invalid", "upload", "InvalidImageName", "couldn't parse image"),
+			pod:    waiting("invalid", "InvalidImageName", "couldn't parse image"),
 			reason: v1.ReasonInvalidReference,
 			text:   "InvalidImageName",
 		},
@@ -132,7 +133,7 @@ func TestStuckClassifiesWaitingStates(t *testing.T) {
 			text:   "unbound",
 		},
 		"progressing": {
-			pod: waiting("fine", "upload", "PodInitializing", ""),
+			pod: waiting("fine", "PodInitializing", ""),
 		},
 		"terminal pod": {pod: succeeded},
 	}
@@ -163,7 +164,7 @@ func TestStuckClassifiesWaitingStates(t *testing.T) {
 func TestStuckIgnoresPodsThatTheSelectorDoesNotMatch(t *testing.T) {
 	t.Parallel()
 
-	stranger := waiting("stranger", "upload", "ImagePullBackOff", "not ours")
+	stranger := waiting("stranger", "ImagePullBackOff", "not ours")
 	stranger.Labels = map[string]string{"camunda.io/component": "other"}
 	c := fake.NewClientBuilder().WithScheme(podScheme(t)).WithObjects(stranger).Build()
 
