@@ -1,174 +1,14 @@
 # CamundaClusterPreset
 
-Cluster-scoped, passive preset that defines a standardized orchestration cluster configuration for [CamundaCluster](camundacluster.md) resources to inherit.
+`CamundaClusterPreset` is a cluster-scoped baseline configuration that [CamundaCluster](camundacluster.md) resources inherit. You create it, or another tool creates it for you.
 
-## Purpose
+A preset lets a platform team define a standard cluster shape once: sizing, topology, environment variables, and backup policy. Each `CamundaCluster` opts in by name through `presetRef`, so individual clusters stay small and consistent. Typical presets are named for their size, for example `small`, `medium`, and `large`.
 
-`CamundaClusterPreset` lets platform teams define standardized cluster shapes — sizing, topology, and defaults — once, so individual clusters stay small and consistent.
-You create presets (or a composition layer above ships a catalog of them, e.g. `small`, `medium`, `large`), and each [CamundaCluster](camundacluster.md) opts in by name via `presetRef`.
-It is a passive data CRD: there is no preset controller, and creating a preset by itself does nothing.
+A preset is passive data. No controller reconciles it, it creates nothing, and it reports no status. A cluster that fits no preset leaves `presetRef` unset and configures everything inline.
 
-## How it works
+The operator creates no resources from this kind. A `CamundaCluster` that references it reads the preset on every reconcile and merges its own spec over `spec.cluster`. When you edit a preset, every referencing cluster picks up the change on its next reconcile.
 
-There is no controller for this kind; consumers resolve and merge presets themselves.
-The CamundaCluster controller resolves `presetRef` on each reconcile, so editing a preset propagates to every referencing cluster on their next reconcile.
-
-`spec.cluster` reuses the preset-legal subset of the CamundaCluster spec type as a full baseline, and the effective spec of a referencing cluster is computed with these merge rules:
-
-1. Start from the preset's `spec.cluster` as the baseline.
-2. Instance-bound fields are cluster-only and rejected in a preset (see Validation): the baseline carries only configuration that is meaningful for any number of clusters.
-3. Scalar and pointer fields override individually: a value set on the CamundaCluster replaces the preset's value, and an absent field inherits it. This covers `version`, the `auth` client-credential fields, per-component `mode`, `replicas`, `partitions`, `replicationFactor`, `storageClassName`, `storageSize`, `persistentVolumeClaimRetentionPolicy`, `connectors.enabled`, and `connectors.version`.
-4. `resources` merges per entry: a request or limit value set on the CamundaCluster replaces the preset's matching entry, and unset entries inherit.
-5. `extraEnv` lists merge by variable name: preset entries come first, and a CamundaCluster entry with the same name replaces the preset's entry.
-6. `extraEnvFrom` lists concatenate: preset entries first, then CamundaCluster entries.
-7. `podLabels` and `podAnnotations` maps merge by key, with the CamundaCluster winning on conflicts.
-8. `scheduling` and `auth.admin` are the exceptions and never merge: if the CamundaCluster sets one of them, it replaces the preset's block entirely. For `scheduling` this holds at each level (top-level or per component), because partial scheduling merges are error-prone. For `auth.admin` it means one manifest names every administrator of the cluster, and a cluster can drop an administrator that the preset grants.
-9. `backup` merges per field. `backup.primaryStorage` overrides field by field, so a cluster can change the schedule and keep the retention of the preset. `backup.dump` follows the component rules above (rules 4 to 8): `backup.dump.scratchVolume` replaces as a whole block, like `scheduling`, and `backup.dump.postgresImage` and `backup.dump.activeDeadlineSeconds` are scalars the cluster overrides when set. `backup.primaryStorage.continuous` is a pointer, so a preset can turn continuous backups on for a fleet and one cluster can still set it to `false`.
-
-The override surface is deliberately small — sizing, env vars, and metadata that commonly vary per cluster.
-Clusters that fit no preset skip `presetRef` and configure everything inline.
-
-```mermaid
-graph LR
-    CC[CamundaCluster] -.->|presetRef| CCP[CamundaClusterPreset]
-```
-
-!!! note "Deviation from the original proposal"
-    The proposal had a preset controller that created `PVCAutoResize` CRs from an `autoResize` block on the preset; that design is dropped.
-    Presets carry no `autoResize` fields, and `PVCAutoResize` CRs are always created explicitly by you or a composition layer above.
-
-## API reference
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaClusterPreset
-metadata:
-  # Cluster-scoped: no namespace. Presets are conventionally named for their size or role.
-  name: medium
-spec:
-  # object. Required. Preset-legal subset of the CamundaCluster spec as a baseline; see the CamundaCluster API reference for field details and Validation below for the fields a preset must not set.
-  cluster:
-    # string. Optional. Camunda version applied to clusters that do not set their own.
-    version: "8.9.0"
-    # object. Optional. Per-cluster OIDC client-credential defaults for referencing clusters; same shape as the CamundaCluster auth block, sits between the platform config's defaults and a cluster's own auth override.
-    auth:
-      # string. Optional. Default OIDC client ID for referencing clusters.
-      clientId: "medium-clusters"
-      # string. Optional, default: the clientId. Audience validated in access tokens.
-      audience: "medium-clusters"
-      # object. Optional. Secret holding the default client secret; the namespace is required, because presets are cluster-scoped and have no namespace to default to.
-      clientSecretRef:
-        name: "medium-clusters-oidc-secret"
-        namespace: "camunda-system"
-        key: "client-secret"
-      # object. Optional. Default administrators of referencing clusters; a cluster that sets its own admin block replaces this entirely (no merge).
-      admin:
-        clients:
-          - "platform-ops"
-    # list. Optional. Env vars applied to ALL workloads of referencing clusters; merged by name, with cluster entries winning.
-    extraEnv:
-      - name: TZ
-        value: "UTC"
-    # list. Optional. Bulk env from ConfigMaps/Secrets applied to ALL workloads; preset entries first, then cluster entries.
-    extraEnvFrom: []
-    # map[string]string. Optional. Labels merged into all workload pods of referencing clusters.
-    podLabels:
-      company.com/team: "automation-ops"
-    # map[string]string. Optional. Annotations merged into all workload pods of referencing clusters.
-    podAnnotations:
-      company.com/cluster-preset: "medium"
-    # object. Optional. Scheduling baseline for all workloads; a cluster that sets its own scheduling replaces this entirely (no merge).
-    scheduling: {}
-    # object. Optional. Backup policy baseline for all clusters that reference this preset.
-    # See the CamundaCluster doc for the full block. backupStorageRef is instance-bound and stays on the cluster.
-    backup:
-      primaryStorage:
-        continuous: true
-        schedule: "PT1H"
-        checkpointInterval: "PT15M"
-        retention:
-          window: "P7D"
-          cleanupSchedule: "PT1H"
-    # object. Optional. Zeebe baseline; zeebe is always a standalone StatefulSet.
-    zeebe:
-      # integer. Optional. Broker replica baseline.
-      replicas: 3
-      # integer. Optional. Partition count baseline.
-      partitions: 3
-      # integer. Optional. Replication factor baseline.
-      replicationFactor: 3
-      # object. Optional. Compute resources baseline.
-      resources:
-        requests: { cpu: "1", memory: "2Gi" }
-      # string. Optional. StorageClass for broker volumes.
-      storageClassName: "ssd"
-      # quantity. Optional. Broker volume size. A cluster that applied a larger size keeps it and records a StorageShrinkIgnored event.
-      storageSize: "32Gi"
-      # object. Optional. What happens to the broker volumes when a referencing cluster is deleted; same shape as on the CamundaCluster.
-      persistentVolumeClaimRetentionPolicy:
-        # string (Retain | Delete). Optional, default: Delete.
-        whenDeleted: Delete
-      # list. Optional. Env var baseline, merged by name with cluster-level entries; an entry replaces an operator entry with the same name.
-      extraEnv:
-        - name: JAVA_TOOL_OPTIONS
-          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
-    # object. Optional. Gateway baseline.
-    gateway:
-      # string. Optional. Standalone | Embedded.
-      mode: Standalone
-      # integer. Optional. Gateway replica baseline.
-      replicas: 2
-      # object. Optional. Compute resources baseline.
-      resources:
-        requests: { cpu: "500m", memory: "1Gi" }
-    # object. Optional. Operate baseline.
-    operate:
-      # string. Optional. Standalone | Embedded.
-      mode: Embedded
-    # object. Optional. Tasklist baseline.
-    tasklist:
-      # string. Optional. Standalone | Embedded.
-      mode: Embedded
-    # object. Optional. Admin baseline. Identity was renamed to Admin in Camunda 8.9; the profile is `admin`.
-    admin:
-      # string. Optional. Standalone | Embedded.
-      mode: Embedded
-    # object. Optional. Connectors baseline; connectors are standalone-only.
-    connectors:
-      # boolean. Optional. Whether referencing clusters run the connectors runtime.
-      enabled: true
-      # string. Optional. Connectors bundle version applied to clusters that do not set their own.
-      version: "8.9.7"
-      # integer. Optional. Connectors replica baseline.
-      replicas: 1
-      # object. Optional. Compute resources baseline.
-      resources:
-        requests: { cpu: "250m", memory: "512Mi" }
-```
-
-## Status
-
-This is a passive data CRD: no controller reconciles it and it reports no status.
-Reference errors surface on the consumer instead — a [CamundaCluster](camundacluster.md) pointing at a missing preset reports `Ready: False` with reason `InvalidReference`.
-
-## Validation
-
-- `spec.cluster` must be present and must conform to the preset-legal subset of the CamundaCluster spec schema.
-- Instance-bound CamundaCluster fields are rejected at admission inside `spec.cluster`: `platformConfigRef`, `presetRef` (no preset chaining), `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`.
-- Preset-legal fields are everything else: `version`, `auth`, the per-component blocks (`zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`), `backup`, and the top-level `extraEnv`, `extraEnvFrom`, `podLabels`, `podAnnotations`, and `scheduling`. `backup` is policy and belongs in a preset; `backupStorageRef`, which says where backups go, is instance-bound.
-- There is no cross-resource validation: preset resolution problems are reported by the consuming controller.
-
-## Relationships
-
-- [CamundaCluster](camundacluster.md) — references this CR via `presetRef` and inherits its baseline under the merge rules above.
-- [CamundaPlatformConfig](camundaplatformconfig.md) — a preset's `auth` baseline sits between the platform config's environment defaults and a cluster's own `auth` override.
-- [PVCAutoResize](pvcautoresize.md) — never created by presets; create it explicitly per cluster (deviation from the original proposal, which had preset-driven auto-resize).
-
-A composition layer above may ship a standard catalog of presets for its clusters to reference.
-
-## Examples
-
-A minimal manifest:
+The smallest preset sets a version and a broker baseline:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -185,7 +25,158 @@ spec:
       storageSize: "10Gi"
 ```
 
-A realistic manifest:
+```mermaid
+graph LR
+    CC[CamundaCluster] -.->|presetRef| CCP[CamundaClusterPreset]
+    CC -.->|platformConfigRef| PFC[CamundaPlatformConfig]
+```
+
+## Merge rules
+
+The cluster starts from `spec.cluster` of the preset. Each field then merges as the table says. The instance-bound fields always come from the cluster.
+
+| Field | Merge behavior |
+| --- | --- |
+| `version`, `auth.clientId`, `auth.audience`, `auth.clientSecretRef`, per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `connectors.enabled`, `connectors.version` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
+| `resources` | Merged per request and limit entry. A cluster entry replaces the matching preset entry. Unset entries inherit. |
+| `extraEnv` | Merged by variable name. Preset entries come first. A cluster entry with the same name replaces the preset entry. |
+| `extraEnvFrom` | Concatenated: preset entries first, then cluster entries. |
+| `podLabels`, `podAnnotations` | Merged by key. The cluster wins on a conflict. |
+| `scheduling` (top-level, per component, and `backup.dump.scheduling`) | Never merged. A block set on the cluster replaces the preset block at that level entirely. |
+| `auth.admin` | Never merged. A block set on the cluster replaces the whole preset block, so one manifest names every administrator. |
+| `backup.primaryStorage` | Merged per field. A cluster can change the schedule and keep the retention of the preset. `continuous` is a pointer, so a cluster can set it to `false` while the preset sets it to `true`. |
+| `backup.dump` | Follows the component rules above. `scratchVolume` replaces as a whole block. `postgresImage` and `activeDeadlineSeconds` are replaced when the cluster sets them. |
+| `platformConfigRef`, `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, `pause` | Instance-bound. They always come from the cluster and are rejected in a preset. |
+
+A `CamundaCluster` that names a preset that does not exist reports `Ready: False` with reason `InvalidReference`.
+
+## Storage size
+
+A preset can lower `zeebe.storageSize` freely. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`.
+
+## Status
+
+A preset reports no status. Reference errors appear on the referencing `CamundaCluster`: a missing preset gives `Ready: False` with reason `InvalidReference`, and an invalid merged spec gives `InvalidReference` with a message that starts with `invalid effective spec:`.
+
+## Spec reference
+
+Every field, with its type, whether it is required, and its default:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaClusterPreset
+metadata:
+  # Cluster-scoped: no namespace.
+  name: medium
+spec:
+  # object. Required. The baseline. It has the shape of the CamundaCluster spec without the instance-bound fields. See the CamundaCluster page for every field.
+  cluster:
+    # string. Optional. Camunda version of clusters that set none.
+    version: "8.9.0"
+    # object. Optional. OIDC client credential defaults and administrators of referencing clusters. Sits between the platform config and the cluster.
+    auth:
+      # string. Optional. Default OIDC client ID.
+      clientId: "medium-clusters"
+      # string. Optional, default: the clientId. Audience that access tokens must carry.
+      audience: "medium-clusters"
+      # object. Optional. Secret key that holds the default client secret. The namespace is required.
+      clientSecretRef:
+        name: "medium-clusters-oidc-secret"
+        namespace: "camunda-system"
+        key: "client-secret"
+      # object. Optional. Default administrators. A cluster that sets its own admin block replaces this block entirely.
+      admin:
+        clients:
+          - "platform-ops"
+    # []EnvVar. Optional. Environment variables of every workload. Merged by name, cluster entries win.
+    extraEnv:
+      - name: TZ
+        value: "UTC"
+    # []EnvFromSource. Optional. Environment sources of every workload. Preset entries first, then cluster entries.
+    extraEnvFrom: []
+    # map[string]string. Optional. Labels merged into every workload pod.
+    podLabels:
+      company.com/team: "automation-ops"
+    # map[string]string. Optional. Annotations merged into every workload pod.
+    podAnnotations:
+      company.com/cluster-preset: "medium"
+    # object. Optional. Scheduling constraints of every workload. A cluster that sets its own replaces this block entirely.
+    scheduling: {}
+    # object. Optional. Backup policy of referencing clusters. Same shape as on the CamundaCluster. backupStorageRef stays on the cluster.
+    backup:
+      primaryStorage:
+        continuous: true
+        schedule: "PT1H"
+        checkpointInterval: "PT15M"
+        retention:
+          window: "P7D"
+          cleanupSchedule: "PT1H"
+    # object. Optional. Broker baseline.
+    zeebe:
+      # integer. Optional. Number of brokers.
+      replicas: 3
+      # integer. Optional. Number of partitions.
+      partitions: 3
+      # integer. Optional. Replication factor.
+      replicationFactor: 3
+      # object. Optional. CPU and memory.
+      resources:
+        requests: { cpu: "1", memory: "2Gi" }
+      # string. Optional. StorageClass of the broker volumes.
+      storageClassName: "ssd"
+      # quantity. Optional. Size of the broker volumes. A cluster that applied a larger size keeps it.
+      storageSize: "32Gi"
+      # object. Optional. What happens to the broker volumes when a referencing cluster is deleted.
+      persistentVolumeClaimRetentionPolicy:
+        # string (Retain | Delete). Optional, default: Delete.
+        whenDeleted: Delete
+      # []EnvVar. Optional. Environment variables of the brokers. Merged by name with cluster entries.
+      extraEnv:
+        - name: JAVA_TOOL_OPTIONS
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+    # object. Optional. Gateway baseline.
+    gateway:
+      # string (Standalone | Embedded). Optional.
+      mode: Standalone
+      # integer. Optional. Replicas.
+      replicas: 2
+      # object. Optional. CPU and memory.
+      resources:
+        requests: { cpu: "500m", memory: "1Gi" }
+    # object. Optional. Operate baseline.
+    operate:
+      # string (Standalone | Embedded). Optional.
+      mode: Embedded
+    # object. Optional. Tasklist baseline.
+    tasklist:
+      # string (Standalone | Embedded). Optional.
+      mode: Embedded
+    # object. Optional. Admin baseline.
+    admin:
+      # string (Standalone | Embedded). Optional.
+      mode: Embedded
+    # object. Optional. Connectors baseline.
+    connectors:
+      # boolean. Optional. Runs the connectors runtime when true.
+      enabled: true
+      # string. Optional. Connectors bundle version of clusters that set none.
+      version: "8.9.7"
+      # integer. Optional. Replicas.
+      replicas: 1
+      # object. Optional. CPU and memory.
+      resources:
+        requests: { cpu: "250m", memory: "512Mi" }
+```
+
+### Validation rules
+
+- `spec.cluster` is required.
+- The instance-bound fields are rejected in `spec.cluster`: `platformConfigRef`, `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`. An explicit zero value, for example `suspend: false` or an empty `presetRef`, counts as unset.
+- The fields of `spec.cluster` obey the same schema rules as on a `CamundaCluster`: versions are `x.y.z`, `whenDeleted` is `Delete` or `Retain`, and the backup durations are ISO 8601 days and time.
+- The transition rules of a `CamundaCluster` do not bind a preset: a preset can lower `zeebe.storageSize`. A referencing cluster keeps its applied volumes.
+- There is no cross-resource validation. The referencing cluster reports a problem with the merged spec.
+
+### A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -216,12 +207,6 @@ spec:
       replicas: 2
       resources:
         requests: { cpu: "500m", memory: "1Gi" }
-    operate:
-      mode: Embedded
-    tasklist:
-      mode: Embedded
-    admin:
-      mode: Embedded
     connectors:
       enabled: true
       version: "8.9.7"
@@ -229,3 +214,10 @@ spec:
       resources:
         requests: { cpu: "250m", memory: "512Mi" }
 ```
+
+## Related
+
+- [CamundaCluster](camundacluster.md): references this resource through `presetRef` and merges its own spec over the baseline.
+- [CamundaPlatformConfig](camundaplatformconfig.md): the `auth` baseline of a preset sits between the defaults of the platform config and the `auth` block of a cluster.
+- [Getting started](../getting-started.md): a preset is optional in the first setup.
+- [Operations guide](../guides/operations.md): how to resize a fleet of clusters through a preset.

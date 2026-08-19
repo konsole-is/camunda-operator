@@ -1,0 +1,240 @@
+# Backup
+
+A backup of an orchestration cluster is one consistent set: the secondary storage data and the Zeebe partitions, taken together. The operator writes the set to a bucket that you provide. There is one backup kind per storage backend: `LogicalBackupElasticsearch` for Elasticsearch and `LogicalBackupRDBMS` for PostgreSQL. They are called logical backups because they back up the data through the Camunda and storage APIs, not the volumes. One resource is one backup. You create it, it runs once, and its status records what was written.
+
+The restore kinds are not available yet. The ids and names that a completed backup records in its status are what a restore needs.
+
+## Set up once
+
+### The bucket
+
+Create an `ObjectStorageConfig`. It describes the bucket and how the cluster authenticates to it. The operator never creates the bucket. You create it, or another tool creates it for you.
+
+An S3 bucket with workload identity:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ObjectStorageConfig
+metadata:
+  name: my-backup-bucket
+spec:
+  type: S3
+  s3:
+    bucketName: my-backup-bucket
+    basePath: backups
+    region: eu-west-1
+    auth:
+      type: workloadIdentity
+      workloadIdentity:
+        roleArn: "arn:aws:iam::123456789012:role/my-cluster-backup-role"
+```
+
+The [ObjectStorageConfig reference](../crds/objectstorageconfig.md) has examples for GCS, Azure Blob, and static credentials (MinIO, Ceph).
+
+`basePath` is a key prefix inside the bucket, without leading or trailing slashes. Every backup of a cluster lands under `<basePath>/<namespace>/<cluster>/`. Two clusters can share one bucket and never share one prefix. Azure Blob is the exception: the Zeebe backup store writes into the whole container. On Azure, create one container and one `ObjectStorageConfig` per cluster.
+
+### Point the cluster at it
+
+Set `spec.backupStorageRef` on the `CamundaCluster` to the name of the `ObjectStorageConfig`:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  # ... version, platformConfigRef, storageRef, and the rest of your cluster
+  backupStorageRef: my-backup-bucket
+```
+
+This reference causes three things:
+
+- The operator configures the Zeebe backup store with the bucket. Zeebe writes its partition backups there.
+- On a PostgreSQL cluster, continuous primary-storage backups are on by default. Zeebe takes a backup every `PT1H`, writes a checkpoint every `PT15M`, and keeps backups for `P7D`. You change these values in `spec.backup.primaryStorage` on the `CamundaCluster`.
+- If the bucket carries a workload identity, the operator writes the matching annotation on the ServiceAccount of the cluster. The ServiceAccount is named `<cluster>-camunda` by default. With a bucket that carries no annotation (for example EKS Pod Identity), bind the principal `system:serviceaccount:my-cluster-ns:my-cluster-camunda` on the cloud side.
+
+### Elasticsearch: the snapshot repository
+
+Camunda writes the Elasticsearch part of a backup into a snapshot repository. The `ElasticsearchCluster` registers it. Set `spec.snapshotStorageRef` to the same `ObjectStorageConfig` that the cluster references:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  # ... version, replicas, storageSize, secondaryStorageConfig
+  snapshotStorageRef: my-backup-bucket
+```
+
+The operator registers the repository `my-cluster-es` in Elasticsearch, under the same prefix layout as every other backup object. It then publishes the name in the `SecondaryStorageConfig` as `snapshotRepository`, and the `CamundaCluster` configures its components with it.
+
+Make sure that the repository is ready before you take a backup:
+
+```bash
+kubectl get elasticsearchcluster my-cluster-es -n my-cluster-ns -o jsonpath='{.status.conditions[?(@.type=="SnapshotRepositoryReady")].reason}'
+kubectl get camundacluster my-cluster -n my-cluster-ns -o jsonpath='{.status.management.backupRepository}'
+```
+
+The first command prints `Healthy`. The second prints `my-cluster-es`. A `CamundaCluster` with a `backupStorageRef` and no repository name reports `Ready: InvalidReference` until the repository exists.
+
+### PostgreSQL: backup credentials
+
+The dump Job connects to the database with a separate backup user. A `Database` resource creates that user by default, as the SQL role `<databaseName>_backup`. It writes the credentials to the Secret `<Database name>-backup-credentials` and names it in the `DatabaseConfig` as `backupCredentialsSecretRef`. If you write the `DatabaseConfig` by hand, set `backupCredentialsSecretRef` yourself. Without it the backup reports `MissingSecret`.
+
+The dump runs the PostgreSQL client tools of the major version of your server. The operator reads that version from the `DatabaseServerConfig`. Make sure that the `DatabaseServerConfig` is `Ready` and that `status.serverVersion` is set:
+
+```bash
+kubectl get databaseserverconfig my-db-server -o jsonpath='{.status.serverVersion}'
+```
+
+`spec.backup.dump` on the `CamundaCluster` shapes the Job. Every field is optional:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  # ... the rest of your cluster
+  backupStorageRef: my-backup-bucket
+  backup:
+    dump:
+      # CPU and memory of the dump pod. The dump and the upload run in turn in the same pod.
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+      # Where the dump is written before the upload. Unset is an emptyDir that the node bounds.
+      # Set a storage class for a dump that is larger than the ephemeral storage of a node.
+      scratchVolume:
+        sizeLimit: 50Gi
+        storageClassName: standard
+      # Image of the dump container. Default: postgres:<major of the server>. Set it in an air-gapped installation.
+      postgresImage: "registry.example.com/postgres:17"
+      # Seconds before the Job fails. Default: 86400 (24 hours).
+      activeDeadlineSeconds: 86400
+      # Extra annotations of the dump pod.
+      podAnnotations:
+        # A service-mesh sidecar that keeps running stops the Job from completing. Turn it off for this pod.
+        sidecar.istio.io/inject: "false"
+```
+
+A `LogicalBackupRDBMS` can replace the pod settings of this block for one backup with its own `spec.dump`. The image always comes from the cluster.
+
+## Take a backup
+
+Create the backup in the namespace of the cluster. A backup cannot reference a cluster in another namespace.
+
+### Elasticsearch
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: LogicalBackupElasticsearch
+metadata:
+  name: my-cluster-backup
+  namespace: my-cluster-ns
+spec:
+  clusterRef:
+    name: my-cluster
+```
+
+Watch it:
+
+```bash
+kubectl get lbes my-cluster-backup -n my-cluster-ns -w
+```
+
+### PostgreSQL
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: LogicalBackupRDBMS
+metadata:
+  name: my-cluster-backup
+  namespace: my-cluster-ns
+spec:
+  clusterRef:
+    name: my-cluster
+```
+
+Watch it:
+
+```bash
+kubectl get lbrdbms my-cluster-backup -n my-cluster-ns -w
+```
+
+### How to tell it worked
+
+Both kinds print the columns `Phase`, `Step`, and `Backup ID`. `status.phase` moves from `Pending` to `Running` to `Completed` or `Failed`. The last two are final. `status.step` names the part of the procedure that runs now.
+
+`Completed` means that every part of the set is written and that the cluster exports again. The `Ready` condition is `True` with reason `Completed`. The status then holds what a restore needs:
+
+| Kind | Field | Meaning |
+| --- | --- | --- |
+| both | `status.backupId` | The id of the backup. The Elasticsearch kind passes it to the cluster. The PostgreSQL kind uses it in the object key. |
+| `LogicalBackupElasticsearch` | `status.historySnapshots` | The names of the Elasticsearch snapshots of the web application indices. |
+| `LogicalBackupElasticsearch` | `status.repository` | The snapshot repository that holds the snapshots. The snapshot of the Zeebe record indices is named `camunda_zeebe_records_backup_<backupId>`. |
+| `LogicalBackupElasticsearch` | `status.history`, `status.records`, `status.runtime` | The state of the three parts. Each is `Completed` on a completed backup. |
+| `LogicalBackupRDBMS` | `status.objectKey` | The key of the dump in the bucket: `<basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump`. |
+| `LogicalBackupRDBMS` | `status.zeebeBackupId` | The id of the Zeebe backup that pairs with the dump. The cluster generates it. |
+| both | `status.completionTime` | When the backup reached its final phase. |
+
+To look at a backup in full:
+
+```bash
+kubectl get lbes my-cluster-backup -n my-cluster-ns -o yaml
+```
+
+If the phase is `Failed`, `status.failureMessage` names the step that failed and why. See [When a backup fails](#when-a-backup-fails).
+
+## What happens during a backup
+
+These are the effects that you notice while a backup runs.
+
+- On the Elasticsearch path, the operator pauses exporting on the cluster first. Zeebe keeps processing. The operator resumes exporting when the set is written, and also when a step fails.
+- On the PostgreSQL path, a Job named `<backup>-dump` runs in the namespace of the cluster. It runs under the ServiceAccount of the cluster. When the dump is uploaded, the operator requests one Zeebe backup and waits for it. A Job that succeeded is removed. A Job that failed stays, so that you can read its logs.
+- The operator runs one backup of a cluster at a time, across both kinds. A second backup waits as `Pending` with reason `BackupInProgress` and starts when the first one ends.
+- If the cluster is suspended, the backup waits with reason `ClusterSuspended`. The management API of a suspended cluster is not reachable.
+
+## Delete a backup
+
+Deleting a backup resource removes what the backup wrote. A finalizer holds the resource until the artifacts are gone.
+
+- On the Elasticsearch path, the operator deletes the snapshots that this backup created and the Zeebe backup under its id.
+- On the PostgreSQL path, the operator deletes the dump object. It never deletes Zeebe backups. They belong to the continuous range that Zeebe keeps under `spec.backup.primaryStorage.retention`.
+
+If you delete a backup that is still running, the operator stops it. On the Elasticsearch path it resumes exporting first. The resource is gone only when the cluster exports again.
+
+On a bucket with workload identity, the cluster ServiceAccount holds the identity, not the operator. The PostgreSQL path then runs a cleanup Job named `<backup>-cleanup` under that ServiceAccount. If the cleanup Job fails, the deletion waits, and an event on the backup names the Job. Read the logs of the Job, correct the cause, and delete the Job. The operator creates it again and tries once more.
+
+## When a backup fails
+
+The `Ready` condition of the backup carries the reason. Before the backup starts, every reason except `Failed` and `ResumeFailed` means that the backup waits in `Pending`. It starts when the cause is gone. During a run, a dependency that goes away holds the backup for 10 minutes with the same reason, then fails it. A backup that ended as `Failed` does not run again. To retry, create a new resource with a new name. The spec of a backup is immutable.
+
+| Reason | What it means | What to do |
+| --- | --- | --- |
+| `Progressing` | The backup runs, or it waits for the cluster to publish its management API or to finish a rollout. | Wait. |
+| `Failed` | A step failed. `status.failureMessage` names the step and the error. | Read the message and the events on the resource. On the PostgreSQL path, read the logs of the dump Job. Correct the cause, then create a new backup. |
+| `ResumeFailed` (Elasticsearch) | A step failed, and the resume of exporting did not succeed within 30 minutes. Exporting on the cluster stays paused. No other backup of this cluster starts. | Make sure that the management API of the cluster is reachable. Then delete this backup. The deletion resumes exporting and releases the cluster. |
+| `InvalidReference` | The cluster, its `SecondaryStorageConfig`, the `ObjectStorageConfig`, or a dependency of the dump does not exist. On the Elasticsearch path, the cluster publishes no snapshot repository. On the PostgreSQL path, the dump image does not pull, or the `DatabaseServerConfig` has no `status.serverVersion` yet. | Read the message. Create the missing resource, or wait until the snapshot repository or the server version is published. |
+| `MissingSecret` | A Secret or a key in it does not exist: the Elasticsearch credentials, the management credentials, or the database backup credentials. | Create the Secret, or set `backupCredentialsSecretRef` on the `DatabaseConfig`. |
+| `MissingCredentials` (PostgreSQL) | The static credentials Secret of the bucket does not resolve. | Make sure that the Secret that the `ObjectStorageConfig` names exists and holds the configured keys. |
+| `ConnectionFailed` | The management API of the cluster, or Elasticsearch, is not reachable or rejected the call. | Make sure that the cluster is healthy and that a network policy does not block the operator. The backup retries for a bounded time, then fails. |
+| `StorageTypeMismatch` | The cluster stores its data in the other backend. | Use the other backup kind. |
+| `ClusterSuspended` | The cluster is suspended. The backup waits. | Set `spec.suspend: false` on the cluster, or wait. |
+| `BackupInProgress` | Another backup of the cluster runs. The message names it. The backup waits. | Wait, or delete the other backup. |
+
+A `Failed` backup holds no artifacts that a restore can use. Delete it to remove what it wrote.
+
+## Related
+
+- [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md): the backup kind of an Elasticsearch cluster, with every status field.
+- [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md): the backup kind of a PostgreSQL cluster, with `spec.dump` and every status field.
+- [ObjectStorageConfig](../crds/objectstorageconfig.md): the bucket contract, with examples for S3, GCS, Azure Blob, and static credentials.
+- [ElasticsearchCluster](../crds/elasticsearchcluster.md): `spec.snapshotStorageRef` and the snapshot repository.
+- [CamundaCluster](../crds/camundacluster.md): `spec.backupStorageRef`, `spec.backup`, and `status.management`.
+- [Secondary storage](./secondary-storage.md): how a cluster gets its Elasticsearch or PostgreSQL backend.
