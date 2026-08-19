@@ -45,6 +45,8 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 ## Bubble-up log
 
+- 2026-08-20 (from the #110 worker, for #111/#112/#113 dispatch): (1) RBAC markers for logicalrestores and pointintimerestores (+/status, +/finalizers) were deleted with the scaffold controllers — PR2 and PR3 must each carry their own +kubebuilder:rbac markers and re-register their kind in cmd/main.go. (2) pgbootstrap.Connection renamed AdminUser/AdminPassword to User/Password. (3) RecreateClaims is a two-call contract: flush status.recreatedClaims from Progress.Recreated between calls and stop calling once Progress.Done. (4) The restore Job container is named restore (restore.ComponentRestore), not camunda — pod-status checks and e2e log scraping select on labels.Managed(owner, ComponentRestore) plus the owner key. (5) status.version exists only on backups taken after PR1 merges; a versionless backup fails compatibility with IncompatibleTarget (resolved question). (6) Deviations recorded in the spec by the worker: topology spread constraints are retargeted at the restore pods, SPRING_PROFILES_ACTIVE=restore is set on the Job, Optimize indices are optimize-* not camunda-optimize*, BuildJob copies the whole broker PodSpec, Target gained ClusterName, ContainerCamunda is exported.
+
 - 2026-08-20 (orchestrator): the plan agent raised four open questions; resolved in the plan's `## Resolved questions` section, each in the plan's own safe direction (same-bucket cross-cluster scope, fail-closed on a versionless backup, short PITR e2e fallback, DROP SCHEMA wipe with manual re-grant). The user was AFK with full autonomy granted.
 
 ## Pending snapshot
