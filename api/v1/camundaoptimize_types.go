@@ -29,10 +29,6 @@ const (
 	// workload.
 	ConditionImporterReady = "ImporterReady"
 
-	// ReasonUnsupportedStorageType means the secondary storage of the
-	// referenced cluster is not Elasticsearch. Optimize reads no other
-	// backend.
-	ReasonUnsupportedStorageType = "UnsupportedStorageType"
 	// ReasonVersionMismatch means the major and the minor of spec.version
 	// differ from those of the effective version of the referenced cluster.
 	// Camunda supports Optimize only on a matching minor.
@@ -108,8 +104,8 @@ type CamundaOptimizeStatus struct {
 
 // CamundaOptimize describes one Camunda Optimize instance attached to one
 // CamundaCluster. The operator turns it into a webapp Deployment, an importer
-// Deployment, and their Services, and it turns on the Elasticsearch exporter
-// of the referenced cluster so that Optimize has data to import.
+// Deployment, and their Services. It also turns on the Elasticsearch exporter
+// of the referenced cluster, so Optimize has data to import.
 type CamundaOptimize struct {
 	metav1.TypeMeta `json:",inline"`
 

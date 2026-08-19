@@ -81,7 +81,4 @@ const (
 	// ReasonBackupInProgress means another backup of the same cluster is not
 	// terminal, so this one waits in Pending.
 	ReasonBackupInProgress = "BackupInProgress"
-	// ReasonStorageTypeMismatch means the backup kind does not match the
-	// storage type of the cluster's SecondaryStorageConfig.
-	ReasonStorageTypeMismatch = "StorageTypeMismatch"
 )
