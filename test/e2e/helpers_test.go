@@ -100,7 +100,7 @@ func dumpDiagnostics(testNamespace string) {
 		"resources": {
 			"get",
 			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs," +
-				"camundaclusters,logicalbackupelasticsearches,logicalbackuprdbmses",
+				"camundaclusters,logicalbackupelasticsearches,logicalbackuprdbmses,backupschedules",
 			"-n", testNamespace,
 		},
 		"object storage contracts": {"get", "objectstorageconfigs", "-o", "wide"},
@@ -145,6 +145,7 @@ var customResourceKinds = []string{
 	"camundaclusters",
 	"logicalbackupelasticsearches",
 	"logicalbackuprdbmses",
+	"backupschedules",
 }
 
 // dumpCustomResources writes every custom resource of this operator in
