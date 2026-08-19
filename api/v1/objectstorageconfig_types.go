@@ -152,6 +152,29 @@ type S3Storage struct {
 	Auth S3StorageAuth `json:"auth,omitempty"`
 }
 
+// SigningRegion returns the region that a consumer of this block sends: the
+// region of the block, or PlaceholderS3Region when the block carries an
+// endpoint and no region. A block that carries neither yields the empty
+// string, which leaves the region to the consumer. The CRD admits no such
+// block.
+//
+// Every consumer of one bucket needs the same answer, and one derivation is
+// what keeps them from disagreeing. The region enters the SigV4 signature of
+// each request. A store that enforces its own region rejects a signature made
+// for another one with AuthorizationHeaderMalformed, an error that names
+// nothing about a region.
+func (in *S3Storage) SigningRegion() string {
+	if in.Region != "" {
+		return in.Region
+	}
+
+	if in.Endpoint != "" {
+		return PlaceholderS3Region
+	}
+
+	return ""
+}
+
 // GCSWorkloadIdentity names the Google principal that the bucket trusts. An
 // empty block means the consumer's ServiceAccount chain already carries the
 // identity (Workload Identity Federation for GKE), so the operator adds

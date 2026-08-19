@@ -315,3 +315,40 @@ func TestLocationPinsWhereObjectsLive(t *testing.T) {
 	mismatched := &v1.ObjectStorageConfig{Spec: v1.ObjectStorageConfigSpec{Type: v1.ObjectStorageTypeGCS}}
 	assert.Empty(t, mismatched.Location())
 }
+
+func TestSigningRegionOfAnS3Block(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		storage v1.S3Storage
+		want    string
+	}{
+		"the region of the block wins over the placeholder": {
+			storage: v1.S3Storage{Region: "eu-west-1", Endpoint: "http://minio.minio.svc:9000"},
+			want:    "eu-west-1",
+		},
+		"an endpoint without a region gets the placeholder": {
+			storage: v1.S3Storage{Endpoint: "http://minio.minio.svc:9000"},
+			want:    v1.PlaceholderS3Region,
+		},
+		"a region without an endpoint is AWS S3 itself": {
+			storage: v1.S3Storage{Region: "eu-west-1"},
+			want:    "eu-west-1",
+		},
+		// The CRD admits no such block: region is required unless endpoint
+		// is set. A placeholder here would aim every request of an AWS
+		// bucket at the wrong region, so the empty answer stays empty and
+		// each consumer falls back to its own chain.
+		"neither one gets no placeholder": {
+			storage: v1.S3Storage{},
+			want:    "",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, tc.storage.SigningRegion())
+		})
+	}
+}
