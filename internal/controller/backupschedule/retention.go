@@ -152,6 +152,10 @@ func prunable(items []scheduledBackup, completed, failed int32) []scheduledBacku
 		v1.LogicalBackupCompleted: completed,
 		v1.LogicalBackupFailed:    failed,
 	} {
+		// The schema bounds spec.retained below, but this function takes
+		// plain integers. A negative bound reads as zero instead of a slice
+		// panic.
+		bound = max(bound, 0)
 		candidates := byPhase[phase]
 		if len(candidates) <= int(bound) {
 			continue

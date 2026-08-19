@@ -87,6 +87,14 @@ func TestPrunable(t *testing.T) {
 		assert.ElementsMatch(t, []string{"f1"}, names(prunable(items, 7, 0)))
 	})
 
+	t.Run("a negative bound deletes everything of the phase and never panics", func(t *testing.T) {
+		items := []scheduledBackup{
+			item("c1", v1.LogicalBackupCompleted, at(1)),
+			item("f1", v1.LogicalBackupFailed, at(1)),
+		}
+		assert.ElementsMatch(t, []string{"c1", "f1"}, names(prunable(items, -1, -5)))
+	})
+
 	t.Run("bounds at or above the count delete nothing", func(t *testing.T) {
 		items := []scheduledBackup{
 			item("c1", v1.LogicalBackupCompleted, at(1)),

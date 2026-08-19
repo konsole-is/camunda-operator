@@ -17,10 +17,10 @@ limitations under the License.
 package backupschedule
 
 import (
+	"time"
+
 	"github.com/robfig/cron/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"time"
 )
 
 // maxMissedTriggers bounds the walk over triggers that fired while nothing
