@@ -54,25 +54,45 @@ help: ## Display this help.
 
 ##@ Development
 
+# The repository holds two Go modules: the operator at the root and the API
+# types in ./api, which consumers import without the operator's dependencies.
+# A `./...` pattern never crosses a module boundary, so every Go tool below
+# runs once per module.
+MODULES := . ./api
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	cd api && "$(CONTROLLER_GEN)" crd paths="./..." output:crd:artifacts:config=../config/crd/bases
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role webhook paths="./..."
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	cd api && "$(CONTROLLER_GEN)" object:headerFile="../hack/boilerplate.go.txt" paths="./..."
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+.PHONY: tidy
+tidy: ## Run go mod tidy in every module.
+	@for m in $(MODULES); do (cd $$m && go mod tidy) || exit 1; done
+
+# API_VERSION is the api module version that consumers of the root module get.
+# The release workflow checks that it equals the release tag with a v prefix.
+.PHONY: api-version
+api-version: ## Pin the api module version in the root go.mod: make api-version VERSION=X.Y.Z
+	@test -n "$(VERSION)" || { echo "usage: make api-version VERSION=X.Y.Z" >&2; exit 1; }
+	go mod edit -require=github.com/konsole-is/camunda-operator/api@v$(VERSION)
 
 .PHONY: fmt
 fmt: golangci-lint ## Format code: callsplit, then the formatters configured in .golangci.yml.
 	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
-	"$(GOLANGCI_LINT)" fmt
+	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" fmt) || exit 1; done
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet ./...
+	@for m in $(MODULES); do (cd $$m && go vet ./...) || exit 1; done
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
+	cd api && go test ./...
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
@@ -128,13 +148,12 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 .PHONY: lint
 lint: golangci-lint ## Run callsplit in check mode, then golangci-lint.
 	go run ./hack/callsplit -check ./api ./cmd ./internal ./pkg ./test
-	"$(GOLANGCI_LINT)" run
+	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" run) || exit 1; done
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
-	"$(GOLANGCI_LINT)" fmt
-	"$(GOLANGCI_LINT)" run --fix
+	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" fmt && "$(GOLANGCI_LINT)" run --fix) || exit 1; done
 
 .PHONY: lint-config
 lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter configuration

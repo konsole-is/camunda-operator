@@ -62,8 +62,8 @@ type around `runtime.SchemeBuilder` from apimachinery. It keeps the `Register(..
 
 A rule for the module, written in `docs/architecture.md`: the api module imports only
 `k8s.io/api`, `k8s.io/apimachinery`, and the standard library. It never imports `pkg/`,
-`internal/`, ocf, or controller-runtime. A test in the root module (`go list -deps` over
-`./api/...`) enforces the rule.
+`internal/`, ocf, or controller-runtime. A test in the api module (`api/v1/module_test.go`,
+`go list -deps`) enforces the rule.
 
 `pkg/labels` and other `pkg/` packages stay in the root module. The cloud operator imports them
 from the root module at a released version. Nothing moves in this change.
@@ -138,8 +138,8 @@ run. This check makes a forgotten bump a loud error instead of a broken root mod
 The `replace` line stays. `go mod tidy` with a `replace` to a local directory never fetches the
 api module, so the bump works before the tag exists.
 
-A note in `docs/installation.md` (release section) lists the order: run `make api-version`,
-merge, publish the release.
+The release paragraph in `AGENTS.md` lists the order: run `make api-version`, merge, publish the
+release.
 
 ### 5. Docs
 
@@ -148,14 +148,14 @@ merge, publish the release.
 - A new page `docs/go-api.md`, in the mkdocs nav: what the api module contains, how to get it,
   how versions map to operator releases, and that the root module is importable at `vX.Y.Z`.
 - `docs/architecture.md`: the module boundary and the import rule from section 1.
-- `docs/installation.md`: the release order from section 4.
-- `AGENTS.md` project structure: `api/go.mod` and the `MODULES` loop.
+- `AGENTS.md`: `api/go.mod` in the project structure, the `MODULES` loop, and the release order
+  from section 4.
 
 ## Testing
 
 - `cd api && go build ./... && go test ./...` passes with no root module on the path.
-- `go list -deps ./api/...` from the api module shows no `sigs.k8s.io/controller-runtime` and no
-  `github.com/konsole-is/camunda-operator/pkg`. A unit test in the root module asserts this.
+- `go list -deps` in the api module shows no `sigs.k8s.io/controller-runtime` and no
+  `github.com/konsole-is/camunda-operator/pkg`. The test `api/v1/module_test.go` asserts this.
 - `make tidy` leaves no diff in either module.
 - `make generate manifests` leaves no diff.
 - `make test` and `make lint` pass in both modules.

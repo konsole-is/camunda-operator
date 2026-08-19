@@ -152,6 +152,10 @@ See the [CRD Overview](crds/index.md) for the full inventory, the reconciler dep
 This operator is the bottom layer of a three-operator stack.
 A cloud operator (managing cloud infrastructure such as buckets, database servers, and encrypted volumes) and a SaaS operator (managing platform extensions such as ingress and monitoring) may run above it: they create CRs of this operator — a composition layer above may create a `CamundaCluster`, contract CRs, or extension CRs — but this operator has zero knowledge of them, takes no code dependency on them, and works standalone on any Kubernetes cluster.
 
+## The api module
+
+The CRD types under `api/` are the Go module `github.com/konsole-is/camunda-operator/api`. The operators above import this module to create and read the CRs. The module depends on `k8s.io/api`, `k8s.io/apimachinery`, and the standard library only. It never imports `pkg/`, `internal/`, ocf, or controller-runtime. The test `api/v1/module_test.go` enforces this rule. See [Use the API types from Go](go-api.md) for the version scheme.
+
 ## Support policy
 
 - **Camunda 8.9+ only.** The operator targets the unified orchestration-cluster architecture introduced with Camunda 8.9. There is no version-conditional rendering and no support for earlier component topologies.

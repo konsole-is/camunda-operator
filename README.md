@@ -24,9 +24,27 @@ operator, which this operator does not install. For plain-manifest
 installation, signature verification, out-of-band CRD installation, and
 upgrades, see the [installation guide](docs/installation.md).
 
+## Use the API types from Go
+
+The CRD types are a Go module of their own, with `k8s.io/api` and
+`k8s.io/apimachinery` as their only dependencies:
+
+```bash
+go get github.com/konsole-is/camunda-operator/api@v<version>
+```
+
+```go
+import camundav1 "github.com/konsole-is/camunda-operator/api/v1"
+```
+
+See [Use the API types from Go](docs/go-api.md) for the version scheme and the
+root module.
+
 ## Documentation
 
 - [Installation](docs/installation.md) — Helm and manifest installation.
+- [Use the API types from Go](docs/go-api.md) — the api module for programs
+  that create or read the CRs.
 - [Architecture](docs/architecture.md) — the extension model and how features
   attach to workloads.
 - [CRD reference](docs/crds/index.md) — every custom resource definition.

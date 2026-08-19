@@ -11,6 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.105.1
 	github.com/elastic/cloud-on-k8s/v3 v3.5.0
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/konsole-is/camunda-operator/api v0.0.0-00010101000000-000000000000
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
@@ -213,3 +214,5 @@ require (
 )
 
 tool github.com/sourcehawk/operator-component-framework/cmd/ocf
+
+replace github.com/konsole-is/camunda-operator/api => ./api

@@ -42,6 +42,36 @@ jobs:
             exit 1
           fi
 
+      # Go module versions need a v prefix, and the api module lives in a
+      # subdirectory, so its tag carries the directory as a prefix. Both tags
+      # point at the release commit. The root go.mod must already name the api
+      # version that this release publishes, because consumers of the root
+      # module ignore its replace directive and fetch that version.
+      - name: Check that the root go.mod pins the api module at this release
+        run: |
+          want="v${TAG}"
+          have=$(go list -m -f '{{.Version}}' github.com/konsole-is/camunda-operator/api)
+          if [[ "${have}" != "${want}" ]]; then
+            echo "go.mod requires api module ${have}, release needs ${want}." >&2
+            echo "Run 'make api-version VERSION=${TAG}', merge, then publish the release again." >&2
+            exit 1
+          fi
+
+      - name: Push the Go module tags
+        run: |
+          head=$(git rev-parse HEAD)
+          for tag in "api/v${TAG}" "v${TAG}"; do
+            existing=$(git ls-remote --tags origin "refs/tags/${tag}" | cut -f1)
+            if [[ -n "${existing}" && "${existing}" != "${head}" ]]; then
+              echo "Tag '${tag}' exists and points at ${existing}, not at ${head}." >&2
+              exit 1
+            fi
+            if [[ -z "${existing}" ]]; then
+              git tag "${tag}" "${head}"
+              git push origin "refs/tags/${tag}"
+            fi
+          done
+
       # Versions below are pinned to .tool-versions. Keep them in sync.
       - name: Install kubebuilder
         run: |
