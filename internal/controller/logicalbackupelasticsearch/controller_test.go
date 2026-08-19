@@ -1780,11 +1780,17 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 			}, timeout, interval).Should(Succeed())
 		}
 		pointStorageAt(other.URL())
-		r.management.SetHistoryState(id, "COMPLETED", "")
 
 		// The destination is verified on every poll of the history backup,
 		// so the repoint is caught there, before anything is written to the
 		// other cluster.
+		//
+		// The history stays in progress on purpose. Completing it lets the
+		// run leave this step, and then which step reports the repoint
+		// depends on whether a poll lands between the completion and the
+		// moment the cache of the controller carries the new endpoint. Both
+		// orders are correct behavior, so a spec that names one step must
+		// leave the run no way to reach the other.
 		expectPhase(backup, v1.LogicalBackupFailed)
 		final := currentBackup(backup)
 		Expect(final.Status.FailureMessage).To(SatisfyAll(
@@ -1796,6 +1802,11 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(other.SnapshotCreates(r.repository, RecordsSnapshotName(id))).To(BeZero())
 
 		By("holding the deletion while the contract points elsewhere")
+		// The failure has landed, so the history can complete now. The
+		// finalizer waits while the history backup is in progress, because
+		// it cannot cancel one, and the deletion below has to reach the
+		// hold that the repointed contract puts on it.
+		r.management.SetHistoryState(id, "COMPLETED", "")
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
 		Consistently(func(g Gomega) {
 			var held v1.LogicalBackupElasticsearch
