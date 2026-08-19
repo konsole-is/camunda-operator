@@ -30,7 +30,7 @@ graph LR
 ## API reference
 
 `spec.cluster` reuses the `ElasticsearchCluster` spec type directly, so the two never drift apart.
-The instance-bound fields of that type — `presetRef`, `secondaryStorageConfig`, and `suspend` — must be left unset inside a preset. Every other field is inheritable, `serviceAccount` and `monitoring` included: a preset alone can make the operator create the `<name>-es` ServiceAccount. `monitoring` is a baseline like any other field: a preset can enable scraping and pin the exporter image and resources for every cluster that references it, and a cluster that sets its own `monitoring` block replaces the preset's wholesale.
+The instance-bound fields of that type — `presetRef`, `secondaryStorageConfig`, and `suspend` — must be left unset inside a preset. Every other field is inheritable, `serviceAccount`, `snapshotStorageRef`, `secureSettings`, and `monitoring` included. A preset alone can make the operator create the `<name>-es` ServiceAccount. A preset alone can also put a whole fleet on one snapshot bucket. `monitoring` is a baseline like any other field: a preset can enable scraping and pin the exporter image and resources for every cluster that references it, and a cluster that sets its own `monitoring` block replaces the preset's wholesale.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -52,6 +52,10 @@ spec:
     storageSize: "64Gi"
     # string. Optional, default: the cluster's default StorageClass. StorageClass for the data volumes.
     storageClassName: "ssd"
+    # string. Optional. Name of a cluster-scoped ObjectStorageConfig holding the bucket of the snapshot repository; see ElasticsearchCluster.
+    snapshotStorageRef: "my-backup-config"
+    # list of objects. Optional. Secrets that ECK loads into the keystore of every node; see ElasticsearchCluster.
+    secureSettings: []
     # list (corev1.EnvVar). Optional. Extra environment variables for every Elasticsearch node.
     extraEnv: []
     # list (corev1.EnvFromSource). Optional. Extra environment sources (ConfigMaps, Secrets) for every node.

@@ -107,10 +107,10 @@ Controller implementation is fanned out in batches derived from the graph above:
 - CamundaCluster
 - CamundaPlatformConfig handling
 
-**Batch D (attach to clusters): everything that references a running cluster.**
+**Batch D (attach to clusters): everything that references a running cluster.** The two logical backup kinds are shipped. The rest are not.
 
-- LogicalBackupElasticsearch
-- LogicalBackupRDBMS
+- LogicalBackupElasticsearch — shipped
+- LogicalBackupRDBMS — shipped
 - BackupSchedule
 - LogicalRestore
 - PointInTimeRestore

@@ -42,6 +42,9 @@ When it is set, the consuming controller writes the matching annotation on the S
 | `GCS` | `serviceAccountEmail` | `iam.gke.io/gcp-service-account` |
 | `AzureBlob` | `clientId` | `azure.workload.identity/client-id` |
 
+On `AzureBlob` the consuming controller also puts the label `azure.workload.identity/use: "true"` on the pods, with or without an annotation.
+The Azure webhook injects nothing into a pod without that label, whatever the ServiceAccount carries.
+
 An empty or absent `workloadIdentity` block means "trust the ServiceAccount chain, add nothing".
 Use it for mechanisms that need no annotation, such as EKS Pod Identity and GKE Workload Identity Federation.
 There the binding lives on the cloud side and names the ServiceAccount itself.

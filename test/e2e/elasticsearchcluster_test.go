@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -268,6 +269,11 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 // Secret and trusts the CA Secret that the contract references, so it proves
 // the contract usable the way a consumer uses it. extra are further curl
 // arguments. It returns the response body.
+//
+// The pod name carries a random suffix. RunPod ignores the error of its own
+// cleanup delete, so a transient API failure leaves the pod behind. A fixed
+// name then fails the create of the next call with AlreadyExists, and a
+// caller inside an Eventually cannot recover.
 func curlElasticsearch(contract *v1.SecondaryStorageConfig, name, path string, extra ...string) (string, error) {
 	es := contract.Spec.Elasticsearch
 	env := []corev1.EnvVar{
@@ -282,7 +288,10 @@ func curlElasticsearch(contract *v1.SecondaryStorageConfig, name, path string, e
 	args := append([]string{"-ec", script, "curl", es.Endpoint + path}, extra...)
 
 	return utils.RunPod(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "curl-" + name, Namespace: contract.Namespace},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "curl-" + name + "-" + utilrand.String(5),
+			Namespace: contract.Namespace,
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
 				Name:    "curl",
