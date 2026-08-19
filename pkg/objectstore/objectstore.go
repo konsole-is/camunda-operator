@@ -241,7 +241,7 @@ func openS3(ctx context.Context, spec *v1.S3Storage, creds *Credentials) (*Bucke
 	} else {
 		// The SDK requires a region even when a custom endpoint routes every
 		// request; S3-compatible stores ignore it.
-		opts = append(opts, awsconfig.WithRegion("us-east-1"))
+		opts = append(opts, awsconfig.WithRegion(v1.PlaceholderS3Region))
 	}
 
 	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {

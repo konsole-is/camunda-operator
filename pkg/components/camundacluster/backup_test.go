@@ -750,7 +750,7 @@ func TestBackupEnvDefaultsTheRegionOfAnEndpointStore(t *testing.T) {
 
 	env := render(in, Process{Component: ComponentZeebe}).env
 
-	assertEnv(t, env, camundaconfig.KeyPrimaryBackupS3Region.Env(), defaultS3Region)
+	assertEnv(t, env, camundaconfig.KeyPrimaryBackupS3Region.Env(), v1.PlaceholderS3Region)
 }
 
 func TestBackupEnvKeepsTheRegionOfAnEndpointStoreThatSetsOne(t *testing.T) {
