@@ -93,6 +93,11 @@ type RepositoryConfig struct {
 	// type alone. Empty means AWS S3. An azure repository takes no endpoint:
 	// its service endpoint is node configuration, not a repository setting.
 	Endpoint string
+	// Region is the region that an s3 repository signs its requests for, and
+	// applies to the s3 type alone. Empty leaves the region to the node:
+	// Elasticsearch then guesses one from the endpoint, and falls back to
+	// us-east-1 with a warning when it cannot.
+	Region string
 	// PathStyleAccess forces path-style bucket addressing, and applies to the
 	// s3 type alone.
 	PathStyleAccess bool
@@ -161,6 +166,11 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 	if cfg.Type == RepositoryTypeS3 {
 		if cfg.Endpoint != "" {
 			settings["endpoint"] = cfg.Endpoint
+		}
+		// The region is a repository setting, not a keystore entry, so a
+		// change of it needs no restart of the nodes.
+		if cfg.Region != "" {
+			settings["region"] = cfg.Region
 		}
 		if cfg.PathStyleAccess {
 			settings["path_style_access"] = true

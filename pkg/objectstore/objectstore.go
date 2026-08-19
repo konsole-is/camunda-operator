@@ -236,12 +236,12 @@ func (b *Bucket) Close() { _ = b.bucket.Close() }
 // openS3 opens an S3 or S3-compatible bucket.
 func openS3(ctx context.Context, spec *v1.S3Storage, creds *Credentials) (*Bucket, error) {
 	var opts []func(*awsconfig.LoadOptions) error
-	if spec.Region != "" {
-		opts = append(opts, awsconfig.WithRegion(spec.Region))
-	} else {
-		// The SDK requires a region even when a custom endpoint routes every
-		// request; S3-compatible stores ignore it.
-		opts = append(opts, awsconfig.WithRegion(v1.PlaceholderS3Region))
+	// The SDK requires a region even when a custom endpoint routes every
+	// request, and SigningRegion answers with the placeholder for a contract
+	// that gives none. It answers with nothing for a bucket that is AWS S3
+	// itself, which the CRD admits only with a region of its own.
+	if region := spec.SigningRegion(); region != "" {
+		opts = append(opts, awsconfig.WithRegion(region))
 	}
 
 	if spec.Auth.Type == v1.ObjectStorageAuthTypeCredentials {

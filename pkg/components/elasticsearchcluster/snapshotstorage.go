@@ -129,8 +129,10 @@ type snapshotRepository struct {
 	// bucket is the bucket of the repository, or the blob container of an
 	// azure one.
 	bucket string
-	// endpoint and pathStyle are repository settings of the s3 type alone.
+	// endpoint, region, and pathStyle are repository settings of the s3 type
+	// alone.
 	endpoint  string
+	region    string
 	pathStyle bool
 	// keystore holds the entries that the repository client reads, keyed by
 	// the setting each one carries.
@@ -171,6 +173,7 @@ func (s *SnapshotStorage) resolve() (*snapshotRepository, error) {
 		repo.repositoryType = esadmin.RepositoryTypeS3
 		repo.bucket = spec.S3.BucketName
 		repo.endpoint = spec.S3.Endpoint
+		repo.region = spec.S3.SigningRegion()
 		repo.pathStyle = spec.S3.ForcePathStyle
 		if s.Credentials != nil {
 			repo.keystore[accessKeyKeystorePath] = []byte(s.Credentials.AccessKeyID)
@@ -308,6 +311,10 @@ func KeystoreComponent(
 // the same contract never share a repository. The credentials are not part of
 // it: they reach the nodes through the keystore.
 //
+// An s3 repository carries the region of the contract, so the nodes sign
+// their requests for the region the other consumers of the bucket sign for
+// rather than for one they resolved on their own.
+//
 // A bucket that does not resolve yields the zero value, which esadmin
 // rejects before it reaches Elasticsearch.
 func RepositoryConfig(
@@ -324,6 +331,7 @@ func RepositoryConfig(
 		Bucket:          repo.bucket,
 		BasePath:        logicalbackup.ClusterPrefix(storage.Config.BasePath(), cluster.Namespace, cluster.Name),
 		Endpoint:        repo.endpoint,
+		Region:          repo.region,
 		PathStyleAccess: repo.pathStyle,
 	}
 }

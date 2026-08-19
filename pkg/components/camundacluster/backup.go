@@ -201,11 +201,10 @@ func backupEnv(in Input, p Process) rendered {
 // Such a store also needs a region. The AWS SDK resolves one even when an
 // endpoint routes every request, and it builds no client when it finds none.
 // The broker builds that client while it validates its configuration, so a
-// store with no region stops the broker at startup. A contract that gives
-// none therefore gets v1.PlaceholderS3Region, which such a store ignores.
-// Without an endpoint the bucket is AWS S3 itself, where the region chain of
-// the pod is a legitimate source, and a placeholder aims every request at the
-// wrong region.
+// store with no region stops the broker at startup. SigningRegion answers
+// with the placeholder for such a contract, and with nothing for a bucket
+// that is AWS S3 itself, where the region chain of the pod is a legitimate
+// source.
 func s3Env(in Input, s3 *v1.S3Storage) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupStore, backupStoreS3),
@@ -213,11 +212,8 @@ func s3Env(in Input, s3 *v1.S3Storage) []corev1.EnvVar {
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupS3BasePath, BackupBasePath(in)),
 	}
 
-	switch {
-	case s3.Region != "":
-		env = append(env, camundaconfig.Var(camundaconfig.KeyPrimaryBackupS3Region, s3.Region))
-	case s3.Endpoint != "":
-		env = append(env, camundaconfig.Var(camundaconfig.KeyPrimaryBackupS3Region, v1.PlaceholderS3Region))
+	if region := s3.SigningRegion(); region != "" {
+		env = append(env, camundaconfig.Var(camundaconfig.KeyPrimaryBackupS3Region, region))
 	}
 	if s3.Endpoint != "" {
 		env = append(
