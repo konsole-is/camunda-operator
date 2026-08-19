@@ -119,6 +119,8 @@ spec:
 
 This is the default topology of Camunda 8.9: one Zeebe broker, and one gateway that also serves Operate, Tasklist, and Admin.
 
+In a shared environment, the version and the sizing come from a `CamundaClusterPreset`, and a cluster sets only `presetRef` and its references. See the [presets guide](guides/presets.md).
+
 Wait until it is ready:
 
 ```bash
@@ -165,10 +167,18 @@ kubectl delete camundaplatformconfig my-platform-config
 kubectl delete namespace my-cluster-ns
 ```
 
-Deleting the `CamundaCluster` deletes the broker volumes. To keep them, set `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted: Retain` before you delete.
+Deleting the `CamundaCluster` deletes the broker volumes. To keep them, set the retention policy before you delete:
+
+```yaml
+spec:
+  zeebe:
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+```
 
 ## Next steps
 
+- [Presets](guides/presets.md): write the sizing once and create each cluster in a few lines.
 - [Secondary storage](guides/secondary-storage.md): run Camunda on PostgreSQL instead of Elasticsearch, or bring your own backend.
 - [Authentication](guides/authentication.md): connect an OIDC identity provider and name administrators.
 - [Backup](guides/backup.md): write backups of the cluster to a bucket.

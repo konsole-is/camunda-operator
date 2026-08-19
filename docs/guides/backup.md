@@ -51,7 +51,19 @@ spec:
 This reference causes three things:
 
 - The operator configures the Zeebe backup store with the bucket. Zeebe writes its partition backups there.
-- On a PostgreSQL cluster, continuous primary-storage backups are on by default. Zeebe takes a backup every `PT1H`, writes a checkpoint every `PT15M`, and keeps backups for `P7D`. You change these values in `spec.backup.primaryStorage` on the `CamundaCluster`.
+- On a PostgreSQL cluster, continuous primary-storage backups are on by default. Zeebe takes a backup every `PT1H`, writes a checkpoint every `PT15M`, and keeps backups for `P7D`. You change these values on the cluster:
+
+    ```yaml
+    spec:
+      backupStorageRef: my-backup-bucket
+      backup:
+        primaryStorage:
+          schedule: "PT30M"
+          checkpointInterval: "PT5M"
+          retention:
+            window: "P14D"
+    ```
+
 - If the bucket carries a workload identity, the operator writes the matching annotation on the ServiceAccount of the cluster. The ServiceAccount is named `<cluster>-camunda` by default. With a bucket that carries no annotation (for example EKS Pod Identity), bind the principal `system:serviceaccount:my-cluster-ns:my-cluster-camunda` on the cloud side.
 
 ### Elasticsearch: the snapshot repository
@@ -71,23 +83,57 @@ spec:
 
 The operator registers the repository `my-cluster-es` in Elasticsearch, under the same prefix layout as every other backup object. It then publishes the name in the `SecondaryStorageConfig` as `snapshotRepository`, and the `CamundaCluster` configures its components with it.
 
-Make sure that the repository is ready before you take a backup:
+Make sure that the repository is ready before you take a backup. The `ElasticsearchCluster` reports it:
 
-```bash
-kubectl get elasticsearchcluster my-cluster-es -n my-cluster-ns -o jsonpath='{.status.conditions[?(@.type=="SnapshotRepositoryReady")].reason}'
-kubectl get camundacluster my-cluster -n my-cluster-ns -o jsonpath='{.status.management.backupRepository}'
+```yaml
+status:
+  conditions:
+    - type: SnapshotRepositoryReady
+      status: "True"
+      reason: Healthy
 ```
 
-The first command prints `Healthy`. The second prints `my-cluster-es`. A `CamundaCluster` with a `backupStorageRef` and no repository name reports `Ready: InvalidReference` until the repository exists.
+And the `CamundaCluster` publishes the name in its management binding:
+
+```yaml
+status:
+  management:
+    endpoint: http://my-cluster-zeebe.my-cluster-ns.svc:9600
+    backupRepository: my-cluster-es
+    version: "8.9.9"
+    partitions: 3
+```
+
+A `CamundaCluster` with a `backupStorageRef` and no repository name reports `Ready: InvalidReference` until the repository exists.
 
 ### PostgreSQL: backup credentials
 
-The dump Job connects to the database with a separate backup user. A `Database` resource creates that user by default, as the SQL role `<databaseName>_backup`. It writes the credentials to the Secret `<Database name>-backup-credentials` and names it in the `DatabaseConfig` as `backupCredentialsSecretRef`. If you write the `DatabaseConfig` by hand, set `backupCredentialsSecretRef` yourself. Without it the backup reports `MissingSecret`.
+The dump Job connects to the database with a separate backup user. A `Database` resource creates that user by default, as the SQL role `<databaseName>_backup`. It writes the credentials to the Secret `<Database name>-backup-credentials` and names it in the `DatabaseConfig` as `backupCredentialsSecretRef`. If you write the `DatabaseConfig` by hand, name the backup credentials yourself. Without them the backup reports `MissingSecret`.
 
-The dump runs the PostgreSQL client tools of the major version of your server. The operator reads that version from the `DatabaseServerConfig`. Make sure that the `DatabaseServerConfig` is `Ready` and that `status.serverVersion` is set:
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseConfig
+metadata:
+  name: my-camunda-db
+  namespace: my-cluster-ns
+spec:
+  # ... serverRef, databaseName, credentialsSecretRef
+  backupCredentialsSecretRef:
+    name: my-camunda-db-backup-credentials
+    namespace: my-cluster-ns
+    usernameKey: username
+    passwordKey: password
+```
 
-```bash
-kubectl get databaseserverconfig my-db-server -o jsonpath='{.status.serverVersion}'
+The dump runs the PostgreSQL client tools of the major version of your server. The operator reads that version from the `DatabaseServerConfig`. Make sure that the `DatabaseServerConfig` is `Ready` and reports the version:
+
+```yaml
+status:
+  serverVersion: "17"
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Healthy
 ```
 
 `spec.backup.dump` on the `CamundaCluster` shapes the Job. Every field is optional:
@@ -123,7 +169,22 @@ spec:
         sidecar.istio.io/inject: "false"
 ```
 
-A `LogicalBackupRDBMS` can replace the pod settings of this block for one backup with its own `spec.dump`. The image always comes from the cluster.
+A `LogicalBackupRDBMS` can replace the pod settings of this block for one backup with its own `dump` block. The image always comes from the cluster.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: LogicalBackupRDBMS
+metadata:
+  name: my-cluster-backup-large
+  namespace: my-cluster-ns
+spec:
+  clusterRef:
+    name: my-cluster
+  dump:
+    scratchVolume:
+      sizeLimit: 200Gi
+      storageClassName: standard
+```
 
 ## Take a backup
 
@@ -169,9 +230,57 @@ kubectl get lbrdbms my-cluster-backup -n my-cluster-ns -w
 
 ### How to tell it worked
 
-Both kinds print the columns `Phase`, `Step`, and `Backup ID`. `status.phase` moves from `Pending` to `Running` to `Completed` or `Failed`. The last two are final. `status.step` names the part of the procedure that runs now.
+Both kinds print the columns `Phase`, `Step`, and `Backup ID`:
 
-`Completed` means that every part of the set is written and that the cluster exports again. The `Ready` condition is `True` with reason `Completed`. The status then holds what a restore needs:
+```text
+NAME                PHASE     STEP              BACKUP ID       AGE
+my-cluster-backup   Running   SnapshotRecords   1755640800000   2m
+```
+
+`phase` moves from `Pending` to `Running` to `Completed` or `Failed`. The last two are final. `step` names the part of the procedure that runs now.
+
+`Completed` means that every part of the set is written and that the cluster exports again. The `Ready` condition is `True` with reason `Completed`. The status of a completed Elasticsearch backup:
+
+```yaml
+status:
+  phase: Completed
+  backupId: 1755640800000
+  partitionsCount: 3
+  repository: my-cluster-es
+  historySnapshots:
+    - camunda_webapps_1755640800000_8.9.9_part_1_of_6
+    - camunda_webapps_1755640800000_8.9.9_part_2_of_6
+    # ...
+  history:
+    state: Completed
+  records:
+    state: Completed
+  runtime:
+    state: Completed
+  completionTime: "2026-08-19T22:07:41Z"
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Completed
+```
+
+And of a completed PostgreSQL backup:
+
+```yaml
+status:
+  phase: Completed
+  backupId: 1755640800000
+  zeebeBackupId: 1755640812345
+  objectKey: backups/my-cluster-ns/my-cluster/1755640800000/3f9c2a7e-2b1d-4f0e-9c1a-7d2f4b8e6a10/camunda.dump
+  bucketRef: my-backup-bucket
+  completionTime: "2026-08-19T22:09:12Z"
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Completed
+```
+
+The fields that a restore needs:
 
 | Kind | Field | Meaning |
 | --- | --- | --- |
@@ -189,7 +298,21 @@ To look at a backup in full:
 kubectl get lbes my-cluster-backup -n my-cluster-ns -o yaml
 ```
 
-If the phase is `Failed`, `status.failureMessage` names the step that failed and why. See [When a backup fails](#when-a-backup-fails).
+If the phase is `Failed`, `failureMessage` names the step that failed and why:
+
+```yaml
+status:
+  phase: Failed
+  step: BackupRuntime
+  failureMessage: "Step BackupRuntime failed: management API unreachable: Get \"http://my-cluster-zeebe.my-cluster-ns.svc:9600/actuator/backupRuntime/1755640800000\": dial tcp: i/o timeout"
+  completionTime: "2026-08-19T22:30:02Z"
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: Failed
+```
+
+See [When a backup fails](#when-a-backup-fails).
 
 ## What happens during a backup
 

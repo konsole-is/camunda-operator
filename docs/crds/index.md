@@ -43,7 +43,7 @@ A contract carries connection details and credential references. The operator va
 Solid arrows mean "creates". Dotted arrows mean "references".
 
 ```mermaid
-graph TD
+graph LR
     CCP[CamundaClusterPreset]
     PFC[CamundaPlatformConfig]
     ESCP[ElasticsearchClusterPreset]
