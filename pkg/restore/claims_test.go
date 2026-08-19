@@ -38,6 +38,7 @@ func targetFixture() *Target {
 	sts := brokerStatefulSet()
 
 	return &Target{
+		ClusterName:   "my-cluster",
 		StatefulSet:   sts,
 		Broker:        &sts.Spec.Template.Spec.Containers[0],
 		Brokers:       3,

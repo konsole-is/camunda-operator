@@ -42,6 +42,11 @@ const ComponentRestore = "restore"
 // cluster. The restore never re-renders the broker configuration. It copies
 // it, so the restore application and the brokers cannot disagree.
 type Target struct {
+	// ClusterName is the CamundaCluster the StatefulSet belongs to. Every
+	// resource a restore renders carries it, so an extension finds the
+	// restore of a cluster by the same label it finds the cluster's workloads
+	// by.
+	ClusterName string
 	// StatefulSet is the live broker StatefulSet, <cluster>-zeebe.
 	StatefulSet *appsv1.StatefulSet
 	// Broker is the container named camunda in the pod template. The Job
@@ -121,6 +126,7 @@ func ReadTarget(
 	}
 
 	return &Target{
+		ClusterName:   cluster.Name,
 		StatefulSet:   &sts,
 		Broker:        broker,
 		Brokers:       brokers,

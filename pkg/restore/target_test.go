@@ -54,7 +54,15 @@ func testCluster() *v1.CamundaCluster {
 // cluster, shaped like pkg/components/camundacluster renders it.
 func brokerStatefulSet() *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-zeebe", Namespace: "ns"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster-zeebe",
+			Namespace: "ns",
+			Labels: map[string]string{
+				"camunda.io/cluster":           "my-cluster",
+				"camunda.io/component":         "zeebe",
+				"app.kubernetes.io/managed-by": "camunda-operator",
+			},
+		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas: new(int32(0)),
 			Template: corev1.PodTemplateSpec{
@@ -106,6 +114,7 @@ func TestReadTargetReadsTheFactsOffTheLiveBroker(t *testing.T) {
 	assert.Equal(t, "camunda", target.Broker.Name)
 	assert.Equal(t, "data", target.ClaimTemplate.Name)
 	assert.Equal(t, "my-cluster-zeebe", target.StatefulSet.Name)
+	assert.Equal(t, "my-cluster", target.ClusterName)
 }
 
 // The broker count comes from the live container, never from spec.replicas.
