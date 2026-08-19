@@ -18,6 +18,7 @@ package restore
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -221,16 +222,69 @@ func TestReadTargetReportsEveryUnreadableFact(t *testing.T) {
 	}
 }
 
-// A digest pins the image without a tag, and the restore has no version to
-// compare against then.
+// The version decides whether a backup restores into this cluster at all, so
+// every reference form has to yield the tag or nothing. A registry port and a
+// digest both hold a colon that is not the start of a tag.
 func TestReadTargetTakesTheVersionFromTheImageTag(t *testing.T) {
 	t.Parallel()
 
-	sts := brokerStatefulSet()
-	sts.Spec.Template.Spec.Containers[0].Image = "registry.example.com:5000/camunda/camunda:8.9.10"
-	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
+	cases := map[string]struct {
+		image string
+		want  string
+	}{
+		"plain tag": {
+			image: "camunda/camunda:8.9.9",
+			want:  "8.9.9",
+		},
+		"registry with a port": {
+			image: "registry.example.com:5000/camunda/camunda:8.9.10",
+			want:  "8.9.10",
+		},
+		"tag and digest": {
+			image: "camunda/camunda:8.9.9@sha256:" + strings.Repeat("a", 64),
+			want:  "8.9.9",
+		},
+		"registry with a port, tag, and digest": {
+			image: "registry.example.com:5000/camunda/camunda:8.9.10@sha256:" + strings.Repeat("b", 64),
+			want:  "8.9.10",
+		},
+	}
 
-	target, err := ReadTarget(context.Background(), c, testCluster())
-	require.NoError(t, err)
-	assert.Equal(t, "8.9.10", target.Version)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			sts := brokerStatefulSet()
+			sts.Spec.Template.Spec.Containers[0].Image = tc.image
+			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
+
+			target, err := ReadTarget(context.Background(), c, testCluster())
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, target.Version)
+		})
+	}
+}
+
+// A digest alone pins the image without naming a version. The restore has
+// nothing to compare a backup against, so it stops instead of comparing the
+// digest.
+func TestReadTargetRejectsADigestWithoutATag(t *testing.T) {
+	t.Parallel()
+
+	for name, image := range map[string]string{
+		"digest only":              "camunda/camunda@sha256:" + strings.Repeat("c", 64),
+		"registry port and digest": "registry.example.com:5000/camunda/camunda@sha256:" + strings.Repeat("d", 64),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			sts := brokerStatefulSet()
+			sts.Spec.Template.Spec.Containers[0].Image = image
+			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
+
+			_, err := ReadTarget(context.Background(), c, testCluster())
+			var failure *conditions.PreCheckFailure
+			require.ErrorAs(t, err, &failure)
+			assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
+			assert.Contains(t, failure.Message, "no version tag")
+		})
+	}
 }

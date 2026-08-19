@@ -193,9 +193,14 @@ func envInt32(sts string, broker *corev1.Container, key camundaconfig.Key) (int3
 }
 
 // imageTag returns the tag of an image reference, or the empty string when it
-// carries none. A registry host with a port also holds a colon, so only a
-// colon after the last slash starts a tag.
+// carries none. Two other parts of a reference hold a colon of their own. A
+// digest follows the tag after an "@", and a registry host can carry a port,
+// so only a colon after the last slash and before the digest starts a tag.
 func imageTag(image string) string {
+	if at := strings.Index(image, "@"); at >= 0 {
+		image = image[:at]
+	}
+
 	colon := strings.LastIndex(image, ":")
 	if colon < 0 || colon < strings.LastIndex(image, "/") {
 		return ""
