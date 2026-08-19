@@ -148,7 +148,29 @@ func backupEnv(in Input, p Process) rendered {
 		))
 	}
 
+	relational := in.Storage.Type == v1.SecondaryStorageTypeRDBMS
+
 	if p.Component != ComponentZeebe {
+		// The process that answers the management API decides on its own
+		// configuration whether the cluster generates its own backup ids.
+		// Camunda 8.9 rejects a request that omits the id unless that
+		// process sees these keys, and the operator omits the id on the
+		// relational path. The brokers reach this rule through the block
+		// below, which carries these keys and the retention ones too.
+		//
+		// The store stays off this process on purpose. It answers by
+		// dispatching to the brokers, which hold the bucket and its
+		// credentials, so nothing here needs them.
+		//
+		// One coupling to keep: this process also generates the id, from
+		// camunda.data.primary-storage.backup.offset. Nothing sets that
+		// offset today and both sides default to zero. Whoever makes it
+		// configurable must render it here as well, or the ids this process
+		// generates drift from what the brokers expect.
+		if relational && p.Component == GatewayComponent(in.Effective) {
+			r.env = append(r.env, backupIDModeEnv(in)...)
+		}
+
 		return r
 	}
 
@@ -163,7 +185,7 @@ func backupEnv(in Input, p Process) rendered {
 		r.env = append(r.env, azureEnv(spec.AzureBlob)...)
 	}
 
-	if in.Storage.Type == v1.SecondaryStorageTypeRDBMS {
+	if relational {
 		r.env = append(r.env, primaryStorageScheduleEnv(in)...)
 	}
 
@@ -311,6 +333,21 @@ func azureEnv(azure *v1.AzureBlobStorage) []corev1.EnvVar {
 func primaryStorageScheduleEnv(in Input) []corev1.EnvVar {
 	backup := in.Effective.primaryStorageBackup()
 
+	return append(
+		backupIDModeEnv(in),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionWindow, backup.retentionWindow),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionCleanupSchedule, backup.cleanupSchedule),
+	)
+}
+
+// backupIDModeEnv renders the three keys that tell a process whether the
+// cluster generates its own backup ids. Camunda 8.9 reads them wherever the
+// backupRuntime actuator runs, and a cluster that takes continuous backups,
+// or runs either scheduler, generates the id itself. Retention is not among
+// them: it prunes backups and takes none, so only the brokers need it.
+func backupIDModeEnv(in Input) []corev1.EnvVar {
+	backup := in.Effective.primaryStorageBackup()
+
 	return []corev1.EnvVar{
 		camundaconfig.Var(
 			camundaconfig.KeyPrimaryBackupContinuous,
@@ -318,7 +355,5 @@ func primaryStorageScheduleEnv(in Input) []corev1.EnvVar {
 		),
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupSchedule, backup.schedule),
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupCheckpointInterval, backup.checkpointInterval),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionWindow, backup.retentionWindow),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionCleanupSchedule, backup.cleanupSchedule),
 	}
 }
