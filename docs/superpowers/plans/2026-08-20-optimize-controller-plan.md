@@ -59,7 +59,7 @@ Branch: `pr/optimize-api` off `feat/optimize-controller`; PR targets `feat/optim
 - Modify: `docs/crds/camundaoptimize.md` (align API section; keep the "Not implemented yet" banner)
 
 **Interfaces:**
-- Produces: `v1.CamundaOptimizeSpec{Version, ManagementAuthRef, ClusterRef, Webapp, Importer, Monitoring}`, `v1.OptimizeMonitoringSpec`, condition/reason constants `ConditionWebappReady`, `ConditionImporterReady`, `ReasonUnsupportedStorageType`, `ReasonVersionMismatch`, and the ocf owner methods on `*CamundaOptimize`.
+- Produces: `v1.CamundaOptimizeSpec{Version, ManagementAuthRef, ClusterRef, Webapp, Importer, Monitoring}`, `v1.OptimizeMonitoringSpec`, condition/reason constants `ConditionWebappReady`, `ConditionImporterReady`, `ReasonVersionMismatch`, the shared `ReasonStorageTypeMismatch` promoted into `api/v1/conditions.go`, and the ocf owner methods on `*CamundaOptimize`.
 
 - [ ] **Step 1: Write the types.** Shape (GoDoc per exported symbol, simple-english, omitted here for brevity — write it):
 
@@ -89,12 +89,13 @@ Note the CEL rule sits on the `Importer` field (a `WorkloadSpec`), so `self` is 
 
 ```go
 const (
-	ConditionWebappReady          = "WebappReady"
-	ConditionImporterReady        = "ImporterReady"
-	ReasonUnsupportedStorageType  = "UnsupportedStorageType"
-	ReasonVersionMismatch         = "VersionMismatch"
+	ConditionWebappReady   = "WebappReady"
+	ConditionImporterReady = "ImporterReady"
+	ReasonVersionMismatch  = "VersionMismatch"
 )
 ```
+
+The RDBMS rejection reuses `ReasonStorageTypeMismatch`, which the backup kinds already report. Move that constant from `api/v1/logicalbackup_shared.go` into `api/v1/conditions.go` and generalize its GoDoc, rather than adding a second spelling of the same concept.
 
 - [ ] **Step 2:** `make manifests generate` (runs per module). Inspect `config/crd/bases/core.camunda.io_camundaoptimizes.yaml` for the CEL rule and required fields.
 - [ ] **Step 3:** Update the API reference section of `docs/crds/camundaoptimize.md`: add `version`, drop `clusterRef.namespace`, align `webapp`/`importer` fields with `WorkloadSpec` (they gain `podAnnotations`; field list must match exactly), note reused types. Keep the warning banner.
@@ -224,7 +225,7 @@ plus authentication args (expected `..._ARGS_AUTHENTICATION_USERNAME` / `..._ARG
 - [ ] **Step 1: Reconciler skeleton** modeled on `internal/controller/camundacluster/controller.go:132-209`: get CR via `APIReader`, deletion → `finalize`, add finalizer before first side effect (pattern `internal/controller/logicalbackupelasticsearch/controller.go:160-176`), build `component.ReconcileContext` with an **uncached** `componentClient` (see `watches.go:239` — never the manager cache), `defer FlushStatus`, precheck → `conditions.Stage(cr, conditions.Failed(...))` on `*conditions.PreCheckFailure`, components → `Reconcile` each → `conditions.Stage(cr, conditions.Aggregate(cr, comps...))`.
 - [ ] **Step 2: precheck.go** — ordered resolution, each failure a `conditions.PreCheckFailure`:
   1. `clusterRef` → cluster in the CR's namespace (`ReasonInvalidReference`).
-  2. Cluster's `storageRef` → `SecondaryStorageConfig`; `Type != elasticsearch` → `ReasonUnsupportedStorageType`; missing → `ReasonInvalidReference`.
+  2. Cluster's `storageRef` → `SecondaryStorageConfig`; `Type != elasticsearch` → `ReasonStorageTypeMismatch`; missing → `ReasonInvalidReference`.
   3. Version gate: major.minor of `spec.version` vs the referenced cluster's effective version. Resolve the cluster's effective spec the same way its own controller does: resolve `presetRef` (if set) + `components.MergePreset`; compare with `strings.Cut` on the two dot positions. Mismatch → `ReasonVersionMismatch`. Partitions come from `camundacluster.NewEffective(merged).Partitions()`.
   4. `managementAuthRef` → cluster-scoped `ManagementAuthConfig` (`ReasonInvalidReference`); its `ClientSecretRef` via `pkg/secretref.Get` (`ReasonMissingSecret`).
   5. Cluster's `platformConfigRef` → `CamundaPlatformConfig` for `ImageRegistry` + `LicenseSecretRef` (absent ref is fine — empty platform spec).
@@ -255,7 +256,7 @@ err := r.Client.Patch(ctx, patch, client.Apply,
 - [ ] **Step 3:** `controller_test.go` Ginkgo specs (create the referenced fixtures directly with the uncached client — no other reconcilers needed):
   - Happy path: fixture `CamundaCluster` (version `8.9.9`, `storageRef`) + `SecondaryStorageConfig` (elasticsearch) + ES credentials secret + `ManagementAuthConfig` + client secret → CR becomes `Ready=True/Healthy`; wait for Deployments to exist with correct image/env/labels; `spec.zeebe.extraEnv` on the cluster gains exactly the exporter entries.
   - Co-ownership: pre-set a user entry in `spec.zeebe.extraEnv` (different field manager), reconcile, assert both the user entry and the exporter entries are present; delete the CR, assert the exporter entries vanish and the user entry survives, finalizer gone.
-  - Each failure reason from its broken input: missing cluster → `InvalidReference`; RDBMS storage → `UnsupportedStorageType`; missing client secret → `MissingSecret`; version `8.8.1` vs cluster `8.9.9` → `VersionMismatch`.
+  - Each failure reason from its broken input: missing cluster → `InvalidReference`; RDBMS storage → `StorageTypeMismatch`; missing client secret → `MissingSecret`; version `8.8.1` vs cluster `8.9.9` → `VersionMismatch`.
 - [ ] **Step 4:** `go test ./internal/controller/camundaoptimize/ -v` — PASS. Then full `go test ./...` + `make all`.
 - [ ] **Step 5:** Commit: `test(camundaoptimize): cover reconciliation, patch ownership, and schema (#116)`. Open PR 2 (`Towards #116`), review loop, self-merge, close #116.
 

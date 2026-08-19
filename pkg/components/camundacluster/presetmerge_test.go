@@ -171,21 +171,6 @@ func TestMergePreset(t *testing.T) {
 			},
 		},
 		{
-			"extraEnv duplicate names in the cluster: the last one wins",
-			v1.CamundaClusterSpec{
-				ExtraEnv: []corev1.EnvVar{{Name: "NEW", Value: "first"}, {Name: "NEW", Value: "last"}},
-			},
-			func(t *testing.T, got v1.CamundaClusterSpec) {
-				assert.Equal(
-					t, []corev1.EnvVar{
-						{Name: "TZ", Value: "UTC"},
-						{Name: "KEEP", Value: "preset"},
-						{Name: "NEW", Value: "last"},
-					}, got.ExtraEnv,
-				)
-			},
-		},
-		{
 			"component extraEnv by name",
 			v1.CamundaClusterSpec{Zeebe: &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{
 				ExtraEnv: []corev1.EnvVar{{Name: "JAVA_OPTS", Value: "-Xmx6g"}},

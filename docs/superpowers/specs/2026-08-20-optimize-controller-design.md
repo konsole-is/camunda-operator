@@ -50,8 +50,11 @@ minors to match.
 - `webapp` and `importer` use the existing `WorkloadSpec` type, so the API reads like the
   per-process sections of `CamundaCluster` (`replicas`, `resources`, `extraEnv`, `extraEnvFrom`,
   `podLabels`, `podAnnotations`, `scheduling`).
-- `monitoring` uses the existing `MonitoringSpec` and `ServiceMonitorSpec` types. ServiceMonitors
-  are created only when the Kubernetes cluster serves the kind, which is the existing pattern.
+- `monitoring` uses a thin `OptimizeMonitoringSpec` wrapper that holds the existing
+  `ServiceMonitorSpec`, the same way `ClusterMonitoringSpec` does. The Elasticsearch
+  `MonitoringSpec` is not reused, because it also carries an `Exporter` field that only an
+  `ElasticsearchCluster` has. ServiceMonitors are created only when the Kubernetes cluster serves
+  the kind, which is the existing pattern.
 - `managementAuthRef` stays a string that names the cluster-scoped `ManagementAuthConfig`.
 
 ### No `platformConfigRef`
@@ -89,7 +92,7 @@ The controller follows the extension pattern and the ocf conventions of the exis
 
 1. Resolve `clusterRef` to the `CamundaCluster`. Read its `storageRef` to find the
    `SecondaryStorageConfig`. A storage type other than `elasticsearch` sets `Ready=False` with
-   reason `UnsupportedStorageType`.
+   reason `StorageTypeMismatch`.
 2. Resolve `managementAuthRef` to the `ManagementAuthConfig` and make sure that the client secret
    exists.
 3. Compare `spec.version` with the cluster's effective version (major.minor), as described above.

@@ -68,12 +68,13 @@ const (
 	ComponentModeEmbedded ComponentMode = "Embedded"
 )
 
-// WorkloadSpec is the override surface that every component block shares. It
-// tunes the size, the environment, the pod metadata, and the scheduling of
-// one process.
+// WorkloadSpec is the override surface that a workload block shares. Every
+// component block of a CamundaCluster uses it, and so does each workload of a
+// CamundaOptimize. It tunes the size, the environment, the pod metadata, and
+// the scheduling of one process.
 type WorkloadSpec struct {
-	// Replicas is the number of pods of this process. Defaults to 1. It has
-	// no effect on an embedded web application.
+	// Replicas is the number of pods of this process. Defaults to 1. On a
+	// CamundaCluster it has no effect on an embedded web application.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
@@ -81,9 +82,16 @@ type WorkloadSpec struct {
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// ExtraEnv are extra environment variables of the container of this
-	// process. A per-component entry wins over a top-level entry with the
-	// same name. For an embedded web application the entries apply to the
-	// host process.
+	// process. On a CamundaCluster, an entry here wins over a top-level entry
+	// with the same name. The entries of an embedded web application apply to
+	// its host process.
+	//
+	// The list merges by name under server-side apply, so each field manager
+	// owns only the entries that it applies. An extension controller can add
+	// its own entry next to yours. One list cannot hold two entries with the
+	// same name.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -97,8 +105,9 @@ type WorkloadSpec struct {
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling constraints of the pods of this process. When set, it
-	// replaces the top-level scheduling block and the scheduling block of a
-	// preset for this process entirely (no merge).
+	// replaces every scheduling block that would otherwise apply to this
+	// process, with no merge. On a CamundaCluster those are the top-level
+	// block and the block of a preset.
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 }
@@ -318,6 +327,13 @@ type CamundaClusterSpec struct {
 	Connectors *ConnectorsSpec `json:"connectors,omitempty"`
 	// ExtraEnv are extra environment variables of every workload. A
 	// per-component entry wins over an entry here with the same name.
+	//
+	// The list merges by name under server-side apply, so each field manager
+	// owns only the entries that it applies. An extension controller can add
+	// its own entry next to yours. One list cannot hold two entries with the
+	// same name.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of

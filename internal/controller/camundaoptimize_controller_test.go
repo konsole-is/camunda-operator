@@ -51,7 +51,11 @@ var _ = Describe("CamundaOptimize Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: corev1.CamundaOptimizeSpec{
+						Version:           "8.9.0",
+						ManagementAuthRef: "management-auth",
+						ClusterRef:        corev1.ClusterRef{Name: "my-cluster"},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

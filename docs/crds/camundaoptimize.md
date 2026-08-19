@@ -18,7 +18,7 @@ This page is one of the extension-pattern exemplars described in the [architectu
 
 The operator reconciles a `CamundaOptimize` in the following steps:
 
-1. Resolve `clusterRef` to the target `CamundaCluster` and read its `storageRef` to find the cluster's `SecondaryStorageConfig`; the referenced storage must be of type `elasticsearch` — a cluster on RDBMS secondary storage is reported as `Ready=False` with reason `UnsupportedStorageType`, because Optimize does not support RDBMS backends.
+1. Resolve `clusterRef` to the target `CamundaCluster` and read its `storageRef` to find the cluster's `SecondaryStorageConfig`; the referenced storage must be of type `elasticsearch` — a cluster on RDBMS secondary storage is reported as `Ready=False` with reason `StorageTypeMismatch`, because Optimize does not support RDBMS backends.
 2. Resolve `managementAuthRef` to a `ManagementAuthConfig` and verify its `clientSecretRef` secret exists.
 3. SSA-patch `spec.zeebe.extraEnv` on the referenced `CamundaCluster` to enable the legacy Zeebe Elasticsearch exporter with the fixed index prefix `zeebe-record`, using the field manager `camunda-operator/camundaoptimize`; the patch owns only the exporter-related environment variables, and nothing else on the cluster — this controller never reconciles the cluster itself.
 4. Deploy the Optimize webapp Deployment and the Optimize importer Deployment into the CR's namespace, labeled with `camunda.io/cluster` (the referenced cluster's name) and `camunda.io/component` (`optimize-webapp` / `optimize-importer`).
@@ -50,6 +50,8 @@ graph LR
 
 ## API reference
 
+`clusterRef` is the same type as on the backup kinds: a name in the namespace of this CR. `webapp` and `importer` are the same workload block as the per-process sections of [CamundaCluster](camundacluster.md), and `monitoring.serviceMonitor` is the same block as on the other kinds that run workloads. There is no `platformConfigRef`: the image registry and the license come from the platform config of the referenced cluster.
+
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: CamundaOptimize
@@ -57,14 +59,14 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
+  # string. Required. Optimize version to deploy, as a full semantic version. Its minor must match the cluster's.
+  version: "8.9.0"
   # string. Required. Name of the cluster-scoped ManagementAuthConfig providing Management Identity OIDC settings.
   managementAuthRef: "management-auth"
-  # object. Required. Reference to the CamundaCluster this Optimize instance attaches to.
+  # object. Required. Reference to the CamundaCluster this Optimize instance attaches to, in this CR's namespace.
   clusterRef:
     # string. Required. Name of the CamundaCluster.
     name: my-cluster
-    # string. Optional, default: this CR's namespace. Namespace of the CamundaCluster.
-    namespace: my-cluster-ns
   # object. Optional. The Optimize webapp deployment.
   webapp:
     # integer. Optional, default: 1. Number of webapp replicas; webapp replicas run with data import disabled.
@@ -123,23 +125,31 @@ spec:
 
 ## Status
 
+`Ready` is `True` only when `WebappReady` and `ImporterReady` are both `True`. Its reason and message come from the workload that governs: the one whose status has the highest priority among those that are not `True`, or the highest of both when both are `True`.
+
 | Type | Reason | Meaning |
 | --- | --- | --- |
-| `Ready` | `Healthy` | Both deployments are available and the exporter patch is applied. |
-| `Ready` | `Progressing` | Deployments are rolling out or the exporter patch is not yet applied. |
+| `WebappReady` | `Healthy` | Every webapp replica is ready. |
+| `ImporterReady` | `Healthy` | The importer replica is ready. |
+| `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. |
+| `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. |
+| `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. |
+| `Ready` | `Healthy` | Both Deployments are healthy. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing Deployment. The message names it. |
 | `Ready` | `InvalidReference` | The `clusterRef`, `managementAuthRef`, or the cluster's `storageRef` chain could not be resolved. |
-| `Ready` | `UnsupportedStorageType` | The cluster's `storageRef` resolves to a `SecondaryStorageConfig` of type `rdbms`; Optimize supports only Elasticsearch/OpenSearch secondary storage. |
+| `Ready` | `StorageTypeMismatch` | The cluster's `storageRef` resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. |
 | `Ready` | `MissingSecret` | A referenced secret (Management Identity client secret or Elasticsearch credentials) does not exist or lacks the required key. |
-| `WebappReady` | `Healthy` / `Progressing` | State of the Optimize webapp Deployment. |
-| `ImporterReady` | `Healthy` / `Progressing` | State of the Optimize importer Deployment. |
+| `Ready` | `VersionMismatch` | The major and minor of `spec.version` differ from those of the referenced cluster's effective version; Camunda supports Optimize only on a matching minor. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
 ## Validation
 
 - `spec.importer.replicas` must be `1`: Optimize supports at most one active importer per instance, and running more causes data inconsistencies.
+- `spec.version` must be a full semantic version such as `8.9.0`. Optimize has its own patch line, so a two-segment version or an inherited cluster version is rejected.
 - `spec.managementAuthRef` and `spec.clusterRef.name` must be non-empty.
-- Cross-resource: the referenced cluster's `storageRef` must resolve to a `SecondaryStorageConfig` of type `elasticsearch`; a cluster on RDBMS secondary storage is rejected at reconcile time and surfaced as `Ready=False` with reason `UnsupportedStorageType`, because Optimize does not support RDBMS backends.
+- Cross-resource: the referenced cluster's `storageRef` must resolve to a `SecondaryStorageConfig` of type `elasticsearch`; a cluster on RDBMS secondary storage is rejected at reconcile time and surfaced as `Ready=False` with reason `StorageTypeMismatch`, because Optimize does not support RDBMS backends.
+- Cross-resource: the major and minor of `spec.version` must equal those of the referenced cluster's effective version; a difference is surfaced as `Ready=False` with reason `VersionMismatch`.
 
 ## Relationships
 
@@ -162,6 +172,7 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
+  version: "8.9.0"
   managementAuthRef: "management-auth"
   clusterRef:
     name: my-cluster
@@ -176,10 +187,10 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
+  version: "8.9.0"
   managementAuthRef: "management-auth"
   clusterRef:
     name: my-cluster
-    namespace: my-cluster-ns
   webapp:
     replicas: 2
     resources:
