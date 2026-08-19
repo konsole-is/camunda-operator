@@ -38,9 +38,6 @@ const (
 	// restarts the pod instead of leaving a broken process (helm chart
 	// 14.8.3 values.yaml:2697-2701 sets the same flag).
 	javaToolOptions = "-XX:+ExitOnOutOfMemoryError"
-	// adminEmail is the email of the seeded admin user; ConfiguredUser.java
-	// requires none, and no mail is ever sent.
-	adminEmail = "admin@localhost"
 	// jdbcPostgres is the JDBC URL prefix of the bundled PostgreSQL driver
 	// (dist/pom.xml:356-359).
 	jdbcPostgres = "jdbc:postgresql://"
@@ -341,7 +338,7 @@ func adminUserEnv(in Input) []corev1.EnvVar {
 			secretSource(AdminSecretName(in.Cluster), AdminPasswordKey),
 		),
 		camundaconfig.Var(camundaconfig.Index(users, 0, "name"), AdminUsername),
-		camundaconfig.Var(camundaconfig.Index(users, 0, "email"), adminEmail),
+		camundaconfig.Var(camundaconfig.Index(users, 0, "email"), AdminEmail),
 		camundaconfig.Var(camundaconfig.Index(camundaconfig.KeyDefaultRolesAdminUsers, 0, ""), AdminUsername),
 	}
 }
@@ -367,11 +364,11 @@ func roleEnv(p Process) []corev1.EnvVar {
 // gateway addresses, the credentials of the admin user or the OIDC client,
 // and the license.
 func connectorsEnv(in Input) []corev1.EnvVar {
-	host := GatewayHost(in.Cluster, in.Effective) + "." + in.Cluster.Namespace + ".svc"
+	host := gatewayServiceHost(in.Cluster, in.Effective)
 	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyClientMode, clientModeSelfManaged),
 		camundaconfig.Var(camundaconfig.KeyClientGRPCAddress, "http://"+host+":"+strconv.Itoa(int(PortGRPC))),
-		camundaconfig.Var(camundaconfig.KeyClientRESTAddress, "http://"+host+":"+strconv.Itoa(int(PortHTTP))),
+		camundaconfig.Var(camundaconfig.KeyClientRESTAddress, RESTEndpoint(in.Cluster, in.Effective)),
 	}
 
 	auth := ResolveAuth(in)

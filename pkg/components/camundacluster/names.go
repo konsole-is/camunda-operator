@@ -45,9 +45,17 @@ const (
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
+	// AdminEmail is the email of the seeded admin user; ConfiguredUser.java
+	// requires none, and no mail is ever sent. A password rotation sends it
+	// again, because the user API replaces the whole profile.
+	AdminEmail = "admin@localhost"
 	// AdminUsernameKey and AdminPasswordKey are the keys of the admin Secret.
 	AdminUsernameKey = "username"
 	AdminPasswordKey = "password"
+	// AdminPendingPasswordKey holds the requested password while a rotation
+	// is in flight, next to the active one under AdminPasswordKey. The
+	// workloads never read it.
+	AdminPendingPasswordKey = "password-pending"
 	// DataVolumeName is the volume claim template of the brokers.
 	DataVolumeName = "data"
 	// DataMountPath is where the brokers keep their data. It is the

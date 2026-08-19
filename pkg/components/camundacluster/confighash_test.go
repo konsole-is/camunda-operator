@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfigHashStableAndSensitive(t *testing.T) {
@@ -55,4 +56,43 @@ func TestConfigHashStableAndSensitive(t *testing.T) {
 	envFrom.Cluster.Spec.ExtraEnvFrom = nil
 	envFrom.Effective = NewEffective(MergePreset(envFrom.Cluster.Spec, mediumPreset()))
 	assert.NotEqual(t, base, hash(envFrom), "an envFrom change rolls the pods")
+}
+
+// The active admin password feeds the hash of connectors only: connectors
+// authenticate every call with it at runtime, while the unified processes
+// read it once as the create-once initial user seed, so rolling them on a
+// rotation would restart the brokers for nothing.
+func TestConfigHashAdminPassword(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureDefault(t)
+	processes := Resolve(in.Effective)
+	connectors := processes[len(processes)-1]
+	require.Equal(t, ComponentConnectors, connectors.Component)
+	zeebe := processes[0]
+
+	base := ConfigHash(in, connectors)
+	zeebeBase := ConfigHash(in, zeebe)
+
+	rotated := fixtureDefault(t)
+	rotated.AdminPasswordHash = PasswordHash("the-new-password")
+	assert.NotEqual(t, base, ConfigHash(rotated, connectors), "a password change rolls connectors")
+	assert.Equal(t, zeebeBase, ConfigHash(rotated, zeebe), "a password change does not roll the brokers")
+
+	same := fixtureDefault(t)
+	same.AdminPasswordHash = rotated.AdminPasswordHash
+	assert.Equal(t, ConfigHash(rotated, connectors), ConfigHash(same, connectors), "same password, same hash")
+}
+
+// PasswordHash never returns the password itself, and equal passwords hash
+// equal so the config hash stays stable across reconciles.
+func TestPasswordHash(t *testing.T) {
+	t.Parallel()
+
+	hash := PasswordHash("s3cret")
+	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{16}$`), hash)
+	assert.NotContains(t, hash, "s3cret")
+	assert.Equal(t, hash, PasswordHash("s3cret"))
+	assert.NotEqual(t, hash, PasswordHash("other"))
+	assert.Empty(t, PasswordHash(""), "no password, no hash input")
 }

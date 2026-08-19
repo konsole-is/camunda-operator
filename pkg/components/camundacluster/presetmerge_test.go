@@ -478,3 +478,29 @@ func TestMergePresetAdminBlockReplacesWholesale(t *testing.T) {
 	assert.Empty(t, replaced.Auth.Admin.Clients, "the clients of the preset do not survive a cluster block")
 	assert.Equal(t, "preset-client", replaced.Auth.ClientID, "the other auth fields still merge per field")
 }
+
+// The basic block never merges per field: a cluster that sets it replaces
+// the block of the preset entirely. A preset block still applies to every
+// cluster that sets none, so a fleet can rotate on one preset change.
+func TestMergePresetBasicBlockReplacesWholesale(t *testing.T) {
+	t.Parallel()
+
+	preset := &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+		Auth: &v1.ClusterAuthSpec{
+			ClientID: "preset-client",
+			Basic:    &v1.BasicAuthSpec{PasswordRotation: "fleet-2026-08"},
+		},
+	}}
+
+	inherited := MergePreset(v1.CamundaClusterSpec{}, preset)
+	require.NotNil(t, inherited.Auth)
+	require.NotNil(t, inherited.Auth.Basic)
+	assert.Equal(t, "fleet-2026-08", inherited.Auth.Basic.PasswordRotation)
+
+	replaced := MergePreset(v1.CamundaClusterSpec{
+		Auth: &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "mine"}},
+	}, preset)
+	require.NotNil(t, replaced.Auth.Basic)
+	assert.Equal(t, "mine", replaced.Auth.Basic.PasswordRotation)
+	assert.Equal(t, "preset-client", replaced.Auth.ClientID, "the other auth fields still merge per field")
+}

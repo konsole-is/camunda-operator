@@ -252,7 +252,7 @@ func (r *CamundaClusterReconciler) buildComponents(
 			return clusterComponents{}, fmt.Errorf("looking up admin password: %w", err)
 		}
 	}
-	admin, err := components.AdminSecretComponent(cluster, basic, password)
+	admin, err := components.AdminSecretComponent(cluster, basic, password, "")
 	if err != nil {
 		return clusterComponents{}, fmt.Errorf("building admin secret component: %w", err)
 	}

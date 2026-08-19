@@ -1016,6 +1016,24 @@ spec:
                       Audience is the audience that access tokens must carry. Defaults to
                       the clientId.
                     type: string
+                  basic:
+                    description: |-
+                      Basic configures the admin credential that the operator owns. It
+                      applies under basic authentication only. OIDC ignores this block, like
+                      basic authentication ignores admin.
+                    properties:
+                      passwordRotation:
+                        description: |-
+                          PasswordRotation requests one rotation of the admin password. Set it
+                          to a value that differs from status.adminPassword.rotation, for
+                          example a date. The operator generates a new password, sets it on the
+                          admin user through the user API of the running cluster, and then
+                          publishes it in the admin Secret. The connectors Deployment restarts
+                          with the new password. An empty value never rotates. A suspended
+                          cluster rotates after it resumes.
+                        maxLength: 253
+                        type: string
+                    type: object
                   clientId:
                     description: ClientID is the OIDC client ID of this cluster.
                     type: string
@@ -7591,6 +7609,18 @@ spec:
           status:
             description: status defines the observed state of CamundaCluster
             properties:
+              adminPassword:
+                description: |-
+                  AdminPassword is the state of the admin credential of a basic-auth
+                  cluster. It is unset under OIDC.
+                properties:
+                  rotation:
+                    description: |-
+                      Rotation is the last spec.auth.basic.passwordRotation value that the
+                      operator applied. A rotation is in progress while the spec value is
+                      not empty and differs from this value.
+                    type: string
+                type: object
               conditions:
                 description: |-
                   Conditions represent the current state. Ready carries a pre-check

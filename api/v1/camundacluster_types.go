@@ -204,6 +204,25 @@ type ClusterAuthSpec struct {
 	// administrator and ignores this block.
 	// +optional
 	Admin *ClusterAdminSpec `json:"admin,omitempty"`
+	// Basic configures the admin credential that the operator owns. It
+	// applies under basic authentication only. OIDC ignores this block, like
+	// basic authentication ignores admin.
+	// +optional
+	Basic *BasicAuthSpec `json:"basic,omitempty"`
+}
+
+// BasicAuthSpec configures the admin credential of a basic-auth cluster.
+type BasicAuthSpec struct {
+	// PasswordRotation requests one rotation of the admin password. Set it
+	// to a value that differs from status.adminPassword.rotation, for
+	// example a date. The operator generates a new password, sets it on the
+	// admin user through the user API of the running cluster, and then
+	// publishes it in the admin Secret. The connectors Deployment restarts
+	// with the new password. An empty value never rotates. A suspended
+	// cluster rotates after it resumes.
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	PasswordRotation string `json:"passwordRotation,omitempty"`
 }
 
 // ClusterAdminSpec holds the identities that get the admin role of one
@@ -226,6 +245,16 @@ type ClusterAdminSpec struct {
 	// a given value.
 	// +optional
 	MappingRules []AdminMappingRule `json:"mappingRules,omitempty"`
+}
+
+// AdminPasswordStatus is the state of the admin credential of a basic-auth
+// cluster.
+type AdminPasswordStatus struct {
+	// Rotation is the last spec.auth.basic.passwordRotation value that the
+	// operator applied. A rotation is in progress while the spec value is
+	// not empty and differs from this value.
+	// +optional
+	Rotation string `json:"rotation,omitempty"`
 }
 
 // AdminMappingRule gives the admin role to every token in which the claim
@@ -387,6 +416,10 @@ type CamundaClusterStatus struct {
 	// sees an unreachable cluster instead of a stale endpoint.
 	// +optional
 	Management *ManagementBinding `json:"management,omitempty"`
+	// AdminPassword is the state of the admin credential of a basic-auth
+	// cluster. It is unset under OIDC.
+	// +optional
+	AdminPassword *AdminPasswordStatus `json:"adminPassword,omitempty"`
 	// ServiceAccountName is the ServiceAccount that the pods of this cluster
 	// run under, or empty when they run under the default account of the
 	// namespace. Extensions that render a pod against this cluster read it

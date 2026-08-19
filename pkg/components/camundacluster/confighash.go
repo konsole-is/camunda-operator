@@ -34,8 +34,28 @@ const configHashLength = 16
 // together with in.HashInputs. It is stable across reconciles for the same
 // input, so the pods of a process roll only when a value rendered for that
 // process or a referenced object changes.
+//
+// The hash of connectors also takes in.AdminPasswordHash, the digest of the
+// active admin password. Connectors authenticate every call with that
+// password at runtime, so they must restart when it changes. The unified
+// processes read it once, as the create-once initial user seed, so the
+// digest stays out of their hashes and a rotation does not restart the
+// brokers.
 func ConfigHash(in Input, p Process) string {
 	return configHash(in, p, render(in, p))
+}
+
+// PasswordHash returns the hash input for a credential value: the first 64
+// bits of its SHA-256 digest, hex encoded. An empty value returns "", so a
+// cluster without the credential adds no input. The digest of a generated
+// password (191 bits of entropy) does not expose the password.
+func PasswordHash(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:configHashLength]
 }
 
 // configHash is ConfigHash for an already rendered process.
@@ -53,6 +73,10 @@ func configHash(in Input, p Process, r rendered) string {
 	slices.Sort(inputs)
 	for _, input := range inputs {
 		b.WriteString("input=" + input + "\n")
+	}
+
+	if p.Component == ComponentConnectors && in.AdminPasswordHash != "" {
+		b.WriteString("adminPassword=" + in.AdminPasswordHash + "\n")
 	}
 
 	sum := sha256.Sum256([]byte(b.String()))

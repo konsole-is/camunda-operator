@@ -726,3 +726,25 @@ func TestRenderConnectorsRoleGrant(t *testing.T) {
 	r = render(in, process(t, in, ComponentGateway))
 	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_CONNECTORS_CLIENTS_0")
 }
+
+func TestResolveAuthBasic(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, ResolveAuth(newInput(t, nil)).Basic)
+
+	block := &v1.BasicAuthSpec{PasswordRotation: "2026-08"}
+
+	basic := ResolveAuth(newInput(t, func(in *Input) {
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Basic: block}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	require.NotNil(t, basic.Basic)
+	assert.Equal(t, "2026-08", basic.Basic.PasswordRotation)
+
+	oidc := ResolveAuth(newInput(t, func(in *Input) {
+		in.Platform = oidcPlatform()
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Basic: block}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	assert.Nil(t, oidc.Basic, "the basic block has no effect under OIDC")
+}

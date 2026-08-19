@@ -42,6 +42,13 @@ const adminComponentName = "admin-secret"
 // password when disabled. The component takes part in Ready only when
 // enabled.
 //
+// While a password rotation is in flight, pendingPassword carries the
+// requested password and the Secret publishes it under password-pending,
+// next to the active one. The key makes the requested password durable
+// before the controller sets it through the user API, so a crash between
+// the call and the publish can never lose it. An empty pendingPassword
+// leaves the key out, which removes it when the rotation completes.
+//
 // A reused password carries its apply precondition onto the Secret, so a
 // delete of the Secret always rotates the password. The controller must
 // reconcile the component through credentials.NewApplyClient for the
@@ -50,7 +57,16 @@ func AdminSecretComponent(
 	cluster *v1.CamundaCluster,
 	enabled bool,
 	password credentials.Password,
+	pendingPassword string,
 ) (*component.Component, error) {
+	data := map[string][]byte{
+		AdminUsernameKey: []byte(AdminUsername),
+		AdminPasswordKey: []byte(password.Value),
+	}
+	if pendingPassword != "" {
+		data[AdminPendingPasswordKey] = []byte(pendingPassword)
+	}
+
 	admin, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        AdminSecretName(cluster),
@@ -59,10 +75,7 @@ func AdminSecretComponent(
 			Annotations: password.PreconditionAnnotations(),
 		},
 		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			AdminUsernameKey: []byte(AdminUsername),
-			AdminPasswordKey: []byte(password.Value),
-		},
+		Data: data,
 	}).Build()
 	if err != nil {
 		return nil, fmt.Errorf("building %s component: %w", adminComponentName, err)
