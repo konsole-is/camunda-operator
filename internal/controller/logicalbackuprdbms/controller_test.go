@@ -1259,6 +1259,33 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("platform-sa"))
 	})
 
+	// The account of the Job follows the bucket that the Job writes to. A
+	// document bucket binds an identity for the pods of the cluster, and the
+	// dump never touches that bucket, so the Job needs no account here.
+	It("gives the Job no account when only the document bucket binds one", func() {
+		documents := &v1.ObjectStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "docs-" + utilrand.String(6)},
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeS3,
+				S3: &v1.S3Storage{
+					BucketName: "documents",
+					Region:     "eu-west-1",
+					Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, documents)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, documents) })
+
+		w := createWorld(func(cluster *v1.CamundaCluster) {
+			cluster.Spec.DocumentStorageRef = documents.Name
+		})
+		backup := createBackup(w)
+
+		job := jobOf(backup, w)
+		Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
+	})
+
 	// The environment of the backup's own block reaches the dump container
 	// only. The upload container runs cloud SDKs that read endpoint and
 	// proxy variables, and a backup author must not steer the upload.

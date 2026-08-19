@@ -623,11 +623,15 @@ type podResolution struct {
 // cluster's: the Job runs with the credentials of the cluster, so the
 // executable stays the choice of the cluster owner.
 //
-// bucket is the backup bucket of the cluster. It joins the document bucket in
-// the one rule that answers which account the pods of the cluster run under,
-// so the Job and the workloads can never disagree. A cluster that runs under
-// no named account gives the Job none either: the API server rejects a pod
-// that names an account which does not exist.
+// bucket is the backup bucket of the cluster. The Job names the account of
+// the cluster when that bucket binds one through workload identity, or when
+// the spec names one. Otherwise it names none and runs under the default
+// account of its namespace.
+//
+// That condition is narrower than the condition under which the cluster
+// renders the account, so it implies it. The Job can therefore only ever
+// name an account that exists, which is what the API server requires before
+// it creates the pod.
 func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -675,45 +679,12 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 		}
 	}
 
-	documents, failure, err := r.resolveDocumentBucket(ctx, merged)
-	if err != nil || failure != nil {
-		return nil, failure, err
-	}
-
 	return &podResolution{
 		settings: settings,
 		owned:    owned,
 		image:    image,
-		account: camundacluster.PodServiceAccountName(
-			cluster, camundacluster.NewEffective(merged), bucket, documents,
-		),
+		account:  camundacluster.PodServiceAccountName(cluster, camundacluster.NewEffective(merged), bucket),
 	}, nil, nil
-}
-
-// resolveDocumentBucket reads the document bucket of the cluster, or returns
-// nil when the cluster references none. The bucket takes part in one decision
-// here: a document bucket on workload identity binds the ServiceAccount of
-// the pods, so the Job of a backup must name that account too.
-func (r *LogicalBackupRDBMSReconciler) resolveDocumentBucket(
-	ctx context.Context,
-	merged v1.CamundaClusterSpec,
-) (*v1.ObjectStorageConfig, *conditions.PreCheckFailure, error) {
-	if merged.DocumentStorageRef == "" {
-		return nil, nil, nil
-	}
-
-	var bucket v1.ObjectStorageConfig
-	if err := r.APIReader.Get(ctx, types.NamespacedName{Name: merged.DocumentStorageRef}, &bucket); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference(
-				"ObjectStorageConfig %q does not exist", merged.DocumentStorageRef,
-			), nil
-		}
-
-		return nil, nil, fmt.Errorf("reading ObjectStorageConfig %q: %w", merged.DocumentStorageRef, err)
-	}
-
-	return &bucket, nil, nil
 }
 
 // dumpBlock returns the pod settings and the image of the Job of one backup.

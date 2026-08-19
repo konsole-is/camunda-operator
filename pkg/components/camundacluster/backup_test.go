@@ -780,10 +780,10 @@ func TestBackupEnvOmitsTheRegionWithoutAnEndpointOrARegion(t *testing.T) {
 }
 
 // The pods of a cluster run under a named ServiceAccount only when something
-// needs one. PodServiceAccountName is the one answer to that question, so the
-// workloads of the cluster and the Jobs of a backup can never disagree about
-// which account exists. A Job that names an account the cluster never
-// rendered is rejected by the API server and its pod is never created.
+// binds one: the spec names an account, or a referenced bucket authenticates
+// through workload identity. PodServiceAccountName is the one answer to that
+// question, and the operator renders the account exactly when the answer is
+// a name.
 func TestPodServiceAccountName(t *testing.T) {
 	tests := []struct {
 		name string
@@ -837,32 +837,76 @@ func TestPodServiceAccountName(t *testing.T) {
 	}
 }
 
-// The gate of the workload pods and the name of the Jobs come from one rule.
-// A test that pinned each of them to a literal would let them drift apart,
-// which is how a Job came to name an account that no cluster rendered.
-func TestPodServiceAccountNameAgreesWithTheWorkloadPods(t *testing.T) {
-	for _, tt := range []struct {
+// The Job of a backup asks this rule with its own bucket alone. Its
+// condition is the condition of the cluster without the document bucket, so
+// it implies it: whenever the Job names an account, the cluster renders that
+// account and it exists. The API server refuses a pod that names an account
+// which does not, so this implication is what makes the Job schedulable.
+func TestPodServiceAccountNameNamesOnlyAnAccountTheClusterRenders(t *testing.T) {
+	tests := []struct {
 		name string
 		with func(in *Input)
+		// cluster is the account the pods of the cluster run under, and job
+		// the account the Job of a backup runs under.
+		cluster string
+		job     string
 	}{
-		{name: "static credentials", with: func(in *Input) { in.Backup = minioBucket() }},
-		{name: "workload identity", with: func(in *Input) { in.Backup = s3Bucket() }},
-		{name: "a named account", with: func(in *Input) {
-			in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
-			in.Effective = NewEffective(in.Cluster.Spec)
-		}},
-	} {
+		{
+			name:    "static credentials bind no account",
+			with:    func(in *Input) { in.Backup = minioBucket() },
+			cluster: "",
+			job:     "",
+		},
+		{
+			name:    "a workload-identity backup bucket binds one",
+			with:    func(in *Input) { in.Backup = s3Bucket() },
+			cluster: "my-cluster-camunda",
+			job:     "my-cluster-camunda",
+		},
+		{
+			name: "a named account binds one",
+			with: func(in *Input) {
+				in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+				in.Effective = NewEffective(in.Cluster.Spec)
+			},
+			cluster: "platform-sa",
+			job:     "platform-sa",
+		},
+		{
+			// The dump never touches the document bucket, so the identity it
+			// binds is nothing the Job needs.
+			name: "a workload-identity document bucket binds one the Job does not need",
+			with: func(in *Input) {
+				in.Backup = minioBucket()
+				in.Documents = s3Bucket()
+			},
+			cluster: "my-cluster-camunda",
+			job:     "",
+		},
+	}
+
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := newInput(t, tt.with)
 
+			cluster := PodServiceAccountName(in.Cluster, in.Effective, in.Backup, in.Documents)
+			job := PodServiceAccountName(in.Cluster, in.Effective, in.Backup)
+
+			assert.Equal(t, tt.cluster, cluster)
+			assert.Equal(t, tt.job, job)
+
+			// The implication: a named Job account is always one the cluster
+			// renders, so it always exists.
+			if job != "" {
+				assert.Equal(t, cluster, job, "the Job named an account the cluster does not render")
+			}
+
 			comps, err := Build(in)
 			require.NoError(t, err)
-
-			want := PodServiceAccountName(in.Cluster, in.Effective, in.Backup, in.Documents)
 			for _, pc := range comps {
 				assert.Equal(
 					t,
-					want,
+					cluster,
 					previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
 					pc.Process.Component,
 				)
