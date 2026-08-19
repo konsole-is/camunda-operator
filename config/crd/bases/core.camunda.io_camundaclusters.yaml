@@ -54,6 +54,11 @@ spec:
                       process. A per-component entry wins over a top-level entry with the
                       same name. For an embedded web application the entries apply to the
                       host process.
+
+                      The list merges by name under server-side apply, so each field manager
+                      owns only the entries that it applies. An extension controller can add
+                      its own entry next to yours. One list cannot hold two entries with the
+                      same name.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -210,6 +215,9 @@ spec:
                       - name
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -2080,6 +2088,11 @@ spec:
                       process. A per-component entry wins over a top-level entry with the
                       same name. For an embedded web application the entries apply to the
                       host process.
+
+                      The list merges by name under server-side apply, so each field manager
+                      owns only the entries that it applies. An extension controller can add
+                      its own entry next to yours. One list cannot hold two entries with the
+                      same name.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -2236,6 +2249,9 @@ spec:
                       - name
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -2988,6 +3004,11 @@ spec:
                 description: |-
                   ExtraEnv are extra environment variables of every workload. A
                   per-component entry wins over an entry here with the same name.
+
+                  The list merges by name under server-side apply, so each field manager
+                  owns only the entries that it applies. An extension controller can add
+                  its own entry next to yours. One list cannot hold two entries with the
+                  same name.
                 items:
                   description: EnvVar represents an environment variable present in
                     a Container.
@@ -3143,6 +3164,9 @@ spec:
                   - name
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               extraEnvFrom:
                 description: |-
                   ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
@@ -3201,6 +3225,11 @@ spec:
                       process. A per-component entry wins over a top-level entry with the
                       same name. For an embedded web application the entries apply to the
                       host process.
+
+                      The list merges by name under server-side apply, so each field manager
+                      owns only the entries that it applies. An extension controller can add
+                      its own entry next to yours. One list cannot hold two entries with the
+                      same name.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -3357,6 +3386,9 @@ spec:
                       - name
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -4135,6 +4167,11 @@ spec:
                       process. A per-component entry wins over a top-level entry with the
                       same name. For an embedded web application the entries apply to the
                       host process.
+
+                      The list merges by name under server-side apply, so each field manager
+                      owns only the entries that it applies. An extension controller can add
+                      its own entry next to yours. One list cannot hold two entries with the
+                      same name.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -4291,6 +4328,9 @@ spec:
                       - name
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -5715,6 +5755,11 @@ spec:
                       process. A per-component entry wins over a top-level entry with the
                       same name. For an embedded web application the entries apply to the
                       host process.
+
+                      The list merges by name under server-side apply, so each field manager
+                      owns only the entries that it applies. An extension controller can add
+                      its own entry next to yours. One list cannot hold two entries with the
+                      same name.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -5871,6 +5916,9 @@ spec:
                       - name
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -6628,6 +6676,11 @@ spec:
                       process. A per-component entry wins over a top-level entry with the
                       same name. For an embedded web application the entries apply to the
                       host process.
+
+                      The list merges by name under server-side apply, so each field manager
+                      owns only the entries that it applies. An extension controller can add
+                      its own entry next to yours. One list cannot hold two entries with the
+                      same name.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -6784,6 +6837,9 @@ spec:
                       - name
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the

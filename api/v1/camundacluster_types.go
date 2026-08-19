@@ -84,6 +84,13 @@ type WorkloadSpec struct {
 	// process. A per-component entry wins over a top-level entry with the
 	// same name. For an embedded web application the entries apply to the
 	// host process.
+	//
+	// The list merges by name under server-side apply, so each field manager
+	// owns only the entries that it applies. An extension controller can add
+	// its own entry next to yours. One list cannot hold two entries with the
+	// same name.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -318,6 +325,13 @@ type CamundaClusterSpec struct {
 	Connectors *ConnectorsSpec `json:"connectors,omitempty"`
 	// ExtraEnv are extra environment variables of every workload. A
 	// per-component entry wins over an entry here with the same name.
+	//
+	// The list merges by name under server-side apply, so each field manager
+	// owns only the entries that it applies. An extension controller can add
+	// its own entry next to yours. One list cannot hold two entries with the
+	// same name.
+	// +listType=map
+	// +listMapKey=name
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
