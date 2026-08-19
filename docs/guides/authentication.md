@@ -29,13 +29,13 @@ spec:
       passwordRotation: "2026-08"
 ```
 
-The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly.
+The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password; the brokers, the gateway, and the web applications keep running. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly. A suspended cluster serves no user API, so a requested rotation waits and applies after the cluster resumes.
 
-If the call fails, the Secret keeps the active password and `AdminSecretReady` reports why: `ConnectionFailed` when the cluster does not answer, `Rejected` when it refuses the credentials. The operator retries until the call succeeds. A `Rejected` rotation usually means that somebody changed the password in the Admin web application. Set the password from the Secret on the `admin` user there, and the next retry succeeds.
+If the call fails, the Secret keeps the active password and `AdminSecretReady` reports why: `ConnectionFailed` when the cluster does not answer, `Rejected` when it refuses the credentials. The operator retries until the call succeeds. `ConnectionFailed` clears on its own when the cluster is `Ready` again; the condition message carries the cause. A `Rejected` rotation usually means that somebody changed the password in the Admin web application. Set the password from the Secret on the `admin` user there, and the next retry succeeds.
 
 > **Caution:** Between the update of the user and the restart of the connectors pods, a connectors call with the old password is rejected. Plan a rotation outside of peak hours.
 
-A deleted Secret still gets a new password, but the `admin` user keeps the old one: the orchestration cluster creates the user once, at first start. You then set the new password on the user in the Admin web application yourself and restart the connectors Deployment. Prefer `passwordRotation`.
+Do not rotate by deletion. A deleted Secret gets a new password, but the `admin` user keeps the old one: the orchestration cluster creates the user once, at first start. The old password is not published again, so read and keep it before you delete the Secret. You then sign in to the Admin web application with the old password, set the new password from the new Secret on the `admin` user, and run `kubectl rollout restart deployment/<name>-connectors`. A `passwordRotation` requested after the deletion fails with `Rejected`, because the operator no longer holds a password that the cluster accepts.
 
 A minimal platform config for basic authentication:
 
