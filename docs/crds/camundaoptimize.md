@@ -125,7 +125,7 @@ spec:
 
 ## Status
 
-`Ready` is `True` only when both Deployments are `True`. Its reason and message come from the Deployment that governs: the one whose status has the highest priority among those that are not `True`, or the highest of both when both are `True`.
+`Ready` is `True` only when `WebappReady` and `ImporterReady` are both `True`. Its reason and message come from the workload that governs: the one whose status has the highest priority among those that are not `True`, or the highest of both when both are `True`.
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
