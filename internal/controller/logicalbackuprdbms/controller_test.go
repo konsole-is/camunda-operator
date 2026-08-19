@@ -605,9 +605,14 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		)))
 		Expect(backup.Status.ObjectKey).To(HaveSuffix("/" + string(backup.UID) + "/camunda.dump"))
 
-		By("rendering the Job under the cluster ServiceAccount with the recorded key")
+		// The bucket of this cluster carries static credentials and the spec
+		// names no account, so the cluster renders none and its own pods run
+		// under the default account of the namespace. The Job runs there too.
+		// Naming the derived account here would be rejected by the API
+		// server, which refuses a pod whose ServiceAccount does not exist.
+		By("rendering the Job under no ServiceAccount, as the cluster workloads run")
 		job := jobOf(backup, w)
-		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal(w.cluster.Name + "-camunda"))
+		Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
 		Expect(job.OwnerReferences).NotTo(BeEmpty())
 
 		By("projecting the same-namespace bucket credentials Secret directly")

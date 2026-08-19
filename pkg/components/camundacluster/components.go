@@ -221,16 +221,13 @@ func monitoringGate(in Input) component.ResourceOption {
 }
 
 // usesServiceAccount reports whether the pods run under a named
-// ServiceAccount, whether or not the operator renders it: the spec asks for
-// one, or a referenced bucket authenticates through workload identity — with
-// or without an annotation, because an annotation-less identity still binds
-// the ServiceAccount by name on the cloud side. The name the pods use is the
-// documented principal, so it must exist and be referenced whenever a
-// workload-identity bucket is.
+// ServiceAccount, whether or not the operator renders it. It is the gate form
+// of PodServiceAccountName, which is the one rule: an annotation-less
+// identity still binds the ServiceAccount by name on the cloud side, so the
+// name the pods use is the documented principal and must exist and be
+// referenced whenever a workload-identity bucket is.
 func usesServiceAccount(in Input) bool {
-	return in.Effective.ServiceAccount != nil ||
-		bucketUsesWorkloadIdentity(in.Backup) ||
-		bucketUsesWorkloadIdentity(in.Documents)
+	return PodServiceAccountName(in.Cluster, in.Effective, in.Backup, in.Documents) != ""
 }
 
 // bucketUsesWorkloadIdentity reports whether the pods authenticate against

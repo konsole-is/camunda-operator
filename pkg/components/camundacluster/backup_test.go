@@ -778,3 +778,95 @@ func TestBackupEnvOmitsTheRegionWithoutAnEndpointOrARegion(t *testing.T) {
 	_, ok := envByName(env, camundaconfig.KeyPrimaryBackupS3Region.Env())
 	assert.False(t, ok, "a bucket without an endpoint must not get a placeholder region")
 }
+
+// The pods of a cluster run under a named ServiceAccount only when something
+// needs one. PodServiceAccountName is the one answer to that question, so the
+// workloads of the cluster and the Jobs of a backup can never disagree about
+// which account exists. A Job that names an account the cluster never
+// rendered is rejected by the API server and its pod is never created.
+func TestPodServiceAccountName(t *testing.T) {
+	tests := []struct {
+		name string
+		with func(in *Input)
+		want string
+	}{
+		{
+			name: "no account and no bucket runs under the default account",
+			with: func(in *Input) {},
+			want: "",
+		},
+		{
+			name: "a bucket with static credentials needs no identity",
+			with: func(in *Input) { in.Backup = minioBucket() },
+			want: "",
+		},
+		{
+			name: "a spec that names an account gets that name",
+			with: func(in *Input) {
+				in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+				in.Effective = NewEffective(in.Cluster.Spec)
+			},
+			want: "platform-sa",
+		},
+		{
+			name: "a spec that asks for an account gets the derived name",
+			with: func(in *Input) {
+				in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{}
+				in.Effective = NewEffective(in.Cluster.Spec)
+			},
+			want: "my-cluster-camunda",
+		},
+		{
+			name: "a backup bucket on workload identity binds the derived name",
+			with: func(in *Input) { in.Backup = s3Bucket() },
+			want: "my-cluster-camunda",
+		},
+		{
+			name: "a document bucket on workload identity binds the derived name",
+			with: func(in *Input) { in.Documents = s3Bucket() },
+			want: "my-cluster-camunda",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := newInput(t, tt.with)
+
+			assert.Equal(t, tt.want, PodServiceAccountName(in.Cluster, in.Effective, in.Backup, in.Documents))
+		})
+	}
+}
+
+// The gate of the workload pods and the name of the Jobs come from one rule.
+// A test that pinned each of them to a literal would let them drift apart,
+// which is how a Job came to name an account that no cluster rendered.
+func TestPodServiceAccountNameAgreesWithTheWorkloadPods(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		with func(in *Input)
+	}{
+		{name: "static credentials", with: func(in *Input) { in.Backup = minioBucket() }},
+		{name: "workload identity", with: func(in *Input) { in.Backup = s3Bucket() }},
+		{name: "a named account", with: func(in *Input) {
+			in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
+			in.Effective = NewEffective(in.Cluster.Spec)
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			in := newInput(t, tt.with)
+
+			comps, err := Build(in)
+			require.NoError(t, err)
+
+			want := PodServiceAccountName(in.Cluster, in.Effective, in.Backup, in.Documents)
+			for _, pc := range comps {
+				assert.Equal(
+					t,
+					want,
+					previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+					pc.Process.Component,
+				)
+			}
+		})
+	}
+}

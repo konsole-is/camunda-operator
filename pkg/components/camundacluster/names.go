@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"slices"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
@@ -106,4 +108,33 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 	}
 
 	return cluster.Name + serviceAccountSuffix
+}
+
+// PodServiceAccountName returns the ServiceAccount that the pods of the
+// cluster run under, or the empty string when they run under the default
+// account of their namespace. buckets are every ObjectStorageConfig the
+// cluster references: the backup bucket, the document bucket, or neither.
+//
+// The pods need a named account only when something binds one: the spec asks
+// for one, or a referenced bucket authenticates through workload identity.
+// With static credentials nothing does. The credentials arrive in a Secret,
+// so the pods carry no cloud identity and the operator renders no account.
+//
+// Every consumer asks this function rather than ServiceAccountName, which
+// names the account whether or not one exists. A Job that names an account
+// that the cluster never rendered is rejected by the API server, and its pod
+// is never created.
+func PodServiceAccountName(cluster *v1.CamundaCluster, e Effective, buckets ...*v1.ObjectStorageConfig) string {
+	if e.ServiceAccount == nil && !anyBucketUsesWorkloadIdentity(buckets) {
+		return ""
+	}
+
+	return ServiceAccountName(cluster, e)
+}
+
+// anyBucketUsesWorkloadIdentity reports whether any of the buckets makes the
+// pods authenticate as their ServiceAccount. A nil bucket is one the cluster
+// does not reference.
+func anyBucketUsesWorkloadIdentity(buckets []*v1.ObjectStorageConfig) bool {
+	return slices.ContainsFunc(buckets, bucketUsesWorkloadIdentity)
 }

@@ -340,7 +340,7 @@ func (r *LogicalBackupRDBMSReconciler) cleanupWithJob(
 		return r.watchCleanupJob(ctx, backup, &job)
 	}
 
-	pod, failure, err := r.resolvePod(ctx, cluster, backup)
+	pod, failure, err := r.resolvePod(ctx, cluster, backup, bucket)
 	if err != nil {
 		return "", err
 	}
