@@ -151,20 +151,24 @@ func (c *Client) EnsureSnapshotRepository(ctx context.Context, name string, cfg 
 	default:
 		return fmt.Errorf("repository %q: unknown repository type %q", name, cfg.Type)
 	}
-	if cfg.Bucket == "" {
-		return fmt.Errorf("repository %q: the bucket of a %s repository is empty", name, cfg.Type)
+	// Azure names the same thing container; every other type names it bucket.
+	// One decision serves both the settings and the message, so the operator
+	// of an azure repository is never sent looking for a bucket.
+	bucketSetting := "bucket"
+	if cfg.Type == RepositoryTypeAzure {
+		bucketSetting = "container"
 	}
 
-	settings := map[string]any{"client": DefaultClientName}
+	if cfg.Bucket == "" {
+		return fmt.Errorf("repository %q: the %s of a %s repository is empty", name, bucketSetting, cfg.Type)
+	}
+
+	settings := map[string]any{
+		"client":      DefaultClientName,
+		bucketSetting: cfg.Bucket,
+	}
 	if cfg.BasePath != "" {
 		settings["base_path"] = cfg.BasePath
-	}
-
-	// Azure names the same thing container; every other type names it bucket.
-	if cfg.Type == RepositoryTypeAzure {
-		settings["container"] = cfg.Bucket
-	} else {
-		settings["bucket"] = cfg.Bucket
 	}
 
 	if cfg.Type == RepositoryTypeS3 {

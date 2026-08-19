@@ -546,3 +546,23 @@ func TestEnsureSnapshotRepositoryRejectsAnIncompleteConfig(t *testing.T) {
 		})
 	}
 }
+
+// The message names the field as the repository type names it. An azure
+// repository has a container, and telling its operator that a "bucket" is
+// empty sends them looking for a field that its settings do not have.
+func TestEnsureSnapshotRepositoryNamesTheEmptyFieldPerType(t *testing.T) {
+	ctx := context.Background()
+	client, _ := newClient(t)
+
+	err := client.EnsureSnapshotRepository(ctx, "my-cluster", esadmin.RepositoryConfig{
+		Type: esadmin.RepositoryTypeAzure,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container")
+
+	err = client.EnsureSnapshotRepository(ctx, "my-cluster", esadmin.RepositoryConfig{
+		Type: esadmin.RepositoryTypeS3,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bucket")
+}
