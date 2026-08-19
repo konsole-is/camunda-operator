@@ -60,8 +60,11 @@ func applyZeebeEnv(obj *v1.CamundaCluster, manager string, env corev1.EnvVar) er
 		},
 	}
 
+	// No ForceOwnership: with a map list the two managers own different
+	// entries and never conflict. A conflict here means the list went atomic
+	// again, and the test must see that error rather than swallow it.
 	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
-	return k8sClient.Patch(ctx, patch, client.Apply, client.FieldOwner(manager), client.ForceOwnership)
+	return k8sClient.Patch(ctx, patch, client.Apply, client.FieldOwner(manager))
 }
 
 // minimalCamundaCluster returns the minimal example of the CRD doc with a
