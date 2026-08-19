@@ -98,9 +98,15 @@ type ElasticsearchClusterReconciler struct {
 	// typed Gets of ocf start a cluster-wide Secret informer, which breaks
 	// the metadata-only Secret posture of the operator.
 	componentClient client.Client
-	// restMapper resolves whether the cluster serves the ServiceMonitor
-	// kind. SetupWithManager sets it from the manager.
+	// restMapper resolves whether the cluster serves the ServiceMonitor and
+	// the ECK Elasticsearch kinds. SetupWithManager sets it from the manager.
 	restMapper meta.RESTMapper
+	// eckInstalled records whether the cluster served the ECK Elasticsearch
+	// kind when SetupWithManager ran. The watch on that kind is registered
+	// then or never, so the answer is fixed for the life of the process: a
+	// reconcile without ECK reports ECKNotInstalled instead of applying a
+	// resource that nothing watches.
+	eckInstalled bool
 
 	// EndpointFor returns the Elasticsearch endpoint of a cluster. Nil means
 	// the in-cluster HTTPS Service that components.HTTPEndpoint names. Tests
@@ -238,7 +244,8 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 // preCheck resolves the preset and validates the merged spec. It returns the
 // preset-merged spec. A failed check returns a *conditions.PreCheckFailure
-// that carries its Ready reason. A dangling presetRef, an incomplete merge,
+// that carries its Ready reason. An operator that started without the ECK
+// CRDs reports ECKNotInstalled. A dangling presetRef, an incomplete merge,
 // and a version below the floor all report InvalidReference. Any other error
 // is a transient API failure.
 func (r *ElasticsearchClusterReconciler) preCheck(
@@ -246,6 +253,13 @@ func (r *ElasticsearchClusterReconciler) preCheck(
 	cluster *v1.ElasticsearchCluster,
 ) (v1.ElasticsearchClusterSpec, *components.SnapshotStorage, error) {
 	merged := cluster.Spec
+
+	if !r.eckInstalled {
+		return merged, nil, &conditions.PreCheckFailure{
+			Reason:  v1.ReasonECKNotInstalled,
+			Message: "ECK Elasticsearch CRD not found when the operator started. Install ECK, then restart the operator",
+		}
+	}
 
 	if cluster.Spec.PresetRef != "" {
 		var preset v1.ElasticsearchClusterPreset
@@ -539,15 +553,32 @@ func (r *ElasticsearchClusterReconciler) serviceMonitorSupported() bool {
 	return err == nil
 }
 
+// eckSupported reports whether the cluster serves the ECK Elasticsearch
+// kind.
+func (r *ElasticsearchClusterReconciler) eckSupported() bool {
+	_, err := r.restMapper.RESTMapping(
+		schema.GroupKind{Group: esv1.GroupVersion.Group, Kind: esv1.Kind}, esv1.GroupVersion.Version,
+	)
+	return err == nil
+}
+
 // SetupWithManager registers the controller, ownership watches on the ECK CR,
 // the user Secret, and the SecondaryStorageConfig, a preset watch through a
 // field index on spec.presetRef, and a watch on the data volume claims that
 // ECK labels with the cluster name.
+//
+// The ECK watch is registered only when the cluster serves the ECK
+// Elasticsearch kind. An informer on a kind that the API server does not
+// serve fails the cache sync and stops the manager, and the operator must
+// start on a cluster that uses only RDBMS storage. Without ECK the controller
+// still runs and reports ECKNotInstalled on every ElasticsearchCluster. The
+// decision is made once: install ECK, then restart the operator.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder("elasticsearchcluster")
 	}
 	r.restMapper = mgr.GetRESTMapper()
+	r.eckInstalled = r.eckSupported()
 
 	if r.componentClient == nil {
 		// Uncached: see the componentClient field doc. The ECK apply wrapper
@@ -583,9 +614,17 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		return err
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1.ElasticsearchCluster{}).
-		Owns(&esv1.Elasticsearch{}).
+	controller := ctrl.NewControllerManagedBy(mgr).
+		For(&v1.ElasticsearchCluster{})
+	if r.eckInstalled {
+		controller = controller.Owns(&esv1.Elasticsearch{})
+	} else {
+		mgr.GetLogger().Info(
+			"ECK Elasticsearch CRD not found, every ElasticsearchCluster reports ECKNotInstalled until ECK is installed and the operator restarts",
+		)
+	}
+
+	return controller.
 		Owns(&corev1.Secret{}, builder.OnlyMetadata).
 		Owns(&v1.SecondaryStorageConfig{}).
 		Owns(&appsv1.Deployment{}).

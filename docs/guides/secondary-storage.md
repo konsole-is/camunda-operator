@@ -20,7 +20,7 @@ If you have no strong reason to pick one, pick Elasticsearch. It is the backend 
 
 ## Elasticsearch
 
-Prerequisite: the ECK operator is installed in the Kubernetes cluster. The operator does not run Elasticsearch nodes itself. It creates an ECK `Elasticsearch` resource, and ECK runs the nodes.
+Prerequisite: the ECK operator is installed in the Kubernetes cluster, and the camunda-operator started after the ECK CRDs were installed. The operator does not run Elasticsearch nodes itself. It creates an ECK `Elasticsearch` resource, and ECK runs the nodes.
 
 1. Create an `ElasticsearchCluster`. The sizes below are for trying out. For production, use more nodes and larger volumes.
 

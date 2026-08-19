@@ -248,6 +248,12 @@ type ElasticsearchClusterSpec struct {
 	Suspend bool `json:"suspend,omitempty"`
 }
 
+// ReasonECKNotInstalled is the Ready reason of an ElasticsearchCluster on a
+// cluster that did not serve the ECK Elasticsearch kind when the operator
+// started. The operator decides at start whether it watches ECK resources,
+// so it must restart after ECK is installed.
+const ReasonECKNotInstalled = "ECKNotInstalled"
+
 // PersistentVolumeClaimRetentionPolicyType is what happens to the data
 // volumes of a resource (an ElasticsearchCluster, the brokers of a
 // CamundaCluster) when the resource is deleted.
@@ -293,10 +299,11 @@ type ElasticsearchClusterStatus struct {
 	// +listMapKey=name
 	// +optional
 	Volumes []VolumeStatus `json:"volumes,omitempty"`
-	// Conditions represent the current state. Ready carries the pre-check
-	// reason InvalidReference, or it is derived from the component
-	// conditions. The per-component conditions (CredentialsReady,
-	// ElasticsearchReady, StorageContractReady) also appear here.
+	// Conditions represent the current state. Ready carries a pre-check
+	// reason (InvalidReference, MissingSecret, ECKNotInstalled), or it is
+	// derived from the component conditions. The per-component conditions
+	// (CredentialsReady, ElasticsearchReady, StorageContractReady) also
+	// appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

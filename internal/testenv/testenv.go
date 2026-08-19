@@ -66,13 +66,28 @@ type Env struct {
 	control *envtest.Environment
 }
 
-// Start boots a control plane that carries the CRDs of the operator, registers
-// the reconcilers of the caller through register, and starts the manager in
-// the background. register runs before the manager starts and must not block.
+// Options tunes the control plane that StartWith boots.
+type Options struct {
+	// WithoutECK leaves the ECK CRDs out of the control plane, so a suite
+	// can show what the operator does on a cluster that does not serve them.
+	WithoutECK bool
+}
+
+// Start boots a control plane that carries the CRDs of the operator and of
+// ECK, registers the reconcilers of the caller through register, and starts
+// the manager in the background. register runs before the manager starts and
+// must not block.
 //
 // Start asserts through Gomega. Call it from a Ginkgo node that has a fail
 // handler installed, normally BeforeSuite.
 func Start(register func(mgr ctrl.Manager) error) *Env {
+	ginkgo.GinkgoHelper()
+
+	return StartWith(Options{}, register)
+}
+
+// StartWith is Start with options.
+func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	ginkgo.GinkgoHelper()
 
 	gomega.Expect(v1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
@@ -82,17 +97,19 @@ func Start(register func(mgr ctrl.Manager) error) *Env {
 	root, err := moduleRoot()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-	// The ECK CRDs come from the resolved module, so the rendered Elasticsearch
-	// CR applies against the API server. ECK itself does not run in envtest.
-	eckCRDPath, err := utils.ECKCRDPath()
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	crdPaths := []string{filepath.Join(root, "config", "crd", "bases")}
+	if !opts.WithoutECK {
+		// The ECK CRDs come from the resolved module, so the rendered
+		// Elasticsearch CR applies against the API server. ECK itself does
+		// not run in envtest.
+		eckCRDPath, err := utils.ECKCRDPath()
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+		crdPaths = append(crdPaths, eckCRDPath)
+	}
 
 	ginkgo.By("bootstrapping test environment")
 	control := &envtest.Environment{
-		CRDDirectoryPaths: []string{
-			filepath.Join(root, "config", "crd", "bases"),
-			eckCRDPath,
-		},
+		CRDDirectoryPaths:     crdPaths,
 		ErrorIfCRDPathMissing: true,
 		BinaryAssetsDirectory: firstEnvtestBinaryDir(filepath.Join(root, "bin", "k8s")),
 	}

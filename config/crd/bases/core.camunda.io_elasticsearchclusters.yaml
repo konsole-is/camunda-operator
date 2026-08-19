@@ -1196,10 +1196,11 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Conditions represent the current state. Ready carries the pre-check
-                  reason InvalidReference, or it is derived from the component
-                  conditions. The per-component conditions (CredentialsReady,
-                  ElasticsearchReady, StorageContractReady) also appear here.
+                  Conditions represent the current state. Ready carries a pre-check
+                  reason (InvalidReference, MissingSecret, ECKNotInstalled), or it is
+                  derived from the component conditions. The per-component conditions
+                  (CredentialsReady, ElasticsearchReady, StorageContractReady) also
+                  appear here.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

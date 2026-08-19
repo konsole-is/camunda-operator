@@ -2,7 +2,7 @@
 
 `ElasticsearchCluster` runs an Elasticsearch cluster for secondary storage through the ECK operator. You create it, or another tool creates it for you.
 
-An orchestration cluster needs secondary storage. `ElasticsearchCluster` gives you one Elasticsearch cluster with generated credentials and a `SecondaryStorageConfig` that a `CamundaCluster` can reference. The operator does not run Elasticsearch itself. It creates an ECK `Elasticsearch` resource, and the ECK operator runs the nodes. ECK must be installed before you create this kind.
+An orchestration cluster needs secondary storage. `ElasticsearchCluster` gives you one Elasticsearch cluster with generated credentials and a `SecondaryStorageConfig` that a `CamundaCluster` can reference. The operator does not run Elasticsearch itself. It creates an ECK `Elasticsearch` resource, and the ECK operator runs the nodes. The operator looks for the ECK CRDs when it starts. Install ECK before you create this kind. If you install ECK after the operator, restart the operator.
 
 Use it when you want the operator to own the Elasticsearch cluster, its credentials, and its snapshot repository. If you want an RDBMS as secondary storage, use [Database](database.md) instead. An `ElasticsearchCluster` never references a `CamundaCluster`. The two meet only through the `SecondaryStorageConfig`.
 
@@ -69,6 +69,7 @@ Deletion removes everything the operator created: the ECK resource, the Secrets,
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
+| `Ready` | `ECKNotInstalled` | The ECK CRDs were not installed when the operator started. The operator does not create the ECK resource, the Secrets, or the `SecondaryStorageConfig`. | Install ECK, then restart the operator. |
 | `Ready` | `InvalidReference` | `spec.presetRef` or `spec.snapshotStorageRef` names a resource that does not exist, the merged spec lacks `version`, `replicas`, or `storageSize`, the version is below the floor, the bucket has settings that Elasticsearch cannot use, or a ServiceAccount with `create: false` does not exist. | Read the message. Create the missing resource, or fix the field it names. |
 | `Ready` | `MissingSecret` | The bucket of `spec.snapshotStorageRef` names a Secret or a key that does not exist. Or the components are healthy and the ECK Secrets that the repository registration needs do not exist yet. | Create the Secret with the keys that the `ObjectStorageConfig` names. If `SnapshotRepositoryReady` reports `MissingSecret`, wait for ECK. |
 | `Ready` | `Suspended` | `Ready` is `True`. The cluster is suspended by `spec.suspend: true`. The data volumes stay. | Nothing. To serve again, set `spec.suspend: false`. To wait for a serving cluster, require `Ready=True` and a reason other than `Suspended`. |
