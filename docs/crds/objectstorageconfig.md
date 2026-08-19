@@ -77,7 +77,8 @@ spec:
     bucketName: my-cluster-backup-bucket
     # string. Optional, default: "" (bucket root). Key prefix under which consumers write objects, without leading or trailing slashes.
     basePath: backups
-    # string. Required unless endpoint is set. Region of the bucket.
+    # string. Required unless endpoint is set. Region of the bucket. With an
+    # endpoint and no region, consumers use the placeholder us-east-1.
     region: eu-west-1
     # string. Optional. URL of an S3-compatible store. Empty means AWS S3, addressed through region.
     endpoint: "http://minio.minio.svc:9000"
@@ -164,7 +165,7 @@ The operator records the last reconciled generation in `status.observedGeneratio
 - Exactly the block that matches `spec.type` must be set: `S3` pairs with `s3`, `GCS` with `gcs`, and `AzureBlob` with `azureBlob`.
 - In every `auth` block, `credentials` is required when `auth.type` is `credentials`, and forbidden otherwise.
 - In every `auth` block, `workloadIdentity` is only valid when `auth.type` is `workloadIdentity`.
-- `s3.region` is required unless `s3.endpoint` is set.
+- `s3.region` is required unless `s3.endpoint` is set. When you set an endpoint and give no region, every consumer sends the placeholder region `us-east-1`. The AWS SDK resolves a region even when an endpoint routes each request, and it builds no client when it finds none. An S3-compatible store ignores the value. If your store does not ignore it, set `region`.
 - `s3.endpoint` and `azureBlob.endpoint` must be valid `http` or `https` URLs.
 - Every `basePath` is a plain prefix without leading or trailing slashes. The prefix defines one bucket layout that the snapshot repository and every backup object key share, and a stray slash would split it in two.
 - The Secret of `auth.credentials` is checked at reconcile time, not at admission, because a Secret can be created after the contract.

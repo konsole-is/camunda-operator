@@ -102,6 +102,22 @@ type S3StorageAuth struct {
 	Credentials *S3Credentials `json:"credentials,omitempty"`
 }
 
+// PlaceholderS3Region is the region that a consumer of an S3Storage sends
+// when the block carries an endpoint and no region of its own.
+//
+// The AWS SDK resolves a region even when an endpoint routes every request,
+// and it builds no client when it finds none. A store addressed by endpoint
+// ignores the value, so any region serves, and this one is the conventional
+// choice. Every consumer sends the same one on purpose: the region enters
+// the SigV4 signature, so two consumers of one bucket that disagreed would
+// sign differently, and a store that enforces the region would accept one
+// and reject the other.
+//
+// A block without an endpoint is AWS S3 itself. It never gets this value:
+// there the region chain of the pod is a legitimate source, and a
+// placeholder would aim every request at the wrong region.
+const PlaceholderS3Region = "us-east-1"
+
 // S3Storage describes an S3 or S3-compatible bucket.
 //
 // The rule below compares with size() rather than the empty string literal:

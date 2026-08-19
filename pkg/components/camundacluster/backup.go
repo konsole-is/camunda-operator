@@ -175,6 +175,15 @@ func backupEnv(in Input, p Process) rendered {
 // the pod ServiceAccount. An endpoint marks S3-compatible storage, which also
 // needs the checksum variables: several such stores write the chunk framing
 // of AWS SDK 2.30 into the object and corrupt the backup manifest.
+//
+// Such a store also needs a region. The AWS SDK resolves one even when an
+// endpoint routes every request, and it builds no client when it finds none.
+// The broker builds that client while it validates its configuration, so a
+// store with no region stops the broker at startup. A contract that gives
+// none therefore gets v1.PlaceholderS3Region, which such a store ignores.
+// Without an endpoint the bucket is AWS S3 itself, where the region chain of
+// the pod is a legitimate source, and a placeholder aims every request at the
+// wrong region.
 func s3Env(in Input, s3 *v1.S3Storage) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupStore, backupStoreS3),
@@ -182,8 +191,11 @@ func s3Env(in Input, s3 *v1.S3Storage) []corev1.EnvVar {
 		camundaconfig.Var(camundaconfig.KeyPrimaryBackupS3BasePath, BackupBasePath(in)),
 	}
 
-	if s3.Region != "" {
+	switch {
+	case s3.Region != "":
 		env = append(env, camundaconfig.Var(camundaconfig.KeyPrimaryBackupS3Region, s3.Region))
+	case s3.Endpoint != "":
+		env = append(env, camundaconfig.Var(camundaconfig.KeyPrimaryBackupS3Region, v1.PlaceholderS3Region))
 	}
 	if s3.Endpoint != "" {
 		env = append(

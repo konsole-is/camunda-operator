@@ -738,3 +738,43 @@ func TestValidateMergedRejectsContinuousWithoutASchedule(t *testing.T) {
 	assert.Contains(t, err.Error(), "continuous")
 	assert.Contains(t, err.Error(), "schedule")
 }
+
+// The AWS SDK resolves a region even when an endpoint routes every request,
+// and it fails to build the S3 client when it finds none. The Zeebe backup
+// store builds that client while the broker validates its configuration, so
+// a missing region crashes the broker at startup instead of degrading the
+// backup path. The operator therefore supplies a placeholder for a store
+// that the contract addresses by endpoint.
+func TestBackupEnvDefaultsTheRegionOfAnEndpointStore(t *testing.T) {
+	in := newInput(t, func(in *Input) { in.Backup = minioBucket() })
+
+	env := render(in, Process{Component: ComponentZeebe}).env
+
+	assertEnv(t, env, camundaconfig.KeyPrimaryBackupS3Region.Env(), v1.PlaceholderS3Region)
+}
+
+func TestBackupEnvKeepsTheRegionOfAnEndpointStoreThatSetsOne(t *testing.T) {
+	in := newInput(t, func(in *Input) {
+		in.Backup = minioBucket()
+		in.Backup.Spec.S3.Region = "eu-central-1"
+	})
+
+	env := render(in, Process{Component: ComponentZeebe}).env
+
+	assertEnv(t, env, camundaconfig.KeyPrimaryBackupS3Region.Env(), "eu-central-1")
+}
+
+// Without an endpoint the bucket is AWS S3 itself, where the credential and
+// region chain of the pod is a legitimate source. A placeholder would
+// override it and send every request to the wrong region.
+func TestBackupEnvOmitsTheRegionWithoutAnEndpointOrARegion(t *testing.T) {
+	in := newInput(t, func(in *Input) {
+		in.Backup = s3Bucket()
+		in.Backup.Spec.S3.Region = ""
+	})
+
+	env := render(in, Process{Component: ComponentZeebe}).env
+
+	_, ok := envByName(env, camundaconfig.KeyPrimaryBackupS3Region.Env())
+	assert.False(t, ok, "a bucket without an endpoint must not get a placeholder region")
+}
