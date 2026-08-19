@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -913,4 +914,68 @@ func TestPodServiceAccountNameNamesOnlyAnAccountTheClusterRenders(t *testing.T) 
 			}
 		})
 	}
+}
+
+// backupIDModeKeys are the three that Camunda 8.9 reads to decide whether the
+// cluster generates its own backup ids. BackupEndpoint.backupIdShouldBeOmitted
+// reads them from the configuration of the process it runs in.
+var backupIDModeKeys = []camundaconfig.Key{
+	camundaconfig.KeyPrimaryBackupContinuous,
+	camundaconfig.KeyPrimaryBackupSchedule,
+	camundaconfig.KeyPrimaryBackupCheckpointInterval,
+}
+
+// The process that answers the management API decides on its own
+// configuration whether the cluster generates its own backup ids. It rejects
+// the request that omits the id when the three keys are absent. The operator
+// calls that endpoint at the address ManagementEndpoint publishes, so the
+// keys must reach whichever process that address names.
+//
+// The test asks the endpoint which process that is, rather than naming the
+// gateway. Under an embedded gateway it is the brokers, which carry the keys
+// already. A test that named the gateway would pass while the rule was still
+// only true by topology.
+func TestBackupIDModeKeysReachTheManagementProcess(t *testing.T) {
+	for _, mode := range []v1.ComponentMode{v1.ComponentModeStandalone, v1.ComponentModeEmbedded} {
+		t.Run(string(mode), func(t *testing.T) {
+			in := fixtureBackupRDBMS(t)
+			in.Cluster.Spec.Gateway = &v1.GatewaySpec{Mode: mode}
+			in.Effective = NewEffective(in.Cluster.Spec)
+
+			comps, err := Build(in)
+			require.NoError(t, err)
+
+			host := managementHost(t, in)
+			var served bool
+			for _, pc := range comps {
+				if WorkloadName(in.Cluster, pc.Process.Component) != host {
+					continue
+				}
+
+				served = true
+				env := previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.Containers[0].Env
+				for _, key := range backupIDModeKeys {
+					_, ok := envByName(env, key.Env())
+					assert.True(
+						t, ok,
+						"%s serves the management API and is missing %s", pc.Process.Component, key.Env(),
+					)
+				}
+			}
+
+			require.True(t, served, "no process of the topology answers at %q", host)
+		})
+	}
+}
+
+// managementHost returns the workload name inside the endpoint that the
+// cluster publishes, so a test reads the topology from the contract rather
+// than restating it.
+func managementHost(t *testing.T, in Input) string {
+	t.Helper()
+
+	endpoint := strings.TrimPrefix(ManagementEndpoint(in.Cluster, in.Effective), "http://")
+	host, _, _ := strings.Cut(endpoint, ".")
+
+	return host
 }

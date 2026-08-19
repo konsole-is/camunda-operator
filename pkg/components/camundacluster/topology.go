@@ -153,13 +153,22 @@ func profiles(names ...string) []string {
 	return all
 }
 
+// GatewayComponent returns the component of the process that runs the
+// gateway: the gateway itself, or the brokers when the gateway is embedded.
+// That process serves the client API and the management API, so a caller that
+// needs either one asks this function instead of naming a component.
+func GatewayComponent(e Effective) string {
+	if e.GatewayMode() == v1.ComponentModeEmbedded {
+		return ComponentZeebe
+	}
+
+	return ComponentGateway
+}
+
 // GatewayHost returns the Service name that clients (connectors) call: the
 // gateway Service, or the zeebe Service when the gateway is embedded.
 func GatewayHost(cluster *v1.CamundaCluster, e Effective) string {
-	if e.GatewayMode() == v1.ComponentModeEmbedded {
-		return WorkloadName(cluster, ComponentZeebe)
-	}
-	return WorkloadName(cluster, ComponentGateway)
+	return WorkloadName(cluster, GatewayComponent(e))
 }
 
 // ManagementEndpoint returns the base URL of the management API of a

@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 5a00142469caabc3
+        camunda.io/config-hash: dbbae50236caa686
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: gateway
@@ -57,6 +57,12 @@ spec:
               name: camunda-db-user
         - name: CAMUNDA_DATA_SECONDARYSTORAGE_RDBMS_DATABASEVENDORID
           value: postgresql
+        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_CONTINUOUS
+          value: "true"
+        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_SCHEDULE
+          value: PT30M
+        - name: CAMUNDA_DATA_PRIMARYSTORAGE_BACKUP_CHECKPOINTINTERVAL
+          value: PT15M
         - name: CAMUNDA_SECURITY_AUTHENTICATION_METHOD
           value: basic
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_USERNAME
