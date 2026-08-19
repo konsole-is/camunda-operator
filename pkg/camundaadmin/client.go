@@ -36,17 +36,15 @@ limitations under the License.
 package camundaadmin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
-	"unicode/utf8"
+
+	"github.com/konsole-is/camunda-operator/pkg/adminhttp"
 )
 
 // ErrUnreachable, ErrRejected, and ErrConflict classify every failure of the
@@ -110,12 +108,7 @@ type BackupStatus struct {
 // Auth authenticates the client against the management port. The zero value
 // is no authentication, the Camunda 8.9 default: the management port is not
 // secured unless the user adds their own Spring Security configuration.
-type Auth struct {
-	// Username and Password authenticate with HTTP basic auth when both are
-	// set.
-	Username string
-	Password string
-}
+type Auth = adminhttp.BasicAuth
 
 // Binding locates and authenticates the management API of one cluster. It
 // mirrors the management binding that a CamundaCluster publishes in
@@ -135,9 +128,7 @@ type Binding struct {
 
 // Client calls the management API of one cluster.
 type Client struct {
-	base string
-	auth Auth
-	http *http.Client
+	api *adminhttp.Client
 }
 
 // New builds a client for the cluster that binding describes. It returns an
@@ -152,11 +143,17 @@ func New(binding Binding) (*Client, error) {
 		return nil, fmt.Errorf("unsupported Camunda version %q: this client knows 8.9 only", binding.Version)
 	}
 
-	return &Client{
-		base: strings.TrimRight(binding.Endpoint, "/"),
-		auth: binding.Auth,
-		http: &http.Client{Timeout: 30 * time.Second},
-	}, nil
+	api, err := adminhttp.New(adminhttp.Config{
+		Endpoint:    binding.Endpoint,
+		Auth:        binding.Auth,
+		Unreachable: ErrUnreachable,
+		Rejected:    ErrRejected,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{api: api}, nil
 }
 
 // PauseExporting pauses exporting on every partition. With soft, records
@@ -189,7 +186,11 @@ func (c *Client) ResumeExporting(ctx context.Context) error {
 // body.message. Reading the HTTP status alone would report every call, and
 // every partial pause, as a success.
 func (c *Client) exporting(ctx context.Context, path string) error {
-	payload, _, err := c.do(ctx, http.MethodPost, path, nil, http.StatusOK)
+	payload, _, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodPost,
+		Path:   path,
+		Accept: adminhttp.Status(http.StatusOK),
+	})
 	if err != nil {
 		return err
 	}
@@ -237,7 +238,12 @@ func (c *Client) StartHistoryBackup(ctx context.Context, id int64) ([]string, er
 	// that does not decode yields no names, and the status poll reports the
 	// names later. If the client returned an error here, the caller lost an
 	// acceptance that happened.
-	payload, status, err := c.do(ctx, http.MethodPost, "/actuator/backupHistory", body, http.StatusOK)
+	payload, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodPost,
+		Path:   "/actuator/backupHistory",
+		Body:   body,
+		Accept: adminhttp.Status(http.StatusOK),
+	})
 	if err == nil {
 		var scheduled struct {
 			ScheduledSnapshots []string `json:"scheduledSnapshots"`
@@ -268,9 +274,11 @@ func (c *Client) StartHistoryBackup(ctx context.Context, id int64) ([]string, er
 // HistoryBackupStatus reports the status of the history backup id. A backup
 // that does not exist is StateDoesNotExist, not an error.
 func (c *Client) HistoryBackupStatus(ctx context.Context, id int64) (BackupStatus, error) {
-	body, status, err := c.do(
-		ctx, http.MethodGet, "/actuator/backupHistory/"+strconv.FormatInt(id, 10), nil, http.StatusOK,
-	)
+	body, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodGet,
+		Path:   "/actuator/backupHistory/" + strconv.FormatInt(id, 10),
+		Accept: adminhttp.Status(http.StatusOK),
+	})
 	if status == http.StatusNotFound {
 		return BackupStatus{ID: id, State: StateDoesNotExist}, nil
 	}
@@ -328,7 +336,12 @@ func (c *Client) StartRuntimeBackup(ctx context.Context, id *int64) (int64, erro
 		}
 	}
 
-	body, status, err := c.do(ctx, http.MethodPost, "/actuator/backupRuntime", request, http.StatusAccepted)
+	body, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodPost,
+		Path:   "/actuator/backupRuntime",
+		Body:   request,
+		Accept: adminhttp.Status(http.StatusAccepted),
+	})
 	if err != nil {
 		if status == http.StatusConflict {
 			return 0, fmt.Errorf("%w: %v", ErrConflict, err)
@@ -354,9 +367,11 @@ func (c *Client) StartRuntimeBackup(ctx context.Context, id *int64) (int64, erro
 // RuntimeBackupStatus reports the status of the runtime backup id. A backup
 // that does not exist is StateDoesNotExist, not an error.
 func (c *Client) RuntimeBackupStatus(ctx context.Context, id int64) (BackupStatus, error) {
-	body, status, err := c.do(
-		ctx, http.MethodGet, "/actuator/backupRuntime/"+strconv.FormatInt(id, 10), nil, http.StatusOK,
-	)
+	body, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodGet,
+		Path:   "/actuator/backupRuntime/" + strconv.FormatInt(id, 10),
+		Accept: adminhttp.Status(http.StatusOK),
+	})
 	if status == http.StatusNotFound {
 		return BackupStatus{ID: id, State: StateDoesNotExist}, nil
 	}
@@ -394,82 +409,14 @@ func (c *Client) RuntimeBackupStatus(ctx context.Context, id int64) (BackupStatu
 // backup that does not exist is success, so a re-entrant finalizer can call
 // it again.
 func (c *Client) DeleteRuntimeBackup(ctx context.Context, id int64) error {
-	_, status, err := c.do(
-		ctx, http.MethodDelete, "/actuator/backupRuntime/"+strconv.FormatInt(id, 10), nil, http.StatusNoContent,
-	)
+	_, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodDelete,
+		Path:   "/actuator/backupRuntime/" + strconv.FormatInt(id, 10),
+		Accept: adminhttp.Status(http.StatusNoContent),
+	})
 	if status == http.StatusNotFound {
 		return nil
 	}
 
 	return err
-}
-
-// do sends one request and returns the body and status code. A transport
-// error wraps ErrUnreachable. A status other than want wraps ErrRejected
-// with the response body in the message; the caller reads the returned
-// status for the branches that are not failures.
-func (c *Client) do(
-	ctx context.Context,
-	method string,
-	path string,
-	body []byte,
-	want int,
-) ([]byte, int, error) {
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
-	if err != nil {
-		return nil, 0, fmt.Errorf("building request: %w", err)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if c.auth.Username != "" || c.auth.Password != "" {
-		req.SetBasicAuth(c.auth.Username, c.auth.Password)
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %s %s: %w", ErrUnreachable, method, path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf(
-			"%w: reading response of %s %s: %w", ErrUnreachable, method, path, err,
-		)
-	}
-
-	if resp.StatusCode != want {
-		return payload, resp.StatusCode, fmt.Errorf(
-			"%w: %s %s returned %d: %s",
-			ErrRejected, method, path, resp.StatusCode, errorBody(payload),
-		)
-	}
-
-	return payload, resp.StatusCode, nil
-}
-
-// errorBodyLimit bounds how much of a rejected response body an error message
-// carries. The full body is still read and returned to the caller. Only the
-// message is bounded, so an error can land in a condition or an event without
-// exceeding their limits.
-const errorBodyLimit = 1 << 10
-
-// errorBody returns the trimmed body for an error message, cut to
-// errorBodyLimit bytes on a rune boundary and marked when cut.
-func errorBody(payload []byte) string {
-	body := strings.TrimSpace(string(payload))
-	if len(body) <= errorBodyLimit {
-		return body
-	}
-	cut := body[:errorBodyLimit]
-	for !utf8.ValidString(cut) {
-		cut = cut[:len(cut)-1]
-	}
-	return fmt.Sprintf("%s... (truncated, %d bytes)", cut, len(body))
 }
