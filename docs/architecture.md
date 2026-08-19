@@ -30,7 +30,7 @@ The operator labels every resource that it creates:
 | `camunda.io/component` | the role of the resource, for example `zeebe`, `gateway`, `elasticsearch` |
 | `app.kubernetes.io/managed-by` | `camunda-operator` |
 
-One label key per owning kind keeps two owners of different kinds with the same name apart.
+One label key per owning kind keeps two owners of different kinds with the same name apart. Pods and volumes that another operator runs from a template of this operator, for example the Elasticsearch pods that ECK runs, carry the owner and component labels but not the `managed-by` label.
 A feature finds the workloads of a cluster through these labels, or reads the cluster directly through `clusterRef`.
 
 When a feature needs to call the cluster, it reads `status.management` of the `CamundaCluster`. That field publishes the address of the management API, so the feature does not rebuild Service names and ports.

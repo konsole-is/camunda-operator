@@ -139,7 +139,7 @@ With basic authentication the operator creates the first administrator. The cred
 
 ```bash
 kubectl get secret my-cluster-camunda-admin -n my-cluster-ns \
-  -o jsonpath='{.data.password}' | base64 -d
+  -o go-template='{{.data.password | base64decode}}'
 ```
 
 The username is `admin`. Forward the gateway port and open Operate:

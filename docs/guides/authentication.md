@@ -15,7 +15,7 @@ The connectors runtime authenticates against the cluster with the same user and 
 To read the password of the cluster `my-cluster`:
 
 ```bash
-kubectl get secret my-cluster-camunda-admin -n my-cluster-ns -o jsonpath='{.data.password}' | base64 -d
+kubectl get secret my-cluster-camunda-admin -n my-cluster-ns -o go-template='{{.data.password | base64decode}}'
 ```
 
 **Rotation.** To get a new password, delete the Secret. The operator creates a new Secret with a new password on the next reconcile.
