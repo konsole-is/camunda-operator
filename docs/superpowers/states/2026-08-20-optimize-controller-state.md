@@ -28,7 +28,7 @@ Strictly sequential; each PR needs the one before it.
 
 | Issue | Branch                                   | Worktree path                                      | PR (→ base)                | Status      |
 | ----- | ---------------------------------------- | -------------------------------------------------- | -------------------------- | ----------- |
-| #115  | feat/optimize-controller--api-types      | .claude/worktrees/optimize-controller--api-types   | → feat/optimize-controller | in-progress |
+| #115  | feat/optimize-controller--api-types      | .claude/worktrees/optimize-controller--api-types   | #119 → feat/optimize-controller | self-merged |
 | #116  | feat/optimize-controller--reconciler     | .claude/worktrees/optimize-controller--reconciler  | → feat/optimize-controller | not-started |
 | #117  | test/optimize-controller--data-flow-e2e  | .claude/worktrees/optimize-controller--data-flow-e2e | → feat/optimize-controller | not-started |
 
@@ -45,7 +45,7 @@ None — the PRs are sequential; each consumes the merged result of the one befo
 
 ## Pending snapshot
 
-1. Start Phase 1 (#115) per the plan (Tasks 1-3), branch `pr/optimize-api` off `feat/optimize-controller`; skill: `feature-dev-workflow:developing-a-feature`.
+1. Phase 1 done (#119 self-merged as 4f7a302, #115 closed). Start Phase 2 (#116) per the plan (Tasks 4-8); gate its self-merge on the sub-PR's CI checks. Watch the feature-branch CI for 4f7a302; if red, root-cause and fix forward before the wave-2 merge.
 2. Token note: the user runs close to the Fable limit — dispatch every implementation subagent with an explicit model override (`opus`; `sonnet`/`haiku` for mechanical work), never a fork.
 
 ## Resume checklist
