@@ -70,9 +70,10 @@ const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 const eventActionResize = "Resize"
 
 // defaultRetryInterval is how long the controller waits before it looks again
-// at something that no watch reports: a foreign ServiceAccount, and the
-// Secrets that ECK publishes once the cluster serves. Everything else the
-// pre-checks resolve is watched and re-enqueues on its own.
+// at something that no watch reports: a foreign ServiceAccount, the Secrets
+// that ECK publishes once the cluster serves, and an Elasticsearch that does
+// not answer yet. None of the three is an object transition this controller
+// can watch for.
 const defaultRetryInterval = 30 * time.Second
 
 // ElasticsearchClusterReconciler provisions an Elasticsearch cluster through
@@ -206,12 +207,18 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	} else {
 		repository := r.registerSnapshotRepository(ctx, &cluster, storage)
 		conditions.Stage(&cluster, readyWithRepository(&cluster, repository, core))
-		// Registration waits on the Secrets that ECK publishes, which no
-		// watch reports; every other failure retries on the next attempt of
-		// its own trigger.
-		retryRepository = repository.Type != "" &&
-			repository.Status != metav1.ConditionTrue &&
-			repository.Reason == v1.ReasonMissingSecret
+		// Nothing reports that registration became possible, so a failed
+		// registration retries until it succeeds. The two failures it can
+		// report are both unwatched. MissingSecret waits on the Secrets
+		// that ECK owns, and Owns does not report those. ConnectionFailed
+		// waits on Elasticsearch answering, which is not an object at all.
+		//
+		// The default is deliberately to retry. A cluster that stays broken
+		// costs one registration attempt per interval, which is ordinary. A
+		// missed retry leaves the cluster not ready until something
+		// unrelated writes its status. Narrow this only for a reason that a
+		// watch really re-enqueues, and name that watch here.
+		retryRepository = repository.Type != "" && repository.Status != metav1.ConditionTrue
 	}
 
 	volumes, err := r.dataVolumes(ctx, &cluster)
