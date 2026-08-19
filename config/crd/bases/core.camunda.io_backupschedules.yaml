@@ -14,10 +14,34 @@ spec:
     singular: backupschedule
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.clusterRef.name
+      name: Cluster
+      type: string
+    - jsonPath: .spec.schedule
+      name: Schedule
+      type: string
+    - jsonPath: .status.lastScheduleTime
+      name: Last schedule
+      type: date
+    - jsonPath: .status.lastBackupName
+      name: Last backup
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
-        description: BackupSchedule is the Schema for the backupschedules API
+        description: |-
+          BackupSchedule creates logical backups of one CamundaCluster on a cron
+          schedule and prunes the backups it created. At each trigger the operator
+          creates the backup kind that matches the storage type of the cluster,
+          named <schedule>-<unix-timestamp> and labeled camunda.io/cluster and
+          camunda.io/backup-schedule. The backups carry no owner reference to the
+          schedule, so deleting a schedule never deletes its backups. A trigger is
+          skipped, with an event, while the cluster is suspended or while a backup
+          of this schedule has not reached a terminal phase.
         properties:
           apiVersion:
             description: |-
@@ -39,25 +63,63 @@ spec:
           spec:
             description: spec defines the desired state of BackupSchedule
             properties:
-              foo:
-                description: foo is an example field of BackupSchedule. Edit backupschedule_types.go
-                  to remove/update
+              clusterRef:
+                description: |-
+                  ClusterRef references the CamundaCluster to back up. At each trigger
+                  the operator creates the backup kind that matches the storage type of
+                  the cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS.
+                properties:
+                  name:
+                    description: Name of the CamundaCluster, in the namespace of this
+                      object.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              retained:
+                default: {}
+                description: |-
+                  Retained bounds how many backups of this schedule are kept. The
+                  schedule prunes only the backups it created, matched by the
+                  camunda.io/backup-schedule label. It never touches a backup that a
+                  human created, and it never touches a backup that has not reached a
+                  terminal phase.
+                properties:
+                  completed:
+                    default: 7
+                    description: Completed is how many completed backups the schedule
+                      keeps.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  failed:
+                    default: 3
+                    description: |-
+                      Failed is how many failed backups the schedule keeps. Zero deletes a
+                      failed backup at the first look after it fails.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                type: object
+              schedule:
+                description: |-
+                  Schedule is when the backups run: a five-field cron expression
+                  (minute, hour, day of month, month, day of week), evaluated in UTC.
+                pattern: ^\s*([0-9A-Za-z*?,/-]+\s+){4}[0-9A-Za-z*?,/-]+\s*$
                 type: string
+            required:
+            - clusterRef
+            - schedule
             type: object
           status:
             description: status defines the observed state of BackupSchedule
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the BackupSchedule resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current state. The Ready condition is Healthy
+                  while the schedule can run its backups, and InvalidReference while a
+                  reference does not resolve.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +178,22 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              lastBackupName:
+                description: LastBackupName is the backup that the schedule created
+                  most recently.
+                type: string
+              lastScheduleTime:
+                description: |-
+                  LastScheduleTime is the most recent trigger that the schedule
+                  consumed, whether it created a backup or skipped. A skipped trigger is
+                  never retried.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

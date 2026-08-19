@@ -20,38 +20,63 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// BackupScheduleSpec defines the desired state of BackupSchedule
+// BackupScheduleSpec is the backup policy of one cluster: when a backup is
+// created and how many the schedule keeps.
 type BackupScheduleSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of BackupSchedule. Edit backupschedule_types.go to remove/update
+	// ClusterRef references the CamundaCluster to back up. At each trigger
+	// the operator creates the backup kind that matches the storage type of
+	// the cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS.
+	// +required
+	ClusterRef ClusterRef `json:"clusterRef"`
+	// Schedule is when the backups run: a five-field cron expression
+	// (minute, hour, day of month, month, day of week), evaluated in UTC.
+	// +kubebuilder:validation:Pattern=`^\s*([0-9A-Za-z*?,/-]+\s+){4}[0-9A-Za-z*?,/-]+\s*$`
+	// +required
+	Schedule string `json:"schedule"`
+	// Retained bounds how many backups of this schedule are kept. The
+	// schedule prunes only the backups it created, matched by the
+	// camunda.io/backup-schedule label. It never touches a backup that a
+	// human created, and it never touches a backup that has not reached a
+	// terminal phase.
+	// +kubebuilder:default={}
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Retained *RetainedBackups `json:"retained,omitempty"`
 }
 
-// BackupScheduleStatus defines the observed state of BackupSchedule.
+// RetainedBackups bounds the backups that a schedule keeps, by terminal
+// phase. When the count of a phase exceeds its bound, the oldest backups
+// beyond it are deleted through the backup finalizer, which removes the
+// stored artifacts too.
+type RetainedBackups struct {
+	// Completed is how many completed backups the schedule keeps.
+	// +kubebuilder:default=7
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Completed *int32 `json:"completed,omitempty"`
+	// Failed is how many failed backups the schedule keeps. Zero deletes a
+	// failed backup at the first look after it fails.
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Failed *int32 `json:"failed,omitempty"`
+}
+
+// BackupScheduleStatus is the observed state of the schedule.
 type BackupScheduleStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the BackupSchedule resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// LastScheduleTime is the most recent trigger that the schedule
+	// consumed, whether it created a backup or skipped. A skipped trigger is
+	// never retried.
+	// +optional
+	LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`
+	// LastBackupName is the backup that the schedule created most recently.
+	// +optional
+	LastBackupName string `json:"lastBackupName,omitempty"`
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current state. The Ready condition is Healthy
+	// while the schedule can run its backups, and InvalidReference while a
+	// reference does not resolve.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -60,8 +85,20 @@ type BackupScheduleStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterRef.name`
+// +kubebuilder:printcolumn:name="Schedule",type=string,JSONPath=`.spec.schedule`
+// +kubebuilder:printcolumn:name="Last schedule",type=date,JSONPath=`.status.lastScheduleTime`
+// +kubebuilder:printcolumn:name="Last backup",type=string,JSONPath=`.status.lastBackupName`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// BackupSchedule is the Schema for the backupschedules API
+// BackupSchedule creates logical backups of one CamundaCluster on a cron
+// schedule and prunes the backups it created. At each trigger the operator
+// creates the backup kind that matches the storage type of the cluster,
+// named <schedule>-<unix-timestamp> and labeled camunda.io/cluster and
+// camunda.io/backup-schedule. The backups carry no owner reference to the
+// schedule, so deleting a schedule never deletes its backups. A trigger is
+// skipped, with an event, while the cluster is suspended or while a backup
+// of this schedule has not reached a terminal phase.
 type BackupSchedule struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -76,6 +113,21 @@ type BackupSchedule struct {
 	// status defines the observed state of BackupSchedule
 	// +optional
 	Status BackupScheduleStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *BackupSchedule) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *BackupSchedule) GetKind() string { return "BackupSchedule" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *BackupSchedule) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
 }
 
 // +kubebuilder:object:root=true
