@@ -2,8 +2,6 @@
 
 `SecondaryStorageConfig` is a namespaced contract kind that tells an orchestration cluster where its secondary storage is and how to authenticate. An `ElasticsearchCluster` or a `Database` creates it, or you create it by hand.
 
-## Purpose
-
 Camunda stores workflow, decision, and task data in secondary storage. The orchestration cluster needs the connection details and the credentials of that backend. This kind carries them, so the thing that provisions the backend and the thing that uses it do not need to know each other. The operator only validates the contract and reports the result on `Ready`. It never provisions anything from it.
 
 The contract lives in the namespace of the consuming cluster. A `CamundaCluster` finds it by name in its own namespace.
@@ -15,12 +13,24 @@ The contract lives in the namespace of the consuming cluster. A `CamundaCluster`
 
 This contract models the two backends the operator integrates with: `elasticsearch` and `rdbms`.
 
-## What it does
+The smallest contract for an Elasticsearch backend names the endpoint and the credentials:
 
-The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
-
-- For `type: elasticsearch`, the operator makes sure that the Secret in `credentialsSecretRef` exists and holds `usernameKey` and `passwordKey`. If `caSecretRef` is set, it makes sure that this Secret exists and holds `key`.
-- For `type: rdbms`, the operator makes sure that the [DatabaseConfig](databaseconfig.md) named in `rdbms.databaseConfigRef` exists in the same namespace as the contract.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: SecondaryStorageConfig
+metadata:
+  name: my-storage-config
+  namespace: my-cluster-ns
+spec:
+  type: elasticsearch
+  elasticsearch:
+    endpoint: "https://my-cluster-es:9200"
+    credentialsSecretRef:
+      name: my-cluster-es-credentials
+      namespace: my-cluster-ns
+      usernameKey: username
+      passwordKey: password
+```
 
 ```mermaid
 graph LR
@@ -33,13 +43,32 @@ graph LR
     LBR[LogicalBackupRDBMS] -.->|through the cluster storageRef| SSC
 ```
 
-**Missing references.** If a Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the `DatabaseConfig` is missing, `Ready` is `False` with reason `InvalidReference`. The message names the missing object.
+## Validation checks
 
-**Changes.** When you edit the contract, a referenced Secret, or the referenced `DatabaseConfig`, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
+The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
+
+- For `type: elasticsearch`, the operator makes sure that the Secret in `credentialsSecretRef` exists and holds `usernameKey` and `passwordKey`. If `caSecretRef` is set, it makes sure that this Secret exists and holds `key`.
+- For `type: rdbms`, the operator makes sure that the [DatabaseConfig](databaseconfig.md) named in `rdbms.databaseConfigRef` exists in the same namespace as the contract.
+
+If a Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the `DatabaseConfig` is missing, `Ready` is `False` with reason `InvalidReference`. The message names the missing object.
+
+When you edit the contract, a referenced Secret, or the referenced `DatabaseConfig`, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
 
 > **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
 
-## Spec
+## Status
+
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | All referenced Secrets and kinds exist and hold the required keys. | Nothing. |
+| `Ready` | `MissingSecret` | A Secret named by `credentialsSecretRef` or `caSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
+| `Ready` | `InvalidReference` | The `DatabaseConfig` named by `rdbms.databaseConfigRef` does not exist in the namespace of the contract. | Create the `DatabaseConfig`, or fix the name. |
+
+`status.observedGeneration` is the last generation of the contract that the operator validated.
+
+## Spec reference
+
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -80,17 +109,7 @@ spec:
     databaseConfigRef: my-camunda-db
 ```
 
-## Status
-
-| Type | Reason | Meaning | What to do |
-| --- | --- | --- | --- |
-| `Ready` | `Healthy` | All referenced Secrets and kinds exist and hold the required keys. | Nothing. |
-| `Ready` | `MissingSecret` | A Secret named by `credentialsSecretRef` or `caSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
-| `Ready` | `InvalidReference` | The `DatabaseConfig` named by `rdbms.databaseConfigRef` does not exist in the namespace of the contract. | Create the `DatabaseConfig`, or fix the name. |
-
-`status.observedGeneration` is the last generation of the contract that the operator validated.
-
-## Validation
+### Validation rules
 
 - `spec.type` must be `elasticsearch` or `rdbms`.
 - Exactly the block that matches `spec.type` must be set. `elasticsearch` requires `spec.elasticsearch` and forbids `spec.rdbms`. `rdbms` requires `spec.rdbms` and forbids `spec.elasticsearch`.
@@ -100,39 +119,9 @@ spec:
 - `spec.rdbms.databaseConfigRef` must not be empty.
 - No field is immutable.
 
-## Related
+### An ECK cluster with a self-signed certificate
 
-- [DatabaseConfig](databaseconfig.md): the logical database a `rdbms` contract points to through `spec.rdbms.databaseConfigRef`.
-- [ElasticsearchCluster](elasticsearchcluster.md): creates and refreshes an `elasticsearch` contract, named by its `secondaryStorageConfig` field.
-- [Database](database.md): creates a `rdbms` contract when its `secondaryStorageConfig` field is set.
-- [CamundaCluster](camundacluster.md): consumes this contract through `storageRef`.
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): find this contract through the `storageRef` of the cluster they back up.
-- [Secondary storage guide](../guides/secondary-storage.md): how to set up Elasticsearch or a relational database for a cluster.
-- [Backup guide](../guides/backup.md): how `snapshotRepository` takes part in a backup.
-- [Getting started](../getting-started.md): the order in which you create the resources.
-
-## Examples
-
-A minimal manifest for an Elasticsearch backend:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: SecondaryStorageConfig
-metadata:
-  name: my-storage-config
-  namespace: my-cluster-ns
-spec:
-  type: elasticsearch
-  elasticsearch:
-    endpoint: "https://my-cluster-es:9200"
-    credentialsSecretRef:
-      name: my-cluster-es-credentials
-      namespace: my-cluster-ns
-      usernameKey: username
-      passwordKey: password
-```
-
-A realistic manifest for an ECK cluster with a self-signed certificate and a registered snapshot repository:
+A manifest for an ECK cluster with a self-signed certificate and a registered snapshot repository:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -156,6 +145,8 @@ spec:
     snapshotRepository: my-cluster-es
 ```
 
+### A relational database backend
+
 A manifest for a relational database backend that points to a `DatabaseConfig`:
 
 ```yaml
@@ -169,3 +160,14 @@ spec:
   rdbms:
     databaseConfigRef: my-camunda-db
 ```
+
+## Related
+
+- [DatabaseConfig](databaseconfig.md): the logical database a `rdbms` contract points to through `spec.rdbms.databaseConfigRef`.
+- [ElasticsearchCluster](elasticsearchcluster.md): creates and refreshes an `elasticsearch` contract, named by its `secondaryStorageConfig` field.
+- [Database](database.md): creates a `rdbms` contract when its `secondaryStorageConfig` field is set.
+- [CamundaCluster](camundacluster.md): consumes this contract through `storageRef`.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): find this contract through the `storageRef` of the cluster they back up.
+- [Secondary storage guide](../guides/secondary-storage.md): how to set up Elasticsearch or a relational database for a cluster.
+- [Backup guide](../guides/backup.md): how `snapshotRepository` takes part in a backup.
+- [Getting started](../getting-started.md): the order in which you create the resources.

@@ -2,30 +2,32 @@
 Authoring template for a CRD reference page. Copy it to docs/crds/<kind>.md.
 It is not part of the published site.
 
-Rules for every reference page:
-- Exactly these H2 sections, in this order: Purpose, What it does, Spec, Status, Validation, Related, Examples.
-- Write for a person who uses the operator, not for a person who builds it. No reconcile steps, no field managers, no internal mechanics. Describe outcomes: what is created, what the names are, what the user can rely on.
+Rules:
+- Open with the intro, the minimal manifest, and the diagram. No "Purpose" heading.
+- Then one H2 per topic a reader searches for: Endpoints, Authentication, Storage, Deletion, Suspend, and so on. Headings, never bold lead-ins.
+- Then "## Status", "## Spec reference" (full YAML, then "### Validation rules", then one or more example H3s), and "## Related".
+- Write for a person who uses the operator. Describe outcomes and the names a user types or waits on, not reconcile steps or internal mechanics.
 - Simplified Technical English: short sentences, active voice, can/will/must, no semicolons, no em-dashes, no contractions.
-- The API group is core.camunda.io/v1.
-- Names in examples: cluster `my-cluster` in namespace `my-cluster-ns`, `my-cluster-es`, `my-storage-config`, `my-db-server`, `my-platform-config`, `my-backup-bucket`.
+- The API group is core.camunda.io/v1. Names in examples: cluster `my-cluster` in namespace `my-cluster-ns`, derived names `my-cluster-es`, `my-cluster-backup`, config kinds `my-storage-config`, `my-db-server`, `my-platform-config`, `my-backup-bucket`.
 - Verify every field, default, and condition against api/v1 and internal/controller before you write it.
 -->
 
 # Kind
 
-One sentence: what this kind is, and who creates it.
+One or two paragraphs: what this kind is, who creates it, what the operator creates from it.
 
-## Purpose
+The smallest manifest:
 
-One or two short paragraphs. What problem it solves. When you use it.
-A contract kind adds a two-row table: Producers and Consumers.
-
-## What it does
-
-The resources the operator creates from this kind, with their exact names and labels:
-
-- A Secret `<name>-...` with the keys `...`.
-- A Service `<name>-...` on port `...`.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: Kind
+metadata:
+  name: my-cluster-example
+  namespace: my-cluster-ns
+spec:
+  clusterRef:
+    name: my-cluster
+```
 
 ```mermaid
 graph LR
@@ -33,20 +35,26 @@ graph LR
     A -->|creates| S["Secret"]
 ```
 
-Then short bold-led paragraphs for the behaviors a user relies on, only where they apply.
-Each one is at most four sentences.
+## Topic
 
-**Deletion.** What is removed. What is kept.
+One section per behavior a user relies on. Name the names a user types or waits on. At most six sentences per paragraph.
 
-**Suspend.** What happens, and what `Ready` reports.
+## Deletion
 
-**Password rotation.** Which Secret to delete, and what happens next.
+What is removed. What is kept.
 
-**Missing references.** What `Ready` reports while a reference does not exist.
+## Status
 
-**Changes.** What happens when you edit this resource or a resource it references.
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | The resource is fully reconciled. | Nothing. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist. The message names it. | Create it, or fix the reference. |
 
-## Spec
+`status.observedGeneration` is the last generation the operator reconciled.
+
+## Spec reference
+
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -63,49 +71,25 @@ spec:
 
 Each field has one comment line above it: `# <type>. <Required|Optional>[, default: <value>]. <meaning>`.
 
-## Status
-
-| Type | Reason | Meaning | What to do |
-| --- | --- | --- | --- |
-| `Ready` | `Healthy` | The resource is fully reconciled. | Nothing. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist. The message names it. | Create it, or fix the reference. |
-
-`status.observedGeneration` is the last generation the operator reconciled.
-
-## Validation
+### Validation rules
 
 - Rules the API server enforces at admission, and the immutable fields.
 - If there are none beyond the schema, say so in one line.
+
+### A production-shaped example
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: Kind
+metadata:
+  name: my-cluster-example
+  namespace: my-cluster-ns
+spec:
+  clusterRef:
+    name: my-cluster
+```
 
 ## Related
 
 - [CamundaCluster](camundacluster.md): referenced through `clusterRef`.
 - [A guide](../guides/operations.md): when a guide uses this kind.
-
-## Examples
-
-A minimal manifest:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: Kind
-metadata:
-  name: my-cluster-example
-  namespace: my-cluster-ns
-spec:
-  clusterRef:
-    name: my-cluster
-```
-
-A realistic manifest:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: Kind
-metadata:
-  name: my-cluster-example
-  namespace: my-cluster-ns
-spec:
-  clusterRef:
-    name: my-cluster
-```

@@ -1,16 +1,35 @@
 # CamundaCluster
 
-`CamundaCluster` describes one Camunda orchestration cluster. You create it, or another tool creates it for you.
-
-## Purpose
-
-A `CamundaCluster` is the one resource you create to get an orchestration cluster: the Zeebe brokers, the gateway, the web applications Operate, Tasklist, and Admin, and optionally the connectors runtime. The operator turns it into StatefulSets, Deployments, and Services for Camunda 8.9 or later.
+A `CamundaCluster` is one Camunda orchestration cluster: the Zeebe brokers, the gateway, the web applications Operate, Tasklist, and Admin, and optionally the connectors runtime. The operator turns it into StatefulSets, Deployments, and Services for Camunda 8.9 or later, and keeps them healthy.
 
 The cluster owns only its workloads. Secondary storage comes from a [SecondaryStorageConfig](secondarystorageconfig.md), bucket storage from an [ObjectStorageConfig](objectstorageconfig.md), shared settings from a [CamundaPlatformConfig](camundaplatformconfig.md), and sizing defaults from a [CamundaClusterPreset](camundaclusterpreset.md). Backups attach from the outside through [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md).
 
-## What it does
+The smallest cluster names a platform configuration, a version, and a storage contract:
 
-### Component topology
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  platformConfigRef: "my-platform-config"
+  version: "8.9.0"
+  storageRef: "my-storage-config"
+```
+
+```mermaid
+graph LR
+    CC[CamundaCluster] -.->|platformConfigRef| PFC[CamundaPlatformConfig]
+    CC -.->|presetRef| CCP[CamundaClusterPreset]
+    CC -.->|storageRef| SSC[SecondaryStorageConfig]
+    CC -.->|backupStorageRef / documentStorageRef| OSC[ObjectStorageConfig]
+    CC --> WL["StatefulSet, Deployments, Services"]
+    LBE[LogicalBackupElasticsearch] -.->|clusterRef| CC
+    LBR[LogicalBackupRDBMS] -.->|clusterRef| CC
+```
+
+## Topology
 
 Camunda 8.9 ships the orchestration cluster as one binary. Zeebe, the gateway, and the web applications are one image, and configuration selects which parts run in a process. The topology is a choice on this resource:
 
@@ -19,51 +38,103 @@ Camunda 8.9 ships the orchestration cluster as one binary. Zeebe, the gateway, a
 - `operate`, `tasklist`, and `admin` each run `Standalone` (their own Deployment) or `Embedded`. The default is `Embedded`. An embedded web application runs inside the gateway when the gateway is standalone, otherwise inside the brokers.
 - `connectors` is a separate runtime. When enabled, it is always its own Deployment.
 
-### Endpoints and labels
+## Endpoints
 
 Each enabled process gets a workload and a Service named `<name>-<component>`. The gateway Service (`<name>-zeebe` when the gateway is `Embedded`) serves gRPC on port `26500` and HTTP on port `8080`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`.
 
 Every resource carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, where the component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
 
+The operator creates no Ingress. You route traffic to the cluster, and `spec.externalUrl` tells the cluster its public base URL for OIDC redirects and links.
+
+## Authentication
+
+Under basic authentication the operator creates the admin user `admin` and stores the password in the Secret `<name>-camunda-admin` (keys `username` and `password`). Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator. A cluster whose only administrator is a client still shows the setup page in the browser, so list a user too. The [authentication guide](../guides/authentication.md) explains both methods.
+
+The operator generates the admin password once and keeps it stable. To get a new password, delete the Secret `<name>-camunda-admin`. The operator writes a new Secret with a new password. The orchestration cluster does not change the password of the existing `admin` user from its configuration, so set the new password on the user in the Admin web application, then restart the connectors Deployment. The [operations guide](../guides/operations.md#rotate-passwords) has the steps.
+
+## Storage
+
+The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.storageClassName` is fixed at creation. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume: a smaller size from a preset is ignored with the Warning event `StorageShrinkIgnored`.
+
+`spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster: `Delete` (the default) removes them, `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
+
+## Backups
+
+Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket, under the prefix `<basePath>/<namespace>/<name>` on S3 and GCS, so two clusters never share a prefix. Azure Blob has no prefix: every cluster needs an `ObjectStorageConfig` with its own container, and a second cluster on the same Azure contract reports `InvalidReference`.
+
+On the Elasticsearch path the storage contract must carry `elasticsearch.snapshotRepository`, or the cluster reports `InvalidReference`. On the RDBMS path `spec.backup.primaryStorage` configures the backup scheduler of Zeebe with the defaults `schedule: PT1H`, `checkpointInterval: PT15M`, `retention.window: P7D`, and `retention.cleanupSchedule: PT1H`. `continuous` defaults to true unless the schedule is `none`. The [backup guide](../guides/backup.md) covers the backup kinds.
+
+## Workload identity
+
+The pods run under the ServiceAccount `<name>-camunda`, or `spec.serviceAccount.name`. When a referenced bucket carries a workload identity, the operator puts the matching annotation on that ServiceAccount ([ObjectStorageConfig](objectstorageconfig.md#authentication) lists them). An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and the cloud side binds the principal `system:serviceaccount:<namespace>:<name>-camunda` itself. Two buckets that name different identities of one cloud report `InvalidReference`. With `serviceAccount.create: false` the operator does not create the ServiceAccount and reports `InvalidReference` while it is absent.
+
+## Environment and JVM
+
+The operator renders its own configuration first, then the user entries in this order: the top-level `extraEnv`, the `extraEnv` of the embedded gateway (on the brokers), the `extraEnv` of every embedded web application that the process hosts, and the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. `extraEnvFrom` sources are concatenated in the same order. Connectors get the top-level entries and their own block only.
+
+Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process.
+
+## Monitoring
+
 When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one ServiceMonitor per process. On a Kubernetes cluster without the `ServiceMonitor` kind it creates none and reports no error.
 
-```mermaid
-graph LR
-    CC[CamundaCluster] -.->|platformConfigRef| PFC[CamundaPlatformConfig]
-    CC -.->|presetRef| CCP[CamundaClusterPreset]
-    CC -.->|storageRef| SSC[SecondaryStorageConfig]
-    CC -.->|backupStorageRef / documentStorageRef| OSC[ObjectStorageConfig]
-    CC --> WL["StatefulSet, Deployments, Services, ServiceAccount, Secrets"]
-    LBE[LogicalBackupElasticsearch] -.->|clusterRef| CC
-    LBR[LogicalBackupRDBMS] -.->|clusterRef| CC
-    IDP["Identity provider (external)"] -.-> PFC
+## Changes and referenced Secrets
+
+A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. A referenced Secret in another namespace is copied into the namespace of the cluster, and the copy follows the source.
+
+The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
+
+## Suspend and pause
+
+`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
+
+`spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
+
+## Deletion
+
+Deleting the cluster removes every resource that the operator created for it. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
+
+## Status
+
+`Ready` is `True` only when every component that the cluster needs is `True`. Its reason and message come from the component that governs: the first component that is not `True`, or the healthiest one when all are. A component that the cluster does not need (an embedded gateway or web application, disabled connectors) reads `True` with reason `Disabled` and stays out of `Ready`.
+
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `ZeebeReady` | `Healthy` | Every broker replica is ready. | Nothing. |
+| `GatewayReady` | `Healthy` / `Disabled` | Every gateway replica is ready, or the gateway is embedded. | Nothing. |
+| `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` / `Disabled` | The standalone web application is ready, or it is embedded. | Nothing. |
+| `ConnectorsReady` | `Healthy` / `Disabled` | Every connectors replica is ready, or connectors are not enabled. | Nothing. |
+| `AdminSecretReady` | `Healthy` / `Disabled` | The Secret `<name>-camunda-admin` is applied, or the cluster uses OIDC. | Nothing. |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
+| `Ready` | `Healthy` | Every component that the cluster needs is healthy. | Nothing. |
+| `Ready` | `Creating` / `Updating` / `Scaling` | A component rolls out or scales. | Wait. The message names the component. |
+| `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
+| `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
+| `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
+| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
+
+`status.management` publishes the address of the management API, so a backup kind calls it without knowing which process hosts it. It is empty while the cluster is suspended.
+
+```yaml
+status:
+  management:
+    # The Service of the process that serves the management API, on port 9600.
+    endpoint: http://my-cluster-zeebe.my-cluster-ns.svc:9600
+    auth:
+      # none | basic. Camunda 8.9 serves the management port without authentication, so the operator reports none.
+      method: none
+    version: 8.9.9
+    partitions: 3
+    # Elasticsearch path with a backupStorageRef only: the snapshot repository of the storage contract.
+    backupRepository: my-cluster
 ```
 
-**Authentication.** Under basic authentication the operator creates the admin user `admin` and stores the password in the Secret `<name>-camunda-admin` (keys `username` and `password`). Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator. A cluster whose only administrator is a client still shows the setup page in the browser, so list a user too. The [authentication guide](../guides/authentication.md) explains both methods.
+`status.volumes` lists every bound broker volume, sorted by name, with its `name` and the `capacity` that it reports. `status.observedGeneration` is the last generation the operator reconciled.
 
-**Password rotation.** The operator generates the admin password once and keeps it stable. To get a new password, delete the Secret `<name>-camunda-admin`. The operator writes a new Secret with a new password. The orchestration cluster does not change the password of the existing `admin` user from its configuration, so set the new password on the user in the Admin web application, then restart the connectors Deployment. The [operations guide](../guides/operations.md) has the steps.
+## Spec reference
 
-**Deletion.** Deleting the cluster removes every resource that the operator created for it. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted`: `Delete` (the default) removes them, `Retain` keeps them for a later cluster with the same name.
-
-**Suspend.** `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
-
-**Pause.** `spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
-
-**Missing references.** The operator checks every reference at reconcile time, not at admission, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
-
-**Changes.** A change to the cluster, to a referenced resource, or to a referenced Secret rolls out to the pods on its own. A referenced Secret in another namespace is copied into the namespace of the cluster, and the copy follows the source.
-
-**Storage growth.** When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume: a smaller size from a preset is ignored with the Warning event `StorageShrinkIgnored`.
-
-**JVM options.** Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process.
-
-**Extra environment variables.** The operator renders its own configuration first, then the user entries in this order: the top-level `extraEnv`, the `extraEnv` of the embedded gateway (on the brokers), the `extraEnv` of every embedded web application that the process hosts, and the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. `extraEnvFrom` sources are concatenated in the same order. Connectors get the top-level entries and their own block only.
-
-**Backups.** Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket, under the prefix `<basePath>/<namespace>/<name>` on S3 and GCS, so two clusters never share a prefix. Azure Blob has no prefix: every cluster needs an `ObjectStorageConfig` with its own container, and a second cluster on the same Azure contract reports `InvalidReference`. On the Elasticsearch path the storage contract must carry `elasticsearch.snapshotRepository`, or the cluster reports `InvalidReference`. On the RDBMS path `spec.backup.primaryStorage` configures the backup scheduler of Zeebe with the defaults `schedule: PT1H`, `checkpointInterval: PT15M`, `retention.window: P7D`, and `retention.cleanupSchedule: PT1H`. `continuous` defaults to true unless the schedule is `none`. The [backup guide](../guides/backup.md) covers the backup kinds.
-
-**Workload identity.** The pods run under the ServiceAccount `<name>-camunda`, or `spec.serviceAccount.name`. When a referenced bucket carries a workload identity, the operator puts the matching annotation on that ServiceAccount ([ObjectStorageConfig](objectstorageconfig.md) lists them). An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and the cloud side binds the principal `system:serviceaccount:<namespace>:<name>-camunda` itself. Two buckets that name different identities of one cloud report `InvalidReference`. With `serviceAccount.create: false` the operator does not create the ServiceAccount and reports `InvalidReference` while it is absent.
-
-## Spec
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -295,45 +366,7 @@ spec:
   pause: false
 ```
 
-## Status
-
-`Ready` is `True` only when every component that the cluster needs is `True`. Its reason and message come from the component that governs: the first component that is not `True`, or the healthiest one when all are. A component that the cluster does not need (an embedded gateway or web application, disabled connectors) reads `True` with reason `Disabled` and stays out of `Ready`.
-
-| Type | Reason | Meaning | What to do |
-| --- | --- | --- | --- |
-| `ZeebeReady` | `Healthy` | Every broker replica is ready. | Nothing. |
-| `GatewayReady` | `Healthy` / `Disabled` | Every gateway replica is ready, or the gateway is embedded. | Nothing. |
-| `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` / `Disabled` | The standalone web application is ready, or it is embedded. | Nothing. |
-| `ConnectorsReady` | `Healthy` / `Disabled` | Every connectors replica is ready, or connectors are not enabled. | Nothing. |
-| `AdminSecretReady` | `Healthy` / `Disabled` | The Secret `<name>-camunda-admin` is applied, or the cluster uses OIDC. | Nothing. |
-| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
-| `Ready` | `Healthy` | Every component that the cluster needs is healthy. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` | A component rolls out or scales. | Wait. The message names the component. |
-| `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
-| `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
-| `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
-| `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
-
-`status.management` publishes the address of the management API, so a backup kind calls it without knowing which process hosts it. It is empty while the cluster is suspended.
-
-```yaml
-status:
-  management:
-    # The Service of the process that serves the management API, on port 9600.
-    endpoint: http://my-cluster-zeebe.my-cluster-ns.svc:9600
-    auth:
-      # none | basic. Camunda 8.9 serves the management port without authentication, so the operator reports none.
-      method: none
-    version: 8.9.9
-    partitions: 3
-    # Elasticsearch path with a backupStorageRef only: the snapshot repository of the storage contract.
-    backupRepository: my-cluster
-```
-
-`status.volumes` lists every bound broker volume, sorted by name, with its `name` and the `capacity` that it reports. `status.observedGeneration` is the last generation the operator reconciled.
-
-## Validation
+### Validation rules
 
 The API server enforces these rules at admission:
 
@@ -354,36 +387,7 @@ The operator checks these rules on the merged spec after the preset is applied, 
 - `connectors.version` is present when connectors are enabled.
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
 
-## Related
-
-- [CamundaPlatformConfig](camundaplatformconfig.md): `platformConfigRef` provides authentication, the license, and the image registry.
-- [CamundaClusterPreset](camundaclusterpreset.md): `presetRef` provides the baseline that this spec merges over.
-- [SecondaryStorageConfig](secondarystorageconfig.md): `storageRef` names the secondary storage, Elasticsearch or RDBMS, in the namespace of the cluster.
-- [ObjectStorageConfig](objectstorageconfig.md): `backupStorageRef` and `documentStorageRef` name the buckets.
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): they reference this cluster through `clusterRef` and back it up.
-- [Getting started](../getting-started.md): the order in which you create the resources.
-- [Secondary storage guide](../guides/secondary-storage.md): how to set up Elasticsearch or a database.
-- [Authentication guide](../guides/authentication.md): basic and OIDC authentication, and the admin role.
-- [Backup guide](../guides/backup.md): backups and restores.
-- [Operations guide](../guides/operations.md): suspend, resize, rotate secrets, and upgrade.
-
-## Examples
-
-A minimal manifest:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaCluster
-metadata:
-  name: my-cluster
-  namespace: my-cluster-ns
-spec:
-  platformConfigRef: "my-platform-config"
-  version: "8.9.0"
-  storageRef: "my-storage-config"
-```
-
-A realistic manifest:
+### A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -415,3 +419,16 @@ spec:
       labels:
         prometheus: "platform"
 ```
+
+## Related
+
+- [CamundaPlatformConfig](camundaplatformconfig.md): `platformConfigRef` provides authentication, the license, and the image registry.
+- [CamundaClusterPreset](camundaclusterpreset.md): `presetRef` provides the baseline that this spec merges over.
+- [SecondaryStorageConfig](secondarystorageconfig.md): `storageRef` names the secondary storage, Elasticsearch or RDBMS, in the namespace of the cluster.
+- [ObjectStorageConfig](objectstorageconfig.md): `backupStorageRef` and `documentStorageRef` name the buckets.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): they reference this cluster through `clusterRef` and back it up.
+- [Getting started](../getting-started.md): the order in which you create the resources.
+- [Secondary storage guide](../guides/secondary-storage.md): how to set up Elasticsearch or a database.
+- [Authentication guide](../guides/authentication.md): basic and OIDC authentication, and the admin role.
+- [Backup guide](../guides/backup.md): backups of a cluster.
+- [Operations guide](../guides/operations.md): status, suspend, resize, and rotate passwords.

@@ -18,7 +18,9 @@ To read the password of the cluster `my-cluster`:
 kubectl get secret my-cluster-camunda-admin -n my-cluster-ns -o go-template='{{.data.password | base64decode}}'
 ```
 
-**Rotation.** To get a new password, delete the Secret. The operator creates a new Secret with a new password on the next reconcile.
+### Rotate the password
+
+To get a new password, delete the Secret. The operator creates a new Secret with a new password on the next reconcile.
 
 > **Caution:** The orchestration cluster creates the `admin` user once, at first start, and does not change its password from the configuration after that. After you delete the Secret, the new password works only after you set it on the `admin` user in the Admin web application. Then restart the connectors Deployment `<name>-connectors`, so that it reads the new password.
 
@@ -104,7 +106,9 @@ spec:
 
 The Secret can live in any namespace. If it is not in the namespace of a cluster, the operator copies the key into that namespace as the Secret `<name>-camunda-oidc-client`.
 
-**How a token becomes a person or a client.** `usernameClaim` and `clientIdClaim` tell the cluster who is behind a token. The cluster reads a token in this order:
+### How a token becomes a person or a client
+
+`usernameClaim` and `clientIdClaim` tell the cluster who is behind a token. The cluster reads a token in this order:
 
 1. If the token holds the client id claim, the caller is a machine client with that id.
 2. If not, and the token holds the username claim, the caller is a person with that username.
@@ -152,7 +156,9 @@ spec:
           claimValue: "camunda-admins"
 ```
 
-**Per-cluster client.** A cluster can use a client of its own. Set `spec.auth.clientId`, `spec.auth.audience`, and `spec.auth.clientSecretRef` on the `CamundaCluster`. Each field overrides the default of the platform config on its own. When you set `clientId` and not `audience`, the audience becomes the new client id. The issuer, the endpoints, and the claim names always come from the platform config.
+### Per-cluster client
+
+A cluster can use a client of its own. Set `spec.auth.clientId`, `spec.auth.audience`, and `spec.auth.clientSecretRef` on the `CamundaCluster`. Each field overrides the default of the platform config on its own. When you set `clientId` and not `audience`, the audience becomes the new client id. The issuer, the endpoints, and the claim names always come from the platform config.
 
 A `CamundaClusterPreset` can carry the same `spec.auth` fields as a baseline for many clusters. The cluster overrides the client fields of the preset one by one. The `admin` block never merges: when the cluster sets `spec.auth.admin`, it replaces the whole block of the preset.
 

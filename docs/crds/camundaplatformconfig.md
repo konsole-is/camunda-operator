@@ -2,15 +2,23 @@
 
 `CamundaPlatformConfig` is a cluster-scoped resource that holds the settings every orchestration cluster of an environment shares. You create it, or another tool creates it for you.
 
-## Purpose
-
 The settings that are the same for every orchestration cluster live here: how users and clients authenticate (basic or OIDC), the Camunda license, and the registry that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once.
 
 The OIDC fields follow the OIDC discovery vocabulary. They work with Keycloak, Auth0, Entra ID, Okta, or any other OIDC-compliant identity provider.
 
-## What it does
-
 The operator creates no resources from this kind. It makes sure that the referenced Secrets exist and carry the named keys, and reports the result in `Ready`. Every `CamundaCluster` that references this resource reads its values and renders them into the workloads.
+
+The smallest platform config names the authentication method:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  auth:
+    method: basic
+```
 
 ```mermaid
 graph LR
@@ -20,21 +28,40 @@ graph LR
     PFC -.->|issuerUrl| IDP["Identity provider (external)"]
 ```
 
-**Changes.** When you change this resource or one of its Secrets, every referencing cluster rolls its pods with the new values. No operator restart is needed.
+## Override order
 
-**Missing references.** When a referenced Secret or key is missing, `Ready` is `False` with reason `MissingSecret`, and the message names the reference.
+The OIDC client credentials here are the defaults of the environment. A [CamundaClusterPreset](camundaclusterpreset.md) `auth` block overrides them for its clusters, and the `auth` block of a `CamundaCluster` overrides both. The authentication method and the identity provider connection always come from this resource.
 
-**Override order.** The OIDC client credentials here are the defaults of the environment. A [CamundaClusterPreset](camundaclusterpreset.md) `auth` block overrides them for its clusters, and the `auth` block of a `CamundaCluster` overrides both. The authentication method and the identity provider connection always come from this resource.
+## Claims
 
-**Claims.** `usernameClaim` and `clientIdClaim` name the claims that identify a caller. A token that holds the client id claim is a machine client. A token without it is a person, identified by the username claim. The claim identifies a caller and grants nothing: the `spec.auth.admin` block of a `CamundaCluster` makes a caller an administrator.
+`usernameClaim` and `clientIdClaim` name the claims that identify a caller. A token that holds the client id claim is a machine client. A token without it is a person, identified by the username claim. The claim identifies a caller and grants nothing: the `spec.auth.admin` block of a `CamundaCluster` makes a caller an administrator.
 
 > **Caution:** Do not set a `clientIdClaim` that the tokens of persons also carry. A token with that claim always becomes a machine client, even after a browser login. Some providers put a client identifier in every token, for example `azp` in Keycloak. Pick a claim that the provider adds to machine tokens only.
 
-**Split horizon.** When the identity provider is reachable at a different URL from inside the Kubernetes cluster, keep `issuerUrl` equal to the issuer claim of the tokens. Set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
+## Split horizon
+
+When the identity provider is reachable at a different URL from inside the Kubernetes cluster, keep `issuerUrl` equal to the issuer claim of the tokens. Set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
 
 The [authentication guide](../guides/authentication.md) explains the setup of both methods.
 
-## Spec
+## Changes and referenced Secrets
+
+When you change this resource or one of its Secrets, every referencing cluster rolls its pods with the new values. No operator restart is needed.
+
+When a referenced Secret or key is missing, `Ready` is `False` with reason `MissingSecret`, and the message names the reference.
+
+## Status
+
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | Every referenced Secret exists and carries the named key. | Nothing. |
+| `Ready` | `MissingSecret` | The Secret named by `clientSecretRef` or `licenseSecretRef` is missing, or lacks the named key. | Create the Secret with the named key. The message names the reference. |
+
+`status.observedGeneration` is the last generation the operator reconciled.
+
+## Spec reference
+
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -85,44 +112,14 @@ spec:
   imageRegistry: "registry.example.com"
 ```
 
-## Status
-
-| Type | Reason | Meaning | What to do |
-| --- | --- | --- | --- |
-| `Ready` | `Healthy` | Every referenced Secret exists and carries the named key. | Nothing. |
-| `Ready` | `MissingSecret` | The Secret named by `clientSecretRef` or `licenseSecretRef` is missing, or lacks the named key. | Create the Secret with the named key. The message names the reference. |
-
-`status.observedGeneration` is the last generation the operator reconciled.
-
-## Validation
+### Validation rules
 
 - `spec.auth.oidc` is required when `spec.auth.method` is `oidc`, and forbidden when the method is `basic`.
 - In `spec.auth.oidc`, `issuerUrl`, `clientId`, and `clientSecretRef` are required.
 - `issuerUrl` must be an http or https URL. `jwksUrl`, `tokenUrl`, and `authUrl` must be empty or an http or https URL.
 - Secret existence is checked at reconcile time, not at admission, so you can create or rotate Secrets after this resource.
 
-## Related
-
-- [CamundaCluster](camundacluster.md): references this resource through `platformConfigRef` and rolls its pods when it changes.
-- [CamundaClusterPreset](camundaclusterpreset.md): its `auth` block overrides the default OIDC client credentials for the clusters that use the preset.
-- [Getting started](../getting-started.md): where this resource fits in the order of creation.
-- [Authentication guide](../guides/authentication.md): how to set up basic and OIDC authentication.
-
-## Examples
-
-A minimal manifest:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaPlatformConfig
-metadata:
-  name: my-platform-config
-spec:
-  auth:
-    method: basic
-```
-
-A realistic manifest:
+### A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -148,3 +145,10 @@ spec:
     key: "license-key"
   imageRegistry: "registry.example.com"
 ```
+
+## Related
+
+- [CamundaCluster](camundacluster.md): references this resource through `platformConfigRef` and rolls its pods when it changes.
+- [CamundaClusterPreset](camundaclusterpreset.md): its `auth` block overrides the default OIDC client credentials for the clusters that use the preset.
+- [Getting started](../getting-started.md): where this resource fits in the order of creation.
+- [Authentication guide](../guides/authentication.md): how to set up basic and OIDC authentication.

@@ -2,15 +2,28 @@
 
 `CamundaClusterPreset` is a cluster-scoped baseline configuration that [CamundaCluster](camundacluster.md) resources inherit. You create it, or another tool creates it for you.
 
-## Purpose
-
 A preset lets a platform team define a standard cluster shape once: sizing, topology, environment variables, and backup policy. Each `CamundaCluster` opts in by name through `presetRef`, so individual clusters stay small and consistent. Typical presets are named for their size, for example `small`, `medium`, and `large`.
 
 A preset is passive data. No controller reconciles it, it creates nothing, and it reports no status. A cluster that fits no preset leaves `presetRef` unset and configures everything inline.
 
-## What it does
-
 The operator creates no resources from this kind. A `CamundaCluster` that references it reads the preset on every reconcile and merges its own spec over `spec.cluster`. When you edit a preset, every referencing cluster picks up the change on its next reconcile.
+
+The smallest preset sets a version and a broker baseline:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaClusterPreset
+metadata:
+  name: small
+spec:
+  cluster:
+    version: "8.9.0"
+    zeebe:
+      replicas: 1
+      partitions: 1
+      replicationFactor: 1
+      storageSize: "10Gi"
+```
 
 ```mermaid
 graph LR
@@ -18,7 +31,9 @@ graph LR
     CC -.->|platformConfigRef| PFC[CamundaPlatformConfig]
 ```
 
-**Merge rules.** The cluster starts from `spec.cluster` of the preset. Each field then merges as the table says. The instance-bound fields always come from the cluster.
+## Merge rules
+
+The cluster starts from `spec.cluster` of the preset. Each field then merges as the table says. The instance-bound fields always come from the cluster.
 
 | Field | Merge behavior |
 | --- | --- |
@@ -33,11 +48,19 @@ graph LR
 | `backup.dump` | Follows the component rules above. `scratchVolume` replaces as a whole block. `postgresImage` and `activeDeadlineSeconds` are replaced when the cluster sets them. |
 | `platformConfigRef`, `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, `pause` | Instance-bound. They always come from the cluster and are rejected in a preset. |
 
-**Missing references.** A `CamundaCluster` that names a preset that does not exist reports `Ready: False` with reason `InvalidReference`.
+A `CamundaCluster` that names a preset that does not exist reports `Ready: False` with reason `InvalidReference`.
 
-**Storage size.** A preset can lower `zeebe.storageSize` freely. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`.
+## Storage size
 
-## Spec
+A preset can lower `zeebe.storageSize` freely. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`.
+
+## Status
+
+A preset reports no status. Reference errors appear on the referencing `CamundaCluster`: a missing preset gives `Ready: False` with reason `InvalidReference`, and an invalid merged spec gives `InvalidReference` with a message that starts with `invalid effective spec:`.
+
+## Spec reference
+
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -145,11 +168,7 @@ spec:
         requests: { cpu: "250m", memory: "512Mi" }
 ```
 
-## Status
-
-A preset reports no status. Reference errors appear on the referencing `CamundaCluster`: a missing preset gives `Ready: False` with reason `InvalidReference`, and an invalid merged spec gives `InvalidReference` with a message that starts with `invalid effective spec:`.
-
-## Validation
+### Validation rules
 
 - `spec.cluster` is required.
 - The instance-bound fields are rejected in `spec.cluster`: `platformConfigRef`, `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`. An explicit zero value, for example `suspend: false` or an empty `presetRef`, counts as unset.
@@ -157,33 +176,7 @@ A preset reports no status. Reference errors appear on the referencing `CamundaC
 - The transition rules of a `CamundaCluster` do not bind a preset: a preset can lower `zeebe.storageSize`. A referencing cluster keeps its applied volumes.
 - There is no cross-resource validation. The referencing cluster reports a problem with the merged spec.
 
-## Related
-
-- [CamundaCluster](camundacluster.md): references this resource through `presetRef` and merges its own spec over the baseline.
-- [CamundaPlatformConfig](camundaplatformconfig.md): the `auth` baseline of a preset sits between the defaults of the platform config and the `auth` block of a cluster.
-- [Getting started](../getting-started.md): a preset is optional in the first setup.
-- [Operations guide](../guides/operations.md): how to resize a fleet of clusters through a preset.
-
-## Examples
-
-A minimal manifest:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaClusterPreset
-metadata:
-  name: small
-spec:
-  cluster:
-    version: "8.9.0"
-    zeebe:
-      replicas: 1
-      partitions: 1
-      replicationFactor: 1
-      storageSize: "10Gi"
-```
-
-A realistic manifest:
+### A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -221,3 +214,10 @@ spec:
       resources:
         requests: { cpu: "250m", memory: "512Mi" }
 ```
+
+## Related
+
+- [CamundaCluster](camundacluster.md): references this resource through `presetRef` and merges its own spec over the baseline.
+- [CamundaPlatformConfig](camundaplatformconfig.md): the `auth` baseline of a preset sits between the defaults of the platform config and the `auth` block of a cluster.
+- [Getting started](../getting-started.md): a preset is optional in the first setup.
+- [Operations guide](../guides/operations.md): how to resize a fleet of clusters through a preset.

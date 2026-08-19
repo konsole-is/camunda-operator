@@ -2,8 +2,6 @@
 
 `ObjectStorageConfig` is a cluster-scoped contract kind that describes one bucket, for backups or for document storage, and how consumers authenticate to it. You create it, or another tool creates it for you.
 
-## Purpose
-
 Orchestration clusters write backups and documents to a bucket, but the operator never creates cloud infrastructure. This kind carries the location of the bucket and the authentication choice. The thing that provisions the bucket and the thing that writes to it do not need to know each other. The operator only validates the contract and reports the result on `Ready`. It never provisions anything from it.
 
 | Role | Who |
@@ -11,14 +9,25 @@ Orchestration clusters write backups and documents to a bucket, but the operator
 | Producers | You, by hand, or another tool that provisions the bucket and creates the contract for you |
 | Consumers | [CamundaCluster](camundacluster.md) (through `backupStorageRef` and `documentStorageRef`), [ElasticsearchCluster](elasticsearchcluster.md) (through `snapshotStorageRef`), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `backupStorageRef` of the cluster they back up) |
 
-## What it does
-
-The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
-
-- If the active `auth` block has `type: credentials`, the operator makes sure that the Secret exists and holds the configured keys.
-- If the active `auth` block has `type: workloadIdentity`, there is nothing to check, and `Ready` is `True`.
-
 `spec.type` selects the storage API of the bucket. Exactly the block with the same name carries its fields: `s3`, `gcs`, or `azureBlob`. Each block has its own `auth` block, because the three storage types authenticate in different ways.
+
+The smallest contract names an AWS bucket, accessed through IRSA:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ObjectStorageConfig
+metadata:
+  name: my-backup-bucket
+spec:
+  type: S3
+  s3:
+    bucketName: my-cluster-backup-bucket
+    region: eu-west-1
+    auth:
+      type: workloadIdentity
+      workloadIdentity:
+        roleArn: "arn:aws:iam::123456789012:role/my-cluster-workload-role"
+```
 
 ```mermaid
 graph LR
@@ -30,7 +39,9 @@ graph LR
     LBR[LogicalBackupRDBMS] -.->|through the cluster backupStorageRef| OSC
 ```
 
-**Authentication.** `auth.type` selects one of two mechanisms. `workloadIdentity` is the default. No credentials pass through Kubernetes. The cloud binds a principal to the ServiceAccount of the consuming pods, and each pod gets a token from its runtime. The optional `workloadIdentity` block names that principal. When you set it, the consumer writes the matching annotation on the ServiceAccount of its pods:
+## Authentication
+
+`auth.type` selects one of two mechanisms. `workloadIdentity` is the default. No credentials pass through Kubernetes. The cloud binds a principal to the ServiceAccount of the consuming pods, and each pod gets a token from its runtime. The optional `workloadIdentity` block names that principal. When you set it, the consumer writes the matching annotation on the ServiceAccount of its pods:
 
 | Storage type | Field | Annotation on the ServiceAccount |
 | --- | --- | --- |
@@ -44,13 +55,31 @@ An empty or absent `workloadIdentity` block means "trust the ServiceAccount chai
 
 `credentials` names a Secret that holds a static key. Use it for S3-compatible storage such as MinIO or Ceph, and for a cloud bucket that you access with keys. The shape of the Secret differs per storage type. `S3` takes an access key pair, `GCS` a service-account JSON key, and `AzureBlob` an account key.
 
-**Missing references.** If the Secret of `auth.credentials` or one of its keys is missing, `Ready` is `False` with reason `MissingSecret`. The message names the Secret and the key.
+## Validation checks
 
-**Changes.** When you edit the contract or the referenced Secret, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
+The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
+
+- If the active `auth` block has `type: credentials`, the operator makes sure that the Secret exists and holds the configured keys.
+- If the active `auth` block has `type: workloadIdentity`, there is nothing to check, and `Ready` is `True`.
+
+If the Secret of `auth.credentials` or one of its keys is missing, `Ready` is `False` with reason `MissingSecret`. The message names the Secret and the key.
+
+When you edit the contract or the referenced Secret, the operator validates the contract again. Consumers read the contract by name and do not care who produced it.
 
 > **Note:** A Secret reference can name any namespace, and the status message says whether it exists. Grant write access to this kind with care.
 
-## Spec
+## Status
+
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Healthy` | The contract is valid. A Secret in `auth.credentials`, if any, exists and holds the configured keys. | Nothing. |
+| `Ready` | `MissingSecret` | The Secret of `auth.credentials` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
+
+`status.observedGeneration` is the last generation of the contract that the operator validated.
+
+## Spec reference
+
+Every field, with its type, whether it is required, and its default:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -147,16 +176,7 @@ spec:
           key: accountKey
 ```
 
-## Status
-
-| Type | Reason | Meaning | What to do |
-| --- | --- | --- | --- |
-| `Ready` | `Healthy` | The contract is valid. A Secret in `auth.credentials`, if any, exists and holds the configured keys. | Nothing. |
-| `Ready` | `MissingSecret` | The Secret of `auth.credentials` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
-
-`status.observedGeneration` is the last generation of the contract that the operator validated.
-
-## Validation
+### Validation rules
 
 - Exactly the block that matches `spec.type` must be set: `S3` with `s3`, `GCS` with `gcs`, and `AzureBlob` with `azureBlob`.
 - In every `auth` block, `credentials` is required when `auth.type` is `credentials`, and forbidden otherwise.
@@ -168,33 +188,7 @@ spec:
 - The Secret of `auth.credentials` is checked at reconcile time, not at admission, because you can create the Secret after the contract.
 - No field is immutable.
 
-## Related
-
-- [CamundaCluster](camundacluster.md): consumes this contract through `backupStorageRef` for backups and `documentStorageRef` for document storage.
-- [ElasticsearchCluster](elasticsearchcluster.md): consumes this contract through `snapshotStorageRef` for its snapshot repository.
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): write to the bucket that the `backupStorageRef` of the cluster names.
-- [Backup guide](../guides/backup.md): how to set up a backup bucket and take a backup.
-- [Getting started](../getting-started.md): the order in which you create the resources.
-
-## Examples
-
-A minimal manifest for an AWS bucket, accessed through IRSA:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: ObjectStorageConfig
-metadata:
-  name: my-backup-bucket
-spec:
-  type: S3
-  s3:
-    bucketName: my-cluster-backup-bucket
-    region: eu-west-1
-    auth:
-      type: workloadIdentity
-      workloadIdentity:
-        roleArn: "arn:aws:iam::123456789012:role/my-cluster-workload-role"
-```
+### S3 with EKS Pod Identity
 
 A bucket bound through EKS Pod Identity, which needs no annotation. Bind the principal `system:serviceaccount:my-cluster-ns:my-cluster-camunda` on the cloud side:
 
@@ -211,6 +205,8 @@ spec:
     auth:
       type: workloadIdentity
 ```
+
+### S3-compatible storage with static credentials
 
 S3-compatible storage with static keys, the shape that MinIO and Ceph need:
 
@@ -236,6 +232,8 @@ spec:
           secretAccessKeyKey: secretAccessKey
 ```
 
+### GCS for document storage
+
 A document storage bucket on Google Cloud, scoped to a key prefix:
 
 ```yaml
@@ -253,3 +251,11 @@ spec:
       workloadIdentity:
         serviceAccountEmail: "my-cluster-workload@my-project.iam.gserviceaccount.com"
 ```
+
+## Related
+
+- [CamundaCluster](camundacluster.md): consumes this contract through `backupStorageRef` for backups and `documentStorageRef` for document storage.
+- [ElasticsearchCluster](elasticsearchcluster.md): consumes this contract through `snapshotStorageRef` for its snapshot repository.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): write to the bucket that the `backupStorageRef` of the cluster names.
+- [Backup guide](../guides/backup.md): how to set up a backup bucket and take a backup.
+- [Getting started](../getting-started.md): the order in which you create the resources.
