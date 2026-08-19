@@ -9,7 +9,7 @@ sub_pr_approval: autonomous   # EXCEPT #68, #69, integration PR: manual (user re
 sub_pr_review_loop: on        # no round cap — loop until clean
 sub_pr_target: main   # CHANGED 2026-08-19 by the user: #71 and #70 go straight to main; there is no second integration PR
 integration_pr: "#89"   # MERGED e5b3c63; no second integration PR — the rest lands on main directly
-status: phase-4   # #71 merged to main 2026-08-19 (fb538d5) and closed; every worktree and branch of the epic swept; only #70 remains
+status: phase-4   # #70 implemented on feat/backup-controllers--backup-schedule (worktree .claude/worktrees/backup-schedule); PR to main open, review loop running; after its merge: close epic #64 by hand, then teardown
 ---
 
 # Backup controllers — orchestration state
@@ -37,7 +37,7 @@ status: phase-4   # #71 merged to main 2026-08-19 (fb538d5) and closed; every wo
 | #68 | feat/backup-controllers--lbes-controller (deleted) | (removed) | #84 → feat/backup-controllers | merged 2026-08-18 (squash 722f80a; 17 Copilot reviews; user-reviewed) |
 | #69 | feat/backup-controllers--lbrdbms-controller (deleted) | (removed) | #85 → feat/backup-controllers | merged 2026-08-18 (squash 0b90839; 18 Copilot reviews; user-reviewed) |
 | flake fix | fix/backup-controllers--secret-regeneration-flakes | (removed) | #87 → feat/backup-controllers | self-merged (3 Copilot rounds; SSA uid precondition via `credentials.Password`/`NewApplyClient`; database spec tightened — 3/10 repro there); feature branch merged into #84 (92a7216) and #85 (77f0bdb) |
-| #70 | branch off `main` | (not created) | → main (`Closes #70`) | NOT STARTED — the last piece of the epic. It also owns the schedule e2e and the `docs/crds/backupschedule.md` rewrite, both moved off #71 |
+| #70 | feat/backup-controllers--backup-schedule | .claude/worktrees/backup-schedule | → main (`Closes #70`) | IMPLEMENTED 2026-08-20: types+schema, controller (trigger/skips/prune/warning), envtest+unit, schedule e2e, docs page. Local gates green. PR open, review loop until clean, then self-merge |
 | #71 | test/backup-controllers--e2e-minio (deleted) | (removed) | #92 → main | **merged 2026-08-19** (fb538d5), closed by the keyword. Final run 36 of 36 specs green in 20.6 minutes. It found four defects on `main` on the way — see the 2026-08-19 entry |
 | #64 | feat/backup-controllers (deleted) | (removed) | #89 → main | epic, still OPEN — #70 is the one sub-issue left. The integration branch is gone: everything after #89 went to `main` directly |
 
@@ -112,7 +112,7 @@ status: phase-4   # #71 merged to main 2026-08-19 (fb538d5) and closed; every wo
 
 ## Pending snapshot
 
-1. **#70 (BackupSchedule) is the only work left in the epic.** Branch off `main`, PR to `main` with `Closes #70`; `sub_pr_target` is `main` and there is no integration branch any more. Beyond the CR itself it owns two things moved off #71: the schedule e2e (a one-minute cron produces one backup and skips the overlap with an event) and the full rewrite of `docs/crds/backupschedule.md`, whose vocabulary #71 corrected but whose design still describes the pre-epic shape. `api/v1/backupschedule_types.go` is still the kubebuilder scaffold with a `foo` field. The MinIO suite from #92 gives it a working backup flow on both paths to attach to.
+1. **#70 (BackupSchedule) is implemented; drive its PR home.** The PR from `feat/backup-controllers--backup-schedule` to `main` carries `Closes #70`. Run `feature-dev-workflow:copilot-review-loop` until clean (no round cap), wait for CI green, then self-merge per `sub_pr_approval: autonomous` (the manual-review carve-out named only #68, #69, and the integration PR). The e2e runs in CI only; the local gates (go test both modules, make all, helm-verify, mkdocs --strict) were green at PR-open.
 2. **Close epic #64 by hand once #70 merges.** No PR keyword closes it — sub-PR keywords only close their own sub-issue.
 3. **Two follow-ups are filed and unscheduled**: #94 (a region on the ES snapshot repository; ES guards the provider chain that kills Zeebe, but then signs SigV4 for whatever it resolved, so a store that enforces a different region fails with `AuthorizationHeaderMalformed` — MinIO ignores region, so the e2e cannot catch it) and #97 (publish the effective ServiceAccount on `CamundaCluster.status`, which would make #96's class of defect structurally impossible).
 4. **The sweep is done.** Every worktree and every branch of this epic is gone, including `feat/backup-controllers`. Five merged branches from other work remain on the remote and are not this epic's to delete.
