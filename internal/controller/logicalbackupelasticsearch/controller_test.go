@@ -434,6 +434,10 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(final.Status.HistoryRequestedTime).NotTo(BeNil())
 		Expect(final.Status.HistoryAcceptedTime).NotTo(BeNil())
 		Expect(final.Status.PartitionsCount).To(Equal(int32(5)))
+		// A restore reads the Camunda version here. The management binding of
+		// the cluster is unset while a restore runs, because the restore runs
+		// against a suspended cluster.
+		Expect(final.Status.Version).To(Equal("8.9.9"))
 		Expect(final.Status.Repository).To(Equal(r.repository))
 		Expect(final.Status.Storage).To(Equal(&v1.PinnedStorage{
 			SecondaryStorageConfig: "storage",

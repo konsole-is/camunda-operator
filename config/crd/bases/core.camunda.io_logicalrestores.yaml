@@ -11,13 +11,35 @@ spec:
     kind: LogicalRestore
     listKind: LogicalRestoreList
     plural: logicalrestores
+    shortNames:
+    - lr
     singular: logicalrestore
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.backupRef.name
+      name: Backup
+      type: string
+    - jsonPath: .spec.targetClusterRef.name
+      name: Target
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
-        description: LogicalRestore is the Schema for the logicalrestores API
+        description: |-
+          LogicalRestore restores one completed logical backup into a suspended
+          CamundaCluster. The target can be the cluster the backup came from, or
+          another cluster that reads the same backup bucket. The restore writes the
+          backup into secondary storage, deletes and creates the broker data volumes
+          again, and runs the Camunda restore application once per broker. The
+          operator only reads spec.suspend of the target. Whoever owns the cluster
+          suspends it before the restore and unsuspends it after.
         properties:
           apiVersion:
             description: |-
@@ -37,27 +59,78 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of LogicalRestore
+            description: |-
+              spec names the backup to restore and the cluster to restore into. It is
+              immutable: a restore is one-shot, retried by creating a new resource.
             properties:
-              foo:
-                description: foo is an example field of LogicalRestore. Edit logicalrestore_types.go
-                  to remove/update
-                type: string
+              backupRef:
+                description: BackupRef references the completed backup to restore
+                  from.
+                properties:
+                  kind:
+                    description: Kind of the backup.
+                    enum:
+                    - LogicalBackupElasticsearch
+                    - LogicalBackupRDBMS
+                    type: string
+                  name:
+                    description: Name of the backup, in the namespace of this restore.
+                    minLength: 1
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+              targetClusterRef:
+                description: |-
+                  TargetClusterRef references the CamundaCluster to restore into. It can
+                  differ from the cluster the backup was taken from. The cluster must be
+                  suspended for the whole restore.
+                properties:
+                  name:
+                    description: Name of the CamundaCluster, in the namespace of this
+                      object.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - backupRef
+            - targetClusterRef
             type: object
+            x-kubernetes-validations:
+            - message: 'spec is immutable: a restore is one-shot, retried by creating
+                a new resource'
+              rule: self == oldSelf
           status:
-            description: status defines the observed state of LogicalRestore
+            description: status defines the observed state of the restore
             properties:
+              backupId:
+                description: |-
+                  BackupID is the backup id that the restore reads, pinned when the
+                  restore starts. The backup can be deleted afterwards without moving the
+                  restore to another set of artifacts.
+                format: int64
+                type: integer
+              brokers:
+                description: |-
+                  Brokers is the broker count read from the live broker StatefulSet when
+                  the restore entered RestoringPrimaryStorage. It fixes how many volumes
+                  are recreated and how many Jobs run.
+                format: int32
+                type: integer
+              completionTime:
+                description: CompletionTime is when the restore reached a terminal
+                  phase.
+                format: date-time
+                type: string
               conditions:
                 description: |-
-                  conditions represent the current state of the LogicalRestore resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current state. The Ready condition carries the
+                  reasons Progressing, Completed, Failed, ClusterNotSuspended,
+                  InvalidReference, IncompatibleTarget, MissingSecret, and
+                  ConnectionFailed.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +189,83 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              failureMessage:
+                description: |-
+                  FailureMessage names the failing phase and its error. The Ready
+                  condition carries the same message, and the operator stages the
+                  condition again from this field, so a write conflict cannot lose it.
+                type: string
+              firstFailedAt:
+                description: |-
+                  FirstFailedAt is when a dependency of the running restore first stopped
+                  resolving. The operator measures the mid-run grace from it, and clears
+                  it when the restore recovers.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase of the restore. It is the resume marker: a reconcile that
+                  re-enters after a crash continues at the recorded phase.
+                enum:
+                - Pending
+                - ValidatingCompatibility
+                - RestoringSecondaryStorage
+                - RestoringPrimaryStorage
+                - Completed
+                - Failed
+                type: string
+              primaryJobNames:
+                description: |-
+                  PrimaryJobNames are the per-broker restore-application Jobs, in broker
+                  order.
+                items:
+                  type: string
+                type: array
+              recreatedClaims:
+                description: |-
+                  RecreatedClaims names the broker data claims that the restore deleted
+                  and created again. A reconcile that re-enters does not delete a claim
+                  twice.
+                items:
+                  type: string
+                type: array
+              repository:
+                description: |-
+                  Repository is the Elasticsearch snapshot repository the restore reads
+                  from, registered on the target's Elasticsearch. It is unset on the
+                  relational path.
+                type: string
+              restoredSnapshots:
+                description: |-
+                  RestoredSnapshots names every snapshot the restore asked Elasticsearch
+                  to restore. It is unset on the relational path.
+                items:
+                  type: string
+                type: array
+              secondaryJobName:
+                description: |-
+                  SecondaryJobName is the Job that runs pg_restore on the relational
+                  path, while it exists. It is unset on the Elasticsearch path.
+                type: string
+              storageType:
+                description: |-
+                  StorageType is the secondary storage type of the backup, pinned with
+                  the backup id. It decides which restore procedure runs.
+                enum:
+                - elasticsearch
+                - rdbms
+                type: string
+              targetClusterUID:
+                description: |-
+                  TargetClusterUID pins the identity of the target cluster. A cluster
+                  that is deleted and created again under the same name is another
+                  cluster, and this restore is not its restore.
+                type: string
             type: object
         required:
         - spec
