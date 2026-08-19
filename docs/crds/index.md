@@ -77,4 +77,13 @@ graph TD
 
 ## Planned kinds
 
-The CRDs `BackupSchedule`, `LogicalRestore`, `PointInTimeRestore`, `CamundaOptimize`, `CamundaManagementCluster`, and `PVCAutoResize` are installed with the operator but have no controller yet. Their spec is a placeholder. Do not create them. Their documentation follows when they are implemented.
+These CRDs are installed with the operator but have no controller yet. Their installed spec is a placeholder, so do not create them. Their pages describe the planned design and will be rewritten when the kind ships.
+
+| Kind | Scope | Planned purpose |
+| --- | --- | --- |
+| [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule. |
+| [LogicalRestore](logicalrestore.md) | Namespaced | Restore a completed logical backup into a suspended cluster. |
+| [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
+| [CamundaOptimize](camundaoptimize.md) | Namespaced | Run Optimize next to a cluster. |
+| [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
+| [PVCAutoResize](pvcautoresize.md) | Namespaced | Grow the volumes of a cluster on their own. |
