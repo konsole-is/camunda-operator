@@ -66,7 +66,7 @@ spec:
   s3:
     # string. Required. Bucket name as the storage client SDK uses it.
     bucketName: my-cluster-backup-bucket
-    # string. Optional, default: "" (bucket root). Key prefix under which consumers write objects, without leading or trailing slashes.
+    # string. Optional. Key prefix under which consumers write objects, without leading or trailing slashes. Omit it to write to the bucket root.
     basePath: backups
     # string. Required unless endpoint is set. Region of the bucket. With an endpoint and no region, consumers send the placeholder region us-east-1.
     region: eu-west-1
@@ -98,7 +98,7 @@ spec:
   gcs:
     # string. Required. Bucket name as the storage client SDK uses it.
     bucketName: my-cluster-documents
-    # string. Optional, default: "" (bucket root). Key prefix under which consumers write objects, without leading or trailing slashes.
+    # string. Optional. Key prefix under which consumers write objects, without leading or trailing slashes. Omit it to write to the bucket root.
     basePath: documents
     # object. Optional, default: {type: workloadIdentity}. How consumers authenticate.
     auth:
@@ -124,7 +124,7 @@ spec:
     accountName: camundabackups
     # string. Required. Blob container that consumers write to.
     container: backups
-    # string. Optional, default: "" (container root). Blob prefix under which consumers write objects, without leading or trailing slashes.
+    # string. Optional. Blob prefix under which consumers write objects, without leading or trailing slashes. Omit it to write to the container root.
     basePath: clusters
     # string. Optional. URL of the blob service. Empty means the public Azure endpoint of the account. Set it for Azurite and sovereign clouds.
     endpoint: "https://camundabackups.blob.core.windows.net"
@@ -163,7 +163,7 @@ spec:
 - In every `auth` block, `workloadIdentity` is only valid when `auth.type` is `workloadIdentity`.
 - `s3.region` is required unless `s3.endpoint` is set. With an endpoint and no region, every consumer sends the placeholder region `us-east-1`. An S3-compatible store ignores it. If your store does not ignore it, set `region`.
 - `s3.endpoint` and `azureBlob.endpoint` must be valid `http` or `https` URLs.
-- Every `basePath` must match `^[^/]+(/[^/]+)*$`. That is a plain prefix without leading or trailing slashes.
+- A `basePath`, when set, must match `^[^/]+(/[^/]+)*$`: a plain prefix without leading or trailing slashes. An empty string is rejected. Omit the field to use the bucket root.
 - `bucketName`, `accountName`, `container`, and every Secret reference field must not be empty.
 - The Secret of `auth.credentials` is checked at reconcile time, not at admission, because you can create the Secret after the contract.
 - No field is immutable.

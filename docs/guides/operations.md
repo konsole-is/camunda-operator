@@ -81,7 +81,7 @@ Increase `spec.zeebe.storageSize` to give the brokers more disk:
 kubectl patch camundacluster my-cluster -n my-cluster-ns --type=merge -p '{"spec":{"zeebe":{"storageSize":"64Gi"}}}'
 ```
 
-The operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. If it does not, the API server rejects the expansion and the operator retries with backoff. A volume of a new replica is expanded after it binds. The StatefulSet keeps its original claim template, and its annotation `camunda.io/requested-storage-size` shows the size you asked for. `status.volumes` shows the result per volume.
+The operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. If it does not, the API server rejects the expansion and the operator retries with backoff. A volume of a new replica is expanded after it binds. `status.volumes` shows the result per volume.
 
 A smaller value is rejected at admission. If a preset lowers the size under a running cluster, the operator ignores it, keeps the current size, and records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
 
@@ -98,7 +98,7 @@ The operator generates each password once and keeps it stable. To rotate one, de
 | The admin user of a basic-authentication cluster | `<name>-camunda-admin` | The operator writes a new Secret. Nothing rolls, and the `admin` user keeps the old password. See below. |
 
 ```bash
-kubectl delete secret my-cluster-es-user -n my-cluster-ns
+kubectl delete secret my-cluster-es-es-user -n my-cluster-ns
 ```
 
 > **Caution:** Between the deletion and the roll, a client with the old password is rejected. Plan the rotation outside of peak hours.
