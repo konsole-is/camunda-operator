@@ -77,7 +77,7 @@ graph TD
 
 ## Planned kinds
 
-These CRDs are installed with the operator but have no controller yet. Their installed spec is a placeholder, so do not create them. Their pages describe the planned design and will be rewritten when the kind ships.
+These CRDs are installed with the operator, but the operator does not act on them yet. Their controllers and their installed spec are placeholders, so do not create them. Their pages describe the planned design and will be rewritten when the kind ships.
 
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |

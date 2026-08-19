@@ -24,9 +24,11 @@ sudo sysctl -w vm.max_map_count=262144
 The operator runs Elasticsearch through [Elastic Cloud on Kubernetes (ECK)](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html). Install ECK first. The operator does not start without the ECK CRDs, even when you do not use Elasticsearch.
 
 ```bash
-kubectl create -f https://download.elastic.co/downloads/eck/3.5.0/crds.yaml
-kubectl apply -f https://download.elastic.co/downloads/eck/3.5.0/operator.yaml
+kubectl apply --server-side -f https://download.elastic.co/downloads/eck/3.5.0/crds.yaml
+kubectl apply --server-side -f https://download.elastic.co/downloads/eck/3.5.0/operator.yaml
 ```
+
+Use `--server-side`: the ECK CRD manifest is larger than the annotation that client-side apply writes.
 
 ## 2. Install the operator
 
