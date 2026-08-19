@@ -226,6 +226,16 @@ func itBacksUpTheRelationalCluster(cluster *v1.CamundaCluster) {
 	var backup v1.LogicalBackupRDBMS
 
 	It("completes a LogicalBackupRDBMS with a non-empty dump and a Zeebe backup", func() {
+		// The dump Job runs under the account the cluster publishes. The
+		// bucket of this flow holds static credentials, so the cluster binds
+		// no cloud identity and renders no account. A Job that named one
+		// here would name an account that does not exist, and the API server
+		// would never create its pod.
+		By("reading the empty account that a cluster on static credentials publishes")
+		var published v1.CamundaCluster
+		Expect(utils.Get(ccResource, cluster.Name, cluster.Namespace, &published)).To(Succeed())
+		Expect(published.Status.ServiceAccountName).To(BeEmpty())
+
 		By("creating the LogicalBackupRDBMS")
 		Expect(apply(&v1.LogicalBackupRDBMS{
 			TypeMeta: metav1.TypeMeta{

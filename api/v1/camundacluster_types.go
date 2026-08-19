@@ -387,6 +387,13 @@ type CamundaClusterStatus struct {
 	// sees an unreachable cluster instead of a stale endpoint.
 	// +optional
 	Management *ManagementBinding `json:"management,omitempty"`
+	// ServiceAccountName is the ServiceAccount that the pods of this cluster
+	// run under, or empty when they run under the default account of the
+	// namespace. Extensions that render a pod against this cluster read it
+	// instead of rebuilding the rule from the spec and the buckets the
+	// cluster references.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason, or it is derived from the conditions of the components that the
 	// cluster needs. The per-process conditions (ZeebeReady, GatewayReady,

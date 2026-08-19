@@ -119,7 +119,9 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // StatefulSet is never recreated. Then the components are reconciled in
 // order: the admin Secret, the mirrored Secrets, then every process, each
 // gated on whether the cluster needs it. The management binding is published
-// with the status, and cleared while the cluster is suspended. Ready is True only when every
+// with the status, and cleared while the cluster is suspended. The
+// ServiceAccount the pods run under is published with it and is never
+// cleared: the account outlives a suspension. Ready is True only when every
 // component the cluster needs is True. Its reason and message come from the
 // governing component, which is the highest-priority component that is not
 // True, or the highest-priority of all of them when they all are.
@@ -201,6 +203,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
+	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
 
 	return ctrl.Result{}, reconcileErr
 }

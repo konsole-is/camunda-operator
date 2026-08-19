@@ -408,7 +408,8 @@ func stageAdmitted(w *world, backup *v1.LogicalBackupRDBMS) {
 
 // makeBucketWIF flips the bucket of the world to workload identity. Then the
 // manager holds no credentials for it, and cleanup must run where the
-// identity lives.
+// identity lives. The cluster binds the identity on its ServiceAccount, so
+// the account it publishes is the derived one.
 func makeBucketWIF(w *world) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -418,6 +419,21 @@ func makeBucketWIF(w *world) {
 			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::1:role/backup"},
 		}
 		g.Expect(k8sClient.Update(ctx, w.bucket)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	publishServiceAccount(w.cluster, w.cluster.Name+"-camunda")
+}
+
+// publishServiceAccount stands in for the CamundaCluster controller, which
+// publishes the account its pods run under. An empty name is a cluster whose
+// pods run under the default account of the namespace, which is what
+// createWorld leaves behind.
+func publishServiceAccount(cluster *v1.CamundaCluster, name string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
+		cluster.Status.ServiceAccountName = name
+		g.Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -1249,20 +1265,25 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		Expect(job.Spec.Template.Spec.InitContainers[0].Image).To(Equal("mirror.example/postgres:17.4"))
 	})
 
-	It("runs the Job under an overridden ServiceAccount name", func() {
+	// The Job runs under the account the cluster publishes, whatever bound
+	// it. This controller never rebuilds that rule from the spec of the
+	// cluster and the buckets it references.
+	It("runs the Job under the account the cluster publishes", func() {
 		w := createWorld(func(cluster *v1.CamundaCluster) {
 			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
 		})
+		publishServiceAccount(w.cluster, "platform-sa")
 		backup := createBackup(w)
 
 		job := jobOf(backup, w)
 		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal("platform-sa"))
 	})
 
-	// The account of the Job follows the bucket that the Job writes to. A
-	// document bucket binds an identity for the pods of the cluster, and the
-	// dump never touches that bucket, so the Job needs no account here.
-	It("gives the Job no account when only the document bucket binds one", func() {
+	// A document bucket binds an identity for the pods of the cluster, and
+	// the dump never touches that bucket. The Job still runs under the
+	// published account, because the cluster renders it. The narrower rule
+	// that this controller used to rebuild is gone.
+	It("runs the Job under the account that only the document bucket binds", func() {
 		documents := &v1.ObjectStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "docs-" + utilrand.String(6)},
 			Spec: v1.ObjectStorageConfigSpec{
@@ -1280,10 +1301,11 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		w := createWorld(func(cluster *v1.CamundaCluster) {
 			cluster.Spec.DocumentStorageRef = documents.Name
 		})
+		publishServiceAccount(w.cluster, w.cluster.Name+"-camunda")
 		backup := createBackup(w)
 
 		job := jobOf(backup, w)
-		Expect(job.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
+		Expect(job.Spec.Template.Spec.ServiceAccountName).To(Equal(w.cluster.Name + "-camunda"))
 	})
 
 	// The environment of the backup's own block reaches the dump container

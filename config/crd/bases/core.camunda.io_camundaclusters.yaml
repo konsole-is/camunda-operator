@@ -7744,6 +7744,14 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              serviceAccountName:
+                description: |-
+                  ServiceAccountName is the ServiceAccount that the pods of this cluster
+                  run under, or empty when they run under the default account of the
+                  namespace. Extensions that render a pod against this cluster read it
+                  instead of rebuilding the rule from the spec and the buckets the
+                  cluster references.
+                type: string
               volumes:
                 description: |-
                   Volumes lists the bound broker PersistentVolumeClaims and the capacity

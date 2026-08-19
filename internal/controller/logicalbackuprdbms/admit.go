@@ -423,7 +423,7 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 		return nil, failure, err
 	}
 
-	pod, failure, err := r.resolvePod(ctx, precheck.Cluster, backup, precheck.Bucket)
+	pod, failure, err := r.resolvePod(ctx, precheck.Cluster, backup)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
@@ -623,20 +623,14 @@ type podResolution struct {
 // cluster's: the Job runs with the credentials of the cluster, so the
 // executable stays the choice of the cluster owner.
 //
-// bucket is the backup bucket of the cluster. The Job names the account of
-// the cluster when that bucket binds one through workload identity, or when
-// the spec names one. Otherwise it names none and runs under the default
-// account of its namespace.
-//
-// That condition is narrower than the condition under which the cluster
-// renders the account, so it implies it. The Job can therefore only ever
-// name an account that exists, which is what the API server requires before
-// it creates the pod.
+// The account is the one the cluster publishes on status.serviceAccountName,
+// so the Job runs under the account its pods run under, and under none when
+// the cluster names none. The account is read, never rebuilt: an account the
+// cluster never rendered makes the API server refuse the pod of the Job.
 func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	backup *v1.LogicalBackupRDBMS,
-	bucket *v1.ObjectStorageConfig,
 ) (*podResolution, *conditions.PreCheckFailure, error) {
 	merged := cluster.Spec
 	if cluster.Spec.PresetRef != "" {
@@ -683,7 +677,7 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 		settings: settings,
 		owned:    owned,
 		image:    image,
-		account:  camundacluster.PodServiceAccountName(cluster, camundacluster.NewEffective(merged), bucket),
+		account:  cluster.Status.ServiceAccountName,
 	}, nil, nil
 }
 
