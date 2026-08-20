@@ -111,12 +111,15 @@ func (c adminCredential) stageFailure(cluster *v1.CamundaCluster) {
 // credential, never as an error: the caller reports it on AdminSecretReady
 // and retries on a timer.
 //
-// A Secret without a password (a fresh cluster, or a deleted Secret) gets a
-// new password and records the requested rotation at once: the password
+// A Secret without a password gets a new one. A cluster that never published
+// an admin Secret records the requested rotation with it: that password
 // seeds the initial user at first start, so there is nothing to update. A
-// suspended cluster serves no user API, so a requested rotation waits, and
-// an in-flight one stays pending, until the cluster resumes. An error is a
-// transient read failure or an exhausted entropy source.
+// Secret that went away keeps the recorded rotation instead, because the
+// cluster still holds the password of the deleted Secret; the request then
+// goes to the user API and fails with Rejected there. A suspended cluster
+// serves no user API, so a requested rotation waits, and an in-flight one
+// stays pending, until the cluster resumes. An error is a transient read
+// failure or an exhausted entropy source.
 func (r *CamundaClusterReconciler) resolveAdminCredential(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -147,10 +150,22 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			return adminCredential{}, err
 		}
 
+		// Only a cluster that never published an admin Secret seeds the
+		// requested rotation: its password becomes the initial user at first
+		// start, so there is nothing to update. A Secret that went away keeps
+		// the recorded rotation. The cluster still holds the password of the
+		// deleted Secret, so the next reconcile takes the request to the user
+		// API and reports Rejected there.
+		//
 		// published stays empty: the Secret holds no password yet, so the
 		// connectors of a new cluster hash on "" for one reconcile. They are
 		// being created in that reconcile anyway.
-		return adminCredential{password: credentials.Password{Value: value}, rotation: requested}, nil
+		rotation := recorded
+		if meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady) == nil {
+			rotation = requested
+		}
+
+		return adminCredential{password: credentials.Password{Value: value}, rotation: rotation}, nil
 	}
 
 	if pending == "" && (requested == "" || requested == recorded) {

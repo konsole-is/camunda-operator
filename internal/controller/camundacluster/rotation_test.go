@@ -209,6 +209,86 @@ var _ = Describe("Admin password rotation", func() {
 		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(string(component.Healthy)))
 	})
 
+	It("records a requested rotation only while the cluster never published an admin Secret", func() {
+		cluster := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cc-seam", Namespace: newNamespace()},
+		}
+		in := components.Input{
+			Cluster: cluster,
+			Effective: components.Effective{
+				CamundaClusterSpec: v1.CamundaClusterSpec{
+					Auth: &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "round-1"}},
+				},
+			},
+		}
+		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
+
+		By("seeding the initial user of a new cluster with the requested rotation")
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.password.Value).NotTo(BeEmpty())
+		Expect(cred.rotation).To(Equal("round-1"))
+
+		By("keeping the recorded rotation once the cluster has published a Secret")
+		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
+			Type:    v1.ConditionAdminSecretReady,
+			Status:  metav1.ConditionTrue,
+			Reason:  string(component.Healthy),
+			Message: "the admin Secret is published",
+		})
+
+		cred, err = reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.password.Value).NotTo(BeEmpty())
+		Expect(cred.rotation).To(BeEmpty(), "a rotation requested after a delete must reach the user API")
+	})
+
+	It("refuses a rotation that was requested while the admin Secret was gone", func() {
+		cluster := createDefaultCluster()
+		password := fetchAdminPassword(cluster)
+		seedClusterUser(password)
+
+		By("stalling the rotation on the pending password")
+		userAPIEndpoint.Store("http://127.0.0.1:1")
+		requestRotation(cluster, "round-1")
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonConnectionFailed))
+
+		By("pausing the cluster, so that no reconcile republishes the Secret")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Pause = true })
+		expectEvent(cluster, "Paused", corev1.EventTypeNormal)
+
+		By("deleting the admin Secret")
+		var secret corev1.Secret
+		Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &secret)).To(Succeed())
+		Consistently(func(g Gomega) {
+			err := k8sClient.Get(ctx, adminSecretKey(cluster), &corev1.Secret{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the paused cluster republished its admin Secret")
+		}, "3s", interval).Should(Succeed())
+
+		By("resuming on a cluster that still holds the first password")
+		userAPIEndpoint.Store(users.URL())
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Pause = false })
+
+		By("publishing a password that the cluster does not hold")
+		Eventually(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &latest)).To(Succeed())
+			g.Expect(string(latest.Data[components.AdminPasswordKey])).NotTo(BeEmpty())
+			g.Expect(string(latest.Data[components.AdminPasswordKey])).NotTo(Equal(password))
+		}, timeout, interval).Should(Succeed())
+
+		By("recording no rotation")
+		Consistently(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.AdminPassword).To(BeNil())
+		}, "5s", interval).Should(Succeed())
+
+		By("reporting Rejected, because the operator holds no password that the cluster accepts")
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonRejected))
+	})
+
 	It("reports ConnectionFailed while the cluster does not answer, and retries", func() {
 		userAPIEndpoint.Store("http://127.0.0.1:1")
 		cluster := createDefaultCluster()
