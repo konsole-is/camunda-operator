@@ -216,7 +216,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
-	cluster.Status.AdminPassword = cred.status()
+	cred.recordRotation(&cluster)
 
 	// A failed rotation retries on a timer: no watch fires when the user API
 	// recovers or accepts the credentials again.

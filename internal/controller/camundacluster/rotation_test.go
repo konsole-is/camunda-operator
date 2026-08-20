@@ -170,7 +170,7 @@ var _ = Describe("Admin password rotation", func() {
 			g.Expect(users.Password(components.AdminUsername)).To(Equal(pending))
 		}, timeout, interval).Should(Succeed())
 
-		By("keeping the connectors hash on the password that the Secret still publishes")
+		By("keeping the connectors hash and the recorded rotation on what the Secret still publishes")
 		Consistently(func(g Gomega) {
 			var latest corev1.Secret
 			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &latest)).To(Succeed())
@@ -179,6 +179,12 @@ var _ = Describe("Admin password rotation", func() {
 			var connectors appsv1.Deployment
 			g.Expect(k8sClient.Get(ctx, connectorsKey, &connectors)).To(Succeed())
 			g.Expect(connectors.Spec.Template.Annotations[components.ConfigHashAnnotation]).To(Equal(beforeHash))
+
+			var recorded v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &recorded)).To(Succeed())
+			g.Expect(recorded.Status.AdminPassword).To(
+				BeNil(), "a rotation is complete only once the Secret publishes the promoted password",
+			)
 		}, "5s", interval).Should(Succeed())
 	})
 

@@ -70,14 +70,25 @@ type rotationFailure struct {
 	message string
 }
 
-// status returns the adminPassword block that the cluster publishes, or nil
-// when there is nothing to record.
-func (c adminCredential) status() *v1.AdminPasswordStatus {
+// recordRotation writes the adminPassword block on cluster, but only once
+// the admin Secret publishes the promoted password. The Secret component
+// reports its apply on AdminSecretReady, and it has already reconciled when
+// the caller runs this. An apply that failed leaves the value that the
+// status was read with: recording the rotation there would report it as
+// complete while the Secret still publishes the old password. The pending
+// password stays in the Secret, so the next reconcile promotes again.
+func (c adminCredential) recordRotation(cluster *v1.CamundaCluster) {
 	if c.rotation == "" {
-		return nil
+		cluster.Status.AdminPassword = nil
+		return
 	}
 
-	return &v1.AdminPasswordStatus{Rotation: c.rotation}
+	cond := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady)
+	if cond == nil || cond.Status != metav1.ConditionTrue {
+		return
+	}
+
+	cluster.Status.AdminPassword = &v1.AdminPasswordStatus{Rotation: c.rotation}
 }
 
 // stageFailure overwrites the AdminSecretReady condition of cluster, in
