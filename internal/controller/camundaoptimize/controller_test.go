@@ -237,6 +237,10 @@ func createNamedOptimize(
 // createDanglingOptimize creates a CamundaOptimize whose clusterRef names no
 // cluster. The controller reports InvalidReference and builds nothing, so a
 // spec can stage workloads under it and they stay as staged.
+//
+// Each one names a cluster of its own. Two that named the same cluster would
+// contend for it, and the controller would park the loser and release the
+// workloads that the spec staged under it.
 func createDanglingOptimize(name, namespace string) *v1.CamundaOptimize {
 	GinkgoHelper()
 	optimize := &v1.CamundaOptimize{
@@ -244,7 +248,7 @@ func createDanglingOptimize(name, namespace string) *v1.CamundaOptimize {
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           "8.9.4",
 			ManagementAuthRef: "no-such-auth",
-			ClusterRef:        v1.ClusterRef{Name: "no-such-cluster"},
+			ClusterRef:        v1.ClusterRef{Name: "no-such-cluster-" + name},
 		},
 	}
 	Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
