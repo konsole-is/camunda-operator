@@ -287,7 +287,7 @@ func (r *BackupScheduleReconciler) trigger(
 	if err != nil {
 		return err
 	}
-	if running := nonTerminal(items, backup.GetName()); running != "" {
+	if running := nonTerminal(items, kind, backup.GetName()); running != "" {
 		schedule.Status.LastScheduleTime = &consumed
 		r.EventRecorder.Eventf(
 			schedule,

@@ -104,6 +104,43 @@ func TestPrunable(t *testing.T) {
 	})
 }
 
+func TestNonTerminal(t *testing.T) {
+	item := func(kind, name string, phase v1.LogicalBackupPhase) scheduledBackup {
+		return scheduledBackup{
+			object: &v1.LogicalBackupRDBMS{ObjectMeta: metav1.ObjectMeta{Name: name}},
+			kind:   kind,
+			phase:  phase,
+		}
+	}
+	running := item("LogicalBackupRDBMS", "nightly-100", v1.LogicalBackupRunning)
+
+	t.Run("names a non-terminal backup and ignores terminal ones", func(t *testing.T) {
+		items := []scheduledBackup{
+			item("LogicalBackupRDBMS", "done", v1.LogicalBackupCompleted),
+			running,
+		}
+		assert.Equal(t, "nightly-100", nonTerminal(items, "LogicalBackupRDBMS", "other"))
+	})
+
+	t.Run("exempts the backup of the trigger under decision", func(t *testing.T) {
+		assert.Empty(
+			t,
+			nonTerminal([]scheduledBackup{running}, "LogicalBackupRDBMS", "nightly-100"),
+		)
+	})
+
+	t.Run("a same-named backup of the other kind is not exempted", func(t *testing.T) {
+		// A crash mid-trigger and a storage repoint before the retry leave a
+		// non-terminal backup of the other kind under the trigger's name. It
+		// must still block the trigger.
+		assert.Equal(
+			t,
+			"nightly-100",
+			nonTerminal([]scheduledBackup{running}, "LogicalBackupElasticsearch", "nightly-100"),
+		)
+	})
+}
+
 func TestCompletedAt(t *testing.T) {
 	created := metav1.NewTime(time.Date(2026, 8, 20, 2, 0, 0, 0, time.UTC))
 	completion := metav1.NewTime(created.Add(time.Hour))
