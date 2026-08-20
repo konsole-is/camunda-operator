@@ -56,11 +56,13 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 ## Pending snapshot
 
-- BLOCKED ON THE USER: review and merge PR #122 (PointInTimeRestore) and PR #123 (LogicalRestore), both into feat/restore-controllers. Both are review-clean: 3 Copilot rounds each plus a two-stage orchestrator review with all findings closed. Merge order does not matter (no deepcopy conflict; both add plain string status fields, disjoint files).
-- After both merge: fast-forward the feature worktree, close #111 and #112 (gh issue close), flip their rows to self-merged, run the wave checkpoint (feature-dev-workflow:reviewing-feature-progress) with the full local suite, then dispatch #113 (e2e, worktree .claude/worktrees/restore-controllers--e2e exists? create off the merged feature branch) on model opus. #113's dispatch context: the bubble-up log items marked "For #113".
-- After #113 self-merges: open the integration PR feat/restore-controllers → main with "Closes #109", run its review loop, STOP at ready-to-merge for the user.
+- PAUSED 2026-08-20 pending a user decision: split `LogicalRestore` into `LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS`. The user is likely to close PR #123 and open two PRs instead. A fresh session starts that work; this session handed over a prompt. Do not resume #123's current shape without checking that decision.
+- USER CONSTRAINT on the split: the Zeebe primary-storage restore (PVC recreation plus the per-broker restore-application Jobs) is SHARED by both storage paths and by `PointInTimeRestore`. It already lives in `pkg/restore`. The split covers the API kinds and the secondary-storage phase only. Never duplicate the primary phase.
+- Open PRs, both review-clean and NOT to be merged by an agent: #122 (PointInTimeRestore, head 9f547e6) and #123 (LogicalRestore, head 14a1545). Both had three lite Copilot rounds, a balanced round, and two orchestrator review passes.
+- Base branch `feat/restore-controllers` carries, beyond PR #120: the e2e compile fix (a409a42), the cluster claim moved to `pkg/clusterclaim` with a neutral Lease prefix (e787f7c), a kind-agnostic claim liveness rule (dc01466), and an elasticsearchcluster test-flake fix (81ff766).
+- NOT DONE, carried to the next session: neither restore kind calls `clusterclaim.Claim`/`Release` yet. The groundwork is merged on the base; both restore kinds (all of them, after any split) must take the per-cluster Lease before their first destructive step and release it at the terminal transition. Copilot threads #122/3822851527 and #123/3822837179 are deliberately left open for this.
+- Then: #113 (e2e) after the restore controllers merge, then the integration PR `feat/restore-controllers` -> main with `Closes #109`, stopping at ready-to-merge for the user.
 - FLAG TO THE USER: two verification gaps found the hard way. (1) `make all` does not lint (Makefile `all: build`) while CLAUDE.md claims it does. (2) `go test ./...` never compiles `test/e2e` (build tag), so symbol moves break CI silently — worth adding both `make lint` and `go vet -tags=e2e ./test/e2e/` to a single documented pre-PR gate.
-- Token note: the user runs close to the Fable limit. Dispatch implementation subagents on `model: opus`.
 
 ## Resume checklist
 
