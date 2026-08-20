@@ -1,21 +1,22 @@
-# Restore controllers: LogicalRestore and PointInTimeRestore
+# Restore controllers: LogicalRestoreElasticsearch, LogicalRestoreRDBMS, and PointInTimeRestore
 
 - Date: 2026-08-20
 - Status: draft
-- Detailed design record: `docs/crds/logicalrestore.md` and `docs/crds/pointintimerestore.md`
+- Detailed design record: `docs/crds/logicalrestoreelasticsearch.md`,
+  `docs/crds/logicalrestorerdbms.md`, and `docs/crds/pointintimerestore.md`
 
 ## Problem
 
-The operator takes backups but cannot restore them. `LogicalRestore` and `PointInTimeRestore` are
-empty kubebuilder stubs: the API types hold a `Foo` field and the reconcilers return immediately.
+The operator takes backups but cannot restore them. The restore kinds are empty kubebuilder stubs:
+the API types hold a `Foo` field and the reconcilers return immediately.
 The backup epic (#64) stated its own limit: it proves that backup artifacts exist, and it defers the
 proof that a backup restores to this work. Until a restore path exists, every backup the operator
 takes is unverified.
 
 ## Goals
 
-- Implement the `LogicalRestore` API and controller for both secondary storage types, as
-  `docs/crds/logicalrestore.md` describes.
+- Implement one logical restore kind for each secondary storage type, `LogicalRestoreElasticsearch`
+  and `LogicalRestoreRDBMS`, as their two pages under `docs/crds/` describe.
 - Implement the `PointInTimeRestore` API and controller, as `docs/crds/pointintimerestore.md`
   describes, plus the database-state precheck below.
 - Prove restorability end to end: an e2e test that takes a backup, wipes the cluster state, restores
@@ -37,20 +38,98 @@ takes is unverified.
 
 ## Design overview
 
-The two CRD design docs are the detailed design record. Both are verified against Camunda 8.9 and
-record their deviations from the original proposal. This spec adds one mechanism on top of them and
-fixes the scope of the tests.
+The CRD design docs are the detailed design record. All are verified against Camunda 8.9 and record
+their deviations from the original proposal. This spec adds the mechanisms on top of them and fixes
+the scope of the tests.
 
-`LogicalRestore` restores a completed `LogicalBackupElasticsearch` or `LogicalBackupRDBMS` into a
-suspended target cluster, on the same cluster or a different one. The controller validates the
-target and the backup reference, checks compatibility (storage type, partition count, version rule),
-restores secondary storage (Elasticsearch snapshot API, or a `pg_restore` Job), recreates the Zeebe
-PVCs, and runs Camunda's standalone restore application once per broker as a Job.
+`LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS` restore one completed logical backup into a
+suspended target cluster, on the same cluster or a different one. Each kind validates the target and
+the backup reference, checks compatibility (storage type, partition count, version rule), restores
+secondary storage, recreates the Zeebe PVCs, and runs Camunda's standalone restore application once
+per broker as a Job. The Elasticsearch kind restores secondary storage through the snapshot API. The
+relational kind runs a `pg_restore` Job.
 
 `PointInTimeRestore` aligns an RDBMS-backed cluster's primary storage with a database that was
 already restored to a timestamp, in place. The controller validates the suspend state, the storage
 chain, the PITR capability declaration, and the dedicated-server rule. Then it recreates the Zeebe
 PVCs and runs the restore application with `--to=<spec.timestamp>` once per broker.
+
+## Decision: one restore kind for each secondary storage type
+
+`LogicalRestore` was one kind for both secondary storage types. It is now two kinds,
+`LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS`. Epic #64 split the backups on the same
+criterion, and these two mirror that pair.
+
+The single kind carried a union. Three status fields were live on one path and unset on the other:
+`repository` and `restoredSnapshots` on the Elasticsearch path, `secondaryJobName` on the relational
+path. Two more fields existed only to say which path ran, `spec.backupRef.kind` and
+`status.storageType`. The version rule also differs per path. An Elasticsearch backup needs the
+exact Camunda version of the target, and a relational backup accepts the same minor or one minor
+newer. The two procedures share no code.
+
+The kind now says which path runs, so both discriminator fields are gone. `spec.backupRef` keeps
+only a name, like `spec.targetClusterRef`. Each status holds the fields of its own path alone.
+
+`PointInTimeRestore` stays one kind. It reads no backup, and it runs on the relational path only.
+
+## Decision: the shared restore machinery lives in pkg/restore
+
+The three restore kinds share their admission, their pinning, their mid-run grace, their terminal
+transitions, and the whole primary-storage phase. Only the secondary-storage phase differs, and
+`PointInTimeRestore` has none.
+
+`pkg/restore` holds this machinery, in the role that `pkg/logicalbackup` has for the backup pair. It
+renders and applies as before, and it now also drives the phases that every restore kind shares. Its
+package comment records the wider scope.
+
+The driver takes a request struct and returns an outcome, like `logicalbackup.PreCheck`. It needs no
+type parameters, because the status fields that every kind shares live in one embedded struct:
+
+```go
+// api/v1/restore_shared.go
+type RestoreProgress struct { ... }  // embedded with json:",inline" in all three statuses
+```
+
+The driver reads and writes `*v1.RestoreProgress` in place. The JSON form of each status does not
+change, because controller-gen flattens an inline embedded struct.
+
+The driver never writes `status.phase`. Each kind owns its own phase vocabulary, so the driver
+returns an outcome and the controller maps it:
+
+```go
+type Outcome struct {
+    Wait    time.Duration  // zero means that the watches carry the wake-up
+    Done    bool           // the phase finished
+    Failure *Failure       // terminal: a reason and a message
+}
+```
+
+`PointInTimeRestore` and `LogicalRestore` grew as separate controllers, and their copies of the
+shared machinery diverged. The unification resolves each divergence in one direction:
+
+| Behavior | Kept from | Reason |
+| --- | --- | --- |
+| Record `primaryJobNames` before the Jobs are applied | `PointInTimeRestore` | The names are durable before a Job exists, so the record covers what the next look applies |
+| Refuse an ordinal past the live broker count | `PointInTimeRestore` | It names the real cause. The render error underneath reports only counts |
+| Fail when a recorded Job is gone | `LogicalRestore` | A second Job runs the restore application on a volume that the first one wrote |
+| One event for each broker that starts | `PointInTimeRestore` | It is the only per-broker signal that the user gets |
+| `fail` takes a reason | `LogicalRestore` | The logical kinds report `IncompatibleTarget`. `PointInTimeRestore` passes `Failed` |
+| The field name `targetClusterUID` | `LogicalRestore` | `PointInTimeRestore` called it `clusterUID`. One thing has one name |
+
+## Decision: a restore claims its cluster
+
+`pkg/clusterclaim` holds one Lease for each cluster. Both backup kinds take it. No restore kind took
+it, so two restores of one cluster can run together and erase the volumes of each other.
+
+Every restore kind now takes the claim when admission passes, and gives it back at the terminal
+transition. Completed and Failed both give it back. The claim point is the same for all three kinds,
+and it comes before every phase that touches storage. Two restores of one cluster can therefore
+never both pass validation.
+
+A cluster that another holder claims holds the restore in `Pending` with the reason
+`ClusterClaimed`. Nothing bounds this hold, and the restore starts on its own when the holder
+reaches a terminal phase. The holder can be a backup or another restore, so the reason names no
+kind. The backup pair reports `BackupInProgress`, which names one.
 
 ## Decision: the database-state precheck for PointInTimeRestore
 
@@ -128,10 +207,10 @@ holds the restore in `Pending` until the owner has suspended the cluster.
 
 ## Decision: e2e scope
 
-- `LogicalRestore`: a full round trip on both secondary storage paths, in the existing kind + MinIO
-  harness. Seed data into a cluster, take a backup, wipe the state, restore, unsuspend, and verify
-  that the seeded data is visible again. This closes the verification gap that the backup epic left
-  open.
+- `LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS`: a full round trip for each kind, in the
+  existing kind + MinIO harness. Seed data into a cluster, take a backup, wipe the state, restore,
+  unsuspend, and verify that the seeded data is visible again. This closes the verification gap that
+  the backup epic left open.
 - `PointInTimeRestore`: the operator's side only, with no WAL replay in kind. The test treats the
   live database as "already restored". It creates one restore with a timestamp before the database
   state and verifies the `DatabaseNotRestored` refusal. It then creates one restore with a valid
@@ -145,9 +224,12 @@ cost is not justified now. If it becomes justified, it is a follow-up issue, not
 - The backup story closes: backups are proven restorable by CI, not assumed.
 - `PointInTimeRestore` fails fast and non-destructively when the database was not restored, which is
   the most likely operator error in the flow.
-- Both controllers apply their Jobs with SSA under their own field managers
-  (`camunda-operator/logicalrestore`, `camunda-operator/pointintimerestore`), consistent with the
-  rest of the operator.
+- Each kind writes under its own field manager: `camunda-operator/logicalrestoreelasticsearch`,
+  `camunda-operator/logicalrestorerdbms`, and `camunda-operator/pointintimerestore`. The recreated
+  broker volumes go through SSA. The Jobs do not. A Job is created once, as an identity claim, and
+  the API server decides who owns the name. A read and a forced apply after it are two calls, and a
+  Job of an earlier restore can land between them.
+- One restore of a cluster runs at a time, across all three restore kinds and both backup kinds.
 
 ## Risks
 
@@ -155,9 +237,12 @@ cost is not justified now. If it becomes justified, it is a follow-up issue, not
   clock skew between the exporter's writes and the caller's timestamp source can pass or hold a
   restore incorrectly. The slack bounds this, and the restore application still catches the unsafe
   direction.
-- The Elasticsearch path deletes the target's Camunda indices before the snapshot restore. A restore
-  that fails between the delete and the snapshot restore leaves secondary storage empty until a
-  retry succeeds. The backup itself stays intact, so the retry path is safe.
+- `LogicalRestoreElasticsearch` deletes the target's Camunda indices before the snapshot restore. A
+  restore that fails between the delete and the snapshot restore leaves secondary storage empty
+  until a retry succeeds. The backup itself stays intact, so the retry path is safe.
+- The unification rewrites the destructive primary-storage phase of `PointInTimeRestore` after that
+  controller merged. Its envtest suite is the safety net, and it stays as it is. A test that the
+  unification changes names the resolved divergence that made the change necessary.
 - Camunda's restore application is a one-shot app that this operator has not run before. The Job
   pods copy their configuration from the live broker StatefulSet, which removes the drift risk, but
   the copy itself is new code. The version matrix tests and the e2e round trip carry this risk.
