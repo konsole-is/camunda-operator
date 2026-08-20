@@ -20,9 +20,16 @@ import (
 	"context"
 	"fmt"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 )
 
 // attachmentHolder returns the CamundaOptimize that holds the attachment to
@@ -87,4 +94,68 @@ func (r *Reconciler) holdsAttachment(ctx context.Context, optimize *v1.CamundaOp
 	}
 
 	return holder != nil && holder.Name == optimize.Name, nil
+}
+
+// releaseWorkloads deletes the Deployment, the Service, and the ServiceMonitor
+// of each component that optimize controls.
+//
+// The attachment can move to a CamundaOptimize that was created later. The
+// election breaks a tie on the name, and a creationTimestamp carries whole
+// seconds, so one created in the same second with a name that sorts earlier
+// takes the attachment from one that already built its workloads. The deposed
+// one reports ClusterAlreadyAttached and stops. Without this call its pods keep
+// running, and they carry the discovery labels of the new holder, so the
+// Services of both route to the pods of both and two importers write the same
+// indices.
+//
+// The objects carry an owner reference, so deleting the CamundaOptimize
+// collects them. This path is for the CamundaOptimize that stays.
+func (r *Reconciler) releaseWorkloads(ctx context.Context, optimize *v1.CamundaOptimize) error {
+	for _, comp := range []string{components.ComponentWebapp, components.ComponentImporter} {
+		key := client.ObjectKey{
+			Namespace: optimize.Namespace,
+			Name:      components.WorkloadName(optimize, comp),
+		}
+
+		owned := []client.Object{&appsv1.Deployment{}, &corev1.Service{}}
+		if r.serviceMonitorSupported() {
+			owned = append(owned, &monitoringv1.ServiceMonitor{})
+		}
+
+		for _, obj := range owned {
+			if err := r.deleteControlled(ctx, key, obj, optimize); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// deleteControlled deletes the object at key when optimize controls it. A
+// missing object is already the wanted state. The ownership check matters
+// because the managed labels of two CamundaOptimizes on one cluster are
+// identical. Only the owner reference tells their objects apart.
+func (r *Reconciler) deleteControlled(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	optimize *v1.CamundaOptimize,
+) error {
+	if err := r.APIReader.Get(ctx, key, obj); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return nil
+		}
+		return fmt.Errorf("reading %T %q: %w", obj, key, err)
+	}
+
+	if !metav1.IsControlledBy(obj, optimize) {
+		return nil
+	}
+
+	if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("deleting %T %q: %w", obj, key, err)
+	}
+
+	return nil
 }

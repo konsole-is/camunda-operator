@@ -154,6 +154,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
+		// A CamundaOptimize that lost the attachment must not keep the
+		// workloads it built while it held it, see releaseWorkloads.
+		if failure.Reason == v1.ReasonClusterAlreadyAttached {
+			return ctrl.Result{}, r.releaseWorkloads(ctx, &optimize)
+		}
+
 		return ctrl.Result{}, nil
 	}
 	if err != nil {

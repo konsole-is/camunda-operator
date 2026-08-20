@@ -128,7 +128,7 @@ func discoveryLabels(in Input, comp string) map[string]string {
 	return labels.Discovery(labels.Cluster(in.ClusterName), comp)
 }
 
-// deploymentFor renders the base rolling-update Deployment of a component.
+// deploymentFor renders the base Deployment of a component.
 // deploymentMutations layer the overrides on top.
 func deploymentFor(in Input, comp string) *appsv1.Deployment {
 	return &appsv1.Deployment{
@@ -140,10 +140,22 @@ func deploymentFor(in Input, comp string) *appsv1.Deployment {
 		Spec: appsv1.DeploymentSpec{
 			Replicas: new(in.replicas(comp)),
 			Selector: &metav1.LabelSelector{MatchLabels: discoveryLabels(in, comp)},
-			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType},
+			Strategy: appsv1.DeploymentStrategy{Type: strategyFor(comp)},
 			Template: podTemplate(in, comp),
 		},
 	}
+}
+
+// strategyFor returns the rollout strategy of a component. The importer takes
+// Recreate: a rolling update starts the new pod before it stops the old one,
+// and two importers that write the same indices at the same time make the
+// analytics data inconsistent. The webapp serves read traffic and rolls.
+func strategyFor(comp string) appsv1.DeploymentStrategyType {
+	if comp == ComponentImporter {
+		return appsv1.RecreateDeploymentStrategyType
+	}
+
+	return appsv1.RollingUpdateDeploymentStrategyType
 }
 
 // podTemplate renders the base pod template of a component: the discovery

@@ -199,18 +199,53 @@ func TestWorkloadNamesComeFromTheCustomResource(t *testing.T) {
 	)
 }
 
-// The webapp scales with the spec; the importer stays at one replica whatever
-// the spec asks for, because Optimize supports one active importer.
-func TestImporterAlwaysRunsOneReplica(t *testing.T) {
+// The webapp scales with the spec. The importer takes 0 or 1, which CEL holds
+// it to, and 0 is the suspend value that stops the import.
+func TestImporterReplicasSuspendTheImport(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureRealistic(t)
-	in.Optimize.Spec.Importer.Replicas = new(int32(4))
+	in.Optimize.Spec.Importer.Replicas = new(int32(0))
 	comps, err := Build(in)
 	require.NoError(t, err)
 
 	assert.Equal(t, int32(2), *previewedDeployment(t, comps[0]).Spec.Replicas)
+	assert.Equal(t, int32(0), *previewedDeployment(t, comps[1]).Spec.Replicas)
+}
+
+// A spec that names no replica count runs one of each workload.
+func TestReplicasDefaultToOne(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureRealistic(t)
+	in.Optimize.Spec.Webapp.Replicas = nil
+	in.Optimize.Spec.Importer.Replicas = nil
+	comps, err := Build(in)
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(1), *previewedDeployment(t, comps[0]).Spec.Replicas)
 	assert.Equal(t, int32(1), *previewedDeployment(t, comps[1]).Spec.Replicas)
+}
+
+// A rolling update starts the new importer pod before it stops the old one,
+// and two importers that write the same indices at the same time make the
+// analytics data inconsistent. The webapp serves read traffic and rolls.
+func TestImporterReplacesRatherThanRolls(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(fixtureRealistic(t))
+	require.NoError(t, err)
+
+	assert.Equal(
+		t,
+		appsv1.RollingUpdateDeploymentStrategyType,
+		previewedDeployment(t, comps[0]).Spec.Strategy.Type,
+	)
+	assert.Equal(
+		t,
+		appsv1.RecreateDeploymentStrategyType,
+		previewedDeployment(t, comps[1]).Spec.Strategy.Type,
+	)
 }
 
 // Only the importer imports the exported records of the cluster.

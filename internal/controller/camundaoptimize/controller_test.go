@@ -30,6 +30,7 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -230,6 +231,65 @@ func createNamedOptimize(
 	DeferCleanup(func() { _ = deleteOptimize(optimize) })
 
 	return optimize
+}
+
+// createDanglingOptimize creates a CamundaOptimize whose clusterRef names no
+// cluster. The controller reports InvalidReference and builds nothing, so a
+// spec can stage workloads under it and they stay as staged.
+func createDanglingOptimize(name, namespace string) *v1.CamundaOptimize {
+	GinkgoHelper()
+	optimize := &v1.CamundaOptimize{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: v1.CamundaOptimizeSpec{
+			Version:           "8.9.4",
+			ManagementAuthRef: "no-such-auth",
+			ClusterRef:        v1.ClusterRef{Name: "no-such-cluster"},
+		},
+	}
+	Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
+	DeferCleanup(func() { _ = deleteOptimize(optimize) })
+
+	return optimize
+}
+
+// stageWorkload creates the Deployment and the Service that the renderer gives
+// a component of named, under the control of owner, and returns their shared
+// key. The two are separate so that a spec can stage an object at the name of
+// one CamundaOptimize that another one controls.
+func stageWorkload(named, owner *v1.CamundaOptimize, comp string) client.ObjectKey {
+	GinkgoHelper()
+	key := client.ObjectKey{
+		Namespace: named.Namespace,
+		Name:      components.WorkloadName(named, comp),
+	}
+	selector := map[string]string{"camunda.io/component": comp, "camunda.io/optimize": named.Name}
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: selector},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: selector},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "optimize", Image: "camunda/optimize:8.9.4"}},
+				},
+			},
+		},
+	}
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+		Spec: corev1.ServiceSpec{
+			Selector: selector,
+			Ports:    []corev1.ServicePort{{Name: "http", Port: 8090}},
+		},
+	}
+
+	for _, obj := range []client.Object{deployment, svc} {
+		Expect(controllerutil.SetControllerReference(owner, obj, k8sClient.Scheme())).To(Succeed())
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+	}
+
+	return key
 }
 
 // deleteOptimize deletes a CamundaOptimize and waits for the finalizer to let
@@ -499,6 +559,53 @@ var _ = Describe("CamundaOptimize controller", func() {
 					HaveField("Name", "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"),
 				))
 			}, 2*time.Second, interval).Should(Succeed())
+		})
+
+		// The attachment moves when a CamundaOptimize created in the same second
+		// sorts earlier by name, so a holder that already built its workloads
+		// can be deposed and must drop them. Reproducing that ordering races
+		// the clock, so the workloads of a deposed holder are staged here and
+		// releaseWorkloads is called on them.
+		It("releases the workloads that a deposed holder still owns", func() {
+			ns := newNamespace()
+			deposed := createDanglingOptimize("co-deposed", ns)
+			other := createDanglingOptimize("co-other", ns)
+
+			webappKey := stageWorkload(deposed, deposed, components.ComponentWebapp)
+			importerKey := stageWorkload(deposed, deposed, components.ComponentImporter)
+			otherKey := stageWorkload(other, other, components.ComponentWebapp)
+
+			r := &Reconciler{Client: k8sClient, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
+			Expect(r.releaseWorkloads(ctx, deposed)).To(Succeed())
+
+			By("leaving no Deployment and no Service of the deposed holder")
+			for _, key := range []client.ObjectKey{webappKey, importerKey} {
+				var deployment appsv1.Deployment
+				Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &deployment))).To(BeTrue(), key.Name)
+
+				var svc corev1.Service
+				Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &svc))).To(BeTrue(), key.Name)
+			}
+
+			By("keeping the workloads of another CamundaOptimize")
+			var kept appsv1.Deployment
+			Expect(k8sClient.Get(ctx, otherKey, &kept)).To(Succeed())
+		})
+
+		// The managed labels of two CamundaOptimizes on one cluster are
+		// identical, so only the owner reference tells their objects apart.
+		It("keeps an object at its own workload name that another owner controls", func() {
+			ns := newNamespace()
+			deposed := createDanglingOptimize("co-deposed", ns)
+			other := createDanglingOptimize("co-other", ns)
+
+			key := stageWorkload(deposed, other, components.ComponentWebapp)
+
+			r := &Reconciler{Client: k8sClient, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
+			Expect(r.releaseWorkloads(ctx, deposed)).To(Succeed())
+
+			var kept appsv1.Deployment
+			Expect(k8sClient.Get(ctx, key, &kept)).To(Succeed())
 		})
 
 		It("hands the cluster to the waiting one when the holder goes", func() {

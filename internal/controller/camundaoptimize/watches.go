@@ -161,6 +161,23 @@ func (r *Reconciler) enqueueSiblings() handler.EventHandler {
 	})
 }
 
+// enqueueForClusterDefaults maps an event on a cluster-scoped defaults object
+// to every Optimize attached to a cluster that names it, through the given
+// index of the cluster controller.
+//
+// Both defaults kinds reach the Optimize pods: a preset supplies the version
+// and the partition count, a platform config the image registry and the
+// license. Neither changes the CamundaCluster object, so without this watch
+// nothing tells an attached Optimize that its rendered input moved.
+func (r *Reconciler) enqueueForClusterDefaults(field string) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		set := requestSet{}
+		set.addClustersByIndex(ctx, r.Client, field, o.GetName())
+
+		return set.requests()
+	})
+}
+
 // requestSet collects reconcile requests without duplicates.
 type requestSet map[types.NamespacedName]struct{}
 
@@ -206,7 +223,10 @@ func (s requestSet) requests() []reconcile.Request {
 // copies (metadata only). Every reference is watched: the cluster and the
 // Management Identity contract through the indexes, the storage contract
 // through the storage index of the cluster controller, and Secrets (metadata
-// only) by namespace. It also watches its own kind a second time, so the
+// only) by namespace. The preset and the platform config of the cluster are
+// watched through the indexes of the cluster controller, because they change
+// the rendered input without changing the CamundaCluster object. It also
+// watches its own kind a second time, so the
 // CamundaOptimizes that wait for an attached cluster hear that the holder of
 // the attachment went. ServiceMonitors are not watched: the operator only
 // checks whether the Kubernetes cluster serves the kind. It also sets
@@ -255,6 +275,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(&v1.CamundaOptimize{}, r.enqueueSiblings()).
 		Watches(&v1.SecondaryStorageConfig{}, r.enqueueForStorage()).
+		Watches(
+			&v1.CamundaClusterPreset{},
+			r.enqueueForClusterDefaults(camundacluster.PresetRefField),
+		).
+		Watches(
+			&v1.CamundaPlatformConfig{},
+			r.enqueueForClusterDefaults(camundacluster.PlatformConfigRefField),
+		).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named("camundaoptimize").
 		Complete(r)

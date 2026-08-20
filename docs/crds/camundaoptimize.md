@@ -29,6 +29,8 @@ The operator reconciles a `CamundaOptimize` in the following steps:
 
 No index prefix fields exist on the CRD: the operator controls both the exporter side (on the cluster) and the importer side (on Optimize), so the `zeebe-record` prefix is fixed by design.
 
+The importer pod is replaced, not rolled. A rolling update starts the new pod before it stops the old one, and two importers that write the same indices at the same time make the analytics data inconsistent. A new image or a changed setting therefore stops the import for the length of the restart. The webapp rolls as usual and keeps serving what is already imported.
+
 Optimize connects directly to Elasticsearch and never talks to the orchestration cluster's API.
 
 ```mermaid
@@ -91,7 +93,7 @@ spec:
     scheduling: {}
   # object. Optional. The Optimize importer deployment; reads zeebe-record indices from Elasticsearch.
   importer:
-    # integer. Optional, default: 1. Number of importer replicas; must be 1 — Optimize supports only one active importer.
+    # integer. Optional, default: 1. Number of importer replicas. Must be 0 or 1. Set 0 to stop the import.
     replicas: 1
     # object. Optional. Kubernetes resource requests and limits for the importer pod.
     resources:

@@ -42,7 +42,9 @@ import (
 // The index fields of CamundaClusters, one per reference kind. Cluster-scoped
 // referents are keyed by name, namespaced ones with refindex.NamespacedKey.
 const (
-	presetRefField = "camundacluster.spec.presetRef"
+	// PresetRefField is exported: an extension that renders from the effective
+	// spec of a cluster finds the clusters bound to a preset through it.
+	PresetRefField = "camundacluster.spec.presetRef"
 	// PlatformConfigRefField is exported: an extension that reads the platform
 	// defaults of a cluster finds the clusters bound to one through it.
 	PlatformConfigRefField = "camundacluster.spec.platformConfigRef"
@@ -61,7 +63,7 @@ const (
 
 // indexers are the index functions of the fields above.
 var indexers = map[string]client.IndexerFunc{
-	presetRefField: func(o client.Object) []string {
+	PresetRefField: func(o client.Object) []string {
 		return nonEmpty(o.(*v1.CamundaCluster).Spec.PresetRef)
 	},
 	PlatformConfigRefField: func(o client.Object) []string {
@@ -130,7 +132,7 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 		}
 
 		for _, preset := range listByIndex[v1.CamundaClusterPresetList](ctx, r.Client, presetSecretRefsField, key).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{presetRefField: preset.Name})
+			set.addList(ctx, r.Client, client.MatchingFields{PresetRefField: preset.Name})
 		}
 
 		for _, binding := range listByIndex[v1.SecondaryStorageConfigList](
@@ -292,7 +294,7 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(
 			&v1.CamundaClusterPreset{},
-			refindex.Enqueue(cached, clusters, presetRefField, refindex.ObjectName),
+			refindex.Enqueue(cached, clusters, PresetRefField, refindex.ObjectName),
 		).
 		Watches(
 			&v1.SecondaryStorageConfig{},

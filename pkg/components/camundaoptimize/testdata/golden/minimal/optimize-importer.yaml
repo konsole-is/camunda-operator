@@ -14,7 +14,7 @@ spec:
       camunda.io/cluster: my-cluster
       camunda.io/component: optimize-importer
   strategy:
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       annotations:

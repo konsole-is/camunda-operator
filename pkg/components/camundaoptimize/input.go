@@ -86,14 +86,12 @@ func (in Input) workload(component string) v1.WorkloadSpec {
 	return *spec
 }
 
-// replicas returns the replica count of a component. The webapp defaults to 1
-// and the importer is always 1: Optimize supports one active importer, and CEL
-// rejects any other value on the spec.
+// replicas returns the replica count of a component. Both default to 1. CEL
+// holds the importer to 0 or 1, because Optimize supports one active importer.
+// 0 is the suspend value. It stops the import while a restore or an index
+// rewrite runs.
 func (in Input) replicas(component string) int32 {
-	if component == ComponentImporter {
-		return 1
-	}
-	if r := in.workload(ComponentWebapp).Replicas; r != nil {
+	if r := in.workload(component).Replicas; r != nil {
 		return *r
 	}
 
