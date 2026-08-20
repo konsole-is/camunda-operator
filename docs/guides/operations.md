@@ -242,7 +242,7 @@ A smaller value is rejected at admission. If a preset lowers the size under a ru
 
 ## Rotate passwords
 
-The operator generates each password once and keeps it stable. To rotate one, delete its Secret. The operator generates a new password on the next reconcile and publishes it in a new Secret. The old password is never published again.
+The operator generates each password once and keeps it stable. To rotate one, delete its Secret. The operator generates a new password on the next reconcile and publishes it in a new Secret. The old password is never published again. The admin user of a basic-authentication cluster is the exception: it rotates through the spec, and a deletion does not change it on the cluster.
 
 | Password | Secret to delete | What happens next |
 | --- | --- | --- |
