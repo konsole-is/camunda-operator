@@ -9,13 +9,13 @@ The operator creates two Deployments and their Services: the webapp, which serve
 The cluster must store its data in Elasticsearch. Optimize does not read an RDBMS secondary storage.
 
 !!! warning "The exporter cannot use a private certificate authority"
-    The Zeebe Elasticsearch exporter that this kind turns on has no TLS setting, so it reaches an HTTPS endpoint only when the JVM of the broker already trusts the certificate. The operator puts no certificate into the trust store of the broker.
+    Optimize reads the `zeebe-record` indices, which only the Zeebe Elasticsearch exporter writes. That exporter carries no TLS setting of its own. It reaches an HTTPS endpoint only when the JVM of the broker already trusts the certificate. This is a limit of Camunda, recorded in [camunda/camunda#9839](https://github.com/camunda/camunda/issues/9839), and the documented answer is a trust store for the whole JVM. This operator does not build one yet.
 
     An `ElasticsearchCluster` publishes an HTTPS endpoint with its own private certificate authority. The exporter cannot reach that endpoint, so Optimize gets no records from a cluster on such a storage today.
 
     Attach Optimize to a cluster whose `SecondaryStorageConfig` names an Elasticsearch that the broker already trusts: one on HTTP, or one with a certificate from a public authority.
 
-    The limit is on the exporter alone. The Optimize pods read `caSecretRef` of the contract themselves, so they reach either kind.
+    The limit is on the exporter alone. Two other paths to the same Elasticsearch work with a private authority, which is what makes this easy to miss. The cluster reads its secondary storage through `certificate-path`, and the Optimize pods read `caSecretRef` of the contract. Only the exporter has no such field.
 
 The smallest manifest names the cluster, the authentication contract, and the version:
 
