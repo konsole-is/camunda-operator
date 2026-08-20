@@ -18,6 +18,7 @@ package backupschedule
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -100,6 +101,11 @@ func retentionWindowWarning(
 	}
 
 	lifetime := time.Duration(retainedCompleted) * interval
+	if interval > 0 && lifetime/interval != time.Duration(retainedCompleted) {
+		// The product overflowed int64, so the true lifetime is far beyond
+		// any window. The largest duration keeps the comparison honest.
+		lifetime = time.Duration(math.MaxInt64)
+	}
 	if lifetime <= window {
 		return ""
 	}

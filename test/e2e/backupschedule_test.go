@@ -24,7 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -99,11 +99,13 @@ func itSchedulesBackups(cluster *v1.CamundaCluster) {
 			g.Expect(schedule.Status.LastScheduleTime).NotTo(BeNil())
 			g.Expect(schedule.Status.LastBackupName).To(BeEmpty())
 
-			var events corev1.EventList
-			g.Expect(utils.List("events", cluster.Namespace, "", &events)).To(Succeed())
+			var events eventsv1.EventList
+			g.Expect(utils.List(
+				"events.v1.events.k8s.io", cluster.Namespace, "", &events,
+			)).To(Succeed())
 			skipped := false
 			for _, event := range events.Items {
-				if event.InvolvedObject.Name == scheduleName && event.Reason == "TriggerSkipped" {
+				if event.Regarding.Name == scheduleName && event.Reason == "TriggerSkipped" {
 					skipped = true
 				}
 			}

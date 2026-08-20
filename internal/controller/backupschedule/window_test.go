@@ -80,6 +80,15 @@ func TestRetentionWindowWarning(t *testing.T) {
 		)
 	})
 
+	t.Run("an absurd retained count cannot overflow the warning away", func(t *testing.T) {
+		// A leap-year-only cron makes the interval about eight years. The
+		// product with a huge count overflows int64; the warning must still
+		// fire instead of comparing a wrapped negative lifetime.
+		interval := 8 * 366 * 24 * time.Hour
+		message := retentionWindowWarning(1<<31-1, interval, policy("P7D", "PT1H"))
+		assert.NotEmpty(t, message)
+	})
+
 	t.Run("is silent on a window it cannot parse", func(t *testing.T) {
 		assert.Empty(t, retentionWindowWarning(200, 24*time.Hour, policy("P1W", "PT1H")))
 	})
