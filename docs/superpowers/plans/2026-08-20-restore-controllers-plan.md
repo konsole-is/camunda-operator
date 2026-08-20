@@ -2463,10 +2463,13 @@ The adaptation is PR-B's, with the relational type. The resource is `*v1.Logical
 
 | Case | Result |
 | --- | --- |
-| relational backup, relational target, same partitions, same version, same bucket | nil |
+| relational backup, relational target, same version, same bucket | nil |
 | the target's secondary storage is Elasticsearch | `IncompatibleTarget`, the message names both types |
-| partition counts differ | `IncompatibleTarget`, the message names both counts |
 | the target bucket differs from the backup's pinned bucket | `IncompatibleTarget`, the message names both buckets |
+
+A relational backup records no partition count, so the rules compare none. Only
+`LogicalBackupElasticsearchStatus` carries `partitionsCount`. The restore application
+reads the exporter position from the restored database and aligns the partitions itself.
 | backup 8.9.9, target 8.9.9 | nil |
 | backup 8.9.9, target 8.9.12 | nil, the patch level is free |
 | backup 8.9.9, target 8.10.0 | nil, one minor newer is allowed |
@@ -2555,7 +2558,7 @@ The set is PR-B's, with two differences. The Jobs carry `camunda.io/logical-rest
 Load `simple-english:simple-english` first. Follow `docs/crds/TEMPLATE.md` and the conventions of `docs/crds/logicalbackuprdbms.md`. The page carries no "Not implemented yet" warning. It states:
 
 - the phase list `Pending | ValidatingCompatibility | RestoringSecondaryStorage | RestoringPrimaryStorage | Completed | Failed`
-- the compatibility rules: same secondary storage type, same partition count, same backup bucket, and the same Camunda minor or one minor newer
+- the compatibility rules: same secondary storage type, same backup bucket, and the same Camunda minor or one minor newer. There is no partition-count rule, because a relational backup records no partition count
 - that the `pg_restore` Job connects as the application role of the cluster, which is the role that owns every object it drops and recreates
 - that the restore Jobs copy the broker configuration from the live broker StatefulSet
 - the PVC rule and the volume ownership rule
