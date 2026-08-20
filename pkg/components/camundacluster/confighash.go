@@ -132,8 +132,19 @@ func envFromValue(source corev1.EnvFromSource) string {
 // still moves the fingerprint and rolls the workloads that inherit it.
 func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
 	rendered := spec.DeepCopy()
-	if auth := rendered.Cluster.Auth; auth != nil && auth.Basic != nil {
-		auth.Basic.PasswordRotation = ""
+	// The wrappers go with the value. The first rotation of a preset adds
+	// the blocks that carry it, and a fingerprint that saw an empty basic or
+	// auth block appear would roll every workload once for that rotation.
+	if auth := rendered.Cluster.Auth; auth != nil {
+		if auth.Basic != nil {
+			auth.Basic.PasswordRotation = ""
+			if *auth.Basic == (v1.BasicAuthSpec{}) {
+				auth.Basic = nil
+			}
+		}
+		if *auth == (v1.ClusterAuthSpec{}) {
+			rendered.Cluster.Auth = nil
+		}
 	}
 
 	encoded, err := json.Marshal(rendered)

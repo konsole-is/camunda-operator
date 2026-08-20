@@ -117,12 +117,13 @@ func (c adminCredential) stageFailure(cluster *v1.CamundaCluster, prior *metav1.
 	}
 	// The component reported the unchanged Secret as healthy a moment ago,
 	// so staging the failure flips the condition back and would stamp a new
-	// transition time on it. An unchanged failure keeps the time it already
-	// carries: the status then stays byte for byte what the server holds,
-	// the flush writes nothing, and the retry waits for its timer instead of
-	// being enqueued again by its own status write.
-	if prior != nil && prior.Status == cond.Status && prior.Reason == cond.Reason &&
-		prior.Message == cond.Message && prior.ObservedGeneration == cond.ObservedGeneration {
+	// transition time on it. The time belongs to the status, and the status
+	// never left False, so it keeps the one it carries. A failure that is
+	// unchanged in every field then stages a status that matches the server
+	// exactly, the flush writes nothing, and the retry waits for its timer
+	// instead of being enqueued again by its own status write. A new reason
+	// or message still travels, and still writes.
+	if prior != nil && prior.Status == cond.Status {
 		cond.LastTransitionTime = prior.LastTransitionTime
 	}
 

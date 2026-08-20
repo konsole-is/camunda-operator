@@ -496,6 +496,39 @@ var _ = Describe("Admin password rotation", func() {
 		expectRotated(cluster, "round-1")
 	})
 
+	It("keeps the transition time of a failure that only changed its message", func() {
+		stamped := metav1.NewTime(time.Now().Add(-time.Hour).Truncate(time.Second))
+		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-cond", Generation: 3}}
+		prior := &metav1.Condition{
+			Type:               v1.ConditionAdminSecretReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             v1.ReasonConnectionFailed,
+			Message:            "dial tcp 10.0.0.1:8080: i/o timeout",
+			ObservedGeneration: 3,
+			LastTransitionTime: stamped,
+		}
+
+		// The Secret component reports the unchanged Secret as healthy on
+		// every reconcile, which is what makes the staged failure a flip.
+		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
+			Type:   v1.ConditionAdminSecretReady,
+			Status: metav1.ConditionTrue,
+			Reason: string(component.Healthy),
+		})
+
+		cred := adminCredential{failure: &rotationFailure{
+			reason: v1.ReasonConnectionFailed, message: "dial tcp 10.0.0.2:8080: i/o timeout",
+		}}
+		cred.stageFailure(cluster, prior)
+
+		cond := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Message).To(ContainSubstring("10.0.0.2"), "the newest answer is reported")
+		Expect(cond.LastTransitionTime).To(
+			Equal(stamped), "the condition never left False, so it never transitioned",
+		)
+	})
+
 	It("does not roll the unified processes when a preset asks for the rotation", func() {
 		ns := newNamespace()
 		preset := &v1.CamundaClusterPreset{

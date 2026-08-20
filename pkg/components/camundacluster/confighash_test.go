@@ -124,4 +124,11 @@ func TestPresetFingerprintIgnoresThePasswordRotation(t *testing.T) {
 
 	assert.Equal(t, first, second, "a rotation renders nothing, so no process may roll for it")
 	assert.NotEqual(t, first, third, "every other preset change still rolls the workloads")
+
+	// The first rotation of a preset adds the block that carries it, so the
+	// fingerprint must not see the wrapper either.
+	none := v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{Version: "8.9.9"}}
+	bare, err := PresetFingerprint(none)
+	require.NoError(t, err)
+	assert.Equal(t, bare, first, "adding the first rotation to a preset may not roll the workloads")
 }
