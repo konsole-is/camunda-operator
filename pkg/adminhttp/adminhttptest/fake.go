@@ -124,6 +124,8 @@ func (f *Fake) FailNext(op string, n int) {
 func (f *Fake) DropNext(op string, n int) {
 	f.Lock()
 	defer f.Unlock()
+	// A schedule replaces the one before it, skips included.
+	f.dropSkip[op] = 0
 	f.drops[op] = n
 }
 

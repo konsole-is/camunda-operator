@@ -177,10 +177,15 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 
 		// Only a cluster that never published an admin Secret seeds the
 		// requested rotation: its password becomes the initial user at first
-		// start, so there is nothing to update. A Secret that went away keeps
-		// the recorded rotation. The cluster still holds the password of the
-		// deleted Secret, so the next reconcile takes the request to the user
-		// API and reports Rejected there.
+		// start, so there is nothing to update. A Secret that went away took
+		// its applied rotation with it, so this replacement records none.
+		// The orchestration cluster still holds the password of the deleted
+		// Secret, which nobody has any more, so the next reconcile takes the
+		// request to the user API and reports Rejected there. That is what
+		// the authentication guide promises, and it is the point: a
+		// replacement that kept the applied value would reach the steady
+		// branch and report a healthy Secret that the cluster does not
+		// accept.
 		//
 		// published is the password of this apply, not the empty value that
 		// the Secret holds now: connectors would otherwise hash on "" and

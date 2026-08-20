@@ -265,9 +265,12 @@ type ClusterAdminSpec struct {
 // AdminPasswordStatus is the state of the admin credential of a basic-auth
 // cluster.
 type AdminPasswordStatus struct {
-	// Rotation is the last spec.auth.basic.passwordRotation value that the
-	// operator applied. A rotation is in progress while the spec value is
-	// not empty and differs from this value.
+	// Rotation is the last admin password rotation that the operator
+	// applied: the effective spec.auth.basic.passwordRotation value, after
+	// the preset merge, that produced the password in the admin Secret. A
+	// rotation is in progress while that effective value is not empty and
+	// differs from this one. A cluster that inherits the value from its
+	// preset carries none of its own in the spec.
 	// +optional
 	Rotation string `json:"rotation,omitempty"`
 }
