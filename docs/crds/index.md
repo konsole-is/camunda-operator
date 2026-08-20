@@ -43,6 +43,7 @@ A contract carries connection details and credential references. The operator va
 | Kind | Scope | What it is |
 | --- | --- | --- |
 | [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) | Namespaced | Restore one Elasticsearch backup into one suspended cluster. |
+| [LogicalRestoreRDBMS](logicalrestorerdbms.md) | Namespaced | Restore one relational logical backup into a suspended cluster. |
 | [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 
 ## How the kinds relate
@@ -63,6 +64,7 @@ graph LR
     CC[CamundaCluster]
     LBE[LogicalBackupElasticsearch]
     LBR[LogicalBackupRDBMS]
+    LRR[LogicalRestoreRDBMS]
 
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
@@ -80,6 +82,8 @@ graph LR
 
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
+    LRR -.->|backupRef| LBR
+    LRR -.->|targetClusterRef| CC
 ```
 
 ## Planned kinds
