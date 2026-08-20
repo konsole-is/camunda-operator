@@ -16,7 +16,7 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - logicalrestorerdbms
+  - logicalrestorerdbmses
   verbs:
   - create
   - delete
@@ -28,6 +28,6 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - logicalrestorerdbms/status
+  - logicalrestorerdbmses/status
   verbs:
   - get

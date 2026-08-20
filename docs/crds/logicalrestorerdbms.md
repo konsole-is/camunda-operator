@@ -85,7 +85,7 @@ The operator applies one Job that rebuilds the logical database of the target. A
 
 **The Job connects as the application role of the target**, the role that `DatabaseConfig.spec.credentialsSecretRef` names. `pg_restore --clean` drops each object before it recreates it, and PostgreSQL lets only the owner of an object drop it. The application role owns the database and every object in it. The backup role that wrote the dump owns nothing: it holds USAGE and CREATE on the schema and DML on the tables. A restore that connected as the backup role would fail every DROP with "must be owner of table" and would restore no data.
 
-A credentials Secret outside the namespace of the target is read through the local copy that the `CamundaCluster` controller maintains. A Secret that is missing or lacks a key holds the restore with reason `MissingSecret` for the bucket credentials, or `MissingCredentials` for the bucket.
+A credentials Secret outside the namespace of the target is read through the local copy that the `CamundaCluster` controller maintains. A Secret that is missing or lacks a key holds the restore with reason `MissingSecret` for the database credentials, or `MissingCredentials` for the bucket credentials.
 
 The Job takes its pod settings and its postgres image from `spec.backup.dump` of the target cluster, through its preset when it names one. The Job runs under the ServiceAccount of the cluster, so the pod shape and the executable stay the choice of whoever owns the cluster. The restore resource carries no pod block of its own.
 
