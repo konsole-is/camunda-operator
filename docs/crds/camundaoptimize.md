@@ -29,6 +29,8 @@ The operator reconciles a `CamundaOptimize` in the following steps:
 
 No index prefix fields exist on the CRD: the operator controls both the exporter side (on the cluster) and the importer side (on Optimize), so the `zeebe-record` prefix is fixed by design.
 
+The attachment moves between resources in two cases: the holder is deleted, or a resource created in the same second with a name that sorts earlier takes it. On both paths the previous holder deletes its workloads before it lets go, and the new holder reports `WaitingForHandover` and renders nothing until the importer Deployment of the previous one is gone. The pods of that Deployment can take their termination grace period to stop after it goes, so a short overlap remains.
+
 The importer pod is replaced, not rolled. A rolling update starts the new pod before it stops the old one, and two importers that write the same indices at the same time make the analytics data inconsistent. A new image or a changed setting therefore stops the import for the length of the restart. The webapp rolls as usual and keeps serving what is already imported.
 
 Optimize connects directly to Elasticsearch and never talks to the orchestration cluster's API.
@@ -140,6 +142,7 @@ spec:
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. One cluster carries one Optimize instance. | Delete one of the two. The message names the one that holds the cluster. |
+| `Ready` | `WaitingForHandover` | This `CamundaOptimize` now holds the cluster, and the importer of the one that held it before still runs. It renders nothing until that importer goes. | Wait. The message names the Deployment. The state clears on its own. |
 | `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`, because the operator never reconciles such a cluster. | Read the message. Create the missing resource, or correct the field it names on the `CamundaOptimize` or on the cluster. |
 | `Ready` | `StorageTypeMismatch` | The `storageRef` of the cluster resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. | Attach Optimize to a cluster on Elasticsearch secondary storage. |
 | `Ready` | `VersionMismatch` | The major and the minor of `spec.version` differ from those of the effective version of the cluster. Camunda supports Optimize only on a matching minor. | Set `spec.version` to a release on the minor of the cluster. |

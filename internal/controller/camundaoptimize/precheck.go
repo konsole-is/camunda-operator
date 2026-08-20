@@ -117,6 +117,25 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 		}
 	}
 
+	// The attachment moves before the workloads of the previous holder go, on
+	// both handover paths: a deposed holder deletes its own, and a deleted one
+	// leaves them to the garbage collector. A render at this point starts a
+	// second importer against the same indices, which is the state that one
+	// Optimize per cluster exists to prevent.
+	other, err := r.otherImporter(ctx, optimize)
+	if err != nil {
+		return out, err
+	}
+	if other != "" {
+		return out, &conditions.PreCheckFailure{
+			Reason: v1.ReasonWaitingForHandover,
+			Message: fmt.Sprintf(
+				"Deployment %q of the previous Optimize instance still runs; waiting for its pods to go",
+				other,
+			),
+		}
+	}
+
 	var cluster v1.CamundaCluster
 	if err := res.exists(ctx, out.ClusterKey, &cluster); err != nil {
 		return out, err

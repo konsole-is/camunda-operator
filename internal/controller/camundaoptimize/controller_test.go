@@ -36,6 +36,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // userManager is the field manager of the entry that a user owns on
@@ -308,6 +309,35 @@ func stageMirroredSecret(optimize *v1.CamundaOptimize, purpose string) client.Ob
 	Expect(k8sClient.Create(ctx, mirrored)).To(Succeed())
 
 	return client.ObjectKeyFromObject(mirrored)
+}
+
+// stageForeignImporter creates an importer Deployment of a cluster under the
+// control of owner, with the managed labels that the renderer gives it. Every
+// CamundaOptimize on one cluster renders the same labels, so this is what the
+// holder sees when the previous one has not finished going.
+func stageForeignImporter(owner *v1.CamundaOptimize, clusterName string) client.ObjectKey {
+	GinkgoHelper()
+	selector := labels.Discovery(labels.Cluster(clusterName), components.ComponentImporter)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      components.WorkloadName(owner, components.ComponentImporter),
+			Namespace: owner.Namespace,
+			Labels:    labels.Managed(labels.Cluster(clusterName), components.ComponentImporter),
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: selector},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: selector},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "optimize", Image: "camunda/optimize:8.9.4"}},
+				},
+			},
+		},
+	}
+	Expect(controllerutil.SetControllerReference(owner, deployment, k8sClient.Scheme())).To(Succeed())
+	Expect(k8sClient.Create(ctx, deployment)).To(Succeed())
+
+	return client.ObjectKeyFromObject(deployment)
 }
 
 // deleteOptimize deletes a CamundaOptimize and waits for the finalizer to let
@@ -629,6 +659,36 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 			var kept appsv1.Deployment
 			Expect(k8sClient.Get(ctx, key, &kept)).To(Succeed())
+		})
+
+		// The attachment moves before the workloads of the previous holder go.
+		// Two importers on the same indices is the state that one Optimize per
+		// cluster exists to prevent, so the new holder renders nothing until
+		// the importer Deployment of the old one is gone.
+		It("waits for the importer of the previous holder before it renders", func() {
+			ns := newNamespace()
+			cluster := createCluster(ns, createBinding(ns, ns))
+			auth := createAuth(ns, true)
+			previous := createDanglingOptimize("co-previous", ns)
+			foreign := stageForeignImporter(previous, cluster.Name)
+
+			optimize := createOptimize(ns, cluster, auth, "8.9.4")
+			expectNotReady(optimize, v1.ReasonWaitingForHandover)
+
+			By("rendering no importer of its own while it waits")
+			var mine appsv1.Deployment
+			mineKey := client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(optimize, components.ComponentImporter),
+			}
+			Expect(apierrors.IsNotFound(k8sClient.Get(ctx, mineKey, &mine))).To(BeTrue())
+
+			By("rendering once the importer of the previous holder goes")
+			var stale appsv1.Deployment
+			Expect(k8sClient.Get(ctx, foreign, &stale)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &stale)).To(Succeed())
+
+			fetchDeployment(mineKey)
 		})
 
 		It("hands the cluster to the waiting one when the holder goes", func() {

@@ -67,6 +67,14 @@ func (r *Reconciler) finalize(ctx context.Context, optimize *v1.CamundaOptimize)
 		)
 	}
 
+	// The owner references collect these too, but the garbage collector runs on
+	// its own schedule. The CamundaOptimize that takes the attachment next
+	// waits for the importer of this one to go, so the wait ends when this call
+	// returns rather than whenever the collector arrives.
+	if err := r.releaseWorkloads(ctx, optimize); err != nil {
+		return err
+	}
+
 	controllerutil.RemoveFinalizer(optimize, Finalizer)
 	if err := r.Update(ctx, optimize); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("removing the finalizer: %w", err)

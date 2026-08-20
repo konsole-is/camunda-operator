@@ -30,6 +30,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // attachmentHolder returns the CamundaOptimize that holds the attachment to
@@ -171,4 +172,39 @@ func (r *Reconciler) deleteControlled(
 	}
 
 	return nil
+}
+
+// otherImporter returns the name of an importer Deployment of the same cluster
+// that optimize does not control, or an empty string when there is none.
+//
+// The importer Deployments of every CamundaOptimize on one cluster carry the
+// same managed labels, so one list finds them all and the owner reference tells
+// them apart.
+//
+// The gate is the Deployment, not the pods behind it. Both handover paths
+// delete the Deployment of the previous holder before the new holder renders,
+// so the overlap shrinks to the termination of pods that are already ordered to
+// stop. Closing it fully needs a pod-level check, which needs a label that
+// names the owning CamundaOptimize on the pod template.
+func (r *Reconciler) otherImporter(ctx context.Context, optimize *v1.CamundaOptimize) (string, error) {
+	var list appsv1.DeploymentList
+	err := r.APIReader.List(
+		ctx,
+		&list,
+		client.InNamespace(optimize.Namespace),
+		client.MatchingLabels(labels.Managed(
+			labels.Cluster(optimize.Spec.ClusterRef.Name), components.ComponentImporter,
+		)),
+	)
+	if err != nil {
+		return "", fmt.Errorf("listing the importer Deployments of namespace %q: %w", optimize.Namespace, err)
+	}
+
+	for i := range list.Items {
+		if !metav1.IsControlledBy(&list.Items[i], optimize) {
+			return list.Items[i].Name, nil
+		}
+	}
+
+	return "", nil
 }

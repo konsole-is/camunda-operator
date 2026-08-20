@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -35,6 +36,8 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
 
@@ -178,6 +181,29 @@ func (r *Reconciler) enqueueForClusterDefaults(field string) handler.EventHandle
 	})
 }
 
+// enqueueForOptimizeWorkload maps an event on a Deployment that this operator
+// renders for Optimize to every CamundaOptimize attached to the same cluster.
+//
+// Owns covers the Deployments of the reconciled CamundaOptimize only. The one
+// that waits for a handover waits for a Deployment of another CamundaOptimize,
+// which no other watch reports. Without this watch it waits until an unrelated
+// event arrives.
+func (r *Reconciler) enqueueForOptimizeWorkload() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		cluster := o.GetLabels()[labels.ClusterKey]
+		if cluster == "" {
+			return nil
+		}
+
+		set := requestSet{}
+		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()), client.MatchingFields{
+			clusterRefField: refindex.NamespacedKey(o.GetNamespace(), cluster),
+		})
+
+		return set.requests()
+	})
+}
+
 // requestSet collects reconcile requests without duplicates.
 type requestSet map[types.NamespacedName]struct{}
 
@@ -282,6 +308,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&v1.CamundaPlatformConfig{},
 			r.enqueueForClusterDefaults(camundacluster.PlatformConfigRefField),
+		).
+		Watches(
+			&appsv1.Deployment{},
+			r.enqueueForOptimizeWorkload(),
+			builder.OnlyMetadata,
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
+				return o.GetLabels()[labels.ComponentKey] == components.ComponentImporter
+			})),
 		).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named("camundaoptimize").
