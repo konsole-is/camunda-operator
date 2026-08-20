@@ -33,7 +33,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	lbes "github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	escomponents "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
@@ -174,7 +173,7 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 			names, err := snapshotNames(cluster.Namespace, storageConfig, backup.Status.Repository)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(names).To(ContainElements(toAny(backup.Status.HistorySnapshots)...))
-			g.Expect(names).To(ContainElement(lbes.RecordsSnapshotName(backup.Status.BackupID)))
+			g.Expect(names).To(ContainElement(logicalbackup.RecordsSnapshotName(backup.Status.BackupID)))
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("finding the partition backup objects in MinIO")
@@ -210,7 +209,7 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 		for _, name := range backup.Status.HistorySnapshots {
 			Expect(names).NotTo(ContainElement(name))
 		}
-		Expect(names).NotTo(ContainElement(lbes.RecordsSnapshotName(backup.Status.BackupID)))
+		Expect(names).NotTo(ContainElement(logicalbackup.RecordsSnapshotName(backup.Status.BackupID)))
 
 		By("checking that the partition backup objects are gone from MinIO")
 		objects, err := runtimeBackupObjects(cluster, backup.Status.BackupID)
