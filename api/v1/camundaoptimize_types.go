@@ -40,10 +40,15 @@ const (
 	// names the CamundaOptimize that holds the attachment.
 	ReasonClusterAlreadyAttached = "ClusterAlreadyAttached"
 	// ReasonWaitingForHandover means that this CamundaOptimize now holds the
-	// attachment, and that the importer of the one that held it before still
-	// runs. Optimize supports one active importer, so the new holder renders
-	// nothing until the pods of the old one are gone. The message names the
-	// Deployment it waits for. The state clears on its own.
+	// attachment, and that the importer Deployment of the one that held it
+	// before still exists. Optimize supports one active importer, so the new
+	// holder renders nothing until that Deployment is gone. The message names
+	// the Deployment it waits for. The state clears on its own.
+	//
+	// The gate is the Deployment, not the pods behind it. A pod that is
+	// already ordered to stop can outlive its Deployment for the length of the
+	// termination grace period. Two importers can therefore overlap for that
+	// time.
 	ReasonWaitingForHandover = "WaitingForHandover"
 	// ReasonExporterConflict means that spec.zeebe.extraEnv of the referenced
 	// cluster already carries an entry with the name of an exporter setting,

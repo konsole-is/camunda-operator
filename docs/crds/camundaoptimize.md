@@ -166,7 +166,7 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. | Delete one of the two. The message names the one that holds the cluster. |
-| `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer of the previous one still runs. | Wait. The message names the Deployment. The state clears on its own. |
+| `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. | Wait. The message names the Deployment. The state clears on its own. |
 | `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`. | Read the message. Create the missing resource, or correct the field it names. |
 | `Ready` | `StorageTypeMismatch` | The `storageRef` of the cluster resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. | Attach Optimize to a cluster on Elasticsearch secondary storage. |
 | `Ready` | `VersionMismatch` | The major and the minor of `spec.version` differ from those of the effective version of the cluster. | Set `spec.version` to a release on the minor of the cluster. |

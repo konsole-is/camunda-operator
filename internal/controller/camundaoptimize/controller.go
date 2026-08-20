@@ -157,6 +157,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// A CamundaOptimize that lost the attachment must not keep the
 		// workloads it built while it held it, see releaseWorkloads.
 		if failure.Reason == v1.ReasonClusterAlreadyAttached {
+			// The component conditions describe workloads that the next call
+			// deletes, and comps stays nil on this path, so the flush does not
+			// own those types and would write the stale values back. A parked
+			// CamundaOptimize renders nothing, so it reports nothing about
+			// what it used to render.
+			removeComponentConditions(&optimize)
 			return ctrl.Result{}, r.releaseWorkloads(ctx, &optimize)
 		}
 
