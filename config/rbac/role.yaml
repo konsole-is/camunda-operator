@@ -91,6 +91,7 @@ rules:
   - logicalbackupelasticsearches
   - logicalbackuprdbmses
   - logicalrestoreelasticsearches
+  - logicalrestorerdbmses
   - pointintimerestores
   - pvcautoresizes
   - secondarystorageconfigs
@@ -114,6 +115,7 @@ rules:
   - logicalbackupelasticsearches/finalizers
   - logicalbackuprdbmses/finalizers
   - logicalrestoreelasticsearches/finalizers
+  - logicalrestorerdbmses/finalizers
   - pointintimerestores/finalizers
   - pvcautoresizes/finalizers
   verbs:
@@ -133,6 +135,7 @@ rules:
   - logicalbackupelasticsearches/status
   - logicalbackuprdbmses/status
   - logicalrestoreelasticsearches/status
+  - logicalrestorerdbmses/status
   - managementauthconfigs/status
   - objectstorageconfigs/status
   - pointintimerestores/status

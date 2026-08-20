@@ -14,34 +14,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package logicalrestoreelasticsearch reconciles a
-// LogicalRestoreElasticsearch. One resource restores one completed
-// LogicalBackupElasticsearch into one suspended CamundaCluster, and runs
-// once.
+// Package logicalrestorerdbms reconciles a LogicalRestoreRDBMS. One resource
+// restores one completed LogicalBackupRDBMS into one suspended
+// CamundaCluster, and runs once.
 //
 // The phase is the resume marker, and it is persisted before the side effect
 // it names. Pending holds the restore until its references resolve, the
 // target is suspended, and no other operation holds the cluster.
 // ValidatingCompatibility refuses a target that cannot hold the backup.
-// RestoringSecondaryStorage deletes the Camunda indices of the target and
-// restores the snapshots of the backup into its Elasticsearch.
-// RestoringPrimaryStorage gives the brokers empty data volumes and runs the
-// Camunda restore application on them, once per broker.
+// RestoringSecondaryStorage writes the dump back into the logical database of
+// the target with pg_restore. RestoringPrimaryStorage gives the brokers empty
+// data volumes and runs the Camunda restore application on them, once per
+// broker.
 //
 // The controller only reads spec.suspend of the target. Whoever owns the
 // cluster suspends it before the restore and unsuspends it after.
 //
 // The files follow the phases. admit.go resolves the references, holds the
 // restore in Pending, and takes the claim on the cluster. compatibility.go
-// compares the backup against the target. secondary.go rebuilds the
-// Elasticsearch of the target. primary.go runs the shared primary-storage
-// phase of pkg/restore. This file holds what every phase shares: Reconcile,
-// the terminal transitions, and the wiring.
+// compares the backup against the target. secondary.go rebuilds the logical
+// database. primary.go runs the shared primary-storage phase of pkg/restore.
+// This file holds what every phase shares: Reconcile, the terminal
+// transitions, and the wiring.
 //
 // The machinery that every restore kind shares lives in pkg/restore. This
 // package holds the phase vocabulary of this kind, its own rules, and the
 // mapping of a driver outcome onto its phase.
-package logicalrestoreelasticsearch
+package logicalrestorerdbms
 
 import (
 	"context"
@@ -69,11 +68,10 @@ const (
 	// clusterRefField indexes restores by the namespace and name of their
 	// targetClusterRef, so an event on a cluster wakes the restores that wait
 	// for it, for example on the flip of spec.suspend.
-	clusterRefField = "logicalrestoreelasticsearch.spec.targetClusterRef"
+	clusterRefField = "logicalrestorerdbms.spec.targetClusterRef"
 	// backupRefField indexes restores by the namespace and name of their
-	// backupRef, so a backup that reaches Completed wakes them. Index names
-	// are global to the manager, so both carry the kind as a prefix.
-	backupRefField = "logicalrestoreelasticsearch.spec.backupRef"
+	// backupRef, so a backup that reaches Completed wakes them.
+	backupRefField = "logicalrestorerdbms.spec.backupRef"
 
 	// defaultPollInterval paces a running phase.
 	defaultPollInterval = 5 * time.Second
@@ -81,14 +79,18 @@ const (
 	defaultRetryInterval = 30 * time.Second
 	// defaultMidRunGrace bounds how long a started restore waits on a
 	// dependency that stopped resolving before the restore fails. A restore
-	// that already deleted an index or a broker volume must reach a terminal
-	// phase, so that whoever owns the cluster learns that it has to act.
+	// that already rewrote the logical database or deleted a broker volume
+	// must reach a terminal phase, so that whoever owns the cluster learns
+	// that it has to act.
 	defaultMidRunGrace = 10 * time.Minute
 )
 
-// Options tunes a Reconciler. The zero value is the production configuration.
-// Tests shrink the intervals.
+// Options tunes a Reconciler. Only CLIImage is required. Every other field
+// has a production default, and a test sets what it needs to observe.
 type Options struct {
+	// CLIImage is the camunda-operator-cli image that downloads the dump of
+	// the backup. The manager passes --camunda-operator-cli-image.
+	CLIImage string
 	// PollInterval paces a running phase. Zero means five seconds.
 	PollInterval time.Duration
 	// RetryInterval paces a hold that no watch resolves. Zero means thirty
@@ -100,7 +102,12 @@ type Options struct {
 }
 
 // withDefaults fills the zero fields of o with the production configuration.
-func (o Options) withDefaults() Options {
+// It rejects an empty CLIImage, because the restore cannot guess an image and
+// would fail only once it reached the secondary-storage phase.
+func (o Options) withDefaults() (Options, error) {
+	if o.CLIImage == "" {
+		return o, errors.New("the camunda-operator-cli image is required")
+	}
 	if o.PollInterval <= 0 {
 		o.PollInterval = defaultPollInterval
 	}
@@ -111,15 +118,16 @@ func (o Options) withDefaults() Options {
 		o.MidRunGrace = defaultMidRunGrace
 	}
 
-	return o
+	return o, nil
 }
 
-// Reconciler drives a LogicalRestoreElasticsearch to a terminal phase.
+// Reconciler drives a LogicalRestoreRDBMS to a terminal phase.
 type Reconciler struct {
 	client.Client
-	// APIReader reads without the cache. Every decision that deletes an index
-	// or a broker volume reads live state. A stale suspend flag, a stale
-	// claim, or a stale Job each let a restore act on a cluster that moved on.
+	// APIReader reads without the cache. Every decision that rewrites the
+	// logical database or deletes a broker volume reads live state. A stale
+	// suspend flag, a stale claim, or a stale Job each let a restore act on a
+	// cluster that moved on.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// EventRecorder publishes the lifecycle events of the restore.
@@ -129,25 +137,25 @@ type Reconciler struct {
 	opts Options
 }
 
-// New returns a Reconciler with the given options, with every zero field
-// filled from the production configuration.
+// New returns a Reconciler with the given options. SetupWithManager applies
+// their defaults and rejects an incomplete set.
 func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options Options) *Reconciler {
-	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, opts: options.withDefaults()}
+	return &Reconciler{Client: c, APIReader: reader, Scheme: scheme, opts: options}
 }
 
-// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;objectstorageconfigs;logicalbackupelasticsearches,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestorerdbmses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestorerdbmses/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestorerdbmses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;camundaclusterpresets;secondarystorageconfigs;databaseconfigs;databaseserverconfigs;objectstorageconfigs;logicalbackuprdbmses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=configmaps;secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // The cluster claim reads the resource of whichever kind holds the Lease,
 // to decide whether that holder still needs the cluster.
-// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackuprdbmses;logicalrestorerdbmses;pointintimerestores,verbs=get
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches;logicalrestoreelasticsearches;pointintimerestores,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile advances the restore by at most one phase. The phase is the
@@ -156,16 +164,16 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	// The restore is its own state machine. A stale cached read of its status
 	// re-enters a phase whose side effect already ran, and the side effects of
-	// this controller delete data.
-	var lres v1.LogicalRestoreElasticsearch
-	if err := r.APIReader.Get(ctx, req.NamespacedName, &lres); err != nil {
+	// this controller erase data.
+	var lrr v1.LogicalRestoreRDBMS
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &lrr); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	// The Jobs of a restore carry a controller reference to it, so the garbage
 	// collector removes them with the restore. It writes nothing outside the
 	// cluster, so it needs no finalizer.
-	if !lres.DeletionTimestamp.IsZero() {
+	if !lrr.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
 
@@ -174,7 +182,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
 		APIReader:     r.APIReader,
-		Owner:         &lres,
+		Owner:         &lrr,
 	}
 	defer func() {
 		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
@@ -182,28 +190,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		}
 	}()
 
-	if lres.Terminal() {
+	if lrr.Terminal() {
 		// A conflict on the terminal flush can restore a stale Ready from the
 		// server. Staging it again on every look heals that. This branch also
 		// gives the claim back the first time, on the look that follows the
 		// terminal transition. A release that failed heals here too.
-		restore.StageTerminal(&lres, &lres.Status.RestoreProgress)
+		restore.StageTerminal(&lrr, &lrr.Status.RestoreProgress)
 
-		return ctrl.Result{}, r.releaseClaim(ctx, &lres)
+		return ctrl.Result{}, r.releaseClaim(ctx, &lrr)
 	}
 
 	var outcome restore.Outcome
-	switch lres.Status.Phase {
+	switch lrr.Status.Phase {
 	case "", v1.LogicalRestorePending:
-		outcome, err = r.admit(ctx, &lres)
+		outcome, err = r.admit(ctx, &lrr)
 	case v1.LogicalRestoreValidatingCompatibility:
-		outcome, err = r.validate(ctx, &lres)
+		outcome, err = r.validate(ctx, &lrr)
 	case v1.LogicalRestoreRestoringSecondaryStorage:
-		outcome, err = r.restoreSecondaryStorage(ctx, &lres)
+		outcome, err = r.restoreDatabase(ctx, &lrr)
 	case v1.LogicalRestoreRestoringPrimaryStorage:
-		outcome, err = r.restorePrimaryStorage(ctx, &lres)
+		outcome, err = r.restorePrimaryStorage(ctx, &lrr)
 	default:
-		return ctrl.Result{}, fmt.Errorf("unknown phase %q", lres.Status.Phase)
+		return ctrl.Result{}, fmt.Errorf("unknown phase %q", lrr.Status.Phase)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
@@ -219,47 +227,46 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return ctrl.Result{RequeueAfter: outcome.Wait}, nil
 }
 
-// complete ends the restore. The secondary storage of the target holds the
-// backup, the brokers hold the partitions of the backup, and whoever owns the
-// cluster can unsuspend it.
-func (r *Reconciler) complete(lres *v1.LogicalRestoreElasticsearch) {
-	lres.Status.Phase = v1.LogicalRestoreCompleted
-	restore.Complete(&lres.Status.RestoreProgress, metav1.Now())
-	restore.StageTerminal(lres, &lres.Status.RestoreProgress)
+// complete ends the restore. The logical database and the broker volumes now
+// hold the state of the backup, and whoever owns the cluster can unsuspend it.
+func (r *Reconciler) complete(lrr *v1.LogicalRestoreRDBMS) {
+	lrr.Status.Phase = v1.LogicalRestoreCompleted
+	restore.Complete(&lrr.Status.RestoreProgress, metav1.Now())
+	restore.StageTerminal(lrr, &lrr.Status.RestoreProgress)
 	r.EventRecorder.Eventf(
-		lres,
+		lrr,
 		nil,
 		corev1.EventTypeNormal,
 		restore.EventReasonCompleted,
 		restore.EventActionRestore,
 		"The restore of backup %d into CamundaCluster %s/%s finished",
-		lres.Status.BackupID,
-		lres.Namespace,
-		lres.Spec.TargetClusterRef.Name,
+		lrr.Status.BackupID,
+		lrr.Namespace,
+		lrr.Spec.TargetClusterRef.Name,
 	)
 }
 
 // fail ends the restore with reason and message. Status keeps the reason, so
 // a terminal look stages the same one again after a write conflict.
-func (r *Reconciler) fail(lres *v1.LogicalRestoreElasticsearch, reason, message string) {
-	lres.Status.Phase = v1.LogicalRestoreFailed
-	restore.Fail(&lres.Status.RestoreProgress, reason, message, metav1.Now())
-	restore.StageTerminal(lres, &lres.Status.RestoreProgress)
+func (r *Reconciler) fail(lrr *v1.LogicalRestoreRDBMS, reason, message string) {
+	lrr.Status.Phase = v1.LogicalRestoreFailed
+	restore.Fail(&lrr.Status.RestoreProgress, reason, message, metav1.Now())
+	restore.StageTerminal(lrr, &lrr.Status.RestoreProgress)
 	r.EventRecorder.Eventf(
-		lres,
+		lrr,
 		nil,
 		corev1.EventTypeWarning,
 		restore.EventReasonFailed,
 		restore.EventActionRestore,
 		"The restore failed: %s",
-		lres.Status.FailureMessage,
+		lrr.Status.FailureMessage,
 	)
 }
 
 // progressing stages that a phase of the restore runs.
-func (r *Reconciler) progressing(lres *v1.LogicalRestoreElasticsearch, message string) {
-	conditions.Stage(lres, conditions.Ready(
-		metav1.ConditionFalse, v1.ReasonProgressing, message, lres.Generation,
+func (r *Reconciler) progressing(lrr *v1.LogicalRestoreRDBMS, message string) {
+	conditions.Stage(lrr, conditions.Ready(
+		metav1.ConditionFalse, v1.ReasonProgressing, message, lrr.Generation,
 	))
 }
 
@@ -267,13 +274,15 @@ func (r *Reconciler) progressing(lres *v1.LogicalRestoreElasticsearch, message s
 // restore has touched nothing, so it goes back to waiting and recovers on its
 // own once the cause is gone. Nothing bounds this hold.
 func (r *Reconciler) waiting(
-	lres *v1.LogicalRestoreElasticsearch,
+	lrr *v1.LogicalRestoreRDBMS,
 	failure *conditions.PreCheckFailure,
 ) restore.Outcome {
-	lres.Status.Phase = v1.LogicalRestorePending
-	restore.Recovered(&lres.Status.RestoreProgress)
-	conditions.Stage(lres, conditions.Failed(lres, failure))
+	lrr.Status.Phase = v1.LogicalRestorePending
+	restore.Recovered(&lrr.Status.RestoreProgress)
+	conditions.Stage(lrr, conditions.Failed(lrr, failure))
 
+	// The watches on the cluster and on the backup resolve every hold that
+	// admission reports. The timer is the safety net.
 	return restore.Outcome{Wait: r.opts.RetryInterval}
 }
 
@@ -281,19 +290,19 @@ func (r *Reconciler) waiting(
 // and ends it once the mid-run grace is over. The phase of this kind is the
 // controller's to write, so the terminal transition happens here.
 func (r *Reconciler) holdStarted(
-	lres *v1.LogicalRestoreElasticsearch,
+	lrr *v1.LogicalRestoreRDBMS,
 	failure *conditions.PreCheckFailure,
 ) restore.Outcome {
 	outcome := restore.HoldRunning(
-		lres,
-		&lres.Status.RestoreProgress,
+		lrr,
+		&lrr.Status.RestoreProgress,
 		failure,
 		metav1.Now(),
 		r.opts.MidRunGrace,
 		r.opts.PollInterval,
 	)
 	if outcome.Failure != nil {
-		r.fail(lres, outcome.Failure.Reason, outcome.Failure.Message)
+		r.fail(lrr, outcome.Failure.Reason, outcome.Failure.Message)
 
 		return restore.Outcome{}
 	}
@@ -302,75 +311,81 @@ func (r *Reconciler) holdStarted(
 }
 
 // claimant is the identity under which the restore holds the claim on its
-// cluster.
-func claimant(lres *v1.LogicalRestoreElasticsearch) clusterclaim.Claimant {
-	return clusterclaim.Claimant{Kind: lres.GetKind(), Name: lres.Name, UID: lres.UID}
+// target cluster.
+func claimant(lrr *v1.LogicalRestoreRDBMS) clusterclaim.Claimant {
+	return clusterclaim.Claimant{Kind: lrr.GetKind(), Name: lrr.Name, UID: lrr.UID}
 }
 
-// releaseClaim gives the claim on the cluster back. It is a no-op when the
-// restore does not hold it.
-func (r *Reconciler) releaseClaim(ctx context.Context, lres *v1.LogicalRestoreElasticsearch) error {
+// releaseClaim gives the claim on the target cluster back. It is a no-op when
+// the restore does not hold it.
+func (r *Reconciler) releaseClaim(ctx context.Context, lrr *v1.LogicalRestoreRDBMS) error {
 	return restore.Give(
-		ctx, r.Client, r.APIReader, lres.Namespace, lres.Spec.TargetClusterRef.Name, claimant(lres),
+		ctx, r.Client, r.APIReader, lrr.Namespace, lrr.Spec.TargetClusterRef.Name, claimant(lrr),
 	)
 }
 
-// SetupWithManager registers the controller, the two field indexes, and the
-// watches: the restores, the Jobs they own, the clusters they name, and the
-// backups they read. A suspend flip and a backup that reaches Completed both
-// wake a waiting restore without a timer.
+// SetupWithManager applies the options, registers the controller, the two
+// field indexes, and the watches: the restores, the Jobs they own, the target
+// clusters, and the backups they read. A suspend flip and a backup that
+// reaches Completed both wake a waiting restore without a timer.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	resolved, err := r.opts.withDefaults()
+	if err != nil {
+		return err
+	}
+	r.opts = resolved
+
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("logicalrestoreelasticsearch")
+		r.EventRecorder = mgr.GetEventRecorder("logicalrestorerdbms")
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(),
-		&v1.LogicalRestoreElasticsearch{},
+		&v1.LogicalRestoreRDBMS{},
 		clusterRefField,
 		func(obj client.Object) []string {
-			lres := obj.(*v1.LogicalRestoreElasticsearch)
+			lrr := obj.(*v1.LogicalRestoreRDBMS)
 
-			return []string{refindex.NamespacedKey(lres.Namespace, lres.Spec.TargetClusterRef.Name)}
+			return []string{refindex.NamespacedKey(lrr.Namespace, lrr.Spec.TargetClusterRef.Name)}
 		},
 	); err != nil {
-		return fmt.Errorf("indexing LogicalRestoreElasticsearch by targetClusterRef: %w", err)
+		return fmt.Errorf("indexing LogicalRestoreRDBMS by targetClusterRef: %w", err)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(),
-		&v1.LogicalRestoreElasticsearch{},
+		&v1.LogicalRestoreRDBMS{},
 		backupRefField,
 		func(obj client.Object) []string {
-			lres := obj.(*v1.LogicalRestoreElasticsearch)
+			lrr := obj.(*v1.LogicalRestoreRDBMS)
 
-			return []string{refindex.NamespacedKey(lres.Namespace, lres.Spec.BackupRef.Name)}
+			return []string{refindex.NamespacedKey(lrr.Namespace, lrr.Spec.BackupRef.Name)}
 		},
 	); err != nil {
-		return fmt.Errorf("indexing LogicalRestoreElasticsearch by backupRef: %w", err)
+		return fmt.Errorf("indexing LogicalRestoreRDBMS by backupRef: %w", err)
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1.LogicalRestoreElasticsearch{}).
+		For(&v1.LogicalRestoreRDBMS{}).
 		Owns(&batchv1.Job{}).
 		Watches(
 			&v1.CamundaCluster{},
 			refindex.Enqueue(
 				mgr.GetClient(),
-				&v1.LogicalRestoreElasticsearchList{},
+				&v1.LogicalRestoreRDBMSList{},
 				clusterRefField,
 				refindex.ObjectNamespacedName,
 			),
 		).
 		Watches(
-			&v1.LogicalBackupElasticsearch{},
+			&v1.LogicalBackupRDBMS{},
 			refindex.Enqueue(
 				mgr.GetClient(),
-				&v1.LogicalRestoreElasticsearchList{},
+				&v1.LogicalRestoreRDBMSList{},
 				backupRefField,
 				refindex.ObjectNamespacedName,
 			),
 		).
-		Named("logicalrestoreelasticsearch").
+		Named("logicalrestorerdbms").
 		Complete(r)
 }

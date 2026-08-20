@@ -52,6 +52,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestoreelasticsearch"
+	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
@@ -382,6 +383,15 @@ func main() {
 		logicalrestoreelasticsearch.Options{},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreElasticsearch")
+		os.Exit(1)
+	}
+	if err := logicalrestorerdbms.New(
+		mgr.GetClient(),
+		mgr.GetAPIReader(),
+		mgr.GetScheme(),
+		logicalrestorerdbms.Options{CLIImage: cliImage},
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreRDBMS")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
