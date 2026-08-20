@@ -57,8 +57,6 @@ func TestMergeLetsOperatorLabelsWin(t *testing.T) {
 }
 
 func TestRestoreOwners(t *testing.T) {
-	assert.Equal(t, Owner{Key: LogicalRestoreKey, Name: "r"}, LogicalRestore("r"))
 	assert.Equal(t, Owner{Key: PointInTimeRestoreKey, Name: "p"}, PointInTimeRestore("p"))
-	assert.Equal(t, "camunda.io/logical-restore", LogicalRestoreKey)
 	assert.Equal(t, "camunda.io/point-in-time-restore", PointInTimeRestoreKey)
 }

@@ -329,7 +329,7 @@ func (r *Reconciler) ensureJob(
 // overwrites its owner reference and its fields before anything looked at
 // them. A Create is atomic, so the API server decides who owns the name. On
 // AlreadyExists the winner is read and rejected unless this restore owns it.
-// The pg_restore Job of a LogicalRestore claims its name the same way.
+// The pg_restore Job of a LogicalRestoreRDBMS claims its name the same way.
 func (r *Reconciler) claimJob(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,

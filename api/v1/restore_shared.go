@@ -16,7 +16,12 @@ limitations under the License.
 
 package v1
 
-// The condition vocabulary that both restore kinds report. A reason that only
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+)
+
+// The condition vocabulary that every restore kind reports. A reason that only
 // one restore kind reports is declared next to that kind, in its types file.
 const (
 	// ReasonClusterNotSuspended means that the target cluster still runs. A
@@ -24,4 +29,112 @@ const (
 	// owner of the cluster suspends it. The restore controllers never write
 	// spec.suspend.
 	ReasonClusterNotSuspended = "ClusterNotSuspended"
+	// ReasonClusterClaimed means that another backup or another restore holds
+	// the cluster. The restore waits in Pending until that holder reaches a
+	// terminal phase. Nothing bounds the wait, and the reason names no kind,
+	// because the holder can be either.
+	ReasonClusterClaimed = "ClusterClaimed"
+	// ReasonIncompatibleTarget means that the target cluster cannot hold the
+	// backup: the secondary storage types differ, the partition counts differ,
+	// the backup bucket differs, or the Camunda versions break the version
+	// rule. Only a logical restore reports it.
+	ReasonIncompatibleTarget = "IncompatibleTarget"
 )
+
+// LogicalBackupRef references a completed logical backup in the namespace of
+// the restore. The reference never crosses a namespace. The kind of the
+// restore says which backup kind it reads, so the reference carries a name
+// alone.
+type LogicalBackupRef struct {
+	// Name of the backup, in the namespace of this restore.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// LogicalRestorePhase tracks a one-shot logical restore. Completed and Failed
+// are terminal. A retry is a new resource. Both logical restore kinds use it,
+// because their phase values are the same.
+// +kubebuilder:validation:Enum=Pending;ValidatingCompatibility;RestoringSecondaryStorage;RestoringPrimaryStorage;Completed;Failed
+type LogicalRestorePhase string
+
+// The phases of a logical restore, in order.
+const (
+	// LogicalRestorePending means that the restore did not start real work.
+	// A pre-check still holds it: the target cluster runs, another operation
+	// holds the cluster, or the backup is not completed.
+	LogicalRestorePending LogicalRestorePhase = "Pending"
+	// LogicalRestoreValidatingCompatibility means that the operator compares
+	// the backup against the target: the storage type, the partition count,
+	// the backup bucket, and the Camunda version.
+	LogicalRestoreValidatingCompatibility LogicalRestorePhase = "ValidatingCompatibility"
+	// LogicalRestoreRestoringSecondaryStorage means that the operator writes
+	// the backup into the target's secondary storage.
+	LogicalRestoreRestoringSecondaryStorage LogicalRestorePhase = "RestoringSecondaryStorage"
+	// LogicalRestoreRestoringPrimaryStorage means that the operator recreated
+	// the broker data volumes and runs the restore application on them.
+	LogicalRestoreRestoringPrimaryStorage LogicalRestorePhase = "RestoringPrimaryStorage"
+	// LogicalRestoreCompleted means that the restore finished. The target can
+	// be unsuspended.
+	LogicalRestoreCompleted LogicalRestorePhase = "Completed"
+	// LogicalRestoreFailed means that the restore failed. The Ready condition
+	// names the failing phase.
+	LogicalRestoreFailed LogicalRestorePhase = "Failed"
+)
+
+// RestoreProgress is the part of a restore status that every restore kind
+// has. It is embedded with json:",inline", so each status keeps the field
+// names it had before and the CRD schema does not change. controller-gen
+// flattens an inline embedded struct the same way encoding/json does.
+//
+// pkg/restore reads and writes this struct in place. The driver owns every
+// field here. Each kind owns its own phase and the fields of its own
+// procedure.
+type RestoreProgress struct {
+	// TargetClusterUID pins the identity of the target cluster. A cluster
+	// that is deleted and created again under the same name is another
+	// cluster, and this restore is not its restore.
+	// +optional
+	TargetClusterUID types.UID `json:"targetClusterUID,omitempty"`
+	// Brokers is the broker count read from the live broker StatefulSet when
+	// the restore entered the primary-storage phase. It fixes how many
+	// volumes are recreated and how many Jobs run.
+	// +optional
+	Brokers int32 `json:"brokers,omitempty"`
+	// PrimaryJobNames are the per-broker restore-application Jobs, in broker
+	// order. The operator records them before it applies the Jobs, so the
+	// record covers every Job that the next look finds.
+	// +optional
+	PrimaryJobNames []string `json:"primaryJobNames,omitempty"`
+	// RecreatedClaims names the broker data claims that the restore deleted
+	// and created again. A reconcile that re-enters does not delete a claim
+	// twice.
+	// +optional
+	RecreatedClaims []string `json:"recreatedClaims,omitempty"`
+	// FirstFailedAt is when a dependency of the running restore first stopped
+	// resolving. The operator measures the mid-run grace from it. It stays
+	// set once the restore starts, because a dependency that flaps must not
+	// reset the grace.
+	// +optional
+	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
+	// TerminalReason is the Ready reason recorded at the terminal transition.
+	// The operator stages the terminal condition again from this field, so a
+	// write conflict cannot replace the reason with a weaker one.
+	// +optional
+	TerminalReason string `json:"terminalReason,omitempty"`
+	// FailureMessage names the failing phase and its error. The Ready
+	// condition carries the same message.
+	// +optional
+	FailureMessage string `json:"failureMessage,omitempty"`
+	// CompletionTime is when the restore reached a terminal phase.
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current state of the restore.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}

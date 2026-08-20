@@ -378,7 +378,7 @@ func expectAdmitted(pitr *v1.PointInTimeRestore, w *world) {
 		current := readRestore(pitr)
 		g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestorePending))
 		g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
-		g.Expect(current.Status.ClusterUID).To(Equal(w.cluster.UID))
+		g.Expect(current.Status.TargetClusterUID).To(Equal(w.cluster.UID))
 	}, timeout, interval).Should(Succeed())
 }
 

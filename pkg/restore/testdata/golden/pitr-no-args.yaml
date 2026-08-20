@@ -6,7 +6,7 @@ metadata:
     camunda.io/cluster: my-cluster
     camunda.io/component: restore
     camunda.io/point-in-time-restore: my-cluster-pitr
-  name: my-cluster-pitr-pitr-1
+  name: my-cluster-pitr-pitr-0
   namespace: ns
 spec:
   backoffLimit: 0
@@ -21,9 +21,7 @@ spec:
         camunda.io/point-in-time-restore: my-cluster-pitr
     spec:
       containers:
-      - args:
-        - --to=2026-07-30T14:30:00Z
-        command:
+      - command:
         - /usr/local/camunda/bin/restore
         env:
         - name: CAMUNDA_CLUSTER_SIZE
@@ -40,7 +38,7 @@ spec:
               key: password
               name: es-credentials
         - name: CAMUNDA_CLUSTER_NODEID
-          value: "1"
+          value: "0"
         envFrom:
         - configMapRef:
             name: broker-extra
@@ -87,4 +85,4 @@ spec:
           secretName: es-ca
       - name: data
         persistentVolumeClaim:
-          claimName: data-my-cluster-zeebe-1
+          claimName: data-my-cluster-zeebe-0

@@ -68,8 +68,8 @@ type JobInput struct {
 	// Job. Without that reference, deleting the restore resource leaves the
 	// Jobs behind.
 	Owner client.Object
-	// OwnerLabel is the owner label of the restore kind:
-	// labels.LogicalRestore or labels.PointInTimeRestore.
+	// OwnerLabel is the owner label of the restore kind, from pkg/labels, for
+	// example labels.PointInTimeRestore.
 	OwnerLabel labels.Owner
 	// Ordinal is the broker this Job restores. It becomes the node id and
 	// selects the data volume.
@@ -94,20 +94,19 @@ func isNil(obj client.Object) bool {
 	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
-// jobKindInfixes name each restore kind inside a Job name. A LogicalRestore
-// and a PointInTimeRestore of the same name can live in one namespace, so the
-// kind has to reach the name. The values are the short names of the two CRDs,
-// which is what a user already types with kubectl.
+// jobKindInfixes name each restore kind inside a Job name. Two restores of
+// different kinds and the same name can live in one namespace, so the kind has
+// to reach the name. The values are the short names of the CRDs, which is what
+// a user already types with kubectl.
 var jobKindInfixes = map[string]string{
-	labels.LogicalRestoreKey:     "lr",
 	labels.PointInTimeRestoreKey: "pitr",
 }
 
 // JobName returns the name of the restore Job of one broker:
-// <restore>-<kind>-<ordinal>, where kind is lr for a LogicalRestore and pitr
-// for a PointInTimeRestore. It derives from the owner and the ordinal alone,
-// so a reconcile that re-enters after a crash finds the Job it already
-// created.
+// <restore>-<kind>-<ordinal>, where kind is the short name of the restore
+// CRD, for example pitr for a PointInTimeRestore. It derives from the owner
+// and the ordinal alone, so a reconcile that re-enters after a crash finds the
+// Job it already created.
 //
 // A restore name can be a full DNS subdomain, but a Job name is a DNS label,
 // so a long name truncates deterministically and stays unique through a hash

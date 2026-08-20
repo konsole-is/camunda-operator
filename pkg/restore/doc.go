@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package restore is the shared machinery of the two restore kinds,
-// LogicalRestore and PointInTimeRestore: the facts they read off the live
-// broker StatefulSet, the broker data volumes they delete and create again,
-// and the restore-application Job they run once per broker.
+// Package restore is the shared machinery of every restore kind, in the role
+// that pkg/logicalbackup has for the backup pair. It holds the facts a
+// restore reads off the live broker StatefulSet, the broker data volumes it
+// deletes and creates again, the restore-application Job it runs once per
+// broker, the claim it takes on the cluster, and the mid-run grace and the
+// terminal transitions that every kind shares.
 //
 // The restore Jobs never re-render the broker configuration. They copy it
 // from the StatefulSet that the CamundaCluster controller applied, which
@@ -25,6 +27,9 @@ limitations under the License.
 // always runs with the configuration the brokers run with, and the two
 // cannot drift.
 //
-// The package holds no knowledge of either restore CR's spec. It renders and
-// applies. The controllers decide.
+// The package reads no restore CR's spec. It reads and writes
+// [v1.RestoreProgress] in place, which every restore status embeds, and it
+// never writes status.phase: each kind owns its own phase vocabulary. A
+// driver step reports an [Outcome], and the controller maps that outcome onto
+// its own phase.
 package restore

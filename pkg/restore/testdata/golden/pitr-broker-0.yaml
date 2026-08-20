@@ -5,8 +5,8 @@ metadata:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: my-cluster
     camunda.io/component: restore
-    camunda.io/logical-restore: my-cluster-restore
-  name: my-cluster-restore-lr-0
+    camunda.io/point-in-time-restore: my-cluster-pitr
+  name: my-cluster-pitr-pitr-0
   namespace: ns
 spec:
   backoffLimit: 0
@@ -18,10 +18,12 @@ spec:
         app.kubernetes.io/managed-by: camunda-operator
         camunda.io/cluster: my-cluster
         camunda.io/component: restore
-        camunda.io/logical-restore: my-cluster-restore
+        camunda.io/point-in-time-restore: my-cluster-pitr
     spec:
       containers:
-      - command:
+      - args:
+        - --to=2026-07-30T14:30:00Z
+        command:
         - /usr/local/camunda/bin/restore
         env:
         - name: CAMUNDA_CLUSTER_SIZE
@@ -75,7 +77,7 @@ spec:
       - labelSelector:
           matchLabels:
             camunda.io/component: restore
-            camunda.io/logical-restore: my-cluster-restore
+            camunda.io/point-in-time-restore: my-cluster-pitr
         maxSkew: 1
         topologyKey: topology.kubernetes.io/zone
         whenUnsatisfiable: DoNotSchedule

@@ -126,12 +126,6 @@ type PointInTimeRestoreStatus struct {
 	// Phase of the restore. It is the resume marker.
 	// +optional
 	Phase PointInTimeRestorePhase `json:"phase,omitempty"`
-	// ClusterUID pins the identity of the cluster.
-	// +optional
-	ClusterUID types.UID `json:"clusterUID,omitempty"`
-	// Brokers is the broker count read from the live broker StatefulSet.
-	// +optional
-	Brokers int32 `json:"brokers,omitempty"`
 	// Storage pins the storage chain that the restore validated. The operator
 	// records it once, before it reads the database, and fails the restore
 	// when a later look disagrees.
@@ -144,44 +138,11 @@ type PointInTimeRestoreStatus struct {
 	// +listType=map
 	// +listMapKey=partitionId
 	ObservedPositions []PartitionPosition `json:"observedPositions,omitempty"`
-	// PrimaryJobNames are the per-broker restore-application Jobs, in broker
-	// order.
-	// +optional
-	PrimaryJobNames []string `json:"primaryJobNames,omitempty"`
-	// RecreatedClaims names the broker data claims that the restore deleted
-	// and created again.
-	// +optional
-	RecreatedClaims []string `json:"recreatedClaims,omitempty"`
-	// FirstFailedAt is when a dependency of the running restore first stopped
-	// resolving. The operator measures the mid-run grace from it, and clears
-	// it when the restore recovers.
-	// +optional
-	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
-	// TerminalReason is the Ready reason recorded at the terminal transition:
-	// Completed or Failed. The operator stages the terminal condition again
-	// from this field, so a write conflict cannot replace the reason with a
-	// weaker one.
-	// +optional
-	TerminalReason string `json:"terminalReason,omitempty"`
-	// FailureMessage names the failing phase and its error. The Ready
-	// condition carries the same message, and the operator stages the
-	// condition again from this field, so a write conflict cannot lose it.
-	// +optional
-	FailureMessage string `json:"failureMessage,omitempty"`
-	// CompletionTime is when the restore reached a terminal phase.
-	// +optional
-	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
-	// ObservedGeneration is the last generation reconciled by the operator.
-	// +optional
-	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions represent the current state. The Ready condition carries the
-	// reasons Progressing, Completed, Failed, ClusterNotSuspended,
-	// InvalidReference, PitrUnavailable, SharedServer, DatabaseNotRestored,
-	// MissingSecret, and ConnectionFailed.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// RestoreProgress is the part of the status that every restore kind has.
+	// Its Ready condition carries the reasons Progressing, Completed, Failed,
+	// ClusterNotSuspended, ClusterClaimed, InvalidReference, PitrUnavailable,
+	// SharedServer, DatabaseNotRestored, MissingSecret, and ConnectionFailed.
+	RestoreProgress `json:",inline"`
 }
 
 // +kubebuilder:object:root=true

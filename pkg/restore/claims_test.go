@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-const testManager = client.FieldOwner("camunda-operator/logicalrestore")
+const testManager = FieldManagerPointInTimeRestore
 
 // targetFixture is the target that ReadTarget builds from brokerStatefulSet.
 func targetFixture() *Target {

@@ -136,14 +136,14 @@ func (r *Reconciler) resolve(
 	// runs. A restore that waits for a rule keeps waiting for the cluster it
 	// read, and a cluster that was deleted and created again under one name is
 	// another cluster with other primary storage.
-	if pitr.Status.ClusterUID == "" {
-		pitr.Status.ClusterUID = cluster.UID
+	if pitr.Status.TargetClusterUID == "" {
+		pitr.Status.TargetClusterUID = cluster.UID
 	}
-	if cluster.UID != pitr.Status.ClusterUID {
+	if cluster.UID != pitr.Status.TargetClusterUID {
 		return nil, nil, fmt.Errorf(
 			"%w: CamundaCluster %s was replaced. It admitted the restore with UID %s and now has "+
 				"UID %s, so its primary storage is not the storage this restore validated",
-			errClusterReplaced, key, pitr.Status.ClusterUID, cluster.UID,
+			errClusterReplaced, key, pitr.Status.TargetClusterUID, cluster.UID,
 		)
 	}
 
@@ -184,7 +184,8 @@ func (r *Reconciler) resolve(
 		return nil, invalidReference(
 			"SecondaryStorageConfig %s stores the data of CamundaCluster %s in %s. A point-in-time "+
 				"restore exists only for a relational database, because an Elasticsearch cluster has "+
-				"no point-in-time recovery. Use a LogicalRestore instead",
+				"no point-in-time recovery. Use a LogicalRestoreElasticsearch or a "+
+				"LogicalRestoreRDBMS instead",
 			storageKey, key, storage.Spec.Type,
 		), nil
 	}

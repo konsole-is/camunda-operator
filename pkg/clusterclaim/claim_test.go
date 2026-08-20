@@ -100,23 +100,14 @@ func resumeFailedHolder(claimant clusterclaim.Claimant) client.Object {
 // restoreHolder fakes the resource of a restore claimant. terminal picks a
 // phase the restore never leaves.
 func restoreHolder(claimant clusterclaim.Claimant, terminal bool) client.Object {
-	if claimant.Kind == "PointInTimeRestore" {
-		phase := v1.PointInTimeRestoreRestoringPrimaryStorage
-		if terminal {
-			phase = v1.PointInTimeRestoreCompleted
-		}
-		return &v1.PointInTimeRestore{
-			ObjectMeta: objectMeta(claimant),
-			Status:     v1.PointInTimeRestoreStatus{Phase: phase},
-		}
-	}
-	phase := v1.LogicalRestoreRestoringPrimaryStorage
+	phase := v1.PointInTimeRestoreRestoringPrimaryStorage
 	if terminal {
-		phase = v1.LogicalRestoreCompleted
+		phase = v1.PointInTimeRestoreCompleted
 	}
-	return &v1.LogicalRestore{
+
+	return &v1.PointInTimeRestore{
 		ObjectMeta: objectMeta(claimant),
-		Status:     v1.LogicalRestoreStatus{Phase: phase},
+		Status:     v1.PointInTimeRestoreStatus{Phase: phase},
 	}
 }
 
@@ -395,12 +386,12 @@ func TestReleaseOnlyByTheHolder(t *testing.T) {
 }
 
 // Every claimant kind answers the same question, through the Terminal method
-// that api/v1 gives all four. A live holder of any kind blocks. A terminal
+// that api/v1 gives each of them. A live holder of any kind blocks. A terminal
 // or a deleted holder of any kind is taken over. A kind the claim cannot
 // read blocks and is never taken over.
 func TestTakeoverIsTheSameForEveryClaimantKind(t *testing.T) {
 	for _, kind := range []string{
-		"LogicalBackupElasticsearch", "LogicalBackupRDBMS", "LogicalRestore", "PointInTimeRestore",
+		"LogicalBackupElasticsearch", "LogicalBackupRDBMS", "PointInTimeRestore",
 	} {
 		t.Run(kind, func(t *testing.T) {
 			holder := clusterclaim.Claimant{Kind: kind, Name: "holder", UID: types.UID("uid-holder")}

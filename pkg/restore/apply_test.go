@@ -37,7 +37,6 @@ import (
 func TestFieldManagersAreStable(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, client.FieldOwner("camunda-operator/logicalrestore"), FieldManagerLogicalRestore)
 	assert.Equal(
 		t,
 		client.FieldOwner("camunda-operator/pointintimerestore"),
@@ -114,7 +113,7 @@ func TestApplyReturnsTheClientError(t *testing.T) {
 		context.Background(),
 		c,
 		&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "ns"}},
-		FieldManagerLogicalRestore,
+		FieldManagerPointInTimeRestore,
 	)
 	require.ErrorIs(t, err, boom)
 }

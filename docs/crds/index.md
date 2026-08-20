@@ -82,7 +82,8 @@ These CRDs are installed with the operator, but the operator does not act on the
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
 | [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule. |
-| [LogicalRestore](logicalrestore.md) | Namespaced | Restore a completed logical backup into a suspended cluster. |
+| LogicalRestoreElasticsearch | Namespaced | Restore a completed Elasticsearch logical backup into a suspended cluster. |
+| LogicalRestoreRDBMS | Namespaced | Restore a completed relational logical backup into a suspended cluster. |
 | [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 | [CamundaOptimize](camundaoptimize.md) | Namespaced | Run Optimize next to a cluster. |
 | [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |

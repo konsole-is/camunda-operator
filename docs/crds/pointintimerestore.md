@@ -4,7 +4,7 @@
 
 The cluster must store its data in a relational database. You use this kind to undo a destructive operation without a [LogicalBackupRDBMS](logicalbackuprdbms.md). It relies on two continuous mechanisms instead of discrete backups: point-in-time recovery on the database server, which happens outside this operator, and the continuous primary-storage backups of Zeebe, which this operator aligns.
 
-The operator never restores the database server. PostgreSQL point-in-time recovery needs host-level access to base backups and to the write-ahead log archive. A managed service exposes it only through a provider API. Both belong to the layer above this operator. For an Elasticsearch cluster, or to restore into another cluster, use [LogicalRestore](logicalrestore.md) instead.
+The operator never restores the database server. PostgreSQL point-in-time recovery needs host-level access to base backups and to the write-ahead log archive. A managed service exposes it only through a provider API. Both belong to the layer above this operator. For an Elasticsearch cluster, or to restore into another cluster, use a `LogicalRestoreElasticsearch` or a `LogicalRestoreRDBMS` instead.
 
 One resource is one restore. The spec is immutable, and the restore runs once. `kubectl get pitr` lists the restores with their phase, cluster, and timestamp.
 
@@ -182,7 +182,7 @@ spec:
 
 ## Related
 
-- [LogicalRestore](logicalrestore.md): the backup-based alternative. It works for both storage types and across clusters.
+- `LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS`: the backup-based alternative. One kind serves each secondary storage type, and both restore across clusters.
 - [CamundaCluster](camundacluster.md): referenced through `clusterRef`. You suspend it for the whole restore, and its controller enables the continuous primary-storage backups.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It must be `type: rdbms`.
 - [DatabaseConfig](databaseconfig.md): resolved for the logical database and its `serverRef`. Its `credentialsSecretRef` holds the credentials that read `EXPORTER_POSITION`.
