@@ -22,13 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// The field managers of the two restore kinds. Every Job and every recreated
-// volume that a restore applies carries one of them, so the fields a restore
-// owns are visible on the object.
-const (
-	FieldManagerLogicalRestore     client.FieldOwner = "camunda-operator/logicalrestore"
-	FieldManagerPointInTimeRestore client.FieldOwner = "camunda-operator/pointintimerestore"
-)
+// FieldManagerPointInTimeRestore owns every Job and every recreated volume
+// that a PointInTimeRestore applies, so the fields a restore owns are visible
+// on the object. Each restore kind has a field manager of its own.
+const FieldManagerPointInTimeRestore client.FieldOwner = "camunda-operator/pointintimerestore"
 
 // Apply server-side applies obj under manager, forcing ownership of every
 // field the operator sets. Every resource a restore manages goes through it,

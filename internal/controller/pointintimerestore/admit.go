@@ -64,7 +64,10 @@ var errClusterReplaced = errors.New("the CamundaCluster was replaced")
 // restore that the database holds back must report Pending. The phase is
 // staged first, so the one status write of this reconcile records whichever
 // of the two outcomes the read produced.
-func (r *Reconciler) admit(ctx context.Context, pitr *v1.PointInTimeRestore) (hold, error) {
+func (r *Reconciler) admit(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+) (restore.Outcome, error) {
 	resolved, failure, err := r.resolve(ctx, pitr)
 	if err != nil {
 		return r.resolveFailed(pitr, err)
@@ -84,7 +87,7 @@ func (r *Reconciler) admit(ctx context.Context, pitr *v1.PointInTimeRestore) (ho
 		ctx, r.APIReader, resolved.cluster.Namespace, resolved.target.Broker,
 	)
 	if err != nil {
-		return settle, err
+		return restore.Outcome{}, err
 	}
 	if failure != nil {
 		return r.waiting(pitr, failure), nil
@@ -92,10 +95,24 @@ func (r *Reconciler) admit(ctx context.Context, pitr *v1.PointInTimeRestore) (ho
 
 	failure, err = r.dedicatedServer(ctx, resolved.server)
 	if err != nil {
-		return settle, err
+		return restore.Outcome{}, err
 	}
 	if failure != nil {
 		return r.waiting(pitr, failure), nil
+	}
+
+	// Every rule of this restore holds, so the cluster becomes this restore's
+	// alone. The claim point is the same for all three restore kinds, and it
+	// comes before every phase that touches storage. Two restores of one
+	// cluster therefore never both pass validation.
+	claimed, err := restore.Take(
+		ctx, r.Client, r.APIReader, pitr.Namespace, pitr.Spec.ClusterRef.Name, claimant(pitr),
+	)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if claimed.Failure != nil {
+		return r.waiting(pitr, claimed.Failure), nil
 	}
 
 	// Everything that this restore is allowed to act on is now known: the
@@ -136,14 +153,14 @@ func (r *Reconciler) resolve(
 	// runs. A restore that waits for a rule keeps waiting for the cluster it
 	// read, and a cluster that was deleted and created again under one name is
 	// another cluster with other primary storage.
-	if pitr.Status.ClusterUID == "" {
-		pitr.Status.ClusterUID = cluster.UID
+	if pitr.Status.TargetClusterUID == "" {
+		pitr.Status.TargetClusterUID = cluster.UID
 	}
-	if cluster.UID != pitr.Status.ClusterUID {
+	if cluster.UID != pitr.Status.TargetClusterUID {
 		return nil, nil, fmt.Errorf(
 			"%w: CamundaCluster %s was replaced. It admitted the restore with UID %s and now has "+
 				"UID %s, so its primary storage is not the storage this restore validated",
-			errClusterReplaced, key, pitr.Status.ClusterUID, cluster.UID,
+			errClusterReplaced, key, pitr.Status.TargetClusterUID, cluster.UID,
 		)
 	}
 
@@ -184,7 +201,8 @@ func (r *Reconciler) resolve(
 		return nil, invalidReference(
 			"SecondaryStorageConfig %s stores the data of CamundaCluster %s in %s. A point-in-time "+
 				"restore exists only for a relational database, because an Elasticsearch cluster has "+
-				"no point-in-time recovery. Use a LogicalRestore instead",
+				"no point-in-time recovery. Use a LogicalRestoreElasticsearch or a "+
+				"LogicalRestoreRDBMS instead",
 			storageKey, key, storage.Spec.Type,
 		), nil
 	}
@@ -301,14 +319,17 @@ func pinnedChainCurrent(
 // cluster that was replaced, and a storage chain that moved, both end the
 // restore: nothing of what it validated pairs with what the cluster carries
 // now. Every other error is a transient read that the caller retries.
-func (r *Reconciler) resolveFailed(pitr *v1.PointInTimeRestore, err error) (hold, error) {
+func (r *Reconciler) resolveFailed(
+	pitr *v1.PointInTimeRestore,
+	err error,
+) (restore.Outcome, error) {
 	if errors.Is(err, errClusterReplaced) || errors.Is(err, errChainChanged) {
-		r.fail(pitr, err.Error())
+		r.fail(pitr, v1.ReasonFailed, err.Error())
 
-		return settle, nil
+		return restore.Outcome{}, nil
 	}
 
-	return settle, err
+	return restore.Outcome{}, err
 }
 
 // pitrAvailable reports why the server cannot serve the requested point, or

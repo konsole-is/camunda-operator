@@ -42,8 +42,6 @@ const (
 	LogicalBackupRDBMSKey = "camunda.io/logical-backup-rdbms"
 	// BackupScheduleKey names the owning BackupSchedule.
 	BackupScheduleKey = "camunda.io/backup-schedule"
-	// LogicalRestoreKey names the owning LogicalRestore.
-	LogicalRestoreKey = "camunda.io/logical-restore"
 	// PointInTimeRestoreKey names the owning PointInTimeRestore.
 	PointInTimeRestoreKey = "camunda.io/point-in-time-restore"
 	// ComponentKey names the role of a resource inside its owner, for example
@@ -92,10 +90,6 @@ func LogicalBackupRDBMS(name string) Owner { return Owner{Key: LogicalBackupRDBM
 // BackupSchedule returns the Owner of resources that a BackupSchedule with
 // the given name renders.
 func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: name} }
-
-// LogicalRestore returns the Owner of resources that a LogicalRestore with
-// the given name renders.
-func LogicalRestore(name string) Owner { return Owner{Key: LogicalRestoreKey, Name: name} }
 
 // PointInTimeRestore returns the Owner of resources that a PointInTimeRestore
 // with the given name renders.

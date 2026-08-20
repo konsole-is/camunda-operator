@@ -40,9 +40,6 @@ resources:
 - logicalbackupelasticsearch_admin_role.yaml
 - logicalbackupelasticsearch_editor_role.yaml
 - logicalbackupelasticsearch_viewer_role.yaml
-- logicalrestore_admin_role.yaml
-- logicalrestore_editor_role.yaml
-- logicalrestore_viewer_role.yaml
 - pointintimerestore_admin_role.yaml
 - pointintimerestore_editor_role.yaml
 - pointintimerestore_viewer_role.yaml

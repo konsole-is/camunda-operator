@@ -44,22 +44,13 @@ type jobPreview struct{ input JobInput }
 
 func (p jobPreview) Preview() (client.Object, error) { return BuildJob(p.input) }
 
-func logicalRestore() *v1.LogicalRestore {
-	return &v1.LogicalRestore{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "my-cluster-restore",
-			Namespace: "ns",
-			UID:       "8f2a9c1e-7b4d-4e0a-9c6f-2d1b8a5e4c73",
-		},
-		Spec: v1.LogicalRestoreSpec{
-			BackupRef: v1.LogicalBackupRef{
-				Kind: v1.LogicalBackupKindElasticsearch,
-				Name: "my-cluster-backup",
-			},
-			TargetClusterRef: v1.ClusterRef{Name: "my-cluster"},
-		},
-	}
-}
+// The fixture restore that every case renders from: its name, the name its
+// Jobs derive, and the argument that the restore application takes.
+const (
+	restoreName = "my-cluster-pitr"
+	restoreJob0 = "my-cluster-pitr-pitr-0"
+	restoreArg  = "--to=2026-07-30T14:30:00Z"
+)
 
 func pointInTimeRestore() *v1.PointInTimeRestore {
 	return &v1.PointInTimeRestore{
@@ -143,13 +134,15 @@ func richTarget() *Target {
 	return target
 }
 
-func logicalInput() JobInput {
+// restoreInput is the input that every case starts from: a rich target, the
+// fixture restore as the owner, and the arguments of the restore application.
+func restoreInput() JobInput {
 	return JobInput{
 		Target:     richTarget(),
-		Owner:      logicalRestore(),
-		OwnerLabel: labels.LogicalRestore("my-cluster-restore"),
+		Owner:      pointInTimeRestore(),
+		OwnerLabel: labels.PointInTimeRestore(restoreName),
 		Ordinal:    0,
-		Args:       []string{"--backupId=1748937221"},
+		Args:       []string{restoreArg},
 	}
 }
 
@@ -198,7 +191,7 @@ func dataClaimName(job *batchv1.Job) string {
 func TestBuildJobMirrorsTheBrokerAndPinsTheNodeID(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	in.Ordinal = 2
 	target := in.Target
 
@@ -208,7 +201,7 @@ func TestBuildJobMirrorsTheBrokerAndPinsTheNodeID(t *testing.T) {
 	container := job.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, target.Broker.Image, container.Image)
 	assert.Equal(t, []string{RestoreEntrypoint}, container.Command)
-	assert.Equal(t, []string{"--backupId=1748937221"}, container.Args)
+	assert.Equal(t, []string{restoreArg}, container.Args)
 	assert.Equal(t, target.Broker.Resources, container.Resources)
 	assert.Equal(t, target.Broker.SecurityContext, container.SecurityContext)
 	assert.Equal(t, "2", envValue(container.Env, "CAMUNDA_CLUSTER_NODEID"))
@@ -228,7 +221,7 @@ func TestBuildJobMirrorsTheBrokerAndPinsTheNodeID(t *testing.T) {
 		job.Spec.Template.Spec.ServiceAccountName,
 	)
 	assert.Equal(t, "restore", job.Labels["camunda.io/component"])
-	assert.Equal(t, "my-cluster-restore", job.Labels["camunda.io/logical-restore"])
+	assert.Equal(t, restoreName, job.Labels["camunda.io/point-in-time-restore"])
 	assert.Equal(t, "my-cluster", job.Labels["camunda.io/cluster"])
 	assert.Equal(t, corev1.RestartPolicyNever, job.Spec.Template.Spec.RestartPolicy)
 }
@@ -240,7 +233,7 @@ func TestBuildJobMirrorsTheBrokerAndPinsTheNodeID(t *testing.T) {
 func TestBuildJobSpreadsTheRestorePodsLikeTheBrokers(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	broker := in.Target.StatefulSet.Spec.Template.Spec.TopologySpreadConstraints[0]
 	in.Target.StatefulSet.Spec.Template.Spec.TopologySpreadConstraints[0].MatchLabelKeys =
 		[]string{"pod-template-hash"}
@@ -257,8 +250,8 @@ func TestBuildJobSpreadsTheRestorePodsLikeTheBrokers(t *testing.T) {
 	assert.Equal(
 		t,
 		map[string]string{
-			"camunda.io/logical-restore": "my-cluster-restore",
-			"camunda.io/component":       "restore",
+			"camunda.io/point-in-time-restore": restoreName,
+			"camunda.io/component":             "restore",
 		},
 		spread.LabelSelector.MatchLabels,
 	)
@@ -270,7 +263,7 @@ func TestBuildJobSpreadsTheRestorePodsLikeTheBrokers(t *testing.T) {
 func TestBuildJobReplacesTheBrokerCommand(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	in.Target.Broker.Command = []string{
 		"bash", "-c", "export CAMUNDA_CLUSTER_NODEID=${HOSTNAME##*-}; exec /usr/local/camunda/bin/camunda",
 	}
@@ -290,7 +283,7 @@ func TestBuildJobReplacesTheBrokerCommand(t *testing.T) {
 func TestBuildJobDropsTheBrokerInitContainers(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	in.Target.StatefulSet.Spec.Template.Spec.InitContainers = []corev1.Container{{
 		Name: "wait-for-gateway", Image: "busybox",
 	}}
@@ -309,7 +302,7 @@ func TestBuildJobDropsTheBrokerInitContainers(t *testing.T) {
 func TestBuildJobSharesNothingWithTheTargetOrASibling(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	target := in.Target
 
 	first, err := BuildJob(in)
@@ -356,7 +349,7 @@ func TestBuildJobSharesNothingWithTheTargetOrASibling(t *testing.T) {
 func TestBuildJobRunsUnderTheRestoreProfile(t *testing.T) {
 	t.Parallel()
 
-	job, err := BuildJob(logicalInput())
+	job, err := BuildJob(restoreInput())
 	require.NoError(t, err)
 
 	env := job.Spec.Template.Spec.Containers[0].Env
@@ -378,7 +371,7 @@ func TestBuildJobRunsUnderTheRestoreProfile(t *testing.T) {
 func TestBuildJobNeverRetriesAPod(t *testing.T) {
 	t.Parallel()
 
-	job, err := BuildJob(logicalInput())
+	job, err := BuildJob(restoreInput())
 	require.NoError(t, err)
 
 	require.NotNil(t, job.Spec.BackoffLimit)
@@ -396,7 +389,7 @@ func TestBuildJobNeverRetriesAPod(t *testing.T) {
 func TestBuildJobLabelsThePodsLikeBrokersUnderTheRestoreOwner(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	in.Target.StatefulSet.Spec.Template.Labels["camunda.io/component"] = "zeebe"
 
 	job, err := BuildJob(in)
@@ -405,7 +398,7 @@ func TestBuildJobLabelsThePodsLikeBrokersUnderTheRestoreOwner(t *testing.T) {
 	pod := job.Spec.Template.Labels
 	assert.Equal(t, "restore", pod["camunda.io/component"])
 	assert.Equal(t, "my-cluster", pod["camunda.io/cluster"])
-	assert.Equal(t, "my-cluster-restore", pod["camunda.io/logical-restore"])
+	assert.Equal(t, restoreName, pod["camunda.io/point-in-time-restore"])
 	assert.Equal(t, "camunda-operator", pod["app.kubernetes.io/managed-by"])
 }
 
@@ -415,27 +408,27 @@ func TestBuildJobLabelsThePodsLikeBrokersUnderTheRestoreOwner(t *testing.T) {
 func TestBuildJobSetsNoOwnerReference(t *testing.T) {
 	t.Parallel()
 
-	job, err := BuildJob(logicalInput())
+	job, err := BuildJob(restoreInput())
 	require.NoError(t, err)
 
 	assert.Empty(t, job.OwnerReferences)
 	assert.Empty(t, job.Spec.Template.OwnerReferences)
 	assert.Equal(t, "ns", job.Namespace)
-	assert.Equal(t, "my-cluster-restore-lr-0", job.Name)
+	assert.Equal(t, restoreJob0, job.Name)
 }
 
-// A LogicalRestore and a PointInTimeRestore of the same name can live in one
+// Two restores of different kinds and the same name can live in one
 // namespace. Without the kind in the Job name they would fight over one Job,
 // each adopting the other's.
-func TestJobNameSeparatesTheTwoRestoreKinds(t *testing.T) {
+func TestJobNameCarriesTheRestoreKind(t *testing.T) {
 	t.Parallel()
 
-	logical := labels.LogicalRestore("my-cluster-recovery")
 	pitr := labels.PointInTimeRestore("my-cluster-recovery")
 
-	assert.Equal(t, "my-cluster-recovery-lr-0", JobName(logical, 0))
 	assert.Equal(t, "my-cluster-recovery-pitr-0", JobName(pitr, 0))
-	assert.NotEqual(t, JobName(logical, 0), JobName(pitr, 0))
+	for key, infix := range jobKindInfixes {
+		assert.Contains(t, JobName(labels.Owner{Key: key, Name: "r"}, 0), "-"+infix+"-")
+	}
 }
 
 // An owner that names no restore kind yields no name. BuildJob turns that
@@ -445,8 +438,8 @@ func TestJobNameRefusesAnythingButARestoreOwner(t *testing.T) {
 
 	assert.Empty(t, JobName(labels.Cluster("my-cluster"), 0))
 	assert.Empty(t, JobName(labels.Owner{}, 0))
-	assert.Empty(t, JobName(labels.LogicalRestore(""), 0))
-	assert.Empty(t, JobName(labels.LogicalRestore("r"), -1))
+	assert.Empty(t, JobName(labels.PointInTimeRestore(""), 0))
+	assert.Empty(t, JobName(labels.PointInTimeRestore("r"), -1))
 }
 
 // The Job takes its name from OwnerLabel and its namespace from Owner. If the
@@ -455,8 +448,8 @@ func TestJobNameRefusesAnythingButARestoreOwner(t *testing.T) {
 func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
-	in.OwnerLabel = labels.LogicalRestore("another-restore")
+	in := restoreInput()
+	in.OwnerLabel = labels.PointInTimeRestore("another-restore")
 
 	job, err := BuildJob(in)
 	require.Error(t, err)
@@ -467,19 +460,16 @@ func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
 
 // The infix of a Job name is the short name of its CRD, so a user who reads
 // a Job name can reach the restore with the kubectl alias they already know.
-// The two markers are the source of truth:
+// The marker is the source of truth:
 //
-//	api/v1/logicalrestore_types.go:     +kubebuilder:resource:path=logicalrestores,shortName=lr
 //	api/v1/pointintimerestore_types.go: +kubebuilder:resource:path=pointintimerestores,shortName=pitr
 //
 // Changing a marker without changing the infix breaks that promise, and this
-// test is what says so.
+// test is what says so. Every restore kind needs an entry of its own here.
 func TestJobNameInfixesMatchTheCRDShortNames(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "lr", jobKindInfixes[labels.LogicalRestoreKey])
-	assert.Equal(t, "pitr", jobKindInfixes[labels.PointInTimeRestoreKey])
-	assert.Len(t, jobKindInfixes, 2, "every restore kind needs an infix of its own")
+	assert.Equal(t, map[string]string{labels.PointInTimeRestoreKey: "pitr"}, jobKindInfixes)
 }
 
 // A consumer that builds a selector by hand misses every Job of a restore
@@ -489,10 +479,9 @@ func TestJobSelectorRoundTripsALongRestoreName(t *testing.T) {
 	t.Parallel()
 
 	long := strings.Repeat("a", 200)
-	owner := labels.LogicalRestore(long)
+	owner := labels.PointInTimeRestore(long)
 
-	in := logicalInput()
-	in.Owner = logicalRestore()
+	in := restoreInput()
 	in.Owner.SetName(long)
 	in.OwnerLabel = owner
 
@@ -508,8 +497,13 @@ func TestJobSelectorRoundTripsALongRestoreName(t *testing.T) {
 	}
 
 	// The naive selector that a consumer would write by hand does not match.
-	naive := map[string]string{labels.LogicalRestoreKey: long, labels.ComponentKey: ComponentRestore}
-	assert.NotEqual(t, naive[labels.LogicalRestoreKey], job.Labels[labels.LogicalRestoreKey])
+	naive := map[string]string{
+		labels.PointInTimeRestoreKey: long,
+		labels.ComponentKey:          ComponentRestore,
+	}
+	assert.NotEqual(
+		t, naive[labels.PointInTimeRestoreKey], job.Labels[labels.PointInTimeRestoreKey],
+	)
 
 	full := JobLabels(owner, "my-cluster")
 	assert.Equal(t, full, job.Labels)
@@ -525,7 +519,7 @@ func TestBuildJobRejectsAnIncompleteTarget(t *testing.T) {
 	for name, tc := range incompleteTargets() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			in := logicalInput()
+			in := restoreInput()
 			in.Target = tc.target
 
 			job, err := BuildJob(in)
@@ -552,7 +546,7 @@ func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 			text:   "owner",
 		},
 		"a typed nil owner": {
-			mutate: func(in *JobInput) { in.Owner = (*v1.LogicalRestore)(nil) },
+			mutate: func(in *JobInput) { in.Owner = (*v1.PointInTimeRestore)(nil) },
 			text:   "owner",
 		},
 		"no owner label": {
@@ -560,8 +554,10 @@ func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 			text:   "owner",
 		},
 		"an owner label without a name": {
-			mutate: func(in *JobInput) { in.OwnerLabel = labels.Owner{Key: labels.LogicalRestoreKey} },
-			text:   "owner",
+			mutate: func(in *JobInput) {
+				in.OwnerLabel = labels.Owner{Key: labels.PointInTimeRestoreKey}
+			},
+			text: "owner",
 		},
 		"an owner label of another kind": {
 			mutate: func(in *JobInput) { in.OwnerLabel = labels.Cluster("my-cluster") },
@@ -580,7 +576,7 @@ func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			in := logicalInput()
+			in := restoreInput()
 			tc.mutate(&in)
 
 			job, err := BuildJob(in)
@@ -597,75 +593,61 @@ func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 func TestJobNameStaysADNSLabel(t *testing.T) {
 	t.Parallel()
 
-	restore := labels.LogicalRestore("my-cluster-restore")
-	assert.Equal(t, "my-cluster-restore-lr-0", JobName(restore, 0))
-	assert.Equal(t, "my-cluster-restore-lr-12", JobName(restore, 12))
+	owner := labels.PointInTimeRestore(restoreName)
+	assert.Equal(t, restoreJob0, JobName(owner, 0))
+	assert.Equal(t, "my-cluster-pitr-pitr-12", JobName(owner, 12))
 
-	name := JobName(labels.LogicalRestore(strings.Repeat("a", 200)), 0)
+	name := JobName(labels.PointInTimeRestore(strings.Repeat("a", 200)), 0)
 	assert.LessOrEqual(t, len(name), validation.DNS1123LabelMaxLength)
-	assert.True(t, strings.HasSuffix(name, "-lr-0"))
+	assert.True(t, strings.HasSuffix(name, "-pitr-0"))
 	assert.Empty(t, validation.IsDNS1123Label(name))
 
-	other := JobName(labels.LogicalRestore(strings.Repeat("a", 199)+"b"), 0)
+	other := JobName(labels.PointInTimeRestore(strings.Repeat("a", 199)+"b"), 0)
 	assert.NotEqual(t, name, other)
 	assert.LessOrEqual(t, len(other), validation.DNS1123LabelMaxLength)
 
-	// pitr is the longer infix, so it is the tighter bound on the name.
-	pitr := JobName(labels.PointInTimeRestore(strings.Repeat("a", 200)), 12)
-	assert.LessOrEqual(t, len(pitr), validation.DNS1123LabelMaxLength)
-	assert.True(t, strings.HasSuffix(pitr, "-pitr-12"))
-	assert.Empty(t, validation.IsDNS1123Label(pitr))
+	// A two-digit ordinal is the tighter bound on the name.
+	twelve := JobName(labels.PointInTimeRestore(strings.Repeat("a", 200)), 12)
+	assert.LessOrEqual(t, len(twelve), validation.DNS1123LabelMaxLength)
+	assert.True(t, strings.HasSuffix(twelve, "-pitr-12"))
+	assert.Empty(t, validation.IsDNS1123Label(twelve))
 }
 
-func TestJobGoldenElasticsearchBroker0(t *testing.T) {
+// The whole rendered Job of the first broker: the broker container mirrored
+// into the restore container, the recreated data volume, and the labels.
+func TestJobGoldenBroker0(t *testing.T) {
 	t.Parallel()
 
 	golden.AssertYAML(
-		t, "testdata/golden/elasticsearch-broker-0.yaml", jobPreview{logicalInput()},
+		t, "testdata/golden/pitr-broker-0.yaml", jobPreview{restoreInput()},
 		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
 	)
 }
 
 // The node id, the Job name, and the claim all follow the ordinal.
-func TestJobGoldenElasticsearchBroker2(t *testing.T) {
+func TestJobGoldenBroker2(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	in.Ordinal = 2
 
 	golden.AssertYAML(
-		t, "testdata/golden/elasticsearch-broker-2.yaml", jobPreview{in},
+		t, "testdata/golden/pitr-broker-2.yaml", jobPreview{in},
 		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
 	)
 }
 
-// The relational path takes no argument. The restore application reads the
-// exporter position from the restored database itself.
-func TestJobGoldenRDBMSNoArgs(t *testing.T) {
+// A restore that passes no argument renders no args key at all. The relational
+// logical restore takes that shape: its restore application reads the exporter
+// position from the restored database itself.
+func TestJobGoldenNoArgs(t *testing.T) {
 	t.Parallel()
 
-	in := logicalInput()
+	in := restoreInput()
 	in.Args = nil
 
 	golden.AssertYAML(
-		t, "testdata/golden/rdbms-no-args.yaml", jobPreview{in},
-		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
-	)
-}
-
-func TestJobGoldenPointInTimeRestore(t *testing.T) {
-	t.Parallel()
-
-	in := JobInput{
-		Target:     richTarget(),
-		Owner:      pointInTimeRestore(),
-		OwnerLabel: labels.PointInTimeRestore("my-cluster-pitr"),
-		Ordinal:    1,
-		Args:       []string{"--to=2026-07-30T14:30:00Z"},
-	}
-
-	golden.AssertYAML(
-		t, "testdata/golden/pitr-to-timestamp.yaml", jobPreview{in},
+		t, "testdata/golden/pitr-no-args.yaml", jobPreview{in},
 		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
 	)
 }

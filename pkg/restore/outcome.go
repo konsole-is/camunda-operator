@@ -1,0 +1,44 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package restore
+
+import (
+	"time"
+
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
+)
+
+// Shortly is how long a step waits after it staged a record that the next
+// side effect depends on. The status flush of the reconcile persists the
+// record, and the next look acts on a durable one.
+const Shortly = time.Second
+
+// Outcome is what a driver step reports back to a controller. The driver
+// never writes status.phase, because each restore kind owns its own phase
+// vocabulary. The controller maps an outcome onto its own phase.
+type Outcome struct {
+	// Wait is how long before the next look. Zero means that the watches
+	// carry the wake-up, and the controller settles.
+	Wait time.Duration
+	// Done reports that the step finished and the controller advances.
+	Done bool
+	// Failure is why the step cannot go on, with the Ready reason and the
+	// message that belong to it. What it means for the resource is the
+	// controller's to decide: a failure of the primary-storage phase ends the
+	// restore, and a cluster that another operation holds keeps it waiting.
+	Failure *conditions.PreCheckFailure
+}

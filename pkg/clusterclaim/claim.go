@@ -17,8 +17,8 @@ limitations under the License.
 // Package clusterclaim holds the mutual exclusion of one CamundaCluster.
 // An operation that takes the cluster for itself holds the claim while it
 // runs, and no second operation of any kind starts in the meantime. Both
-// backup kinds hold this claim. The two restore kinds must hold it too: a
-// restore and a backup of one cluster must never run together.
+// backup kinds hold this claim, and so does every restore kind: a restore and
+// a backup of one cluster must never run together.
 //
 // The claim on a cluster is a coordination.k8s.io Lease that the API server
 // creates atomically: the first Create wins, every later Create answers
@@ -399,7 +399,6 @@ type claimHolder interface {
 var holderKinds = map[string]func() claimHolder{
 	"LogicalBackupElasticsearch": func() claimHolder { return &v1.LogicalBackupElasticsearch{} },
 	"LogicalBackupRDBMS":         func() claimHolder { return &v1.LogicalBackupRDBMS{} },
-	"LogicalRestore":             func() claimHolder { return &v1.LogicalRestore{} },
 	"PointInTimeRestore":         func() claimHolder { return &v1.PointInTimeRestore{} },
 }
 
@@ -491,7 +490,7 @@ func holderResource(
 // paused. This is the one rule the claim cannot ask of a kind in general.
 // Only LogicalBackupElasticsearch pauses exporting on the cluster it holds,
 // so only it can end and leave the cluster paused. A backup of the RDBMS and
-// both restore kinds leave the cluster the way they found it, and a terminal
+// every restore kind leave the cluster the way they found it, and a terminal
 // holder of those kinds releases it.
 //
 // The recorded status.terminalReason decides first. A write conflict at the

@@ -19,12 +19,17 @@ limitations under the License.
 // CamundaCluster with a database that somebody else already restored to a
 // point in time. The operator never restores the database server.
 //
-// The files follow the phases. admit.go resolves the storage chain and checks
-// the rules of the server. dbstate.go reads the exporter position of every
-// partition and refuses a database that is ahead of the requested point.
-// primary.go recreates the broker data volumes and runs the restore
-// application on them. This file holds what every phase shares: Reconcile, the
-// terminal transitions, and the wiring.
+// The files follow the phases. admit.go resolves the storage chain, checks
+// the rules of the server, and takes the claim on the cluster. dbstate.go
+// reads the exporter position of every partition and refuses a database that
+// is ahead of the requested point. primary.go runs the shared primary-storage
+// phase of pkg/restore, which recreates the broker data volumes and runs the
+// restore application on them. This file holds what every phase shares:
+// Reconcile, the terminal transitions, and the wiring.
+//
+// The machinery that every restore kind shares lives in pkg/restore. This
+// package holds the phase vocabulary of this kind, its own rules, and the
+// mapping of a driver outcome onto its phase.
 //
 // Nothing is destroyed before the RestoringPrimaryStorage phase. A failure of
 // an earlier phase holds the restore and touches no volume, in one of two
@@ -52,9 +57,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
 const (
@@ -71,26 +78,7 @@ const (
 	// that already deleted a broker volume must reach a terminal phase, so
 	// that whoever owns the cluster learns that it has to act.
 	defaultMidRunGrace = 10 * time.Minute
-
-	eventReasonStarted   = "RestoreStarted"
-	eventReasonCompleted = "RestoreCompleted"
-	eventReasonFailed    = "RestoreFailed"
-	eventActionRestore   = "Restore"
 )
-
-// hold is the domain result of one reconcile phase. It says how long to wait
-// before the next look, or nothing when the watches carry the wake-up. Only
-// Reconcile turns it into a ctrl.Result.
-type hold struct {
-	after time.Duration
-}
-
-// settle waits on the watches alone.
-var settle = hold{}
-
-// shortly re-enters after a staged status is persisted, so the next side
-// effect acts on a durable record.
-var shortly = hold{after: time.Second}
 
 // ReadPositions reads the exporter position of every partition from the
 // logical database of a cluster.
@@ -163,6 +151,10 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps;secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// The cluster claim reads the resource of whichever kind holds the Lease,
+// to decide whether that holder still needs the cluster.
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalbackupelasticsearches;logicalbackuprdbmses,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile advances the restore by at most one phase. The phase is the resume
@@ -199,20 +191,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	if pitr.Terminal() {
 		// A conflict on the terminal flush can restore a stale Ready from the
-		// server. Staging it again on every look heals that.
-		r.stageTerminal(&pitr)
+		// server. Staging it again on every look heals that. This branch also
+		// gives the claim back the first time, on the look that follows the
+		// terminal transition. A release that failed heals here too.
+		restore.StageTerminal(&pitr, &pitr.Status.RestoreProgress)
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.releaseClaim(ctx, &pitr)
 	}
 
-	var wait hold
+	var outcome restore.Outcome
 	switch pitr.Status.Phase {
 	case "", v1.PointInTimeRestorePending:
-		wait, err = r.admit(ctx, &pitr)
+		outcome, err = r.admit(ctx, &pitr)
 	case v1.PointInTimeRestoreValidatingDatabaseState:
-		wait, err = r.enterDatabaseState(ctx, &pitr)
+		outcome, err = r.enterDatabaseState(ctx, &pitr)
 	case v1.PointInTimeRestoreRestoringPrimaryStorage:
-		wait, err = r.restorePrimaryStorage(ctx, &pitr)
+		outcome, err = r.restorePrimaryStorage(ctx, &pitr)
 	default:
 		return ctrl.Result{}, fmt.Errorf("unknown phase %q", pitr.Status.Phase)
 	}
@@ -220,23 +214,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: wait.after}, nil
+	// A restore that reached its terminal phase in this look keeps the claim
+	// until the flush of this reconcile makes that phase durable. The look
+	// that the flush wakes releases it through the branch above. A Lease that
+	// outlives the phase by one look costs nothing, because the claim reports
+	// a terminal holder inactive. A release before that point lets a second
+	// operation start against a cluster whose restore the API still reports
+	// as running.
+	return ctrl.Result{RequeueAfter: outcome.Wait}, nil
 }
 
 // complete ends the restore. The brokers now hold the state of the requested
 // point, and whoever owns the cluster can unsuspend it.
 func (r *Reconciler) complete(pitr *v1.PointInTimeRestore) {
-	now := metav1.Now()
 	pitr.Status.Phase = v1.PointInTimeRestoreCompleted
-	pitr.Status.CompletionTime = &now
-	pitr.Status.TerminalReason = v1.ReasonCompleted
-	r.stageTerminal(pitr)
+	restore.Complete(&pitr.Status.RestoreProgress, metav1.Now())
+	restore.StageTerminal(pitr, &pitr.Status.RestoreProgress)
 	r.EventRecorder.Eventf(
 		pitr,
 		nil,
 		corev1.EventTypeNormal,
-		eventReasonCompleted,
-		eventActionRestore,
+		restore.EventReasonCompleted,
+		restore.EventActionRestore,
 		"The restore of CamundaCluster %s/%s to %s finished",
 		pitr.Namespace,
 		pitr.Spec.ClusterRef.Name,
@@ -244,55 +243,24 @@ func (r *Reconciler) complete(pitr *v1.PointInTimeRestore) {
 	)
 }
 
-// fail ends the restore with message. Every failure of this kind reports the
-// reason Failed: the causes that carry a reason of their own, for example a
-// server without point-in-time recovery, hold the restore instead of ending
-// it. Status keeps the reason anyway, so stageTerminal stages the same one
-// again after a write conflict.
-//
-// The message carries an external error whose size the controller cannot know,
-// for example the reason of a Job or of a pod, so it is bounded before it
-// reaches the free-form status field.
-func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, message string) {
-	now := metav1.Now()
-	message = conditions.BoundMessage(message)
+// fail ends the restore with reason and message. Every failure that this kind
+// raises itself reports the reason Failed: the causes that carry a reason of
+// their own, for example a server without point-in-time recovery, hold the
+// restore instead of ending it. Status keeps the reason, so a terminal look
+// stages the same one again after a write conflict.
+func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
 	pitr.Status.Phase = v1.PointInTimeRestoreFailed
-	pitr.Status.CompletionTime = &now
-	pitr.Status.TerminalReason = v1.ReasonFailed
-	pitr.Status.FailureMessage = message
-	r.stageTerminal(pitr)
+	restore.Fail(&pitr.Status.RestoreProgress, reason, message, metav1.Now())
+	restore.StageTerminal(pitr, &pitr.Status.RestoreProgress)
 	r.EventRecorder.Eventf(
 		pitr,
 		nil,
 		corev1.EventTypeWarning,
-		eventReasonFailed,
-		eventActionRestore,
+		restore.EventReasonFailed,
+		restore.EventActionRestore,
 		"The restore failed: %s",
-		message,
+		pitr.Status.FailureMessage,
 	)
-}
-
-// stageTerminal stages the Ready condition of a terminal phase. It is
-// idempotent, so a terminal restore stages it again on every look and heals a
-// conflict that restored a stale condition.
-func (r *Reconciler) stageTerminal(pitr *v1.PointInTimeRestore) {
-	switch pitr.Status.Phase {
-	case v1.PointInTimeRestoreCompleted:
-		conditions.Stage(pitr, conditions.Ready(
-			metav1.ConditionTrue,
-			v1.ReasonCompleted,
-			"The restore finished. The cluster can be unsuspended",
-			pitr.Generation,
-		))
-	case v1.PointInTimeRestoreFailed:
-		reason := pitr.Status.TerminalReason
-		if reason == "" {
-			reason = v1.ReasonFailed
-		}
-		conditions.Stage(pitr, conditions.Ready(
-			metav1.ConditionFalse, reason, pitr.Status.FailureMessage, pitr.Generation,
-		))
-	}
 }
 
 // progressing stages that a phase of the restore runs.
@@ -304,47 +272,54 @@ func (r *Reconciler) progressing(pitr *v1.PointInTimeRestore, message string) {
 
 // waiting stages a pre-check failure that holds the restore in Pending. The
 // restore has touched nothing, so it goes back to waiting and recovers on its
-// own once the cause is gone.
-func (r *Reconciler) waiting(pitr *v1.PointInTimeRestore, failure *conditions.PreCheckFailure) hold {
+// own once the cause is gone. Nothing bounds this hold.
+func (r *Reconciler) waiting(
+	pitr *v1.PointInTimeRestore,
+	failure *conditions.PreCheckFailure,
+) restore.Outcome {
 	pitr.Status.Phase = v1.PointInTimeRestorePending
-	pitr.Status.FirstFailedAt = nil
+	restore.Recovered(&pitr.Status.RestoreProgress)
 	conditions.Stage(pitr, conditions.Failed(pitr, failure))
 
-	return hold{after: r.opts.RetryInterval}
+	return restore.Outcome{Wait: r.opts.RetryInterval}
 }
 
-// holdStarted stages a dependency failure of a started restore and decides its
-// fate. Within the grace it holds the restore on a timer. Past the grace the
-// restore fails, because a restore that already recreated a broker volume has
-// nothing to go back to. The grace counts from when the dependency first
-// stopped resolving, which recovered clears.
+// holdStarted holds a started restore on a dependency that stopped resolving,
+// and ends it once the mid-run grace is over. The phase of this kind is the
+// controller's to write, so the terminal transition happens here.
 func (r *Reconciler) holdStarted(
 	pitr *v1.PointInTimeRestore,
 	failure *conditions.PreCheckFailure,
-) hold {
-	now := metav1.Now()
-	if pitr.Status.FirstFailedAt == nil {
-		pitr.Status.FirstFailedAt = &now
-	}
-	if now.Sub(pitr.Status.FirstFailedAt.Time) > r.opts.MidRunGrace {
-		r.fail(pitr, fmt.Sprintf(
-			"a dependency stopped resolving and did not recover: %s", failure.Message,
-		))
+) restore.Outcome {
+	outcome := restore.HoldRunning(
+		pitr,
+		&pitr.Status.RestoreProgress,
+		failure,
+		metav1.Now(),
+		r.opts.MidRunGrace,
+		r.opts.PollInterval,
+	)
+	if outcome.Failure != nil {
+		r.fail(pitr, outcome.Failure.Reason, outcome.Failure.Message)
 
-		return settle
+		return restore.Outcome{}
 	}
-	conditions.Stage(pitr, conditions.Failed(pitr, failure))
 
-	// A started restore looks again at the cadence of a running phase, not at
-	// the slower cadence of an admission hold. The grace is measured in this
-	// loop, so the loop has to run inside it.
-	return hold{after: r.opts.PollInterval}
+	return outcome
 }
 
-// recovered clears the clock of the mid-run grace. The phase just resolved
-// what it needs, so the next failure gets the full grace again.
-func recovered(pitr *v1.PointInTimeRestore) {
-	pitr.Status.FirstFailedAt = nil
+// claimant is the identity under which the restore holds the claim on its
+// cluster.
+func claimant(pitr *v1.PointInTimeRestore) clusterclaim.Claimant {
+	return clusterclaim.Claimant{Kind: pitr.GetKind(), Name: pitr.Name, UID: pitr.UID}
+}
+
+// releaseClaim gives the claim on the cluster back. It is a no-op when the
+// restore does not hold it.
+func (r *Reconciler) releaseClaim(ctx context.Context, pitr *v1.PointInTimeRestore) error {
+	return restore.Give(
+		ctx, r.Client, r.APIReader, pitr.Namespace, pitr.Spec.ClusterRef.Name, claimant(pitr),
+	)
 }
 
 // SetupWithManager registers the controller, the two field indexes, and the

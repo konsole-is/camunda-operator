@@ -97,24 +97,19 @@ spec:
             description: status defines the observed state of the restore
             properties:
               brokers:
-                description: Brokers is the broker count read from the live broker
-                  StatefulSet.
+                description: |-
+                  Brokers is the broker count read from the live broker StatefulSet and
+                  recorded before the restore deletes a volume. It fixes how many volumes
+                  are recreated and how many Jobs run.
                 format: int32
                 type: integer
-              clusterUID:
-                description: ClusterUID pins the identity of the cluster.
-                type: string
               completionTime:
                 description: CompletionTime is when the restore reached a terminal
                   phase.
                 format: date-time
                 type: string
               conditions:
-                description: |-
-                  Conditions represent the current state. The Ready condition carries the
-                  reasons Progressing, Completed, Failed, ClusterNotSuspended,
-                  InvalidReference, PitrUnavailable, SharedServer, DatabaseNotRestored,
-                  MissingSecret, and ConnectionFailed.
+                description: Conditions represent the current state of the restore.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -176,14 +171,14 @@ spec:
               failureMessage:
                 description: |-
                   FailureMessage names the failing phase and its error. The Ready
-                  condition carries the same message, and the operator stages the
-                  condition again from this field, so a write conflict cannot lose it.
+                  condition carries the same message.
                 type: string
               firstFailedAt:
                 description: |-
                   FirstFailedAt is when a dependency of the running restore first stopped
-                  resolving. The operator measures the mid-run grace from it, and clears
-                  it when the restore recovers.
+                  resolving. The operator measures the mid-run grace from it. It stays
+                  set once the restore starts, because a dependency that flaps must not
+                  reset the grace.
                 format: date-time
                 type: string
               observedGeneration:
@@ -231,14 +226,16 @@ spec:
               primaryJobNames:
                 description: |-
                   PrimaryJobNames are the per-broker restore-application Jobs, in broker
-                  order.
+                  order. The operator records them before it applies the Jobs, so the
+                  record covers every Job that the next look finds.
                 items:
                   type: string
                 type: array
               recreatedClaims:
                 description: |-
                   RecreatedClaims names the broker data claims that the restore deleted
-                  and created again.
+                  and created again. A reconcile that re-enters does not delete a claim
+                  twice.
                 items:
                   type: string
                 type: array
@@ -289,12 +286,17 @@ spec:
                 - endpoint
                 - secondaryStorageConfig
                 type: object
+              targetClusterUID:
+                description: |-
+                  TargetClusterUID pins the identity of the target cluster. A cluster
+                  that is deleted and created again under the same name is another
+                  cluster, and this restore is not its restore.
+                type: string
               terminalReason:
                 description: |-
-                  TerminalReason is the Ready reason recorded at the terminal transition:
-                  Completed or Failed. The operator stages the terminal condition again
-                  from this field, so a write conflict cannot replace the reason with a
-                  weaker one.
+                  TerminalReason is the Ready reason recorded at the terminal transition.
+                  The operator stages the terminal condition again from this field, so a
+                  write conflict cannot replace the reason with a weaker one.
                 type: string
             type: object
         required:
