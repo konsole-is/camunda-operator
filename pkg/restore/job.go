@@ -61,7 +61,13 @@ const (
 type JobInput struct {
 	// Target holds the live broker StatefulSet that the Job mirrors.
 	Target *Target
-	// Owner is the restore resource. It names and owns the Job.
+	// Owner is the restore resource. Its name gives the Job its name, and its
+	// namespace gives the Job its namespace.
+	//
+	// BuildJob sets no owner reference on the Job, because it renders without
+	// a scheme. The caller sets the controller reference before it applies the
+	// Job. Without that reference, deleting the restore resource leaves the
+	// Jobs behind.
 	Owner client.Object
 	// OwnerLabel is the owner label of the restore kind:
 	// labels.LogicalRestore or labels.PointInTimeRestore.
@@ -115,13 +121,24 @@ func boundedName(name string, limit int) string {
 
 // BuildJob renders the Job that runs the restore application for one broker.
 //
-// The pod is the broker pod of the live StatefulSet with three changes: the
-// data volume becomes a claim on data-<cluster>-zeebe-<ordinal> instead of a
-// claim template, the container runs the restore entrypoint under the restore
-// Spring profile with the node id as a plain value, and the pod never
-// restarts. Everything else is copied, so the restore application sees the
-// same secondary storage, the same credentials, the same backup store, the
-// same paths, and the same scheduling as the brokers.
+// The pod starts as a copy of the broker pod of the live StatefulSet, so the
+// restore application reads the same secondary storage with the same
+// credentials, writes to the same backup store, and finds every file at the
+// path the brokers use. BuildJob changes five things:
+//
+//   - The pod runs one container, and that container runs the restore
+//     entrypoint under the restore Spring profile, with the node id as a
+//     plain value. It carries no probe, because the restore application is a
+//     one-shot process.
+//   - The data volume becomes a claim on data-<cluster>-zeebe-<ordinal>,
+//     because a Job has no claim template.
+//   - The pod never restarts, and the Job never retries it.
+//   - The topology spread constraints keep the shape of the broker's own, but
+//     they select the pods of this restore. See spreadOverRestorePods.
+//   - The operator labels of the restore go over the copied broker labels, so
+//     the owner and the component name this restore.
+//
+// BuildJob sets no owner reference. See JobInput.Owner.
 func BuildJob(in JobInput) (*batchv1.Job, error) {
 	if err := in.Target.complete(); err != nil {
 		return nil, fmt.Errorf("building the restore Job of broker %d: %w", in.Ordinal, err)
