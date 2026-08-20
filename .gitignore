@@ -44,3 +44,19 @@ site/
 # every `make helm-generate`, silently reverting any edits. Our real chart CI
 # lives in .github/workflows/chart.yml, at a path the plugin does not own.
 .github/workflows/test-chart.yml
+
+# Claude Code writes these files while a session runs. They hold local state:
+# lock files, worktree checkouts, and per-user settings. None of them belong to
+# the repository. Until now they were ignored only through .git/info/exclude and
+# the global git ignore file, which are local to one machine and are not shared.
+**/.claude/settings.local.json
+**/.claude/scheduled_tasks.lock
+**/.claude/scheduled_tasks.json
+**/.claude/routines/.state/
+**/.claude/worktrees/
+**/.claude/checkpoints/
+**/.claude/mailbox/
+**/.claude/agent-registry.json
+**/.claude/agent-memory-local
+**/.claude/first-run
+**/.claude/assistant-daemon-state.json
