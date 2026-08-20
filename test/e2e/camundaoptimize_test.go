@@ -109,7 +109,19 @@ func esFixtureEndpoint() string {
 // optimizeIssuerURL is the issuer of the realm that testdata/keycloak.yaml
 // serves, reachable from the pods of this namespace.
 func optimizeIssuerURL() string {
-	return fmt.Sprintf("http://keycloak.%s.svc:8080/realms/%s", optimizeNamespace, ccOIDCRealm)
+	return optimizeIdentityBaseURL() + "/realms/" + ccOIDCRealm
+}
+
+// optimizeIdentityBaseURL is the root of the service that stands in for
+// Management Identity in this flow.
+//
+// baseUrl is the root of a service, not an issuer, so it keeps that shape here.
+// Optimize reads it only to fetch tenant authorizations, and only when
+// multi-tenancy is on, which the operator never turns on, so nothing in this
+// flow calls it. Keycloak is what runs in the namespace, so it is what the
+// contract names.
+func optimizeIdentityBaseURL() string {
+	return fmt.Sprintf("http://keycloak.%s.svc:8080", optimizeNamespace)
 }
 
 // esFixtureCredentials returns the Secret that the storage contract names. It
@@ -234,7 +246,7 @@ func optimizeManagementAuth() *v1.ManagementAuthConfig {
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ManagementAuthConfig"},
 		ObjectMeta: metav1.ObjectMeta{Name: optimizeAuthConfig},
 		Spec: v1.ManagementAuthConfigSpec{
-			BaseURL:   issuer,
+			BaseURL:   optimizeIdentityBaseURL(),
 			IssuerURL: issuer,
 			AuthURL:   issuer + "/protocol/openid-connect/auth",
 			TokenURL:  issuer + "/protocol/openid-connect/token",
