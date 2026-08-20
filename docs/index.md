@@ -14,6 +14,7 @@ The operator also manages what a cluster needs around it: an Elasticsearch clust
 
 ## Guides
 
+- [Presets](guides/presets.md): write the sizing and the defaults once, then create a cluster in a few lines.
 - [Secondary storage](guides/secondary-storage.md): Elasticsearch or PostgreSQL, and how each connects to a cluster.
 - [Authentication](guides/authentication.md): basic authentication, OIDC, administrators.
 - [Backup](guides/backup.md): set up a bucket and take backups.

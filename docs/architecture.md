@@ -63,7 +63,7 @@ These settings are plain fields on the resource, set before creation. `spec.zeeb
 ## The resource map
 
 ```mermaid
-graph TD
+graph LR
     CCP[CamundaClusterPreset]
     PFC[CamundaPlatformConfig]
     ESCP[ElasticsearchClusterPreset]

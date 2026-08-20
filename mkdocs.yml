@@ -1,5 +1,6 @@
 site_name: Camunda Operator
 site_description: Core Kubernetes operator for the Camunda platform
+site_url: https://konsole-is.github.io/camunda-operator/
 repo_url: https://github.com/konsole-is/camunda-operator
 repo_name: konsole-is/camunda-operator
 edit_uri: edit/main/docs/
@@ -67,6 +68,11 @@ markdown_extensions:
 
 plugins:
   - search
+  # Pan and zoom on every mermaid diagram: hold Alt and scroll, or use the
+  # buttons under the diagram. The plugin ships its own JavaScript.
+  - panzoom:
+      full_screen: true
+      always_show_hint: true
 
 nav:
   - Home: index.md
@@ -75,6 +81,7 @@ nav:
   - Use the API types from Go: go-api.md
   - Architecture: architecture.md
   - Guides:
+      - Presets: guides/presets.md
       - Secondary storage: guides/secondary-storage.md
       - Authentication: guides/authentication.md
       - Backup: guides/backup.md

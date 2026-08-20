@@ -4,14 +4,93 @@ This guide covers the day-2 tasks of a running orchestration cluster: read its s
 
 ## Read the status
 
-The operator reports the state of a cluster in `status.conditions`. Read them with `kubectl describe`, or print the `Ready` condition alone:
+The operator reports the state of a cluster in `status.conditions`. `kubectl get` shows no status columns for a `CamundaCluster`, so read the status itself:
 
 ```bash
-kubectl describe camundacluster my-cluster -n my-cluster-ns
-kubectl get camundacluster my-cluster -n my-cluster-ns -o jsonpath='{.status.conditions[?(@.type=="Ready")]}'
+kubectl get camundacluster my-cluster -n my-cluster-ns -o yaml
 ```
 
-A `CamundaCluster` has one condition per process and one for each internal Secret: `ZeebeReady`, `GatewayReady`, `OperateReady`, `TasklistReady`, `AdminReady`, `ConnectorsReady`, `AdminSecretReady`, and `MirroredSecretsReady`. The `Ready` condition sums them up. It is `True` only when every condition that the cluster needs is `True`. Its reason and message name the condition that holds it back.
+The status of a healthy cluster with the default topology looks like this:
+
+```yaml
+status:
+  observedGeneration: 3
+  serviceAccountName: my-cluster-camunda
+  management:
+    endpoint: http://my-cluster-zeebe.my-cluster-ns.svc:9600
+    auth:
+      method: none
+    version: "8.9.9"
+    partitions: 1
+  volumes:
+    - name: data-my-cluster-zeebe-0
+      capacity: 10Gi
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "zeebe: All resources healthy."
+    - type: ZeebeReady
+      status: "True"
+      reason: Healthy
+      message: All resources healthy.
+    - type: GatewayReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+    - type: OperateReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+    - type: TasklistReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+    - type: AdminReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+    - type: ConnectorsReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+    - type: AdminSecretReady
+      status: "True"
+      reason: Healthy
+      message: All resources healthy.
+    - type: MirroredSecretsReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+```
+
+A `CamundaCluster` has one condition per process and one for each internal Secret. The `Ready` condition sums them up. It is `True` only when every condition that the cluster needs is `True`. Its reason and message name the condition that holds it back. While the brokers of this cluster start, `Ready` reads:
+
+```yaml
+    - type: Ready
+      status: "False"
+      reason: Creating
+      message: "zeebe: Waiting for replicas: 0/1 ready"
+    - type: ZeebeReady
+      status: "False"
+      reason: Creating
+      message: "Waiting for replicas: 0/1 ready"
+```
+
+And when `storageRef` names a `SecondaryStorageConfig` that does not exist:
+
+```yaml
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: SecondaryStorageConfig "my-cluster-ns/my-storage-config" not found
+```
+
+To print one condition without the rest:
+
+```bash
+kubectl get camundacluster my-cluster -n my-cluster-ns -o jsonpath='{.status.conditions[?(@.type=="Ready")]}'
+```
 
 Every condition carries one of these reasons:
 
@@ -30,23 +109,45 @@ Every condition carries one of these reasons:
 
 `Disabled` shows on `GatewayReady` when the gateway is `Embedded`, on `OperateReady`, `TasklistReady`, and `AdminReady` when the web application is `Embedded`, on `ConnectorsReady` when connectors are off, on `AdminSecretReady` under OIDC, and on `MirroredSecretsReady` when every referenced Secret lives in the namespace of the cluster. `InvalidReference` and `MissingSecret` show on `Ready` only.
 
-Three more status fields help you:
+The other status fields in the example above:
 
-- `status.management` holds the address of the management API, for example `http://my-cluster-gateway.my-cluster-ns.svc:9600`, with the Camunda version and the number of partitions. The backup kinds read it. It is absent while the cluster is suspended.
-- `status.volumes` lists every bound broker volume with its name and capacity.
-- `status.observedGeneration` is the last generation of the spec that the operator reconciled. If it is lower than `metadata.generation`, the operator has not processed your last edit yet.
+- `management` holds the address of the management API, with the Camunda version and the number of partitions. The backup kinds read it. It is absent while the cluster is suspended.
+- `volumes` lists every bound broker volume with its name and capacity.
+- `serviceAccountName` is the ServiceAccount that the pods run under.
+- `observedGeneration` is the last generation of the spec that the operator reconciled. If it is lower than `metadata.generation`, the operator has not processed your last edit yet.
 
 An `ElasticsearchCluster` uses the same reason vocabulary. Its `Ready` also reports `ConnectionFailed` when the snapshot repository cannot be registered. Read the [ElasticsearchCluster](../crds/elasticsearchcluster.md) page for its condition types.
 
 ## Change the topology
 
-The gateway and each web application run `Standalone` or `Embedded`. You change the mode on the cluster, and the operator changes the workloads:
+The gateway and each web application run `Standalone` or `Embedded`. You change the mode on the cluster, and the operator changes the workloads. A cluster with a standalone gateway and a standalone Operate:
 
-```bash
-kubectl patch camundacluster my-cluster -n my-cluster-ns --type=merge -p '{"spec":{"operate":{"mode":"Standalone"}}}'
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  # ... version, platformConfigRef, storageRef, and the rest of your cluster
+  gateway:
+    mode: Standalone
+    replicas: 2
+  operate:
+    mode: Standalone
+    replicas: 2
 ```
 
-When you set `operate.mode: Standalone`, the Deployment and the Service `my-cluster-operate` appear, and `OperateReady` reports `Creating` and then `Healthy`. When you set it back to `Embedded`, the operator deletes both, `OperateReady` reads `Disabled`, and the gateway serves Operate again. The same applies to `tasklist`, `admin`, and `gateway`. An embedded web application runs inside the gateway when the gateway is standalone, otherwise inside the brokers.
+When Operate becomes `Standalone`, the Deployment and the Service `my-cluster-operate` appear, and `OperateReady` reports `Creating` and then `Healthy`:
+
+```yaml
+    - type: OperateReady
+      status: "False"
+      reason: Creating
+      message: "Waiting for replicas: 0/2 ready"
+```
+
+When you set it back to `Embedded`, the operator deletes both, `OperateReady` reads `Disabled`, and the gateway serves Operate again. The same applies to `tasklist`, `admin`, and `gateway`. An embedded web application runs inside the gateway when the gateway is standalone, otherwise inside the brokers.
 
 The Services stay stable, so clients find the cluster this way:
 
@@ -59,33 +160,85 @@ The Services stay stable, so clients find the cluster this way:
 
 ## Suspend and resume
 
-Set `spec.suspend: true` to stop a cluster and keep its data:
+To stop a cluster and keep its data, suspend it:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  # ... the rest of your cluster
+  suspend: true
+```
+
+Or, as a one-liner:
 
 ```bash
 kubectl patch camundacluster my-cluster -n my-cluster-ns --type=merge -p '{"spec":{"suspend":true}}'
 ```
 
-The operator scales every workload to zero replicas and keeps the broker volumes. `Ready` stays `True` with reason `Suspended`, and `status.management` disappears. A backup of a suspended cluster waits.
+The operator scales every workload to zero replicas and keeps the broker volumes. `Ready` stays `True` with reason `Suspended`, and `management` disappears from the status. A backup of a suspended cluster waits.
 
-Set `spec.suspend: false` to start the cluster again. `Ready` reads `Updating` while the pods start, then `Healthy`. The brokers attach to the same volumes, and the process instances from before the suspension are still there.
+```yaml
+status:
+  volumes:
+    - name: data-my-cluster-zeebe-0
+      capacity: 10Gi
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Suspended
+      message: "zeebe: StatefulSet scaled to zero"
+```
+
+Set `suspend: false` to start the cluster again. `Ready` reads `Updating` while the pods start, then `Healthy`. The brokers attach to the same volumes, and the process instances from before the suspension are still there.
 
 An `ElasticsearchCluster` suspends the same way. The operator deletes the ECK `Elasticsearch` resource and keeps the data volumes. `Ready` is `True` with reason `Suspended`, and `MetricsReady` reports `Suspended` too. On resume the operator recreates the resource, and ECK attaches the same volumes with the data intact.
 
-`spec.pause: true` is different. The operator stops reconciling the resource. It writes nothing, not even status, and records one `Paused` event per reconcile. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource, for example while you inspect or repair a workload by hand.
+`pause: true` is different:
+
+```yaml
+spec:
+  # ... the rest of your cluster
+  pause: true
+```
+
+The operator stops reconciling the resource. It writes nothing, not even status, and records one `Paused` event per reconcile. The workloads keep running as they are. Use `suspend` to save compute and keep the data. Use `pause` when you must stop the operator from touching the resource, for example while you inspect or repair a workload by hand.
 
 ## Grow storage
 
-Increase `spec.zeebe.storageSize` to give the brokers more disk:
+Increase `zeebe.storageSize` to give the brokers more disk:
 
-```bash
-kubectl patch camundacluster my-cluster -n my-cluster-ns --type=merge -p '{"spec":{"zeebe":{"storageSize":"64Gi"}}}'
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  # ... the rest of your cluster
+  zeebe:
+    storageSize: 64Gi
 ```
 
-The operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. If it does not, the API server rejects the expansion and the operator retries with backoff. A volume of a new replica is expanded after it binds. `status.volumes` shows the result per volume.
+The operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. If it does not, the API server rejects the expansion and the operator retries with backoff. A volume of a new replica is expanded after it binds. `status.volumes` shows the result per volume:
+
+```yaml
+status:
+  volumes:
+    - name: data-my-cluster-zeebe-0
+      capacity: 64Gi
+    - name: data-my-cluster-zeebe-1
+      capacity: 64Gi
+    - name: data-my-cluster-zeebe-2
+      capacity: 32Gi   # not expanded yet
+```
 
 A smaller value is rejected at admission. If a preset lowers the size under a running cluster, the operator ignores it, keeps the current size, and records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
 
-`spec.storageSize` of an `ElasticsearchCluster` obeys the same rules: it grows in place, a smaller inline value is rejected, and a smaller preset value is ignored with `StorageShrinkIgnored`.
+`storageSize` of an `ElasticsearchCluster` obeys the same rules: it grows in place, a smaller inline value is rejected, and a smaller preset value is ignored with `StorageShrinkIgnored`.
 
 ## Rotate passwords
 
@@ -134,9 +287,37 @@ Keep `-XX:+ExitOnOutOfMemoryError` in the value. The operator sets it, and your 
 
 ## Monitor
 
-Set `spec.monitoring.serviceMonitor.enabled: true` to let a Prometheus operator scrape the cluster. The operator creates one ServiceMonitor per process, named like the workload. It scrapes `/actuator/prometheus` on port `9600` of a unified process and on port `8080` of connectors. On a Kubernetes cluster without the `ServiceMonitor` kind, the operator creates none and reports no error.
+To let a Prometheus operator scrape the cluster, turn on the ServiceMonitors:
 
-An `ElasticsearchCluster` with the same flag runs the Prometheus `elasticsearch_exporter` next to the cluster and a ServiceMonitor for it. The exporter reports its state in the `MetricsReady` condition. This condition is not part of `Ready`, so a broken exporter never marks the cluster not ready.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  # ... the rest of your cluster
+  monitoring:
+    serviceMonitor:
+      enabled: true
+```
+
+The operator creates one ServiceMonitor per process, named like the workload. It scrapes `/actuator/prometheus` on port `9600` of a unified process and on port `8080` of connectors. On a Kubernetes cluster without the `ServiceMonitor` kind, the operator creates none and reports no error.
+
+An `ElasticsearchCluster` with the same block runs the Prometheus `elasticsearch_exporter` next to the cluster and a ServiceMonitor for it. The exporter reports its state in the `MetricsReady` condition. This condition is not part of `Ready`, so a broken exporter never marks the cluster not ready.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  # ... version, replicas, storageSize, secondaryStorageConfig
+  monitoring:
+    serviceMonitor:
+      enabled: true
+```
 
 ## Find the resources of a cluster
 
@@ -169,7 +350,20 @@ kubectl get pod,pvc -n my-cluster-ns -l camunda.io/cluster=my-cluster,camunda.io
 kubectl delete camundacluster my-cluster -n my-cluster-ns
 ```
 
-Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the ServiceAccount, the admin Secret, the copied Secrets, and the ServiceMonitors. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted`. With `Delete`, the default, they go with the cluster. With `Retain`, they stay, and a later cluster with the same name attaches them again.
+Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the ServiceAccount, the admin Secret, the copied Secrets, and the ServiceMonitors. The broker volumes follow the retention policy of the cluster. With `Delete`, the default, they go with the cluster. With `Retain`, they stay, and a later cluster with the same name attaches them again. Set the policy before you delete:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  # ... the rest of your cluster
+  zeebe:
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+```
 
 The `ElasticsearchCluster` and the `Database` are separate resources with their own lifecycle. Deleting the `CamundaCluster` leaves them in place. Deleting an `ElasticsearchCluster` removes the ECK resource, its Secrets, and its `SecondaryStorageConfig`, and its data volumes follow its own `persistentVolumeClaimRetentionPolicy`. Deleting a `Database` removes its `DatabaseConfig`, its `SecondaryStorageConfig`, and its credential Secrets, but it never drops the logical database or the SQL roles. Data removal on the server is a manual act.
 
