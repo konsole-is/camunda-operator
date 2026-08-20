@@ -24,6 +24,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -47,10 +48,25 @@ var _ = Describe("PointInTimeRestore schema", func() {
 		Expect(k8sClient.Create(ctx, pitr)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, pitr) })
 
-		pitr.Spec.Timestamp = metav1.NewTime(suiteStart.Add(-2 * time.Hour))
-		err := k8sClient.Update(ctx, pitr)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("immutable"))
+		// The controller writes the status of the restore concurrently, so an
+		// update of the created copy can lose to a conflict instead of meeting
+		// the CEL rule. mutate changes the live object. Only the rejection of
+		// the CEL rule ends the retry.
+		mutate := func(change func(*v1.PointInTimeRestore)) error {
+			var current v1.PointInTimeRestore
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pitr), &current)).To(Succeed())
+			change(&current)
+
+			return k8sClient.Update(ctx, &current)
+		}
+
+		Eventually(func(g Gomega) {
+			err := mutate(func(p *v1.PointInTimeRestore) {
+				p.Spec.Timestamp = metav1.NewTime(suiteStart.Add(-2 * time.Hour))
+			})
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring("immutable"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("requires the cluster name", func() {
