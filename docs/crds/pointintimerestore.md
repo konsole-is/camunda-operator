@@ -1,54 +1,22 @@
 # PointInTimeRestore
 
-A PointInTimeRestore aligns an RDBMS-backed orchestration cluster's Zeebe primary storage with a database that has already been restored to a timestamp, in place.
+`PointInTimeRestore` aligns the Zeebe primary storage of a `CamundaCluster` with a database that you already restored to a point in time. You create it, or a recovery flow above the operator creates it for you.
+
+The cluster must store its data in a relational database. You use this kind to undo a destructive operation without a [LogicalBackupRDBMS](logicalbackuprdbms.md). It relies on two continuous mechanisms instead of discrete backups: point-in-time recovery on the database server, which happens outside this operator, and the continuous primary-storage backups of Zeebe, which this operator aligns.
+
+The operator never restores the database server. PostgreSQL point-in-time recovery needs host-level access to base backups and to the write-ahead log archive. A managed service exposes it only through a provider API. Both belong to the layer above this operator. For an Elasticsearch cluster, or to restore into another cluster, use [LogicalRestore](logicalrestore.md) instead.
+
+One resource is one restore. The spec is immutable, and the restore runs once. `kubectl get pitr` lists the restores with their phase, cluster, and timestamp.
 
 !!! warning "Not implemented yet"
     The operator does not implement this kind yet. This page describes the planned design.
 
-## Purpose
+Two things must be true before you create the resource:
 
-A PointInTimeRestore recovers a `CamundaCluster` whose secondary storage is an RDBMS to an arbitrary point in time — for example to undo a destructive operation — without needing a [LogicalBackupRDBMS](logicalbackuprdbms.md).
-It relies on two continuous mechanisms instead of discrete backups: WAL-based point-in-time recovery on the database server, performed outside this operator, and Zeebe's continuous primary-storage backups, aligned by this controller.
-The operator never restores the database server itself: PostgreSQL PITR requires host-level access to base backups and the WAL archive, and managed database services expose it only through provider APIs that belong to the cloud operator or composition layer above — this controller aligns primary storage only.
-You create it, or a composition layer above creates it as part of a managed recovery flow.
-For Elasticsearch-backed clusters, or for restoring into a different cluster, use [LogicalRestore](logicalrestore.md) instead.
+- The cluster has `spec.suspend: true`, so no workload writes to primary or secondary storage.
+- The database already holds the state of the requested timestamp. On a self-hosted server the database administrator runs standard PostgreSQL point-in-time recovery. On a managed service you use the point-in-time restore of the provider. Some providers, for example Amazon RDS, create a **new** instance for the restore. Then you update `host` on the `DatabaseServerConfig` before you create this resource.
 
-## How it works
-
-**Prerequisites.** Two things must already be true before this CR is created, both owned by you or the composition layer above:
-
-- The cluster is suspended (`spec.suspend: true` on the `CamundaCluster`), so no workload writes to primary or secondary storage during the restore.
-- The database has already been restored to the target timestamp: on a self-hosted server the database administrator performs standard PostgreSQL point-in-time recovery (base backup plus WAL replay to `recovery_target_time`); on a managed service you use the provider's point-in-time restore. Note that some providers (for example Amazon RDS) materialize the restore as a **new** database instance — in that case the `DatabaseServerConfig`'s `host` must be updated to the new endpoint before this CR is created.
-
-The operator then drives the restore through the phases in `status.phase`; each phase must complete before the next starts.
-
-1. Validate that the cluster is suspended (`spec.suspend: true` and the `Suspended` condition reported on the `CamundaCluster`). The restore controller only ever reads the suspend field — it never writes it. The `suspend` field is owned by you or by the composition layer above, which suspends the cluster before creating the PointInTimeRestore and unsuspends it after completion. A running cluster keeps the restore in `Pending` with `Ready: ClusterNotSuspended`.
-2. Resolve the storage chain: the cluster's `storageRef` → `SecondaryStorageConfig` (must be `type: rdbms`) → `DatabaseConfig` → `serverRef` → `DatabaseServerConfig`.
-3. Validate that the `DatabaseServerConfig` has `pitr.enabled: true` and that `spec.timestamp` lies within the server's PITR retention period; otherwise fail with `Ready: PitrUnavailable`. The `DatabaseServerConfig`'s role here is capability declaration only — this controller never uses its `adminCredentialsSecretRef`.
-4. Validate the dedicated-server rule: the `DatabaseServerConfig` must be referenced by exactly one `Database`. Engine-level PITR rolls back the entire server instance, not one logical database, so a shared server would silently roll back unrelated databases.
-5. Enter `RestoringPrimaryStorage`: ensure the cluster's Zeebe data volumes are empty — the operator deletes and recreates the Zeebe PVCs, because Camunda's restore application refuses a non-empty data directory — then run the restore application (`bin/restore`, the Camunda distribution's one-shot Spring Boot app) once per broker as a Job with the broker's own configuration and `--to=<spec.timestamp>`, applied with Server-Side Apply (SSA) under the field manager `camunda-operator/pointintimerestore`. The restore application does the alignment itself: it reads the per-partition exporter position from the restored database's `EXPORTER_POSITION` table — using the cluster's application credentials, resolved via `storageRef` → `SecondaryStorageConfig` → `DatabaseConfig.credentialsSecretRef`, the same credentials the brokers use — and restores the newest checkpoint at or before that position from the continuous primary-storage backups, so the restored Zeebe state is never behind the database.
-6. Report `Completed`. You or the composition layer unsuspend the cluster; on start, Zeebe re-exports any events between the database's position and the restored checkpoint, and the two storages converge.
-
-**The safety net.** The operator cannot verify that the database was actually restored to `spec.timestamp` — it has no view into the server's restore history. Camunda's restore application rejects a `--to` timestamp that lies before the database's restored state, so a skipped or wrong database restore fails the Jobs loudly instead of silently assembling an inconsistent cluster.
-
-```mermaid
-graph TD
-    PITR[PointInTimeRestore] -.->|clusterRef, reads suspend| CC[CamundaCluster]
-    CC -.->|storageRef| SSC[SecondaryStorageConfig]
-    SSC -.->|databaseConfigRef| DBC[DatabaseConfig]
-    DBC -.->|serverRef| DBS["DatabaseServerConfig (pitr.enabled)"]
-    EXT["You / composition layer (external)"] -->|"restores server to timestamp"| PG["PostgreSQL server (external)"]
-    PITR -->|per broker, --to timestamp| RJ[restore app Jobs]
-```
-
-**The CamundaCluster-side prerequisite.** Point-in-time restore is only possible if primary-storage restore points exist for the requested timestamp. The `CamundaCluster` controller enables Zeebe's continuous primary-storage backups — continuous mode plus a backup schedule and checkpoint interval, written to the store behind the cluster's `backupStorageRef` — for every RDBMS-backed cluster with a `backupStorageRef`; point-in-time restore additionally requires `pitr.enabled` on the resolved `DatabaseServerConfig`. The checkpoint interval bounds how precise the restore can be: Zeebe restores to the nearest checkpoint at or before the requested timestamp, while the database restores to the exact timestamp.
-
-!!! note "Deviation from the original proposal"
-    The proposal had the restore controller restore the database server itself — `recovery_target_time` WAL replay — and read the `exporter_position` table to restore primary storage "to match". Neither survives verification.
-    Operator-driven WAL replay is not implementable over a SQL connection: PostgreSQL point-in-time recovery requires host-level access to base backups and the WAL archive, and managed services expose it only through provider restore APIs, which belong to the composition layer above. This operator therefore aligns primary storage only, against a database restored externally.
-    Verified against Camunda 8.9: the standalone restore application performs the alignment natively — it accepts `--to` (and `--from`) timestamps, reads the `EXPORTER_POSITION` table when secondary storage is RDBMS, and selects the matching checkpoint from the continuous backup ranges — so the operator never parses exporter positions itself. Camunda 8.9 also constrains the restore timestamp: it must not lie before the restored state of the database, which is the safety net described above.
-
-## API reference
+The smallest restore names the cluster and the point:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -57,53 +25,98 @@ metadata:
   name: my-cluster-pitr
   namespace: my-cluster-ns
 spec:
-  # object. Required. Reference to the CamundaCluster to roll back in place.
   clusterRef:
-    # string. Required. Name of the CamundaCluster.
     name: my-cluster
-    # string. Optional, default: this CR's namespace. Namespace of the CamundaCluster.
-    namespace: my-cluster-ns
-  # string. Required. RFC 3339 timestamp the database was restored to; must lie within the server's PITR retention period.
   timestamp: "2026-07-30T14:30:00Z"
 ```
+
+```mermaid
+graph LR
+    PITR[PointInTimeRestore] -.->|clusterRef| CC[CamundaCluster]
+    CC -.->|storageRef| SSC[SecondaryStorageConfig]
+    SSC -.->|databaseConfigRef| DBC[DatabaseConfig]
+    DBC -.->|serverRef| DBS["DatabaseServerConfig (pitr)"]
+    EXT["You, or the layer above (external)"] -->|restores the server| PG["PostgreSQL (external)"]
+    PITR -->|reads exporter positions| PG
+    PITR -->|restore Job per broker| PVC[Broker data volumes]
+```
+
+## Suspend
+
+The operator only reads `spec.suspend` of the cluster. It never writes it. You suspend the cluster before you create the restore, and you unsuspend it after the restore is `Completed`. A running cluster holds the restore in `Pending` with reason `ClusterNotSuspended`, and the operator touches no data.
+
+## Phases
+
+`status.phase` is the resume marker. A restore that re-enters after an operator restart continues at the recorded phase.
+
+| Phase | What happens |
+| --- | --- |
+| `Pending` | The restore waits. The cluster runs, the storage chain does not resolve, or the database is ahead of the requested point. |
+| `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. |
+| `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the restore application on them. |
+| `Completed` | The restore finished. You can unsuspend the cluster. |
+| `Failed` | A phase failed. `status.failureMessage` names it. |
+
+## The storage chain
+
+The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, which must be `type: rdbms`, then its `DatabaseConfig`, then its `serverRef` to a `DatabaseServerConfig`. A cluster on Elasticsearch is rejected with reason `InvalidReference`. Point-in-time restore does not exist for it.
+
+The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore fails with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
+
+Exactly one `Database` can reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it fails the restore with reason `SharedServer`.
+
+## The database-state check
+
+Before it touches a volume, the operator connects to the logical database with the application credentials of the cluster, resolved through `storageRef` to `SecondaryStorageConfig` to `DatabaseConfig.credentialsSecretRef`. It reads `LAST_UPDATED` for every partition from the `EXPORTER_POSITION` table and records what it saw in `status.observedPositions`.
+
+The restore holds in `Pending` with reason `DatabaseNotRestored` when a partition row is missing, or when any `LAST_UPDATED` is later than `spec.timestamp` plus one minute of slack. The slack exists because the clock of the database and the source of your timestamp are not the same clock.
+
+**Limits of this check.** The check proves that the database is not ahead of the requested point. It cannot prove that the database holds exactly that point. A database that was restored to an earlier point passes the check, and that is safe: Zeebe re-exports the difference after the restore. The check of the restore application stays the authoritative gate. This check only moves the common error before the volume deletion.
+
+## Primary storage
+
+The Camunda restore application refuses a non-empty data directory, so the operator deletes the broker data volumes of the cluster and creates them again. The new volume takes the size of the claim template of the broker StatefulSet, together with its storage class, access modes, and labels. The volumes belong to that StatefulSet, not to the restore. Deleting the restore never deletes a broker volume.
+
+The operator then runs the Camunda restore application once per broker, as a Job with `--to=<spec.timestamp>`. The Jobs copy their configuration from the live broker StatefulSet, so the restore application always runs with the configuration the brokers run with. A cluster whose broker StatefulSet was deleted cannot restore until its own controller applies it again.
+
+The restore application does the alignment itself. It reads the exporter position of each partition from the restored database with the same credentials the brokers use, and it restores the newest checkpoint at or before that position from the continuous primary-storage backups. The restored Zeebe state is therefore never behind the database.
+
+## What the cluster must provide
+
+Point-in-time restore is possible only when primary-storage restore points exist for the requested timestamp. The `CamundaCluster` controller enables the continuous primary-storage backups of Zeebe for every relational cluster with a `backupStorageRef`. The checkpoint interval bounds how precise the restore can be: Zeebe restores to the nearest checkpoint at or before the requested point, while the database holds the exact point.
+
+## Deletion
+
+When you delete the restore, the operator deletes the Jobs it created. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind.
 
 ## Status
 
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `Ready` | `Completed` | The restore finished; the cluster can be unsuspended. |
-| `Ready` | `Progressing` | A restore phase is running. |
-| `Ready` | `ClusterNotSuspended` | The cluster is not suspended; the restore waits in `Pending`. |
-| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist. |
-| `Ready` | `PitrUnavailable` | PITR is not enabled on the server, or the timestamp is outside retention. |
-| `Ready` | `SharedServer` | The database server is referenced by more than one `Database`. |
-| `Ready` | `Failed` | A restore phase failed; the message names the failing step. |
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
+| `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
+| `Ready` | `ClusterNotSuspended` | The cluster runs. | Set `spec.suspend: true` on the cluster. |
+| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, or the broker StatefulSet is gone. | Correct the reference that the message names. |
+| `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, or `spec.timestamp` lies in the future. | Enable `pitr` on the server, or restore to a point within retention. |
+| `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
+| `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
+| `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
+| `Ready` | `ConnectionFailed` | The database rejects the operator. | Correct the endpoint or the credentials. |
+| `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 
-`status.phase` tracks the long-running operation: `Pending | RestoringPrimaryStorage | Completed | Failed`.
+The status also records what the restore pinned and what it did:
 
-The operator records the last reconciled generation in `status.observedGeneration`.
+- `status.clusterUID` pins the identity of the cluster.
+- `status.brokers` is the broker count that the operator read off the broker StatefulSet.
+- `status.observedPositions` holds the `LAST_UPDATED` value that the check read for each partition.
+- `status.primaryJobNames` names the per-broker restore Jobs, in broker order.
+- `status.recreatedClaims` names the broker data volumes that the operator deleted and created again.
+- `status.completionTime` is when the restore reached `Completed` or `Failed`.
+- `status.observedGeneration` is the last generation the operator reconciled.
 
-## Validation
+## Spec reference
 
-- `spec.timestamp` must be a valid RFC 3339 timestamp and must not lie in the future.
-- `spec` is immutable after creation: a restore is a one-shot operation, retried by creating a new CR.
-- A validating webhook rejects creation when the cluster's resolved `DatabaseServerConfig` is referenced by more than one `Database` — PITR requires a server dedicated to a single cluster. The controller re-checks the rule at reconcile time (step 4) because references can change after admission.
-- Non-RDBMS clusters are rejected at reconcile time with `Ready: InvalidReference`: point-in-time restore does not exist for Elasticsearch-backed clusters.
-- Whether the database was actually restored to `spec.timestamp` is not validatable by the operator; a mismatch surfaces as failed restore Jobs (see the safety net above).
-
-## Relationships
-
-- [LogicalRestore](logicalrestore.md) — the backup-based alternative that works for both storage types and across clusters.
-- [CamundaCluster](camundacluster.md) — referenced via `clusterRef`; must be suspended by its owner for the duration of the restore, and its controller enables continuous primary-storage backups for every RDBMS-backed cluster with a `backupStorageRef`.
-- [SecondaryStorageConfig](secondarystorageconfig.md) — resolved via the cluster's `storageRef`; must be `type: rdbms`.
-- [DatabaseConfig](databaseconfig.md) — resolved for the logical database and its `serverRef`; its `credentialsSecretRef` provides the application credentials the restore-app Jobs use to read the `EXPORTER_POSITION` table.
-- [DatabaseServerConfig](databaseserverconfig.md) — declares the `pitr` capability and retention period this controller validates against, and is subject to the dedicated-server rule; this controller never uses its admin credentials.
-- [ObjectStorageConfig](objectstorageconfig.md) — resolved via the cluster's `backupStorageRef`; holds the continuous primary-storage backups.
-- The database restore itself is performed by an external actor — you or the composition layer above — before this CR is created.
-
-## Examples
-
-A minimal manifest:
+Every field, with its type and whether it is required:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -112,12 +125,24 @@ metadata:
   name: my-cluster-pitr
   namespace: my-cluster-ns
 spec:
+  # object. Required. The cluster to align in place.
   clusterRef:
+    # string. Required. Name of the CamundaCluster, in this namespace.
     name: my-cluster
+  # string. Required. RFC 3339 timestamp that the database already holds. It
+  # must lie within the retention period of the server, and not in the future.
   timestamp: "2026-07-30T14:30:00Z"
 ```
 
-A realistic manifest, rolling back to just before a bad deployment:
+### Validation rules
+
+- `spec` is immutable. A restore runs once, and you retry it with a new resource.
+- `spec.timestamp` is an RFC 3339 timestamp. The rule that it must not lie in the future needs a clock, which a CEL rule does not have, so the operator checks it at reconcile time and reports `PitrUnavailable`.
+- `clusterRef` names a cluster in the namespace of the restore. It never crosses a namespace. The operator reads the Secrets of the cluster and runs Jobs in that namespace, so the reference stays inside the RBAC boundary of the restore.
+- The suspend state, the storage chain, the dedicated-server rule, and the state of the database depend on live cluster state. The operator checks them at reconcile time.
+- Whether the database really holds `spec.timestamp` is not provable by the operator. See "Limits of this check" above.
+
+### Roll back to just before a bad deployment
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -130,9 +155,17 @@ metadata:
 spec:
   clusterRef:
     name: my-cluster
-    namespace: my-cluster-ns
-  # One minute before the faulty process deployment was applied.
-  # The database server was already restored to this timestamp, and the
-  # cluster suspended, before this CR was created.
+  # One minute before the faulty process deployment was applied. The database
+  # server was already restored to this point, and the cluster suspended,
+  # before this resource was created.
   timestamp: "2026-07-30T14:29:00Z"
 ```
+
+## Related
+
+- [LogicalRestore](logicalrestore.md): the backup-based alternative. It works for both storage types and across clusters.
+- [CamundaCluster](camundacluster.md): referenced through `clusterRef`. You suspend it for the whole restore, and its controller enables the continuous primary-storage backups.
+- [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It must be `type: rdbms`.
+- [DatabaseConfig](databaseconfig.md): resolved for the logical database and its `serverRef`. Its `credentialsSecretRef` holds the credentials that read `EXPORTER_POSITION`.
+- [DatabaseServerConfig](databaseserverconfig.md): declares the `pitr` capability and the retention period, and carries the dedicated-server rule. This operator never uses its admin credentials.
+- [ObjectStorageConfig](objectstorageconfig.md): resolved through the `backupStorageRef` of the cluster. It holds the continuous primary-storage backups.

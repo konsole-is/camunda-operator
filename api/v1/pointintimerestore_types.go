@@ -18,40 +18,120 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// The condition reasons that only a PointInTimeRestore reports.
+const (
+	// ReasonPitrUnavailable means that the database server does not declare
+	// point-in-time recovery, or that spec.timestamp lies outside its
+	// retention period.
+	ReasonPitrUnavailable = "PitrUnavailable"
+	// ReasonSharedServer means that more than one Database references the
+	// database server. Engine-level point-in-time recovery rolls back the
+	// whole server, so a shared server rolls back unrelated databases too.
+	ReasonSharedServer = "SharedServer"
+	// ReasonDatabaseNotRestored means that the database is ahead of
+	// spec.timestamp, or that it reports no exporter position for a
+	// partition. The restore holds in Pending and touches no volume.
+	ReasonDatabaseNotRestored = "DatabaseNotRestored"
+)
 
-// PointInTimeRestoreSpec defines the desired state of PointInTimeRestore
+// PointInTimeRestorePhase tracks the one-shot restore. Completed and Failed
+// are terminal. A retry is a new resource.
+// +kubebuilder:validation:Enum=Pending;ValidatingDatabaseState;RestoringPrimaryStorage;Completed;Failed
+type PointInTimeRestorePhase string
+
+// The phases of a point-in-time restore, in order.
+const (
+	// PointInTimeRestorePending means that the restore did not start real
+	// work. A pre-check still holds it: the cluster runs, the storage chain
+	// does not resolve, or the database is ahead of spec.timestamp.
+	PointInTimeRestorePending PointInTimeRestorePhase = "Pending"
+	// PointInTimeRestoreValidatingDatabaseState means that the operator reads
+	// the exporter position of every partition from the restored database.
+	// It runs before the operator touches a volume.
+	PointInTimeRestoreValidatingDatabaseState PointInTimeRestorePhase = "ValidatingDatabaseState"
+	// PointInTimeRestoreRestoringPrimaryStorage means that the operator
+	// recreated the broker data volumes and runs the restore application on
+	// them.
+	PointInTimeRestoreRestoringPrimaryStorage PointInTimeRestorePhase = "RestoringPrimaryStorage"
+	// PointInTimeRestoreCompleted means that the restore finished. The
+	// cluster can be unsuspended.
+	PointInTimeRestoreCompleted PointInTimeRestorePhase = "Completed"
+	// PointInTimeRestoreFailed means that the restore failed. The Ready
+	// condition names the failing phase.
+	PointInTimeRestoreFailed PointInTimeRestorePhase = "Failed"
+)
+
+// PointInTimeRestoreSpec names the cluster to roll back and the point it was
+// rolled back to. The whole spec is immutable.
 type PointInTimeRestoreSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of PointInTimeRestore. Edit pointintimerestore_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// ClusterRef references the CamundaCluster to align, in the namespace of
+	// this restore. Its secondary storage must be a relational database.
+	// +required
+	ClusterRef ClusterRef `json:"clusterRef"`
+	// Timestamp is the point the database was already restored to. It must
+	// lie within the retention period the database server declares. It must
+	// not lie in the future either, and the operator checks that at reconcile
+	// time, because a CEL rule has no clock.
+	// +required
+	Timestamp metav1.Time `json:"timestamp"`
 }
 
-// PointInTimeRestoreStatus defines the observed state of PointInTimeRestore.
+// PartitionPosition is the exporter position of one partition, as the
+// pre-check read it from the restored database.
+type PartitionPosition struct {
+	// PartitionID is the Zeebe partition.
+	PartitionID int32 `json:"partitionId"`
+	// LastUpdated is the LAST_UPDATED value of the partition's row in the
+	// EXPORTER_POSITION table.
+	LastUpdated metav1.Time `json:"lastUpdated"`
+}
+
+// PointInTimeRestoreStatus tracks the restore to a terminal phase.
 type PointInTimeRestoreStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the PointInTimeRestore resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Phase of the restore. It is the resume marker.
+	// +optional
+	Phase PointInTimeRestorePhase `json:"phase,omitempty"`
+	// ClusterUID pins the identity of the cluster.
+	// +optional
+	ClusterUID types.UID `json:"clusterUID,omitempty"`
+	// Brokers is the broker count read from the live broker StatefulSet.
+	// +optional
+	Brokers int32 `json:"brokers,omitempty"`
+	// ObservedPositions are the exporter positions the pre-check read, in
+	// partition order. They record what the operator saw when it let the
+	// restore past the database-state check, or what held it.
+	// +optional
+	// +listType=map
+	// +listMapKey=partitionId
+	ObservedPositions []PartitionPosition `json:"observedPositions,omitempty"`
+	// PrimaryJobNames are the per-broker restore-application Jobs, in broker
+	// order.
+	// +optional
+	PrimaryJobNames []string `json:"primaryJobNames,omitempty"`
+	// RecreatedClaims names the broker data claims that the restore deleted
+	// and created again.
+	// +optional
+	RecreatedClaims []string `json:"recreatedClaims,omitempty"`
+	// FirstFailedAt is when a dependency of the running restore first stopped
+	// resolving.
+	// +optional
+	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
+	// FailureMessage names the failing phase and its error.
+	// +optional
+	FailureMessage string `json:"failureMessage,omitempty"`
+	// CompletionTime is when the restore reached a terminal phase.
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions represent the current state. The Ready condition carries the
+	// reasons Progressing, Completed, Failed, ClusterNotSuspended,
+	// InvalidReference, PitrUnavailable, SharedServer, DatabaseNotRestored,
+	// MissingSecret, and ConnectionFailed.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -60,8 +140,20 @@ type PointInTimeRestoreStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:path=pointintimerestores,shortName=pitr
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterRef.name`
+// +kubebuilder:printcolumn:name="Timestamp",type=string,JSONPath=`.spec.timestamp`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// PointInTimeRestore is the Schema for the pointintimerestores API
+// PointInTimeRestore aligns the primary storage of a suspended,
+// relational-backed CamundaCluster with a database that was already restored
+// to a point in time. The operator never restores the database server. It
+// reads the exporter position of every partition from the restored database,
+// deletes and creates the broker data volumes again, and runs the Camunda
+// restore application with the requested point once per broker. The operator
+// only reads spec.suspend of the cluster. Whoever owns the cluster suspends
+// it before the restore and unsuspends it after.
 type PointInTimeRestore struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -69,13 +161,36 @@ type PointInTimeRestore struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the desired state of PointInTimeRestore
+	// spec names the cluster to align and the point its database holds. It is
+	// immutable: a restore is one-shot, retried by creating a new resource.
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable: a restore is one-shot, retried by creating a new resource"
 	Spec PointInTimeRestoreSpec `json:"spec"`
 
-	// status defines the observed state of PointInTimeRestore
+	// status defines the observed state of the restore
 	// +optional
 	Status PointInTimeRestoreStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *PointInTimeRestore) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *PointInTimeRestore) GetKind() string { return "PointInTimeRestore" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *PointInTimeRestore) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
+// Terminal reports whether the restore reached a phase it never leaves.
+func (in *PointInTimeRestore) Terminal() bool {
+	return in.Status.Phase == PointInTimeRestoreCompleted ||
+		in.Status.Phase == PointInTimeRestoreFailed
 }
 
 // +kubebuilder:object:root=true

@@ -338,20 +338,6 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "BackupSchedule")
 		os.Exit(1)
 	}
-	if err := (&controller.PointInTimeRestoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "PointInTimeRestore")
-		os.Exit(1)
-	}
-	if err := (&controller.LogicalRestoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestore")
-		os.Exit(1)
-	}
 	if err := (&controller.CamundaOptimizeReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

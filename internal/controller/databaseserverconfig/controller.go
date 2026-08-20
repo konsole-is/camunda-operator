@@ -227,10 +227,10 @@ func probeWithin(
 	defer cancel()
 
 	admin, err := pgbootstrap.Connect(ctx, pgbootstrap.Connection{
-		Host:          cfg.Spec.Host,
-		Port:          cfg.Spec.Port,
-		AdminUser:     user,
-		AdminPassword: password,
+		Host:     cfg.Spec.Host,
+		Port:     cfg.Spec.Port,
+		User:     user,
+		Password: password,
 	})
 	if err != nil {
 		return "", err

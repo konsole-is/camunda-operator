@@ -615,6 +615,12 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("pinning the bucket the backup writes through")
 		Expect(backup.Status.BucketRef).To(Equal(w.bucket.Name))
 
+		// A restore reads the Camunda version here. The management binding of
+		// the cluster is unset while a restore runs, because the restore runs
+		// against a suspended cluster.
+		By("recording the Camunda version the backup was taken with")
+		Expect(backup.Status.Version).To(Equal("8.9.9"))
+
 		By("keying the dump on the id and on the UID, so a reused id never names another backup's dump")
 		Expect(backup.Status.ObjectKey).To(Equal(components.DumpObjectKey(
 			w.bucket.BasePath(), w.namespace, w.cluster.Name, backup.Status.BackupID, backup.UID,

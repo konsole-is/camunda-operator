@@ -729,6 +729,8 @@ func (r *LogicalBackupRDBMSReconciler) start(
 	backup.Status.BucketLocation = precheck.Bucket.Location()
 	backup.Status.WorkloadConfigHash = workloadConfigHash
 	backup.Status.ClusterUID = cluster.UID
+	// checkManagement ran before this point, so the binding is published.
+	backup.Status.Version = cluster.Status.Management.Version
 	backup.Status.Step = v1.StepDumping
 	backup.Status.Phase = v1.LogicalBackupRunning
 

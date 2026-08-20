@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: restore
+    camunda.io/logical-restore: my-cluster-restore
+  name: my-cluster-restore-lr-2
+  namespace: ns
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: abc123
+      labels:
+        app.kubernetes.io/managed-by: camunda-operator
+        camunda.io/cluster: my-cluster
+        camunda.io/component: restore
+        camunda.io/logical-restore: my-cluster-restore
+    spec:
+      containers:
+      - args:
+        - --backupId=1748937221
+        command:
+        - /usr/local/camunda/bin/restore
+        env:
+        - name: CAMUNDA_CLUSTER_SIZE
+          value: "3"
+        - name: CAMUNDA_CLUSTER_PARTITIONCOUNT
+          value: "6"
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_URL
+          value: https://es:9200
+        - name: SPRING_PROFILES_ACTIVE
+          value: restore
+        - name: CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: es-credentials
+        - name: CAMUNDA_CLUSTER_NODEID
+          value: "2"
+        envFrom:
+        - configMapRef:
+            name: broker-extra
+        image: camunda/camunda:8.9.9
+        name: restore
+        resources:
+          limits:
+            memory: 4Gi
+          requests:
+            cpu: "1"
+        securityContext:
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /usr/local/camunda/data
+          name: data
+        - mountPath: /etc/camunda/es-ca
+          mountPropagation: None
+          name: es-ca
+      imagePullSecrets:
+      - name: registry
+      nodeSelector:
+        workload: camunda
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      serviceAccountName: my-cluster-camunda
+      tolerations:
+      - key: camunda
+        operator: Exists
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            camunda.io/component: restore
+            camunda.io/logical-restore: my-cluster-restore
+        maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+      volumes:
+      - name: es-ca
+        secret:
+          secretName: es-ca
+      - name: data
+        persistentVolumeClaim:
+          claimName: data-my-cluster-zeebe-2

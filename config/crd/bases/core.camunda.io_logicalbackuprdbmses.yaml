@@ -1227,6 +1227,16 @@ spec:
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                 type: object
+              version:
+                description: |-
+                  Version is the Camunda version of the cluster when the backup started,
+                  as the management binding reported it. A restore compares it against
+                  the version of its target: an Elasticsearch backup restores only with
+                  the exact same version, and a relational backup restores with the same
+                  version or one minor newer. It is the only place a restore can read
+                  the version, because the management binding of a suspended cluster is
+                  unset.
+                type: string
               workloadConfigHash:
                 description: |-
                   WorkloadConfigHash pins the configuration that Zeebe ran when the

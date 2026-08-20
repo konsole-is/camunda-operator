@@ -104,6 +104,11 @@ The Job pods also copy the broker pods' labels and topology spread constraints. 
 restore Jobs spread like broker pods, the recreated PVCs land in zones that the brokers can
 schedule into after the restore.
 
+The copy of a spread constraint keeps the broker's topology key, skew, and policies, but its
+selector points at the restore's own pods. An operator label always wins over a copied one, so a
+restore pod carries `camunda.io/component: restore`. A constraint that still selected the broker
+component would count no pod at all, and every restore pod could land in one zone.
+
 This decision adapts the restore-mode mechanism of Camunda's SaaS operator, which mirrors the
 broker container into an init container on the StatefulSet itself. That operator owns the cluster
 spec, so it can flip the StatefulSet into a restore mode and roll it back. This operator does not
