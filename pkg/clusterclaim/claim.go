@@ -14,7 +14,31 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package logicalbackup
+// Package clusterclaim holds the mutual exclusion of one CamundaCluster.
+// An operation that takes the cluster for itself holds the claim while it
+// runs, and no second operation of any kind starts in the meantime. Both
+// backup kinds hold this claim. The two restore kinds must hold it too: a
+// restore and a backup of one cluster must never run together.
+//
+// The claim on a cluster is a coordination.k8s.io Lease that the API server
+// creates atomically: the first Create wins, every later Create answers
+// AlreadyExists. That makes the claim correct under concurrent reconciles and
+// across controllers, where a check-then-act on the status of the siblings is
+// not. There is one Lease per cluster, so every claimant of that cluster
+// meets on it, whatever kind it is. The Lease is authoritative. An ordering
+// that a caller runs among its own pending resources stays a fairness
+// pre-filter in front of it: it decides who tries the claim first, not who
+// holds it.
+//
+// A holder that is gone, replaced, or terminal no longer needs the claim. A
+// claimant that finds such a holder takes the Lease over, so a crash between
+// the claim and the release never blocks the cluster forever.
+//
+// Every function here writes through a client.Client and reads through a
+// separate client.Reader. The reader must read the API server directly.
+// A controller passes its uncached API reader, never the cached manager
+// client: a claim decided from a stale cache is no mutual exclusion.
+package clusterclaim
 
 import (
 	"context"
@@ -34,26 +58,8 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// The backups of one cluster run one at a time, across both backup kinds.
-// The claim on a cluster is a coordination.k8s.io Lease that the API server
-// creates atomically: the first Create wins, every later Create answers
-// AlreadyExists. That makes the claim correct under concurrent reconciles and
-// across the two controllers, where a check-then-act on the status of the
-// siblings is not. The Lease is authoritative. The in-kind tie-break among
-// pending backups stays a fairness pre-filter in front of it: it decides who
-// tries the claim first, not who holds it.
-//
-// A holder that is gone, replaced, or terminal no longer needs the claim. A
-// claimant that finds such a holder takes the Lease over, so a crash between
-// the claim and the release never blocks the cluster forever.
-//
-// Every function here writes through a client.Client and reads through a
-// separate client.Reader. The reader must read the API server directly.
-// A controller passes its uncached API reader, never the cached manager
-// client: a claim decided from a stale cache is no mutual exclusion.
-
 // claimLeasePrefix starts the name of every claim Lease.
-const claimLeasePrefix = "camunda-backup-"
+const claimLeasePrefix = "camunda-cluster-"
 
 // maxLeaseNameLength is the DNS subdomain bound of a Lease name.
 const maxLeaseNameLength = 253
@@ -78,7 +84,7 @@ const (
 )
 
 // ClaimLeaseName returns the name of the Lease that claims the cluster:
-// "camunda-backup-<cluster>". The name is deterministic, so every claimant of
+// "camunda-cluster-<cluster>". The name is deterministic, so every claimant of
 // one cluster meets on the same Lease. A cluster name that pushes the Lease
 // name past the DNS subdomain bound is cut and suffixed with a hash of the
 // full name. The result stays deterministic and unique.
@@ -102,17 +108,17 @@ func boundName(name string, limit int) string {
 	return head + suffix
 }
 
-// Claimant identifies the backup that holds or wants the claim: the kind of
-// its resource, its name, and its UID. The UID tells a resource apart from a
-// later one with the same name.
+// Claimant identifies the resource that holds or wants the claim: its kind,
+// its name, and its UID. The UID tells a resource apart from a later one
+// with the same name.
 type Claimant struct {
-	// Kind is the kind of the backup resource, LogicalBackupElasticsearch
-	// or LogicalBackupRDBMS.
+	// Kind is the kind of the resource, for example
+	// LogicalBackupElasticsearch.
 	Kind string
-	// Name is the name of the backup resource. It lives in the namespace of
-	// the cluster, like the Lease.
+	// Name is the name of the resource. It lives in the namespace of the
+	// cluster, like the Lease.
 	Name string
-	// UID is the UID of the backup resource.
+	// UID is the UID of the resource.
 	UID types.UID
 }
 
@@ -137,8 +143,8 @@ func (c Claimant) HolderIdentity() string {
 }
 
 // ParseClaimant reads an identity that String wrote. It rejects any other
-// shape, so a Lease that something else wrote is never mistaken for a
-// backup and never taken over.
+// shape, so a Lease that something else wrote is never mistaken for one of
+// ours and never taken over.
 func ParseClaimant(holder string) (Claimant, error) {
 	parts := strings.Split(holder, "/")
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
@@ -151,7 +157,7 @@ func ParseClaimant(holder string) (Claimant, error) {
 // It returns "" when self holds the claim after the call. That is the case
 // when the Lease was created, and when self held it already, so a re-entry
 // after a failed status flush proceeds. Otherwise it returns the holder
-// identity of the backup that holds the claim, and self must wait.
+// identity of the claimant that holds the claim, and self must wait.
 //
 // A holder that HolderActive reports inactive is taken over. The Lease is
 // deleted with its UID and resourceVersion as preconditions, and the Create
@@ -236,10 +242,11 @@ func create(
 }
 
 // Holds reports whether self holds the claim on the cluster now. A
-// re-entering claimant asks this before it runs any ordering among the
-// pending backups. A backup that holds the claim goes first, whatever the
-// tie-break says. Otherwise the tie-break and the claim block each other.
-// reader must read the API server directly, like every read of the claim.
+// re-entering claimant asks this before it runs any ordering among its own
+// pending resources. A resource that holds the claim goes first, whatever
+// the tie-break says. Otherwise the tie-break and the claim block each
+// other. reader must read the API server directly, like every read of the
+// claim.
 func Holds(ctx context.Context, reader client.Reader, namespace, cluster string, self Claimant) (bool, error) {
 	holder, ours, found, err := currentHolder(ctx, reader, namespace, cluster)
 	if err != nil {
@@ -363,7 +370,7 @@ func newLease(namespace, cluster string, self Claimant) *coordinationv1.Lease {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      ClaimLeaseName(cluster),
-			Labels:    labels.Managed(labels.Cluster(cluster), "backup-claim"),
+			Labels:    labels.Managed(labels.Cluster(cluster), "cluster-claim"),
 			Annotations: map[string]string{
 				ClaimHolderKindAnnotation: self.Kind,
 				ClaimHolderNameAnnotation: self.Name,
@@ -499,7 +506,7 @@ func holderResumeFailed(backup *unstructured.Unstructured, holder Claimant) (boo
 
 // Release gives the claim on the cluster back when self holds it. It is a
 // no-op when the Lease does not exist or another claimant holds it. A caller
-// can therefore release on every reconcile of a terminal backup and in its
+// can therefore release on every reconcile of a terminal resource and in its
 // finalizer. The Delete carries the UID and the resourceVersion of the
 // Lease as preconditions, both from the direct read through reader. A Lease
 // that a takeover replaced in between is not deleted by the old holder.

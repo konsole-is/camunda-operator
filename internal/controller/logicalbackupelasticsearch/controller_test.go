@@ -37,6 +37,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin/esadmintest"
@@ -248,7 +249,7 @@ func (r *rig) leaseHolder() string {
 	var lease coordinationv1.Lease
 	err := k8sClient.Get(
 		ctx, client.ObjectKey{
-			Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+			Namespace: r.namespace, Name: clusterclaim.ClaimLeaseName(r.cluster.Name),
 		}, &lease,
 	)
 	if apierrors.IsNotFound(err) {
@@ -256,11 +257,11 @@ func (r *rig) leaseHolder() string {
 	}
 	Expect(err).NotTo(HaveOccurred())
 	annotations := lease.GetAnnotations()
-	kind, name, uid := annotations[logicalbackup.ClaimHolderKindAnnotation],
-		annotations[logicalbackup.ClaimHolderNameAnnotation],
-		annotations[logicalbackup.ClaimHolderUIDAnnotation]
+	kind, name, uid := annotations[clusterclaim.ClaimHolderKindAnnotation],
+		annotations[clusterclaim.ClaimHolderNameAnnotation],
+		annotations[clusterclaim.ClaimHolderUIDAnnotation]
 	if kind != "" && name != "" && uid != "" {
-		return logicalbackup.Claimant{Kind: kind, Name: name, UID: types.UID(uid)}.String()
+		return clusterclaim.Claimant{Kind: kind, Name: name, UID: types.UID(uid)}.String()
 	}
 	if lease.Spec.HolderIdentity == nil {
 		return ""
@@ -274,7 +275,7 @@ func (r *rig) holdLease(holder string) {
 	GinkgoHelper()
 	lease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+			Namespace: r.namespace, Name: clusterclaim.ClaimLeaseName(r.cluster.Name),
 		},
 		Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder},
 	}
@@ -284,21 +285,21 @@ func (r *rig) holdLease(holder string) {
 // setLeaseHolder rewrites the existing claim Lease as one that the given
 // claimant holds, in one write, so no claimant finds the Lease absent in
 // between.
-func (r *rig) setLeaseHolder(holder logicalbackup.Claimant) {
+func (r *rig) setLeaseHolder(holder clusterclaim.Claimant) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var lease coordinationv1.Lease
 		g.Expect(k8sClient.Get(
 			ctx, client.ObjectKey{
-				Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+				Namespace: r.namespace, Name: clusterclaim.ClaimLeaseName(r.cluster.Name),
 			}, &lease,
 		)).To(Succeed())
 		identity := holder.HolderIdentity()
 		lease.Spec.HolderIdentity = &identity
 		lease.Annotations = map[string]string{
-			logicalbackup.ClaimHolderKindAnnotation: holder.Kind,
-			logicalbackup.ClaimHolderNameAnnotation: holder.Name,
-			logicalbackup.ClaimHolderUIDAnnotation:  string(holder.UID),
+			clusterclaim.ClaimHolderKindAnnotation: holder.Kind,
+			clusterclaim.ClaimHolderNameAnnotation: holder.Name,
+			clusterclaim.ClaimHolderUIDAnnotation:  string(holder.UID),
 		}
 		g.Expect(k8sClient.Update(ctx, &lease)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
@@ -759,7 +760,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		Expect(r.leaseHolder()).To(Equal("someone-else"))
 
 		By("taking over a Lease whose holder is a backup that no longer exists")
-		r.setLeaseHolder(logicalbackup.Claimant{
+		r.setLeaseHolder(clusterclaim.Claimant{
 			Kind: "LogicalBackupElasticsearch", Name: "deleted-long-ago", UID: "uid-of-the-past",
 		})
 		backupID(backup)
@@ -812,11 +813,11 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		identity := self.HolderIdentity()
 		lease := &coordinationv1.Lease{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: r.namespace, Name: logicalbackup.ClaimLeaseName(r.cluster.Name),
+				Namespace: r.namespace, Name: clusterclaim.ClaimLeaseName(r.cluster.Name),
 				Annotations: map[string]string{
-					logicalbackup.ClaimHolderKindAnnotation: self.Kind,
-					logicalbackup.ClaimHolderNameAnnotation: self.Name,
-					logicalbackup.ClaimHolderUIDAnnotation:  string(self.UID),
+					clusterclaim.ClaimHolderKindAnnotation: self.Kind,
+					clusterclaim.ClaimHolderNameAnnotation: self.Name,
+					clusterclaim.ClaimHolderUIDAnnotation:  string(self.UID),
 				},
 			},
 			Spec: coordinationv1.LeaseSpec{HolderIdentity: &identity},
