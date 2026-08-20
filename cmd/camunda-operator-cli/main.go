@@ -27,6 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/konsole-is/camunda-operator/internal/cli/deleteobject"
+	"github.com/konsole-is/camunda-operator/internal/cli/download"
 	"github.com/konsole-is/camunda-operator/internal/cli/upload"
 )
 
@@ -48,6 +49,7 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 	root.AddCommand(newUploadCommand())
+	root.AddCommand(newDownloadCommand())
 	root.AddCommand(newDeleteCommand())
 
 	return root
@@ -62,6 +64,22 @@ func newUploadCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return upload.Run(cmd.Context())
+		},
+	}
+}
+
+// newDownloadCommand streams one object from the backup bucket into a file.
+// The restore Job runs it as its init container, and its main container runs
+// pg_restore on the file. Its interface is the DOWNLOAD_* environment plus the
+// same UPLOAD_* bucket contract. A transfer that breaks leaves no file, so
+// pg_restore never reads a truncated archive.
+func newDownloadCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "download",
+		Short: "Download an object from the backup bucket described by the UPLOAD_* environment",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return download.Run(cmd.Context())
 		},
 	}
 }

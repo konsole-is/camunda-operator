@@ -94,6 +94,22 @@ func TestWalkStopsOnCallbackError(t *testing.T) {
 	assert.Equal(t, 1, seen)
 }
 
+// TestBucketDownloadReadsBackWhatWasUploaded pins the read side of the round
+// trip that a restore runs. A key that does not exist is an error, unlike a
+// delete: a restore that cannot find its archive must fail.
+func TestBucketDownloadReadsBackWhatWasUploaded(t *testing.T) {
+	ctx := context.Background()
+	bucket := fileBucket(t)
+
+	require.NoError(t, bucket.Upload(ctx, "clusters/ns/name/1/camunda.dump", strings.NewReader("dump-bytes")))
+
+	var out strings.Builder
+	require.NoError(t, bucket.Download(ctx, "clusters/ns/name/1/camunda.dump", &out))
+	assert.Equal(t, "dump-bytes", out.String())
+
+	assert.Error(t, bucket.Download(ctx, "absent-key", &out))
+}
+
 func TestBucketDeleteIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	bucket := fileBucket(t)

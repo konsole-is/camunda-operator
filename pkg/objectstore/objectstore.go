@@ -194,6 +194,24 @@ func (b *Bucket) Upload(ctx context.Context, key string, r io.Reader) error {
 	return nil
 }
 
+// Download writes the object at key to w. It streams, so a restore reads an
+// archive that is larger than its memory. A read that fails partway leaves
+// what it already wrote in w, and the caller discards it: a truncated archive
+// must never reach pg_restore.
+func (b *Bucket) Download(ctx context.Context, key string, w io.Writer) error {
+	r, err := b.bucket.NewReader(ctx, key, nil)
+	if err != nil {
+		return fmt.Errorf("opening reader for %q: %w", key, err)
+	}
+	defer func() { _ = r.Close() }()
+
+	if _, err := io.Copy(w, r); err != nil {
+		return fmt.Errorf("downloading %q: %w", key, err)
+	}
+
+	return nil
+}
+
 // Delete removes key. A key that does not exist is success, so a re-entrant
 // finalizer can call it again.
 func (b *Bucket) Delete(ctx context.Context, key string) error {
