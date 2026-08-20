@@ -498,14 +498,18 @@ var _ = Describe("BackupSchedule controller", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		schedule, trigger := createSchedule(w)
 
-		// The backup of the trigger already exists, as after a crash between
-		// the create and the status flush. It is unlabeled on purpose: the
-		// overlap check must not skip the trigger, so the trigger reaches the
-		// create and meets AlreadyExists.
+		// The backup of the trigger already exists, exactly as a crash
+		// between the create and the status flush leaves it: labeled by the
+		// schedule and not yet terminal. The retry must adopt it, not skip
+		// its own trigger as an overlap.
 		existing := &v1.LogicalBackupRDBMS{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      schedule.Name + "-" + strconv.FormatInt(trigger.Unix(), 10),
 				Namespace: schedule.Namespace,
+				Labels: map[string]string{
+					labels.ClusterKey:        schedule.Spec.ClusterRef.Name,
+					labels.BackupScheduleKey: schedule.Name,
+				},
 			},
 			Spec: v1.LogicalBackupRDBMSSpec{ClusterRef: schedule.Spec.ClusterRef},
 		}
@@ -521,6 +525,7 @@ var _ = Describe("BackupSchedule controller", func() {
 			g.Expect(current.Status.LastScheduleTime).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("BackupCreated")))
+		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("TriggerSkipped")))
 	})
 
 	It("leaves the backups behind when the schedule is deleted", func() {

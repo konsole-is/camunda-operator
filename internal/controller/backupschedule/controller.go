@@ -281,11 +281,13 @@ func (r *BackupScheduleReconciler) trigger(
 		return nil
 	}
 
+	backup, kind := newBackup(schedule, res.storageType, due)
+
 	items, err := r.scheduledBackups(ctx, schedule)
 	if err != nil {
 		return err
 	}
-	if running := nonTerminal(items); running != "" {
+	if running := nonTerminal(items, backup.GetName()); running != "" {
 		schedule.Status.LastScheduleTime = &consumed
 		r.EventRecorder.Eventf(
 			schedule,
@@ -305,7 +307,6 @@ func (r *BackupScheduleReconciler) trigger(
 		r.warnRetentionWindow(ctx, schedule, res.cluster, sched, due)
 	}
 
-	backup, kind := newBackup(schedule, res.storageType, due)
 	switch err := r.Create(ctx, backup); {
 	case apierrors.IsAlreadyExists(err):
 		// A reconcile that crashed between the create and the status flush

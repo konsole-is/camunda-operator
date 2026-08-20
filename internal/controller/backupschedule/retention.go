@@ -124,9 +124,14 @@ func completedAt(completion *metav1.Time, created metav1.Time) metav1.Time {
 
 // nonTerminal returns the name of a backup that has not reached a terminal
 // phase, or the empty string when every one has. One such backup skips the
-// next trigger.
-func nonTerminal(items []scheduledBackup) string {
+// next trigger. The backup named except does not count: it is the backup of
+// the trigger under decision, which a crashed earlier attempt already
+// created, and a trigger must not skip itself.
+func nonTerminal(items []scheduledBackup, except string) string {
 	for _, item := range items {
+		if item.object.GetName() == except {
+			continue
+		}
 		if !item.terminal() {
 			return item.object.GetName()
 		}
