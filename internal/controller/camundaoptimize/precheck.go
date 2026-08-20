@@ -62,9 +62,15 @@ type resolver struct {
 	scheme   *runtime.Scheme
 	optimize *v1.CamundaOptimize
 	mirrors  mirroredSecrets
-	// inputs are the hash inputs of every object read: the generation of a
-	// custom resource and the resource version of a Secret. They roll the pods
-	// when a referenced object changes behind an unchanged reference.
+	// inputs are the hash inputs of the objects that this controller reads and
+	// never writes: the generation of a custom resource and the resource
+	// version of a Secret. They roll the pods when a referenced object changes
+	// behind an unchanged reference.
+	//
+	// An object that this controller writes must never go in. Its own write
+	// bumps the generation, the hash changes, the pods roll, and the next
+	// reconcile hashes the new generation. The referenced CamundaCluster is
+	// such an object, because the exporter patch writes its spec. See exists.
 	inputs []string
 }
 
@@ -112,7 +118,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	}
 
 	var cluster v1.CamundaCluster
-	if err := res.get(ctx, out.ClusterKey, &cluster); err != nil {
+	if err := res.exists(ctx, out.ClusterKey, &cluster); err != nil {
 		return out, err
 	}
 
@@ -337,10 +343,39 @@ func checkExporterConflicts(cluster *v1.CamundaCluster, storage v1.Elasticsearch
 	}
 }
 
-// get reads the referenced object without the cache. A missing object maps to
-// InvalidReference, naming the kind and the reference (with its namespace for
-// a namespaced kind). Any other error is a transient API failure.
+// get reads the referenced object through exists and records its generation as
+// a hash input, so a change to that object rolls the pods.
+//
+// Use it only for an object that this controller never writes. The referenced
+// CamundaCluster goes through exists instead.
 func (res *resolver) get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+	if err := res.exists(ctx, key, obj); err != nil {
+		return err
+	}
+
+	res.inputs = append(
+		res.inputs,
+		res.objectKind(obj)+"/"+objectPath(key)+"="+strconv.FormatInt(obj.GetGeneration(), 10),
+	)
+
+	return nil
+}
+
+// exists reads the referenced object without the cache and records no hash
+// input. A missing object maps to InvalidReference, naming the kind and the
+// reference (with its namespace for a namespaced kind). Any other error is a
+// transient API failure.
+//
+// The referenced CamundaCluster is read through exists, not through get. This
+// controller writes that object: the exporter patch sets spec.zeebe.extraEnv on
+// it, which bumps its generation. A hash over that generation would roll the
+// pods in answer to the controller's own write, and again on every unrelated
+// edit of the cluster, such as a replica count or a label. Nothing is lost. The
+// pods read no field of the cluster spec: the partition count and the version
+// are already in the rendered environment and the image, which the hash covers
+// through the rendered output, and the preset that can supply the partition
+// count is hashed through get.
+func (res *resolver) exists(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 	if err := res.reader.Get(ctx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			return &conditions.PreCheckFailure{
@@ -350,11 +385,6 @@ func (res *resolver) get(ctx context.Context, key client.ObjectKey, obj client.O
 		}
 		return fmt.Errorf("reading %s %q: %w", res.objectKind(obj), key, err)
 	}
-
-	res.inputs = append(
-		res.inputs,
-		res.objectKind(obj)+"/"+objectPath(key)+"="+strconv.FormatInt(obj.GetGeneration(), 10),
-	)
 
 	return nil
 }
@@ -407,6 +437,9 @@ func (res *resolver) secret(
 	if msg != "" {
 		return client.ObjectKey{}, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
 	}
+	// The hash input is the Secret that was read, never the copy that this
+	// controller applies. Hashing the copy would feed the controller's own
+	// write back into the hash.
 	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+found.ResourceVersion)
 
 	if key.Namespace == res.optimize.Namespace {

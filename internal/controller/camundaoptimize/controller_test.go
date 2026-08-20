@@ -278,17 +278,18 @@ func newAttachedPair(version string) (scenario, *v1.CamundaOptimize) {
 	return scenario{namespace: ns, cluster: cluster, binding: binding, auth: auth, optimize: holder}, waiting
 }
 
-// expectReady polls until the Ready condition of optimize has the given status
-// and its reason matches.
-func expectReady(optimize *v1.CamundaOptimize, status metav1.ConditionStatus, reason gomegatypes.GomegaMatcher) {
+// expectNotReady polls until the Ready condition of optimize is False with a
+// reason that matches. The True case belongs to expectReadyWhileStamping,
+// which has to keep the Deployment status current while it waits.
+func expectNotReady(optimize *v1.CamundaOptimize, reason string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		var latest v1.CamundaOptimize
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), &latest)).To(Succeed())
 		ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
 		g.Expect(ready).NotTo(BeNil())
-		g.Expect(ready.Status).To(Equal(status))
-		g.Expect(ready.Reason).To(reason)
+		g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(ready.Reason).To(Equal(reason))
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -329,19 +330,63 @@ func fetchDeployment(key client.ObjectKey) *appsv1.Deployment {
 
 // stampDeploymentReady writes the status a Deployment controller would write
 // when every replica is ready. envtest runs no such controller.
-func stampDeploymentReady(key client.ObjectKey) {
+func stampDeploymentReady(g Gomega, key client.ObjectKey) {
+	var deployment appsv1.Deployment
+	g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+	replicas := *deployment.Spec.Replicas
+	deployment.Status.ObservedGeneration = deployment.Generation
+	deployment.Status.Replicas = replicas
+	deployment.Status.ReadyReplicas = replicas
+	deployment.Status.UpdatedReplicas = replicas
+	deployment.Status.AvailableReplicas = replicas
+	g.Expect(k8sClient.Status().Update(ctx, &deployment)).To(Succeed())
+}
+
+// expectReadyWhileStamping polls until optimize reports Ready=True/Healthy,
+// stamping every Deployment again on each attempt. A stamp names the
+// generation it saw, so a re-render after a single stamp leaves that stamp
+// stale and the components never read the Deployments as up to date. Only a
+// real controller keeps up with a rolling generation, and envtest runs none.
+func expectReadyWhileStamping(optimize *v1.CamundaOptimize, keys ...client.ObjectKey) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		var deployment appsv1.Deployment
-		g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
-		replicas := *deployment.Spec.Replicas
-		deployment.Status.ObservedGeneration = deployment.Generation
-		deployment.Status.Replicas = replicas
-		deployment.Status.ReadyReplicas = replicas
-		deployment.Status.UpdatedReplicas = replicas
-		deployment.Status.AvailableReplicas = replicas
-		g.Expect(k8sClient.Status().Update(ctx, &deployment)).To(Succeed())
+		for _, key := range keys {
+			stampDeploymentReady(g, key)
+		}
+
+		var latest v1.CamundaOptimize
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), &latest)).To(Succeed())
+		ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(ready.Reason).To(Equal("Healthy"))
 	}, timeout, interval).Should(Succeed())
+}
+
+// expectStableRender asserts that nothing re-renders the Deployments: their
+// generation and their config hash both hold still. A hash that takes an input
+// the controller itself writes never settles, so the pods roll on every
+// reconcile and on every unrelated edit of the referenced object.
+func expectStableRender(keys ...client.ObjectKey) {
+	GinkgoHelper()
+	before := map[string]string{}
+	generations := map[string]int64{}
+	for _, key := range keys {
+		deployment := fetchDeployment(key)
+		before[key.Name] = deployment.Spec.Template.Annotations[components.ConfigHashAnnotation]
+		generations[key.Name] = deployment.Generation
+		Expect(before[key.Name]).NotTo(BeEmpty(), key.Name)
+	}
+
+	Consistently(func(g Gomega) {
+		for _, key := range keys {
+			var deployment appsv1.Deployment
+			g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+			g.Expect(deployment.Spec.Template.Annotations[components.ConfigHashAnnotation]).
+				To(Equal(before[key.Name]), key.Name)
+			g.Expect(deployment.Generation).To(Equal(generations[key.Name]), key.Name)
+		}
+	}, 3*time.Second, interval).Should(Succeed())
 }
 
 // clusterEnvNames polls until the exporter entries of the cluster satisfy
@@ -401,9 +446,21 @@ var _ = Describe("CamundaOptimize controller", func() {
 			))
 
 			By("reporting Ready once both Deployments report their replicas ready")
-			stampDeploymentReady(webappKey)
-			stampDeploymentReady(importerKey)
-			expectReady(s.optimize, metav1.ConditionTrue, Equal("Healthy"))
+			expectReadyWhileStamping(s.optimize, webappKey, importerKey)
+
+			By("rendering the same pod template on every later reconcile")
+			expectStableRender(webappKey, importerKey)
+
+			By("holding the render still across an unrelated edit of the cluster")
+			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				var latest v1.CamundaCluster
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(s.cluster), &latest); err != nil {
+					return err
+				}
+				latest.Spec.PodLabels = map[string]string{"unrelated": "edit"}
+				return k8sClient.Update(ctx, &latest)
+			})).To(Succeed())
+			expectStableRender(webappKey, importerKey)
 		})
 
 		It("withdraws the exporter entries on deletion and keeps the entry of the user", func() {
@@ -422,7 +479,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
 
 			By("parking the second CamundaOptimize with no workloads of its own")
-			expectReady(second, metav1.ConditionFalse, Equal(v1.ReasonClusterAlreadyAttached))
+			expectNotReady(second, v1.ReasonClusterAlreadyAttached)
 			Consistently(func() error {
 				var deployment appsv1.Deployment
 				return k8sClient.Get(
@@ -446,7 +503,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 		It("hands the cluster to the waiting one when the holder goes", func() {
 			s, second := newAttachedPair("8.9.4")
-			expectReady(second, metav1.ConditionFalse, Equal(v1.ReasonClusterAlreadyAttached))
+			expectNotReady(second, v1.ReasonClusterAlreadyAttached)
 
 			Expect(deleteOptimize(s.optimize)).To(Succeed())
 
@@ -522,6 +579,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 			}
 			before := fetchDeployment(webappKey).Spec.Template.Annotations[components.ConfigHashAnnotation]
 			Expect(before).NotTo(BeEmpty())
+			expectStableRender(webappKey)
 
 			Eventually(func(g Gomega) {
 				var secret corev1.Secret
@@ -553,7 +611,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 				}, auth, "8.9.4",
 			)
 
-			expectReady(optimize, metav1.ConditionFalse, Equal(v1.ReasonInvalidReference))
+			expectNotReady(optimize, v1.ReasonInvalidReference)
 		})
 
 		It("reports StorageTypeMismatch for a cluster on relational storage", func() {
@@ -561,13 +619,13 @@ var _ = Describe("CamundaOptimize controller", func() {
 			cluster := createCluster(ns, createRDBMSBinding(ns))
 			optimize := createOptimize(ns, cluster, createAuth(ns, true), "8.9.4")
 
-			expectReady(optimize, metav1.ConditionFalse, Equal(v1.ReasonStorageTypeMismatch))
+			expectNotReady(optimize, v1.ReasonStorageTypeMismatch)
 		})
 
 		It("reports VersionMismatch when the minors differ", func() {
 			s := newScenario("8.8.1")
 
-			expectReady(s.optimize, metav1.ConditionFalse, Equal(v1.ReasonVersionMismatch))
+			expectNotReady(s.optimize, v1.ReasonVersionMismatch)
 		})
 
 		It("reports MissingSecret when the client Secret is absent", func() {
@@ -575,7 +633,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 			cluster := createCluster(ns, createBinding(ns, ns))
 			optimize := createOptimize(ns, cluster, createAuth(ns, false), "8.9.4")
 
-			expectReady(optimize, metav1.ConditionFalse, Equal(v1.ReasonMissingSecret))
+			expectNotReady(optimize, v1.ReasonMissingSecret)
 		})
 
 		It("reports ExporterConflict when a user entry supplies the other kind of value", func() {
@@ -591,7 +649,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 			optimize := createOptimize(ns, cluster, createAuth(ns, true), "8.9.4")
 
-			expectReady(optimize, metav1.ConditionFalse, Equal(v1.ReasonExporterConflict))
+			expectNotReady(optimize, v1.ReasonExporterConflict)
 		})
 	})
 
