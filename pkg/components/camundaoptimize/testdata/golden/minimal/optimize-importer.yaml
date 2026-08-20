@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: optimize-importer
+  name: my-optimize-importer
+  namespace: camunda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: optimize-importer
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        camunda.io/cluster: my-cluster
+        camunda.io/component: optimize-importer
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: ccsm
+        - name: CAMUNDA_OPTIMIZE_DATABASE
+          value: elasticsearch
+        - name: OPTIMIZE_ELASTICSEARCH_HOST
+          value: elasticsearch.camunda.svc
+        - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+          value: "9200"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: es-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: es-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+          value: "false"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+          value: zeebe-record
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+          value: "1"
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+          value: https://identity.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+          value: https://identity.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+          value: http://identity.camunda.svc:8080
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+          value: optimize
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: optimize-client
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+          value: optimize-api
+        image: camunda/optimize:8.9.4
+        livenessProbe:
+          httpGet:
+            path: /api/readyz
+            port: http
+          periodSeconds: 30
+        name: optimize
+        ports:
+        - containerPort: 8090
+          name: http
+          protocol: TCP
+        - containerPort: 8092
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /api/readyz
+            port: http
+          periodSeconds: 10
+        resources: {}
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: optimize-importer
+  name: my-optimize-importer
+  namespace: camunda
+spec:
+  ports:
+  - name: http
+    port: 8090
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 8092
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/cluster: my-cluster
+    camunda.io/component: optimize-importer
+status:
+  loadBalancer: {}
