@@ -8,7 +8,7 @@ feature_worktree: .claude/worktrees/optimize-controller
 sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
-integration_pr:
+integration_pr: "#138"
 status: review
 ---
 
@@ -78,9 +78,13 @@ Phase 1 is done: #119 self-merged as 4f7a302, #115 closed, CI green on its head 
     - The Optimize flow deployed a process while the brokers were rolling, and the gateway answered `503 UNAVAILABLE`. Attaching Optimize writes `spec.zeebe.extraEnv`, which is part of the Zeebe pod template.
     - The first fix waited for the cluster to report Ready for the patched generation. CI shows that wait passing in 240ms and the deployment still reading 503: Ready follows the pods, and a broker answers its probe before it serves a partition. Fixed in `a8a1661`, which also waits for the topology to report the partition healthy, the gate `camundacluster_test.go` already uses.
     - The last failure was `camundacluster_test.go:321`, and it belongs to another suite. See the verdict above.
-8. **Now: the integration PR** `feat/optimize-controller` → `main` with **`Towards #114`**, not `Closes`. #131 is now a child of the epic, so the epic must outlive this PR; the user closes it after #131 lands. Review-loop it, tear down the plan, the spec, and this state file in the last commit once CI is green. Leave it open: the user merges it, not you.
+8. **Now: the integration PR.** Open as #138, `feat/optimize-controller` → `main`, straight to ready, with `Towards #114`. The epic outlives this PR because #131 and #133 are open children of it. The user closes the epic, and the user merges #138.
 
-    Its e2e check runs the same suite that failed on #132, so it can hit the same connectors flake. That flake is not a reason to change this feature.
+    The review loop is running. The user set the effort level to balanced before the first request. This repository does not auto-review on push, so each round needs an explicit remove and re-add, and `gh pr view --json reviewRequests` does not show the bot. Confirm the attachment with the GraphQL `reviewRequests` query instead.
+
+    When the loop is clean: tear down the plan, the spec, and this state file in the last commit.
+
+    The e2e check of #138 runs the same suite that failed on #132, so it can hit the same connectors flake. That flake is not a reason to change this feature.
 
 Standing constraints: fresh worktrees need `make setup-envtest`, and `chmod -R u+w bin` before removal. Flakes get root-caused, never re-run to green, unless the cause sits outside this repository.
 
