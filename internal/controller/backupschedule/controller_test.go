@@ -456,6 +456,73 @@ var _ = Describe("BackupSchedule controller", func() {
 		Expect(current.Status.LastScheduleTime).To(BeNil())
 	})
 
+	It("keeps pruning while spec.schedule does not parse", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		schedule, _ := createSchedule(w, func(s *v1.BackupSchedule) {
+			s.Spec.Retained = &v1.RetainedBackups{Completed: ptr.To(int32(1))}
+		})
+
+		By("breaking the cron with a value the schema pattern admits")
+		Eventually(func(g Gomega) {
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			current.Spec.Schedule = "99 2 * * *"
+			g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(ready.Message).To(ContainSubstring("cron"))
+		}, timeout, interval).Should(Succeed())
+
+		By("pruning the overflow on a phase change all the same")
+		base := time.Now().UTC().Add(-time.Hour)
+		oldest := scheduledRDBMS(schedule, v1.LogicalBackupCompleted, base)
+		kept := scheduledRDBMS(schedule, v1.LogicalBackupCompleted, base.Add(time.Minute))
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKeyFromObject(oldest), &v1.LogicalBackupRDBMS{},
+			)).NotTo(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKeyFromObject(kept), &v1.LogicalBackupRDBMS{},
+			)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("adopts a backup that a crashed trigger already created, without a second event", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		schedule, trigger := createSchedule(w)
+
+		// The backup of the trigger already exists, as after a crash between
+		// the create and the status flush. It is unlabeled on purpose: the
+		// overlap check must not skip the trigger, so the trigger reaches the
+		// create and meets AlreadyExists.
+		existing := &v1.LogicalBackupRDBMS{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      schedule.Name + "-" + strconv.FormatInt(trigger.Unix(), 10),
+				Namespace: schedule.Namespace,
+			},
+			Spec: v1.LogicalBackupRDBMSSpec{ClusterRef: schedule.Spec.ClusterRef},
+		}
+		Expect(k8sClient.Create(ctx, existing)).To(Succeed())
+
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		Eventually(func(g Gomega) {
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastBackupName).To(Equal(existing.Name))
+			g.Expect(current.Status.LastScheduleTime).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("BackupCreated")))
+	})
+
 	It("leaves the backups behind when the schedule is deleted", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		schedule, trigger := createSchedule(w)

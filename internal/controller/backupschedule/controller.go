@@ -141,7 +141,8 @@ func (r *BackupScheduleReconciler) Reconcile(
 	if parseErr != nil {
 		// The schema pattern admits a five-field shape with out-of-range
 		// values, for example minute 99. Only a spec change heals this, and
-		// the For watch delivers it.
+		// the For watch delivers it. The pruning does not read the cron, so
+		// spec.retained stays enforced while the schedule cannot fire.
 		conditions.Stage(&schedule, conditions.Ready(
 			metav1.ConditionFalse,
 			v1.ReasonInvalidReference,
@@ -149,7 +150,7 @@ func (r *BackupScheduleReconciler) Reconcile(
 			schedule.Generation,
 		))
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.prune(ctx, &schedule)
 	}
 
 	res, failure, err := r.resolve(ctx, &schedule)
@@ -305,22 +306,28 @@ func (r *BackupScheduleReconciler) trigger(
 	}
 
 	backup, kind := newBackup(schedule, res.storageType, due)
-	if err := r.Create(ctx, backup); err != nil && !apierrors.IsAlreadyExists(err) {
+	switch err := r.Create(ctx, backup); {
+	case apierrors.IsAlreadyExists(err):
+		// A reconcile that crashed between the create and the status flush
+		// already created the backup of this trigger and recorded its event.
+		// The retry only records what it found.
+	case err != nil:
 		return fmt.Errorf("creating %s %q: %w", kind, backup.GetName(), err)
+	default:
+		r.EventRecorder.Eventf(
+			schedule,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonBackupCreated,
+			eventActionSchedule,
+			"Created %s %q",
+			kind,
+			backup.GetName(),
+		)
 	}
 
 	schedule.Status.LastScheduleTime = &consumed
 	schedule.Status.LastBackupName = backup.GetName()
-	r.EventRecorder.Eventf(
-		schedule,
-		nil,
-		corev1.EventTypeNormal,
-		eventReasonBackupCreated,
-		eventActionSchedule,
-		"Created %s %q",
-		kind,
-		backup.GetName(),
-	)
 
 	return nil
 }
