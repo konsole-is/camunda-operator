@@ -117,6 +117,15 @@ func incompleteTargets() map[string]struct {
 	noClaimTemplate := targetFixture()
 	noClaimTemplate.ClaimTemplate = nil
 
+	noBrokers := targetFixture()
+	noBrokers.Brokers = 0
+
+	negativeBrokers := targetFixture()
+	negativeBrokers.Brokers = -1
+
+	noPartitions := targetFixture()
+	noPartitions.Partitions = 0
+
 	return map[string]struct {
 		target *Target
 		text   string
@@ -128,6 +137,9 @@ func incompleteTargets() map[string]struct {
 			target: noClaimTemplate,
 			text:   "no data claim template",
 		},
+		"no brokers":       {target: noBrokers, text: "no broker"},
+		"negative brokers": {target: negativeBrokers, text: "no broker"},
+		"no partitions":    {target: noPartitions, text: "no partition"},
 	}
 }
 

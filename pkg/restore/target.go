@@ -43,11 +43,12 @@ const ComponentRestore = "restore"
 // cluster. The restore never re-renders the broker configuration. It copies
 // it, so the restore application and the brokers cannot disagree.
 //
-// ReadTarget is the only constructor, and it either fills every field or
-// returns an error. The methods on Target read those fields directly, so a
-// Target that a caller built by hand panics in them. BuildJob and
-// RecreateClaims are the two entry points a controller reaches from a
-// reconcile, and both check the Target before they touch it.
+// ReadTarget is the only constructor. It either fills every field, with both
+// counts at one or more, or it returns an error. The methods on Target read
+// those fields directly, so a Target that a caller built by hand panics in
+// them. BuildJob and RecreateClaims are the two entry points a controller
+// reaches from a reconcile, and both check the whole Target before they touch
+// it.
 type Target struct {
 	// ClusterName is the CamundaCluster the StatefulSet belongs to. Every
 	// resource a restore renders carries it, so an extension finds the
@@ -60,8 +61,8 @@ type Target struct {
 	// copies its image, environment, mounts, resources, and security context.
 	Broker *corev1.Container
 	// Brokers is the broker count, read from CAMUNDA_CLUSTER_SIZE on the
-	// broker container. A suspended StatefulSet runs at zero replicas, so
-	// spec.replicas cannot answer it.
+	// broker container, and always one or more. A suspended StatefulSet runs
+	// at zero replicas, so spec.replicas cannot answer it.
 	Brokers int32
 	// Partitions is the partition count, read from
 	// CAMUNDA_CLUSTER_PARTITIONCOUNT on the broker container. A restore of a
@@ -158,6 +159,10 @@ func (t *Target) complete() error {
 		return errors.New("the target carries no broker container")
 	case t.ClaimTemplate == nil:
 		return errors.New("the target carries no data claim template")
+	case t.Brokers < 1:
+		return errors.New("the target carries no broker count of one or more")
+	case t.Partitions < 1:
+		return errors.New("the target carries no partition count of one or more")
 	}
 
 	return nil

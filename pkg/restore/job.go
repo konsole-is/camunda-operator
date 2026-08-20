@@ -59,8 +59,9 @@ const (
 type JobInput struct {
 	// Target holds the live broker StatefulSet that the Job mirrors.
 	Target *Target
-	// Owner is the restore resource. Its name gives the Job its name, and its
-	// namespace gives the Job its namespace.
+	// Owner is the restore resource. Its namespace gives the Job its
+	// namespace. The name of the Job comes from OwnerLabel, and BuildJob
+	// fails when the two name different resources.
 	//
 	// BuildJob sets no owner reference on the Job, because it renders without
 	// a scheme. The caller sets the controller reference before it applies the
@@ -216,6 +217,15 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 			"building the restore Job of broker %d: the input names no restore owner", in.Ordinal,
 		)
 	}
+	// The Job takes its name from the label and its namespace from the object.
+	// Two different resources there put the Job under one name in the other's
+	// namespace, where neither controller looks for it.
+	if in.Owner.GetName() != in.OwnerLabel.Name {
+		return nil, fmt.Errorf(
+			"building the restore Job of broker %d: the owner is %q but the owner label names %q",
+			in.Ordinal, in.Owner.GetName(), in.OwnerLabel.Name,
+		)
+	}
 
 	managed := JobLabels(in.OwnerLabel, in.Target.ClusterName)
 
@@ -302,7 +312,12 @@ func spreadOverRestorePods(
 // StatefulSet pod. The restore application is a one-shot process, so it also
 // carries no probe.
 func restoreContainer(in JobInput) corev1.Container {
-	broker := in.Target.Broker
+	// Target.Broker points into the StatefulSet that ReadTarget holds. One
+	// deep copy keeps every Job of a target independent of the target and of
+	// its siblings, down to the pointers inside a mount or an environment
+	// source. A shallow clone of those slices copies the elements and leaves
+	// what they point at shared.
+	broker := in.Target.Broker.DeepCopy()
 
 	env := overrideEnv(
 		broker.Env,
@@ -316,20 +331,16 @@ func restoreContainer(in JobInput) corev1.Container {
 		},
 	)
 
-	// Target.Broker points into the StatefulSet that ReadTarget holds, so
-	// every field taken from it is copied. Without that, two Jobs of one
-	// target share the same maps and pointers, and an edit to one reaches the
-	// other and the live copy of the StatefulSet.
 	return corev1.Container{
 		Name:            ComponentRestore,
 		Image:           broker.Image,
 		Command:         []string{RestoreEntrypoint},
 		Args:            slices.Clone(in.Args),
 		Env:             env,
-		EnvFrom:         slices.Clone(broker.EnvFrom),
-		Resources:       *broker.Resources.DeepCopy(),
-		VolumeMounts:    slices.Clone(broker.VolumeMounts),
-		SecurityContext: broker.SecurityContext.DeepCopy(),
+		EnvFrom:         broker.EnvFrom,
+		Resources:       broker.Resources,
+		VolumeMounts:    broker.VolumeMounts,
+		SecurityContext: broker.SecurityContext,
 	}
 }
 

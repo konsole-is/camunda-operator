@@ -114,8 +114,24 @@ func richTarget() *Target {
 			Name: "SPRING_PROFILES_ACTIVE", Value: "broker,consolidated-auth",
 		},
 	)
+	broker.Env = append(broker.Env, corev1.EnvVar{
+		Name: "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD",
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "es-credentials"},
+				Key:                  "password",
+			},
+		},
+	})
+	broker.EnvFrom = []corev1.EnvFromSource{{
+		ConfigMapRef: &corev1.ConfigMapEnvSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "broker-extra"},
+		},
+	}}
 	broker.VolumeMounts = append(broker.VolumeMounts, corev1.VolumeMount{
-		Name: "es-ca", MountPath: "/etc/camunda/es-ca",
+		Name:             "es-ca",
+		MountPath:        "/etc/camunda/es-ca",
+		MountPropagation: new(corev1.MountPropagationNone),
 	})
 	broker.Resources = corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
@@ -135,6 +151,26 @@ func logicalInput() JobInput {
 		Ordinal:    0,
 		Args:       []string{"--backupId=1748937221"},
 	}
+}
+
+// esPasswordEnv is the fixture variable that reads from a Secret. A test
+// mutates its reference to reach pointer depth.
+const esPasswordEnv = "CAMUNDA_DATA_SECONDARYSTORAGE_ELASTICSEARCH_PASSWORD"
+
+// envSecretRef returns the secret reference that the named variable reads
+// from, so a test can read or mutate it at pointer depth.
+func envSecretRef(t *testing.T, env []corev1.EnvVar, name string) *corev1.SecretKeySelector {
+	t.Helper()
+
+	for i := range env {
+		if env[i].Name == name && env[i].ValueFrom != nil {
+			return env[i].ValueFrom.SecretKeyRef
+		}
+	}
+
+	require.Fail(t, "no secret reference named "+name)
+
+	return nil
 }
 
 func envValue(env []corev1.EnvVar, name string) string {
@@ -291,16 +327,28 @@ func TestBuildJobSharesNothingWithTheTargetOrASibling(t *testing.T) {
 	edited.Resources.Requests[corev1.ResourceCPU] = resource.MustParse("99")
 	first.Spec.Template.Annotations["mutated"] = "yes"
 
+	// A shallow clone of a slice copies the elements but not what they point
+	// at, so these three reach through the copy into the target.
+	*edited.VolumeMounts[1].MountPropagation = corev1.MountPropagationBidirectional
+	edited.EnvFrom[0].ConfigMapRef.Name = "mutated"
+	envSecretRef(t, edited.Env, esPasswordEnv).Name = "mutated"
+
 	untouched := other.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, new(true), untouched.SecurityContext.RunAsNonRoot)
 	assert.Equal(t, "/usr/local/camunda/data", untouched.VolumeMounts[0].MountPath)
 	assert.Equal(t, resource.MustParse("1"), untouched.Resources.Requests[corev1.ResourceCPU])
 	assert.NotContains(t, other.Spec.Template.Annotations, "mutated")
+	assert.Equal(t, corev1.MountPropagationNone, *untouched.VolumeMounts[1].MountPropagation)
+	assert.Equal(t, "broker-extra", untouched.EnvFrom[0].ConfigMapRef.Name)
+	assert.Equal(t, "es-credentials", envSecretRef(t, untouched.Env, esPasswordEnv).Name)
 
 	assert.Equal(t, new(true), target.Broker.SecurityContext.RunAsNonRoot)
 	assert.Equal(t, "/usr/local/camunda/data", target.Broker.VolumeMounts[0].MountPath)
 	assert.Equal(t, resource.MustParse("1"), target.Broker.Resources.Requests[corev1.ResourceCPU])
 	assert.NotContains(t, target.StatefulSet.Spec.Template.Annotations, "mutated")
+	assert.Equal(t, corev1.MountPropagationNone, *target.Broker.VolumeMounts[1].MountPropagation)
+	assert.Equal(t, "broker-extra", target.Broker.EnvFrom[0].ConfigMapRef.Name)
+	assert.Equal(t, "es-credentials", envSecretRef(t, target.Broker.Env, esPasswordEnv).Name)
 }
 
 // The restore application runs under its own Spring profile. The broker
@@ -399,6 +447,39 @@ func TestJobNameRefusesAnythingButARestoreOwner(t *testing.T) {
 	assert.Empty(t, JobName(labels.Owner{}, 0))
 	assert.Empty(t, JobName(labels.LogicalRestore(""), 0))
 	assert.Empty(t, JobName(labels.LogicalRestore("r"), -1))
+}
+
+// The Job takes its name from OwnerLabel and its namespace from Owner. If the
+// two name different resources, the Job lands under one restore's name in the
+// other's namespace, and neither controller finds it.
+func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
+	t.Parallel()
+
+	in := logicalInput()
+	in.OwnerLabel = labels.LogicalRestore("another-restore")
+
+	job, err := BuildJob(in)
+	require.Error(t, err)
+	assert.Nil(t, job)
+	assert.Contains(t, err.Error(), "another-restore")
+	assert.Contains(t, err.Error(), in.Owner.GetName())
+}
+
+// The infix of a Job name is the short name of its CRD, so a user who reads
+// a Job name can reach the restore with the kubectl alias they already know.
+// The two markers are the source of truth:
+//
+//	api/v1/logicalrestore_types.go:     +kubebuilder:resource:path=logicalrestores,shortName=lr
+//	api/v1/pointintimerestore_types.go: +kubebuilder:resource:path=pointintimerestores,shortName=pitr
+//
+// Changing a marker without changing the infix breaks that promise, and this
+// test is what says so.
+func TestJobNameInfixesMatchTheCRDShortNames(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "lr", jobKindInfixes[labels.LogicalRestoreKey])
+	assert.Equal(t, "pitr", jobKindInfixes[labels.PointInTimeRestoreKey])
+	assert.Len(t, jobKindInfixes, 2, "every restore kind needs an infix of its own")
 }
 
 // A consumer that builds a selector by hand misses every Job of a restore
@@ -528,6 +609,12 @@ func TestJobNameStaysADNSLabel(t *testing.T) {
 	other := JobName(labels.LogicalRestore(strings.Repeat("a", 199)+"b"), 0)
 	assert.NotEqual(t, name, other)
 	assert.LessOrEqual(t, len(other), validation.DNS1123LabelMaxLength)
+
+	// pitr is the longer infix, so it is the tighter bound on the name.
+	pitr := JobName(labels.PointInTimeRestore(strings.Repeat("a", 200)), 12)
+	assert.LessOrEqual(t, len(pitr), validation.DNS1123LabelMaxLength)
+	assert.True(t, strings.HasSuffix(pitr, "-pitr-12"))
+	assert.Empty(t, validation.IsDNS1123Label(pitr))
 }
 
 func TestJobGoldenElasticsearchBroker0(t *testing.T) {
