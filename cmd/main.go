@@ -51,6 +51,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
+	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
@@ -329,6 +330,12 @@ func main() {
 		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), logicalbackupelasticsearch.Options{},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupElasticsearch")
+		os.Exit(1)
+	}
+	if err := logicalrestore.New(
+		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), logicalrestore.Options{CLIImage: cliImage},
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestore")
 		os.Exit(1)
 	}
 	if err := (&controller.BackupScheduleReconciler{

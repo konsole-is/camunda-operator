@@ -6,9 +6,6 @@ The target can be the cluster the backup came from, or another cluster that read
 
 One resource is one restore. The spec is immutable, and the restore runs once. To retry a failed restore, create a new resource. `kubectl get lr` lists the restores with their phase, backup, and target.
 
-!!! warning "Not implemented yet"
-    The operator does not implement this kind yet. This page describes the planned design.
-
 Before you create a restore, make sure that:
 
 - The referenced backup is `Completed`.
@@ -77,7 +74,7 @@ On the Elasticsearch path the operator deletes the Camunda indices of the target
 
 The operator deletes the Optimize indices only when the backup holds Optimize snapshots. A backup without them cannot put them back.
 
-On the relational path the operator runs one Job that downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists` against the logical database of the target. This replaces the schema and the data of that database.
+On the relational path the operator runs one Job that downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists` against the logical database of the target. This replaces the schema and the data of that database. The Job reads the database with the backup user of the target, and it takes its pod settings from `spec.backup.dump` of the target cluster: the resources, the scratch volume, the scheduling, and the postgres image. A restore carries no pod block of its own.
 
 ## Primary storage
 
@@ -104,6 +101,8 @@ When you delete the restore, the operator deletes the Jobs it created. It writes
 | `Ready` | `ConnectionFailed` | Elasticsearch or the database rejects the operator. | Correct the endpoint or the credentials. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 
+A started restore always reaches `Completed` or `Failed`. A dependency that stops resolving, for example an Elasticsearch that stops answering, holds it for ten minutes with the reason above. After that the restore fails, and you create a new one.
+
 The status also records what the restore pinned and what it did:
 
 - `status.backupId` and `status.storageType` are the backup the restore reads. They are pinned when the restore starts.
@@ -113,6 +112,7 @@ The status also records what the restore pinned and what it did:
 - `status.secondaryJobName` names the `pg_restore` Job while it exists.
 - `status.primaryJobNames` names the per-broker restore Jobs, in broker order.
 - `status.recreatedClaims` names the broker data volumes that the operator deleted and created again.
+- `status.terminalReason` is the reason of the `Ready` condition of a restore that finished, and `status.failureMessage` is why it failed.
 - `status.completionTime` is when the restore reached `Completed` or `Failed`.
 - `status.observedGeneration` is the last generation the operator reconciled.
 

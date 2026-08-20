@@ -8,20 +8,6 @@ rules:
   - ""
   resources:
   - persistentvolumeclaims
-  verbs:
-  - get
-  - list
-  - patch
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - list
-- apiGroups:
-  - ""
-  resources:
   - secrets
   - serviceaccounts
   - services
@@ -33,6 +19,12 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
 - apiGroups:
   - ""
   - events.k8s.io
@@ -90,6 +82,7 @@ rules:
   - elasticsearchclusters
   - logicalbackupelasticsearches
   - logicalbackuprdbmses
+  - logicalrestores
   - pvcautoresizes
   - secondarystorageconfigs
   verbs:
@@ -111,6 +104,7 @@ rules:
   - elasticsearchclusters/finalizers
   - logicalbackupelasticsearches/finalizers
   - logicalbackuprdbmses/finalizers
+  - logicalrestores/finalizers
   - pvcautoresizes/finalizers
   verbs:
   - update
@@ -128,6 +122,7 @@ rules:
   - elasticsearchclusters/status
   - logicalbackupelasticsearches/status
   - logicalbackuprdbmses/status
+  - logicalrestores/status
   - managementauthconfigs/status
   - objectstorageconfigs/status
   - pvcautoresizes/status
