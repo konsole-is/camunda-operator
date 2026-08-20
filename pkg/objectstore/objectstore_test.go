@@ -19,6 +19,7 @@ package objectstore
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -387,6 +388,94 @@ func TestBasePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &v1.ObjectStorageConfig{Spec: tt.spec}
 			assert.Equal(t, tt.want, cfg.BasePath())
+		})
+	}
+}
+
+// closingReader is a reader whose Close reports what its Read never did. A
+// blob driver behaves this way when it finds the transfer incomplete only
+// when it closes it, and gocloud hands that error to the caller of
+// blob.Reader.Close.
+type closingReader struct {
+	body     string
+	readErr  error
+	closeErr error
+	closed   bool
+}
+
+func (r *closingReader) Read(p []byte) (int, error) {
+	if r.readErr != nil {
+		return 0, r.readErr
+	}
+	if r.body == "" {
+		return 0, io.EOF
+	}
+	n := copy(p, r.body)
+	r.body = r.body[n:]
+
+	return n, nil
+}
+
+func (r *closingReader) Close() error {
+	r.closed = true
+
+	return r.closeErr
+}
+
+// TestDrainReportsTheCloseOfTheTransfer pins the rule that a download is only
+// whole when the close of the transfer agrees. A driver that reports the
+// truncation on Close would otherwise hand a partial archive to pg_restore as
+// a complete one.
+func TestDrainReportsTheCloseOfTheTransfer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		reader   *closingReader
+		wantErr  string
+		wantBody string
+	}{
+		{
+			name:     "a whole transfer",
+			reader:   &closingReader{body: "dump-bytes"},
+			wantBody: "dump-bytes",
+		},
+		{
+			name:    "a close that reports the truncation",
+			reader:  &closingReader{body: "dump-", closeErr: errors.New("unexpected end of stream")},
+			wantErr: "finishing the download",
+		},
+		{
+			name:    "a read that fails",
+			reader:  &closingReader{readErr: errors.New("connection reset")},
+			wantErr: "downloading",
+		},
+		{
+			name: "a read and a close that both fail: the read is the cause",
+			reader: &closingReader{
+				readErr: errors.New("connection reset"), closeErr: errors.New("late close"),
+			},
+			wantErr: "downloading",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var out strings.Builder
+			err := drain(&out, tt.reader, "clusters/ns/name/1/camunda.dump")
+
+			assert.True(t, tt.reader.closed, "the transfer is closed whatever happens")
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantBody, out.String())
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
 }

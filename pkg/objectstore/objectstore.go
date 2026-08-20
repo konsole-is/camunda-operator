@@ -203,10 +203,27 @@ func (b *Bucket) Download(ctx context.Context, key string, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("opening reader for %q: %w", key, err)
 	}
-	defer func() { _ = r.Close() }()
 
-	if _, err := io.Copy(w, r); err != nil {
-		return fmt.Errorf("downloading %q: %w", key, err)
+	return drain(w, r, key)
+}
+
+// drain copies src into dst and closes src, and it reports the first failure
+// of either.
+//
+// The close is part of the answer, not cleanup. A blob reader closes the
+// transfer of its driver, and a driver that finds the transfer incomplete
+// reports it there: gocloud returns the error of the driver from
+// blob.Reader.Close. A caller that dropped it would read a truncated archive
+// as a whole one and hand it to pg_restore.
+func drain(dst io.Writer, src io.ReadCloser, key string) error {
+	_, copyErr := io.Copy(dst, src)
+	closeErr := src.Close()
+
+	switch {
+	case copyErr != nil:
+		return fmt.Errorf("downloading %q: %w", key, copyErr)
+	case closeErr != nil:
+		return fmt.Errorf("finishing the download of %q: %w", key, closeErr)
 	}
 
 	return nil

@@ -237,9 +237,19 @@ func restoredSnapshots(source *backup, id int64) []string {
 	return append(snapshots, logicalbackup.RecordsSnapshotName(id))
 }
 
-// elasticsearchFailure maps a client error to the failure a user sees.
-// Elasticsearch that does not answer is a connection failure, and everything
-// else is the answer of Elasticsearch itself.
+// elasticsearchFailure maps a client error to the failure a user sees. Both
+// classes of the client are a connection failure: Elasticsearch that does not
+// answer, and Elasticsearch that answers and refuses the call. That is the
+// documented meaning of the reason, which api/v1 states as "a backing server
+// is unreachable or rejects the configured credentials", and the CRD page
+// sends the reader of it to the endpoint and the credentials.
+//
+// Both are held under the mid-run grace and fail the restore afterwards, so a
+// refusal that no credential fixes still ends the restore. Telling a refused
+// call apart from a rejected credential needs the status class of the answer,
+// which the client does not carry today.
+//
+// Any other error is a fault of the operator itself, not of Elasticsearch.
 func elasticsearchFailure(what string, err error) *conditions.PreCheckFailure {
 	reason := v1.ReasonFailed
 	if errors.Is(err, esadmin.ErrUnreachable) || errors.Is(err, esadmin.ErrRejected) {
