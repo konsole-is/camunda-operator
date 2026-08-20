@@ -140,7 +140,7 @@ spec:
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. One cluster carries one Optimize instance. | Delete one of the two. The message names the one that holds the cluster. |
-| `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. | Read the message. Create the missing resource or correct the field it names. |
+| `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`, because the operator never reconciles such a cluster. | Read the message. Create the missing resource, or correct the field it names on the `CamundaOptimize` or on the cluster. |
 | `Ready` | `StorageTypeMismatch` | The `storageRef` of the cluster resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. | Attach Optimize to a cluster on Elasticsearch secondary storage. |
 | `Ready` | `VersionMismatch` | The major and the minor of `spec.version` differ from those of the effective version of the cluster. Camunda supports Optimize only on a matching minor. | Set `spec.version` to a release on the minor of the cluster. |
 | `Ready` | `MissingSecret` | A referenced secret does not exist or lacks a key. | Create the secret with the named key. |

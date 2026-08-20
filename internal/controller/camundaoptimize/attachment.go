@@ -97,7 +97,10 @@ func (r *Reconciler) holdsAttachment(ctx context.Context, optimize *v1.CamundaOp
 }
 
 // releaseWorkloads deletes the Deployment, the Service, and the ServiceMonitor
-// of each component that optimize controls.
+// of each component that optimize controls, and the copies of referenced
+// Secrets that it made. A parked CamundaOptimize renders nothing, and a copy of
+// a credential in a namespace that nothing reads is the part of "nothing" that
+// is easiest to forget.
 //
 // The attachment can move to a CamundaOptimize that was created later. The
 // election breaks a tie on the name, and a creationTimestamp carries whole
@@ -126,6 +129,16 @@ func (r *Reconciler) releaseWorkloads(ctx context.Context, optimize *v1.CamundaO
 			if err := r.deleteControlled(ctx, key, obj, optimize); err != nil {
 				return err
 			}
+		}
+	}
+
+	for _, purpose := range components.MirrorPurposes {
+		key := client.ObjectKey{
+			Namespace: optimize.Namespace,
+			Name:      components.MirroredSecretName(optimize, purpose),
+		}
+		if err := r.deleteControlled(ctx, key, &corev1.Secret{}, optimize); err != nil {
+			return err
 		}
 	}
 

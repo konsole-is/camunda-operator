@@ -206,7 +206,23 @@ func (res *resolver) resolveEffective(
 		preset = &obj.Spec
 	}
 
-	effective := clustercomponents.NewEffective(clustercomponents.MergePreset(cluster.Spec, preset))
+	merged := clustercomponents.MergePreset(cluster.Spec, preset)
+	// The rules that admission cannot enforce, because a preset can supply the
+	// values, are checked by the cluster controller and not by the API server.
+	// A cluster below the version floor is therefore accepted by the API server
+	// and never reconciled. An attachment to one deploys Optimize against a
+	// cluster that never comes up.
+	if err := clustercomponents.ValidateMerged(merged); err != nil {
+		return clustercomponents.Effective{}, &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"CamundaCluster %q has an invalid effective spec and is not reconciled: %s",
+				cluster.Name, err,
+			),
+		}
+	}
+
+	effective := clustercomponents.NewEffective(merged)
 	want := majorMinor(effective.Version)
 	got := majorMinor(res.optimize.Spec.Version)
 	if want != got {

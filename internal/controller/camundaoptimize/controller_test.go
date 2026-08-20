@@ -292,6 +292,24 @@ func stageWorkload(named, owner *v1.CamundaOptimize, comp string) client.ObjectK
 	return key
 }
 
+// stageMirroredSecret creates the copy of a referenced Secret that optimize
+// makes for a purpose, under its control, and returns its key.
+func stageMirroredSecret(optimize *v1.CamundaOptimize, purpose string) client.ObjectKey {
+	GinkgoHelper()
+	mirrored := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      components.MirroredSecretName(optimize, purpose),
+			Namespace: optimize.Namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{"client-secret": []byte("staged")},
+	}
+	Expect(controllerutil.SetControllerReference(optimize, mirrored, k8sClient.Scheme())).To(Succeed())
+	Expect(k8sClient.Create(ctx, mirrored)).To(Succeed())
+
+	return client.ObjectKeyFromObject(mirrored)
+}
+
 // deleteOptimize deletes a CamundaOptimize and waits for the finalizer to let
 // it go, so the namespace cleanup of a spec never blocks.
 func deleteOptimize(optimize *v1.CamundaOptimize) error {
@@ -574,6 +592,7 @@ var _ = Describe("CamundaOptimize controller", func() {
 			webappKey := stageWorkload(deposed, deposed, components.ComponentWebapp)
 			importerKey := stageWorkload(deposed, deposed, components.ComponentImporter)
 			otherKey := stageWorkload(other, other, components.ComponentWebapp)
+			mirrorKey := stageMirroredSecret(deposed, components.MirrorPurposeAuthClient)
 
 			r := &Reconciler{Client: k8sClient, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
 			Expect(r.releaseWorkloads(ctx, deposed)).To(Succeed())
@@ -590,6 +609,10 @@ var _ = Describe("CamundaOptimize controller", func() {
 			By("keeping the workloads of another CamundaOptimize")
 			var kept appsv1.Deployment
 			Expect(k8sClient.Get(ctx, otherKey, &kept)).To(Succeed())
+
+			By("leaving no copy of a referenced Secret behind")
+			var mirrored corev1.Secret
+			Expect(apierrors.IsNotFound(k8sClient.Get(ctx, mirrorKey, &mirrored))).To(BeTrue())
 		})
 
 		// The managed labels of two CamundaOptimizes on one cluster are
@@ -733,6 +756,27 @@ var _ = Describe("CamundaOptimize controller", func() {
 			s := newScenario("8.8.1")
 
 			expectNotReady(s.optimize, v1.ReasonVersionMismatch)
+		})
+
+		// The version floor is a rule that admission cannot enforce, because a
+		// preset can supply the version, so the API server accepts a cluster
+		// below it and the cluster controller refuses to reconcile it. Optimize
+		// must not attach to such a cluster, and the matching minor of the two
+		// is what lets it through without this check.
+		It("reports InvalidReference when the cluster is below the version floor", func() {
+			ns := newNamespace()
+			cluster := createCluster(ns, createBinding(ns, ns))
+			Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				var latest v1.CamundaCluster
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest); err != nil {
+					return err
+				}
+				latest.Spec.Version = "8.8.9"
+				return k8sClient.Update(ctx, &latest)
+			})).To(Succeed())
+			optimize := createOptimize(ns, cluster, createAuth(ns, true), "8.8.9")
+
+			expectNotReady(optimize, v1.ReasonInvalidReference)
 		})
 
 		It("reports MissingSecret when the client Secret is absent", func() {
