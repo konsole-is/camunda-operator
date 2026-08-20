@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: review
 ---
 
 # CamundaOptimize controller — orchestration state
@@ -31,7 +31,7 @@ Strictly sequential; each PR needs the one before it.
 | ----- | ---------------------------------------- | -------------------------------------------------- | -------------------------- | ----------- |
 | #115  | feat/optimize-controller--api-types      | .claude/worktrees/optimize-controller--api-types   | #119 → feat/optimize-controller | self-merged |
 | #116  | feat/optimize-controller--reconciler     | .claude/worktrees/optimize-controller--reconciler  | #121 → feat/optimize-controller | self-merged |
-| #117  | test/optimize-controller--data-flow-e2e  | .claude/worktrees/optimize-controller--data-flow-e2e | #132 → feat/optimize-controller | in-review   |
+| #117  | test/optimize-controller--data-flow-e2e  | .claude/worktrees/optimize-controller--data-flow-e2e | #132 → feat/optimize-controller | user-merged |
 | #131  | not started                              | not created                                        | not opened                 | deferred    |
 
 ## Contracts
@@ -62,21 +62,25 @@ Phase 1 is done: #119 self-merged as 4f7a302, #115 closed, CI green on its head 
 4. ~~**Re-request Copilot on #121.**~~ Done, and the loop reached its 3-round cap. Rounds 2 and 3 found six more real defects, all fixed in `e6cb70b`, `52c055a`, and `42e4c2b`: `importer.replicas: 0` was discarded by the renderer, the importer rolled instead of being replaced, a deposed holder kept its workloads and its mirrored Secrets, the preset and the platform config were read but not watched, the version gate never asked whether the cluster itself is valid, and a new holder started its importer while the previous one still ran. Every thread carries a reply and is resolved; each round's suppressed findings have a disposition comment (`#issuecomment-5358741073`, `#issuecomment-5359407735`). Two findings are declined with reasons recorded there: the ServiceMonitor watch (again) and the config hash over user-supplied Secrets, both because fixing them in this controller alone would split its behavior from `camundacluster`. `42e4c2b` and `00ae6fa` landed after the round-3 review, so they are not Copilot-reviewed on this PR; the integration PR's own loop reads them.
 5. ~~**Then the merge bundle.**~~ Done. #121 merged as `9a69396` with all four checks green, #116 closed, the feature worktree fast-forwarded.
 6. ~~**Then wave 3 (#117).**~~ Built and open as PR #132, straight to ready. `e1cea38` is the e2e flow, `3b33e4a` the docs rewrite into the `TEMPLATE.md` shape, `41187db` and `70935ea` the exporter TLS warning. The plan's `ElasticsearchCluster` fixture cannot work, see the bubble-up entry and #131, so the flow publishes a plain Elasticsearch over HTTP through a hand-written contract. Verified: build, `go vet -tags=e2e`, the package compiling under the e2e tag, `GOSUMDB=off make lint` at 0 issues, and `go test -count=1` green on every non-e2e package. The flow itself is unproven locally and rides on CI.
-7. **Now: get #132 green, then merge it.** The review loop is done: four rounds, every thread replied and resolved, a disposition comment per round (`#issuecomment-5360878969`, `#issuecomment-5361278200`). Past the 3-round cap, so request no more reviews. Head is `a8a1661`. Lint, unit, and chart checks pass; the e2e check does not.
+7. ~~**Get #132 green, then merge it.**~~ Done. The user merged #132 on 2026-08-20 at 22:09 as `17f369f`, with the e2e check red. #117 is closed. The review loop had finished: four rounds, every thread replied and resolved, a disposition comment per round (`#issuecomment-5360878969`, `#issuecomment-5361278200`).
+
+    **The red e2e check is not this branch's fault. Settled on 2026-08-21 with this evidence.** The failing assertion names one workload: `connectors: Waiting for replicas: 0/1 ready`, `Scaling` instead of `Healthy`. In the `dumpDiagnostics` dump of run 32417888829, every pod of `camunda-e2e` started at 21:35:07, one second after the unsuspend patch. Zeebe, the gateway, and Elasticsearch all report `Ready: True` with 0 restarts. Only connectors reports `Ready: False`, with `PodScheduled: True`, the container `Running`, and 0 restarts across 15 minutes. Its liveness probe (`period=30s failure=3`) passed the whole time, so the JVM was alive and only the readiness endpoint stayed red. A node short of CPU does not bring three JVMs to Ready in one second and stall the fourth for 900s. The one `Insufficient cpu` event in the run is 17 minutes old, from a transient second gateway replica two specs earlier, and it cleared.
+
+    The same failure is on a branch that holds none of this feature. `feat/admin-password-rotation` (PR #124) has no Optimize e2e, no Keycloak, and no second Elasticsearch. Runs 32397349766 and 32385408172 both stop with `connectors: Waiting for replicas: 0/1 ready` after 900s, and the connectors pod there carries the same signature: `Running`, `Ready: False`, 0 restarts, 18 minutes.
+
+    The contention hypothesis in the earlier snapshot rested on a wrong premise. The runtimes 1436s, 1728s, and 2283s each contain a 900s timeout. Green runs: `main` 1372s over 38 specs, `feat/admin-password-rotation` 1613s over 39 specs, `feat/restore-controllers--unify` 1281s over 36 specs. The Optimize block ran from 21:21:44 to 21:24:31, which is 2m47s, in its own namespace `camunda-optimize-e2e`. That namespace was deleted at 21:24:31, eleven minutes before `camunda-e2e` was created at 21:29:19. All four `CamundaOptimize` specs passed.
+
+    Open, and not this feature's work: connectors sometimes never reaches readiness after a restart in the middle of the suite. It is on two branches and in two different specs, the suspend and resume spec here and the password rotation spec on #124. No issue holds it yet.
 
     The e2e history on this branch, because the cause moved each time and only the first deserved a re-run:
 
     - `proxy.golang.org` returned `INTERNAL_ERROR` during `make tidy`. Infrastructure. The user called the re-run.
     - The Optimize flow deployed a process while the brokers were rolling, and the gateway answered `503 UNAVAILABLE`. Attaching Optimize writes `spec.zeebe.extraEnv`, which is part of the Zeebe pod template.
     - The first fix waited for the cluster to report Ready for the patched generation. CI shows that wait passing in 240ms and the deployment still reading 503: Ready follows the pods, and a broker answers its probe before it serves a partition. Fixed in `a8a1661`, which also waits for the topology to report the partition healthy, the gate `camundacluster_test.go` already uses.
-    - **Current failure, and it is somewhere else.** All four `CamundaOptimize` specs passed on `a8a1661`, including the deploy and the import, so the data flow is proven. `camundacluster_test.go:321` now times out after 900s waiting for its own cluster to reach Ready Healthy. That suite is not part of this feature.
+    - The last failure was `camundacluster_test.go:321`, and it belongs to another suite. See the verdict above.
+8. **Now: the integration PR** `feat/optimize-controller` → `main` with **`Towards #114`**, not `Closes`. #131 is now a child of the epic, so the epic must outlive this PR; the user closes it after #131 lands. Review-loop it, tear down the plan, the spec, and this state file in the last commit once CI is green. Leave it open: the user merges it, not you.
 
-    First hypothesis for the current failure is runner contention rather than a defect: the suite has grown 1436s to 1728s to 2283s as this flow added an Elasticsearch, a Keycloak, and two Optimize workloads to a 4-vCPU runner, and the spec that fails is the one that waits longest. Check whether `camundacluster_test.go:321` fails on `main` too before treating it as this branch's problem, and read the pod events from `dumpDiagnostics` in the failed run rather than assuming. If it is contention, the fix is resource sizing in this flow's fixtures, not a longer timeout. Do not re-run to green.
-
-    **The user's decision on 2026-08-21: settle relatedness first, and do not fix what this branch did not break.** If `camundacluster_test.go:321` fails for a reason this feature did not introduce, say so with the evidence and stop. The user merges #132 themselves and the work moves on. Only fix it here if this branch caused it.
-
-    When it is green, or when the user has merged it: `gh issue close 117`, fast-forward the feature worktree.
-8. **Finally the integration PR** `feat/optimize-controller` → `main` with **`Towards #114`**, not `Closes`. #131 is now a child of the epic, so the epic must outlive this PR; the user closes it after #131 lands. Review-loop it, tear down the plan and this state file in the last commit once CI is green. Leave it open: the user merges it, not you.
+    Its e2e check runs the same suite that failed on #132, so it can hit the same connectors flake. That flake is not a reason to change this feature.
 
 Standing constraints: fresh worktrees need `make setup-envtest`, and `chmod -R u+w bin` before removal. Flakes get root-caused, never re-run to green, unless the cause sits outside this repository.
 
