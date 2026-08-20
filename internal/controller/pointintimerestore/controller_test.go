@@ -17,6 +17,8 @@ limitations under the License.
 package pointintimerestore
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -36,6 +39,8 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
 // world is the resolved fixture set of one spec: a suspended relational
@@ -321,6 +326,38 @@ func expectAdmitted(pitr *v1.PointInTimeRestore, w *world) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectStartedHold asserts that the restore holds in the database-state
+// phase with the given reason, and returns the message it reported. A restore
+// holds there only while it waits for something that the mid-run grace bounds.
+func expectStartedHold(pitr *v1.PointInTimeRestore, reason string) string {
+	GinkgoHelper()
+	var message string
+	Eventually(func(g Gomega) {
+		current := readRestore(pitr)
+		g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreValidatingDatabaseState))
+		condition := ready(current)
+		g.Expect(condition).NotTo(BeNil())
+		g.Expect(condition.Reason).To(Equal(reason))
+		message = condition.Message
+	}, timeout, interval).Should(Succeed())
+
+	return message
+}
+
+// jobsOf lists the restore Jobs of pitr, selected the way every consumer of
+// these Jobs must select them.
+func jobsOf(pitr *v1.PointInTimeRestore) []batchv1.Job {
+	GinkgoHelper()
+	var jobs batchv1.JobList
+	Expect(k8sClient.List(
+		ctx, &jobs,
+		client.InNamespace(pitr.Namespace),
+		client.MatchingLabels(restore.JobSelector(labels.PointInTimeRestore(pitr.Name))),
+	)).To(Succeed())
+
+	return jobs.Items
+}
+
 // expectClaimsUntouched asserts that every broker volume is still the volume
 // the world created.
 func expectClaimsUntouched(w *world) {
@@ -478,5 +515,88 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		pitr := createRestore(w)
 
 		expectAdmitted(pitr, w)
+	})
+})
+
+var _ = Describe("PointInTimeRestore database-state check", func() {
+	// The refusal is the whole point of the phase: the database of the
+	// cluster still holds state that the requested point does not, so the
+	// broker volumes must survive untouched.
+	It("refuses a database that is ahead of the requested point, and touches nothing", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(-2 * time.Minute)})
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonDatabaseNotRestored)
+		Expect(message).To(ContainSubstring("ahead"))
+		expectClaimsUntouched(w)
+		Expect(jobsOf(pitr)).To(BeEmpty())
+		Expect(readRestore(pitr).Status.ObservedPositions).To(HaveLen(partitionCount))
+	})
+
+	It("refuses a database that reports no position for a partition", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{
+			positions: positionsBehind(time.Hour)[:1],
+		})
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonDatabaseNotRestored)).To(ContainSubstring("partition 2"))
+		expectClaimsUntouched(w)
+	})
+
+	It("continues on its own once the database is restored to the requested point", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(-2 * time.Minute)})
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonDatabaseNotRestored)
+
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(time.Hour)})
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringPrimaryStorage))
+			g.Expect(current.Status.ObservedPositions).To(HaveLen(partitionCount))
+			g.Expect(current.Status.Brokers).To(Equal(int32(brokerCount)))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("holds a database that the operator cannot read, then fails past the grace", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{
+			err: errors.New("password authentication failed for user \"camunda\""),
+		})
+		pitr := createRestore(w)
+
+		Expect(expectStartedHold(pitr, v1.ReasonConnectionFailed)).To(ContainSubstring("password"))
+		expectClaimsUntouched(w)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("did not recover"))
+		}, timeout, interval).Should(Succeed())
+		expectClaimsUntouched(w)
+	})
+
+	It("holds a restore whose application credentials are missing", func() {
+		w := createWorld(func(w *world) {
+			w.dbConfig.Spec.CredentialsSecretRef.Name = "no-such-secret"
+		})
+		pitr := createRestore(w)
+
+		Expect(expectStartedHold(pitr, v1.ReasonMissingSecret)).To(ContainSubstring("no-such-secret"))
+		expectClaimsUntouched(w)
+	})
+
+	It("refuses a database whose Camunda schema does not exist", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{
+			err: fmt.Errorf("%w: relation \"exporter_position\" does not exist", errNoExporterTable),
+		})
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonDatabaseNotRestored)).To(ContainSubstring("exporter position"))
+		expectClaimsUntouched(w)
 	})
 })

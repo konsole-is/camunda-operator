@@ -74,8 +74,10 @@ func (r *Reconciler) enterDatabaseState(
 	if failure != nil {
 		return r.holdStarted(pitr, failure), nil
 	}
-	recovered(pitr)
 
+	// The clock of the grace runs until the phase itself makes progress. A
+	// chain that resolves is not progress here: the database read is the work
+	// of this phase, and it is the part that a broken dependency stops.
 	return r.validateDatabaseState(ctx, pitr, resolved)
 }
 
