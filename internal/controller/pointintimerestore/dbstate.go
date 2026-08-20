@@ -304,41 +304,57 @@ func brokerClockComparable(
 	namespace string,
 	broker *corev1.Container,
 ) (*conditions.PreCheckFailure, error) {
+	// The kubelet builds the environment of a container in this order: every
+	// envFrom source first, in order, then every env entry, which overrides a
+	// name that a source already carried. The check judges the result, not the
+	// layers. A cluster that carries TZ in a ConfigMap and sets TZ to UTC in
+	// extraEnv runs in UTC.
+	effective := map[string]string{}
+
+	for _, source := range broker.EnvFrom {
+		failure, err := collectSource(ctx, reader, namespace, source, effective)
+		if err != nil || failure != nil {
+			return failure, err
+		}
+	}
+
 	for _, env := range broker.Env {
 		if !slices.Contains(zoneVars, env.Name) {
 			continue
 		}
 		if env.ValueFrom != nil {
+			// This entry wins over whatever a source carried, and only the
+			// kubelet resolves it, so the effective zone is unknowable here.
 			return clockUnreadable(fmt.Sprintf(
 				"the broker container takes %s from a reference, which only the kubelet resolves",
 				env.Name,
 			)), nil
 		}
-		if failure := zoneFailure(env.Name, env.Value); failure != nil {
-			return failure, nil
-		}
+		effective[env.Name] = env.Value
 	}
 
-	for _, source := range broker.EnvFrom {
-		failure, err := sourceClockComparable(ctx, reader, namespace, source)
-		if err != nil || failure != nil {
-			return failure, err
+	// The names are sorted, so one environment always reports the same
+	// variable.
+	for _, name := range slices.Sorted(maps.Keys(effective)) {
+		if failure := zoneFailure(name, effective[name]); failure != nil {
+			return failure, nil
 		}
 	}
 
 	return nil, nil
 }
 
-// sourceClockComparable resolves one envFrom source of the broker and reports
-// a zone that it carries. A source that the cluster marks optional and that
-// does not exist carries no variable, so it hides no zone. Any other source
-// that the operator cannot read holds the restore: an unread source can carry
-// the one variable that makes this check wrong.
-func sourceClockComparable(
+// collectSource resolves one envFrom source of the broker and records the
+// variables of it that can set a zone, under the name the kubelet gives them.
+// A source that the cluster marks optional and that does not exist carries no
+// variable. Any other source that the operator cannot read holds the restore:
+// an unread source can carry the one variable that makes this check wrong.
+func collectSource(
 	ctx context.Context,
 	reader client.Reader,
 	namespace string,
 	source corev1.EnvFromSource,
+	effective map[string]string,
 ) (*conditions.PreCheckFailure, error) {
 	switch {
 	case source.ConfigMapRef != nil:
@@ -347,8 +363,7 @@ func sourceClockComparable(
 		if err := reader.Get(ctx, key, &config); err != nil {
 			return unreadableSource(err, "ConfigMap", key, source.ConfigMapRef.Optional)
 		}
-
-		return zoneInData(source.Prefix, config.Data), nil
+		collectZoneVars(source.Prefix, config.Data, effective)
 	case source.SecretRef != nil:
 		var secret corev1.Secret
 		key := types.NamespacedName{Namespace: namespace, Name: source.SecretRef.Name}
@@ -360,11 +375,20 @@ func sourceClockComparable(
 		for name, value := range secret.Data {
 			data[name] = string(value)
 		}
-
-		return zoneInData(source.Prefix, data), nil
+		collectZoneVars(source.Prefix, data, effective)
 	}
 
 	return nil, nil
+}
+
+// collectZoneVars records every entry of one source that can set a zone, under
+// the name the kubelet gives it.
+func collectZoneVars(prefix string, data, effective map[string]string) {
+	for name, value := range data {
+		if slices.Contains(zoneVars, prefix+name) {
+			effective[prefix+name] = value
+		}
+	}
 }
 
 // unreadableSource maps the read error of an envFrom source. A missing source
@@ -388,18 +412,6 @@ func unreadableSource(
 	return clockUnreadable(fmt.Sprintf(
 		"the broker container takes its environment from the %s %s, which does not exist", kind, key,
 	)), nil
-}
-
-// zoneInData reports the first variable of an envFrom source that sets a zone.
-// The keys are sorted, so one source always reports the same variable.
-func zoneInData(prefix string, data map[string]string) *conditions.PreCheckFailure {
-	for _, name := range slices.Sorted(maps.Keys(data)) {
-		if failure := zoneFailure(prefix+name, data[name]); failure != nil {
-			return failure
-		}
-	}
-
-	return nil
 }
 
 // zoneFailure reports why the variable name with the given value makes the

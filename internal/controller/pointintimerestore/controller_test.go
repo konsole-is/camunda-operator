@@ -603,6 +603,51 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 	})
 
+	// The kubelet applies envFrom first and lets env override it, so a cluster
+	// that corrects the zone of a shared ConfigMap in extraEnv runs in UTC.
+	It("admits a cluster whose extraEnv overrides the zone of a source with UTC", func() {
+		namespace := newNamespace()
+		zones := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "shared-env", Namespace: namespace},
+			Data:       map[string]string{"TZ": "America/New_York"},
+		}
+		Expect(k8sClient.Create(ctx, zones)).To(Succeed())
+
+		w := createWorldIn(namespace, func(w *world) {
+			w.brokerEnvFrom = []corev1.EnvFromSource{{
+				ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: zones.Name},
+				},
+			}}
+			w.brokerEnv = []corev1.EnvVar{{Name: "TZ", Value: "UTC"}}
+		})
+		pitr := createRestore(w)
+
+		expectAdmitted(pitr, w)
+	})
+
+	It("holds a cluster whose extraEnv overrides the zone of a source with another zone", func() {
+		namespace := newNamespace()
+		zones := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "shared-env", Namespace: namespace},
+			Data:       map[string]string{"TZ": "UTC"},
+		}
+		Expect(k8sClient.Create(ctx, zones)).To(Succeed())
+
+		w := createWorldIn(namespace, func(w *world) {
+			w.brokerEnvFrom = []corev1.EnvFromSource{{
+				ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: zones.Name},
+				},
+			}}
+			w.brokerEnv = []corev1.EnvVar{{Name: "TZ", Value: "Asia/Tokyo"}}
+		})
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("Asia/Tokyo"))
+		expectClaimsUntouched(w)
+	})
+
 	It("holds a cluster whose broker environment the operator cannot read", func() {
 		w := createWorld(func(w *world) {
 			w.brokerEnvFrom = []corev1.EnvFromSource{{
