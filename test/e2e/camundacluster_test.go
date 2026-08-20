@@ -125,10 +125,13 @@ func newCluster(namespace, platform, storageRef, backupRef string, connectors bo
 	}
 
 	if connectors {
+		// The connectors Deployment rolls when the admin password changes,
+		// and a rolling update runs a second pod before it stops the first.
+		// The request is small enough for both pods to fit on the node.
 		cluster.Spec.Connectors = &v1.ConnectorsSpec{
 			Enabled:      new(true),
 			Version:      ccConnectorsVersion,
-			WorkloadSpec: v1.WorkloadSpec{Resources: requests("250m", "512Mi")},
+			WorkloadSpec: v1.WorkloadSpec{Resources: requests("100m", "512Mi")},
 		}
 	}
 
@@ -269,6 +272,11 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 	It("rotates the admin password through the user API and rolls connectors", func() {
 		adminSecret := components.AdminSecretName(cluster)
 		connectors := components.WorkloadName(cluster, components.ComponentConnectors)
+
+		By("waiting for a Ready cluster, because a rotation needs the user API of the gateway")
+		Eventually(func(g Gomega) {
+			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 
 		By("reading the password and the connectors config hash before the rotation")
 		var secret corev1.Secret
