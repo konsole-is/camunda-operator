@@ -4,7 +4,7 @@
 
 Components outside the orchestration cluster authenticate against Management Identity, which is a separate identity system from the one inside the orchestration cluster. This kind carries the OIDC endpoints and the default machine-to-machine client those components need. The thing that runs Management Identity and the thing that uses it do not need to know each other.
 
-No kind in the operator consumes this contract yet. The operator validates it so that it is ready when the management plane kinds arrive. It never provisions anything from it.
+[CamundaOptimize](camundaoptimize.md) consumes this contract, and the management plane kinds consume it when they arrive. The operator validates it and never provisions anything from it.
 
 | Role | Who |
 | --- | --- |
