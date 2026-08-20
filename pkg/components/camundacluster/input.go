@@ -84,9 +84,14 @@ type Input struct {
 	HashInputs []string
 	// AdminPasswordHash is PasswordHash of the admin password that the admin
 	// Secret of a basic-auth cluster publishes, or "" under OIDC. It is the
-	// password as the Secret already holds it, never one that this reconcile
-	// is still writing. Only the hash of connectors consumes it; see
-	// ConfigHash.
+	// password the Secret already holds, never one that this reconcile is
+	// promoting: connectors resolve the Secret when a pod starts, so a hash
+	// that ran ahead of a Secret write that then failed would never roll
+	// them again. A cluster whose Secret does not exist yet is the
+	// exception, and the controller passes the password it is about to
+	// publish there: a failed apply leaves no Secret at all, and the next
+	// reconcile generates another password, so the hash keeps moving until
+	// one lands. Only the hash of connectors consumes it; see ConfigHash.
 	AdminPasswordHash string
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.
