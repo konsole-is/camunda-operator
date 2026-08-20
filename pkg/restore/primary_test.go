@@ -420,6 +420,34 @@ func TestPrimaryRefusesAJobThatAnotherRestoreOwns(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "Remove the Job of the earlier restore")
 }
 
+// A Create that lost the name asks the API server who won, never the cache. A
+// cache that still holds a Job of this restore under a name that another
+// writer owns now reports the name as claimed by self. The phase then counts
+// a foreign Job as its own and goes on to the next broker.
+func TestPrimaryReadsTheWinnerOfAJobNameLive(t *testing.T) {
+	t.Parallel()
+
+	w := newPrimaryWorld(t)
+	w.runToTheJobNames(t)
+
+	// The cache holds a Job of this restore under the name of broker 0, and
+	// the API server holds none. The Create therefore loses the name against a
+	// Job that only the cache knows.
+	stale := ownedJob(t, w, 0)
+	cached := fake.NewClientBuilder().WithScheme(w.scheme).WithObjects(stale).Build()
+
+	outcome, err := Primary(
+		t.Context(), cached, w.client, w.scheme, w.progress(), w.input,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, Outcome{Wait: Shortly}, outcome, "the phase looks again instead of going on")
+
+	var list batchv1.JobList
+	require.NoError(t, cached.List(t.Context(), &list, client.InNamespace("ns")))
+	assert.Len(t, list.Items, 1, "no Job of a later broker was created against the stale read")
+}
+
 // The recorded name and the derived name are one truth. A restore that polls
 // for a Job whose name it never derives waits for ever, so the mismatch ends
 // it instead.

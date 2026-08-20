@@ -215,8 +215,9 @@ func runJobs(
 		return outcomeOrZero(outcome), err
 	}
 
-	if outcome, err := applyMissingJobs(ctx, c, scheme, p, in, pinned, existing); err != nil ||
-		outcome != nil {
+	if outcome, err := applyMissingJobs(
+		ctx, c, reader, scheme, p, in, pinned, existing,
+	); err != nil || outcome != nil {
 		return outcomeOrZero(outcome), err
 	}
 
@@ -281,6 +282,7 @@ func readJobs(
 func applyMissingJobs(
 	ctx context.Context,
 	c client.Client,
+	reader client.Reader,
 	scheme *runtime.Scheme,
 	p *v1.RestoreProgress,
 	in PrimaryInput,
@@ -299,7 +301,7 @@ func applyMissingJobs(
 			))), nil
 		}
 
-		outcome, err := applyJob(ctx, c, scheme, p, in, pinned, int32(index))
+		outcome, err := applyJob(ctx, c, reader, scheme, p, in, pinned, int32(index))
 		if err != nil || outcome != nil {
 			return outcome, err
 		}
@@ -322,6 +324,7 @@ func applyMissingJobs(
 func applyJob(
 	ctx context.Context,
 	c client.Client,
+	reader client.Reader,
 	scheme *runtime.Scheme,
 	p *v1.RestoreProgress,
 	in PrimaryInput,
@@ -362,7 +365,7 @@ func applyJob(
 	key := types.NamespacedName{Namespace: job.Namespace, Name: job.Name}
 	switch err := c.Create(ctx, job, in.FieldManager); {
 	case apierrors.IsAlreadyExists(err):
-		return claimedByAnother(ctx, c, in, key)
+		return claimedByAnother(ctx, reader, in, key)
 	case err != nil:
 		return nil, fmt.Errorf("creating the restore Job %s: %w", key, err)
 	}
@@ -384,14 +387,18 @@ func applyJob(
 // live: a Job that this restore owns is the one an earlier look created, and
 // any other Job ends the restore. A name that is free again is claimed by the
 // next look.
+//
+// The read goes through the uncached reader. A cache that still holds a Job of
+// this restore under a name that another writer now owns reports the name as
+// claimed by self, and the phase counts a foreign Job as its own.
 func claimedByAnother(
 	ctx context.Context,
-	c client.Client,
+	reader client.Reader,
 	in PrimaryInput,
 	key types.NamespacedName,
 ) (*Outcome, error) {
 	var winner batchv1.Job
-	if err := c.Get(ctx, key, &winner); err != nil {
+	if err := reader.Get(ctx, key, &winner); err != nil {
 		if apierrors.IsNotFound(err) {
 			return new(Outcome{Wait: Shortly}), nil
 		}
