@@ -47,6 +47,11 @@ type backup struct {
 	// Version is the Camunda version that the cluster ran when the backup was
 	// taken. It is empty for a backup that recorded none.
 	Version string
+	// SourceCluster is the name of the CamundaCluster the backup was taken
+	// from. The target must carry the same name, because the restore
+	// application reads the primary-storage backup under the prefix of the
+	// cluster it runs as.
+	SourceCluster string
 	// Bucket is the ObjectStorageConfig that the backup wrote its dump to.
 	// The target must back up through the same one.
 	Bucket string
@@ -216,13 +221,14 @@ func (r *Reconciler) readBackup(
 	}
 
 	return &backup{
-		Namespace: source.Namespace,
-		Name:      source.Name,
-		ID:        source.Status.BackupID,
-		Version:   source.Status.Version,
-		Bucket:    source.Status.BucketRef,
-		ObjectKey: source.Status.ObjectKey,
-		ZeebeSize: source.Status.StorageSizes.Zeebe,
+		Namespace:     source.Namespace,
+		Name:          source.Name,
+		ID:            source.Status.BackupID,
+		Version:       source.Status.Version,
+		SourceCluster: source.Spec.ClusterRef.Name,
+		Bucket:        source.Status.BucketRef,
+		ObjectKey:     source.Status.ObjectKey,
+		ZeebeSize:     source.Status.StorageSizes.Zeebe,
 	}, nil, nil
 }
 

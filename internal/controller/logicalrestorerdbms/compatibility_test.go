@@ -34,6 +34,8 @@ const oneMinorNewer = "8.10.0"
 func pair() compatibility {
 	return compatibility{
 		TargetStorageType: v1.SecondaryStorageTypeRDBMS,
+		BackupCluster:     "my-cluster",
+		TargetCluster:     "my-cluster",
 		BackupBucket:      "backups",
 		TargetBucket:      "backups",
 		BackupVersion:     "8.9.9",
@@ -54,6 +56,30 @@ func TestCheck(t *testing.T) {
 		{
 			name: "a pair that matches in every fact",
 			in:   pair(),
+		},
+		{
+			name: "the target is the cluster the backup came from",
+			in: func() compatibility {
+				in := pair()
+				in.BackupCluster = "another-cluster"
+				in.TargetCluster = "another-cluster"
+
+				return in
+			}(),
+		},
+		{
+			name: "the target is another cluster",
+			in: func() compatibility {
+				in := pair()
+				in.TargetCluster = "my-cluster-clone"
+
+				return in
+			}(),
+			want: []string{
+				`"my-cluster"`,
+				`"my-cluster-clone"`,
+				"a different cluster is not supported",
+			},
 		},
 		{
 			name: "the target stores its data in elasticsearch",

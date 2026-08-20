@@ -45,6 +45,8 @@ func (r *Reconciler) validate(
 
 	if failure := check(compatibility{
 		TargetStorageType: resolved.storage.Spec.Type,
+		BackupCluster:     resolved.backup.SourceCluster,
+		TargetCluster:     resolved.cluster.Name,
 		BackupBucket:      resolved.backup.Bucket,
 		TargetBucket:      resolved.cluster.Spec.BackupStorageRef,
 		BackupVersion:     resolved.backup.Version,
@@ -77,6 +79,11 @@ type compatibility struct {
 	// TargetStorageType is the type of the storage contract of the target.
 	// Only a relational target can hold a relational backup.
 	TargetStorageType v1.SecondaryStorageType
+	// BackupCluster is the name of the CamundaCluster the backup was taken
+	// from.
+	BackupCluster string
+	// TargetCluster is the name of the CamundaCluster the restore writes into.
+	TargetCluster string
 	// BackupBucket is the ObjectStorageConfig that the backup wrote to.
 	BackupBucket string
 	// TargetBucket is the spec.backupStorageRef of the target.
@@ -91,6 +98,17 @@ type compatibility struct {
 // nil when it can. Every answer carries v1.ReasonIncompatibleTarget: the
 // restore fails on it, because no change to the restore resource resolves it.
 func check(in compatibility) *conditions.PreCheckFailure {
+	// This rule goes first. The others say that one fact of the target does
+	// not match the backup. This one says that the restore cannot work at all.
+	if in.BackupCluster != in.TargetCluster {
+		return incompatible(
+			"the backup was taken from CamundaCluster %q and the target cluster is %q. A restore "+
+				"into a different cluster is not supported. The restore application reads the "+
+				"primary-storage backup under the prefix of the cluster it runs as",
+			in.BackupCluster, in.TargetCluster,
+		)
+	}
+
 	if in.TargetStorageType != v1.SecondaryStorageTypeRDBMS {
 		return incompatible(
 			"the backup holds %s data and the target cluster stores its data in %s",

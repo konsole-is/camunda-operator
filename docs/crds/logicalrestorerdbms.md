@@ -2,7 +2,7 @@
 
 `LogicalRestoreRDBMS` restores one completed [LogicalBackupRDBMS](logicalbackuprdbms.md) into one suspended [CamundaCluster](camundacluster.md). You create it, or a recovery flow above the operator creates it for you.
 
-The backup and the target both store their data in a relational database. The target can be the cluster the backup came from, or another cluster. Use this kind to undo a destructive operation, to move a cluster to new infrastructure, or to build a copy of a cluster for a test.
+The backup and the target both store their data in a relational database. The target must be the cluster the backup came from. A restore names a `CamundaCluster` with the same name, in the same namespace as the backup. Use this kind to undo a destructive operation, or to rebuild the cluster on new infrastructure under its own name.
 
 One resource is one restore. The spec is immutable, and the restore runs once. `kubectl get lrrdbms` lists the restores with their phase, backup, and target.
 
@@ -69,9 +69,12 @@ The operator compares the backup against the target before the first destructive
 
 | Rule | Why |
 | --- | --- |
+| The target is the cluster the backup came from. | The restore application reads the primary-storage backup under the prefix of the cluster it runs as. A different name points it at a prefix that holds no backup of this cluster. |
 | The target stores its data in a relational database. | The dump holds relational data. An Elasticsearch target has nothing to read it with. |
 | The target backs up through the same `ObjectStorageConfig` as the backup. | The `pg_restore` Job reads the bucket of the backup with the credentials that the `CamundaCluster` controller copies into the namespace, and it copies them for the bucket of the target alone. |
 | The target runs the same Camunda minor as the backup, or one minor newer. | Camunda migrates its own schema one minor at a time. The patch level is free. |
+
+The brokers write the backup prefix of their own cluster into their configuration. The restore Jobs copy that configuration from the live broker StatefulSet, so the restore always reads the prefix of the target.
 
 The backup must record the Camunda version it was taken with, in `status.version`. A backup that recorded none fails the restore: nothing then proves that the target can read it.
 
@@ -157,7 +160,8 @@ spec:
   backupRef:
     # string. Required. Name of the LogicalBackupRDBMS, in this namespace.
     name: my-cluster-1748937221000
-  # object. Required. The cluster to restore into.
+  # object. Required. The cluster to restore into. It is the cluster the
+  # backup came from.
   targetClusterRef:
     # string. Required. Name of the CamundaCluster, in this namespace.
     name: my-cluster
@@ -169,26 +173,6 @@ spec:
 - `backupRef` and `targetClusterRef` name resources in the namespace of the restore. Neither crosses a namespace. The operator reads the Secrets of the target and runs Jobs in that namespace, so both references stay inside the RBAC boundary of the restore.
 - `backupRef` carries a name alone. The kind of the restore says which backup kind it reads.
 - The suspend state, the phase of the backup, and the compatibility rules depend on live state. The operator checks them at reconcile time.
-
-### Restore into a second cluster
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: LogicalRestoreRDBMS
-metadata:
-  name: my-cluster-clone-restore
-  namespace: my-cluster-ns
-  labels:
-    camunda.io/cluster: my-cluster-clone
-spec:
-  backupRef:
-    # The backup came from my-cluster.
-    name: my-cluster-1748937221000
-  targetClusterRef:
-    # my-cluster-clone backs up through the same ObjectStorageConfig and runs
-    # the same Camunda minor, or one minor newer.
-    name: my-cluster-clone
-```
 
 ## Related
 
