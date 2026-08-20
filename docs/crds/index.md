@@ -37,6 +37,7 @@ A contract carries connection details and credential references. The operator va
 | --- | --- | --- |
 | [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) | Namespaced | One backup of a cluster on Elasticsearch. |
 | [LogicalBackupRDBMS](logicalbackuprdbms.md) | Namespaced | One backup of a cluster on a relational database. |
+| [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule and prune the ones it created. |
 
 ## How the kinds relate
 
@@ -56,6 +57,7 @@ graph LR
     CC[CamundaCluster]
     LBE[LogicalBackupElasticsearch]
     LBR[LogicalBackupRDBMS]
+    BS[BackupSchedule]
 
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
@@ -73,6 +75,9 @@ graph LR
 
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
+    BS -.->|clusterRef| CC
+    BS -->|creates| LBE
+    BS -->|creates| LBR
 ```
 
 ## Planned kinds
@@ -81,7 +86,6 @@ These CRDs are installed with the operator, but the operator does not act on the
 
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
-| [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule. |
 | [LogicalRestore](logicalrestore.md) | Namespaced | Restore a completed logical backup into a suspended cluster. |
 | [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 | [CamundaOptimize](camundaoptimize.md) | Namespaced | Run Optimize next to a cluster. |

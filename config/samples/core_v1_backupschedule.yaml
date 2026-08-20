@@ -6,4 +6,10 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: backupschedule-sample
 spec:
-  # TODO(user): Add fields here
+  clusterRef:
+    name: camundacluster-sample
+  # Every night at 02:00 UTC.
+  schedule: "0 2 * * *"
+  retained:
+    completed: 7
+    failed: 3

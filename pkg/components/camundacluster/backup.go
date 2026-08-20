@@ -36,9 +36,9 @@ const (
 	defaultBackupCheckpointInterval = "PT15M"
 	defaultBackupRetentionWindow    = "P7D"
 	defaultBackupCleanupSchedule    = "PT1H"
-	// scheduleNone is the schedule value that takes no backups. Continuous
+	// ScheduleNone is the schedule value that takes no backups. Continuous
 	// mode must not default on with it, and an explicit pairing is rejected.
-	scheduleNone = "none"
+	ScheduleNone = "none"
 )
 
 // The literal values of the backup store that come from Camunda, not from
@@ -328,12 +328,12 @@ func azureEnv(azure *v1.AzureBlobStorage) []corev1.EnvVar {
 // position. Continuous mode holds the log until it is backed up, so the
 // schedule must always accompany it.
 func primaryStorageScheduleEnv(in Input) []corev1.EnvVar {
-	backup := in.Effective.primaryStorageBackup()
+	backup := in.Effective.PrimaryStorageBackup()
 
 	return append(
 		backupIDModeEnv(in),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionWindow, backup.retentionWindow),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionCleanupSchedule, backup.cleanupSchedule),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionWindow, backup.RetentionWindow),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupRetentionCleanupSchedule, backup.CleanupSchedule),
 	)
 }
 
@@ -343,14 +343,14 @@ func primaryStorageScheduleEnv(in Input) []corev1.EnvVar {
 // or runs either scheduler, generates the id itself. Retention is not among
 // them: it prunes backups and takes none, so only the brokers need it.
 func backupIDModeEnv(in Input) []corev1.EnvVar {
-	backup := in.Effective.primaryStorageBackup()
+	backup := in.Effective.PrimaryStorageBackup()
 
 	return []corev1.EnvVar{
 		camundaconfig.Var(
 			camundaconfig.KeyPrimaryBackupContinuous,
-			strconv.FormatBool(backup.continuous),
+			strconv.FormatBool(backup.Continuous),
 		),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupSchedule, backup.schedule),
-		camundaconfig.Var(camundaconfig.KeyPrimaryBackupCheckpointInterval, backup.checkpointInterval),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupSchedule, backup.Schedule),
+		camundaconfig.Var(camundaconfig.KeyPrimaryBackupCheckpointInterval, backup.CheckpointInterval),
 	}
 }

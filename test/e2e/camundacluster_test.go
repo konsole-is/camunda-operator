@@ -420,6 +420,7 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 
 	itRunsTheOrchestrationCluster(cluster)
 	itBacksUpTheRelationalCluster(cluster)
+	itSchedulesBackups(cluster)
 })
 
 // itRunsTheOrchestrationCluster registers the specs that both flows share:
