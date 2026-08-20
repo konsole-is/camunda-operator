@@ -100,10 +100,16 @@ func dumpDiagnostics(testNamespace string) {
 		"resources": {
 			"get",
 			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs," +
-				"camundaclusters,logicalbackupelasticsearches,logicalbackuprdbmses",
+				"camundaclusters,camundaoptimizes,logicalbackupelasticsearches,logicalbackuprdbmses",
 			"-n", testNamespace,
 		},
 		"object storage contracts": {"get", "objectstorageconfigs", "-o", "wide"},
+		// The Management Identity contract is cluster-scoped, so it never
+		// appears in the resource table of a namespace. YAML rather than wide:
+		// the kind has no print columns, and its Ready reason is what tells a
+		// CamundaOptimize with a dangling reference from one with a Secret
+		// that lacks the key.
+		"management identity contracts": {"get", "managementauthconfigs", "-o", "yaml"},
 		// A Service answers on its ClusterIP only once kube-proxy programmed
 		// an endpoint for it. A ready pod is not enough, so the slices are
 		// the only record of whether a refused connection had a target. YAML
@@ -137,12 +143,13 @@ func dumpDiagnostics(testNamespace string) {
 
 // customResourceKinds are the namespaced custom resources of this operator,
 // in the order a reader follows a failure: the storage backends first, then
-// the cluster, then the backups of it.
+// the cluster, then what attaches to it.
 var customResourceKinds = []string{
 	"elasticsearchclusters",
 	"secondarystorageconfigs",
 	"databaseconfigs",
 	"camundaclusters",
+	"camundaoptimizes",
 	"logicalbackupelasticsearches",
 	"logicalbackuprdbmses",
 }
