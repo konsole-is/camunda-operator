@@ -49,7 +49,7 @@ func TestParseISODuration(t *testing.T) {
 }
 
 func TestTriggerInterval(t *testing.T) {
-	daily, err := parseCron("0 2 * * *")
+	daily, err := parseCron("0 2 * * *", reference)
 	require.NoError(t, err)
 
 	from := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)

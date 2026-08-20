@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -41,6 +42,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -61,6 +63,7 @@ const (
 	eventReasonBackupCreated   = "BackupCreated"
 	eventReasonBackupPruned    = "BackupPruned"
 	eventReasonRetentionWindow = "RetentionWindowExceeded"
+	eventReasonNameTaken       = "BackupNameTaken"
 	eventActionSchedule        = "Schedule"
 	eventActionPrune           = "Prune"
 )
@@ -137,10 +140,25 @@ func (r *BackupScheduleReconciler) Reconcile(
 		}
 	}()
 
-	sched, parseErr := parseCron(schedule.Spec.Schedule)
+	if failure := nameProblem(&schedule); failure != nil {
+		// Every backup carries the schedule and the cluster in a label, and
+		// the pruning and the watches select backups by those labels. A name
+		// that cannot be a label value fails the creation at admission and
+		// the selector of the pruning alike, so nothing below can run and
+		// the condition is all the schedule can offer. Only a new object
+		// under a shorter name heals it.
+		conditions.Stage(&schedule, conditions.Failed(&schedule, failure))
+
+		return ctrl.Result{}, nil
+	}
+
+	now := r.opts.Now()
+
+	sched, parseErr := parseCron(schedule.Spec.Schedule, now)
 	if parseErr != nil {
 		// The schema pattern admits a five-field shape with out-of-range
-		// values, for example minute 99. Only a spec change heals this, and
+		// values, for example minute 99, and dates that never come, for
+		// example the 31st of February. Only a spec change heals either, and
 		// the For watch delivers it. The pruning does not read the cron, so
 		// spec.retained stays enforced while the schedule cannot fire.
 		conditions.Stage(&schedule, conditions.Ready(
@@ -168,7 +186,6 @@ func (r *BackupScheduleReconciler) Reconcile(
 		))
 	}
 
-	now := r.opts.Now()
 	due, next := dueTrigger(sched, schedule.Status.LastScheduleTime, schedule.CreationTimestamp.Time, now)
 	if due != nil {
 		if err := r.trigger(ctx, &schedule, res, failure, sched, *due); err != nil {
@@ -181,6 +198,30 @@ func (r *BackupScheduleReconciler) Reconcile(
 	}
 
 	return ctrl.Result{RequeueAfter: next.Sub(now)}, nil
+}
+
+// nameProblem reports why the schedule cannot label the backups it creates,
+// or nil when it can. A Kubernetes object name may be a 253-character DNS
+// subdomain, while a label value is bounded at 63 characters, so a legal
+// schedule name or cluster name can still be unusable as the label that ties
+// a backup to its schedule.
+func nameProblem(schedule *v1.BackupSchedule) *conditions.PreCheckFailure {
+	for _, named := range []struct{ field, value string }{
+		{"metadata.name", schedule.Name},
+		{"spec.clusterRef.name", schedule.Spec.ClusterRef.Name},
+	} {
+		problems := validation.IsValidLabelValue(named.value)
+		if len(problems) == 0 {
+			continue
+		}
+
+		return logicalbackup.InvalidReference(
+			"%s %q cannot be a label value, and every backup this schedule creates carries it in one: %s",
+			named.field, named.value, strings.Join(problems, "; "),
+		)
+	}
+
+	return nil
 }
 
 // resolved is what one look at the references answers: the cluster to back up
@@ -311,7 +352,30 @@ func (r *BackupScheduleReconciler) trigger(
 	case apierrors.IsAlreadyExists(err):
 		// A reconcile that crashed between the create and the status flush
 		// already created the backup of this trigger and recorded its event.
-		// The retry only records what it found.
+		// The retry only records what it found, once it proves the object is
+		// that backup. A stranger under the same name backs up another
+		// cluster, and reporting it as this schedule's backup would hide
+		// that this trigger produced none.
+		ours, err := r.backupBelongsTo(ctx, schedule, backup)
+		if err != nil {
+			return err
+		}
+		if !ours {
+			schedule.Status.LastScheduleTime = &consumed
+			r.EventRecorder.Eventf(
+				schedule,
+				nil,
+				corev1.EventTypeWarning,
+				eventReasonNameTaken,
+				eventActionSchedule,
+				"Skipped the trigger at %s: %s %q already exists and belongs to something else",
+				due.Format(time.RFC3339),
+				kind,
+				backup.GetName(),
+			)
+
+			return nil
+		}
 	case err != nil:
 		return fmt.Errorf("creating %s %q: %w", kind, backup.GetName(), err)
 	default:
@@ -331,6 +395,45 @@ func (r *BackupScheduleReconciler) trigger(
 	schedule.Status.LastBackupName = backup.GetName()
 
 	return nil
+}
+
+// backupBelongsTo reads the object that holds the name of want and reports
+// whether it is the backup this schedule creates for this trigger: the same
+// kind, carrying this schedule's label, and backing up the same cluster. It
+// reads live, because the decision admits or refuses a trigger.
+//
+// An object that vanished between the failed create and this read is not
+// ours to adopt either. The next reconcile creates the backup if the trigger
+// is still due.
+func (r *BackupScheduleReconciler) backupBelongsTo(
+	ctx context.Context,
+	schedule *v1.BackupSchedule,
+	want client.Object,
+) (bool, error) {
+	found, ok := want.DeepCopyObject().(client.Object)
+	if !ok {
+		return false, fmt.Errorf("copying %T for the identity read", want)
+	}
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(want), found); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("reading the existing %q: %w", want.GetName(), err)
+	}
+
+	if found.GetLabels()[labels.BackupScheduleKey] != schedule.Name {
+		return false, nil
+	}
+
+	switch backup := found.(type) {
+	case *v1.LogicalBackupElasticsearch:
+		return backup.Spec.ClusterRef == schedule.Spec.ClusterRef, nil
+	case *v1.LogicalBackupRDBMS:
+		return backup.Spec.ClusterRef == schedule.Spec.ClusterRef, nil
+	}
+
+	return false, nil
 }
 
 // newBackup builds the backup of one trigger: the kind that matches the

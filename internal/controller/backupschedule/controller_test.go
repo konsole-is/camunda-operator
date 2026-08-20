@@ -18,6 +18,7 @@ package backupschedule
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -142,7 +143,7 @@ func createSchedule(w *world, mutate ...func(*v1.BackupSchedule)) (*v1.BackupSch
 	}
 	Expect(k8sClient.Create(ctx, schedule)).To(Succeed())
 
-	sched, err := parseCron(schedule.Spec.Schedule)
+	sched, err := parseCron(schedule.Spec.Schedule, clock.Now())
 	Expect(err).NotTo(HaveOccurred())
 
 	return schedule, sched.Next(schedule.CreationTimestamp.Time)
@@ -525,6 +526,70 @@ var _ = Describe("BackupSchedule controller", func() {
 		}, timeout, interval).Should(Succeed())
 		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("BackupCreated")))
 		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("TriggerSkipped")))
+	})
+
+	It("does not adopt a same-named backup that belongs to something else", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		schedule, trigger := createSchedule(w)
+
+		// A backup already holds the name of this trigger, but it backs up
+		// another cluster and no schedule label names it. Adopting it would
+		// consume the trigger and report a stranger's backup as this
+		// schedule's own, while the cluster of the schedule got no backup.
+		stranger := &v1.LogicalBackupRDBMS{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      schedule.Name + "-" + strconv.FormatInt(trigger.Unix(), 10),
+				Namespace: schedule.Namespace,
+			},
+			Spec: v1.LogicalBackupRDBMSSpec{ClusterRef: v1.ClusterRef{Name: "another-cluster"}},
+		}
+		Expect(k8sClient.Create(ctx, stranger)).To(Succeed())
+
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		Eventually(func(g Gomega) {
+			g.Expect(eventReasons(schedule)).To(ContainElement(ContainSubstring("BackupNameTaken")))
+
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastScheduleTime).NotTo(BeNil())
+			g.Expect(current.Status.LastBackupName).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		By("leaving the stranger untouched")
+		var found v1.LogicalBackupRDBMS
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(stranger), &found)).To(Succeed())
+		Expect(found.Spec.ClusterRef.Name).To(Equal("another-cluster"))
+		Expect(found.Labels).NotTo(HaveKey(labels.BackupScheduleKey))
+	})
+
+	It("reports InvalidReference for a name that cannot be a label value", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		// A DNS subdomain may be 253 characters, a label value only 63. The
+		// operator copies the schedule name into a label on every backup it
+		// creates, so a longer name makes every creation fail admission.
+		long := "nightly-" + strings.Repeat("x", 60)
+		schedule, trigger := createSchedule(w, func(s *v1.BackupSchedule) { s.Name = long })
+
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		Eventually(func(g Gomega) {
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(ready.Message).To(ContainSubstring("63"))
+		}, timeout, interval).Should(Succeed())
+
+		// scheduledOf cannot help here: its selector carries the same
+		// oversized value and the API server rejects it, which is the reason
+		// the reconcile stops at the condition.
+		var backups v1.LogicalBackupRDBMSList
+		Expect(k8sClient.List(ctx, &backups, client.InNamespace(schedule.Namespace))).To(Succeed())
+		Expect(backups.Items).To(BeEmpty())
 	})
 
 	It("leaves the backups behind when the schedule is deleted", func() {

@@ -17,6 +17,7 @@ limitations under the License.
 package backupschedule
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -46,11 +47,31 @@ var cronParser = cron.NewParser(
 	cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
 )
 
-// parseCron parses a five-field cron expression, evaluated in UTC. The
-// CRON_TZ prefix pins the zone; the schema pattern admits no such prefix in
-// spec.schedule itself, so the pin cannot be overridden.
-func parseCron(spec string) (cron.Schedule, error) {
-	return cronParser.Parse("CRON_TZ=UTC " + spec)
+// parseCron parses a five-field cron expression, evaluated in UTC, and
+// rejects one that never fires. The CRON_TZ prefix pins the zone; the schema
+// pattern admits no such prefix in spec.schedule itself, so the pin cannot be
+// overridden.
+//
+// Every field of "0 0 31 2 *" is in range, so the parser accepts it and the
+// schema pattern admits it, but February has no 31st. The cron library
+// reports that as the zero time from Next, after searching five years for
+// each answer. A walk over such a schedule would spend that search on every
+// step and still find no trigger, so the schedule is rejected here instead,
+// and the reconcile reports it on the Ready condition. from is the time the
+// check searches from.
+func parseCron(spec string, from time.Time) (cron.Schedule, error) {
+	sched, err := cronParser.Parse("CRON_TZ=UTC " + spec)
+	if err != nil {
+		return nil, err
+	}
+	if sched.Next(from).IsZero() {
+		return nil, fmt.Errorf(
+			"it names a date that never comes: no occurrence within five years of %s",
+			from.UTC().Format(time.RFC3339),
+		)
+	}
+
+	return sched, nil
 }
 
 // dueTrigger returns the trigger of sched that is due at now, or nil when
@@ -97,12 +118,15 @@ func walkTriggers(
 ) (*time.Time, time.Time, bool) {
 	var due *time.Time
 	next := sched.Next(base)
-	for i := 0; !next.After(now); i++ {
+	for i := 0; !next.IsZero() && !next.After(now); i++ {
 		if i == limit {
 			return nil, sched.Next(now), false
 		}
 		trigger := next
 		due = &trigger
+		// A schedule that runs out of occurrences answers the zero time.
+		// The loop stops on it rather than taking it for a trigger, whose
+		// timestamp would name a backup of the year one.
 		next = sched.Next(next)
 	}
 

@@ -25,9 +25,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// reference is the time every parse in these tests probes from.
+var reference = time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+
 func TestParseCron(t *testing.T) {
 	t.Run("evaluates in UTC whatever the local zone is", func(t *testing.T) {
-		sched, err := parseCron("0 2 * * *")
+		sched, err := parseCron("0 2 * * *", reference)
 		require.NoError(t, err)
 
 		// 01:00 UTC on a day. The next 02:00 in UTC is one hour later. A
@@ -42,18 +45,31 @@ func TestParseCron(t *testing.T) {
 	})
 
 	t.Run("rejects an out-of-range field that the schema pattern admits", func(t *testing.T) {
-		_, err := parseCron("99 * * * *")
+		_, err := parseCron("99 * * * *", reference)
 		assert.Error(t, err)
 	})
 
 	t.Run("rejects a descriptor", func(t *testing.T) {
-		_, err := parseCron("@hourly")
+		_, err := parseCron("@hourly", reference)
 		assert.Error(t, err)
+	})
+
+	t.Run("rejects a date that never comes", func(t *testing.T) {
+		// The fields are all in range, so the parser accepts it and the
+		// schema pattern admits it, but February has no 31st. Walking it
+		// would search five years per step and never find a trigger.
+		_, err := parseCron("0 0 31 2 *", reference)
+		assert.Error(t, err)
+	})
+
+	t.Run("accepts a rare date that does come", func(t *testing.T) {
+		_, err := parseCron("0 0 29 2 *", reference)
+		assert.NoError(t, err)
 	})
 }
 
 func TestDueTrigger(t *testing.T) {
-	sched, err := parseCron("0 2 * * *")
+	sched, err := parseCron("0 2 * * *", reference)
 	require.NoError(t, err)
 	created := time.Date(2026, 8, 20, 1, 0, 0, 0, time.UTC)
 	trigger := func(day int) time.Time { return time.Date(2026, 8, day, 2, 0, 0, 0, time.UTC) }
@@ -91,7 +107,7 @@ func TestDueTrigger(t *testing.T) {
 	})
 
 	t.Run("a pathological backlog still yields the latest trigger", func(t *testing.T) {
-		minutely, err := parseCron("* * * * *")
+		minutely, err := parseCron("* * * * *", reference)
 		require.NoError(t, err)
 
 		// Two years of missed minutes. The full walk is too large, but the
@@ -103,5 +119,39 @@ func TestDueTrigger(t *testing.T) {
 		require.NotNil(t, due)
 		assert.Equal(t, now.Truncate(time.Minute), due.UTC())
 		assert.True(t, next.After(now))
+	})
+}
+
+// exhaustingSchedule fires count times from base at one hour apart and then
+// answers the zero time, the way robfig/cron reports "no occurrence within
+// five years". A walk must never take that zero time for a trigger.
+type exhaustingSchedule struct {
+	base  time.Time
+	count int
+}
+
+func (s exhaustingSchedule) Next(from time.Time) time.Time {
+	last := s.base.Add(time.Duration(s.count) * time.Hour)
+	if !from.Before(last) {
+		return time.Time{}
+	}
+
+	return from.Add(time.Hour).Truncate(time.Hour)
+}
+
+func TestDueTriggerExhaustedSchedule(t *testing.T) {
+	base := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+
+	t.Run("stops at the last real trigger instead of taking the zero time", func(t *testing.T) {
+		sched := exhaustingSchedule{base: base, count: 3}
+		due, _ := dueTrigger(sched, nil, base, base.Add(24*time.Hour))
+		require.NotNil(t, due)
+		assert.Equal(t, base.Add(3*time.Hour), due.UTC())
+	})
+
+	t.Run("reports no trigger when the schedule is exhausted at once", func(t *testing.T) {
+		sched := exhaustingSchedule{base: base, count: 0}
+		due, _ := dueTrigger(sched, nil, base, base.Add(24*time.Hour))
+		assert.Nil(t, due)
 	})
 }
