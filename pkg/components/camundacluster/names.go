@@ -59,6 +59,12 @@ const (
 	// is in flight, next to the active one under AdminPasswordKey. The
 	// workloads never read it.
 	AdminPendingPasswordKey = "password-pending"
+	// AdminPendingRotationKey holds the rotation value that staged the
+	// password under AdminPendingPasswordKey. The two travel together, so a
+	// promote records the request that produced the password it promotes,
+	// even when the spec changed while the rotation was in flight. The
+	// workloads never read it.
+	AdminPendingRotationKey = "password-pending-rotation"
 	// AdminRotationKey holds the spec.auth.basic.passwordRotation value that
 	// produced the password under AdminPasswordKey. It travels with the
 	// password, in the same apply, so the operator always knows which

@@ -25,6 +25,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -242,6 +243,91 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(failure.reason).To(
 			Equal(v1.ReasonConnectionFailed), "a cluster that went away must not read as bad credentials",
 		)
+	})
+
+	It("records the rotation that staged the pending password, not the spec value of today", func() {
+		ns := newNamespace()
+		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-bound", Namespace: ns}}
+		createSecret(ns, components.AdminSecretName(cluster), map[string]string{
+			components.AdminUsernameKey:        components.AdminUsername,
+			components.AdminPasswordKey:        "active-password",
+			components.AdminPendingPasswordKey: "pending-password",
+			components.AdminPendingRotationKey: "round-1",
+		})
+		seedClusterUser("active-password")
+
+		// The user cleared the field while the rotation was in flight. The
+		// password still changes on the cluster, so the request that staged
+		// it is what the operator must record.
+		in := components.Input{
+			Cluster: cluster,
+			Effective: components.Effective{
+				CamundaClusterSpec: v1.CamundaClusterSpec{
+					Version: "8.9.9",
+					Auth:    &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: ""}},
+				},
+			},
+		}
+		reconciler := &CamundaClusterReconciler{
+			APIReader:     k8sClient,
+			EventRecorder: events.NewFakeRecorder(10),
+			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
+				endpoint, _ := userAPIEndpoint.Load().(string)
+				return endpoint
+			},
+		}
+
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.failure).To(BeNil())
+		Expect(cred.password.Value).To(Equal("pending-password"))
+		Expect(cred.pending).To(BeEmpty())
+		Expect(cred.rotation).To(Equal("round-1"), "a cleared field must not lose the applied request")
+	})
+
+	It("hashes the password it is about to publish on a cluster with no Secret", func() {
+		cluster := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cc-fresh", Namespace: newNamespace()},
+		}
+		in := components.Input{Cluster: cluster, Effective: components.Effective{}}
+		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
+
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.password.Value).NotTo(BeEmpty())
+		Expect(cred.published).To(
+			Equal(cred.password.Value),
+			"connectors would otherwise roll again as soon as the first Secret lands",
+		)
+	})
+
+	It("reports what the cluster refused, and retries only a stale password", func() {
+		cluster := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cc-refused", Namespace: newNamespace()},
+		}
+		in := components.Input{
+			Cluster:   cluster,
+			Effective: components.Effective{CamundaClusterSpec: v1.CamundaClusterSpec{Version: "8.9.9"}},
+		}
+		reconciler := &CamundaClusterReconciler{
+			APIReader: k8sClient,
+			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
+				endpoint, _ := userAPIEndpoint.Load().(string)
+				return endpoint
+			},
+		}
+
+		// The cluster refuses the profile itself, not the credentials. The
+		// operator must report that answer, not hide it behind the 401 of a
+		// retry that cannot help here.
+		seedClusterUser("active-password")
+		users.RefuseNext(1, "the profile is not acceptable")
+
+		failure := reconciler.updateAdminPassword(ctx, cluster, in, "active-password", "pending-password")
+		Expect(failure).NotTo(BeNil())
+		Expect(failure.reason).To(Equal(v1.ReasonRejected))
+		Expect(failure.message).To(ContainSubstring("the profile is not acceptable"))
+		Expect(users.UpdateCalls()).To(Equal(1), "a refusal that is not a stale password must not retry")
 	})
 
 	It("records a requested rotation only while the cluster never published an admin Secret", func() {

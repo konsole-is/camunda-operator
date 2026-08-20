@@ -33,6 +33,25 @@ import (
 // adminComponentName is the ocf name of the admin Secret component.
 const adminComponentName = "admin-secret"
 
+// AdminSecretState is everything the admin Secret publishes about the admin
+// credential: the active password, and the bookkeeping of a rotation. The
+// four travel in one apply, so the record of which request produced a
+// password can never disagree with the password beside it. An empty
+// bookkeeping value leaves its key out.
+type AdminSecretState struct {
+	// Password is the active password, under AdminPasswordKey.
+	Password credentials.Password
+	// PendingPassword is the requested password of a rotation in flight,
+	// under AdminPendingPasswordKey.
+	PendingPassword string
+	// PendingRotation is the rotation value that staged PendingPassword,
+	// under AdminPendingRotationKey.
+	PendingRotation string
+	// Rotation is the rotation value that produced Password, under
+	// AdminRotationKey.
+	Rotation string
+}
+
 // AdminSecretComponent renders the admin credentials Secret of a basic-auth
 // cluster: <name>-camunda-admin with the keys username (admin) and password.
 // The component is gated on enabled (basic authentication): when disabled it
@@ -62,19 +81,20 @@ const adminComponentName = "admin-secret"
 func AdminSecretComponent(
 	cluster *v1.CamundaCluster,
 	enabled bool,
-	password credentials.Password,
-	pendingPassword string,
-	rotation string,
+	state AdminSecretState,
 ) (*component.Component, error) {
 	data := map[string][]byte{
 		AdminUsernameKey: []byte(AdminUsername),
-		AdminPasswordKey: []byte(password.Value),
+		AdminPasswordKey: []byte(state.Password.Value),
 	}
-	if pendingPassword != "" {
-		data[AdminPendingPasswordKey] = []byte(pendingPassword)
-	}
-	if rotation != "" {
-		data[AdminRotationKey] = []byte(rotation)
+	for key, value := range map[string]string{
+		AdminPendingPasswordKey: state.PendingPassword,
+		AdminPendingRotationKey: state.PendingRotation,
+		AdminRotationKey:        state.Rotation,
+	} {
+		if value != "" {
+			data[key] = []byte(value)
+		}
 	}
 
 	admin, err := secret.NewBuilder(&corev1.Secret{
@@ -82,7 +102,7 @@ func AdminSecretComponent(
 			Name:        AdminSecretName(cluster),
 			Namespace:   cluster.Namespace,
 			Labels:      labels.Managed(labels.Cluster(cluster.Name), adminComponentName),
-			Annotations: password.PreconditionAnnotations(),
+			Annotations: state.Password.PreconditionAnnotations(),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: data,

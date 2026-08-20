@@ -78,7 +78,11 @@ func assertGoldens(t *testing.T, dir string, in Input) {
 	}
 
 	if ResolveAuth(in).Method == v1.AuthenticationMethodBasic {
-		admin, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: goldenPassword}, "", "")
+		admin, err := AdminSecretComponent(
+			in.Cluster,
+			true,
+			AdminSecretState{Password: credentials.Password{Value: goldenPassword}},
+		)
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "admin-secret.yaml"), admin,
@@ -322,7 +326,11 @@ func TestAdminSecretComponentCarriesThePassword(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureMinimal(t)
-	comp, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: "s3cret"}, "", "")
+	comp, err := AdminSecretComponent(
+		in.Cluster,
+		true,
+		AdminSecretState{Password: credentials.Password{Value: "s3cret"}},
+	)
 	require.NoError(t, err)
 	assert.Equal(
 		t,
@@ -348,7 +356,7 @@ func TestAdminSecretComponentCarriesTheApplyPrecondition(t *testing.T) {
 
 	in := fixtureMinimal(t)
 	reused := credentials.Password{Value: "s3cret", SourceUID: "uid-1"}
-	comp, err := AdminSecretComponent(in.Cluster, true, reused, "", "")
+	comp, err := AdminSecretComponent(in.Cluster, true, AdminSecretState{Password: reused})
 	require.NoError(t, err)
 
 	objects := previewObjects(t, comp)
@@ -377,36 +385,43 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		pending  string
-		rotation string
-		want     map[string]string
-		absent   []string
+		name            string
+		pending         string
+		pendingRotation string
+		rotation        string
+		want            map[string]string
+		absent          []string
 	}{
 		{
-			name:    "a rotation in flight publishes the pending password",
-			pending: "n3xt",
-			want:    map[string]string{"password-pending": "n3xt"},
-			absent:  []string{"password-rotation"},
+			name:            "a rotation in flight publishes the pending password and the request",
+			pending:         "n3xt",
+			pendingRotation: "2026-09",
+			want: map[string]string{
+				"password-pending": "n3xt", "password-pending-rotation": "2026-09",
+			},
+			absent: []string{"password-rotation"},
 		},
 		{
 			name:     "an applied rotation travels with the password it answers",
 			rotation: "2026-08",
 			want:     map[string]string{"password-rotation": "2026-08"},
-			absent:   []string{"password-pending"},
+			absent:   []string{"password-pending", "password-pending-rotation"},
 		},
 		{
-			name:   "a cluster that never rotated carries neither key",
-			absent: []string{"password-pending", "password-rotation"},
+			name:   "a cluster that never rotated carries no bookkeeping",
+			absent: []string{"password-pending", "password-pending-rotation", "password-rotation"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := fixtureMinimal(t)
-			comp, err := AdminSecretComponent(
-				in.Cluster, true, credentials.Password{Value: "s3cret"}, tt.pending, tt.rotation,
-			)
+			comp, err := AdminSecretComponent(in.Cluster, true, AdminSecretState{
+				Password:        credentials.Password{Value: "s3cret"},
+				PendingPassword: tt.pending,
+				PendingRotation: tt.pendingRotation,
+				Rotation:        tt.rotation,
+			})
 			require.NoError(t, err)
 
 			objects := previewObjects(t, comp)

@@ -109,6 +109,7 @@ func TestUpdateUserPasswordReportsAnEmailThatTheClusterRefuses(t *testing.T) {
 	user.Email = "admin@localhost"
 	err := client.UpdateUserPassword(context.Background(), user, "new-password")
 	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.NotErrorIs(t, err, camundaadmin.ErrUnauthenticated, "another password answers this the same way")
 	assert.Contains(t, err.Error(), "is not valid")
 
 	assert.Equal(t, currentPassword, server.Password("admin"), "a refused update changes nothing")
@@ -130,6 +131,7 @@ func TestUpdateUserPasswordReportsARejectedCall(t *testing.T) {
 
 	err := client.UpdateUserPassword(context.Background(), adminUser, "new-password")
 	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.ErrorIs(t, err, camundaadmin.ErrUnauthenticated, "a caller with a second password may retry")
 	assert.Contains(t, err.Error(), "bad credentials")
 
 	assert.Equal(t, "changed-out-of-band", server.Password("admin"))

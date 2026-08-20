@@ -10,7 +10,7 @@ If you want the whole picture in one place, read [A complete OIDC example](#a-co
 
 Under basic authentication the orchestration cluster stores its users itself, and every caller sends a username and a password. The operator creates the first administrator for you. The user is named `admin` and is a member of the `admin` role. You manage every other user in the Admin web application.
 
-The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation: `password-rotation` names the request that the current password answers, and `password-pending` appears only while a rotation is in flight. Do not read those two keys; they are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
+The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation: `password-rotation` names the request that the current password answers, and `password-pending` with `password-pending-rotation` appear only while a rotation is in flight. Do not read those keys; they are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
 
 The connectors runtime authenticates against the cluster with the same user and password. You configure nothing for it.
 

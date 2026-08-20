@@ -54,6 +54,11 @@ type adminCredential struct {
 	// pending is the requested password of an in-flight rotation, published
 	// under the pending key. Empty when no rotation is in flight.
 	pending string
+	// pendingRotation is the rotation value that staged pending. It travels
+	// with it, so a promote records the request that produced the password
+	// it promotes even when the spec changed, or was cleared, while the
+	// rotation was in flight.
+	pendingRotation string
 	// rotation is the passwordRotation value that the admin Secret publishes
 	// after this reconcile, under the rotation key, beside the password it
 	// answers. The Secret component writes the two together.
@@ -164,18 +169,24 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// deleted Secret, so the next reconcile takes the request to the user
 		// API and reports Rejected there.
 		//
-		// published stays empty: the Secret holds no password yet, so the
-		// connectors of a new cluster hash on "" for one reconcile. They are
-		// being created in that reconcile anyway.
+		// published is the password of this apply, not the empty value that
+		// the Secret holds now: connectors would otherwise hash on "" and
+		// roll again as soon as the first Secret lands. Hashing it early is
+		// safe only here. A failed apply leaves no Secret at all, and the
+		// next reconcile takes this branch again and generates another
+		// password, so the hash keeps moving until one lands. It can never
+		// stall on a password that the Secret does not hold.
 		rotation := ""
 		if meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady) == nil {
 			rotation = requested
 		}
 
-		return adminCredential{password: credentials.Password{Value: value}, rotation: rotation}, nil
+		return adminCredential{
+			password: credentials.Password{Value: value}, published: value, rotation: rotation,
+		}, nil
 	}
 
-	if pending == "" && (requested == "" || requested == applied) {
+	if pending.password == "" && (requested == "" || requested == applied) {
 		return adminCredential{
 			password: current, published: current.Value, rotation: applied, publishedRotation: applied,
 		}, nil
@@ -185,13 +196,14 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		return adminCredential{
 			password:          current,
 			published:         current.Value,
-			pending:           pending,
+			pending:           pending.password,
+			pendingRotation:   pending.rotation,
 			rotation:          applied,
 			publishedRotation: applied,
 		}, nil
 	}
 
-	if pending == "" {
+	if pending.password == "" {
 		value, err := credentials.NewPassword()
 		if err != nil {
 			return adminCredential{}, err
@@ -201,16 +213,18 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			password:          current,
 			published:         current.Value,
 			pending:           value,
+			pendingRotation:   requested,
 			rotation:          applied,
 			publishedRotation: applied,
 		}, nil
 	}
 
-	if failure := r.updateAdminPassword(ctx, cluster, in, current.Value, pending); failure != nil {
+	if failure := r.updateAdminPassword(ctx, cluster, in, current.Value, pending.password); failure != nil {
 		return adminCredential{
 			password:          current,
 			published:         current.Value,
-			pending:           pending,
+			pending:           pending.password,
+			pendingRotation:   pending.rotation,
 			rotation:          applied,
 			publishedRotation: applied,
 			failure:           failure,
@@ -226,10 +240,14 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		"Rotated the admin password through the user API",
 	)
 
+	// The rotation that staged the pending password is what this promote
+	// applies, whatever the spec asks for now. A value that changed, or was
+	// cleared, while the call was in flight never loses the request that the
+	// cluster just accepted.
 	return adminCredential{
-		password:          credentials.Password{Value: pending, SourceUID: current.SourceUID},
+		password:          credentials.Password{Value: pending.password, SourceUID: current.SourceUID},
 		published:         current.Value,
-		rotation:          requested,
+		rotation:          pending.rotation,
 		publishedRotation: applied,
 	}, nil
 }
@@ -242,26 +260,37 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 func (r *CamundaClusterReconciler) readAdminSecret(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) (current credentials.Password, pending string, applied string, err error) {
+) (current credentials.Password, pending pendingRotation, applied string, err error) {
 	key := client.ObjectKey{Namespace: cluster.Namespace, Name: components.AdminSecretName(cluster)}
 
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return credentials.Password{}, "", "", nil
+			return credentials.Password{}, pendingRotation{}, "", nil
 		}
-		return credentials.Password{}, "", "", fmt.Errorf("reading Secret %q: %w", key, err)
+		return credentials.Password{}, pendingRotation{}, "", fmt.Errorf("reading Secret %q: %w", key, err)
 	}
 
 	value := string(secret.Data[components.AdminPasswordKey])
 	if value == "" {
-		return credentials.Password{}, "", "", nil
+		return credentials.Password{}, pendingRotation{}, "", nil
 	}
 
 	return credentials.Password{Value: value, SourceUID: secret.UID},
-		string(secret.Data[components.AdminPendingPasswordKey]),
+		pendingRotation{
+			password: string(secret.Data[components.AdminPendingPasswordKey]),
+			rotation: string(secret.Data[components.AdminPendingRotationKey]),
+		},
 		string(secret.Data[components.AdminRotationKey]),
 		nil
+}
+
+// pendingRotation is the rotation that the admin Secret has staged but not
+// applied: the requested password and the value that asked for it. The zero
+// value is no rotation in flight.
+type pendingRotation struct {
+	password string
+	rotation string
 }
 
 // updateAdminPassword sets pending as the password of the admin user through
@@ -286,12 +315,17 @@ func (r *CamundaClusterReconciler) updateAdminPassword(
 	}
 
 	err := putAdminPassword(ctx, endpoint, in.Effective.Version, active, pending)
-	if errors.Is(err, camundaadmin.ErrRejected) {
-		// A rejected first call is expected when the cluster already holds
-		// the pending password, so the retry decides the outcome of this
-		// reconcile and its own failure is the one to report. A cluster that
-		// goes away during the retry must read ConnectionFailed and clear on
-		// its own, not the bad credentials that the first call expects.
+	if errors.Is(err, camundaadmin.ErrUnauthenticated) {
+		// Only a refused credential is worth a second password: the cluster
+		// already holds the pending one when an earlier reconcile got its
+		// call accepted and died before the promote. Every other refusal,
+		// such as a profile that the cluster does not accept, answers the
+		// same way to both passwords, and retrying would replace its message
+		// with the bad credentials of a password that is not active yet.
+		//
+		// The retry decides this reconcile, so its own failure is the one to
+		// report: a cluster that goes away during the retry must read
+		// ConnectionFailed and clear on its own.
 		err = putAdminPassword(ctx, endpoint, in.Effective.Version, pending, pending)
 	}
 

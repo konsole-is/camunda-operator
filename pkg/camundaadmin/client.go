@@ -67,6 +67,13 @@ var (
 	ErrUnreachable = errors.New("management API unreachable")
 	ErrRejected    = errors.New("management API rejected the call")
 	ErrConflict    = errors.New("a backup with the same or a higher id already exists")
+	// ErrUnauthenticated marks the one rejection that another credential can
+	// answer: the cluster refused the call with 401 because the password is
+	// wrong. It travels with ErrRejected, so a caller that only separates a
+	// rejected call from an unreachable one is unaffected, and a caller that
+	// holds a second password can tell a stale credential from a call that
+	// the cluster refused on its content.
+	ErrUnauthenticated = errors.New("the cluster refused the credentials")
 )
 
 // State is the aggregated state of a backup as the management API reports

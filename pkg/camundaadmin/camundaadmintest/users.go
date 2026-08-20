@@ -46,8 +46,10 @@ type userRecord struct {
 type UserAPI struct {
 	adminhttptest.Fake
 
-	users       map[string]userRecord
-	updateCalls int
+	users         map[string]userRecord
+	updateCalls   int
+	refusals      int
+	refusalReason string
 }
 
 // NewUserAPI starts a fake user API with no users. Close it with Close.
@@ -56,6 +58,27 @@ func NewUserAPI() *UserAPI {
 	api.Start(api.handle)
 
 	return api
+}
+
+// RefuseNext makes the next n updates answer 400 with reason, the way the
+// cluster refuses a profile it does not accept. It is not an authentication
+// failure: the credentials are good and a retry with another password can
+// never help.
+func (s *UserAPI) RefuseNext(n int, reason string) {
+	s.Lock()
+	defer s.Unlock()
+	s.refusals, s.refusalReason = n, reason
+}
+
+// refusing consumes one injected refusal and reports whether the handler
+// must answer with one. It runs under the lock of the request.
+func (s *UserAPI) refusing() (string, bool) {
+	if s.refusals <= 0 {
+		return "", false
+	}
+	s.refusals--
+
+	return s.refusalReason, true
 }
 
 // SetUser stores or replaces a user, so a caller can authenticate as it and
@@ -113,6 +136,10 @@ func (s *UserAPI) handle(w http.ResponseWriter, r *http.Request) {
 	s.updateCalls++
 
 	if s.Dropping(w, "updateUser") {
+		return
+	}
+	if reason, refuse := s.refusing(); refuse {
+		problem(w, http.StatusBadRequest, reason)
 		return
 	}
 	if s.Failing("updateUser") {

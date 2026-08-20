@@ -98,8 +98,11 @@ func NewUserClient(binding UserBinding) (*UserClient, error) {
 
 // UpdateUserPassword sets the password of user through PUT
 // /v2/users/{username}, authenticated with the credentials of the client. A
-// wrong credential is ErrRejected, so a caller that holds a possibly stale
-// password can tell a rejected call from an unreachable cluster. An empty
+// wrong credential is ErrUnauthenticated, which travels with ErrRejected;
+// every other refusal, such as a profile that the cluster does not accept,
+// is ErrRejected alone. A caller that holds a second password retries on the
+// first and reports the second, whose message carries the answer of the
+// cluster. An empty
 // password is an error before any call: the endpoint reads an empty
 // password as "keep the current one", so the call would report success and
 // change nothing.
@@ -117,12 +120,15 @@ func (c *UserClient) UpdateUserPassword(ctx context.Context, user User, password
 		return fmt.Errorf("encoding request: %w", err)
 	}
 
-	_, _, err = c.api.Do(ctx, adminhttp.Request{
+	_, status, err := c.api.Do(ctx, adminhttp.Request{
 		Method: http.MethodPut,
 		Path:   "/v2/users/" + url.PathEscape(user.Username),
 		Body:   body,
 		Accept: adminhttp.Status(http.StatusOK),
 	})
+	if err != nil && status == http.StatusUnauthorized {
+		return fmt.Errorf("%w: %w", ErrUnauthenticated, err)
+	}
 
 	return err
 }
