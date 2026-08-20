@@ -37,6 +37,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
+	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
 // clockSlack is how far the exporter clock of the database can run ahead of
@@ -78,7 +79,7 @@ var errNoExporterTable = errors.New("the database has no exporter position table
 func (r *Reconciler) enterDatabaseState(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
-) (hold, error) {
+) (restore.Outcome, error) {
 	resolved, failure, err := r.resolve(ctx, pitr)
 	if err != nil {
 		return r.resolveFailed(pitr, err)
@@ -108,10 +109,10 @@ func (r *Reconciler) validateDatabaseState(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 	resolved *chain,
-) (hold, error) {
+) (restore.Outcome, error) {
 	positions, failure, err := r.readState(ctx, resolved)
 	if err != nil {
-		return settle, err
+		return restore.Outcome{}, err
 	}
 	if failure != nil {
 		if failure.Reason == v1.ReasonDatabaseNotRestored {
@@ -128,7 +129,7 @@ func (r *Reconciler) validateDatabaseState(
 	); failure != nil {
 		return r.waiting(pitr, failure), nil
 	}
-	recovered(pitr)
+	restore.Recovered(&pitr.Status.RestoreProgress)
 
 	pitr.Status.Phase = v1.PointInTimeRestoreRestoringPrimaryStorage
 	r.progressing(pitr, fmt.Sprintf(
@@ -136,7 +137,7 @@ func (r *Reconciler) validateDatabaseState(
 		pitr.Spec.Timestamp.UTC().Format(time.RFC3339),
 	))
 
-	return shortly, nil
+	return restore.Outcome{Wait: restore.Shortly}, nil
 }
 
 // readState opens the logical database of the cluster with the application

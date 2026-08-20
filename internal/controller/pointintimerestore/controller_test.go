@@ -28,6 +28,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -40,6 +41,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -755,6 +757,115 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		pitr := createRestore(w)
 
 		expectAdmitted(pitr, w)
+	})
+})
+
+// holdCluster creates a relational backup of the cluster and gives it the
+// claim on that cluster, as the backup controller does when its admission
+// passes.
+func holdCluster(w *world) *v1.LogicalBackupRDBMS {
+	GinkgoHelper()
+	backup := &v1.LogicalBackupRDBMS{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "lbrdbms-" + strings.ToLower(utilrand.String(6)), Namespace: w.namespace,
+		},
+		Spec: v1.LogicalBackupRDBMSSpec{ClusterRef: v1.ClusterRef{Name: w.cluster.Name}},
+	}
+	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+
+	holder, err := clusterclaim.Claim(
+		ctx, k8sClient, k8sClient, w.namespace, w.cluster.Name,
+		clusterclaim.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID},
+	)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(holder).To(BeEmpty(), "the backup must hold the claim before the restore looks")
+
+	return backup
+}
+
+// claimHolder returns the identity that the claim Lease of the cluster
+// records, or "" when no Lease exists.
+func claimHolder(w *world) string {
+	GinkgoHelper()
+	var lease coordinationv1.Lease
+	key := types.NamespacedName{
+		Namespace: w.namespace, Name: clusterclaim.ClaimLeaseName(w.cluster.Name),
+	}
+	err := k8sClient.Get(ctx, key, &lease)
+	if apierrors.IsNotFound(err) {
+		return ""
+	}
+	Expect(err).NotTo(HaveOccurred())
+
+	annotations := lease.GetAnnotations()
+
+	return annotations[clusterclaim.ClaimHolderKindAnnotation] + "/" +
+		annotations[clusterclaim.ClaimHolderNameAnnotation]
+}
+
+var _ = Describe("PointInTimeRestore cluster claim", func() {
+	// One backup or restore of a cluster runs at a time. A restore that
+	// started while a backup runs would erase the volumes under it.
+	It("holds a restore whose cluster another operation holds, and touches nothing", func() {
+		w := createWorld()
+		backup := holdCluster(w)
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonClusterClaimed)
+		Expect(message).To(ContainSubstring(backup.Name))
+		expectClaimsUntouched(w)
+		Expect(jobsOf(pitr)).To(BeEmpty())
+		Expect(claimHolder(w)).To(Equal("LogicalBackupRDBMS/" + backup.Name))
+	})
+
+	// Nothing bounds the hold, and no spec change ends it. The restore takes
+	// the claim over as soon as the holder reaches a terminal phase.
+	It("starts on its own once the holder finishes", func() {
+		w := createWorld()
+		backup := holdCluster(w)
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonClusterClaimed)
+
+		Eventually(func(g Gomega) {
+			var current v1.LogicalBackupRDBMS
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &current)).To(Succeed())
+			current.Status.Phase = v1.LogicalBackupCompleted
+			g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectAdmitted(pitr, w)
+		Eventually(func() string {
+			return claimHolder(w)
+		}, timeout, interval).Should(Equal("PointInTimeRestore/" + pitr.Name))
+	})
+
+	It("gives the claim back when it completes", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+		Expect(claimHolder(w)).To(Equal("PointInTimeRestore/" + pitr.Name))
+
+		for ordinal := range int32(brokerCount) {
+			markJob(pitr, ordinal, batchv1.JobComplete)
+		}
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(claimHolder(w)).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("gives the claim back when it fails", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		markJob(pitr, 0, batchv1.JobFailed)
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(claimHolder(w)).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
 	})
 })
 
