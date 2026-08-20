@@ -38,6 +38,13 @@ A contract carries connection details and credential references. The operator va
 | [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) | Namespaced | One backup of a cluster on Elasticsearch. |
 | [LogicalBackupRDBMS](logicalbackuprdbms.md) | Namespaced | One backup of a cluster on a relational database. |
 
+## Restore
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
+| [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) | Namespaced | Restore one Elasticsearch backup into one suspended cluster. |
+| [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
+
 ## How the kinds relate
 
 Solid arrows mean "creates". Dotted arrows mean "references".
@@ -82,7 +89,6 @@ These CRDs are installed with the operator, but the operator does not act on the
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
 | [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule. |
-| [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 | [CamundaOptimize](camundaoptimize.md) | Namespaced | Run Optimize next to a cluster. |
 | [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
 | [PVCAutoResize](pvcautoresize.md) | Namespaced | Grow the volumes of a cluster on their own. |

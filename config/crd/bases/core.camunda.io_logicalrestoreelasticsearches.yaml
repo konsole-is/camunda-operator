@@ -1,0 +1,261 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: logicalrestoreelasticsearches.core.camunda.io
+spec:
+  group: core.camunda.io
+  names:
+    kind: LogicalRestoreElasticsearch
+    listKind: LogicalRestoreElasticsearchList
+    plural: logicalrestoreelasticsearches
+    shortNames:
+    - lres
+    singular: logicalrestoreelasticsearch
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.backupRef.name
+      name: Backup
+      type: string
+    - jsonPath: .spec.targetClusterRef.name
+      name: Target
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LogicalRestoreElasticsearch restores one completed
+          LogicalBackupElasticsearch into one suspended CamundaCluster. It deletes
+          the Camunda indices of the target, restores every snapshot of the backup
+          into its Elasticsearch, gives the brokers empty data volumes, and runs the
+          Camunda restore application once per broker. The operator only reads
+          spec.suspend of the target. Whoever owns the cluster suspends it before the
+          restore and unsuspends it after.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              spec names the backup to restore and the cluster to restore into. It is
+              immutable: a restore is one-shot, retried by creating a new resource.
+            properties:
+              backupRef:
+                description: |-
+                  backupRef references the completed LogicalBackupElasticsearch to
+                  restore from. It lives in the namespace of this restore.
+                properties:
+                  name:
+                    description: Name of the backup, in the namespace of this restore.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              targetClusterRef:
+                description: |-
+                  targetClusterRef references the CamundaCluster to restore into. It must
+                  name the cluster the backup was taken from. The restore application
+                  reads the primary-storage backup under the prefix of the cluster it
+                  runs as. The cluster must stay suspended for the whole restore.
+                properties:
+                  name:
+                    description: Name of the CamundaCluster, in the namespace of this
+                      object.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - backupRef
+            - targetClusterRef
+            type: object
+            x-kubernetes-validations:
+            - message: 'spec is immutable: a restore is one-shot, retried by creating
+                a new resource'
+              rule: self == oldSelf
+          status:
+            description: status defines the observed state of the restore
+            properties:
+              backupId:
+                description: |-
+                  backupId is the backup that the restore reads, pinned when the restore
+                  starts. The backup resource can be deleted afterwards without moving
+                  the restore to another set of artifacts.
+                format: int64
+                type: integer
+              brokers:
+                description: |-
+                  Brokers is the broker count read from the live broker StatefulSet and
+                  recorded before the restore deletes a volume. It fixes how many volumes
+                  are recreated and how many Jobs run.
+                format: int32
+                type: integer
+              completionTime:
+                description: CompletionTime is when the restore reached a terminal
+                  phase.
+                format: date-time
+                type: string
+              conditions:
+                description: Conditions represent the current state of the restore.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureMessage:
+                description: |-
+                  FailureMessage names the failing phase and its error. The Ready
+                  condition carries the same message.
+                type: string
+              firstFailedAt:
+                description: |-
+                  FirstFailedAt is when a dependency of the running restore first stopped
+                  resolving. The operator measures the mid-run grace from it. It stays
+                  set once the restore starts, because a dependency that flaps must not
+                  reset the grace.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  phase of the restore. It is the resume marker: a reconcile that
+                  re-enters after a crash continues at the recorded phase.
+                enum:
+                - Pending
+                - ValidatingCompatibility
+                - RestoringSecondaryStorage
+                - RestoringPrimaryStorage
+                - Completed
+                - Failed
+                type: string
+              primaryJobNames:
+                description: |-
+                  PrimaryJobNames are the per-broker restore-application Jobs, in broker
+                  order. The operator records them before it applies the Jobs, so the
+                  record covers every Job that the next look finds.
+                items:
+                  type: string
+                type: array
+              recreatedClaims:
+                description: |-
+                  RecreatedClaims names the broker data claims that the restore deleted
+                  and created again. A reconcile that re-enters does not delete a claim
+                  twice.
+                items:
+                  type: string
+                type: array
+              repository:
+                description: |-
+                  repository is the Elasticsearch snapshot repository that the restore
+                  reads from, on the Elasticsearch of the target.
+                type: string
+              restoredSnapshots:
+                description: |-
+                  restoredSnapshots names every snapshot that the restore asked
+                  Elasticsearch to restore. It is also the resume marker of the
+                  secondary-storage phase: a look that finds it deletes no index again.
+                items:
+                  type: string
+                type: array
+              targetClusterUID:
+                description: |-
+                  TargetClusterUID pins the identity of the target cluster. A cluster
+                  that is deleted and created again under the same name is another
+                  cluster, and this restore is not its restore.
+                type: string
+              terminalReason:
+                description: |-
+                  TerminalReason is the Ready reason recorded at the terminal transition.
+                  The operator stages the terminal condition again from this field, so a
+                  write conflict cannot replace the reason with a weaker one.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

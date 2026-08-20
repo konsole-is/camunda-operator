@@ -469,7 +469,12 @@ func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
 func TestJobNameInfixesMatchTheCRDShortNames(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, map[string]string{labels.PointInTimeRestoreKey: "pitr"}, jobKindInfixes)
+	assert.Equal(
+		t, map[string]string{
+			labels.LogicalRestoreElasticsearchKey: "lres",
+			labels.PointInTimeRestoreKey:          "pitr",
+		}, jobKindInfixes,
+	)
 }
 
 // A consumer that builds a selector by hand misses every Job of a restore
@@ -633,6 +638,33 @@ func TestJobGoldenBroker2(t *testing.T) {
 
 	golden.AssertYAML(
 		t, "testdata/golden/pitr-broker-2.yaml", jobPreview{in},
+		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
+	)
+}
+
+// A restore of another kind carries its own owner label, its own Job name,
+// and its own argument. Everything the Job copies off the broker stays the
+// same.
+func TestJobGoldenLogicalRestoreElasticsearch(t *testing.T) {
+	t.Parallel()
+
+	in := restoreInput()
+	in.Owner = &v1.LogicalRestoreElasticsearch{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster-lres",
+			Namespace: "ns",
+			UID:       "2d8e5f70-3b4c-5d6e-9f0a-1b2c3d4e5f60",
+		},
+		Spec: v1.LogicalRestoreElasticsearchSpec{
+			BackupRef:        v1.LogicalBackupRef{Name: "my-cluster-backup"},
+			TargetClusterRef: v1.ClusterRef{Name: "my-cluster"},
+		},
+	}
+	in.OwnerLabel = labels.LogicalRestoreElasticsearch("my-cluster-lres")
+	in.Args = []string{"--backupId=1772001869309"}
+
+	golden.AssertYAML(
+		t, "testdata/golden/lres-broker-0.yaml", jobPreview{in},
 		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
 	)
 }

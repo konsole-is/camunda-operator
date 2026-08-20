@@ -40,6 +40,9 @@ const (
 	LogicalBackupElasticsearchKey = "camunda.io/logical-backup-elasticsearch"
 	// LogicalBackupRDBMSKey names the owning LogicalBackupRDBMS.
 	LogicalBackupRDBMSKey = "camunda.io/logical-backup-rdbms"
+	// LogicalRestoreElasticsearchKey names the owning
+	// LogicalRestoreElasticsearch.
+	LogicalRestoreElasticsearchKey = "camunda.io/logical-restore-elasticsearch"
 	// BackupScheduleKey names the owning BackupSchedule.
 	BackupScheduleKey = "camunda.io/backup-schedule"
 	// PointInTimeRestoreKey names the owning PointInTimeRestore.
@@ -86,6 +89,12 @@ func LogicalBackupElasticsearch(name string) Owner {
 // LogicalBackupRDBMS returns the Owner of resources that a LogicalBackupRDBMS
 // with the given name renders.
 func LogicalBackupRDBMS(name string) Owner { return Owner{Key: LogicalBackupRDBMSKey, Name: name} }
+
+// LogicalRestoreElasticsearch returns the Owner of resources that a
+// LogicalRestoreElasticsearch with the given name renders.
+func LogicalRestoreElasticsearch(name string) Owner {
+	return Owner{Key: LogicalRestoreElasticsearchKey, Name: name}
+}
 
 // BackupSchedule returns the Owner of resources that a BackupSchedule with
 // the given name renders.

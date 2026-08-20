@@ -105,9 +105,11 @@ nav:
       - Backup:
           - LogicalBackupElasticsearch: crds/logicalbackupelasticsearch.md
           - LogicalBackupRDBMS: crds/logicalbackuprdbms.md
+      - Restore:
+          - LogicalRestoreElasticsearch: crds/logicalrestoreelasticsearch.md
+          - PointInTimeRestore: crds/pointintimerestore.md
       - Planned:
           - BackupSchedule: crds/backupschedule.md
-          - PointInTimeRestore: crds/pointintimerestore.md
           - CamundaOptimize: crds/camundaoptimize.md
           - CamundaManagementCluster: crds/camundamanagementcluster.md
           - PVCAutoResize: crds/pvcautoresize.md

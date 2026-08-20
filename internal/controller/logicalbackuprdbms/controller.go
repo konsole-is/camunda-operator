@@ -179,7 +179,7 @@ type LogicalBackupRDBMSReconciler struct {
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // The cluster claim reads the resource of whichever kind holds the Lease,
 // to decide whether that holder still needs the cluster.
-// +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches;pointintimerestores,verbs=get
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile drives one backup to a terminal phase: admission, the dump Job,

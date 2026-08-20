@@ -51,6 +51,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
+	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestoreelasticsearch"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
@@ -372,6 +373,15 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "PVCAutoResize")
+		os.Exit(1)
+	}
+	if err := logicalrestoreelasticsearch.New(
+		mgr.GetClient(),
+		mgr.GetAPIReader(),
+		mgr.GetScheme(),
+		logicalrestoreelasticsearch.Options{},
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreElasticsearch")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

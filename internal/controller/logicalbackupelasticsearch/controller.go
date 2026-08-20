@@ -146,7 +146,7 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // The cluster claim reads the resource of whichever kind holds the Lease,
 // to decide whether that holder still needs the cluster.
-// +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get
+// +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches;pointintimerestores,verbs=get
 
 // Reconcile advances the backup by at most one step. The recorded step is
 // persisted before the next side effect, so a crash re-enters where it left

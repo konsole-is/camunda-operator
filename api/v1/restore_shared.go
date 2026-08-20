@@ -35,7 +35,8 @@ const (
 	// because the holder can be either.
 	ReasonClusterClaimed = "ClusterClaimed"
 	// ReasonIncompatibleTarget means that the target cluster cannot hold the
-	// backup: the secondary storage types differ, the partition counts differ,
+	// backup: the target is not the cluster the backup was taken from, the
+	// secondary storage types differ, the partition counts differ,
 	// the backup bucket differs, or the Camunda versions break the version
 	// rule. Only a logical restore reports it.
 	ReasonIncompatibleTarget = "IncompatibleTarget"
