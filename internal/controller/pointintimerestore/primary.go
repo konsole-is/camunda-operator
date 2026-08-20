@@ -81,8 +81,8 @@ func (r *Reconciler) restorePrimaryStorage(
 // lets a Job start.
 //
 // The recreated volumes carry no owner reference to the restore. The
-// StatefulSet owns them, and an owner reference here would delete a live
-// broker volume as soon as somebody deletes the restore resource.
+// StatefulSet owns them, and an owner reference here deletes a live broker
+// volume as soon as somebody deletes the restore resource.
 func (r *Reconciler) recreateClaims(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
@@ -100,7 +100,7 @@ func (r *Reconciler) recreateClaims(
 	if err != nil {
 		// A malformed target is a render failure, not a wait. Nothing changes
 		// on its own, and the restore already left the volumes behind.
-		r.fail(pitr, v1.ReasonFailed, fmt.Sprintf("the broker volumes cannot be recreated: %s", err))
+		r.fail(pitr, fmt.Sprintf("the broker volumes cannot be recreated: %s", err))
 
 		return settle, nil
 	}
@@ -149,11 +149,16 @@ func (r *Reconciler) runJobs(
 	pitr *v1.PointInTimeRestore,
 	target *restore.Target,
 ) (hold, error) {
+	// The recorded names are the work of this restore. The live broker count
+	// can change while the restore runs. A Job derived from the new count
+	// writes to a volume that this restore never emptied, or it leaves a
+	// recorded broker without a Job.
 	done := 0
-	for ordinal := range target.Brokers {
-		job, err := r.ensureJob(ctx, pitr, target, ordinal)
+	for index, name := range pitr.Status.PrimaryJobNames {
+		ordinal := int32(index)
+		job, err := r.ensureJob(ctx, pitr, target, ordinal, name)
 		if errors.Is(err, errUnrecoverable) {
-			r.fail(pitr, v1.ReasonFailed, err.Error())
+			r.fail(pitr, err.Error())
 
 			return settle, nil
 		}
@@ -173,7 +178,7 @@ func (r *Reconciler) runJobs(
 		case concepts.CompletionStatusCompleted:
 			done++
 		case concepts.CompletionStatusFailing:
-			r.fail(pitr, v1.ReasonFailed, fmt.Sprintf(
+			r.fail(pitr, fmt.Sprintf(
 				"the restore of broker %d failed: %s", ordinal, status.Reason,
 			))
 
@@ -181,15 +186,15 @@ func (r *Reconciler) runJobs(
 		}
 	}
 
-	if done == int(target.Brokers) {
+	if done == len(pitr.Status.PrimaryJobNames) {
 		r.complete(pitr)
 
 		return settle, nil
 	}
 
 	// A pod that cannot start consumes no retry of its Job, so the Job stays
-	// active and reports nothing. Without this look the restore would wait
-	// without a bound on a missing Secret or an image that does not pull.
+	// active and reports nothing. Without this look the restore waits without a
+	// bound on a missing Secret or an image that does not pull.
 	stuck, err := podstate.Stuck(
 		ctx,
 		r.APIReader,
@@ -206,7 +211,8 @@ func (r *Reconciler) runJobs(
 	recovered(pitr)
 
 	r.progressing(pitr, fmt.Sprintf(
-		"the restore application runs: %d of %d brokers restored", done, target.Brokers,
+		"the restore application runs: %d of %d brokers restored",
+		done, len(pitr.Status.PrimaryJobNames),
 	))
 
 	// The watch on the owned Jobs carries the progress. The poll also looks at
@@ -215,8 +221,8 @@ func (r *Reconciler) runJobs(
 }
 
 // ensureJob returns the restore Job of one broker, and applies it when none
-// exists yet. It returns a nil Job when it just applied one: the fresh Job
-// reports nothing that the caller could track.
+// exists yet. It returns a nil Job when it just applied one: a fresh Job
+// reports nothing that the caller can track.
 //
 // The read is live and comes first, because spec.template of a Job is
 // immutable. A second apply of a Job that the API server already stamped is a
@@ -226,9 +232,10 @@ func (r *Reconciler) ensureJob(
 	pitr *v1.PointInTimeRestore,
 	target *restore.Target,
 	ordinal int32,
+	name string,
 ) (*batchv1.Job, error) {
 	owner := labels.PointInTimeRestore(pitr.Name)
-	key := types.NamespacedName{Namespace: pitr.Namespace, Name: restore.JobName(owner, ordinal)}
+	key := types.NamespacedName{Namespace: pitr.Namespace, Name: name}
 
 	var current batchv1.Job
 	err := r.APIReader.Get(ctx, key, &current)

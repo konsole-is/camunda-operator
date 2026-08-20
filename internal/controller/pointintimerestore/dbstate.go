@@ -27,6 +27,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -34,7 +35,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 )
 
-// clockSlack is how far the exporter clock of the database may run ahead of
+// clockSlack is how far the exporter clock of the database can run ahead of
 // spec.timestamp before the restore refuses to start. The database writes
 // LAST_UPDATED with its own clock, and the timestamp of the caller comes from
 // another one. One minute bounds an ordinary difference without hiding a
@@ -47,13 +48,20 @@ const clockSlack = time.Minute
 // The identifiers are unquoted on purpose. Camunda creates the table through
 // Liquibase without a quoting strategy, and its own mapper reads it unquoted
 // too, so PostgreSQL folds every name to lower case. A quoted upper-case name
-// would find no table at all. The query takes no identifier from a variable,
-// so it needs no quoting helper.
+// finds no table at all. The query takes no identifier from a variable, so it
+// needs no quoting helper.
 const exporterPositionQuery = `SELECT partition_id, last_updated FROM exporter_position`
 
 // undefinedTable is the SQLSTATE that PostgreSQL reports for a table that does
 // not exist.
 const undefinedTable = "42P01"
+
+// readTimeout bounds one read of the exporter positions, the connection and
+// the query together. The reconcile context carries no deadline, and
+// connect_timeout bounds only the handshake. A database that accepts the
+// connection and then stalls must not hold the worker, because one stalled
+// database then blocks every other restore.
+const readTimeout = 30 * time.Second
 
 // errNoExporterTable reports that the database carries no exporter position
 // table. An empty database is exactly the state that the check must catch, so
@@ -140,6 +148,12 @@ func (r *Reconciler) readState(
 		return nil, failure, err
 	}
 
+	// The whole read ends within readTimeout, the injected reader included.
+	// The deadline belongs to the caller, not to one implementation of the
+	// seam.
+	ctx, cancel := context.WithTimeout(ctx, readTimeout)
+	defer cancel()
+
 	positions, err := r.opts.ReadPositions(
 		ctx, pgbootstrap.Connection{
 			Host:     resolved.server.Spec.Host,
@@ -193,6 +207,8 @@ func decide(
 
 	latest := want.Add(slack)
 	missing := make([]string, 0, partitions)
+	var ahead *conditions.PreCheckFailure
+
 	for partition := int32(1); partition <= partitions; partition++ {
 		at := slices.IndexFunc(positions, func(p v1.PartitionPosition) bool {
 			return p.PartitionID == partition
@@ -203,8 +219,8 @@ func decide(
 			continue
 		}
 
-		if position := positions[at].LastUpdated.Time; position.After(latest) {
-			return &conditions.PreCheckFailure{
+		if position := positions[at].LastUpdated.Time; position.After(latest) && ahead == nil {
+			ahead = &conditions.PreCheckFailure{
 				Reason: v1.ReasonDatabaseNotRestored,
 				Message: fmt.Sprintf(
 					"the database is ahead of the requested point: partition %d last exported at %s, "+
@@ -218,6 +234,9 @@ func decide(
 		}
 	}
 
+	// A missing row outranks a row that is ahead. Both mean that the database
+	// must be restored again, and a message that names one cause at a time
+	// sends the reader back a second time.
 	if len(missing) > 0 {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonDatabaseNotRestored,
@@ -229,7 +248,98 @@ func decide(
 		}
 	}
 
+	return ahead
+}
+
+// javaOptionsVars are the environment variables that carry Java options to the
+// broker. Each of them can set the default time zone of the JVM.
+var javaOptionsVars = []string{"JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"}
+
+// utcZones are the zone names that make the wall clock of the broker the same
+// clock as spec.timestamp.
+var utcZones = []string{"UTC", "UTC0", "Etc/UTC", "Etc/UCT", "UCT", "Universal", "Zulu"}
+
+// brokerClockComparable reports why the operator cannot compare the exporter
+// position of the database with spec.timestamp, or nil when it can.
+//
+// The RDBMS exporter writes LAST_UPDATED with LocalDateTime.now() of the
+// broker JVM, into a column that carries no zone (Camunda 8.9,
+// RdbmsExporter.updatePositionInRdbms). The value is therefore the wall clock
+// of the broker, while spec.timestamp is an instant in UTC. The two are the
+// same clock only while the brokers run in UTC, which a container does by
+// default and which the operator never changes.
+//
+// A cluster can change it through spec.zeebe.extraEnv. A broker west of UTC
+// then writes a position that reads earlier than it is, a database that is
+// ahead of the requested point passes this check, and the cluster loses its
+// volumes. So a broker that names another zone, or a zone that the operator
+// cannot read, holds the restore instead.
+func brokerClockComparable(broker *corev1.Container) *conditions.PreCheckFailure {
+	for _, env := range broker.Env {
+		if env.Name == "TZ" {
+			if env.ValueFrom != nil {
+				return clockUnreadable(
+					"the broker container takes TZ from a reference, which only the kubelet resolves",
+				)
+			}
+			if !utc(env.Value) {
+				return clockUnreadable(fmt.Sprintf("the broker container runs with TZ %q", env.Value))
+			}
+		}
+
+		if !slices.Contains(javaOptionsVars, env.Name) {
+			continue
+		}
+		if env.ValueFrom != nil {
+			return clockUnreadable(fmt.Sprintf(
+				"the broker container takes %s from a reference, which only the kubelet resolves",
+				env.Name,
+			))
+		}
+		if zone, set := userTimezone(env.Value); set && !utc(zone) {
+			return clockUnreadable(fmt.Sprintf(
+				"the broker container runs with -Duser.timezone=%s in %s", zone, env.Name,
+			))
+		}
+	}
+
 	return nil
+}
+
+// clockUnreadable builds the hold of a broker whose clock the operator cannot
+// compare with spec.timestamp.
+func clockUnreadable(what string) *conditions.PreCheckFailure {
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonPitrUnavailable,
+		Message: fmt.Sprintf(
+			"%s. The database records the exporter position with the wall clock of the broker and no "+
+				"zone, so the operator can compare it with spec.timestamp only while the brokers run "+
+				"in UTC. Run the brokers in UTC, then create the restore again",
+			what,
+		),
+	}
+}
+
+// userTimezone returns the value of the last -Duser.timezone option in a Java
+// options string, and whether it names one at all.
+func userTimezone(options string) (string, bool) {
+	const flag = "-Duser.timezone="
+
+	zone := ""
+	set := false
+	for option := range strings.FieldsSeq(options) {
+		if after, found := strings.CutPrefix(option, flag); found {
+			zone, set = after, true
+		}
+	}
+
+	return zone, set
+}
+
+// utc reports whether zone names UTC. An empty value names no zone, and the
+// container then runs in UTC.
+func utc(zone string) bool {
+	return zone == "" || slices.Contains(utcZones, zone)
 }
 
 // readPositions is the production reader: it opens the logical database with

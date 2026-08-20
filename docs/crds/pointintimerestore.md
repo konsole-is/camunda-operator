@@ -49,7 +49,7 @@ The operator only reads `spec.suspend` of the cluster. It never writes it. You s
 | Phase | What happens |
 | --- | --- |
 | `Pending` | The restore waits. The cluster runs, the storage chain does not resolve, a rule of the server does not hold, or the database is ahead of the requested point. The operator touches nothing here. |
-| `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. |
+| `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. You see this phase only while the operator cannot reach the database. A check that passes moves on within the same step, and a database that is ahead sends the restore back to `Pending`. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the restore application on them. |
 | `Completed` | The restore finished. You can unsuspend the cluster. |
 | `Failed` | A phase failed. `status.failureMessage` names it. |
@@ -75,6 +75,8 @@ The operator reads the table under the name that Camunda creates it with, and it
 The restore holds in `Pending` with reason `DatabaseNotRestored` when a partition row is missing, or when any `LAST_UPDATED` is later than `spec.timestamp` plus one minute of slack. The slack exists because the clock of the database and the source of your timestamp are not the same clock.
 
 A database that the operator cannot reach at all is a different hold. The restore stays in `ValidatingDatabaseState` with reason `ConnectionFailed` or `MissingSecret`, and it fails after ten minutes. It touches no volume there either.
+
+**The clocks must match.** The operator compares the two times as UTC. The database records `LAST_UPDATED` with the wall clock of the broker and no time zone, so the two are the same clock only while the brokers run in UTC. A container runs in UTC, and the operator never changes that. A cluster that sets `TZ`, or `-Duser.timezone` through `JAVA_TOOL_OPTIONS`, on its brokers holds the restore with reason `PitrUnavailable`. A broker west of UTC records a position that reads earlier than it is. The check then lets an unrestored database through.
 
 **Limits of this check.** The check proves that the database is not ahead of the requested point. It cannot prove that the database holds exactly that point. A database that was restored to an earlier point passes the check, and that is safe: Zeebe re-exports the difference after the restore. The check of the restore application stays the authoritative gate. This check only moves the common error before the volume deletion.
 
@@ -104,7 +106,7 @@ When you delete the restore, the operator deletes the Jobs it created. It writes
 | `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
 | `Ready` | `ClusterNotSuspended` | The cluster runs. | Set `spec.suspend: true` on the cluster. |
 | `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, or the broker StatefulSet is gone. | Correct the reference that the message names. |
-| `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, or `spec.timestamp` lies in the future. | Enable `pitr` on the server, or restore to a point within retention. |
+| `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, `spec.timestamp` lies in the future, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, restore to a point within retention, or run the brokers in UTC. |
 | `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |

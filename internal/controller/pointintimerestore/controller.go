@@ -62,13 +62,6 @@ const (
 	// clusterRef, so an event on a cluster wakes the restores that wait for
 	// it, for example on the flip of spec.suspend.
 	clusterRefField = "pointintimerestore.spec.clusterRef"
-	// databaseServerRefField indexes Database resources by the name of their
-	// serverRef, so the dedicated-server rule is one indexed list and not a
-	// full scan. The Database controller indexes the same field under a name
-	// of its own, and a manager rejects a second registration of one index
-	// name, so this one carries the name of this controller.
-	databaseServerRefField = "pointintimerestore.database.spec.serverRef"
-
 	// defaultPollInterval paces a running phase.
 	defaultPollInterval = 5 * time.Second
 	// defaultRetryInterval paces a hold that no watch resolves.
@@ -144,8 +137,8 @@ func (o Options) withDefaults() Options {
 type Reconciler struct {
 	client.Client
 	// APIReader reads without the cache. Every decision that deletes a broker
-	// volume reads live state: a stale suspend flag, a stale claim, or a
-	// stale Job would each let a restore act on a cluster that moved on.
+	// volume reads live state. A stale suspend flag, a stale claim, or a stale
+	// Job each let a restore act on a cluster that moved on.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// EventRecorder publishes the lifecycle events of the restore.
@@ -251,16 +244,21 @@ func (r *Reconciler) complete(pitr *v1.PointInTimeRestore) {
 	)
 }
 
-// fail ends the restore with reason and message. Status keeps the reason, so a
-// later look stages the same one again. The message carries an external error
-// whose size the controller cannot know, for example the reason of a Job or of
-// a pod, so it is bounded before it reaches the free-form status field.
-func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
+// fail ends the restore with message. Every failure of this kind reports the
+// reason Failed: the causes that carry a reason of their own, for example a
+// server without point-in-time recovery, hold the restore instead of ending
+// it. Status keeps the reason anyway, so stageTerminal stages the same one
+// again after a write conflict.
+//
+// The message carries an external error whose size the controller cannot know,
+// for example the reason of a Job or of a pod, so it is bounded before it
+// reaches the free-form status field.
+func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, message string) {
 	now := metav1.Now()
 	message = conditions.BoundMessage(message)
 	pitr.Status.Phase = v1.PointInTimeRestoreFailed
 	pitr.Status.CompletionTime = &now
-	pitr.Status.TerminalReason = reason
+	pitr.Status.TerminalReason = v1.ReasonFailed
 	pitr.Status.FailureMessage = message
 	r.stageTerminal(pitr)
 	r.EventRecorder.Eventf(
@@ -329,7 +327,7 @@ func (r *Reconciler) holdStarted(
 		pitr.Status.FirstFailedAt = &now
 	}
 	if now.Sub(pitr.Status.FirstFailedAt.Time) > r.opts.MidRunGrace {
-		r.fail(pitr, v1.ReasonFailed, fmt.Sprintf(
+		r.fail(pitr, fmt.Sprintf(
 			"a dependency stopped resolving and did not recover: %s", failure.Message,
 		))
 
@@ -367,20 +365,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	); err != nil {
 		return fmt.Errorf("indexing PointInTimeRestore by clusterRef: %w", err)
-	}
-
-	// A DatabaseServerConfig is cluster-scoped, so the dedicated-server rule
-	// counts the Database resources of every namespace. The index keys them by
-	// the name of the server alone.
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&v1.Database{},
-		databaseServerRefField,
-		func(obj client.Object) []string {
-			return []string{obj.(*v1.Database).Spec.ServerRef}
-		},
-	); err != nil {
-		return fmt.Errorf("indexing Database by serverRef: %w", err)
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).

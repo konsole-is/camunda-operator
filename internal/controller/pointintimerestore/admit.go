@@ -76,6 +76,13 @@ func (r *Reconciler) admit(ctx context.Context, pitr *v1.PointInTimeRestore) (ho
 		return r.waiting(pitr, failure), nil
 	}
 
+	// The database-state check compares the wall clock of the broker with
+	// spec.timestamp, so a cluster whose brokers run in another zone never
+	// reaches that check.
+	if failure := brokerClockComparable(resolved.target.Broker); failure != nil {
+		return r.waiting(pitr, failure), nil
+	}
+
 	failure, err = r.dedicatedServer(ctx, resolved.server)
 	if err != nil {
 		return settle, err
@@ -94,10 +101,10 @@ func (r *Reconciler) admit(ctx context.Context, pitr *v1.PointInTimeRestore) (ho
 // broker StatefulSet. Every reference that does not resolve, and every state
 // that a restore must not run against, comes back as a
 // *conditions.PreCheckFailure whose message names what is wrong. The phase
-// decides how long such a failure may hold the restore.
+// decides how long such a failure holds the restore.
 //
-// The reads are live. A stale suspend flag or a stale storage reference would
-// let the restore delete the volumes of a cluster that moved on.
+// The reads are live. A stale suspend flag or a stale storage reference lets
+// the restore delete the volumes of a cluster that moved on.
 func (r *Reconciler) resolve(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
@@ -137,7 +144,7 @@ func (r *Reconciler) resolve(
 	if cluster.Spec.BackupStorageRef == "" {
 		return nil, invalidReference(
 			"CamundaCluster %s has no spec.backupStorageRef, so Zeebe holds no primary storage "+
-				"backup that the restore could read", key,
+				"backup for the restore to read", key,
 		), nil
 	}
 
@@ -192,7 +199,12 @@ func (r *Reconciler) resolve(
 
 		return nil, nil, err
 	}
-	pitr.Status.Brokers = target.Brokers
+	// The broker count is pinned at the first look, not followed. A restore
+	// recreates the volumes of the brokers it read and runs a Job for each of
+	// them, and a cluster that is scaled while it runs changes neither.
+	if pitr.Status.Brokers == 0 {
+		pitr.Status.Brokers = target.Brokers
+	}
 
 	return &chain{
 		cluster:  &cluster,
@@ -208,7 +220,7 @@ func (r *Reconciler) resolve(
 // retries.
 func (r *Reconciler) resolveFailed(pitr *v1.PointInTimeRestore, err error) (hold, error) {
 	if errors.Is(err, errClusterReplaced) {
-		r.fail(pitr, v1.ReasonFailed, err.Error())
+		r.fail(pitr, err.Error())
 
 		return settle, nil
 	}
@@ -272,20 +284,27 @@ func (r *Reconciler) dedicatedServer(
 	ctx context.Context,
 	server *v1.DatabaseServerConfig,
 ) (*conditions.PreCheckFailure, error) {
+	// The read is live and unindexed, like every other read of this
+	// controller. A cached list can miss the Database that a sibling cluster
+	// created a moment ago, and the rule exists to protect that sibling. The
+	// filter runs here because a cluster holds few Database resources, and an
+	// index of this field repeats what the Database controller already
+	// indexes, which one manager rejects.
 	var databases v1.DatabaseList
-	if err := r.List(
-		ctx, &databases, client.MatchingFields{databaseServerRefField: server.Name},
-	); err != nil {
+	if err := r.APIReader.List(ctx, &databases); err != nil {
 		return nil, fmt.Errorf("listing the databases of DatabaseServerConfig %q: %w", server.Name, err)
 	}
 
-	if len(databases.Items) < 2 {
-		return nil, nil
+	names := make([]string, 0, 2)
+	for i := range databases.Items {
+		if databases.Items[i].Spec.ServerRef != server.Name {
+			continue
+		}
+		names = append(names, databases.Items[i].Namespace+"/"+databases.Items[i].Name)
 	}
 
-	names := make([]string, 0, len(databases.Items))
-	for i := range databases.Items {
-		names = append(names, databases.Items[i].Namespace+"/"+databases.Items[i].Name)
+	if len(names) < 2 {
+		return nil, nil
 	}
 	slices.Sort(names)
 
@@ -293,7 +312,7 @@ func (r *Reconciler) dedicatedServer(
 		Reason: v1.ReasonSharedServer,
 		Message: fmt.Sprintf(
 			"DatabaseServerConfig %q holds the databases %s. Point-in-time recovery rolls back the "+
-				"whole server, so it would roll back a database that another cluster uses. Move the "+
+				"whole server, so it also rolls back a database that another cluster uses. Move the "+
 				"cluster to a server of its own",
 			server.Name, strings.Join(names, ", "),
 		),

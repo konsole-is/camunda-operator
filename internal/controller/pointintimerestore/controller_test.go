@@ -29,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,7 +57,10 @@ type world struct {
 	database    *v1.Database
 	credentials *corev1.Secret
 	brokers     *appsv1.StatefulSet
-	claims      []*corev1.PersistentVolumeClaim
+	// brokerEnv is added to the broker container of the world, so a spec can
+	// shape the environment that the restore reads its facts from.
+	brokerEnv []corev1.EnvVar
+	claims    []*corev1.PersistentVolumeClaim
 }
 
 // brokerCount is how many brokers every world runs. It is what
@@ -113,7 +117,7 @@ func createWorld(mutate ...func(*world)) *world {
 				Name: "admin", Namespace: namespace,
 				UsernameKey: "username", PasswordKey: "password",
 			},
-			PITR: &v1.PITRCapability{Enabled: true, RetentionPeriodDays: ptr(int32(7))},
+			PITR: &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(7))},
 		},
 	}
 
@@ -186,7 +190,7 @@ func createBrokers(w *world) {
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: w.namespace},
 		Spec: appsv1.StatefulSetSpec{
 			ServiceName: name,
-			Replicas:    ptr(int32(0)),
+			Replicas:    new(int32(0)),
 			Selector:    &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
@@ -194,10 +198,10 @@ func createBrokers(w *world) {
 					Containers: []corev1.Container{{
 						Name:  components.ContainerCamunda,
 						Image: "camunda/camunda:8.9.9",
-						Env: []corev1.EnvVar{
+						Env: append([]corev1.EnvVar{
 							camundaconfig.Var(camundaconfig.KeyClusterSize, "2"),
 							camundaconfig.Var(camundaconfig.KeyClusterPartitionCount, "3"),
-						},
+						}, w.brokerEnv...),
 						VolumeMounts: []corev1.VolumeMount{{
 							Name: components.DataVolumeName, MountPath: "/usr/local/camunda/data",
 						}},
@@ -276,13 +280,18 @@ func claimName(w *world, ordinal int) string {
 }
 
 // positionsBehind returns one exporter position per partition, each the given
-// duration behind the timestamp that restoreAt uses.
+// duration behind the point that a restore of a spec asks for.
 func positionsBehind(behind time.Duration) []v1.PartitionPosition {
+	return positionsAt(restorePoint().Add(-behind))
+}
+
+// positionsAt returns one exporter position per partition, each at when.
+func positionsAt(when time.Time) []v1.PartitionPosition {
 	positions := make([]v1.PartitionPosition, 0, partitionCount)
 	for partition := 1; partition <= partitionCount; partition++ {
 		positions = append(positions, v1.PartitionPosition{
 			PartitionID: int32(partition),
-			LastUpdated: metav1.NewTime(restorePoint().Add(-behind)),
+			LastUpdated: metav1.NewTime(when),
 		})
 	}
 
@@ -406,8 +415,6 @@ func expectClaimsUntouched(w *world) {
 	}
 }
 
-func ptr[T any](value T) *T { return &value }
-
 var _ = Describe("PointInTimeRestore admission", func() {
 	It("holds a restore whose cluster still runs, and touches nothing", func() {
 		w := createWorld(func(w *world) { w.cluster.Spec.Suspend = false })
@@ -525,6 +532,21 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		})
 
 		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("future"))
+	})
+
+	// The database records the exporter position with the wall clock of the
+	// broker. A broker west of UTC would make a database that is ahead of the
+	// requested point read as behind it, and the volumes would go.
+	It("holds a cluster whose brokers do not run in UTC", func() {
+		w := createWorld(func(w *world) {
+			w.brokerEnv = []corev1.EnvVar{{Name: "TZ", Value: "America/New_York"}}
+		})
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonPitrUnavailable)
+		Expect(message).To(ContainSubstring("America/New_York"))
+		Expect(message).To(ContainSubstring("UTC"))
+		expectClaimsUntouched(w)
 	})
 
 	It("holds a server that a second Database references", func() {
@@ -750,9 +772,6 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 			container := job.Spec.Template.Spec.Containers[0]
 			Expect(container.Command).To(Equal([]string{restore.RestoreEntrypoint}))
-			Expect(container.Args).To(Equal([]string{
-				"--to=" + pitr.Spec.Timestamp.UTC().Format(time.RFC3339),
-			}))
 			Expect(container.Env).To(ContainElement(camundaconfig.Var(
 				camundaconfig.KeyClusterNodeID, strconv.Itoa(ordinal),
 			)))
@@ -762,6 +781,10 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			Expect(job.OwnerReferences).To(HaveLen(1), "deleting the restore must remove its Jobs")
 			Expect(job.OwnerReferences[0].Name).To(Equal(pitr.Name))
 			Expect(*job.OwnerReferences[0].Controller).To(BeTrue())
+			Expect(job.ManagedFields).To(
+				ContainElement(HaveField("Manager", string(restore.FieldManagerPointInTimeRestore))),
+				"the fields of a restore Job carry the field manager of this kind",
+			)
 		}
 		Expect(readRestore(pitr).Status.PrimaryJobNames).To(HaveLen(brokerCount))
 
@@ -788,6 +811,28 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(condition.Reason).To(Equal(v1.ReasonCompleted))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// The argument is the contract with the restore application, so the spec
+	// names the exact string a broker receives instead of building it the way
+	// the controller does.
+	It("passes the requested point to the restore application as RFC 3339", func() {
+		point := time.Date(2026, 7, 30, 14, 30, 0, 0, time.UTC)
+		w := createWorld(func(w *world) {
+			// The point lies further back than the retention of the other
+			// worlds, and the rule that guards it has its own spec.
+			w.server.Spec.PITR.RetentionPeriodDays = new(int32(3650))
+		})
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsAt(point.Add(-time.Hour))})
+		pitr := createRestore(w, func(p *v1.PointInTimeRestore) {
+			p.Spec.Timestamp = metav1.NewTime(point)
+		})
+
+		for _, job := range expectJobs(pitr) {
+			Expect(job.Spec.Template.Spec.Containers[0].Args).To(
+				Equal([]string{"--to=2026-07-30T14:30:00Z"}),
+			)
+		}
 	})
 
 	It("fails when a broker cannot restore, and names the broker", func() {
@@ -907,6 +952,46 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// The Jobs of a restore are the ones it recorded. A cluster that changes
+	// its broker count while the restore runs must not add a Job on a volume
+	// that this restore never emptied, and must not hold the restore open for
+	// a broker it never started.
+	It("tracks the Jobs it recorded when the cluster size changes under it", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		Eventually(func(g Gomega) {
+			var brokers appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.brokers), &brokers)).To(Succeed())
+			brokers.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
+				camundaconfig.Var(camundaconfig.KeyClusterSize, "3"),
+				camundaconfig.Var(camundaconfig.KeyClusterPartitionCount, "3"),
+			}
+			g.Expect(k8sClient.Update(ctx, &brokers)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		for ordinal := range int32(brokerCount) {
+			markJob(pitr, ordinal, batchv1.JobComplete)
+		}
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(current.Status.PrimaryJobNames).To(HaveLen(brokerCount))
+			g.Expect(current.Status.Brokers).To(Equal(int32(brokerCount)))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			var third batchv1.Job
+			key := types.NamespacedName{
+				Namespace: pitr.Namespace,
+				Name:      restore.JobName(labels.PointInTimeRestore(pitr.Name), 2),
+			}
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &third))).To(BeTrue())
+		}, time.Second, interval).Should(Succeed())
 	})
 
 	It("never recreates a broker volume once the Jobs exist", func() {

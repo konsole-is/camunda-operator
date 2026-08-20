@@ -60,9 +60,8 @@ type answer struct {
 // world registers the answer for its own logical database, so the specs stay
 // independent of each other and of their order.
 type exporterPositions struct {
-	mu       sync.Mutex
-	answers  map[string]answer
-	requests map[string]int
+	mu      sync.Mutex
+	answers map[string]answer
 }
 
 // set records what the reader answers for database.
@@ -75,23 +74,11 @@ func (e *exporterPositions) set(database string, a answer) {
 	e.answers[database] = a
 }
 
-// reads reports how often the check read database.
-func (e *exporterPositions) reads(database string) int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	return e.requests[database]
-}
-
 func (e *exporterPositions) read(
 	_ context.Context, _ pgbootstrap.Connection, database string,
 ) ([]v1.PartitionPosition, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.requests == nil {
-		e.requests = map[string]int{}
-	}
-	e.requests[database]++
 	a := e.answers[database]
 
 	return a.positions, a.err
