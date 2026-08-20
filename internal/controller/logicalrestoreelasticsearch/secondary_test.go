@@ -17,6 +17,8 @@ limitations under the License.
 package logicalrestoreelasticsearch
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -148,6 +150,55 @@ var _ = Describe("LogicalRestoreElasticsearch of secondary storage", func() {
 		By("moving on once the restored indices are there")
 		w.search.SetIndices(targetIndices...)
 		expectPhase(restore, v1.LogicalRestoreRestoringPrimaryStorage)
+	})
+
+	// The clock of the mid-run grace runs from the first outage of a started
+	// restore. The indices of the target are gone once the delete succeeded.
+	// A restore that measures a second full grace from a later outage holds an
+	// erased cluster twice as long.
+	It("keeps the mid-run grace of the first outage once the indices are deleted", func() {
+		// outage is a failure count that outlasts the spec. The spec ends an
+		// outage by setting the count back to zero.
+		const outage = 1000
+
+		w := newWorld()
+		backup := createBackup(w)
+		w.seedSnapshots(elasticsearchSnapshots...)
+		w.search.SetIndices(targetIndices...)
+		w.search.FailNext("snapshotRestore", outage)
+
+		restore := createRestore(w, backup.Name)
+
+		By("deleting the indices and then holding the failing snapshot restore")
+		first := expectReason(
+			restore, v1.LogicalRestoreRestoringSecondaryStorage, v1.ReasonConnectionFailed,
+		)
+		Expect(w.search.DeletedIndices()).NotTo(BeEmpty(), "the destructive step ran")
+		Expect(first.Status.FirstFailedAt).NotTo(BeNil())
+		firstFailedAt := *first.Status.FirstFailedAt
+
+		By("keeping the clock when Elasticsearch answers again")
+		w.search.FailNext("snapshotRestore", 0)
+		Eventually(func(g Gomega) {
+			recovered := latest(g, restore)
+			g.Expect(recovered.Status.RestoredSnapshots).NotTo(BeEmpty())
+			g.Expect(recovered.Status.FirstFailedAt).To(Equal(&firstFailedAt))
+		}, timeout, interval).Should(Succeed())
+
+		By("running on while the grace of the first outage passes")
+		Consistently(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.Phase).To(
+				Equal(v1.LogicalRestoreRestoringSecondaryStorage),
+			)
+		}, midRunGrace, interval).Should(Succeed())
+
+		By("failing on the next outage, because that grace is spent")
+		w.search.FailNext("indexResolve", outage)
+		Eventually(func(g Gomega) {
+			ended := latest(g, restore)
+			g.Expect(ended.Status.Phase).To(Equal(v1.LogicalRestoreFailed), "Ready: %s", readyMessage(ended))
+			g.Expect(ended.Status.FirstFailedAt).To(Equal(&firstFailedAt))
+		}, midRunGrace-time.Second, interval).Should(Succeed())
 	})
 
 	It("holds an unreachable Elasticsearch and fails after the grace", func() {

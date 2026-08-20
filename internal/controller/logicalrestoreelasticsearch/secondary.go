@@ -51,6 +51,10 @@ var allIndicesOfSnapshot = []string{"*"}
 // of the target empty. The backup itself stays whole, and the next look
 // deletes what is there and asks for the restore again, so the retry
 // converges.
+//
+// The phase never clears the mid-run grace. The first look deletes the
+// indices of the target. A clock that restarts after that delete gives every
+// later failure a full grace over data that is already gone.
 func (r *Reconciler) restoreSecondaryStorage(
 	ctx context.Context,
 	lres *v1.LogicalRestoreElasticsearch,
@@ -113,7 +117,6 @@ func (r *Reconciler) startRestore(
 			)), nil
 		}
 	}
-	restore.Recovered(&lres.Status.RestoreProgress)
 
 	lres.Status.RestoredSnapshots = snapshots
 	r.progressing(lres, "Elasticsearch restores the snapshots of the backup")
@@ -161,7 +164,6 @@ func (r *Reconciler) trackRestore(
 		return restore.Outcome{Wait: r.opts.PollInterval}, nil
 	}
 
-	restore.Recovered(&lres.Status.RestoreProgress)
 	lres.Status.Phase = v1.LogicalRestoreRestoringPrimaryStorage
 	r.progressing(lres, "the secondary storage is restored. The broker volumes come next")
 

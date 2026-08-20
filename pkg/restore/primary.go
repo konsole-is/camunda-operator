@@ -170,9 +170,13 @@ func recreateClaims(
 		return failure(fmt.Sprintf("the broker volumes cannot be recreated: %s", err))
 	}
 
-	Recovered(p)
 	recorded := !slices.Equal(progress.Recreated, p.RecreatedClaims)
 	p.RecreatedClaims = progress.Recreated
+
+	// The record comes first. This pass deleted the volumes that it names, and
+	// Recovered reads the record to see them. A clock that is cleared before
+	// the record gives the next failure a full grace over erased volumes.
+	Recovered(p)
 
 	// The record of a deleted volume must be durable before any Job runs. Its
 	// flush is this reconcile, so the Jobs wait for the next look.

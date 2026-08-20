@@ -71,9 +71,13 @@ func HoldRunning(
 // next failure the full mid-run grace.
 //
 // A restore that already erased a broker volume or recorded a Job keeps its
-// clock. That restore has started, and a dependency that flaps in and out
-// would reset the grace on every pass and hold it for ever. Only a restore
-// that has touched no volume yet gets its clock back.
+// clock. That restore has started. Without the guard, a dependency that flaps
+// in and out resets the grace on every pass and holds the restore for ever.
+// Only a restore that has touched no volume yet gets its clock back.
+//
+// The guard reads the primary-storage record alone. It does not see the
+// indices that the secondary-storage phase deletes. That phase therefore
+// calls this before its first delete and never after it.
 func Recovered(p *v1.RestoreProgress) {
 	if len(p.RecreatedClaims) > 0 || len(p.PrimaryJobNames) > 0 {
 		return

@@ -94,7 +94,7 @@ Every Job carries the labels `camunda.io/component: restore`, `camunda.io/logica
 
 ## Time limits
 
-A restore that has started waits 10 minutes on a dependency that stops resolving, then it fails. The wait covers an Elasticsearch that does not answer, a reference that breaks, a pod that cannot start, and a target that somebody unsuspends mid-run. A restore that already deleted an index or a volume must reach a terminal phase, so that whoever owns the cluster learns that it has to act.
+A restore that has started waits 10 minutes on a dependency that stops resolving, then it fails. The 10 minutes run from the first outage. Once an index or a volume is gone, a dependency that resolves again starts no second wait. The wait covers an Elasticsearch that does not answer, a reference that breaks, a pod that cannot start, and a target that somebody unsuspends mid-run. A restore that already deleted an index or a volume must reach a terminal phase, so that whoever owns the cluster learns that it has to act.
 
 A restore in `Pending` waits without a bound, because it deleted nothing yet.
 
