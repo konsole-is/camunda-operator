@@ -117,10 +117,15 @@ type JobInput struct {
 	// BucketSecretName is the credentials Secret of the bucket as reachable
 	// from the cluster namespace. Empty means workload identity.
 	BucketSecretName string
-	// DBSecretName is the Secret of the backup user of the target database,
-	// reachable the same way. DBUsernameKey and DBPasswordKey name its keys.
-	// pg_restore connects as that user, the same role that pg_dump wrote the
-	// archive with.
+	// DBSecretName is the Secret of the role that owns the target database,
+	// which is its application role, reachable the same way. DBUsernameKey
+	// and DBPasswordKey name its keys.
+	//
+	// pg_restore --clean drops every object before it recreates it, and
+	// PostgreSQL lets only the owner of an object drop it. The backup role
+	// that wrote the archive owns nothing of what it dumped, so a restore
+	// that connected as it would fail every DROP with "must be owner of
+	// table" and would restore no data.
 	DBSecretName  string
 	DBUsernameKey string
 	DBPasswordKey string

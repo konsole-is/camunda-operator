@@ -40,12 +40,12 @@ spec:
           valueFrom:
             secretKeyRef:
               key: username
-              name: my-cluster-camunda-dump-credentials
+              name: my-cluster-camunda-db-credentials
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
               key: password
-              name: my-cluster-camunda-dump-credentials
+              name: my-cluster-camunda-db-credentials
         image: postgres:17
         name: restore
         resources: {}

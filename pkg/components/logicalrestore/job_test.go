@@ -113,7 +113,7 @@ func input() JobInput {
 		ClusterName:        "my-cluster",
 		Bucket:             s3Bucket(s3Credentials()),
 		BucketSecretName:   "my-cluster-camunda-backup-credentials",
-		DBSecretName:       "my-cluster-camunda-dump-credentials",
+		DBSecretName:       "my-cluster-camunda-db-credentials",
 		DBUsernameKey:      "username",
 		DBPasswordKey:      "password",
 		ServiceAccountName: "my-cluster-camunda",
@@ -179,11 +179,20 @@ func TestJobGoldenScratchPVC(t *testing.T) {
 	)
 }
 
-// TestBuildJobConnectsWithTheTargetCoordinatesAndBackupCredentials pins the
-// connection half of the restore container. The Job restores into the target
-// database over the backup user of the target, never over a credential of the
-// cluster the backup came from.
-func TestBuildJobConnectsWithTheTargetCoordinatesAndBackupCredentials(t *testing.T) {
+// TestBuildJobConnectsAsTheOwnerOfTheTargetDatabase pins the connection half
+// of the restore container, and with it the one rule that decides whether a
+// relational restore works at all.
+//
+// pg_restore --clean drops every object before it recreates it, and
+// PostgreSQL lets only the owner of an object drop it. The objects of a
+// Camunda database belong to the application role, which owns the database.
+// The backup role that pg_dump runs as holds USAGE and CREATE on the schema
+// and DML on the tables, and it owns nothing (pkg/pgbootstrap
+// EnsureBackupUser), so every DROP of the restore fails with "must be owner
+// of table" and the data of the backup never lands. The Job therefore
+// connects as the application role, and never as the backup role that wrote
+// the archive.
+func TestBuildJobConnectsAsTheOwnerOfTheTargetDatabase(t *testing.T) {
 	t.Parallel()
 
 	job, err := BuildJob(input())
@@ -208,11 +217,11 @@ func TestBuildJobConnectsWithTheTargetCoordinatesAndBackupCredentials(t *testing
 	)
 
 	user := secretRef(t, restoreContainer, "PGUSER")
-	assert.Equal(t, "my-cluster-camunda-dump-credentials", user.Name)
+	assert.Equal(t, "my-cluster-camunda-db-credentials", user.Name)
 	assert.Equal(t, "username", user.Key)
 
 	password := secretRef(t, restoreContainer, "PGPASSWORD")
-	assert.Equal(t, "my-cluster-camunda-dump-credentials", password.Name)
+	assert.Equal(t, "my-cluster-camunda-db-credentials", password.Name)
 	assert.Equal(t, "password", password.Key)
 
 	// The init container reads the object that the backup recorded.

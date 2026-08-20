@@ -162,6 +162,15 @@ func newRelationalWorld() *world {
 	}
 	Expect(k8sClient.Create(ctx, backupUser)).To(Succeed())
 
+	// The application role owns the database and every object in it. A
+	// restore connects as that role, because only an owner can drop what
+	// pg_restore --clean drops.
+	appUser := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "app-user", Namespace: w.namespace},
+		Data:       map[string][]byte{"username": []byte("camunda"), "password": []byte("app-secret")},
+	}
+	Expect(k8sClient.Create(ctx, appUser)).To(Succeed())
+
 	w.dbConfig = &v1.DatabaseConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbc-" + suffix, Namespace: w.namespace},
 		Spec: v1.DatabaseConfigSpec{

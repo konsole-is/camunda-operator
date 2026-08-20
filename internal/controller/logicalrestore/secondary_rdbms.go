@@ -48,16 +48,21 @@ const whatSecondary = "the pg_restore Job"
 // backup bucket and runs pg_restore over it, and it tracks that Job to its
 // end.
 func (r *Reconciler) restoreDatabase(ctx context.Context, restore *v1.LogicalRestore) (hold, error) {
-	if restore.Status.SecondaryJobName != "" {
-		return r.trackDatabaseJob(ctx, restore)
-	}
-
+	// Every look resolves the target again, the one that tracks a running Job
+	// included. The Job rewrites the database of the target while it runs, so
+	// a cluster that is unsuspended under it and a backup that was replaced
+	// under its name both have to reach the restore, and the mid-run grace
+	// bounds how long either can hold it.
 	resolved, failure, err := r.resolveTarget(ctx, restore)
 	if err != nil {
 		return settle, err
 	}
 	if failure != nil {
 		return r.holdRunning(restore, failure), nil
+	}
+
+	if restore.Status.SecondaryJobName != "" {
+		return r.trackDatabaseJob(ctx, restore)
 	}
 
 	database, failure, err := r.resolveDatabase(ctx, resolved)
@@ -234,8 +239,16 @@ type databaseResolution struct {
 
 // resolveDatabase resolves the logical database of the target, the server it
 // runs on, the credentials the Job mounts, and the bucket that holds the
-// dump. The database is reached with the backup user of the target, which is
-// the user that wrote the dump on the source.
+// dump.
+//
+// The database is reached with the application role of the target, the role
+// that owns the database and every object in it. pg_restore --clean drops
+// each object before it recreates it, and PostgreSQL lets only the owner of
+// an object drop it. The backup role that wrote the dump owns nothing: it
+// holds USAGE and CREATE on the schema and DML on the tables
+// (pkg/pgbootstrap EnsureBackupUser). A restore that connected as the backup
+// role would fail every DROP with "must be owner of table" and would restore
+// no data.
 func (r *Reconciler) resolveDatabase(
 	ctx context.Context,
 	resolved *resolution,
@@ -263,7 +276,7 @@ func (r *Reconciler) resolveDatabase(
 	}
 
 	credentials, bucketSecret, failure, err := r.jobCredentials(
-		ctx, resolved.cluster, bucket, *config.Spec.BackupCredentialsSecretRef,
+		ctx, resolved.cluster, bucket, config.Spec.CredentialsSecretRef,
 	)
 	if err != nil || failure != nil {
 		return nil, failure, err
@@ -285,8 +298,9 @@ func (r *Reconciler) resolveDatabase(
 	}, nil, nil
 }
 
-// databaseConfig reads the DatabaseConfig that the storage contract names and
-// requires the backup user that a restore runs as.
+// databaseConfig reads the DatabaseConfig that the storage contract names. It
+// asks for no backup user: a restore connects as the application role, which
+// every DatabaseConfig names.
 func (r *Reconciler) databaseConfig(
 	ctx context.Context,
 	storage *v1.SecondaryStorageConfig,
@@ -303,15 +317,6 @@ func (r *Reconciler) databaseConfig(
 		}
 
 		return nil, nil, fmt.Errorf("reading DatabaseConfig %s: %w", key, err)
-	}
-
-	if config.Spec.BackupCredentialsSecretRef == nil {
-		return nil, &conditions.PreCheckFailure{
-			Reason: v1.ReasonMissingSecret,
-			Message: fmt.Sprintf(
-				"DatabaseConfig %s has no backupCredentialsSecretRef, which a restore needs", key,
-			),
-		}, nil
 	}
 
 	return &config, nil, nil
@@ -391,7 +396,7 @@ func (r *Reconciler) jobCredentials(
 	database v1.CredentialsSecretRef,
 ) (v1.CredentialsSecretRef, string, *conditions.PreCheckFailure, error) {
 	local := localSecretName(
-		cluster, database.Namespace, database.Name, camundacluster.MirrorPurposeDumpCredentials,
+		cluster, database.Namespace, database.Name, camundacluster.MirrorPurposeDBCredentials,
 	)
 	database.Name, database.Namespace = local, cluster.Namespace
 	failure, err := r.checkSecret(

@@ -115,9 +115,18 @@ func (r *Reconciler) recreateClaims(
 	return r.applyRestoreJobs(ctx, restore, resolved)
 }
 
-// applyRestoreJobs applies one Job per broker and records their names. A Job
+// applyRestoreJobs creates one Job per broker and records their names. A Job
 // that this restore already created is left alone, because its pod template is
 // immutable.
+//
+// Each Job is created as an identity claim, never applied. A read that finds
+// no Job and a forced apply after it are two calls, and a Job of an earlier
+// restore of the same name can land between them. The apply would overwrite
+// its owner reference and its labels, and this restore would then count the
+// work of that Job as its own, on volumes it had already emptied. A Create is
+// atomic, so the API server decides who owns the name, and a name that is
+// taken is checked before anything is tracked. This is the claim that the
+// pg_restore Job of the relational path makes as well.
 func (r *Reconciler) applyRestoreJobs(
 	ctx context.Context,
 	restore *v1.LogicalRestore,
@@ -127,25 +136,7 @@ func (r *Reconciler) applyRestoreJobs(
 	names := make([]string, 0, resolved.target.Brokers)
 
 	for ordinal := range resolved.target.Brokers {
-		name := restorepkg.JobName(owner, ordinal)
-		names = append(names, name)
-
-		key := types.NamespacedName{Namespace: restore.Namespace, Name: name}
-
-		var current batchv1.Job
-		err := r.APIReader.Get(ctx, key, &current)
-		if err == nil {
-			if !ownedBy(&current, restore) {
-				r.failForeignJob(restore, key)
-
-				return settle, nil
-			}
-
-			continue
-		}
-		if !apierrors.IsNotFound(err) {
-			return settle, fmt.Errorf("reading the restore Job %s: %w", key, err)
-		}
+		names = append(names, restorepkg.JobName(owner, ordinal))
 
 		job, err := restorepkg.BuildJob(restorepkg.JobInput{
 			Target:     resolved.target,
@@ -167,8 +158,10 @@ func (r *Reconciler) applyRestoreJobs(
 		if err := controllerutil.SetControllerReference(restore, job, r.Scheme); err != nil {
 			return settle, fmt.Errorf("owning the restore Job of broker %d: %w", ordinal, err)
 		}
-		if err := restorepkg.Apply(ctx, r.Client, job, restorepkg.FieldManagerLogicalRestore); err != nil {
-			return settle, fmt.Errorf("applying the restore Job of broker %d: %w", ordinal, err)
+
+		claimed, wait, err := r.claimRestoreJob(ctx, restore, job)
+		if err != nil || !claimed {
+			return wait, err
 		}
 	}
 
@@ -179,6 +172,44 @@ func (r *Reconciler) applyRestoreJobs(
 	))
 
 	return hold{after: r.opts.PollInterval}, nil
+}
+
+// claimRestoreJob creates one restore Job and reports whether the name is this
+// restore's. A name that is already taken is read live and checked: a Job that
+// no controller reference of this restore owns ends the restore, and a Job
+// that it does own is the one that an earlier look created.
+func (r *Reconciler) claimRestoreJob(
+	ctx context.Context,
+	restore *v1.LogicalRestore,
+	job *batchv1.Job,
+) (claimed bool, wait hold, err error) {
+	err = r.Create(ctx, job, restorepkg.FieldManagerLogicalRestore)
+	switch {
+	case apierrors.IsAlreadyExists(err):
+		key := types.NamespacedName{Namespace: job.Namespace, Name: job.Name}
+
+		var winner batchv1.Job
+		if err := r.APIReader.Get(ctx, key, &winner); err != nil {
+			if apierrors.IsNotFound(err) {
+				// The Job was deleted again in between. The requeue re-enters
+				// the claim.
+				return false, r.shortly(), nil
+			}
+
+			return false, settle, fmt.Errorf("reading the restore Job that won the name: %w", err)
+		}
+		if !ownedBy(&winner, restore) {
+			r.failForeignJob(restore, key)
+
+			return false, settle, nil
+		}
+
+		return true, hold{}, nil
+	case err != nil:
+		return false, settle, fmt.Errorf("creating the restore Job %s: %w", job.Name, err)
+	}
+
+	return true, hold{}, nil
 }
 
 // restoreArgs are the arguments of the restore application. The Elasticsearch

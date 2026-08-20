@@ -183,13 +183,16 @@ var _ = Describe("LogicalRestore of a relational cluster", func() {
 			g.Expect(jobs.Items).To(HaveLen(1))
 		}, "2s", interval).Should(Succeed())
 
-		By("reading the dump of the backup with the backup credentials of the target")
+		By("restoring the dump as the role that owns the database of the target")
 		job := jobNamed(w.namespace, jobName)
 		Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 		container := job.Spec.Template.Spec.Containers[0]
 		Expect(envValue(container, "PGDATABASE")).To(Equal("camunda"))
 		Expect(envValue(container, "PGHOST")).To(Equal("postgres.databases.svc"))
-		Expect(secretOfEnv(container, "PGUSER")).To(Equal("backup-user"))
+		// The backup role that wrote the archive owns none of the objects it
+		// dumped, and pg_restore --clean drops every one of them, so a restore
+		// that connected as the backup role would fail on every DROP.
+		Expect(secretOfEnv(container, "PGUSER")).To(Equal("app-user"))
 
 		By("moving on to primary storage when the Job completed")
 		markJob(w.namespace, jobName, batchv1.JobComplete)
@@ -409,6 +412,61 @@ var _ = Describe("LogicalRestore of primary storage", func() {
 		expectReason(restore, v1.LogicalRestoreRestoringPrimaryStorage, v1.ReasonMissingSecret)
 	})
 
+	It("stops when the target is unsuspended while the restore runs", func() {
+		w := newRelationalWorld()
+		backup := createRelationalBackup(w)
+		restore := createRestore(w, v1.LogicalBackupKindRDBMS, backup.Name)
+		completeSecondaryStorage(w, restore)
+		expectPhase(restore, v1.LogicalRestoreRestoringPrimaryStorage)
+
+		By("starting the workloads of the target again")
+		w.suspend(false)
+
+		// The restore deletes the data volumes of the brokers in this phase.
+		// A cluster whose workloads run again must hold it, and the grace
+		// then ends it.
+		expectReason(
+			restore, v1.LogicalRestoreRestoringPrimaryStorage, v1.ReasonClusterNotSuspended,
+		)
+
+		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("did not recover"))
+	})
+
+	It("refuses a backup that was replaced under its name", func() {
+		w := newRelationalWorld()
+		backup := createRelationalBackup(w)
+		restore := createRestore(w, v1.LogicalBackupKindRDBMS, backup.Name)
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.BackupID).To(Equal(backupID))
+		}, timeout, interval).Should(Succeed())
+
+		By("replacing the backup with another completed one of the same name")
+		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
+		replacement := &v1.LogicalBackupRDBMS{
+			ObjectMeta: metav1.ObjectMeta{Name: backup.Name, Namespace: w.namespace},
+			Spec:       v1.LogicalBackupRDBMSSpec{ClusterRef: v1.ClusterRef{Name: w.cluster.Name}},
+		}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		replacement.Status = v1.LogicalBackupRDBMSStatus{
+			Phase:     v1.LogicalBackupCompleted,
+			BackupID:  backupID + 1,
+			Version:   worldVersion,
+			BucketRef: w.bucket.Name,
+			ObjectKey: "clusters/elsewhere/camunda.dump",
+		}
+		Expect(k8sClient.Status().Update(ctx, replacement)).To(Succeed())
+
+		// The dump of the replacement lies under another key. A restore that
+		// followed the name would download it and call it the backup it
+		// pinned.
+		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("another backup"))
+	})
+
 	It("refuses a Job that another restore left behind under its name", func() {
 		w := newRelationalWorld()
 		backup := createRelationalBackup(w)
@@ -433,6 +491,13 @@ var _ = Describe("LogicalRestore of primary storage", func() {
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
 		Expect(reached.Status.FailureMessage).To(ContainSubstring(name))
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("Remove the Job"))
+
+		By("writing nothing to the Job of the other restore")
+		foreign := jobNamed(w.namespace, name)
+		Expect(foreign.OwnerReferences).To(BeEmpty())
+		for _, entry := range foreign.ManagedFields {
+			Expect(entry.Manager).NotTo(Equal(string(restorepkg.FieldManagerLogicalRestore)))
+		}
 	})
 
 	It("fails and names the broker when one restore Job fails", func() {

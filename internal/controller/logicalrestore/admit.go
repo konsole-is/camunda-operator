@@ -88,15 +88,8 @@ func (r *Reconciler) admit(ctx context.Context, restore *v1.LogicalRestore) (hol
 			// The controller reads spec.suspend and never writes it. Suspending
 			// the target and unsuspending it afterwards belongs to whoever owns
 			// the cluster.
-			if !cluster.Spec.Suspend {
-				failure = &conditions.PreCheckFailure{
-					Reason: v1.ReasonClusterNotSuspended,
-					Message: fmt.Sprintf(
-						"CamundaCluster %s/%s is not suspended; a restore rewrites its storage, so it "+
-							"waits until spec.suspend is true",
-						cluster.Namespace, cluster.Name,
-					),
-				}
+			if suspend := notSuspended(cluster); suspend != nil {
+				failure = suspend
 			} else {
 				r.start(restore, cluster, source)
 
@@ -133,6 +126,24 @@ func (r *Reconciler) start(restore *v1.LogicalRestore, cluster *v1.CamundaCluste
 		cluster.Namespace,
 		cluster.Name,
 	)
+}
+
+// notSuspended reports the target that still runs. A restore rewrites the
+// storage of its target, so it may only touch a cluster whose workloads are
+// scaled down. The controller reads spec.suspend and never writes it.
+func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
+	if cluster.Spec.Suspend {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonClusterNotSuspended,
+		Message: fmt.Sprintf(
+			"CamundaCluster %s/%s is not suspended; a restore rewrites its storage, so it runs only "+
+				"while spec.suspend is true",
+			cluster.Namespace, cluster.Name,
+		),
+	}
 }
 
 // targetCluster reads the target of the restore. A cluster that does not
@@ -296,10 +307,30 @@ func (r *Reconciler) resolveTarget(
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
+	// Suspension is a standing condition of a restore, not a gate that
+	// admission passes once. Every phase after admission deletes something of
+	// the target: the indices of its Elasticsearch, the rows of its database,
+	// the data volumes of its brokers. A cluster that is unsuspended mid-run
+	// starts its workloads again, and the restore would delete under them.
+	// The failure holds the restore for the mid-run grace and then ends it.
+	if failure := notSuspended(cluster); failure != nil {
+		return nil, failure, nil
+	}
 
 	source, failure, err := r.readBackup(ctx, restore)
 	if err != nil || failure != nil {
 		return nil, failure, err
+	}
+	// The pinned id is the identity of the backup, and the name alone is not.
+	// A backup that somebody deleted and created again under the same name is
+	// another set of artifacts: its dump lies under another key, and its
+	// snapshots pair with another record backup.
+	if restore.Status.BackupID != 0 && source.ID != restore.Status.BackupID {
+		return nil, logicalbackup.InvalidReference(
+			"%s %s/%s holds backup %d and the restore started against %d, so it is another backup",
+			restore.Spec.BackupRef.Kind, source.Namespace, source.Name,
+			source.ID, restore.Status.BackupID,
+		), nil
 	}
 
 	resolved, failure, err := r.target(ctx, cluster)

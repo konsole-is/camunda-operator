@@ -76,7 +76,7 @@ The operator registers that repository only when the Elasticsearch of the target
 
 The operator deletes the Optimize indices only when the backup holds Optimize snapshots. A backup without them cannot put them back.
 
-On the relational path the operator runs one Job that downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists` against the logical database of the target. This replaces the schema and the data of that database. The Job reads the database with the backup user of the target, and it takes its pod settings from `spec.backup.dump` of the target cluster: the resources, the scratch volume, the scheduling, and the postgres image. A restore carries no pod block of its own.
+On the relational path the operator runs one Job that downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists` against the logical database of the target. This replaces the schema and the data of that database. The Job connects as the application user of the target, the user that `DatabaseConfig` names in `spec.credentialsSecretRef`. That user owns the database and everything in it, and PostgreSQL lets only the owner of an object drop it. The backup user that wrote the dump owns nothing, so a restore that ran as it would fail on every object it tried to replace. The Job takes its pod settings from `spec.backup.dump` of the target cluster: the resources, the scratch volume, the scheduling, and the postgres image. A restore carries no pod block of its own.
 
 ## Primary storage
 
@@ -178,6 +178,6 @@ The replacement cluster must run the same Camunda version, hold the same partiti
 - [PointInTimeRestore](pointintimerestore.md): the in-place alternative for a relational cluster that you roll back to a point in time.
 - [CamundaCluster](camundacluster.md): referenced through `targetClusterRef`. You suspend it for the whole restore.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the target, for the storage type and the credentials.
-- [DatabaseConfig](databaseconfig.md): resolved on the relational path, for the logical database and the backup credentials.
+- [DatabaseConfig](databaseconfig.md): resolved on the relational path, for the logical database and the credentials of its application user. The restore runs as that user, because it owns the objects it replaces.
 - [ObjectStorageConfig](objectstorageconfig.md): resolved through the `backupStorageRef` of the target. It must hold the artifacts of the backup.
 - [CamundaOptimize](camundaoptimize.md): the Optimize indices of the target are restored only when the backup holds Optimize snapshots.
