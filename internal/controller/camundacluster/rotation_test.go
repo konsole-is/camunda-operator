@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -435,6 +437,28 @@ var _ = Describe("Admin password rotation", func() {
 
 		By("reporting Rejected, because the operator holds no password that the cluster accepts")
 		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonRejected))
+	})
+
+	It("retries a rejected rotation on the timer, not in a hot loop", func() {
+		cluster := createDefaultCluster()
+		fetchAdminPassword(cluster)
+		seedClusterUser("changed-in-the-admin-app")
+
+		requestRotation(cluster, "round-1")
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonRejected))
+
+		By("counting the calls of a nine second window")
+		before := users.UpdateCalls()
+		time.Sleep(9 * time.Second)
+		calls := users.UpdateCalls() - before
+
+		// The retry timer of this suite is one second and each attempt calls
+		// twice: the active password, then the pending one. That is about 18
+		// calls. A failure that writes its own status every reconcile
+		// enqueues a second reconcile per retry and doubles the rate.
+		Expect(calls).To(
+			BeNumerically("<=", 24), "the failed rotation is enqueuing itself instead of waiting",
+		)
 	})
 
 	It("reports ConnectionFailed while the cluster does not answer, and retries", func() {

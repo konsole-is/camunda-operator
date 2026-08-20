@@ -14,10 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package camundaadmin is the management API client of the orchestration
-// cluster: pure HTTP against the management port, no Kubernetes types. It is
-// constructed from the management binding that a CamundaCluster publishes,
-// and it covers exactly the surface that backups need.
+// Package camundaadmin is the administration client of the orchestration
+// cluster: pure HTTP, no Kubernetes types. Client calls the management port
+// from the management binding that a CamundaCluster publishes, and covers
+// exactly the surface that backups need. UserClient calls the /v2 user API
+// on the gateway HTTP port, which is what a password rotation needs.
 //
 // The Camunda version of the binding selects the endpoint set at
 // construction. One set exists today, 8.9: the unified management API
@@ -64,8 +65,11 @@ import (
 // may poll that backup, while one that just allocated an id must fail rather
 // than adopt the artifacts of another backup.
 var (
-	ErrUnreachable = errors.New("management API unreachable")
-	ErrRejected    = errors.New("management API rejected the call")
+	// The wording of these two names no API: this package calls the
+	// management API and the user API, and the message that wraps them
+	// always carries the method and the path of the call that failed.
+	ErrUnreachable = errors.New("the cluster is unreachable")
+	ErrRejected    = errors.New("the cluster rejected the call")
 	ErrConflict    = errors.New("a backup with the same or a higher id already exists")
 	// ErrUnauthenticated marks the one rejection that another credential can
 	// answer: the cluster refused the call with 401 because the password is

@@ -210,8 +210,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	comps = built.all
 
+	// Read before the components stage their own conditions: stageFailure
+	// needs the AdminSecretReady that the server holds, not the healthy one
+	// that the Secret component is about to write over it.
+	priorAdminSecret := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady).
+		DeepCopy()
+
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
-	cred.stageFailure(&cluster)
+	cred.stageFailure(&cluster, priorAdminSecret)
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)

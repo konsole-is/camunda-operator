@@ -97,23 +97,36 @@ func (c adminCredential) recordRotation(cluster *v1.CamundaCluster) {
 }
 
 // stageFailure overwrites the AdminSecretReady condition of cluster, in
-// memory, with the failure of this reconcile. The admin Secret component has
+// memory, with the failure of this reconcile. prior is that condition as the
+// reconcile read it, before the components staged their own. The admin Secret component has
 // already reconciled and reported the unchanged Secret as healthy, but the
 // requested rotation is not applied, so the component condition must say
 // why. The deferred FlushStatus persists the staged value, and the Ready
 // aggregate reads it from the in-memory cluster.
-func (c adminCredential) stageFailure(cluster *v1.CamundaCluster) {
+func (c adminCredential) stageFailure(cluster *v1.CamundaCluster, prior *metav1.Condition) {
 	if c.failure == nil {
 		return
 	}
 
-	meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
+	cond := metav1.Condition{
 		Type:               v1.ConditionAdminSecretReady,
 		Status:             metav1.ConditionFalse,
 		Reason:             c.failure.reason,
 		Message:            conditions.BoundMessage(c.failure.message),
 		ObservedGeneration: cluster.Generation,
-	})
+	}
+	// The component reported the unchanged Secret as healthy a moment ago,
+	// so staging the failure flips the condition back and would stamp a new
+	// transition time on it. An unchanged failure keeps the time it already
+	// carries: the status then stays byte for byte what the server holds,
+	// the flush writes nothing, and the retry waits for its timer instead of
+	// being enqueued again by its own status write.
+	if prior != nil && prior.Status == cond.Status && prior.Reason == cond.Reason &&
+		prior.Message == cond.Message && prior.ObservedGeneration == cond.ObservedGeneration {
+		cond.LastTransitionTime = prior.LastTransitionTime
+	}
+
+	meta.SetStatusCondition(cluster.GetStatusConditions(), cond)
 }
 
 // resolveAdminCredential resolves what the admin Secret publishes this
