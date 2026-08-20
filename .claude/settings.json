@@ -17,5 +17,17 @@
   "enabledPlugins": {
     "ocf@operator-component-framework": true,
     "simple-english@simple-english": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-plugins.sh"
+          }
+        ]
+      }
+    ]
   }
 }
