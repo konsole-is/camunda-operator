@@ -21,12 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// ReasonMissingCredentials means that the backup bucket uses static
-// credentials and their local copy in the cluster namespace does not resolve.
-// Only a LogicalBackupRDBMS reports it, because the dump Job mounts those
-// credentials.
-const ReasonMissingCredentials = "MissingCredentials"
-
 // LogicalBackupRDBMSStep is the resume marker of the backup procedure. A
 // reconcile that re-enters after a crash continues at the recorded step. It
 // does not repeat a step that already ran.

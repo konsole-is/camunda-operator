@@ -63,7 +63,7 @@ The restore fails with reason `IncompatibleTarget` when the target cannot hold t
 
 - The secondary storage type of the target differs from the type of the backup.
 - The Zeebe partition count of the target differs from `status.partitionsCount` of the backup.
-- The `spec.backupStorageRef` of the target names another bucket than the one the backup wrote to. The restore reads the artifacts of the backup through the bucket of the target, so another bucket cannot hold them.
+- The `spec.backupStorageRef` of the target names another bucket than the one the backup wrote to. The restore reads the bucket that the backup wrote to, with the credentials that the operator copies into the namespace of the cluster. It copies them for the bucket of the target alone, so a backup in another bucket has no credentials to read it with.
 - The Camunda versions break the version rule below.
 
 **Version rule.** An Elasticsearch backup restores only with the exact Camunda version it was taken with, because that version is part of every snapshot name. A relational backup restores with the same version, or with one minor version newer. A backup taken with 8.9.x restores with 8.9.x or 8.10.x. The backup records its version in `status.version`, and a backup that recorded none cannot restore.
@@ -86,7 +86,9 @@ The operator then runs the Camunda restore application once per broker, as a Job
 
 ## Deletion
 
-When you delete the restore, the operator deletes the Jobs it created. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind. A backup that a restore read stays untouched, and you can delete it while the restore still runs. The restore pins the backup ID and the storage type in its status when it starts.
+When you delete the restore, the operator deletes the Jobs it created. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind. A backup that a restore read stays untouched.
+
+Do not delete a backup while its restore runs. The restore reads the backup again in every phase, for the snapshots and the key of the dump, and a backup that goes away holds the restore and then fails it. The restore pins the backup ID and the storage type in its status when it starts, so a backup that you delete after the restore finished changes nothing.
 
 ## Status
 
@@ -98,6 +100,7 @@ When you delete the restore, the operator deletes the Jobs it created. It writes
 | `Ready` | `InvalidReference` | The backup or the target does not exist, the backup is not `Completed`, or the broker StatefulSet is gone. | Correct the reference that the message names. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold this backup. | Read the message. Restore into a cluster that matches. |
 | `Ready` | `MissingSecret` | A credentials Secret of the target is missing or lacks a key. | Create the Secret that the message names. |
+| `Ready` | `MissingCredentials` | The backup bucket uses static credentials and their copy in the namespace of the cluster does not resolve. | Wait for the cluster to copy them, or correct the Secret that the bucket names. |
 | `Ready` | `ConnectionFailed` | Elasticsearch or the database rejects the operator. | Correct the endpoint or the credentials. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 

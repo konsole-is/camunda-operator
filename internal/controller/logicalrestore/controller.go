@@ -70,6 +70,9 @@ const (
 	defaultPollInterval = 5 * time.Second
 	// defaultRetryInterval paces a hold that no watch resolves.
 	defaultRetryInterval = 30 * time.Second
+	// defaultStageInterval re-enters after a staged status is persisted, so
+	// the next look acts on a fact that the API server already holds.
+	defaultStageInterval = time.Second
 	// defaultMidRunGrace bounds how long a started restore waits on a
 	// dependency that stopped resolving before the restore fails. A restore
 	// that already rewrote storage must reach a terminal phase, so a broken
@@ -89,12 +92,8 @@ type hold struct {
 	after time.Duration
 }
 
-var (
-	// settle waits on the watches alone.
-	settle = hold{}
-	// shortly re-enters to persist staged status before acting on it.
-	shortly = hold{after: time.Second}
-)
+// settle waits on the watches alone.
+var settle = hold{}
 
 // Options configures the reconciler at construction. Only CLIImage is
 // required. Every other field has a default that fits production, and a test
@@ -109,6 +108,9 @@ type Options struct {
 	RetryInterval time.Duration
 	// MidRunGrace overrides defaultMidRunGrace. Zero means the default.
 	MidRunGrace time.Duration
+	// StageInterval overrides defaultStageInterval, the wait that re-enters
+	// after a staged status is persisted. Zero means the default.
+	StageInterval time.Duration
 }
 
 // withDefaults fills the zero fields of o with the production defaults. It
@@ -126,6 +128,9 @@ func (o Options) withDefaults() (Options, error) {
 	}
 	if o.MidRunGrace <= 0 {
 		o.MidRunGrace = defaultMidRunGrace
+	}
+	if o.StageInterval <= 0 {
+		o.StageInterval = defaultStageInterval
 	}
 
 	return o, nil
@@ -240,6 +245,12 @@ func (r *Reconciler) restoreSecondaryStorage(
 	default:
 		return settle, fmt.Errorf("unknown secondary storage type %q", restore.Status.StorageType)
 	}
+}
+
+// shortly re-enters after a staged status is persisted, so the next look acts
+// on a fact that the API server already holds.
+func (r *Reconciler) shortly() hold {
+	return hold{after: r.opts.StageInterval}
 }
 
 // complete ends the restore. The target can be unsuspended.

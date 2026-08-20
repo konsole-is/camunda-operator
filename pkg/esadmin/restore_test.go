@@ -18,6 +18,7 @@ package esadmin_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -280,4 +281,37 @@ func TestConcurrentCallsAndAccessors(t *testing.T) {
 	group.Wait()
 
 	assert.NotEmpty(t, server.RestoreRequests())
+}
+
+// TestDeleteIndicesBatchesLongTargets pins the bound that keeps a delete
+// inside the request line of Elasticsearch. A cluster with real history holds
+// one zeebe-record index per day, and every name of a set goes into the path
+// of the delete. http.max_initial_line_length defaults to 4kb, so one request
+// that named them all would come back as a 400 and fail the restore.
+func TestDeleteIndicesBatchesLongTargets(t *testing.T) {
+	t.Parallel()
+
+	names := make([]string, 0, 200)
+	for i := range 200 {
+		names = append(names, fmt.Sprintf("zeebe-record_process-instance_8.9.0_2026-08-%03d", i))
+	}
+
+	server := esadmintest.New()
+	defer server.Close()
+	server.SetIndices(names...)
+
+	client, err := esadmin.New(server.URL(), "user", "pass", nil)
+	require.NoError(t, err)
+
+	require.NoError(t, client.DeleteIndices(t.Context(), []string{"zeebe-record*"}))
+
+	assert.Empty(t, server.Indices(), "every index of the set is gone")
+	assert.ElementsMatch(t, names, server.DeletedIndices(), "each name is named once")
+	assert.Greater(t, server.IndexDeleteCalls(), 1, "the set does not fit in one request line")
+
+	for _, path := range server.IndexDeletePaths() {
+		assert.LessOrEqual(
+			t, len(path), esadmin.MaxDeletePathBytes, "a request line stays inside the budget",
+		)
+	}
 }

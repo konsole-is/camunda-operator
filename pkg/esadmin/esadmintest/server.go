@@ -99,7 +99,8 @@ type RestoreRequest struct {
 //
 // The operations that the inherited FailNext and DropNext name are
 // "repository", "snapshotCreate", "snapshotStatus", "snapshotDelete",
-// "snapshotRestore", "indexResolve", "indexDelete", "recovery", "reload", and
+// "repositoryGet", "snapshotRestore", "indexResolve", "indexDelete",
+// "recovery", "reload", and
 // "stats". A failing operation answers 500; a dropped one closes the
 // connection.
 //
@@ -128,6 +129,7 @@ type Server struct {
 	indices map[string]struct{}
 
 	deletedIndices   []string
+	indexDeletePaths []string
 	indexDeleteCalls int
 
 	// recoveryActive drives the stage that _recovery reports for every
@@ -279,6 +281,16 @@ func (s *Server) DeletedIndices() []string {
 	return slices.Clone(s.deletedIndices)
 }
 
+// IndexDeletePaths returns the escaped path of every delete request that the
+// fake accepted, in the order they arrived. A test reads it to bound the
+// request line that a client builds: Elasticsearch refuses one that passes
+// http.max_initial_line_length.
+func (s *Server) IndexDeletePaths() []string {
+	s.Lock()
+	defer s.Unlock()
+	return slices.Clone(s.indexDeletePaths)
+}
+
 // IndexDeleteCalls reports how many delete requests the fake accepted. The
 // whole restore set belongs in one request, so a test that resolves three
 // indices and reads three calls has found a client that deletes one index at
@@ -372,22 +384,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
 
-	case len(parts) == 2 && parts[0] == snapshotPath && r.Method == http.MethodPut:
-		if s.Dropping(w, "repository") {
-			return
-		}
-		if s.Failing("repository") {
-			errorBody(w, http.StatusInternalServerError, "injected repository failure")
-			return
-		}
-		var body struct {
-			Type     string         `json:"type"`
-			Settings map[string]any `json:"settings"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		s.repos[parts[1]] = &Repository{Type: body.Type, Settings: body.Settings}
-		s.repositoryPuts[parts[1]]++
-		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
+	case len(parts) == 2 && parts[0] == snapshotPath:
+		s.handleRepository(w, r, parts[1])
 
 	case len(parts) == 3 && parts[0] == snapshotPath:
 		s.handleSnapshot(w, r, parts)
@@ -417,6 +415,52 @@ func errorBodyTyped(w http.ResponseWriter, status int, errorType, reason string)
 		"error":  map[string]string{"type": errorType, "reason": reason},
 		"status": status,
 	})
+}
+
+// handleRepository serves the registration and the read of one snapshot
+// repository: PUT registers or updates it, and GET answers it or reports it
+// missing.
+func (s *Server) handleRepository(w http.ResponseWriter, r *http.Request, name string) {
+	switch r.Method {
+	case http.MethodGet:
+		if s.Dropping(w, "repositoryGet") {
+			return
+		}
+		if s.Failing("repositoryGet") {
+			errorBody(w, http.StatusInternalServerError, "injected repository read failure")
+			return
+		}
+		repo, registered := s.repos[name]
+		if !registered {
+			errorBodyTyped(
+				w, http.StatusNotFound, "repository_missing_exception", "["+name+"] missing",
+			)
+			return
+		}
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
+			name: map[string]any{"type": repo.Type, "settings": repo.Settings},
+		})
+
+	case http.MethodPut:
+		if s.Dropping(w, "repository") {
+			return
+		}
+		if s.Failing("repository") {
+			errorBody(w, http.StatusInternalServerError, "injected repository failure")
+			return
+		}
+		var body struct {
+			Type     string         `json:"type"`
+			Settings map[string]any `json:"settings"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		s.repos[name] = &Repository{Type: body.Type, Settings: body.Settings}
+		s.repositoryPuts[name]++
+		adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
+
+	default:
+		errorBody(w, http.StatusMethodNotAllowed, "unsupported method "+r.Method)
+	}
 }
 
 // handleRestore serves POST /_snapshot/<repo>/<snapshot>/_restore. The
@@ -578,6 +622,7 @@ func (s *Server) handleIndexDelete(w http.ResponseWriter, r *http.Request, targe
 		delete(s.indices, name)
 	}
 	s.deletedIndices = append(s.deletedIndices, strings.Split(target, ",")...)
+	s.indexDeletePaths = append(s.indexDeletePaths, r.URL.EscapedPath())
 	s.indexDeleteCalls++
 	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"acknowledged": true})
 }

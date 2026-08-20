@@ -69,7 +69,7 @@ func (r *Reconciler) restorePrimaryStorage(
 		return r.recreateClaims(ctx, restore, resolved)
 	}
 
-	return r.trackRestoreJobs(ctx, restore, resolved.target.Brokers)
+	return r.trackRestoreJobs(ctx, restore)
 }
 
 // recreateClaims deletes every broker data claim that still holds data and
@@ -109,7 +109,7 @@ func (r *Reconciler) recreateClaims(
 			restore, "the broker volumes are empty and the restore application starts",
 		))
 
-		return shortly, nil
+		return r.shortly(), nil
 	}
 
 	return r.applyRestoreJobs(ctx, restore, resolved)
@@ -202,9 +202,9 @@ func restoreArgs(restore *v1.LogicalRestore) []string {
 func (r *Reconciler) trackRestoreJobs(
 	ctx context.Context,
 	restore *v1.LogicalRestore,
-	brokers int32,
 ) (hold, error) {
 	completed := 0
+	jobs := make([]batchv1.Job, 0, len(restore.Status.PrimaryJobNames))
 
 	for ordinal, name := range restore.Status.PrimaryJobNames {
 		job, gone, err := r.restoreJob(ctx, restore.Namespace, name)
@@ -228,6 +228,8 @@ func (r *Reconciler) trackRestoreJobs(
 			return settle, nil
 		}
 
+		jobs = append(jobs, *job)
+
 		status, err := ocfjob.DefaultConvergingStatusHandler(concepts.ConvergingOperationNone, job)
 		if err != nil {
 			return settle, err
@@ -245,12 +247,32 @@ func (r *Reconciler) trackRestoreJobs(
 		}
 	}
 
-	if completed == int(brokers) {
+	// The denominator is what status records, not what the live target says
+	// now. A cluster that changed its broker count mid-restore would
+	// otherwise never let the restore finish, or let it finish early.
+	if completed == len(restore.Status.PrimaryJobNames) {
 		r.complete(restore)
 
 		return settle, nil
 	}
 
+	// A broker that finished while a failure held the restore is progress,
+	// and progress gives the next failure the full grace again. Resolving the
+	// same references once more is not progress: a restore whose pod cannot
+	// start resolves them on every look, and a clock that it cleared would
+	// never run out.
+	if jobProgressedAfter(jobs, restore.Status.FirstFailedAt) {
+		recovered(restore)
+	}
+
+	// The selector carries the name of the restore and the restore component,
+	// and no UID: pkg/restore builds it, and both restore kinds share it. A
+	// restore that somebody deleted and created again under one name can
+	// therefore see a leftover pod of its predecessor and report it as its
+	// own, until the garbage collector removes that pod with its Job. The Job
+	// itself cannot be mistaken, because ownedBy compares the controller
+	// reference, and a foreign Job fails the restore before any pod of it is
+	// read.
 	stuck, err := podstate.Stuck(
 		ctx,
 		r.APIReader,
@@ -266,7 +288,8 @@ func (r *Reconciler) trackRestoreJobs(
 	}
 
 	conditions.Stage(restore, progressing(restore, fmt.Sprintf(
-		"the restore application finished on %d of %d brokers", completed, brokers,
+		"the restore application finished on %d of %d brokers",
+		completed, len(restore.Status.PrimaryJobNames),
 	)))
 
 	// The watch on the owned Jobs wakes the restore on progress. The poll also
@@ -294,6 +317,31 @@ func (r *Reconciler) failForeignJob(restore *v1.LogicalRestore, key types.Namesp
 			"earlier restore, then create a new restore",
 		key,
 	))
+}
+
+// jobProgressedAfter reports whether any job finished no earlier than since,
+// which is when the mid-run failure clock started. It answers false for a
+// clock that does not run: there is nothing to clear then.
+//
+// A Job that finished in the very second the clock started counts as
+// progress. Kubernetes keeps both times to the second, so a broker that
+// finished while the failure was reported carries the same stamp as the
+// failure, and a strict comparison would drop the one case the clock exists
+// for. The answer stays stable afterwards, because it compares two fixed
+// times: the clock is cleared once, and the next failure starts a new one.
+func jobProgressedAfter(jobs []batchv1.Job, since *metav1.Time) bool {
+	if since == nil {
+		return false
+	}
+
+	for i := range jobs {
+		finished := jobs[i].Status.CompletionTime
+		if finished != nil && !finished.Before(since) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // restoreJob reads one Job of the restore. gone reports that the live API has

@@ -332,22 +332,34 @@ func (w *world) suspend(suspended bool) {
 func (w *world) registerRepository() {
 	GinkgoHelper()
 
+	w.registerRepositoryAt(logicalbackup.ClusterPrefix(w.bucket.BasePath(), w.namespace, w.repository))
+}
+
+// registerRepositoryAt registers the repository of the world over the given
+// prefix. A spec uses another prefix to stand in for a registration that
+// somebody else made and that the restore must not overwrite.
+func (w *world) registerRepositoryAt(basePath string) {
+	GinkgoHelper()
+
 	admin, err := esadmin.New(w.search.URL(), "elastic", "secret", w.search.CertificatePEM())
 	Expect(err).NotTo(HaveOccurred())
 	Expect(admin.EnsureSnapshotRepository(ctx, w.repository, esadmin.RepositoryConfig{
 		Type:     esadmin.RepositoryTypeS3,
 		Bucket:   w.bucket.Spec.S3.BucketName,
-		BasePath: logicalbackup.ClusterPrefix(w.bucket.BasePath(), w.namespace, w.repository),
+		BasePath: basePath,
 	})).To(Succeed())
 }
 
 // seedSnapshots puts the snapshots of a backup into the fake Elasticsearch,
 // in the repository that the backup recorded. The restore asks for a snapshot
 // by name, and Elasticsearch answers a name it does not hold with an error.
+//
+// It registers no repository. A target whose Elasticsearch already holds one
+// is the other half of the story, and a spec of that half registers it with
+// registerRepository first.
 func (w *world) seedSnapshots(names ...string) {
 	GinkgoHelper()
 
-	w.registerRepository()
 	for _, name := range append(names, logicalbackup.RecordsSnapshotName(backupID)) {
 		w.search.SetSnapshotState(w.repository, name, "SUCCESS")
 	}

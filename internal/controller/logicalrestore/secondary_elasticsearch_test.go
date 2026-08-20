@@ -52,6 +52,7 @@ var _ = Describe("LogicalRestore of Elasticsearch secondary storage", func() {
 
 		repository := w.search.Repository(w.repository)
 		Expect(repository).NotTo(BeNil())
+		Expect(w.search.RepositoryPuts(w.repository)).To(Equal(1), "the restore registered it once")
 		Expect(repository.Type).To(Equal("s3"))
 		Expect(repository.Settings).To(HaveKeyWithValue("bucket", "camunda-backups"))
 		Expect(repository.Settings).To(HaveKeyWithValue(
@@ -90,6 +91,31 @@ var _ = Describe("LogicalRestore of Elasticsearch secondary storage", func() {
 		By("moving on when no shard recovers any more")
 		w.search.SetRecoveryActive(false)
 		expectPhase(restore, v1.LogicalRestoreRestoringPrimaryStorage)
+	})
+
+	It("keeps a snapshot repository that the target already holds", func() {
+		w := newElasticsearchWorld()
+		backup := createElasticsearchBackup(w)
+		w.seedSnapshots(elasticsearchSnapshots...)
+		w.search.SetIndices(targetIndices...)
+		w.search.SetRecoveryActive(true)
+
+		// The Elasticsearch of a target can be a cluster that this operator
+		// does not manage, where an operator registered the repository by
+		// hand. Overwriting it would point it at another prefix of another
+		// bucket.
+		w.registerRepositoryAt("someone-elses/prefix")
+
+		restore := createRestore(w, v1.LogicalBackupKindElasticsearch, backup.Name)
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.RestoredSnapshots).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		Expect(w.search.RepositoryPuts(w.repository)).To(Equal(1), "only the hand registration")
+		Expect(w.search.Repository(w.repository).Settings).To(
+			HaveKeyWithValue("base_path", "someone-elses/prefix"),
+		)
 	})
 
 	It("deletes the Optimize indices when the backup holds an Optimize snapshot", func() {

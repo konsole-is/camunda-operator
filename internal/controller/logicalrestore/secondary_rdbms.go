@@ -35,6 +35,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
+	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -100,7 +101,8 @@ func (r *Reconciler) restoreDatabase(ctx context.Context, restore *v1.LogicalRes
 }
 
 // claimDatabaseJob creates the Job as an identity claim: create-only, never a
-// forced apply. A forced apply after a NotFound is not atomic. It overwrites
+// forced apply. The create still carries the field manager of this kind, so
+// every resource of a restore names the same owner of its fields. A forced apply after a NotFound is not atomic. It overwrites
 // the UID label and the owner reference of a same-named Job that lands in
 // between, before the adoption check can look at them. A Create is atomic, so
 // the API server decides who owns the name. This is the same reasoning the
@@ -110,7 +112,7 @@ func (r *Reconciler) claimDatabaseJob(
 	restore *v1.LogicalRestore,
 	job *batchv1.Job,
 ) (hold, error) {
-	err := r.Create(ctx, job)
+	err := r.Create(ctx, job, restorepkg.FieldManagerLogicalRestore)
 	switch {
 	case apierrors.IsAlreadyExists(err):
 		var winner batchv1.Job
@@ -119,7 +121,7 @@ func (r *Reconciler) claimDatabaseJob(
 			if apierrors.IsNotFound(err) {
 				// The Job was deleted again in between. The requeue re-enters
 				// the claim.
-				return shortly, nil
+				return r.shortly(), nil
 			}
 
 			return settle, fmt.Errorf("reading the pg_restore Job that won the name: %w", err)
@@ -193,7 +195,7 @@ func (r *Reconciler) trackDatabaseJob(ctx context.Context, restore *v1.LogicalRe
 			restore, "the logical database is restored; the broker volumes come next",
 		))
 
-		return shortly, nil
+		return r.shortly(), nil
 	case concepts.CompletionStatusFailing:
 		r.fail(restore, v1.ReasonFailed, fmt.Sprintf(
 			"the pg_restore Job %s failed: %s", name, status.Reason,

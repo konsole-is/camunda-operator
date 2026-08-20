@@ -116,7 +116,7 @@ func (r *Reconciler) startElasticsearchRestore(
 		restore, "Elasticsearch restores the snapshots of the backup",
 	))
 
-	return shortly, nil
+	return r.shortly(), nil
 }
 
 // trackElasticsearchRestore polls the recovery of the restored indices. The
@@ -169,22 +169,23 @@ func (r *Reconciler) trackElasticsearchRestore(
 		restore, "the secondary storage is restored; the broker volumes come next",
 	))
 
-	return shortly, nil
+	return r.shortly(), nil
 }
 
-// ensureRepository registers the snapshot repository that holds the artifacts
-// of the backup on the Elasticsearch of the target. Its settings come from the
-// bucket that the backup pinned, and its prefix is the prefix that the source
-// cluster wrote under. That is what lets a backup restore into a second
-// cluster.
+// ensureRepository makes sure that the Elasticsearch of the target holds the
+// snapshot repository that the backup recorded, and returns its name.
 //
-// The repository keeps the name that the backup recorded. On a restore into
-// the source cluster, that registration is the one the ElasticsearchCluster
-// controller already keeps, with the same settings, so the call converges on
-// what is there. Two ElasticsearchCluster resources of the same name in
-// different namespaces that share one Elasticsearch would point the same
-// registration at another prefix, and the controller of the target puts its
-// own back on its next look.
+// A repository that is already registered is used as it is. The restore never
+// overwrites one, because it does not own every registration it finds: the
+// Elasticsearch of a target can be a cluster that this operator does not
+// manage, where an operator registered the repository by hand, and a PUT
+// would point that registration at another prefix of another bucket. A
+// registration that points elsewhere makes the restore fail on a snapshot
+// that is missing, which names the repository and which a human can correct.
+//
+// Only an absent repository is registered. Its settings come from the bucket
+// that the backup pinned, and its prefix is the prefix that the source cluster
+// wrote under. That is what lets a backup restore into a second cluster.
 func (r *Reconciler) ensureRepository(
 	ctx context.Context,
 	resolved *resolution,
@@ -195,6 +196,16 @@ func (r *Reconciler) ensureRepository(
 		return "", logicalbackup.InvalidReference(
 			"the backup did not record the snapshot repository that holds its snapshots",
 		), nil
+	}
+
+	registered, err := admin.SnapshotRepositoryExists(ctx, repository)
+	if err != nil {
+		return "", elasticsearchFailure(
+			fmt.Sprintf("reading the snapshot repository %s", repository), err,
+		), nil
+	}
+	if registered {
+		return repository, nil, nil
 	}
 
 	bucket, failure, err := r.backupBucket(ctx, resolved.backup.Bucket)

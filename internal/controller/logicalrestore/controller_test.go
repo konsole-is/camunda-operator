@@ -373,6 +373,42 @@ var _ = Describe("LogicalRestore of primary storage", func() {
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("did not recover"))
 	})
 
+	It("gives the full grace again after a broker finished", func() {
+		w := newRelationalWorld()
+		backup := createRelationalBackup(w)
+		restore := createRestore(w, v1.LogicalBackupKindRDBMS, backup.Name)
+		completeSecondaryStorage(w, restore)
+
+		owner := labels.LogicalRestore(restore.Name)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
+		}, timeout, interval).Should(Succeed())
+
+		By("holding on a pod that cannot start, which starts the clock of the grace")
+		stuck := stuckPod(w, restorepkg.JobName(owner, 0), restorepkg.JobSelector(owner))
+		expectReason(restore, v1.LogicalRestoreRestoringPrimaryStorage, v1.ReasonMissingSecret)
+
+		By("finishing one broker while the failure holds")
+		// envtest runs no kubelet, so a pod that is deleted the graceful way
+		// stays until one confirms it. The zero grace period removes it.
+		Expect(k8sClient.Delete(ctx, stuck, client.GracePeriodSeconds(0))).To(Succeed())
+		markJob(w.namespace, restorepkg.JobName(owner, 0), batchv1.JobComplete)
+
+		// The Job that finished is progress, so the clock goes and the next
+		// failure gets the whole grace again. Without that, the clock of the
+		// first hold would still run and the second hold would fail the
+		// restore at once.
+		Eventually(func(g Gomega) {
+			current := latest(g, restore)
+			g.Expect(current.Status.FirstFailedAt).To(BeNil())
+			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestoreRestoringPrimaryStorage))
+		}, timeout, interval).Should(Succeed())
+
+		By("holding again instead of failing at once")
+		stuckPod(w, restorepkg.JobName(owner, 1), restorepkg.JobSelector(owner))
+		expectReason(restore, v1.LogicalRestoreRestoringPrimaryStorage, v1.ReasonMissingSecret)
+	})
+
 	It("refuses a Job that another restore left behind under its name", func() {
 		w := newRelationalWorld()
 		backup := createRelationalBackup(w)
@@ -439,6 +475,14 @@ func completeSecondaryStorage(w *world, restore *v1.LogicalRestore) {
 func createStuckPod(w *world, jobName string, selector map[string]string) {
 	GinkgoHelper()
 
+	stuckPod(w, jobName, selector)
+}
+
+// stuckPod is createStuckPod that hands the pod back, for a spec that removes
+// it again.
+func stuckPod(w *world, jobName string, selector map[string]string) *corev1.Pod {
+	GinkgoHelper()
+
 	podLabels := map[string]string{"batch.kubernetes.io/job-name": jobName}
 	maps.Copy(podLabels, selector)
 
@@ -464,6 +508,8 @@ func createStuckPod(w *world, jobName string, selector map[string]string) {
 		}},
 	}}
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+	return pod
 }
 
 // createForeignJob creates a completed Job under name that no restore of the

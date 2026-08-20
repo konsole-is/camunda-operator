@@ -41,4 +41,9 @@ const (
 	// ReasonConnectionFailed means that a backing server is unreachable or
 	// rejects the configured credentials.
 	ReasonConnectionFailed = "ConnectionFailed"
+	// ReasonMissingCredentials means that the backup bucket uses static
+	// credentials and their local copy in the cluster namespace does not
+	// resolve. A LogicalBackupRDBMS reports it for the dump Job, and a
+	// LogicalRestore for the Job that reads the dump back.
+	ReasonMissingCredentials = "MissingCredentials"
 )

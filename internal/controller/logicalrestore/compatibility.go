@@ -63,7 +63,7 @@ func (r *Reconciler) validate(ctx context.Context, restore *v1.LogicalRestore) (
 		restore, "the restore writes the backup into the secondary storage of the target",
 	))
 
-	return shortly, nil
+	return r.shortly(), nil
 }
 
 // compatibility is what the ValidatingCompatibility phase compares: the facts
@@ -114,7 +114,9 @@ func check(in compatibility) *conditions.PreCheckFailure {
 	if in.BackupBucket != in.TargetBucket {
 		return incompatible(
 			"the backup wrote to ObjectStorageConfig %q and the target cluster backs up through %q; "+
-				"the restore reads the artifacts of the backup through the bucket of the target",
+				"the restore reads the bucket of the backup with the credentials that the "+
+				"CamundaCluster controller copies into the namespace, and it copies them for the "+
+				"bucket of the target alone",
 			in.BackupBucket, in.TargetBucket,
 		)
 	}

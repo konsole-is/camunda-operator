@@ -100,7 +100,7 @@ func (r *Reconciler) admit(ctx context.Context, restore *v1.LogicalRestore) (hol
 			} else {
 				r.start(restore, cluster, source)
 
-				return shortly, nil
+				return r.shortly(), nil
 			}
 		}
 	}
