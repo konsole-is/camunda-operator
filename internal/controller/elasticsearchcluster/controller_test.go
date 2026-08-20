@@ -19,6 +19,7 @@ package elasticsearchcluster
 import (
 	"maps"
 	"slices"
+	"time"
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	. "github.com/onsi/ginkgo/v2"
@@ -691,8 +692,19 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		// A converged, unchanged repository is not re-verified: Elasticsearch
 		// makes every data node write a test blob per registration. A reconcile
 		// that changes nothing must keep the condition without a new PUT.
-		puts := elasticsearch.RepositoryPuts(cluster.Name)
-		Expect(puts).NotTo(BeZero())
+		// The baseline is taken once the registration has quiesced. The
+		// condition goes True on the reconcile that registered, and a reconcile
+		// that started before it can still land a later PUT. A baseline taken
+		// while one is in flight makes the check below fail on the reconcile
+		// that was already on its way.
+		var puts int
+		Eventually(func(g Gomega) {
+			before := elasticsearch.RepositoryPuts(cluster.Name)
+			g.Expect(before).NotTo(BeZero())
+			time.Sleep(interval)
+			puts = elasticsearch.RepositoryPuts(cluster.Name)
+			g.Expect(puts).To(Equal(before), "a registration is still in flight")
+		}, timeout, interval).Should(Succeed())
 		// The reconciler writes the cluster too, so the update re-reads on a
 		// conflict.
 		Eventually(func(g Gomega) {
