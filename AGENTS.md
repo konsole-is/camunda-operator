@@ -47,6 +47,12 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 - `**/zz_generated.*.go` - from `make generate`
 - `PROJECT` - from `kubebuilder [OPTIONS]`
 
+**One exception: removing a kind.** Kubebuilder v4 scaffolds an API but never removes one. There is
+no `kubebuilder delete api`. To remove a kind, delete its `resource:` block from `PROJECT` by hand,
+together with the types file, the controller, the CRD base, the RBAC role files, the sample, and the
+three `config/{crd,rbac,samples}/kustomization.yaml` entries. Say in the pull request body that
+`PROJECT` was hand-edited, and why. Adding a kind still goes through `kubebuilder create api`.
+
 ### Never Remove Scaffold Markers
 Do NOT delete `// +kubebuilder:scaffold:*` comments. CLI injects code at these markers.
 
