@@ -90,16 +90,18 @@ func TestDueTrigger(t *testing.T) {
 		assert.Equal(t, trigger(26), next.UTC())
 	})
 
-	t.Run("a pathological backlog stays bounded and skips to the future", func(t *testing.T) {
+	t.Run("a pathological backlog still yields the latest trigger", func(t *testing.T) {
 		minutely, err := parseCron("* * * * *")
 		require.NoError(t, err)
 
-		// Two years of missed minutes. The walk gives up and no trigger is
-		// due; the next one is in the future, so the schedule recovers.
-		now := created.AddDate(2, 0, 0)
+		// Two years of missed minutes. The full walk is too large, but the
+		// latest trigger must still come due, or the schedule would re-walk
+		// the same backlog forever and never fire again.
+		now := created.AddDate(2, 0, 0).Add(30 * time.Second)
 		last := metav1.NewTime(created)
 		due, next := dueTrigger(minutely, &last, created, now)
-		assert.Nil(t, due)
+		require.NotNil(t, due)
+		assert.Equal(t, now.Truncate(time.Minute), due.UTC())
 		assert.True(t, next.After(now))
 	})
 }
