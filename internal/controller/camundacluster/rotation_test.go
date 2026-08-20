@@ -215,6 +215,35 @@ var _ = Describe("Admin password rotation", func() {
 		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(string(component.Healthy)))
 	})
 
+	It("reports the failure of the retry, not the expected rejection of the first call", func() {
+		cluster := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cc-retry", Namespace: newNamespace()},
+		}
+		in := components.Input{
+			Cluster:   cluster,
+			Effective: components.Effective{CamundaClusterSpec: v1.CamundaClusterSpec{Version: "8.9.9"}},
+		}
+		reconciler := &CamundaClusterReconciler{
+			APIReader: k8sClient,
+			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
+				endpoint, _ := userAPIEndpoint.Load().(string)
+				return endpoint
+			},
+		}
+
+		// The cluster holds the pending password already, so the call with
+		// the active one is rejected and the retry is the real attempt. The
+		// retry then finds the endpoint gone.
+		seedClusterUser("pending-password")
+		users.DropAfter("updateUser", 1, 1)
+
+		failure := reconciler.updateAdminPassword(ctx, cluster, in, "active-password", "pending-password")
+		Expect(failure).NotTo(BeNil())
+		Expect(failure.reason).To(
+			Equal(v1.ReasonConnectionFailed), "a cluster that went away must not read as bad credentials",
+		)
+	})
+
 	It("records a requested rotation only while the cluster never published an admin Secret", func() {
 		cluster := &v1.CamundaCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "cc-seam", Namespace: newNamespace()},

@@ -269,8 +269,10 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 // pending second. The second try is what makes a crash re-entrant: when an
 // earlier reconcile got its call accepted and crashed before the promote,
 // the cluster already holds the pending password, so only pending
-// authenticates, and setting it again changes nothing. It returns nil on
-// success and the failure to report otherwise.
+// authenticates, and setting it again changes nothing. The outcome of the
+// retry replaces the rejection that provoked it, so the reported reason is
+// always the last thing the operator learned about the cluster. It returns
+// nil on success and the failure to report otherwise.
 func (r *CamundaClusterReconciler) updateAdminPassword(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -285,11 +287,20 @@ func (r *CamundaClusterReconciler) updateAdminPassword(
 
 	err := putAdminPassword(ctx, endpoint, in.Effective.Version, active, pending)
 	if errors.Is(err, camundaadmin.ErrRejected) {
-		if retryErr := putAdminPassword(ctx, endpoint, in.Effective.Version, pending, pending); retryErr == nil {
-			return nil
-		}
+		// A rejected first call is expected when the cluster already holds
+		// the pending password, so the retry decides the outcome of this
+		// reconcile and its own failure is the one to report. A cluster that
+		// goes away during the retry must read ConnectionFailed and clear on
+		// its own, not the bad credentials that the first call expects.
+		err = putAdminPassword(ctx, endpoint, in.Effective.Version, pending, pending)
 	}
 
+	return rotationFailureFor(err)
+}
+
+// rotationFailureFor maps the error of a user API call onto the
+// AdminSecretReady reason that reports it. A nil error is no failure.
+func rotationFailureFor(err error) *rotationFailure {
 	switch {
 	case err == nil:
 		return nil

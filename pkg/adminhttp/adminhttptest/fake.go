@@ -40,6 +40,7 @@ type Fake struct {
 
 	failures map[string]int
 	drops    map[string]int
+	dropSkip map[string]int
 
 	server *httptest.Server
 }
@@ -60,6 +61,7 @@ func (f *Fake) StartTLS(handler http.HandlerFunc) {
 func (f *Fake) start(newServer func(http.Handler) *httptest.Server, handler http.HandlerFunc) {
 	f.failures = map[string]int{}
 	f.drops = map[string]int{}
+	f.dropSkip = map[string]int{}
 	f.server = newServer(f.locked(handler))
 
 	// Serve without keep-alive, so every call opens its own connection: the
@@ -125,6 +127,16 @@ func (f *Fake) DropNext(op string, n int) {
 	f.drops[op] = n
 }
 
+// DropAfter serves the next skip calls of op and drops the n calls that
+// follow. It is DropNext for a client that retries: the test lets the first
+// call answer, so the retry is the one that finds the endpoint gone.
+func (f *Fake) DropAfter(op string, skip, n int) {
+	f.Lock()
+	defer f.Unlock()
+	f.dropSkip[op] = skip
+	f.drops[op] = n
+}
+
 // Failing consumes one injected failure of op and reports whether the
 // handler must answer with one. It runs under the lock of the request.
 func (f *Fake) Failing(op string) bool {
@@ -141,6 +153,10 @@ func (f *Fake) Failing(op string) bool {
 // writing. It runs under the lock of the request.
 func (f *Fake) Dropping(w http.ResponseWriter, op string) bool {
 	if f.drops[op] <= 0 {
+		return false
+	}
+	if f.dropSkip[op] > 0 {
+		f.dropSkip[op]--
 		return false
 	}
 	f.drops[op]--

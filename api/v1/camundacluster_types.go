@@ -191,9 +191,12 @@ type ConnectorsSpec struct {
 	WorkloadSpec `       json:",inline"`
 }
 
-// ClusterAuthSpec holds the OIDC client credentials of one cluster, and the
-// identities that get its admin role. The credentials override the defaults
-// of the platform config and of the preset.
+// ClusterAuthSpec holds the credentials of one cluster and the identities
+// that get its admin role. Under OIDC it carries the client credentials,
+// which override the defaults of the platform config and of the preset, and
+// the identities of the administrators. Under basic authentication it
+// carries the basic block, which configures the admin credential that the
+// operator owns.
 type ClusterAuthSpec struct {
 	// ClientID is the OIDC client ID of this cluster.
 	// +optional
@@ -221,12 +224,17 @@ type ClusterAuthSpec struct {
 // BasicAuthSpec configures the admin credential of a basic-auth cluster.
 type BasicAuthSpec struct {
 	// PasswordRotation requests one rotation of the admin password. Set it
-	// to a value that differs from status.adminPassword.rotation, for
-	// example a date. The operator generates a new password, sets it on the
-	// admin user through the user API of the running cluster, and then
-	// publishes it in the admin Secret. The connectors Deployment restarts
-	// with the new password. An empty value never rotates. A suspended
-	// cluster rotates after it resumes.
+	// to a value that differs from the applied one, for example a date. The
+	// operator generates a new password, sets it on the admin user through
+	// the user API of the running cluster, and then publishes it in the
+	// admin Secret. The connectors Deployment restarts with the new
+	// password. An empty value never rotates. A suspended cluster rotates
+	// after it resumes.
+	//
+	// The applied value of a cluster is status.adminPassword.rotation on
+	// that cluster. This field takes its effective value from the preset
+	// merge, so a preset that sets it rotates every cluster that references
+	// the preset, and each of those clusters reports its own status.
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	PasswordRotation string `json:"passwordRotation,omitempty"`
@@ -329,8 +337,9 @@ type CamundaClusterSpec struct {
 	// identity.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
-	// Auth holds the OIDC client credentials of this cluster and the
-	// identities that get its admin role.
+	// Auth holds the credentials of this cluster and the identities that get
+	// its admin role: the OIDC client credentials and administrators under
+	// OIDC, the operator-owned admin credential under basic authentication.
 	// +optional
 	Auth *ClusterAuthSpec `json:"auth,omitempty"`
 	// Zeebe configures the brokers.

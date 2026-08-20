@@ -44,6 +44,7 @@ The cluster starts from `spec.cluster` of the preset. Each field then merges as 
 | `podLabels`, `podAnnotations` | Merged by key. The cluster wins on a conflict. |
 | `scheduling` (top-level, per component, and `backup.dump.scheduling`) | Never merged. A block set on the cluster replaces the preset block at that level entirely. |
 | `auth.admin` | Never merged. A block set on the cluster replaces the whole preset block, so one manifest names every administrator. |
+| `auth.basic` | Never merged. A block set on the cluster replaces the whole preset block. A `passwordRotation` on the preset rotates the admin password of every cluster that inherits it, and each cluster reports its own `status.adminPassword.rotation`. |
 | `backup.primaryStorage` | Merged per field. A cluster can change the schedule and keep the retention of the preset. `continuous` is a pointer, so a cluster can set it to `false` while the preset sets it to `true`. |
 | `backup.dump` | Follows the component rules above. `scratchVolume` replaces as a whole block. `postgresImage` and `activeDeadlineSeconds` are replaced when the cluster sets them. |
 | `platformConfigRef`, `presetRef`, `externalUrl`, `serviceAccount`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, `pause` | Instance-bound. They always come from the cluster and are rejected in a preset. |
