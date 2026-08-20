@@ -125,10 +125,11 @@ spec:
 
 ## Status
 
-`Ready` is `True` only when `WebappReady` and `ImporterReady` are both `True`. Its reason and message come from the workload that governs: the one whose status has the highest priority among those that are not `True`, or the highest of both when both are `True`.
+`Ready` is `True` only when `WebappReady` and `ImporterReady` are both `True`. Its reason and message come from the workload that governs: the one whose status has the highest priority among those that are not `True`, or the highest of both when both are `True`. `MirroredSecretsReady` joins the aggregate when a referenced secret lives in another namespace.
 
 | Type | Reason | Meaning |
 | --- | --- | --- |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced secret from another namespace is applied, or no such secret exists. |
 | `WebappReady` | `Healthy` | Every webapp replica is ready. |
 | `ImporterReady` | `Healthy` | The importer replica is ready. |
 | `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. |
