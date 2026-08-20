@@ -9,7 +9,7 @@ sub_pr_approval: autonomous for #110 and #113; manual for #111 and #112 (user re
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: consumer-wave
 ---
 
 # Restore controllers — orchestration state
@@ -24,7 +24,7 @@ status: foundational-wave
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | → feat/restore-controllers | in-progress |
+| #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | #120 → feat/restore-controllers | self-merged |
 | #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | → feat/restore-controllers | not-started |
 | #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | → feat/restore-controllers | not-started |
 | #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started |
@@ -35,12 +35,12 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| `restore-api-types` | merged code (PR1 first) | n/a | pending |
-| `restore-shared-package` | merged code (PR1 first) | n/a | pending |
-| `pod-stuck-helper` | merged code (PR1 first) | n/a | pending |
-| `backup-version-field` | merged code (PR1 first) | n/a | pending |
-| `backup-artifact-naming` | merged code (PR1 first) | n/a | pending |
-| `pg-open-seam` | merged code (PR1 first) | n/a | pending |
+| `restore-api-types` | merged code (PR1 first) | #120 | locked |
+| `restore-shared-package` | merged code (PR1 first) | #120 | locked |
+| `pod-stuck-helper` | merged code (PR1 first) | #120 | locked |
+| `backup-version-field` | merged code (PR1 first) | #120 | locked |
+| `backup-artifact-naming` | merged code (PR1 first) | #120 | locked |
+| `pg-open-seam` | merged code (PR1 first) | #120 | locked |
 | `esadmin-restore-api` | merged code (PR2) | n/a | pending |
 
 ## Bubble-up log
@@ -51,7 +51,7 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 ## Pending snapshot
 
-- Phase 1 in flight: an Opus worker implements #110 in .claude/worktrees/restore-controllers--api. On its ready report: copilot review loop, two-stage orchestrator review, self-merge, close #110, lock the PR1 contracts, checkpoint, then fan out #111 and #112 in parallel.
+- Phase 1 done: PR #120 self-merged (squash eb0b970) after a 3-round Copilot loop and a two-stage orchestrator review; #110 closed; all six PR1 contracts locked. Phase 2 next: fan out #111 and #112 in parallel off feat/restore-controllers. Their review loops run to clean, then the PRs STAY OPEN for the user. The contract deltas the workers must receive are in the bubble-up log (JobName scheme <restore>-lr|pitr-<ordinal>, JobLabels/JobSelector helpers, SetControllerReference before restore.Apply, flush Progress.Recreated before Jobs, Owner.GetName must equal OwnerLabel.Name, hard-fail on malformed-Target errors, digest-only images fail ReadTarget).
 - User instructions (2026-08-20, AFK with full autonomy): run the Copilot review loop on every sub-PR. Self-merge #110 when clean. Keep #111 and #112 OPEN once their loops are clean — the user reviews the controller PRs personally. Hold #113 until #111 and #112 merge.
 - Token note: the user runs close to the Fable limit. Dispatch implementation subagents on `model: opus`.
 
