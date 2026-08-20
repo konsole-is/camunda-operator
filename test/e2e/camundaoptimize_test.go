@@ -404,10 +404,35 @@ var _ = Describe("CamundaOptimize", Ordered, func() {
 		// UNAVAILABLE. Waiting for the cluster to reconcile the generation that
 		// carries the exporter settings is what makes this a test of behavior
 		// rather than of timing.
-		By("waiting for the cluster to finish the rollout that the exporter settings started")
+		By("waiting for the cluster to reconcile the generation that carries the exporter settings")
 		Eventually(func(g Gomega) {
 			expectReconciledReady(g, ccResource, ccName, optimizeNamespace)
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+
+		// Ready on the cluster is not enough on its own. It follows the pods,
+		// and a broker answers its probe before it serves a partition again, so
+		// a deployment sent in that window reads 503 UNAVAILABLE. The topology
+		// is what reports the partition, so it is what this waits on.
+		By("waiting for the partition to report healthy through the gateway")
+		Eventually(func(g Gomega) {
+			resp, err := camundaREST(cluster, "topology", http.MethodGet, pathTopology, nil)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+
+			var topology struct {
+				Brokers []struct {
+					Partitions []struct {
+						Health string `json:"health"`
+					} `json:"partitions"`
+				} `json:"brokers"`
+			}
+			g.Expect(json.Unmarshal([]byte(resp.Body), &topology)).To(Succeed(), resp.Body)
+			g.Expect(topology.Brokers).NotTo(BeEmpty(), resp.Body)
+			g.Expect(topology.Brokers[0].Partitions).NotTo(BeEmpty(), resp.Body)
+			g.Expect(topology.Brokers[0].Partitions).To(
+				HaveEach(HaveField("Health", "healthy")), resp.Body,
+			)
+		}, ccAPITimeout, 5*time.Second).Should(Succeed())
 
 		By("deploying the process")
 		dir, err := utils.GetProjectDir()
