@@ -5,29 +5,41 @@ plan: docs/superpowers/plans/2026-08-20-restore-controllers-plan.md
 tracking_issue: #109
 feature_branch: feat/restore-controllers
 feature_worktree: .claude/worktrees/restore-controllers
-sub_pr_approval: autonomous for #110 and #113; manual for #111 and #112 (user reviews the controller PRs; keep them open once their review loops are clean)
+sub_pr_approval: autonomous for the e2e PR; manual for every controller PR (the user reviews and merges PR-A, PR-B, and PR-C personally; keep them open once their review loops are clean)
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: consumer-wave
+status: split-rebreak
 ---
 
 # Restore controllers — orchestration state
 
+## The split (2026-08-20)
+
+`LogicalRestore` became `LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS`. The spec records
+the three decisions that drive the rest of this file: the split, the shared machinery moving into
+`pkg/restore`, and the per-cluster claim that every restore kind now takes. PR #123 is closed, and
+its branch is the raw material for PR-B and PR-C.
+
 ## Phases
 
-- **Phase 1 (foundational)** — `#110` (API types + shared restore package)
-- **Phase 2 (consumers, parallel)** — `#111` (LogicalRestore), `#112` (PointInTimeRestore)
-- **Phase 3 (proof)** — `#113` (e2e)
+- **Phase 1 (foundational)** — `#110` (API types + shared restore package). Done.
+- **Phase 2 (PointInTimeRestore)** — `#112`. Done.
+- **Phase 3 (unify)** — PR-A. One driver in `pkg/restore` for all three restore kinds.
+- **Phase 4 (logical kinds, parallel)** — PR-B (Elasticsearch), PR-C (RDBMS).
+- **Phase 5 (proof)** — `#113` (e2e, both new kinds), then the integration PR.
 
 ## PRs / worktrees
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | #120 → feat/restore-controllers | self-merged |
-| #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | #123 → feat/restore-controllers | ready (loops clean at 004e042; OPEN for the user's review) |
-| #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | #122 → feat/restore-controllers | ready (loops clean at b4717b4; OPEN for the user's review) |
-| #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started |
+| #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | #120 → feat/restore-controllers | MERGED |
+| #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | #122 → feat/restore-controllers | MERGED (075746a) |
+| #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | #123 | CLOSED — raw material for PR-B and PR-C, head 14a1545 |
+| PR-A | not created | not created | → feat/restore-controllers | not-started; sub-issue NOT FILED |
+| PR-B (#111) | not created | not created | → feat/restore-controllers | not-started; #111 body still says "LogicalRestore" |
+| PR-C | not created | not created | → feat/restore-controllers | not-started; sub-issue NOT FILED |
+| #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started; must cover BOTH new kinds |
 
 ## Contracts (from the plan)
 
@@ -56,12 +68,15 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 ## Pending snapshot
 
-- PAUSED 2026-08-20 pending a user decision: split `LogicalRestore` into `LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS`. The user is likely to close PR #123 and open two PRs instead. A fresh session starts that work; this session handed over a prompt. Do not resume #123's current shape without checking that decision.
-- USER CONSTRAINT on the split: the Zeebe primary-storage restore (PVC recreation plus the per-broker restore-application Jobs) is SHARED by both storage paths and by `PointInTimeRestore`. It already lives in `pkg/restore`. The split covers the API kinds and the secondary-storage phase only. Never duplicate the primary phase.
-- Open PRs, both review-clean and NOT to be merged by an agent: #122 (PointInTimeRestore, head 9f547e6) and #123 (LogicalRestore, head 14a1545). Both had three lite Copilot rounds, a balanced round, and two orchestrator review passes.
-- Base branch `feat/restore-controllers` carries, beyond PR #120: the e2e compile fix (a409a42), the cluster claim moved to `pkg/clusterclaim` with a neutral Lease prefix (e787f7c), a kind-agnostic claim liveness rule (dc01466), and an elasticsearchcluster test-flake fix (81ff766).
-- NOT DONE, carried to the next session: neither restore kind calls `clusterclaim.Claim`/`Release` yet. The groundwork is merged on the base; both restore kinds (all of them, after any split) must take the per-cluster Lease before their first destructive step and release it at the terminal transition. Copilot threads #122/3822851527 and #123/3822837179 are deliberately left open for this.
-- Then: #113 (e2e) after the restore controllers merge, then the integration PR `feat/restore-controllers` -> main with `Closes #109`, stopping at ready-to-merge for the user.
+- The split is DECIDED and recorded. Spec amended at d53f70a, plan rebroken at a325561. Both are on the feature branch. Read them before dispatching any worker.
+- USER CONSTRAINT, still binding: the Zeebe primary-storage restore (PVC recreation plus the per-broker restore-application Jobs) is SHARED by both storage paths and by `PointInTimeRestore`. It lives in `pkg/restore`. The split covers the API kinds and the secondary-storage phase only. Never duplicate the primary phase.
+- NEXT ACTION: file the two missing sub-issues under #109 (PR-A unification, PR-C `LogicalRestoreRDBMS`) and reconcile #111 to `LogicalRestoreElasticsearch` through `feature-dev-workflow:writing-github-issues` Step 2D. Not done yet.
+- Then PR-A. PR-B and PR-C are parallel once PR-A lands — they touch disjoint files. Then #113, then the integration PR `feat/restore-controllers` -> main with `Closes #109`, stopping at ready-to-merge for the user.
+- PR-A RISK: it rewrites the destructive primary-storage phase of `PointInTimeRestore` after that controller merged. Its envtest suite (1325 lines) is the safety net and stays as it is. A test that PR-A changes must name the resolved divergence that forced the change, in the PR body. Never adjust a test quietly to make the refactor pass.
+- The Lease is UNBUILT. No restore kind calls `clusterclaim.Claim`/`Release`. PR-A puts it in the shared driver: claim when admission passes, release at the terminal transition, hold in `Pending` with `ClusterClaimed` when another holder has it. Copilot thread #122/3822851527 is still open for this and gets answered in PR-A. Thread #123/3822837179 was answered in the closing comment of #123.
+- Base branch `feat/restore-controllers` carries, beyond PR #120: the e2e compile fix (a409a42), the cluster claim moved to `pkg/clusterclaim` with a neutral Lease prefix (e787f7c), a kind-agnostic claim liveness rule (dc01466), an elasticsearchcluster test-flake fix (81ff766), and the merged `PointInTimeRestore` controller (075746a).
+- REMOVAL SURFACE for PR-A, verified by grep. Beyond the obvious types file, CRD, RBAC role files, sample, and docs page: `config/{crd,rbac,samples}/kustomization.yaml` entries; the `kind: LogicalRestore` block in `PROJECT`; the `resources=logicalrestores;pointintimerestores` RBAC markers in BOTH backup controllers (`logicalbackupelasticsearch/controller.go:149`, `logicalbackuprdbms/controller.go:182`); `internal/controller/samples_schema_test.go`; `jobKindInfixes[labels.LogicalRestoreKey]` in `pkg/restore/job.go`; all three `pkg/restore/testdata/golden/*.yaml` (they carry `camunda.io/logical-restore` labels and `-lr-` Job names); the hardcoded field manager in `pkg/restore/claims_test.go`; the package comment in `pkg/restore/doc.go`; two links to `logicalrestore.md` in `docs/crds/pointintimerestore.md` (lines 7 and 185 — `mkdocs build --strict` catches these); and user-visible prose in `pointintimerestore/{admit.go:187,primary.go:332}`. `v1.ReasonIncompatibleTarget` must SURVIVE the deletion and move to `restore_shared.go`.
+- OPEN QUESTION for the user: `PROJECT` has no supported removal path. AGENTS.md forbids hand-editing it and kubebuilder v4 has no `delete api` verb. PR-A hand-edits it and says so in its body. Decide whether AGENTS.md records the exception.
 - FLAG TO THE USER: two verification gaps found the hard way. (1) `make all` does not lint (Makefile `all: build`) while CLAUDE.md claims it does. (2) `go test ./...` never compiles `test/e2e` (build tag), so symbol moves break CI silently — worth adding both `make lint` and `go vet -tags=e2e ./test/e2e/` to a single documented pre-PR gate.
 
 ## Resume checklist
