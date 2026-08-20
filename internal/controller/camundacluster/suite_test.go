@@ -51,11 +51,13 @@ var (
 )
 
 // userAPIEndpoints maps the namespace of a cluster to the user API that
-// serves it. The reconciler is process wide, and envtest runs no namespace
-// controller, so a cluster that an earlier spec left retrying keeps
-// reconciling for the rest of the suite. Keying by namespace means such a
-// cluster can never reach the fake of a later spec and disturb its call
-// counts. A namespace with no entry has no user API.
+// serves it. The reconciler is process wide, so one fake for the whole suite
+// would let a reconcile of an earlier cluster count against the fake of a
+// later spec. createCluster waits for its cluster to go, which closes that
+// window for everything but a reconcile already in flight; keying the
+// endpoint by namespace closes it for that one too. A namespace with no
+// entry has no user API, which is what a spec wants while it drives a
+// rotation that cannot reach the cluster.
 var userAPIEndpoints sync.Map
 
 // unreachableUserAPI is the address of a cluster that answers nothing.
