@@ -17,7 +17,6 @@ limitations under the License.
 package restore
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -502,22 +501,34 @@ func TestPrimaryHoldsOnAPodThatCannotStart(t *testing.T) {
 	assert.Contains(t, condition.Message, pod.Name)
 }
 
-// A malformed target is a render failure, not a wait. Nothing changes on its
-// own, and the restore already left the volumes behind.
-func TestPrimaryFailsOnATargetItCannotRenderFrom(t *testing.T) {
+// A Target that is missing any of its parts reaches Primary only through
+// misuse, because ReadTarget fills all of them. Such a target is a render
+// failure, not a wait: nothing changes on its own.
+//
+// The check runs before the phase pins the broker count, because the count is
+// read off the target. A nil target takes the manager down inside a reconcile,
+// and a target without brokers pins a count of zero that no later look ever
+// replaces.
+func TestPrimaryRejectsAnIncompleteTarget(t *testing.T) {
 	t.Parallel()
 
-	w := newPrimaryWorld(t)
-	w.look(t)
-	w.input.Target.ClaimTemplate = nil
+	for name, tc := range incompleteTargets() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			w := newPrimaryWorld(t)
+			w.input.Target = tc.target
 
-	outcome, err := Primary(
-		context.Background(), w.client, w.client, w.scheme, w.progress(), w.input,
-	)
-	require.NoError(t, err)
+			outcome := w.look(t)
 
-	require.NotNil(t, outcome.Failure)
-	assert.Contains(t, outcome.Failure.Message, "the broker volumes cannot be recreated")
+			require.NotNil(t, outcome.Failure, "an incomplete target ends the restore")
+			assert.Zero(t, outcome.Wait, "it is a failure, not a wait")
+			assert.Equal(t, v1.ReasonFailed, outcome.Failure.Reason)
+			assert.Contains(t, outcome.Failure.Message, tc.text)
+			assert.Contains(t, outcome.Failure.Message, "primary-storage phase")
+			assert.Zero(t, w.progress().Brokers, "it pins no count")
+			assert.Len(t, w.claims(t), 3, "the volumes of the cluster are untouched")
+		})
+	}
 }
 
 // A Job whose name is free is created, never applied. A read that finds no

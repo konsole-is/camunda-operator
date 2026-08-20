@@ -87,9 +87,11 @@ const (
 // names it had before and the CRD schema does not change. controller-gen
 // flattens an inline embedded struct the same way encoding/json does.
 //
-// pkg/restore reads and writes this struct in place. The driver owns every
-// field here. Each kind owns its own phase and the fields of its own
-// procedure.
+// pkg/restore reads and writes this struct in place, through the driver
+// calls that every restore kind makes. TargetClusterUID and Brokers are the
+// two exceptions: a controller pins them during its own admission, before the
+// driver first runs, so that every rule it checks is measured against one
+// cluster. Each kind owns its own phase and the fields of its own procedure.
 type RestoreProgress struct {
 	// TargetClusterUID pins the identity of the target cluster. A cluster
 	// that is deleted and created again under the same name is another

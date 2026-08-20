@@ -108,6 +108,17 @@ func Primary(
 	p *v1.RestoreProgress,
 	in PrimaryInput,
 ) (Outcome, error) {
+	// Every entry point that renders from a Target rejects an incomplete one.
+	// The check comes first here, because the phase reads the broker count off
+	// the target before it renders anything. A nil target takes the manager
+	// down inside a reconcile, and a target without brokers pins a count of
+	// zero that no later look ever replaces.
+	if err := in.Target.complete(); err != nil {
+		return failure(fmt.Sprintf(
+			"the restore cannot run the primary-storage phase: %s", err,
+		)), nil
+	}
+
 	// The count is pinned at the first look. The restore recreates the volumes
 	// of the brokers it read and runs a Job for each of them, and a cluster
 	// that is scaled while it runs changes neither. The live count still
