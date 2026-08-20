@@ -36,7 +36,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-const managementAuthConfigSecretRefsField = "managementauthconfig.spec.secretRefs"
+// SecretRefsField is the index field that lists contracts by the Secrets they
+// reference, keyed by "<namespace>/<name>". A consumer of the contract watches
+// those Secrets through it.
+const SecretRefsField = "managementauthconfig.spec.secretRefs"
 
 // ManagementAuthConfigReconciler validates ManagementAuthConfig contracts and
 // maintains their Ready condition.
@@ -102,7 +105,7 @@ func (r *ManagementAuthConfigReconciler) validate(
 func (r *ManagementAuthConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.ManagementAuthConfig{},
-		managementAuthConfigSecretRefsField, func(o client.Object) []string {
+		SecretRefsField, func(o client.Object) []string {
 			ref := o.(*v1.ManagementAuthConfig).Spec.ClientSecretRef
 			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
 		},
@@ -116,7 +119,7 @@ func (r *ManagementAuthConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			&corev1.Secret{},
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.ManagementAuthConfigList{},
-				managementAuthConfigSecretRefsField, refindex.ObjectNamespacedName,
+				SecretRefsField, refindex.ObjectNamespacedName,
 			),
 			builder.OnlyMetadata,
 		).
