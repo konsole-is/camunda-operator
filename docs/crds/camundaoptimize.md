@@ -53,7 +53,11 @@ The operator creates two Deployments in the namespace of the resource, and one S
 | `<name>-webapp` | Serves the Optimize user interface. | `http` 8090, `management` 8092 |
 | `<name>-importer` | Reads the exported records and writes the analytics indices. | `http` 8090, `management` 8092 |
 
-`kubectl get camundaoptimize` lists the resources with their `Ready` condition. `kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read.
+`kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read. The kind carries no printer columns yet, so `kubectl get camundaoptimize` shows the name and the age alone. To see the state of every one at once, ask for the condition:
+
+```bash
+kubectl get camundaoptimize -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason'
+```
 
 The operator creates no Ingress and no route from outside the Kubernetes cluster. To open the user interface, publish `<name>-webapp` yourself, or reach it for a moment with `kubectl port-forward svc/<name>-webapp 8090:8090`.
 
@@ -326,6 +330,5 @@ spec:
 - [ManagementAuthConfig](managementauthconfig.md): referenced through `managementAuthRef`.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It carries the Elasticsearch endpoint and credentials.
 - [CamundaManagementCluster](camundamanagementcluster.md): produces the `ManagementAuthConfig` in a self-managed installation.
-- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): a backup of the cluster includes the Optimize analytics data while this resource is attached.
-- [LogicalRestore](logicalrestore.md): restores the Optimize data with the rest of the set.
+- [LogicalBackupElasticsearch](logicalbackupelasticsearch.md): backs up the cluster, which includes the `zeebe-record` indices that Optimize reads. It does not back up the Optimize analytics indices. Optimize keeps those behind a backup API of its own, which no controller calls yet.
 - [ElasticsearchCluster](elasticsearchcluster.md): the ECK-managed Elasticsearch behind the contract.

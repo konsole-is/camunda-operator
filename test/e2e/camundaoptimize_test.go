@@ -397,6 +397,18 @@ var _ = Describe("CamundaOptimize", Ordered, func() {
 	})
 
 	It("deploys a process, starts an instance, and exports the records to Elasticsearch", func() {
+		// Attaching Optimize writes spec.zeebe.extraEnv of the cluster, and
+		// those entries are part of the Zeebe pod template, so the brokers
+		// roll. The Ready condition of the CamundaOptimize says nothing about
+		// that, and a deployment sent while a broker is away answers 503
+		// UNAVAILABLE. Waiting for the cluster to reconcile the generation that
+		// carries the exporter settings is what makes this a test of behavior
+		// rather than of timing.
+		By("waiting for the cluster to finish the rollout that the exporter settings started")
+		Eventually(func(g Gomega) {
+			expectReconciledReady(g, ccResource, ccName, optimizeNamespace)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+
 		By("deploying the process")
 		dir, err := utils.GetProjectDir()
 		Expect(err).NotTo(HaveOccurred())
