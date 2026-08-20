@@ -131,11 +131,26 @@ func (w *primaryWorld) claims(t *testing.T) map[string]corev1.PersistentVolumeCl
 	return byName
 }
 
+// runToTheJobNames looks until the phase recorded the name of every restore
+// Job, which is the last look before it applies the first one.
+func (w *primaryWorld) runToTheJobNames(t *testing.T) {
+	t.Helper()
+
+	for range 5 {
+		if len(w.progress().PrimaryJobNames) > 0 {
+			return
+		}
+		w.look(t)
+	}
+
+	require.NotEmpty(t, w.progress().PrimaryJobNames, "the phase never recorded its Job names")
+}
+
 // runToTheJobs looks until the phase applied the restore Jobs.
 func (w *primaryWorld) runToTheJobs(t *testing.T) {
 	t.Helper()
 
-	for range 4 {
+	for range 5 {
 		if len(w.jobs(t)) == int(w.input.Target.Brokers) {
 			return
 		}
@@ -196,8 +211,7 @@ func TestPrimaryRecreatesTheClaimsWithoutAnOwnerReference(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
-	w.look(t)
-	w.look(t)
+	w.runToTheJobNames(t)
 
 	claims := w.claims(t)
 	require.Len(t, claims, 3)
@@ -214,9 +228,12 @@ func TestPrimaryRecordsTheBrokerCountBeforeItDeletesAnything(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
-	w.look(t)
+	outcome := w.look(t)
 
+	assert.Equal(t, Outcome{Wait: Shortly}, outcome)
 	assert.Equal(t, int32(3), w.progress().Brokers)
+	assert.Len(t, w.claims(t), 3, "the volumes of the cluster are still there")
+	assert.Empty(t, w.progress().RecreatedClaims, "the phase deleted nothing yet")
 }
 
 // A volume whose deletion is not recorded is deleted again by the next look.
@@ -226,6 +243,7 @@ func TestPrimaryRecordsEveryClaimBeforeItDeletesIt(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
+	w.look(t)
 
 	outcome := w.look(t)
 
@@ -242,6 +260,7 @@ func TestPrimaryRecordsEveryJobNameBeforeItAppliesAJob(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
+	w.look(t)
 	w.look(t)
 
 	outcome := w.look(t)
@@ -289,8 +308,7 @@ func TestPrimaryRefusesAnOrdinalPastTheLiveBrokerCount(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
-	w.look(t)
-	w.look(t)
+	w.runToTheJobNames(t)
 	require.Len(t, w.progress().PrimaryJobNames, 3)
 
 	// The live StatefulSet runs one broker now. The pinned count stays three.
@@ -337,8 +355,7 @@ func TestPrimaryCreatesTheJobsThatFollowTheLastOneItApplied(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
-	w.look(t)
-	w.look(t)
+	w.runToTheJobNames(t)
 	require.Len(t, w.progress().PrimaryJobNames, 3)
 	require.NoError(t, w.client.Create(t.Context(), ownedJob(t, w, 0)))
 
@@ -390,8 +407,7 @@ func TestPrimaryRefusesAJobThatAnotherRestoreOwns(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
-	w.look(t)
-	w.look(t)
+	w.runToTheJobNames(t)
 
 	foreign := ownedJob(t, w, 0)
 	foreign.OwnerReferences = nil
@@ -411,8 +427,7 @@ func TestPrimaryFailsWhenARecordedNameIsNotTheNameOfThatJob(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
-	w.look(t)
-	w.look(t)
+	w.runToTheJobNames(t)
 	w.progress().PrimaryJobNames[0] = "not-the-name-of-this-job"
 
 	outcome := w.look(t)
@@ -465,6 +480,7 @@ func TestPrimaryFailsOnATargetItCannotRenderFrom(t *testing.T) {
 	t.Parallel()
 
 	w := newPrimaryWorld(t)
+	w.look(t)
 	w.input.Target.ClaimTemplate = nil
 
 	outcome, err := Primary(

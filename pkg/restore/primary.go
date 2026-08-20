@@ -92,8 +92,9 @@ type PrimaryInput struct {
 // Primary the first time, because the phase is the resume marker of the
 // destructive step.
 //
-// The order is the safety property. The record of a deleted volume is durable
-// before the first Job exists, so a reconcile that re-enters never deletes a
+// The order is the safety property. The broker count is durable before the
+// first volume is deleted. The record of a deleted volume is durable before
+// the first Job exists. A reconcile that re-enters therefore never deletes a
 // volume that a Job already wrote to. Once the Jobs are recorded, the volumes
 // are never touched again.
 //
@@ -113,6 +114,17 @@ func Primary(
 	// decides whether a Job can run at all, which runJobs checks.
 	if p.Brokers == 0 {
 		p.Brokers = in.Target.Brokers
+
+		// Every volume this restore deletes is counted against the pinned
+		// count, so the count is durable first. A restore that re-enters from
+		// a count it never persisted reads the live one again. A cluster that
+		// was scaled in between then loses volumes that this restore never
+		// read.
+		progressing(in.Owner, fmt.Sprintf(
+			"the restore covers %d brokers. Their volumes are emptied next", p.Brokers,
+		))
+
+		return Outcome{Wait: Shortly}, nil
 	}
 	pinned := *in.Target
 	pinned.Brokers = p.Brokers

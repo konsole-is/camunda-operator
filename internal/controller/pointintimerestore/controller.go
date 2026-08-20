@@ -191,8 +191,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	if pitr.Terminal() {
 		// A conflict on the terminal flush can restore a stale Ready from the
-		// server. Staging it again on every look heals that. Giving the claim
-		// back on every look heals a release that failed.
+		// server. Staging it again on every look heals that. This branch also
+		// gives the claim back the first time, on the look that follows the
+		// terminal transition. A release that failed heals here too.
 		restore.StageTerminal(&pitr, &pitr.Status.RestoreProgress)
 
 		return ctrl.Result{}, r.releaseClaim(ctx, &pitr)
@@ -213,14 +214,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	// The restore reached its terminal phase in this look. The cluster is free
-	// for the next backup or restore as soon as the phase is recorded.
-	if pitr.Terminal() {
-		if err := r.releaseClaim(ctx, &pitr); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
+	// A restore that reached its terminal phase in this look keeps the claim
+	// until the flush of this reconcile makes that phase durable. The look
+	// that the flush wakes releases it through the branch above. A Lease that
+	// outlives the phase by one look costs nothing, because the claim reports
+	// a terminal holder inactive. A release before that point lets a second
+	// operation start against a cluster whose restore the API still reports
+	// as running.
 	return ctrl.Result{RequeueAfter: outcome.Wait}, nil
 }
 

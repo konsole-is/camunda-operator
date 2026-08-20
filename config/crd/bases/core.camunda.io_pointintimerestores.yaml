@@ -98,9 +98,9 @@ spec:
             properties:
               brokers:
                 description: |-
-                  Brokers is the broker count read from the live broker StatefulSet when
-                  the restore entered the primary-storage phase. It fixes how many
-                  volumes are recreated and how many Jobs run.
+                  Brokers is the broker count read from the live broker StatefulSet and
+                  recorded before the restore deletes a volume. It fixes how many volumes
+                  are recreated and how many Jobs run.
                 format: int32
                 type: integer
               completionTime:

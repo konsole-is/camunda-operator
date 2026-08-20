@@ -96,9 +96,9 @@ type RestoreProgress struct {
 	// cluster, and this restore is not its restore.
 	// +optional
 	TargetClusterUID types.UID `json:"targetClusterUID,omitempty"`
-	// Brokers is the broker count read from the live broker StatefulSet when
-	// the restore entered the primary-storage phase. It fixes how many
-	// volumes are recreated and how many Jobs run.
+	// Brokers is the broker count read from the live broker StatefulSet and
+	// recorded before the restore deletes a volume. It fixes how many volumes
+	// are recreated and how many Jobs run.
 	// +optional
 	Brokers int32 `json:"brokers,omitempty"`
 	// PrimaryJobNames are the per-broker restore-application Jobs, in broker
