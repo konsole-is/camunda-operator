@@ -38,10 +38,11 @@ import (
 const day = 24 * time.Hour
 
 // chain is what a phase of the restore resolves from the cluster: the cluster
-// itself, the logical database behind its storage contract, the server that
-// holds the database, and the facts of the live broker StatefulSet.
+// itself, its storage contract, the logical database behind it, the server
+// that holds the database, and the facts of the live broker StatefulSet.
 type chain struct {
 	cluster  *v1.CamundaCluster
+	storage  *v1.SecondaryStorageConfig
 	dbConfig *v1.DatabaseConfig
 	server   *v1.DatabaseServerConfig
 	target   *restore.Target
@@ -97,7 +98,11 @@ func (r *Reconciler) admit(ctx context.Context, pitr *v1.PointInTimeRestore) (ho
 		return r.waiting(pitr, failure), nil
 	}
 
-	pitr.Status.ClusterUID = resolved.cluster.UID
+	// Everything that this restore is allowed to act on is now known: the
+	// chain, the rules of the server, and the clock of the brokers. The record
+	// goes in before the database is read, so every later look is measured
+	// against the chain that the read used.
+	pitr.Status.Storage = pinnedChain(resolved.storage, resolved.dbConfig, resolved.server)
 	pitr.Status.Phase = v1.PointInTimeRestoreValidatingDatabaseState
 
 	return r.validateDatabaseState(ctx, pitr, resolved)
@@ -127,9 +132,17 @@ func (r *Reconciler) resolve(
 
 		return nil, nil, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
 	}
-	if pitr.Status.ClusterUID != "" && cluster.UID != pitr.Status.ClusterUID {
+	// The identity of the cluster is pinned at the first look, before any rule
+	// runs. A restore that waits for a rule keeps waiting for the cluster it
+	// read, and a cluster that was deleted and created again under one name is
+	// another cluster with other primary storage.
+	if pitr.Status.ClusterUID == "" {
+		pitr.Status.ClusterUID = cluster.UID
+	}
+	if cluster.UID != pitr.Status.ClusterUID {
 		return nil, nil, fmt.Errorf(
-			"%w: CamundaCluster %s admitted the restore with UID %s and now has UID %s",
+			"%w: CamundaCluster %s was replaced. It admitted the restore with UID %s and now has "+
+				"UID %s, so its primary storage is not the storage this restore validated",
 			errClusterReplaced, key, pitr.Status.ClusterUID, cluster.UID,
 		)
 	}
@@ -196,6 +209,10 @@ func (r *Reconciler) resolve(
 		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %q: %w", serverKey.Name, err)
 	}
 
+	if err := pinnedChainCurrent(pitr, &storage, &dbConfig, &server); err != nil {
+		return nil, nil, err
+	}
+
 	target, err := restore.ReadTarget(ctx, r.APIReader, &cluster)
 	if err != nil {
 		var failure *conditions.PreCheckFailure
@@ -214,18 +231,78 @@ func (r *Reconciler) resolve(
 
 	return &chain{
 		cluster:  &cluster,
+		storage:  &storage,
 		dbConfig: &dbConfig,
 		server:   &server,
 		target:   target,
 	}, nil, nil
 }
 
+// errChainChanged reports that the storage chain of the cluster is no longer
+// the chain that the restore validated.
+var errChainChanged = errors.New("the storage chain of the cluster changed")
+
+// pinnedChain records what the restore validated. The rules of the server and
+// the state of the database are checked once, and every link of the chain is
+// mutable, so the record is what every later look is measured against.
+func pinnedChain(
+	storage *v1.SecondaryStorageConfig,
+	dbConfig *v1.DatabaseConfig,
+	server *v1.DatabaseServerConfig,
+) *v1.PointInTimeRestoreStorage {
+	return &v1.PointInTimeRestoreStorage{
+		SecondaryStorageConfig:    storage.Name,
+		SecondaryStorageConfigUID: storage.UID,
+		DatabaseConfig:            dbConfig.Name,
+		DatabaseConfigUID:         dbConfig.UID,
+		DatabaseServerConfig:      server.Name,
+		DatabaseServerConfigUID:   server.UID,
+		DatabaseName:              dbConfig.Spec.DatabaseName,
+		Endpoint:                  fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
+	}
+}
+
+// pinnedChainCurrent reports whether the chain of this look is the chain that
+// the restore validated. A restore that has pinned nothing yet passes: it is
+// on its first look, and admission pins the chain before it reads the
+// database.
+//
+// The check is what keeps the destructive phase honest. The rules of the
+// server, the dedicated-server rule, the clock of the brokers, and the
+// exporter position are all read once, against one chain. A cluster that is
+// repointed afterwards carries another database, which nothing validated.
+func pinnedChainCurrent(
+	pitr *v1.PointInTimeRestore,
+	storage *v1.SecondaryStorageConfig,
+	dbConfig *v1.DatabaseConfig,
+	server *v1.DatabaseServerConfig,
+) error {
+	pinned := pitr.Status.Storage
+	if pinned == nil {
+		return nil
+	}
+
+	current := pinnedChain(storage, dbConfig, server)
+	if *current == *pinned {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"%w: the restore validated %s of DatabaseConfig %s on %s at %s, and the cluster now uses %s "+
+			"of DatabaseConfig %s on %s at %s. Create a new restore for the database the cluster "+
+			"uses now",
+		errChainChanged,
+		pinned.SecondaryStorageConfig, pinned.DatabaseConfig, pinned.DatabaseName, pinned.Endpoint,
+		current.SecondaryStorageConfig, current.DatabaseConfig, current.DatabaseName, current.Endpoint,
+	)
+}
+
 // resolveFailed maps an error of resolve onto the outcome of the phase. A
-// cluster that was replaced ends the restore, because nothing of it pairs with
-// the replacement. Every other error is a transient read that the caller
-// retries.
+// cluster that was replaced, and a storage chain that moved, both end the
+// restore: nothing of what it validated pairs with what the cluster carries
+// now. Every other error is a transient read that the caller retries.
 func (r *Reconciler) resolveFailed(pitr *v1.PointInTimeRestore, err error) (hold, error) {
-	if errors.Is(err, errClusterReplaced) {
+	if errors.Is(err, errClusterReplaced) || errors.Is(err, errChainChanged) {
 		r.fail(pitr, err.Error())
 
 		return settle, nil
@@ -309,7 +386,20 @@ func (r *Reconciler) dedicatedServer(
 		names = append(names, databases.Items[i].Namespace+"/"+databases.Items[i].Name)
 	}
 
-	if len(names) < 2 {
+	// Zero is not one. A server that no Database resource names carries no
+	// evidence at all: the operator cannot tell whether it holds one database
+	// or ten, and point-in-time recovery rolls back all of them. On a path
+	// that deletes volumes, the absence of evidence holds the restore.
+	if len(names) == 0 {
+		return invalidReference(
+			"no Database resource names DatabaseServerConfig %q, so the operator cannot tell which "+
+				"databases the server holds. Point-in-time recovery rolls back the whole server. "+
+				"Declare the database of the cluster as a Database resource on a server of its own",
+			server.Name,
+		), nil
+	}
+
+	if len(names) == 1 {
 		return nil, nil
 	}
 	slices.Sort(names)

@@ -62,7 +62,11 @@ The cluster must also name a `backupStorageRef`. Without it, Zeebe writes no pri
 
 The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore holds with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
 
-Exactly one `Database` can reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it holds the restore with reason `SharedServer`.
+Exactly one `Database` must reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it holds the restore with reason `SharedServer`.
+
+A server that **no** `Database` references holds the restore too, with reason `InvalidReference`. The `Database` resources are the only evidence the operator has about the databases of a server. Without one it cannot tell whether the server holds one database or ten, and the restore deletes volumes. Declare the database of the cluster as a `Database` resource on a server of its own.
+
+The operator records the chain it validated in `status.storage`: the two contracts, the server, the logical database, and the endpoint. It checks the record on every later look. A cluster that is repointed at another database after the check fails the restore, because the rules of the server and the state of the database were read against the first chain. Create a new restore for the database the cluster uses now.
 
 Every rule of this section holds the restore in `Pending`. Nothing is deleted while a rule does not hold, so you correct the cause and the same resource continues. You do not create a new one.
 
@@ -107,7 +111,7 @@ When you delete the restore, the operator deletes the Jobs it created. It writes
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
 | `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
 | `Ready` | `ClusterNotSuspended` | The cluster runs. | Set `spec.suspend: true` on the cluster. |
-| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, or the broker StatefulSet is gone. | Correct the reference that the message names. |
+| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, no `Database` names the server, or the broker StatefulSet is gone. | Correct the reference that the message names. |
 | `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, `spec.timestamp` lies in the future, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, restore to a point within retention, or run the brokers in UTC. |
 | `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
@@ -119,7 +123,8 @@ A restore that already started keeps a broken dependency for ten minutes. After 
 
 The status also records what the restore pinned and what it did:
 
-- `status.clusterUID` pins the identity of the cluster.
+- `status.clusterUID` pins the identity of the cluster, from the first look onwards. A cluster that is deleted and created again under one name fails the restore.
+- `status.storage` pins the storage chain that the restore validated.
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.
 - `status.observedPositions` holds the `LAST_UPDATED` value that the check read for each partition.
 - `status.primaryJobNames` names the per-broker restore Jobs, in broker order.

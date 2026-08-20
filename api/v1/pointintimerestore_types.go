@@ -89,6 +89,38 @@ type PartitionPosition struct {
 	LastUpdated metav1.Time `json:"lastUpdated"`
 }
 
+// PointInTimeRestoreStorage is the identity of the storage chain that the
+// restore validated: the contracts it resolved, the logical database it read,
+// and the server that holds it. Every link of the chain is mutable, and the
+// rules of the server and the state of the database are checked once, before
+// the restore deletes anything. A later look that disagrees with this record
+// is another database, so the restore ends instead of acting on it.
+type PointInTimeRestoreStorage struct {
+	// SecondaryStorageConfig is the storage contract of the cluster.
+	SecondaryStorageConfig string `json:"secondaryStorageConfig"`
+	// SecondaryStorageConfigUID pins the identity of that contract, so a
+	// contract that was deleted and created again under one name is caught.
+	// +optional
+	SecondaryStorageConfigUID types.UID `json:"secondaryStorageConfigUID,omitempty"`
+	// DatabaseConfig is the contract of the logical database.
+	DatabaseConfig string `json:"databaseConfig"`
+	// DatabaseConfigUID pins the identity of that contract.
+	// +optional
+	DatabaseConfigUID types.UID `json:"databaseConfigUID,omitempty"`
+	// DatabaseServerConfig is the contract of the server that holds the
+	// database and declares its point-in-time recovery.
+	DatabaseServerConfig string `json:"databaseServerConfig"`
+	// DatabaseServerConfigUID pins the identity of that contract.
+	// +optional
+	DatabaseServerConfigUID types.UID `json:"databaseServerConfigUID,omitempty"`
+	// DatabaseName is the logical database whose exporter position the
+	// pre-check read.
+	DatabaseName string `json:"databaseName"`
+	// Endpoint is the host and port of the server, as the pre-check reached
+	// it. A server that is repointed in place is another server.
+	Endpoint string `json:"endpoint"`
+}
+
 // PointInTimeRestoreStatus tracks the restore to a terminal phase.
 type PointInTimeRestoreStatus struct {
 	// Phase of the restore. It is the resume marker.
@@ -100,6 +132,11 @@ type PointInTimeRestoreStatus struct {
 	// Brokers is the broker count read from the live broker StatefulSet.
 	// +optional
 	Brokers int32 `json:"brokers,omitempty"`
+	// Storage pins the storage chain that the restore validated. The operator
+	// records it once, before it reads the database, and fails the restore
+	// when a later look disagrees.
+	// +optional
+	Storage *PointInTimeRestoreStorage `json:"storage,omitempty"`
 	// ObservedPositions are the exporter positions the pre-check read, in
 	// partition order. They record what the operator saw when it let the
 	// restore past the database-state check, or what held it.

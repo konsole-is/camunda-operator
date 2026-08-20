@@ -688,6 +688,49 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectAdmitted(pitr, w)
 	})
 
+	// The Database resource is what proves that the server holds one database.
+	// Without it the operator can prove nothing, and point-in-time recovery
+	// rolls back the whole server, so it does not start.
+	It("holds a server that no Database references", func() {
+		w := createWorld(func(w *world) { w.database.Spec.ServerRef = "another-server" })
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonInvalidReference)
+		Expect(message).To(ContainSubstring(w.server.Name))
+		Expect(message).To(ContainSubstring("Database"))
+		expectClaimsUntouched(w)
+	})
+
+	// A restore that waits for a rule keeps the identity of the cluster it
+	// read. A cluster that is deleted and created again under one name is
+	// another cluster, with other primary storage.
+	It("fails when the cluster it waits for is replaced under its name", func() {
+		w := createWorld(func(w *world) { w.cluster.Spec.Suspend = false })
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonClusterNotSuspended)
+
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		replacement.Spec.Suspend = true
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("replaced"))
+		}, timeout, interval).Should(Succeed())
+		expectClaimsUntouched(w)
+	})
+
 	It("holds a server that a second Database references", func() {
 		w := createWorld()
 		second := &v1.Database{
@@ -712,6 +755,69 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		pitr := createRestore(w)
 
 		expectAdmitted(pitr, w)
+	})
+})
+
+var _ = Describe("PointInTimeRestore storage identity", func() {
+	// The restore validated one database. A cluster that is repointed at
+	// another one after that is a different restore, and the volumes of this
+	// one must not go on the strength of a check that ran elsewhere.
+	It("fails when the cluster is repointed at another database", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(-2 * time.Minute)})
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonDatabaseNotRestored)
+
+		other := &v1.DatabaseConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-config", Namespace: w.namespace},
+			Spec: v1.DatabaseConfigSpec{
+				ServerRef:            w.server.Name,
+				DatabaseName:         "other_database",
+				CredentialsSecretRef: w.dbConfig.Spec.CredentialsSecretRef,
+			},
+		}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+		otherStorage := &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-storage", Namespace: w.namespace},
+			Spec: v1.SecondaryStorageConfigSpec{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: other.Name},
+			},
+		}
+		Expect(k8sClient.Create(ctx, otherStorage)).To(Succeed())
+		// The database of the new chain would pass the check that the old one
+		// holds on.
+		exporter.set(other.Spec.DatabaseName, answer{positions: positionsBehind(time.Hour)})
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Spec.StorageRef = otherStorage.Name
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("other-storage"))
+		}, timeout, interval).Should(Succeed())
+		expectClaimsUntouched(w)
+		Expect(jobsOf(pitr)).To(BeEmpty())
+	})
+
+	It("pins what it validated", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+
+		Eventually(func(g Gomega) {
+			pinned := readRestore(pitr).Status.Storage
+			g.Expect(pinned).NotTo(BeNil())
+			g.Expect(pinned.SecondaryStorageConfig).To(Equal(w.storage.Name))
+			g.Expect(pinned.DatabaseConfig).To(Equal(w.dbConfig.Name))
+			g.Expect(pinned.DatabaseServerConfig).To(Equal(w.server.Name))
+			g.Expect(pinned.DatabaseName).To(Equal(w.dbConfig.Spec.DatabaseName))
+			g.Expect(pinned.Endpoint).To(Equal("postgres.databases.svc:5432"))
+		}, timeout, interval).Should(Succeed())
 	})
 })
 
@@ -1052,6 +1158,16 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring(foreign.Name))
 		}, timeout, interval).Should(Succeed())
+
+		// The restore never writes to a Job it does not own, so the Job of the
+		// other restore keeps its own fields and its own owner.
+		var untouched batchv1.Job
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(foreign), &untouched)).To(Succeed())
+		Expect(untouched.UID).To(Equal(foreign.UID))
+		Expect(untouched.OwnerReferences).To(BeEmpty())
+		Expect(untouched.ManagedFields).NotTo(
+			ContainElement(HaveField("Manager", string(restore.FieldManagerPointInTimeRestore))),
+		)
 	})
 
 	It("holds a restore whose pod cannot start, then fails past the grace", func() {

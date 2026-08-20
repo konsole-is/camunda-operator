@@ -317,9 +317,53 @@ func (r *Reconciler) ensureJob(
 		return nil, fmt.Errorf("owning the restore Job %s: %w", key, err)
 	}
 
-	if err := restore.Apply(ctx, r.Client, job, restore.FieldManagerPointInTimeRestore); err != nil {
-		return nil, fmt.Errorf("applying the restore Job %s: %w", key, err)
+	return r.claimJob(ctx, pitr, job, ordinal)
+}
+
+// claimJob creates the Job as an identity claim: create-only, never a forced
+// apply. The create carries the field manager of this kind, so every resource
+// of a restore names the same owner of its fields.
+//
+// A forced apply after a NotFound is not atomic. Between the read and the
+// apply, another writer can create a Job under this name, and the apply then
+// overwrites its owner reference and its fields before anything looked at
+// them. A Create is atomic, so the API server decides who owns the name. On
+// AlreadyExists the winner is read and rejected unless this restore owns it.
+// The pg_restore Job of a LogicalRestore claims its name the same way.
+func (r *Reconciler) claimJob(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	job *batchv1.Job,
+	ordinal int32,
+) (*batchv1.Job, error) {
+	key := types.NamespacedName{Namespace: job.Namespace, Name: job.Name}
+
+	err := r.Create(ctx, job, restore.FieldManagerPointInTimeRestore)
+	switch {
+	case apierrors.IsAlreadyExists(err):
+		var winner batchv1.Job
+		if err := r.APIReader.Get(ctx, key, &winner); err != nil {
+			if apierrors.IsNotFound(err) {
+				// The Job was deleted again in between. The next look re-enters
+				// the claim.
+				return nil, nil
+			}
+
+			return nil, fmt.Errorf("reading the restore Job that won the name %s: %w", key, err)
+		}
+		if !ownedBy(&winner, pitr) {
+			return nil, fmt.Errorf(
+				"%w: Job %s exists, but no controller reference of this restore owns it. "+
+					"Remove the Job of the earlier restore, then create a new restore",
+				errUnrecoverable, key,
+			)
+		}
+
+		return &winner, nil
+	case err != nil:
+		return nil, fmt.Errorf("creating the restore Job %s: %w", key, err)
 	}
+
 	r.EventRecorder.Eventf(
 		pitr,
 		nil,
