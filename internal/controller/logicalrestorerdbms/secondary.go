@@ -34,9 +34,9 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
-	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
 // whatSecondary names the work of the pg_restore Job in the messages of a pod
@@ -422,23 +422,20 @@ func (r *Reconciler) backupBucket(
 }
 
 // jobCredentials locates the two Secrets that the Job mounts, as reachable
-// from the namespace of the cluster. It obeys the rule of the CamundaCluster
-// controller: a Secret in the namespace of the cluster is used where it is,
-// and a Secret anywhere else is read through the local copy that the
-// CamundaCluster controller maintains. The bucket name is empty for workload
-// identity.
+// from the namespace of the cluster. It applies the mirrored-Secret rule of
+// pkg/mirror to both. The bucket name is empty for workload identity.
 func (r *Reconciler) jobCredentials(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	bucket *v1.ObjectStorageConfig,
 	database v1.CredentialsSecretRef,
 ) (v1.CredentialsSecretRef, string, *conditions.PreCheckFailure, error) {
-	local := localSecretName(
+	local := mirror.LocalSecretName(
 		cluster, database.Namespace, database.Name, camundacluster.MirrorPurposeDBCredentials,
 	)
 	database.Name, database.Namespace = local, cluster.Namespace
-	failure, err := r.checkSecret(
-		ctx, cluster.Namespace, local, v1.ReasonMissingSecret, "database",
+	failure, err := mirror.CheckLocalSecret(
+		ctx, r.APIReader, cluster.Namespace, local, v1.ReasonMissingSecret, "database",
 		database.UsernameKey, database.PasswordKey,
 	)
 	if err != nil || failure != nil {
@@ -450,56 +447,18 @@ func (r *Reconciler) jobCredentials(
 		return database, "", nil, nil
 	}
 
-	bucketSecret := localSecretName(
+	bucketSecret := mirror.LocalSecretName(
 		cluster, credentials.Namespace, credentials.Name, camundacluster.MirrorPurposeBackupCredentials,
 	)
-	failure, err = r.checkSecret(
-		ctx, cluster.Namespace, bucketSecret, v1.ReasonMissingCredentials, "bucket", credentials.Keys...,
+	failure, err = mirror.CheckLocalSecret(
+		ctx, r.APIReader, cluster.Namespace, bucketSecret, v1.ReasonMissingCredentials, "bucket",
+		credentials.Keys...,
 	)
 	if err != nil || failure != nil {
 		return database, "", failure, err
 	}
 
 	return database, bucketSecret, nil, nil
-}
-
-// checkSecret checks that the Secret at namespace/name carries keys and maps
-// a miss to a failure with the given reason. purpose names the credentials in
-// the message.
-func (r *Reconciler) checkSecret(
-	ctx context.Context,
-	namespace, name, reason, purpose string,
-	keys ...string,
-) (*conditions.PreCheckFailure, error) {
-	message, err := secretref.CheckKeys(
-		ctx, r.APIReader, types.NamespacedName{Namespace: namespace, Name: name}, keys...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("checking the %s credentials: %w", purpose, err)
-	}
-	if message == "" {
-		return nil, nil
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: reason,
-		Message: fmt.Sprintf(
-			"%s. The CamundaCluster controller keeps the local copy of %s credentials that live "+
-				"outside the cluster namespace",
-			message, purpose,
-		),
-	}, nil
-}
-
-// localSecretName resolves where a referenced Secret is reachable from the
-// namespace of the cluster. A source in that namespace is used where it is,
-// and any other source through its purpose-named copy.
-func localSecretName(cluster *v1.CamundaCluster, namespace, name, purpose string) string {
-	if namespace == cluster.Namespace {
-		return name
-	}
-
-	return camundacluster.MirroredSecretName(cluster, purpose)
 }
 
 // dumpBlock resolves the pod settings and the postgres image of the Job from
