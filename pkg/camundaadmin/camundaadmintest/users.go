@@ -142,6 +142,11 @@ func (s *UserAPI) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if request.Email != "" && !validEmail(request.Email) {
+		problem(w, http.StatusBadRequest, "The provided email '"+request.Email+"' is not valid.")
+		return
+	}
+
 	user.name, user.email = request.Name, request.Email
 	if request.Password != "" {
 		user.password = request.Password
@@ -151,4 +156,14 @@ func (s *UserAPI) handle(w http.ResponseWriter, r *http.Request) {
 	adminhttptest.WriteJSON(w, http.StatusOK, map[string]string{
 		"username": username, "name": user.name, "email": user.email,
 	})
+}
+
+// validEmail mirrors the check that the orchestration cluster runs on an
+// update: the domain must carry a dot, so an address such as admin@localhost
+// is refused with 400 INVALID_ARGUMENT. The cluster seeds the initial user
+// from its configuration without this check, so only an update finds a bad
+// address.
+func validEmail(email string) bool {
+	_, domain, found := strings.Cut(email, "@")
+	return found && strings.Contains(domain, ".")
 }

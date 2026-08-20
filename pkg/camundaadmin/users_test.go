@@ -28,7 +28,7 @@ import (
 )
 
 // adminUser is the seeded administrator that the rotation flow updates.
-var adminUser = camundaadmin.User{Username: "admin", Name: "admin", Email: "admin@localhost"}
+var adminUser = camundaadmin.User{Username: "admin", Name: "admin", Email: "admin@example.com"}
 
 // currentPassword is the password every test seeds the fake with and
 // authenticates the client with.
@@ -99,7 +99,19 @@ func TestUpdateUserPasswordSetsThePassword(t *testing.T) {
 	assert.Equal(t, "new-password", server.Password("admin"))
 	name, email := server.Profile("admin")
 	assert.Equal(t, "admin", name)
-	assert.Equal(t, "admin@localhost", email)
+	assert.Equal(t, "admin@example.com", email)
+}
+
+func TestUpdateUserPasswordReportsAnEmailThatTheClusterRefuses(t *testing.T) {
+	client, server := newUserClient(t)
+
+	user := adminUser
+	user.Email = "admin@localhost"
+	err := client.UpdateUserPassword(context.Background(), user, "new-password")
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+	assert.Contains(t, err.Error(), "is not valid")
+
+	assert.Equal(t, currentPassword, server.Password("admin"), "a refused update changes nothing")
 }
 
 func TestUpdateUserPasswordRejectsAnEmptyPassword(t *testing.T) {

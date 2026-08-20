@@ -113,7 +113,7 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(rotated).NotTo(Equal(password))
 		name, email := users.Profile(components.AdminUsername)
 		Expect(name).To(Equal("admin"))
-		Expect(email).To(Equal("admin@localhost"))
+		Expect(email).To(Equal("admin@example.com"))
 		expectEvent(cluster, "AdminPasswordRotated", corev1.EventTypeNormal)
 
 		By("rolling the connectors Deployment on the new password")

@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: bea9cd0371c42098
+        camunda.io/config-hash: 07dc58178a8eb2bc
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: tasklist
@@ -67,7 +67,7 @@ spec:
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME
           value: admin
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL
-          value: admin@localhost
+          value: admin@example.com
         - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
           value: admin
         - name: SPRING_PROFILES_ACTIVE

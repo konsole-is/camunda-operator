@@ -45,10 +45,13 @@ const (
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
-	// AdminEmail is the email of the seeded admin user; ConfiguredUser.java
-	// requires none, and no mail is ever sent. A password rotation sends it
-	// again, because the user API replaces the whole profile.
-	AdminEmail = "admin@localhost"
+	// AdminEmail is the email of the seeded admin user. No mail is ever sent
+	// to it. A password rotation sends it again, because the user API
+	// replaces the whole profile, and that endpoint validates the address:
+	// it refuses a domain without a dot, such as admin@localhost, with 400
+	// INVALID_ARGUMENT. The domain is the one that RFC 2606 reserves for
+	// documentation, so the address can never reach a real mailbox.
+	AdminEmail = "admin@example.com"
 	// AdminUsernameKey and AdminPasswordKey are the keys of the admin Secret.
 	AdminUsernameKey = "username"
 	AdminPasswordKey = "password"

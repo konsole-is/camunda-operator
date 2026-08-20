@@ -35,7 +35,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 762506e3858f3338
+        camunda.io/config-hash: 97fee3855275a4a9
         company.com/cluster-preset: medium
         prometheus.io/scrape: "true"
       labels:
@@ -96,7 +96,7 @@ spec:
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME
           value: admin
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL
-          value: admin@localhost
+          value: admin@example.com
         - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
           value: admin
         - name: CAMUNDA_LICENSE_KEY

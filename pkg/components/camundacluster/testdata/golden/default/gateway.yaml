@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 0138306ead19d75e
+        camunda.io/config-hash: 2ac99e01b41d02b1
         company.com/cluster-preset: medium
       labels:
         camunda.io/cluster: my-cluster
@@ -78,7 +78,7 @@ spec:
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME
           value: admin
         - name: CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL
-          value: admin@localhost
+          value: admin@example.com
         - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
           value: admin
         - name: CAMUNDA_LICENSE_KEY

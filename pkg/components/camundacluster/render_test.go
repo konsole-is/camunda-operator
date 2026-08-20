@@ -292,7 +292,7 @@ func TestRenderBasicAuthSeedsAdmin(t *testing.T) {
 		"password",
 	)
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME", "admin")
-	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL", "admin@localhost")
+	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL", "admin@example.com")
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0", "admin")
 	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_ISSUERURI")
 	assertNoEnv(t, r.env, "CAMUNDA_LICENSE_KEY")
