@@ -266,6 +266,13 @@ spec:
                   that is deleted and created again under the same name is another
                   cluster, and this restore is not its restore.
                 type: string
+              terminalReason:
+                description: |-
+                  TerminalReason is the Ready reason recorded at the terminal transition:
+                  Completed, Failed, or IncompatibleTarget. The operator stages the
+                  terminal condition again from this field, so a write conflict cannot
+                  replace the reason with a weaker one.
+                type: string
             type: object
         required:
         - spec

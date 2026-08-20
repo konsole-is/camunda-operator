@@ -144,6 +144,12 @@ type LogicalRestoreStatus struct {
 	// it when the restore recovers.
 	// +optional
 	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
+	// TerminalReason is the Ready reason recorded at the terminal transition:
+	// Completed, Failed, or IncompatibleTarget. The operator stages the
+	// terminal condition again from this field, so a write conflict cannot
+	// replace the reason with a weaker one.
+	// +optional
+	TerminalReason string `json:"terminalReason,omitempty"`
 	// FailureMessage names the failing phase and its error. The Ready
 	// condition carries the same message, and the operator stages the
 	// condition again from this field, so a write conflict cannot lose it.
