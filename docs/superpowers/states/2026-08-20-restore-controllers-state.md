@@ -25,7 +25,7 @@ status: consumer-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | #120 → feat/restore-controllers | self-merged |
-| #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | #123 → feat/restore-controllers | ready |
+| #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | #123 → feat/restore-controllers | ready (loops clean at 004e042; OPEN for the user's review) |
 | #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | #122 → feat/restore-controllers | ready (loops clean at b4717b4; OPEN for the user's review) |
 | #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started |
 
@@ -55,8 +55,10 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 ## Pending snapshot
 
-- Phase 1 done: PR #120 self-merged (squash eb0b970) after a 3-round Copilot loop and a two-stage orchestrator review; #110 closed; all six PR1 contracts locked. Phase 2 next: fan out #111 and #112 in parallel off feat/restore-controllers. Their review loops run to clean, then the PRs STAY OPEN for the user. The contract deltas the workers must receive are in the bubble-up log (JobName scheme <restore>-lr|pitr-<ordinal>, JobLabels/JobSelector helpers, SetControllerReference before restore.Apply, flush Progress.Recreated before Jobs, Owner.GetName must equal OwnerLabel.Name, hard-fail on malformed-Target errors, digest-only images fail ReadTarget).
-- User instructions (2026-08-20, AFK with full autonomy): run the Copilot review loop on every sub-PR. Self-merge #110 when clean. Keep #111 and #112 OPEN once their loops are clean — the user reviews the controller PRs personally. Hold #113 until #111 and #112 merge.
+- BLOCKED ON THE USER: review and merge PR #122 (PointInTimeRestore) and PR #123 (LogicalRestore), both into feat/restore-controllers. Both are review-clean: 3 Copilot rounds each plus a two-stage orchestrator review with all findings closed. Merge order does not matter (no deepcopy conflict; both add plain string status fields, disjoint files).
+- After both merge: fast-forward the feature worktree, close #111 and #112 (gh issue close), flip their rows to self-merged, run the wave checkpoint (feature-dev-workflow:reviewing-feature-progress) with the full local suite, then dispatch #113 (e2e, worktree .claude/worktrees/restore-controllers--e2e exists? create off the merged feature branch) on model opus. #113's dispatch context: the bubble-up log items marked "For #113".
+- After #113 self-merges: open the integration PR feat/restore-controllers → main with "Closes #109", run its review loop, STOP at ready-to-merge for the user.
+- FLAG TO THE USER: `make all` does not lint (Makefile all: build) while CLAUDE.md claims it does — fix one of the two.
 - Token note: the user runs close to the Fable limit. Dispatch implementation subagents on `model: opus`.
 
 ## Resume checklist
