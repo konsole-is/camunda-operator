@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	apimachineryvalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -40,9 +39,9 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 )
 
-// The claim is exercised against the fake client. The holder resources are
-// unstructured, because the claim reads them without a typed client. This
-// test must run whichever backup kind the module has compiled in.
+// The claim is exercised against the fake client. Every claimant kind of the
+// operator appears here: the claim reads any of them, and a holder of a kind
+// it cannot read must keep the cluster.
 
 const claimNamespace = "ns"
 
@@ -55,34 +54,70 @@ func claimClient(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
 	s := runtime.NewScheme()
 	require.NoError(t, scheme.AddToScheme(s))
+	require.NoError(t, v1.AddToScheme(s))
 	return fake.NewClientBuilder().WithScheme(s).WithObjects(objects...).Build()
 }
 
-// holderResource fakes the backup resource of a claimant in the given
-// phase. An empty phase leaves status.phase unset, as a fresh resource has
-// it.
+func objectMeta(claimant clusterclaim.Claimant) metav1.ObjectMeta {
+	return metav1.ObjectMeta{Namespace: claimNamespace, Name: claimant.Name, UID: claimant.UID}
+}
+
+// holderResource fakes the backup resource of a claimant in the given phase.
+// An empty phase leaves status.phase unset, as a fresh resource has it.
 func holderResource(claimant clusterclaim.Claimant, phase v1.LogicalBackupPhase) client.Object {
-	backup := &unstructured.Unstructured{}
-	backup.SetGroupVersionKind(v1.GroupVersion.WithKind(claimant.Kind))
-	backup.SetNamespace(claimNamespace)
-	backup.SetName(claimant.Name)
-	backup.SetUID(claimant.UID)
-	if phase != "" {
-		_ = unstructured.SetNestedField(backup.Object, string(phase), "status", "phase")
+	if claimant.Kind == "LogicalBackupRDBMS" {
+		return &v1.LogicalBackupRDBMS{
+			ObjectMeta: objectMeta(claimant),
+			Status:     v1.LogicalBackupRDBMSStatus{Phase: phase},
+		}
 	}
-	return backup
+	return &v1.LogicalBackupElasticsearch{
+		ObjectMeta: objectMeta(claimant),
+		Status:     v1.LogicalBackupElasticsearchStatus{Phase: phase},
+	}
+}
+
+// readyReason builds the status conditions of a resource whose Ready
+// condition carries the given reason.
+func readyReason(reason string) []metav1.Condition {
+	return []metav1.Condition{
+		{
+			Type: v1.ConditionReady, Status: metav1.ConditionFalse,
+			Reason: reason, LastTransitionTime: metav1.Now(),
+		},
+	}
 }
 
 // resumeFailedHolder fakes a backup that ended Failed with the Ready reason
-// ResumeFailed: terminal, and the cluster's exporting is still paused.
+// ResumeFailed: terminal, and the cluster's exporting is still paused. The
+// terminal reason is unset, so the Ready condition alone decides.
 func resumeFailedHolder(claimant clusterclaim.Claimant) client.Object {
-	backup := holderResource(claimant, v1.LogicalBackupFailed).(*unstructured.Unstructured)
-	_ = unstructured.SetNestedSlice(
-		backup.Object, []any{
-			map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
-		}, "status", "conditions",
-	)
+	backup := holderResource(claimant, v1.LogicalBackupFailed).(*v1.LogicalBackupElasticsearch)
+	backup.Status.Conditions = readyReason(v1.ReasonResumeFailed)
 	return backup
+}
+
+// restoreHolder fakes the resource of a restore claimant. terminal picks a
+// phase the restore never leaves.
+func restoreHolder(claimant clusterclaim.Claimant, terminal bool) client.Object {
+	if claimant.Kind == "PointInTimeRestore" {
+		phase := v1.PointInTimeRestoreRestoringPrimaryStorage
+		if terminal {
+			phase = v1.PointInTimeRestoreCompleted
+		}
+		return &v1.PointInTimeRestore{
+			ObjectMeta: objectMeta(claimant),
+			Status:     v1.PointInTimeRestoreStatus{Phase: phase},
+		}
+	}
+	phase := v1.LogicalRestoreRestoringPrimaryStorage
+	if terminal {
+		phase = v1.LogicalRestoreCompleted
+	}
+	return &v1.LogicalRestore{
+		ObjectMeta: objectMeta(claimant),
+		Status:     v1.LogicalRestoreStatus{Phase: phase},
+	}
 }
 
 // leaseHolder returns the exact identity that the Lease records in its
@@ -359,6 +394,103 @@ func TestReleaseOnlyByTheHolder(t *testing.T) {
 	)
 }
 
+// Every claimant kind answers the same question, through the Terminal method
+// that api/v1 gives all four. A live holder of any kind blocks. A terminal
+// or a deleted holder of any kind is taken over. A kind the claim cannot
+// read blocks and is never taken over.
+func TestTakeoverIsTheSameForEveryClaimantKind(t *testing.T) {
+	for _, kind := range []string{
+		"LogicalBackupElasticsearch", "LogicalBackupRDBMS", "LogicalRestore", "PointInTimeRestore",
+	} {
+		t.Run(kind, func(t *testing.T) {
+			holder := clusterclaim.Claimant{Kind: kind, Name: "holder", UID: types.UID("uid-holder")}
+			live, ended := kindHolders(holder)
+
+			t.Run("a live holder blocks", func(t *testing.T) {
+				c := claimClient(t, live, holderResource(second, v1.LogicalBackupPending))
+				leaseHeldBy(t, c, holder)
+
+				active, err := clusterclaim.HolderActive(t.Context(), c, claimNamespace, holder)
+				require.NoError(t, err)
+				assert.True(t, active)
+
+				got, err := clusterclaim.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+				require.NoError(t, err)
+				assert.Equal(t, holder.String(), got)
+				assert.Equal(t, holder.String(), leaseHolder(t, c), "not taken over")
+			})
+
+			t.Run("a terminal holder is taken over", func(t *testing.T) {
+				c := claimClient(t, ended, holderResource(second, v1.LogicalBackupPending))
+				leaseHeldBy(t, c, holder)
+
+				active, err := clusterclaim.HolderActive(t.Context(), c, claimNamespace, holder)
+				require.NoError(t, err)
+				assert.False(t, active)
+
+				got, err := clusterclaim.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+				require.NoError(t, err)
+				assert.Empty(t, got)
+				assert.Equal(t, second.String(), leaseHolder(t, c))
+			})
+
+			t.Run("a deleted holder is taken over", func(t *testing.T) {
+				c := claimClient(t, holderResource(second, v1.LogicalBackupPending))
+				leaseHeldBy(t, c, holder)
+
+				active, err := clusterclaim.HolderActive(t.Context(), c, claimNamespace, holder)
+				require.NoError(t, err)
+				assert.False(t, active)
+
+				got, err := clusterclaim.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+				require.NoError(t, err)
+				assert.Empty(t, got)
+				assert.Equal(t, second.String(), leaseHolder(t, c))
+			})
+
+			t.Run("a holder that ended normally leaves the cluster running", func(t *testing.T) {
+				c := claimClient(t, ended)
+				paused, err := clusterclaim.HolderKeepsClusterPaused(t.Context(), c, claimNamespace, holder)
+				require.NoError(t, err)
+				assert.False(t, paused)
+			})
+		})
+	}
+}
+
+// kindHolders fakes two resources of the claimant's kind: one that still
+// runs, and one that reached a phase it never leaves.
+func kindHolders(claimant clusterclaim.Claimant) (live, ended client.Object) {
+	switch claimant.Kind {
+	case "LogicalBackupElasticsearch", "LogicalBackupRDBMS":
+		return holderResource(claimant, v1.LogicalBackupRunning),
+			holderResource(claimant, v1.LogicalBackupCompleted)
+	default:
+		return restoreHolder(claimant, false), restoreHolder(claimant, true)
+	}
+}
+
+// A holder of a kind the claim does not know keeps the cluster. It can be
+// running for all the claim knows, so no claimant takes the Lease from it.
+func TestAHolderOfAnUnknownKindBlocksAndIsNeverTakenOver(t *testing.T) {
+	unknown := clusterclaim.Claimant{Kind: "SomeFutureKind", Name: "x", UID: types.UID("uid-unknown")}
+	c := claimClient(t, holderResource(second, v1.LogicalBackupPending))
+	leaseHeldBy(t, c, unknown)
+
+	active, err := clusterclaim.HolderActive(t.Context(), c, claimNamespace, unknown)
+	require.NoError(t, err)
+	assert.True(t, active, "an unreadable holder is never declared inactive")
+
+	paused, err := clusterclaim.HolderKeepsClusterPaused(t.Context(), c, claimNamespace, unknown)
+	require.NoError(t, err)
+	assert.False(t, paused)
+
+	got, err := clusterclaim.Claim(t.Context(), c, c, claimNamespace, "prod", second)
+	require.NoError(t, err)
+	assert.Equal(t, unknown.String(), got)
+	assert.Equal(t, unknown.String(), leaseHolder(t, c), "not taken over")
+}
+
 func TestHolderOfAKindTheServerDoesNotServeIsInactive(t *testing.T) {
 	// The fake client cannot answer NoMatch by itself; an interceptor
 	// plays the API server of an operator that ships one backup kind only.
@@ -446,14 +578,10 @@ func TestClaimLeaseNameOfADottedNameIsAValidDNSSubdomain(t *testing.T) {
 // restores an older Ready condition. The recorded terminalReason decides,
 // so such a holder still counts as paused and its claim is never taken over.
 func TestATerminalReasonResumeFailedDecidesOverAStaleReadyCondition(t *testing.T) {
-	backup := holderResource(first, v1.LogicalBackupFailed).(*unstructured.Unstructured)
-	require.NoError(t, unstructured.SetNestedField(backup.Object, "ResumeFailed", "status", "terminalReason"))
+	backup := holderResource(first, v1.LogicalBackupFailed).(*v1.LogicalBackupElasticsearch)
+	backup.Status.TerminalReason = v1.ReasonResumeFailed
 	// The stale Ready of an earlier write: still Progressing.
-	require.NoError(t, unstructured.SetNestedSlice(
-		backup.Object, []any{
-			map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "Progressing"},
-		}, "status", "conditions",
-	))
+	backup.Status.Conditions = readyReason("Progressing")
 	c := claimClient(t, backup, holderResource(second, v1.LogicalBackupPending))
 	leaseHeldBy(t, c, first)
 
@@ -474,13 +602,9 @@ func TestATerminalReasonResumeFailedDecidesOverAStaleReadyCondition(t *testing.T
 // A terminalReason other than ResumeFailed decides too: the holder resumed
 // exporting, so it is inactive whatever a stale Ready condition says.
 func TestATerminalReasonFailedIsInactiveDespiteAStaleResumeFailedReady(t *testing.T) {
-	backup := holderResource(first, v1.LogicalBackupFailed).(*unstructured.Unstructured)
-	require.NoError(t, unstructured.SetNestedField(backup.Object, "Failed", "status", "terminalReason"))
-	require.NoError(t, unstructured.SetNestedSlice(
-		backup.Object, []any{
-			map[string]any{"type": v1.ConditionReady, "status": "False", "reason": "ResumeFailed"},
-		}, "status", "conditions",
-	))
+	backup := holderResource(first, v1.LogicalBackupFailed).(*v1.LogicalBackupElasticsearch)
+	backup.Status.TerminalReason = "Failed"
+	backup.Status.Conditions = readyReason(v1.ReasonResumeFailed)
 	c := claimClient(t, backup)
 
 	active, err := clusterclaim.HolderActive(t.Context(), c, claimNamespace, first)

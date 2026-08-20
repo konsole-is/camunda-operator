@@ -150,6 +150,13 @@ rules:
   - list
   - watch
 - apiGroups:
+  - core.camunda.io
+  resources:
+  - logicalrestores
+  - pointintimerestores
+  verbs:
+  - get
+- apiGroups:
   - elasticsearch.k8s.elastic.co
   resources:
   - elasticsearches

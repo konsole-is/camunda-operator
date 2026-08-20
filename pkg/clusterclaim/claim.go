@@ -50,7 +50,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -384,124 +383,133 @@ func newLease(namespace, cluster string, self Claimant) *coordinationv1.Lease {
 	}
 }
 
-// readyReasonResumeFailed is the Ready condition reason of a backup that
-// ended with exporting still paused. It is declared here, not taken from
-// the kind's own constants. The claim reads every holder kind, and each
-// branch of the module compiles with only its own kind.
-const readyReasonResumeFailed = "ResumeFailed"
+// holder is what the claim needs of a claimant resource to decide whether it
+// still needs the cluster. Every claimant kind in api/v1 answers Terminal:
+// the kind owns its own phase vocabulary, and the claim never repeats it.
+type claimHolder interface {
+	client.Object
+	// Terminal reports whether the resource reached a phase it never leaves.
+	Terminal() bool
+}
 
-// HolderActive reports whether the backup that holder names still needs the
+// holderKinds gives an empty resource for the kind of a claimant. It lists
+// every kind that takes a cluster for itself. A kind that is absent is one
+// the claim cannot interpret: such a holder keeps the claim, and no claimant
+// ever takes it over. Adding a claimant kind means adding it here.
+var holderKinds = map[string]func() claimHolder{
+	"LogicalBackupElasticsearch": func() claimHolder { return &v1.LogicalBackupElasticsearch{} },
+	"LogicalBackupRDBMS":         func() claimHolder { return &v1.LogicalBackupRDBMS{} },
+	"LogicalRestore":             func() claimHolder { return &v1.LogicalRestore{} },
+	"PointInTimeRestore":         func() claimHolder { return &v1.PointInTimeRestore{} },
+}
+
+// HolderActive reports whether the resource that holder names still needs the
 // claim. It reads the resource of holder.Kind in the namespace. Absent, a
 // UID other than holder.UID (a later resource with the same name), or a
 // terminal phase means inactive. A kind that the API server does not serve
 // means inactive too: no resource of that kind can exist.
 //
-// One terminal holder stays active: a backup whose Ready condition carries
-// the reason ResumeFailed. Such a backup ended with the cluster's exporting
-// still paused, and its claim is what keeps a sibling from backing up a
-// paused cluster. The claim follows the pause, not the phase. It goes back
-// when the holder's deletion resumes exporting, or when the holder is gone.
+// A kind that holderKinds does not list means active. The claim cannot read
+// such a holder, so it must not take the cluster from it. An uninterpretable
+// holder blocks until a human removes its Lease.
 //
-// The phase and condition vocabulary is shared by both backup kinds. The
-// check therefore reads the resource without a typed client, and it works
-// whichever kind this operator has compiled in. reader must read the API
-// server directly: a cached read of the holder can be behind, and a stale
-// "gone" or a stale phase would take a live claim over.
+// One terminal holder stays active: an Elasticsearch backup that left the
+// cluster's exporting paused. Its claim is what keeps a sibling from backing
+// up a paused cluster. The claim follows the pause, not the phase. It goes
+// back when the holder's deletion resumes exporting, or when the holder is
+// gone. See keepsClusterPaused.
+//
+// reader must read the API server directly: a cached read of the holder can
+// be behind, and a stale "gone" or a stale phase would take a live claim
+// over.
 func HolderActive(ctx context.Context, reader client.Reader, namespace string, holder Claimant) (bool, error) {
-	backup, err := holderResource(ctx, reader, namespace, holder)
-	if err != nil || backup == nil {
+	resource, known, err := holderResource(ctx, reader, namespace, holder)
+	if err != nil {
 		return false, err
 	}
-
-	phase, _, err := unstructured.NestedString(backup.Object, "status", "phase")
-	if err != nil {
-		return false, fmt.Errorf("reading the phase of the claim holder %s: %w", holder.Display(), err)
+	if !known {
+		return true, nil
 	}
-	terminal := v1.LogicalBackupPhase(phase) == v1.LogicalBackupCompleted ||
-		v1.LogicalBackupPhase(phase) == v1.LogicalBackupFailed
-	if !terminal {
+	if resource == nil {
+		return false, nil
+	}
+	if !resource.Terminal() {
 		return true, nil
 	}
 
-	resumeFailed, err := holderResumeFailed(backup, holder)
-	if err != nil {
-		return false, err
-	}
-
-	return resumeFailed, nil
+	return keepsClusterPaused(resource), nil
 }
 
-// HolderKeepsClusterPaused reports whether the holder is a terminal backup
-// that left the cluster's exporting paused: its Ready condition reason is
-// ResumeFailed. A claimant blocked by such a holder tells the user more
-// than "a backup runs". The cluster is paused, and it needs the holder's
-// deletion or repair.
+// HolderKeepsClusterPaused reports whether the holder left the cluster's
+// exporting paused. Only an Elasticsearch backup can, so this reports false
+// for every other kind. A claimant blocked by such a holder tells the user
+// more than "another operation runs". The cluster is paused, and it needs
+// the holder's deletion or repair.
 func HolderKeepsClusterPaused(
 	ctx context.Context,
 	reader client.Reader,
 	namespace string,
 	holder Claimant,
 ) (bool, error) {
-	backup, err := holderResource(ctx, reader, namespace, holder)
-	if err != nil || backup == nil {
+	resource, known, err := holderResource(ctx, reader, namespace, holder)
+	if err != nil || !known || resource == nil {
 		return false, err
 	}
-	return holderResumeFailed(backup, holder)
+	return keepsClusterPaused(resource), nil
 }
 
-// holderResource reads the resource of the holder. It returns nil when the
-// resource is gone or replaced under the same name. A kind that the API
-// server does not serve is nil too.
+// holderResource reads the resource of the holder. known is false for a kind
+// that holderKinds does not list. The resource is nil when it is gone or
+// replaced under the same name, and for a kind that the API server does not
+// serve: no resource of such a kind can exist.
 func holderResource(
 	ctx context.Context,
 	reader client.Reader,
 	namespace string,
 	holder Claimant,
-) (*unstructured.Unstructured, error) {
-	backup := &unstructured.Unstructured{}
-	backup.SetGroupVersionKind(v1.GroupVersion.WithKind(holder.Kind))
+) (resource claimHolder, known bool, err error) {
+	newResource, known := holderKinds[holder.Kind]
+	if !known {
+		return nil, false, nil
+	}
+
+	resource = newResource()
 	key := client.ObjectKey{Namespace: namespace, Name: holder.Name}
-	if err := reader.Get(ctx, key, backup); err != nil {
+	if err := reader.Get(ctx, key, resource); err != nil {
 		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-			return nil, nil
+			return nil, true, nil
 		}
-		return nil, fmt.Errorf("reading the claim holder %s %s: %w", holder.Kind, key, err)
+		return nil, true, fmt.Errorf("reading the claim holder %s %s: %w", holder.Kind, key, err)
 	}
-	if backup.GetUID() != holder.UID {
-		return nil, nil
+	if resource.GetUID() != holder.UID {
+		return nil, true, nil
 	}
-	return backup, nil
+	return resource, true, nil
 }
 
-// holderResumeFailed reports whether the holder ended as ResumeFailed. The
-// recorded status.terminalReason decides first. A write conflict at the
-// terminal transition can persist the phase and the terminal reason while
-// it restores an older Ready condition. A decision from that stale
-// condition would take a live paused-cluster claim over. A kind without the
-// field falls back to the reason of the Ready condition.
-func holderResumeFailed(backup *unstructured.Unstructured, holder Claimant) (bool, error) {
-	terminalReason, found, err := unstructured.NestedString(backup.Object, "status", "terminalReason")
-	if err != nil {
-		return false, fmt.Errorf("reading the terminal reason of the claim holder %s: %w", holder.Display(), err)
+// keepsClusterPaused reports whether the holder left the cluster's exporting
+// paused. This is the one rule the claim cannot ask of a kind in general.
+// Only LogicalBackupElasticsearch pauses exporting on the cluster it holds,
+// so only it can end and leave the cluster paused. A backup of the RDBMS and
+// both restore kinds leave the cluster the way they found it, and a terminal
+// holder of those kinds releases it.
+//
+// The recorded status.terminalReason decides first. A write conflict at the
+// terminal transition can persist the phase and the terminal reason while it
+// restores an older Ready condition. A decision from that stale condition
+// would take a live paused-cluster claim over. Without the field the reason
+// of the Ready condition decides.
+func keepsClusterPaused(resource claimHolder) bool {
+	backup, ok := resource.(*v1.LogicalBackupElasticsearch)
+	if !ok {
+		return false
 	}
-	if found && terminalReason != "" {
-		return terminalReason == readyReasonResumeFailed, nil
+	if backup.Status.TerminalReason != "" {
+		return backup.Status.TerminalReason == v1.ReasonResumeFailed
 	}
 
-	items, _, err := unstructured.NestedSlice(backup.Object, "status", "conditions")
-	if err != nil {
-		return false, fmt.Errorf("reading the conditions of the claim holder %s: %w", holder.Display(), err)
-	}
-	for _, item := range items {
-		condition, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if condition["type"] == v1.ConditionReady {
-			return condition["reason"] == readyReasonResumeFailed, nil
-		}
-	}
-	return false, nil
+	ready := meta.FindStatusCondition(backup.Status.Conditions, v1.ConditionReady)
+	return ready != nil && ready.Reason == v1.ReasonResumeFailed
 }
 
 // Release gives the claim on the cluster back when self holds it. It is a
