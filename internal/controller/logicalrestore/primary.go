@@ -26,6 +26,7 @@ import (
 	ocfjob "github.com/sourcehawk/operator-component-framework/pkg/primitives/job"
 	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -115,8 +116,8 @@ func (r *Reconciler) recreateClaims(
 }
 
 // applyRestoreJobs applies one Job per broker and records their names. A Job
-// that already exists is left alone: its pod template is immutable, and the
-// Job is the one this restore created under that name.
+// that this restore already created is left alone, because its pod template is
+// immutable.
 func (r *Reconciler) applyRestoreJobs(
 	ctx context.Context,
 	restore *v1.LogicalRestore,
@@ -134,6 +135,12 @@ func (r *Reconciler) applyRestoreJobs(
 		var current batchv1.Job
 		err := r.APIReader.Get(ctx, key, &current)
 		if err == nil {
+			if !ownedBy(&current, restore) {
+				r.failForeignJob(restore, key)
+
+				return settle, nil
+			}
+
 			continue
 		}
 		if !apierrors.IsNotFound(err) {
@@ -211,6 +218,15 @@ func (r *Reconciler) trackRestoreJobs(
 
 			return settle, nil
 		}
+		// The recorded name alone does not prove that this is still the Job
+		// that the restore created. A Job deleted and created again under the
+		// same name by another actor completes work that this restore never
+		// asked for.
+		if !ownedBy(job, restore) {
+			r.failForeignJob(restore, types.NamespacedName{Namespace: restore.Namespace, Name: name})
+
+			return settle, nil
+		}
 
 		status, err := ocfjob.DefaultConvergingStatusHandler(concepts.ConvergingOperationNone, job)
 		if err != nil {
@@ -256,6 +272,28 @@ func (r *Reconciler) trackRestoreJobs(
 	// The watch on the owned Jobs wakes the restore on progress. The poll also
 	// re-checks the pods, because a Job does not report their waiting states.
 	return hold{after: r.opts.PollInterval}, nil
+}
+
+// ownedBy reports whether job is a Job that this restore created. The UID
+// answers it, not the name: a restore that somebody deleted and created again
+// carries the same name and another UID, and the name of a restore Job comes
+// from the name of the restore and the broker ordinal alone.
+func ownedBy(job *batchv1.Job, restore *v1.LogicalRestore) bool {
+	controller := metav1.GetControllerOf(job)
+
+	return controller != nil && controller.UID == restore.UID
+}
+
+// failForeignJob ends the restore because a Job under the name of one of its
+// Jobs belongs to somebody else. Tracking it would count work that this
+// restore never did, on volumes that it already emptied. Nothing resolves it
+// on its own, so the restore fails and names what a human has to remove.
+func (r *Reconciler) failForeignJob(restore *v1.LogicalRestore, key types.NamespacedName) {
+	r.fail(restore, v1.ReasonFailed, fmt.Sprintf(
+		"Job %s exists, but no controller reference of this restore owns it. Remove the Job of the "+
+			"earlier restore, then create a new restore",
+		key,
+	))
 }
 
 // restoreJob reads one Job of the restore. gone reports that the live API has

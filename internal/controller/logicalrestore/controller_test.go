@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/logicalrestore"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
 )
@@ -195,6 +196,26 @@ var _ = Describe("LogicalRestore of a relational cluster", func() {
 		expectPhase(restore, v1.LogicalRestoreRestoringPrimaryStorage)
 	})
 
+	It("refuses a pg_restore Job that another restore left behind under its name", func() {
+		w := newRelationalWorld()
+		backup := createRelationalBackup(w)
+
+		restore := &v1.LogicalRestore{
+			ObjectMeta: metav1.ObjectMeta{Name: "lr-pg-successor", Namespace: w.namespace},
+			Spec: v1.LogicalRestoreSpec{
+				BackupRef:        v1.LogicalBackupRef{Kind: v1.LogicalBackupKindRDBMS, Name: backup.Name},
+				TargetClusterRef: v1.ClusterRef{Name: w.cluster.Name},
+			},
+		}
+		createForeignJob(w, components.JobName(restore))
+
+		Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+
+		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
+		Expect(reached.Status.FailureMessage).To(ContainSubstring(components.JobName(restore)))
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("another restore"))
+	})
+
 	It("fails when the pg_restore Job fails", func() {
 		w := newRelationalWorld()
 		backup := createRelationalBackup(w)
@@ -352,6 +373,32 @@ var _ = Describe("LogicalRestore of primary storage", func() {
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("did not recover"))
 	})
 
+	It("refuses a Job that another restore left behind under its name", func() {
+		w := newRelationalWorld()
+		backup := createRelationalBackup(w)
+
+		// The name of a restore Job comes from the name of the restore and the
+		// broker ordinal, so a restore that somebody deleted and created again
+		// finds the Jobs of its predecessor. Only the controller reference
+		// tells the two apart.
+		restore := &v1.LogicalRestore{
+			ObjectMeta: metav1.ObjectMeta{Name: "lr-successor", Namespace: w.namespace},
+			Spec: v1.LogicalRestoreSpec{
+				BackupRef:        v1.LogicalBackupRef{Kind: v1.LogicalBackupKindRDBMS, Name: backup.Name},
+				TargetClusterRef: v1.ClusterRef{Name: w.cluster.Name},
+			},
+		}
+		name := restorepkg.JobName(labels.LogicalRestore(restore.Name), 0)
+		createForeignJob(w, name)
+
+		Expect(k8sClient.Create(ctx, restore)).To(Succeed())
+		completeSecondaryStorage(w, restore)
+
+		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
+		Expect(reached.Status.FailureMessage).To(ContainSubstring(name))
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("Remove the Job"))
+	})
+
 	It("fails and names the broker when one restore Job fails", func() {
 		w := newRelationalWorld()
 		backup := createRelationalBackup(w)
@@ -417,6 +464,27 @@ func createStuckPod(w *world, jobName string, selector map[string]string) {
 		}},
 	}}
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+}
+
+// createForeignJob creates a completed Job under name that no restore of the
+// suite owns. It stands in for the Job of a restore that somebody deleted and
+// created again under the same name.
+func createForeignJob(w *world, name string) {
+	GinkgoHelper()
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: w.namespace},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					Containers:    []corev1.Container{{Name: "restore", Image: "camunda/camunda:8.9.9"}},
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, job)).To(Succeed())
+	markJob(w.namespace, name, batchv1.JobComplete)
 }
 
 // claimNamed reads one broker data claim.

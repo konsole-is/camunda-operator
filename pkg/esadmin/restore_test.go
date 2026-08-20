@@ -18,6 +18,7 @@ package esadmin_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -243,4 +244,40 @@ func seedSnapshot(t *testing.T, client *esadmin.Client, server *esadmintest.Serv
 		),
 	)
 	server.SetSnapshotState(repo, name, "SUCCESS")
+}
+
+// TestConcurrentCallsAndAccessors runs the restore calls of two clients
+// against one fake while a test reads its accessors. The fake serves one
+// request at a time under the lock of adminhttptest.Fake, and its accessors
+// take the same lock, so neither side sees half-written state. Run the package
+// with -race to see it fail if that ever changes.
+func TestConcurrentCallsAndAccessors(t *testing.T) {
+	t.Parallel()
+
+	server := esadmintest.New()
+	defer server.Close()
+
+	server.SetIndices("camunda-1", "operate-1")
+	server.SetSnapshotState("repo", "snap", "SUCCESS")
+
+	client, err := esadmin.New(server.URL(), "user", "pass", nil)
+	require.NoError(t, err)
+	require.NoError(t, client.EnsureSnapshotRepository(t.Context(), "repo", esadmin.RepositoryConfig{
+		Type: esadmin.RepositoryTypeS3, Bucket: "bucket",
+	}))
+
+	var group sync.WaitGroup
+	for range 8 {
+		group.Go(func() {
+			_ = client.RestoreSnapshot(t.Context(), "repo", "snap", []string{"camunda-*"})
+			_, _ = client.RestoreProgress(t.Context(), []string{"camunda-*"})
+			_ = client.DeleteIndices(t.Context(), []string{"operate-*"})
+			server.RestoreRequests()
+			server.Indices()
+			server.DeletedIndices()
+		})
+	}
+	group.Wait()
+
+	assert.NotEmpty(t, server.RestoreRequests())
 }

@@ -91,8 +91,11 @@ type RestoreRequest struct {
 	WaitForCompletion bool
 }
 
-// Server fakes the Elasticsearch admin surface. Every exported method is
-// safe for concurrent use.
+// Server fakes the Elasticsearch admin surface. Every exported method is safe
+// for concurrent use, and so is the handler: adminhttptest.Fake serves one
+// request at a time under the same lock that every accessor here takes, so
+// the handler reads and writes the state below directly and must never take
+// that lock again.
 //
 // The operations that the inherited FailNext and DropNext name are
 // "repository", "snapshotCreate", "snapshotStatus", "snapshotDelete",
