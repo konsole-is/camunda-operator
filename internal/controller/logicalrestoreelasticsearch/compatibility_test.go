@@ -26,10 +26,13 @@ import (
 )
 
 // compatiblePair returns a pair that matches in every fact. Each case changes
-// the one fact it is about.
+// the one fact it is about. The two cluster names are one name, because a
+// backup restores into the cluster it was taken from alone.
 func compatiblePair() compatibility {
 	return compatibility{
 		TargetStorageType: v1.SecondaryStorageTypeElasticsearch,
+		BackupCluster:     "my-cluster",
+		TargetCluster:     "my-cluster",
 		BackupPartitions:  3,
 		TargetPartitions:  3,
 		BackupBucket:      "backups",
@@ -62,6 +65,21 @@ func TestCheck(t *testing.T) {
 				return in
 			}(),
 			want: []string{"holds elasticsearch data", "stores its data in rdbms"},
+		},
+		{
+			name: "a target that is another cluster",
+			in: func() compatibility {
+				in := compatiblePair()
+				in.TargetCluster = "my-clone"
+
+				return in
+			}(),
+			want: []string{
+				`CamundaCluster "my-cluster"`,
+				`the target cluster is "my-clone"`,
+				"A restore into another cluster is not supported",
+				`The prefix of "my-clone" holds no backup of "my-cluster"`,
+			},
 		},
 		{
 			name: "partition counts that differ",

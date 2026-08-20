@@ -39,6 +39,10 @@ type backup struct {
 	// namespace of the restore.
 	Namespace string
 	Name      string
+	// Cluster is the CamundaCluster that the backup was taken from. The
+	// restore application reads the partition backup under the prefix of the
+	// cluster it runs as, so only that cluster is a target.
+	Cluster string
 	// ID is the backup id that keys every artifact of the backup.
 	ID int64
 	// Partitions is the partition count that the backup recorded.
@@ -219,6 +223,7 @@ func backupFacts(source *v1.LogicalBackupElasticsearch) *backup {
 	facts := &backup{
 		Namespace:        source.Namespace,
 		Name:             source.Name,
+		Cluster:          source.Spec.ClusterRef.Name,
 		ID:               source.Status.BackupID,
 		Partitions:       source.Status.PartitionsCount,
 		Version:          source.Status.Version,

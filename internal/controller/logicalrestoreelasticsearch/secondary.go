@@ -183,8 +183,8 @@ func (r *Reconciler) trackRestore(
 //
 // Only an absent repository is registered. Its settings come from the bucket
 // that the backup pinned, and its prefix is the prefix that the source
-// cluster wrote under. That is what lets a backup restore into a second
-// cluster.
+// cluster wrote under. The snapshots lie under that prefix, whichever
+// Elasticsearch server the target reads through.
 func (r *Reconciler) ensureRepository(
 	ctx context.Context,
 	resolved *resolution,

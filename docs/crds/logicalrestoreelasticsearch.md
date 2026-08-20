@@ -2,7 +2,7 @@
 
 `LogicalRestoreElasticsearch` restores one completed [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) into one `CamundaCluster`. You create it, or a recovery flow above the operator creates it for you.
 
-The target can be the cluster the backup was taken from, or another cluster. The operator rebuilds both halves of the cluster state: it puts the web-application indices and the Zeebe record indices back into the Elasticsearch of the target, and it gives the brokers new data volumes that the Camunda restore application fills from the partition backup.
+The target is the cluster the backup was taken from. The operator rebuilds both halves of the cluster state: it puts the web-application indices and the Zeebe record indices back into the Elasticsearch of the target, and it gives the brokers new data volumes that the Camunda restore application fills from the partition backup.
 
 One resource is one restore. The spec is immutable, and the restore runs once. To retry, create a new resource. `kubectl get lres` lists the restores with their phase, backup, and target.
 
@@ -55,9 +55,10 @@ graph LR
 
 ## Compatibility
 
-Before the operator deletes anything, it compares the backup against the target. A breach fails the restore with the reason `IncompatibleTarget`, and the message names both values. Four rules apply:
+Before the operator deletes anything, it compares the backup against the target. A breach fails the restore with the reason `IncompatibleTarget`, and the message names both values. Five rules apply:
 
 - The target stores its data in Elasticsearch. Use a `LogicalRestoreRDBMS` for a relational cluster.
+- The target is the cluster that the backup was taken from, which the backup names in `spec.clusterRef`. The restore application reads the partition backup under the prefix of the cluster it runs as. No other cluster reads that prefix.
 - The partition count of the target is the partition count that the backup recorded in `status.partitionsCount`.
 - The `spec.backupStorageRef` of the target names the same `ObjectStorageConfig` that the backup wrote to. The operator reads the artifacts through the bucket of the target, and the `CamundaCluster` controller copies the credentials of that bucket alone into the namespace.
 - The target runs the exact Camunda version that the backup recorded in `status.version`. An Elasticsearch backup carries that version in the name of every snapshot, so a target one patch release newer cannot read it. A backup that recorded no version fails this rule.
@@ -68,7 +69,7 @@ The operator lets one backup or one restore of a cluster run at a time. A restor
 
 ## The snapshot repository
 
-The restore reads the snapshots from the repository that the backup recorded in `status.repository`, on the Elasticsearch of the target. If that repository is absent, the operator registers it over the bucket that the backup pinned and the prefix that the source cluster wrote under. That is what lets a backup restore into a second cluster.
+The restore reads the snapshots from the repository that the backup recorded in `status.repository`, on the Elasticsearch of the target. If that repository is absent, the operator registers it over the bucket that the backup pinned and the prefix that the source cluster wrote under. The snapshots lie under that prefix, whichever Elasticsearch server the target reads through.
 
 If the repository is already registered, the operator uses it as it is. It never points an existing registration at another bucket or another prefix. The Elasticsearch of a target can be a cluster that this operator does not manage, where an administrator registered the repository by hand. A registration that points elsewhere makes the restore fail on a snapshot that is missing, and the message names the repository.
 
@@ -115,7 +116,7 @@ Deleting the restore removes its Jobs. The recreated broker volumes stay, and so
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 | `Ready` | `ClusterNotSuspended` | The target still runs. | Set `spec.suspend` of the cluster to `true`. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |
-| `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. Restore into a cluster that meets the rules. |
+| `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. A backup restores into the cluster it was taken from alone. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the backup is not completed. | Read the message. Create the resource, or wait for the backup. |
 | `Ready` | `ConnectionFailed` | The Elasticsearch of the target does not answer, or it refuses the credentials. | Make sure that the endpoint answers and that the credentials of the `SecondaryStorageConfig` are valid. |
 | `Ready` | `MissingSecret` | A pod of a restore Job cannot start, because a Secret it mounts does not exist. | Create the Secret that the message names. |
@@ -159,25 +160,6 @@ spec:
 - `spec.backupRef.name` and `spec.targetClusterRef.name` are required and must not be empty.
 - Neither reference crosses a namespace. The backup and the cluster live in the namespace of the restore.
 - The suspend state of the target, the state of the backup, and the compatibility rules all depend on live state. The operator checks them at reconcile time.
-
-### Restore into a second cluster
-
-The target reads the same backup bucket and runs the same Camunda version as the cluster the backup came from:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: LogicalRestoreElasticsearch
-metadata:
-  name: my-clone-lres
-  namespace: my-cluster-ns
-  labels:
-    camunda.io/cluster: my-clone
-spec:
-  backupRef:
-    name: my-cluster-backup-20260819
-  targetClusterRef:
-    name: my-clone
-```
 
 ## Related
 

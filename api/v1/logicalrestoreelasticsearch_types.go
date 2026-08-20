@@ -28,9 +28,10 @@ type LogicalRestoreElasticsearchSpec struct {
 	// restore from. It lives in the namespace of this restore.
 	// +required
 	BackupRef LogicalBackupRef `json:"backupRef"`
-	// targetClusterRef references the CamundaCluster to restore into. It can
-	// differ from the cluster the backup was taken from. The cluster must
-	// stay suspended for the whole restore.
+	// targetClusterRef references the CamundaCluster to restore into. It must
+	// name the cluster the backup was taken from. The restore application
+	// reads the primary-storage backup under the prefix of the cluster it
+	// runs as. The cluster must stay suspended for the whole restore.
 	// +required
 	TargetClusterRef ClusterRef `json:"targetClusterRef"`
 }

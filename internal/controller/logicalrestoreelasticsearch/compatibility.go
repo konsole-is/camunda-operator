@@ -45,6 +45,8 @@ func (r *Reconciler) validate(
 
 	if failure := check(compatibility{
 		TargetStorageType: resolved.storage.Spec.Type,
+		BackupCluster:     resolved.backup.Cluster,
+		TargetCluster:     resolved.cluster.Name,
 		BackupPartitions:  resolved.backup.Partitions,
 		TargetPartitions:  resolved.target.Partitions,
 		BackupBucket:      resolved.backup.Bucket,
@@ -75,6 +77,10 @@ type compatibility struct {
 	// TargetStorageType is the type of the storage contract of the target. An
 	// Elasticsearch backup restores into Elasticsearch alone.
 	TargetStorageType v1.SecondaryStorageType
+	// BackupCluster is the cluster that the backup was taken from.
+	BackupCluster string
+	// TargetCluster is the cluster that the restore writes into.
+	TargetCluster string
 	// BackupPartitions is the partition count that the backup recorded.
 	BackupPartitions int32
 	// TargetPartitions is CAMUNDA_CLUSTER_PARTITIONCOUNT of the target.
@@ -97,6 +103,21 @@ func check(in compatibility) *conditions.PreCheckFailure {
 		return incompatible(
 			"the backup holds %s data and the target cluster stores its data in %s",
 			v1.SecondaryStorageTypeElasticsearch, in.TargetStorageType,
+		)
+	}
+
+	// The restore Jobs copy the broker configuration of the target, and that
+	// configuration names the backup prefix of the target. A restore into
+	// another cluster points the restore application at a prefix that holds no
+	// partition backup. The application reports that only after the indices
+	// and the broker volumes are gone.
+	if in.BackupCluster != in.TargetCluster {
+		return incompatible(
+			"the backup was taken from CamundaCluster %q and the target cluster is %q. A restore "+
+				"into another cluster is not supported. The restore application reads the partition "+
+				"backup under the prefix of the cluster it runs as. The prefix of %q holds no backup "+
+				"of %q",
+			in.BackupCluster, in.TargetCluster, in.TargetCluster, in.BackupCluster,
 		)
 	}
 
