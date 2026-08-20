@@ -9,7 +9,7 @@ No kind in the operator consumes this contract yet. The operator validates it so
 | Role | Who |
 | --- | --- |
 | Producers | You, by hand, or another tool that runs Management Identity and creates the contract for you |
-| Consumers | None in the operator yet |
+| Consumers | [CamundaOptimize](camundaoptimize.md) |
 
 The smallest contract names the endpoints, the client, the audience, and the client secret:
 
