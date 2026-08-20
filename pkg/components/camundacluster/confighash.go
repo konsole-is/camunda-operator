@@ -19,10 +19,14 @@ package camundacluster
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // configHashLength is the number of hex characters of the config hash: the
@@ -113,4 +117,30 @@ func envFromValue(source corev1.EnvFromSource) string {
 	default:
 		return "prefix:" + source.Prefix
 	}
+}
+
+// PresetFingerprint is the hash input that stands for a CamundaClusterPreset:
+// a digest of its spec with the fields that no process renders removed. The
+// controller records it instead of the generation of the preset, because the
+// generation moves for every spec change, and the fingerprint of a preset is
+// an input of every process hash.
+//
+// spec.cluster.auth.basic.passwordRotation is the field this exists for. It
+// requests a rotation of the admin password and renders nothing, so the
+// unified processes must not restart for it; only connectors follow the
+// password, through Input.AdminPasswordHash. Every other change of a preset
+// still moves the fingerprint and rolls the workloads that inherit it.
+func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
+	rendered := spec.DeepCopy()
+	if auth := rendered.Cluster.Auth; auth != nil && auth.Basic != nil {
+		auth.Basic.PasswordRotation = ""
+	}
+
+	encoded, err := json.Marshal(rendered)
+	if err != nil {
+		return "", fmt.Errorf("encoding the preset spec: %w", err)
+	}
+
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])[:configHashLength], nil
 }

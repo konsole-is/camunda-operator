@@ -27,6 +27,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -493,6 +494,58 @@ var _ = Describe("Admin password rotation", func() {
 		seedClusterUser(password)
 		serveCluster(cluster)
 		expectRotated(cluster, "round-1")
+	})
+
+	It("does not roll the unified processes when a preset asks for the rotation", func() {
+		ns := newNamespace()
+		preset := &v1.CamundaClusterPreset{
+			ObjectMeta: metav1.ObjectMeta{Name: "ccp-" + utilrand.String(8)},
+			Spec: v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+				Version: "8.9.9",
+				Auth:    &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "round-1"}},
+			}},
+		}
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.PresetRef = preset.Name
+		createCluster(cluster)
+		serveCluster(cluster)
+
+		zeebeKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+		before := fetchStatefulSet(zeebeKey).Spec.Template.Annotations[components.ConfigHashAnnotation]
+		Expect(before).NotTo(BeEmpty())
+
+		By("asking for another rotation on the preset")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.Auth.Basic.PasswordRotation = "round-2"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("keeping the brokers on their configuration")
+		Consistently(func(g Gomega) {
+			var sts appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, zeebeKey, &sts)).To(Succeed())
+			g.Expect(sts.Spec.Template.Annotations[components.ConfigHashAnnotation]).To(
+				Equal(before), "a rotation renders nothing for the brokers",
+			)
+		}, "5s", interval).Should(Succeed())
+
+		By("rolling them for a preset change that does render")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.PodLabels = map[string]string{"touch": "1"}
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			var sts appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, zeebeKey, &sts)).To(Succeed())
+			g.Expect(sts.Spec.Template.Annotations[components.ConfigHashAnnotation]).NotTo(Equal(before))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("ignores the field under OIDC and rejects nothing", func() {

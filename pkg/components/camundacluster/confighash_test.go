@@ -22,6 +22,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 func TestConfigHashStableAndSensitive(t *testing.T) {
@@ -95,4 +97,31 @@ func TestPasswordHash(t *testing.T) {
 	assert.Equal(t, hash, PasswordHash("s3cret"))
 	assert.NotEqual(t, hash, PasswordHash("other"))
 	assert.Empty(t, PasswordHash(""), "no password, no hash input")
+}
+
+func TestPresetFingerprintIgnoresThePasswordRotation(t *testing.T) {
+	t.Parallel()
+
+	base := v1.CamundaClusterPresetSpec{
+		Cluster: v1.CamundaClusterSpec{
+			Version: "8.9.9",
+			Auth:    &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "2026-08"}},
+		},
+	}
+
+	rotated := *base.DeepCopy()
+	rotated.Cluster.Auth.Basic.PasswordRotation = "2026-09"
+
+	other := *base.DeepCopy()
+	other.Cluster.Version = "8.9.8"
+
+	first, err := PresetFingerprint(base)
+	require.NoError(t, err)
+	second, err := PresetFingerprint(rotated)
+	require.NoError(t, err)
+	third, err := PresetFingerprint(other)
+	require.NoError(t, err)
+
+	assert.Equal(t, first, second, "a rotation renders nothing, so no process may roll for it")
+	assert.NotEqual(t, first, third, "every other preset change still rolls the workloads")
 }
