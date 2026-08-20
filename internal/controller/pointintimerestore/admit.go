@@ -37,13 +37,11 @@ import (
 // day is how long the retention period of a database server counts one day.
 const day = 24 * time.Hour
 
-// chain is everything a phase of the restore resolves from the cluster: the
-// cluster itself, its storage contract, the logical database behind it, the
-// server that holds the database, and the facts of the live broker
-// StatefulSet.
+// chain is what a phase of the restore resolves from the cluster: the cluster
+// itself, the logical database behind its storage contract, the server that
+// holds the database, and the facts of the live broker StatefulSet.
 type chain struct {
 	cluster  *v1.CamundaCluster
-	storage  *v1.SecondaryStorageConfig
 	dbConfig *v1.DatabaseConfig
 	server   *v1.DatabaseServerConfig
 	target   *restore.Target
@@ -130,7 +128,7 @@ func (r *Reconciler) resolve(
 		return nil, &conditions.PreCheckFailure{
 			Reason: v1.ReasonClusterNotSuspended,
 			Message: fmt.Sprintf(
-				"CamundaCluster %s is not suspended; set spec.suspend to true, so that no workload "+
+				"CamundaCluster %s is not suspended. Set spec.suspend to true, so that no workload "+
 					"writes while the restore runs", key,
 			),
 		}, nil
@@ -158,7 +156,7 @@ func (r *Reconciler) resolve(
 	}
 	if storage.Spec.Type != v1.SecondaryStorageTypeRDBMS || storage.Spec.RDBMS == nil {
 		return nil, invalidReference(
-			"SecondaryStorageConfig %s stores the data of CamundaCluster %s in %s; a point-in-time "+
+			"SecondaryStorageConfig %s stores the data of CamundaCluster %s in %s. A point-in-time "+
 				"restore exists only for a relational database, because an Elasticsearch cluster has "+
 				"no point-in-time recovery. Use a LogicalRestore instead",
 			storageKey, key, storage.Spec.Type,
@@ -198,7 +196,6 @@ func (r *Reconciler) resolve(
 
 	return &chain{
 		cluster:  &cluster,
-		storage:  &storage,
 		dbConfig: &dbConfig,
 		server:   &server,
 		target:   target,
@@ -229,7 +226,7 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
-				"DatabaseServerConfig %q declares no point-in-time recovery; set spec.pitr.enabled "+
+				"DatabaseServerConfig %q declares no point-in-time recovery. Set spec.pitr.enabled "+
 					"to true once the server archives its write-ahead log", server.Name,
 			),
 		}
@@ -240,7 +237,7 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
-				"spec.timestamp %s lies in the future; a database holds no state of a point that "+
+				"spec.timestamp %s lies in the future. A database holds no state of a point that "+
 					"did not happen yet", want.UTC().Format(time.RFC3339),
 			),
 		}
@@ -255,7 +252,7 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
 				"spec.timestamp %s is older than the retention period of DatabaseServerConfig %q, "+
-					"which is %d days; the server archives nothing of that point any more",
+					"which is %d days. The server archives nothing of that point any more",
 				want.UTC().Format(time.RFC3339), server.Name, days,
 			),
 		}
@@ -295,7 +292,7 @@ func (r *Reconciler) dedicatedServer(
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonSharedServer,
 		Message: fmt.Sprintf(
-			"DatabaseServerConfig %q holds the databases %s; point-in-time recovery rolls back the "+
+			"DatabaseServerConfig %q holds the databases %s. Point-in-time recovery rolls back the "+
 				"whole server, so it would roll back a database that another cluster uses. Move the "+
 				"cluster to a server of its own",
 			server.Name, strings.Join(names, ", "),
@@ -323,8 +320,10 @@ func (r *Reconciler) credentials(
 
 	secret, message, err := secretref.Get(ctx, r.APIReader, key, ref.UsernameKey, ref.PasswordKey)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("reading the credentials of DatabaseConfig %s: %w",
-			client.ObjectKeyFromObject(dbConfig), err)
+		return "", "", nil, fmt.Errorf(
+			"reading the credentials of DatabaseConfig %s: %w",
+			client.ObjectKeyFromObject(dbConfig), err,
+		)
 	}
 	if message != "" {
 		return "", "", &conditions.PreCheckFailure{

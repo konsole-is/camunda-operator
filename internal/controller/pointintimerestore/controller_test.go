@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -169,6 +170,7 @@ func createWorld(mutate ...func(*world)) *world {
 	Expect(k8sClient.Create(ctx, w.cluster)).To(Succeed())
 
 	createBrokers(w)
+	releaseTerminatingClaims(namespace)
 	exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(time.Hour)})
 
 	return w
@@ -231,6 +233,40 @@ func createBrokers(w *world) {
 		Expect(k8sClient.Create(ctx, claim)).To(Succeed())
 		w.claims = append(w.claims, claim)
 	}
+}
+
+// releaseTerminatingClaims plays the volume protection of a real cluster: it
+// clears the protection finalizer that the API server puts on every claim, as
+// the cluster does once no pod holds the volume any more. Nothing does that in
+// envtest, so a deleted claim would stay in place for ever and no restore
+// would get past its first volume.
+func releaseTerminatingClaims(namespace string) {
+	stop := make(chan struct{})
+	DeferCleanup(func() { close(stop) })
+
+	go func() {
+		defer GinkgoRecover()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+
+			var claims corev1.PersistentVolumeClaimList
+			if err := k8sClient.List(ctx, &claims, client.InNamespace(namespace)); err != nil {
+				continue
+			}
+			for i := range claims.Items {
+				claim := &claims.Items[i]
+				if claim.DeletionTimestamp == nil || len(claim.Finalizers) == 0 {
+					continue
+				}
+				claim.Finalizers = nil
+				_ = k8sClient.Update(ctx, claim)
+			}
+		}
+	}()
 }
 
 func claimName(w *world, ordinal int) string {
@@ -598,5 +634,244 @@ var _ = Describe("PointInTimeRestore database-state check", func() {
 
 		Expect(expectHeld(pitr, v1.ReasonDatabaseNotRestored)).To(ContainSubstring("exporter position"))
 		expectClaimsUntouched(w)
+	})
+})
+
+// markJob writes onto the restore Job of one broker the bookkeeping that a
+// finished Job carries. No Job controller runs in envtest, so the suite plays
+// it.
+func markJob(pitr *v1.PointInTimeRestore, ordinal int32, kind batchv1.JobConditionType) {
+	GinkgoHelper()
+	key := types.NamespacedName{
+		Namespace: pitr.Namespace,
+		Name:      restore.JobName(labels.PointInTimeRestore(pitr.Name), ordinal),
+	}
+	var job batchv1.Job
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	// The API server demands the full bookkeeping of a finished Job: the
+	// precursor condition, the start time, and, for a completed one, the
+	// completion time.
+	now := metav1.Now()
+	precursor := batchv1.JobSuccessCriteriaMet
+	if kind == batchv1.JobFailed {
+		precursor = batchv1.JobFailureTarget
+	}
+	job.Status.StartTime = &now
+	job.Status.Conditions = append(
+		job.Status.Conditions,
+		batchv1.JobCondition{
+			Type: precursor, Status: corev1.ConditionTrue,
+			Reason: "Test", Message: "marked by the suite",
+		},
+		batchv1.JobCondition{
+			Type: kind, Status: corev1.ConditionTrue,
+			Reason: "Test", Message: "marked by the suite",
+		},
+	)
+	if kind == batchv1.JobComplete {
+		job.Status.Succeeded = 1
+		job.Status.CompletionTime = &now
+	}
+	Expect(k8sClient.Status().Update(ctx, &job)).To(Succeed())
+}
+
+// expectRecreatedClaims waits until every broker volume of the world is a new,
+// empty volume and returns the volumes as they are now.
+func expectRecreatedClaims(w *world, pitr *v1.PointInTimeRestore) []corev1.PersistentVolumeClaim {
+	GinkgoHelper()
+	current := make([]corev1.PersistentVolumeClaim, brokerCount)
+	Eventually(func(g Gomega) {
+		for ordinal, claim := range w.claims {
+			var live corev1.PersistentVolumeClaim
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), &live)).To(Succeed())
+			g.Expect(live.UID).NotTo(Equal(claim.UID), "the broker volume still holds its old data")
+			current[ordinal] = live
+		}
+		g.Expect(readRestore(pitr).Status.RecreatedClaims).To(HaveLen(brokerCount))
+	}, timeout, interval).Should(Succeed())
+
+	return current
+}
+
+// expectJobs waits for one restore Job per broker and returns them in broker
+// order.
+func expectJobs(pitr *v1.PointInTimeRestore) []batchv1.Job {
+	GinkgoHelper()
+	jobs := make([]batchv1.Job, brokerCount)
+	Eventually(func(g Gomega) {
+		for ordinal := range int32(brokerCount) {
+			var job batchv1.Job
+			key := types.NamespacedName{
+				Namespace: pitr.Namespace,
+				Name:      restore.JobName(labels.PointInTimeRestore(pitr.Name), ordinal),
+			}
+			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+			jobs[ordinal] = job
+		}
+	}, timeout, interval).Should(Succeed())
+
+	return jobs
+}
+
+var _ = Describe("PointInTimeRestore primary storage", func() {
+	It("recreates the broker volumes, runs one Job per broker, and completes", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+
+		By("recording the broker count of the live StatefulSet before it deletes anything")
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Brokers).To(Equal(int32(brokerCount)))
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting and creating every broker volume, at the size of the claim template")
+		claims := expectRecreatedClaims(w, pitr)
+		for _, claim := range claims {
+			Expect(claim.Spec.Resources.Requests.Storage().String()).To(Equal("10Gi"))
+			Expect(claim.Spec.AccessModes).To(Equal(w.brokers.Spec.VolumeClaimTemplates[0].Spec.AccessModes))
+			Expect(claim.Labels).To(HaveKeyWithValue("app", w.brokers.Name))
+			Expect(claim.OwnerReferences).To(
+				BeEmpty(), "the StatefulSet owns the broker volumes, never the restore",
+			)
+		}
+		Expect(readRestore(pitr).Status.RecreatedClaims).To(ConsistOf(claimName(w, 0), claimName(w, 1)))
+
+		By("running the restore application once per broker, at the requested point")
+		jobs := expectJobs(pitr)
+		for ordinal, job := range jobs {
+			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
+			container := job.Spec.Template.Spec.Containers[0]
+			Expect(container.Command).To(Equal([]string{restore.RestoreEntrypoint}))
+			Expect(container.Args).To(Equal([]string{
+				"--to=" + pitr.Spec.Timestamp.UTC().Format(time.RFC3339),
+			}))
+			Expect(container.Env).To(ContainElement(camundaconfig.Var(
+				camundaconfig.KeyClusterNodeID, strconv.Itoa(ordinal),
+			)))
+			Expect(job.Labels).To(HaveKeyWithValue(labels.PointInTimeRestoreKey, pitr.Name))
+			Expect(job.Labels).To(HaveKeyWithValue(labels.ComponentKey, restore.ComponentRestore))
+			Expect(job.Labels).To(HaveKeyWithValue(labels.ClusterKey, w.cluster.Name))
+			Expect(job.OwnerReferences).To(HaveLen(1), "deleting the restore must remove its Jobs")
+			Expect(job.OwnerReferences[0].Name).To(Equal(pitr.Name))
+			Expect(*job.OwnerReferences[0].Controller).To(BeTrue())
+		}
+		Expect(readRestore(pitr).Status.PrimaryJobNames).To(HaveLen(brokerCount))
+
+		By("keeping the volumes it created while the Jobs run")
+		Consistently(func(g Gomega) {
+			for ordinal, claim := range claims {
+				var live corev1.PersistentVolumeClaim
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&claims[ordinal]), &live)).To(Succeed())
+				g.Expect(live.UID).To(Equal(claim.UID))
+			}
+		}, time.Second, interval).Should(Succeed())
+
+		By("completing once every broker restored")
+		for ordinal := range int32(brokerCount) {
+			markJob(pitr, ordinal, batchv1.JobComplete)
+		}
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			g.Expect(current.Status.CompletionTime).NotTo(BeNil())
+			condition := ready(current)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonCompleted))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("fails when a broker cannot restore, and names the broker", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		markJob(pitr, 1, batchv1.JobFailed)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("broker 1"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("holds a restore whose cluster was unsuspended under it", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			cluster.Spec.Suspend = false
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			condition := ready(readRestore(pitr))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonClusterNotSuspended))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("holds a restore whose pod cannot start, then fails past the grace", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		// No Job controller runs in envtest, so the suite creates the pod that
+		// a Job creates, in the state that a missing Secret leaves it in.
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "restore-pod-" + strings.ToLower(utilrand.String(6)),
+				Namespace: w.namespace,
+				Labels:    restore.JobSelector(labels.PointInTimeRestore(pitr.Name)),
+			},
+			Spec: corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyNever,
+				Containers: []corev1.Container{{
+					Name: restore.ComponentRestore, Image: "camunda/camunda:8.9.9",
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+		pod.Status.Phase = corev1.PodPending
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+			Name: restore.ComponentRestore,
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+				Reason:  "CreateContainerConfigError",
+				Message: "secret \"camunda-credentials\" not found",
+			}},
+		}}
+		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			condition := ready(readRestore(pitr))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonMissingSecret))
+			g.Expect(condition.Message).To(ContainSubstring(pod.Name))
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("never recreates a broker volume once the Jobs exist", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		claims := expectRecreatedClaims(w, pitr)
+		expectJobs(pitr)
+
+		Consistently(func(g Gomega) {
+			for ordinal := range claims {
+				var live corev1.PersistentVolumeClaim
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&claims[ordinal]), &live)).To(Succeed())
+				g.Expect(live.UID).To(Equal(claims[ordinal].UID))
+				g.Expect(live.DeletionTimestamp).To(BeNil())
+			}
+		}, 2*time.Second, interval).Should(Succeed())
 	})
 })

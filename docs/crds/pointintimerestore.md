@@ -8,9 +8,6 @@ The operator never restores the database server. PostgreSQL point-in-time recove
 
 One resource is one restore. The spec is immutable, and the restore runs once. `kubectl get pitr` lists the restores with their phase, cluster, and timestamp.
 
-!!! warning "Not implemented yet"
-    The operator does not implement this kind yet. This page describes the planned design.
-
 Two things must be true before you create the resource:
 
 - The cluster has `spec.suspend: true`, so no workload writes to primary or secondary storage.
@@ -51,7 +48,7 @@ The operator only reads `spec.suspend` of the cluster. It never writes it. You s
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. The cluster runs, the storage chain does not resolve, or the database is ahead of the requested point. |
+| `Pending` | The restore waits. The cluster runs, the storage chain does not resolve, a rule of the server does not hold, or the database is ahead of the requested point. The operator touches nothing here. |
 | `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the restore application on them. |
 | `Completed` | The restore finished. You can unsuspend the cluster. |
@@ -61,13 +58,19 @@ The operator only reads `spec.suspend` of the cluster. It never writes it. You s
 
 The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, which must be `type: rdbms`, then its `DatabaseConfig`, then its `serverRef` to a `DatabaseServerConfig`. A cluster on Elasticsearch is rejected with reason `InvalidReference`. Point-in-time restore does not exist for it.
 
-The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore fails with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
+The cluster must also name a `backupStorageRef`. Without it, Zeebe writes no primary-storage backup, so no restore point exists. Such a cluster holds the restore with reason `InvalidReference`.
 
-Exactly one `Database` can reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it fails the restore with reason `SharedServer`.
+The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore holds with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
+
+Exactly one `Database` can reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it holds the restore with reason `SharedServer`.
+
+Every rule of this section holds the restore in `Pending`. Nothing is deleted while a rule does not hold, so you correct the cause and the same resource continues. You do not create a new one.
 
 ## The database-state check
 
 Before it touches a volume, the operator connects to the logical database with the application credentials of the cluster, resolved through `storageRef` to `SecondaryStorageConfig` to `DatabaseConfig.credentialsSecretRef`. It reads `LAST_UPDATED` for every partition from the `EXPORTER_POSITION` table and records what it saw in `status.observedPositions`.
+
+The operator reads the table under the name that Camunda creates it with, and it reads no table prefix. A cluster that sets `camunda.data.secondary-storage.rdbms.prefix` is outside this check. A database that carries no such table holds the restore with reason `DatabaseNotRestored` too: an empty database is the state that this check exists for.
 
 The restore holds in `Pending` with reason `DatabaseNotRestored` when a partition row is missing, or when any `LAST_UPDATED` is later than `spec.timestamp` plus one minute of slack. The slack exists because the clock of the database and the source of your timestamp are not the same clock.
 
@@ -96,13 +99,15 @@ When you delete the restore, the operator deletes the Jobs it created. It writes
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
 | `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
 | `Ready` | `ClusterNotSuspended` | The cluster runs. | Set `spec.suspend: true` on the cluster. |
-| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, or the broker StatefulSet is gone. | Correct the reference that the message names. |
+| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, or the broker StatefulSet is gone. | Correct the reference that the message names. |
 | `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, or `spec.timestamp` lies in the future. | Enable `pitr` on the server, or restore to a point within retention. |
 | `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
 | `Ready` | `ConnectionFailed` | The database rejects the operator. | Correct the endpoint or the credentials. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
+
+A restore that already started keeps a broken dependency for ten minutes. After that it fails, because a restore that recreated a volume must not wait without an end. A restore that still waits in `Pending` has no such limit: it deleted nothing.
 
 The status also records what the restore pinned and what it did:
 

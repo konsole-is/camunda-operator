@@ -1,11 +1,277 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package pointintimerestore
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
+	ocfjob "github.com/sourcehawk/operator-component-framework/pkg/primitives/job"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/podstate"
+	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
-func (r *Reconciler) restorePrimaryStorage(_ context.Context, _ *v1.PointInTimeRestore) (hold, error) {
-	return settle, nil
+// errRenderFailed reports that the shared package cannot render a resource of
+// this restore. It is a hard failure: the target does not repair itself, and
+// the restore already emptied the broker volumes.
+var errRenderFailed = errors.New("the restore cannot be rendered")
+
+// restorePrimaryStorage gives the brokers empty data volumes and runs the
+// Camunda restore application on them, once per broker. It is the destructive
+// phase, and every check that protects it already passed.
+//
+// The order is the safety property. status.recreatedClaims is durable before
+// the first Job exists, so a reconcile that re-enters never deletes a volume
+// that a Job already wrote to. Once the Jobs are recorded, the volumes are
+// never touched again.
+func (r *Reconciler) restorePrimaryStorage(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+) (hold, error) {
+	resolved, failure, err := r.resolve(ctx, pitr)
+	if err != nil {
+		return r.resolveFailed(pitr, err)
+	}
+	if failure != nil {
+		return r.holdStarted(pitr, failure), nil
+	}
+
+	// A chain that resolves is not progress. Only the work of the phase clears
+	// the clock of the grace: a volume that came back empty, or a Job whose
+	// pods run.
+	if len(pitr.Status.PrimaryJobNames) == 0 {
+		return r.recreateClaims(ctx, pitr, resolved.target)
+	}
+
+	return r.runJobs(ctx, pitr, resolved.target)
+}
+
+// recreateClaims deletes the data volume of every broker and creates it again
+// as an empty volume, because the restore application refuses a data directory
+// that holds data. It records every volume whose old data is gone before it
+// lets a Job start.
+//
+// The recreated volumes carry no owner reference to the restore. The
+// StatefulSet owns them, and an owner reference here would delete a live
+// broker volume as soon as somebody deletes the restore resource.
+func (r *Reconciler) recreateClaims(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	target *restore.Target,
+) (hold, error) {
+	progress, err := restore.RecreateClaims(ctx, r.Client, r.APIReader, restore.ClaimInput{
+		Target: target,
+		// A point-in-time restore reads no backup resource, so no recorded
+		// size exists. The claim template of the StatefulSet is the size the
+		// cluster runs with.
+		Size:         target.ClaimSize(nil),
+		Recreated:    pitr.Status.RecreatedClaims,
+		FieldManager: restore.FieldManagerPointInTimeRestore,
+	})
+	if err != nil {
+		// A malformed target is a render failure, not a wait. Nothing changes
+		// on its own, and the restore already left the volumes behind.
+		r.fail(pitr, fmt.Sprintf("the broker volumes cannot be recreated: %s", err))
+
+		return settle, nil
+	}
+
+	recovered(pitr)
+	recorded := !slices.Equal(progress.Recreated, pitr.Status.RecreatedClaims)
+	pitr.Status.RecreatedClaims = progress.Recreated
+
+	// The record of a deleted volume must be durable before any Job runs. Its
+	// flush is this reconcile, so the Jobs wait for the next look.
+	if !progress.Done || recorded {
+		r.progressing(pitr, progress.Message)
+		if progress.Done {
+			return shortly, nil
+		}
+
+		return hold{after: r.opts.PollInterval}, nil
+	}
+
+	// The names are derived from the restore and the ordinal, so recording
+	// them before the first Job exists claims exactly the Jobs that the next
+	// look applies. From here the volumes are never touched again.
+	pitr.Status.PrimaryJobNames = jobNames(pitr, target.Brokers)
+	r.progressing(pitr, "the broker volumes are empty. The restore application starts")
+
+	return shortly, nil
+}
+
+// jobNames returns the name of the restore Job of every broker, in broker
+// order.
+func jobNames(pitr *v1.PointInTimeRestore, brokers int32) []string {
+	names := make([]string, 0, brokers)
+	for ordinal := range brokers {
+		names = append(names, restore.JobName(labels.PointInTimeRestore(pitr.Name), ordinal))
+	}
+
+	return names
+}
+
+// runJobs applies the restore Job of every broker that has none yet, and
+// tracks the Jobs to a terminal outcome. The restore application reads the
+// exporter position of the restored database itself and restores the newest
+// checkpoint at or before the requested point.
+func (r *Reconciler) runJobs(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	target *restore.Target,
+) (hold, error) {
+	done := 0
+	for ordinal := range target.Brokers {
+		job, err := r.ensureJob(ctx, pitr, target, ordinal)
+		if errors.Is(err, errRenderFailed) {
+			// Nothing resolves a Job that cannot be rendered from this target.
+			r.fail(pitr, err.Error())
+
+			return settle, nil
+		}
+		if err != nil {
+			return settle, err
+		}
+		if job == nil {
+			// The Job was applied in this pass. It reports nothing yet.
+			continue
+		}
+
+		status, err := ocfjob.DefaultConvergingStatusHandler(concepts.ConvergingOperationNone, job)
+		if err != nil {
+			return settle, err
+		}
+		switch status.Status {
+		case concepts.CompletionStatusCompleted:
+			done++
+		case concepts.CompletionStatusFailing:
+			r.fail(pitr, fmt.Sprintf(
+				"the restore of broker %d failed: %s", ordinal, status.Reason,
+			))
+
+			return settle, nil
+		}
+	}
+
+	if done == int(target.Brokers) {
+		r.complete(pitr)
+
+		return settle, nil
+	}
+
+	// A pod that cannot start consumes no retry of its Job, so the Job stays
+	// active and reports nothing. Without this look the restore would wait
+	// without a bound on a missing Secret or an image that does not pull.
+	stuck, err := podstate.Stuck(
+		ctx,
+		r.APIReader,
+		pitr.Namespace,
+		restore.JobSelector(labels.PointInTimeRestore(pitr.Name)),
+		"the restore Jobs",
+	)
+	if err != nil {
+		return settle, err
+	}
+	if stuck != nil {
+		return r.holdStarted(pitr, stuck), nil
+	}
+	recovered(pitr)
+
+	r.progressing(pitr, fmt.Sprintf(
+		"the restore application runs: %d of %d brokers restored", done, target.Brokers,
+	))
+
+	// The watch on the owned Jobs carries the progress. The poll also looks at
+	// the pods again, which no Job reports.
+	return hold{after: r.opts.PollInterval}, nil
+}
+
+// ensureJob returns the restore Job of one broker, and applies it when none
+// exists yet. It returns a nil Job when it just applied one: the fresh Job
+// reports nothing that the caller could track.
+//
+// The read is live and comes first, because spec.template of a Job is
+// immutable. A second apply of a Job that the API server already stamped is a
+// validation error, not an adoption.
+func (r *Reconciler) ensureJob(
+	ctx context.Context,
+	pitr *v1.PointInTimeRestore,
+	target *restore.Target,
+	ordinal int32,
+) (*batchv1.Job, error) {
+	owner := labels.PointInTimeRestore(pitr.Name)
+	key := types.NamespacedName{Namespace: pitr.Namespace, Name: restore.JobName(owner, ordinal)}
+
+	var current batchv1.Job
+	err := r.APIReader.Get(ctx, key, &current)
+	switch {
+	case err == nil:
+		return &current, nil
+	case !apierrors.IsNotFound(err):
+		return nil, fmt.Errorf("reading the restore Job %s: %w", key, err)
+	}
+
+	job, err := restore.BuildJob(restore.JobInput{
+		Target:     target,
+		Owner:      pitr,
+		OwnerLabel: owner,
+		Ordinal:    ordinal,
+		// The restore application takes the point as an argument. It finds the
+		// newest checkpoint at or before it, and it refuses a point that lies
+		// before the state of the restored database.
+		Args: []string{"--to=" + pitr.Spec.Timestamp.UTC().Format(time.RFC3339)},
+	})
+	if err != nil {
+		return nil, fmt.Errorf(
+			"%w: the restore Job of broker %d cannot be rendered: %s", errRenderFailed, ordinal, err,
+		)
+	}
+
+	// Without the controller reference, deleting the restore leaves its Jobs
+	// behind, and the next restore of the cluster finds pods that write to the
+	// broker volumes.
+	if err := controllerutil.SetControllerReference(pitr, job, r.Scheme); err != nil {
+		return nil, fmt.Errorf("owning the restore Job %s: %w", key, err)
+	}
+
+	if err := restore.Apply(ctx, r.Client, job, restore.FieldManagerPointInTimeRestore); err != nil {
+		return nil, fmt.Errorf("applying the restore Job %s: %w", key, err)
+	}
+	r.EventRecorder.Eventf(
+		pitr,
+		nil,
+		corev1.EventTypeNormal,
+		eventReasonStarted,
+		eventActionRestore,
+		"The restore application runs for broker %d",
+		ordinal,
+	)
+
+	return nil, nil
 }

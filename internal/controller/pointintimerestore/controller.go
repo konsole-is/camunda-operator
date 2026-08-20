@@ -275,7 +275,7 @@ func (r *Reconciler) stageTerminal(pitr *v1.PointInTimeRestore) {
 		conditions.Stage(pitr, conditions.Ready(
 			metav1.ConditionTrue,
 			v1.ReasonCompleted,
-			"The restore finished; the cluster can be unsuspended",
+			"The restore finished. The cluster can be unsuspended",
 			pitr.Generation,
 		))
 	case v1.PointInTimeRestoreFailed:

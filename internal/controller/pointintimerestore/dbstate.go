@@ -120,7 +120,7 @@ func (r *Reconciler) validateDatabaseState(
 
 	pitr.Status.Phase = v1.PointInTimeRestoreRestoringPrimaryStorage
 	r.progressing(pitr, fmt.Sprintf(
-		"the database holds no state after %s; the broker volumes are next",
+		"the database holds no state after %s. The broker volumes are next",
 		pitr.Spec.Timestamp.UTC().Format(time.RFC3339),
 	))
 
@@ -140,12 +140,14 @@ func (r *Reconciler) readState(
 		return nil, failure, err
 	}
 
-	positions, err := r.opts.ReadPositions(ctx, pgbootstrap.Connection{
-		Host:     resolved.server.Spec.Host,
-		Port:     resolved.server.Spec.Port,
-		User:     user,
-		Password: password,
-	}, resolved.dbConfig.Spec.DatabaseName)
+	positions, err := r.opts.ReadPositions(
+		ctx, pgbootstrap.Connection{
+			Host:     resolved.server.Spec.Host,
+			Port:     resolved.server.Spec.Port,
+			User:     user,
+			Password: password,
+		}, resolved.dbConfig.Spec.DatabaseName,
+	)
 	switch {
 	case errors.Is(err, errNoExporterTable):
 		return nil, &conditions.PreCheckFailure{
