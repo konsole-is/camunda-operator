@@ -397,9 +397,10 @@ type claimHolder interface {
 // the claim cannot interpret: such a holder keeps the claim, and no claimant
 // ever takes it over. Adding a claimant kind means adding it here.
 var holderKinds = map[string]func() claimHolder{
-	"LogicalBackupElasticsearch": func() claimHolder { return &v1.LogicalBackupElasticsearch{} },
-	"LogicalBackupRDBMS":         func() claimHolder { return &v1.LogicalBackupRDBMS{} },
-	"PointInTimeRestore":         func() claimHolder { return &v1.PointInTimeRestore{} },
+	"LogicalBackupElasticsearch":  func() claimHolder { return &v1.LogicalBackupElasticsearch{} },
+	"LogicalBackupRDBMS":          func() claimHolder { return &v1.LogicalBackupRDBMS{} },
+	"LogicalRestoreElasticsearch": func() claimHolder { return &v1.LogicalRestoreElasticsearch{} },
+	"PointInTimeRestore":          func() claimHolder { return &v1.PointInTimeRestore{} },
 }
 
 // HolderActive reports whether the resource that holder names still needs the

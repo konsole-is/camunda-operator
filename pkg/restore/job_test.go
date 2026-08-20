@@ -469,7 +469,12 @@ func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
 func TestJobNameInfixesMatchTheCRDShortNames(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, map[string]string{labels.PointInTimeRestoreKey: "pitr"}, jobKindInfixes)
+	assert.Equal(
+		t, map[string]string{
+			labels.LogicalRestoreElasticsearchKey: "lres",
+			labels.PointInTimeRestoreKey:          "pitr",
+		}, jobKindInfixes,
+	)
 }
 
 // A consumer that builds a selector by hand misses every Job of a restore

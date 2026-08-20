@@ -99,7 +99,8 @@ func isNil(obj client.Object) bool {
 // to reach the name. The values are the short names of the CRDs, which is what
 // a user already types with kubectl.
 var jobKindInfixes = map[string]string{
-	labels.PointInTimeRestoreKey: "pitr",
+	labels.LogicalRestoreElasticsearchKey: "lres",
+	labels.PointInTimeRestoreKey:          "pitr",
 }
 
 // JobName returns the name of the restore Job of one broker:
