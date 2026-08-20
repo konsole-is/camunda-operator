@@ -102,12 +102,12 @@ func ReadTarget(
 		return nil, invalidTarget(name, "it has no container named %q", components.ContainerCamunda)
 	}
 
-	brokers, err := envInt32(name, broker, camundaconfig.KeyClusterSize)
+	brokers, err := envCount(name, broker, camundaconfig.KeyClusterSize)
 	if err != nil {
 		return nil, err
 	}
 
-	partitions, err := envInt32(name, broker, camundaconfig.KeyClusterPartitionCount)
+	partitions, err := envCount(name, broker, camundaconfig.KeyClusterPartitionCount)
 	if err != nil {
 		return nil, err
 	}
@@ -188,11 +188,15 @@ func claimTemplateNamed(claims []corev1.PersistentVolumeClaim, name string) *cor
 	return nil
 }
 
-// envInt32 reads one plain numeric variable off the broker container. A
+// envCount reads one plain positive count off the broker container. A
 // variable that carries a ValueFrom is not readable here: its value lives in
 // a Secret, a ConfigMap, or a field of the pod, and only the kubelet resolves
 // it.
-func envInt32(sts string, broker *corev1.Container, key camundaconfig.Key) (int32, error) {
+//
+// A count below one is a failure, not a small cluster. Zero brokers makes a
+// restore recreate no volume and run no Job, and then report that it
+// finished. A negative count is not a size at all.
+func envCount(sts string, broker *corev1.Container, key camundaconfig.Key) (int32, error) {
 	name := key.Env()
 	for _, env := range broker.Env {
 		if env.Name != name {
@@ -205,6 +209,9 @@ func envInt32(sts string, broker *corev1.Container, key camundaconfig.Key) (int3
 		value, err := strconv.ParseInt(env.Value, 10, 32)
 		if err != nil {
 			return 0, invalidTarget(sts, "%s is %q, which is not a number", name, env.Value)
+		}
+		if value < 1 {
+			return 0, invalidTarget(sts, "%s is %q, which is not a count of one or more", name, env.Value)
 		}
 
 		return int32(value), nil

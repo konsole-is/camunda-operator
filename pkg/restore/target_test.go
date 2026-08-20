@@ -198,6 +198,24 @@ func TestReadTargetReportsEveryUnreadableFact(t *testing.T) {
 			},
 			text: "CAMUNDA_CLUSTER_SIZE",
 		},
+		"cluster size is zero": {
+			mutate: func(s *appsv1.StatefulSet) {
+				s.Spec.Template.Spec.Containers[0].Env[0].Value = "0"
+			},
+			text: "CAMUNDA_CLUSTER_SIZE",
+		},
+		"cluster size is negative": {
+			mutate: func(s *appsv1.StatefulSet) {
+				s.Spec.Template.Spec.Containers[0].Env[0].Value = "-1"
+			},
+			text: "CAMUNDA_CLUSTER_SIZE",
+		},
+		"partition count is zero": {
+			mutate: func(s *appsv1.StatefulSet) {
+				s.Spec.Template.Spec.Containers[0].Env[1].Value = "0"
+			},
+			text: "CAMUNDA_CLUSTER_PARTITIONCOUNT",
+		},
 		"cluster size is not a number": {
 			mutate: func(s *appsv1.StatefulSet) {
 				s.Spec.Template.Spec.Containers[0].Env[0].Value = "three"

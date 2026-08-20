@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -42,9 +43,6 @@ const (
 	// so a restore can never run another version than the brokers (Camunda 8.9
 	// restore guides: command "/usr/local/camunda/bin/restore").
 	RestoreEntrypoint = "/usr/local/camunda/bin/restore"
-	// jobNameInfix separates the restore name from the broker ordinal in a Job
-	// name.
-	jobNameInfix = "-restore-"
 	// nameHashLength is the hex length of the hash that keeps a long name
 	// unique after boundedName truncates it to a DNS label.
 	nameHashLength = 10
@@ -95,15 +93,70 @@ func isNil(obj client.Object) bool {
 	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
-// JobName returns the name of the restore Job of one broker. It derives from
-// the restore name and the ordinal alone, so a reconcile that re-enters after
-// a crash adopts the Job it already created. A restore name can be a full DNS
-// subdomain, but a Job name is a DNS label, so a long name truncates
-// deterministically and stays unique through a hash of the whole name.
-func JobName(owner client.Object, ordinal int32) string {
-	suffix := jobNameInfix + strconv.FormatInt(int64(ordinal), 10)
+// jobKindInfixes name each restore kind inside a Job name. A LogicalRestore
+// and a PointInTimeRestore of the same name can live in one namespace, so the
+// kind has to reach the name. The values are the short names of the two CRDs,
+// which is what a user already types with kubectl.
+var jobKindInfixes = map[string]string{
+	labels.LogicalRestoreKey:     "lr",
+	labels.PointInTimeRestoreKey: "pitr",
+}
 
-	return boundedName(owner.GetName(), validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+// JobName returns the name of the restore Job of one broker:
+// <restore>-<kind>-<ordinal>, where kind is lr for a LogicalRestore and pitr
+// for a PointInTimeRestore. It derives from the owner and the ordinal alone,
+// so a reconcile that re-enters after a crash finds the Job it already
+// created.
+//
+// A restore name can be a full DNS subdomain, but a Job name is a DNS label,
+// so a long name truncates deterministically and stays unique through a hash
+// of the whole name. Pass the owner as pkg/labels builds it, with the name of
+// the restore resource unshortened.
+//
+// JobName returns the empty string for an owner of any other kind, for an
+// owner without a name, and for a negative ordinal. BuildJob rejects all
+// three.
+func JobName(owner labels.Owner, ordinal int32) string {
+	kind, known := jobKindInfixes[owner.Key]
+	if !known || owner.Name == "" || ordinal < 0 {
+		return ""
+	}
+
+	suffix := "-" + kind + "-" + strconv.FormatInt(int64(ordinal), 10)
+
+	return boundedName(owner.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+}
+
+// boundedOwner returns owner with its name bounded to a label value. A label
+// value is bounded like a DNS label, and a restore name can be longer.
+func boundedOwner(owner labels.Owner) labels.Owner {
+	owner.Name = boundedName(owner.Name, validation.LabelValueMaxLength)
+
+	return owner
+}
+
+// JobLabels returns every label that a restore Job and its pods carry: the
+// owner of the restore, the restore component, the operator as manager, and
+// the cluster the restore runs against.
+//
+// A consumer that selects these Jobs must build the labels here rather than
+// by hand. The owner label value is bounded to a DNS label, and a restore
+// name can be longer, so a hand-built selector misses every Job of a restore
+// whose name passes 63 characters.
+func JobLabels(owner labels.Owner, cluster string) map[string]string {
+	managed := labels.Managed(boundedOwner(owner), ComponentRestore)
+	managed[labels.ClusterKey] = cluster
+
+	return managed
+}
+
+// JobSelector returns the labels that select every restore Job of one restore
+// and every pod of those Jobs. It is what a caller passes to a List and to
+// podstate.Stuck. It carries no cluster label, so it keeps selecting after a
+// restore moved between clusters, and it carries no manager label, which a
+// selector must not depend on.
+func JobSelector(owner labels.Owner) map[string]string {
+	return labels.Discovery(boundedOwner(owner), ComponentRestore)
 }
 
 // boundedName returns name when it fits limit, or its head followed by a hash
@@ -143,11 +196,6 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	if err := in.Target.complete(); err != nil {
 		return nil, fmt.Errorf("building the restore Job of broker %d: %w", in.Ordinal, err)
 	}
-	if isNil(in.Owner) || in.OwnerLabel.Key == "" || in.OwnerLabel.Name == "" {
-		return nil, fmt.Errorf(
-			"building the restore Job of broker %d: the input names no owner", in.Ordinal,
-		)
-	}
 	if in.Ordinal < 0 || in.Ordinal >= in.Target.Brokers {
 		return nil, fmt.Errorf(
 			"building the restore Job of broker %d: the cluster runs %d brokers",
@@ -155,13 +203,14 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		)
 	}
 
-	// Label values are bounded like DNS labels, and a restore name can be
-	// longer.
-	owner := in.OwnerLabel
-	owner.Name = boundedName(owner.Name, validation.LabelValueMaxLength)
+	name := JobName(in.OwnerLabel, in.Ordinal)
+	if isNil(in.Owner) || name == "" {
+		return nil, fmt.Errorf(
+			"building the restore Job of broker %d: the input names no restore owner", in.Ordinal,
+		)
+	}
 
-	managed := labels.Managed(owner, ComponentRestore)
-	managed[labels.ClusterKey] = in.Target.ClusterName
+	managed := JobLabels(in.OwnerLabel, in.Target.ClusterName)
 
 	// The pods look like broker pods to a topology spread constraint, so the
 	// recreated volumes land where the brokers can schedule afterwards. The
@@ -171,7 +220,11 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	pod := *in.Target.StatefulSet.Spec.Template.Spec.DeepCopy()
 	pod.RestartPolicy = corev1.RestartPolicyNever
 	pod.Containers = []corev1.Container{restoreContainer(in)}
-	pod.TopologySpreadConstraints = spreadOverRestorePods(pod.TopologySpreadConstraints, owner)
+	// A broker init container prepares a broker, and the platform injects its
+	// own again when this pod is created. Carrying the broker's copy over
+	// would run it twice.
+	pod.InitContainers = nil
+	pod.TopologySpreadConstraints = spreadOverRestorePods(pod.TopologySpreadConstraints, in.OwnerLabel)
 	pod.Volumes = append(
 		slices.Clone(pod.Volumes),
 		corev1.Volume{
@@ -187,7 +240,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      JobName(in.Owner, in.Ordinal),
+			Name:      name,
 			Namespace: in.Owner.GetNamespace(),
 			Labels:    managed,
 		},
@@ -196,7 +249,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      podLabels,
-					Annotations: in.Target.StatefulSet.Spec.Template.Annotations,
+					Annotations: maps.Clone(in.Target.StatefulSet.Spec.Template.Annotations),
 				},
 				Spec: pod,
 			},
@@ -224,9 +277,7 @@ func spreadOverRestorePods(
 
 	retargeted := make([]corev1.TopologySpreadConstraint, 0, len(constraints))
 	for _, constraint := range constraints {
-		constraint.LabelSelector = &metav1.LabelSelector{
-			MatchLabels: labels.Discovery(owner, ComponentRestore),
-		}
+		constraint.LabelSelector = &metav1.LabelSelector{MatchLabels: JobSelector(owner)}
 		// MatchLabelKeys would add the value of a pod label to the selector
 		// above. A Job stamps a per-Job identity onto its pods, so a key that
 		// keeps the broker pods together would keep every restore pod apart.
@@ -258,16 +309,20 @@ func restoreContainer(in JobInput) corev1.Container {
 		},
 	)
 
+	// Target.Broker points into the StatefulSet that ReadTarget holds, so
+	// every field taken from it is copied. Without that, two Jobs of one
+	// target share the same maps and pointers, and an edit to one reaches the
+	// other and the live copy of the StatefulSet.
 	return corev1.Container{
 		Name:            ComponentRestore,
 		Image:           broker.Image,
 		Command:         []string{RestoreEntrypoint},
-		Args:            in.Args,
+		Args:            slices.Clone(in.Args),
 		Env:             env,
-		EnvFrom:         broker.EnvFrom,
-		Resources:       broker.Resources,
-		VolumeMounts:    broker.VolumeMounts,
-		SecurityContext: broker.SecurityContext,
+		EnvFrom:         slices.Clone(broker.EnvFrom),
+		Resources:       *broker.Resources.DeepCopy(),
+		VolumeMounts:    slices.Clone(broker.VolumeMounts),
+		SecurityContext: broker.SecurityContext.DeepCopy(),
 	}
 }
 

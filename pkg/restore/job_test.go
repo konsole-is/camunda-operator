@@ -79,6 +79,9 @@ func richTarget() *Target {
 	target := targetFixture()
 	pod := &target.StatefulSet.Spec.Template.Spec
 
+	target.StatefulSet.Spec.Template.Annotations = map[string]string{
+		"camunda.io/config-hash": "abc123",
+	}
 	pod.ImagePullSecrets = []corev1.LocalObjectReference{{Name: "registry"}}
 	pod.SecurityContext = &corev1.PodSecurityContext{
 		RunAsUser:    new(int64(1001)),
@@ -244,6 +247,62 @@ func TestBuildJobReplacesTheBrokerCommand(t *testing.T) {
 	assert.Equal(t, "0", envValue(container.Env, "CAMUNDA_CLUSTER_NODEID"))
 }
 
+// The pod runs the restore application and nothing else. A broker init
+// container prepares a broker, and the platform injects its own again when
+// the Job pod is created, so carrying the broker's copy over would run it
+// twice.
+func TestBuildJobDropsTheBrokerInitContainers(t *testing.T) {
+	t.Parallel()
+
+	in := logicalInput()
+	in.Target.StatefulSet.Spec.Template.Spec.InitContainers = []corev1.Container{{
+		Name: "wait-for-gateway", Image: "busybox",
+	}}
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.Empty(t, job.Spec.Template.Spec.InitContainers)
+	require.Len(t, job.Spec.Template.Spec.Containers, 1)
+	assert.Equal(t, ComponentRestore, job.Spec.Template.Spec.Containers[0].Name)
+}
+
+// One Target renders one Job per broker. Nothing the builder returns may
+// share memory with the Target or with another Job, or a caller that edits
+// one Job silently edits the live StatefulSet copy and every sibling.
+func TestBuildJobSharesNothingWithTheTargetOrASibling(t *testing.T) {
+	t.Parallel()
+
+	in := logicalInput()
+	target := in.Target
+
+	first, err := BuildJob(in)
+	require.NoError(t, err)
+
+	second := in
+	second.Ordinal = 1
+	other, err := BuildJob(second)
+	require.NoError(t, err)
+
+	edited := first.Spec.Template.Spec.Containers[0]
+	edited.SecurityContext.RunAsNonRoot = nil
+	edited.VolumeMounts[0].MountPath = "/mutated"
+	edited.EnvFrom = append(edited.EnvFrom, corev1.EnvFromSource{})
+	edited.Resources.Requests[corev1.ResourceCPU] = resource.MustParse("99")
+	first.Spec.Template.Annotations["mutated"] = "yes"
+
+	untouched := other.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, new(true), untouched.SecurityContext.RunAsNonRoot)
+	assert.Equal(t, "/usr/local/camunda/data", untouched.VolumeMounts[0].MountPath)
+	assert.Equal(t, resource.MustParse("1"), untouched.Resources.Requests[corev1.ResourceCPU])
+	assert.NotContains(t, other.Spec.Template.Annotations, "mutated")
+
+	assert.Equal(t, new(true), target.Broker.SecurityContext.RunAsNonRoot)
+	assert.Equal(t, "/usr/local/camunda/data", target.Broker.VolumeMounts[0].MountPath)
+	assert.Equal(t, resource.MustParse("1"), target.Broker.Resources.Requests[corev1.ResourceCPU])
+	assert.NotContains(t, target.StatefulSet.Spec.Template.Annotations, "mutated")
+}
+
 // The restore application runs under its own Spring profile. The broker
 // profile of the copied environment would start a broker instead.
 func TestBuildJobRunsUnderTheRestoreProfile(t *testing.T) {
@@ -302,17 +361,79 @@ func TestBuildJobLabelsThePodsLikeBrokersUnderTheRestoreOwner(t *testing.T) {
 	assert.Equal(t, "camunda-operator", pod["app.kubernetes.io/managed-by"])
 }
 
-// The Job belongs to its restore resource, so deleting the resource removes
-// the Jobs. The restore needs no finalizer: it writes no artifact to an
-// external store.
-func TestBuildJobIsOwnedByTheRestore(t *testing.T) {
+// BuildJob renders without a scheme, so it sets no owner reference. The
+// controller adds the controller reference before it applies the Job. This
+// pins that deliberate gap, so nobody assumes garbage collection is wired.
+func TestBuildJobSetsNoOwnerReference(t *testing.T) {
 	t.Parallel()
 
 	job, err := BuildJob(logicalInput())
 	require.NoError(t, err)
 
+	assert.Empty(t, job.OwnerReferences)
+	assert.Empty(t, job.Spec.Template.OwnerReferences)
 	assert.Equal(t, "ns", job.Namespace)
-	assert.Equal(t, "my-cluster-restore-restore-0", job.Name)
+	assert.Equal(t, "my-cluster-restore-lr-0", job.Name)
+}
+
+// A LogicalRestore and a PointInTimeRestore of the same name can live in one
+// namespace. Without the kind in the Job name they would fight over one Job,
+// each adopting the other's.
+func TestJobNameSeparatesTheTwoRestoreKinds(t *testing.T) {
+	t.Parallel()
+
+	logical := labels.LogicalRestore("my-cluster-recovery")
+	pitr := labels.PointInTimeRestore("my-cluster-recovery")
+
+	assert.Equal(t, "my-cluster-recovery-lr-0", JobName(logical, 0))
+	assert.Equal(t, "my-cluster-recovery-pitr-0", JobName(pitr, 0))
+	assert.NotEqual(t, JobName(logical, 0), JobName(pitr, 0))
+}
+
+// An owner that names no restore kind yields no name. BuildJob turns that
+// into an error rather than applying a Job under a name nothing can find.
+func TestJobNameRefusesAnythingButARestoreOwner(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, JobName(labels.Cluster("my-cluster"), 0))
+	assert.Empty(t, JobName(labels.Owner{}, 0))
+	assert.Empty(t, JobName(labels.LogicalRestore(""), 0))
+	assert.Empty(t, JobName(labels.LogicalRestore("r"), -1))
+}
+
+// A consumer that builds a selector by hand misses every Job of a restore
+// whose name passes a label value, because the owner label carries the
+// bounded name. The exported helpers are the only correct source.
+func TestJobSelectorRoundTripsALongRestoreName(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("a", 200)
+	owner := labels.LogicalRestore(long)
+
+	in := logicalInput()
+	in.Owner = logicalRestore()
+	in.Owner.SetName(long)
+	in.OwnerLabel = owner
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	selector := JobSelector(owner)
+	require.Len(t, selector, 2)
+	for key, value := range selector {
+		assert.LessOrEqual(t, len(value), validation.LabelValueMaxLength, key)
+		assert.Equal(t, value, job.Labels[key], key)
+		assert.Equal(t, value, job.Spec.Template.Labels[key], key)
+	}
+
+	// The naive selector that a consumer would write by hand does not match.
+	naive := map[string]string{labels.LogicalRestoreKey: long, labels.ComponentKey: ComponentRestore}
+	assert.NotEqual(t, naive[labels.LogicalRestoreKey], job.Labels[labels.LogicalRestoreKey])
+
+	full := JobLabels(owner, "my-cluster")
+	assert.Equal(t, full, job.Labels)
+	assert.Equal(t, "my-cluster", full[labels.ClusterKey])
+	assert.Subset(t, full, selector)
 }
 
 // A Target that is missing any of its parts reaches BuildJob only through
@@ -361,6 +482,10 @@ func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 			mutate: func(in *JobInput) { in.OwnerLabel = labels.Owner{Key: labels.LogicalRestoreKey} },
 			text:   "owner",
 		},
+		"an owner label of another kind": {
+			mutate: func(in *JobInput) { in.OwnerLabel = labels.Cluster("my-cluster") },
+			text:   "owner",
+		},
 		"an ordinal beyond the broker count": {
 			mutate: func(in *JobInput) { in.Ordinal = 3 },
 			text:   "3 brokers",
@@ -391,20 +516,18 @@ func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 func TestJobNameStaysADNSLabel(t *testing.T) {
 	t.Parallel()
 
-	restore := logicalRestore()
-	assert.Equal(t, "my-cluster-restore-restore-0", JobName(restore, 0))
-	assert.Equal(t, "my-cluster-restore-restore-12", JobName(restore, 12))
+	restore := labels.LogicalRestore("my-cluster-restore")
+	assert.Equal(t, "my-cluster-restore-lr-0", JobName(restore, 0))
+	assert.Equal(t, "my-cluster-restore-lr-12", JobName(restore, 12))
 
-	long := logicalRestore()
-	long.Name = strings.Repeat("a", 200)
-	name := JobName(long, 0)
+	name := JobName(labels.LogicalRestore(strings.Repeat("a", 200)), 0)
 	assert.LessOrEqual(t, len(name), validation.DNS1123LabelMaxLength)
-	assert.True(t, strings.HasSuffix(name, "-restore-0"))
+	assert.True(t, strings.HasSuffix(name, "-lr-0"))
 	assert.Empty(t, validation.IsDNS1123Label(name))
 
-	other := logicalRestore()
-	other.Name = strings.Repeat("a", 199) + "b"
-	assert.NotEqual(t, name, JobName(other, 0))
+	other := JobName(labels.LogicalRestore(strings.Repeat("a", 199)+"b"), 0)
+	assert.NotEqual(t, name, other)
+	assert.LessOrEqual(t, len(other), validation.DNS1123LabelMaxLength)
 }
 
 func TestJobGoldenElasticsearchBroker0(t *testing.T) {

@@ -6,12 +6,14 @@ metadata:
     camunda.io/cluster: my-cluster
     camunda.io/component: restore
     camunda.io/point-in-time-restore: my-cluster-pitr
-  name: my-cluster-pitr-restore-1
+  name: my-cluster-pitr-pitr-1
   namespace: ns
 spec:
   backoffLimit: 0
   template:
     metadata:
+      annotations:
+        camunda.io/config-hash: abc123
       labels:
         app.kubernetes.io/managed-by: camunda-operator
         camunda.io/cluster: my-cluster
