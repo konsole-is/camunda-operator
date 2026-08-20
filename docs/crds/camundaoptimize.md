@@ -8,6 +8,15 @@ The operator creates two Deployments and their Services: the webapp, which serve
 
 The cluster must store its data in Elasticsearch. Optimize does not read an RDBMS secondary storage.
 
+!!! warning "The exporter cannot use a private certificate authority"
+    The Zeebe Elasticsearch exporter that this kind turns on has no TLS setting, so it reaches an HTTPS endpoint only when the JVM of the broker already trusts the certificate. The operator puts no certificate into the trust store of the broker.
+
+    An `ElasticsearchCluster` publishes an HTTPS endpoint with its own private certificate authority. The exporter cannot reach that endpoint, so Optimize gets no records from a cluster on such a storage today.
+
+    Attach Optimize to a cluster whose `SecondaryStorageConfig` names an Elasticsearch that the broker already trusts: one on HTTP, or one with a certificate from a public authority.
+
+    The limit is on the exporter alone. The Optimize pods read `caSecretRef` of the contract themselves, so they reach either kind.
+
 The smallest manifest names the cluster, the authentication contract, and the version:
 
 ```yaml
