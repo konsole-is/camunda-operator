@@ -24,6 +24,11 @@ limitations under the License.
 // (/actuator/exporting/*, /actuator/backupHistory, /actuator/backupRuntime).
 // An unknown version is a constructor error, never a guess.
 //
+// UserClient is the exception. It calls the /v2 user API on the gateway HTTP
+// port, and those endpoints keep their shape across minors. It checks its
+// version against a floor only, so it calls every version that the operator
+// accepts.
+//
 // The exporting calls and the deletes are idempotent from the caller's
 // view: the backup state machine re-enters after a crash, so "already done"
 // is success and never an error. The two backup starts are the exception.

@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/konsole-is/camunda-operator/pkg/adminhttp"
 )
@@ -47,8 +49,9 @@ type UserBinding struct {
 	// Endpoint is the base URL of the gateway HTTP port, for example
 	// http://my-cluster-zeebe.ns.svc:8080.
 	Endpoint string
-	// Version is the Camunda version of the cluster, for example 8.9.9. Its
-	// minor selects the endpoint set, like Binding.Version does.
+	// Version is the Camunda version of the cluster, for example 8.9.9. It
+	// is checked against a floor only: the user API endpoints are stable
+	// across minors, unlike the actuator endpoints of Binding.Version.
 	Version string
 	// Auth authenticates the calls. The user API, unlike the management
 	// port, always authenticates its callers; under basic authentication
@@ -64,15 +67,19 @@ type UserClient struct {
 	api *adminhttp.Client
 }
 
+// userAPIVersionFloor is the oldest Camunda version whose user API this
+// client calls. It is the floor the operator itself supports.
+const userAPIVersionFloor = "8.9"
+
 // NewUserClient builds a client for the cluster that binding describes. It
-// returns an error when the endpoint is empty or the Camunda version is not
-// one the client knows.
+// returns an error when the endpoint is empty or the Camunda version is
+// below the floor.
 func NewUserClient(binding UserBinding) (*UserClient, error) {
 	if binding.Endpoint == "" {
 		return nil, errors.New("user API binding has no endpoint")
 	}
 
-	if err := checkVersion(binding.Version); err != nil {
+	if err := checkUserAPIVersion(binding.Version); err != nil {
 		return nil, err
 	}
 
@@ -118,4 +125,42 @@ func (c *UserClient) UpdateUserPassword(ctx context.Context, user User, password
 	})
 
 	return err
+}
+
+// checkUserAPIVersion rejects a Camunda version below userAPIVersionFloor. A
+// later minor or major passes: the user API endpoints keep their shape
+// across minors, so the operator must call every version it accepts. This is
+// why the user client does not share the endpoint-set check of Client.
+func checkUserAPIVersion(version string) error {
+	major, minor, err := majorMinor(version)
+	if err != nil {
+		return err
+	}
+	floorMajor, floorMinor, _ := majorMinor(userAPIVersionFloor)
+
+	if major < floorMajor || (major == floorMajor && minor < floorMinor) {
+		return fmt.Errorf(
+			"unsupported Camunda version %q: the user API needs %s or later", version, userAPIVersionFloor,
+		)
+	}
+
+	return nil
+}
+
+// majorMinor reads the first two segments of a version such as 8.9 or
+// 8.10.1. A segment that follows the minor is ignored.
+func majorMinor(version string) (major int, minor int, err error) {
+	segments := strings.Split(version, ".")
+	if len(segments) < 2 {
+		return 0, 0, fmt.Errorf("unsupported Camunda version %q: it is not of the form major.minor", version)
+	}
+
+	if major, err = strconv.Atoi(segments[0]); err != nil {
+		return 0, 0, fmt.Errorf("unsupported Camunda version %q: its major is not a number", version)
+	}
+	if minor, err = strconv.Atoi(segments[1]); err != nil {
+		return 0, 0, fmt.Errorf("unsupported Camunda version %q: its minor is not a number", version)
+	}
+
+	return major, minor, nil
 }

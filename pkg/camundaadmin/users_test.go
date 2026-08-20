@@ -53,16 +53,19 @@ func newUserClient(t *testing.T) (*camundaadmin.UserClient, *camundaadmintest.Us
 	return client, server
 }
 
-func TestNewUserClientRejectsUnknownVersions(t *testing.T) {
+func TestNewUserClientChecksTheVersionFloor(t *testing.T) {
 	tests := []struct {
 		version string
 		wantErr bool
 	}{
 		{"8.9.9", false},
 		{"8.9", false},
-		{"8.10.0", true},
+		{"8.10.0", false},
+		{"9.0.0", false},
 		{"8.8.3", true},
+		{"7.23.0", true},
 		{"", true},
+		{"latest", true},
 	}
 
 	for _, tt := range tests {
