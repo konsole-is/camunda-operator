@@ -36,9 +36,9 @@ its branch is the raw material for PR-B and PR-C.
 | #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | #120 → feat/restore-controllers | MERGED |
 | #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | #122 → feat/restore-controllers | MERGED (075746a) |
 | #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | #123 | CLOSED — raw material for PR-B and PR-C, head 14a1545 |
-| PR-A | not created | not created | → feat/restore-controllers | not-started; sub-issue NOT FILED |
-| PR-B (#111) | not created | not created | → feat/restore-controllers | not-started; #111 body still says "LogicalRestore" |
-| PR-C | not created | not created | → feat/restore-controllers | not-started; sub-issue NOT FILED |
+| #129 (PR-A) | not created | not created | → feat/restore-controllers | not-started; issue filed, parent #109 |
+| #111 (PR-B) | not created | not created | → feat/restore-controllers | not-started; issue reconciled to `LogicalRestoreElasticsearch` |
+| #130 (PR-C) | not created | not created | → feat/restore-controllers | not-started; issue filed, parent #109 |
 | #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started; must cover BOTH new kinds |
 
 ## Contracts (from the plan)
@@ -70,8 +70,9 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 - The split is DECIDED and recorded. Spec amended at d53f70a, plan rebroken at a325561. Both are on the feature branch. Read them before dispatching any worker.
 - USER CONSTRAINT, still binding: the Zeebe primary-storage restore (PVC recreation plus the per-broker restore-application Jobs) is SHARED by both storage paths and by `PointInTimeRestore`. It lives in `pkg/restore`. The split covers the API kinds and the secondary-storage phase only. Never duplicate the primary phase.
-- NEXT ACTION: file the two missing sub-issues under #109 (PR-A unification, PR-C `LogicalRestoreRDBMS`) and reconcile #111 to `LogicalRestoreElasticsearch` through `feature-dev-workflow:writing-github-issues` Step 2D. Not done yet.
-- Then PR-A. PR-B and PR-C are parallel once PR-A lands — they touch disjoint files. Then #113, then the integration PR `feat/restore-controllers` -> main with `Closes #109`, stopping at ready-to-merge for the user.
+- Issues are filed and parented to #109: `#129` (PR-A, unify), `#111` (PR-B, `LogicalRestoreElasticsearch`, reconciled through Step 2D), `#130` (PR-C, `LogicalRestoreRDBMS`).
+- NEXT ACTION: dispatch PR-A against `#129`. PR-B and PR-C are parallel once PR-A lands — they touch disjoint files. Then #113, then the integration PR `feat/restore-controllers` -> main with `Closes #109`, stopping at ready-to-merge for the user.
+- The user reviews and merges PR-A, PR-B, and PR-C personally. An agent never merges them.
 - PR-A RISK: it rewrites the destructive primary-storage phase of `PointInTimeRestore` after that controller merged. Its envtest suite (1325 lines) is the safety net and stays as it is. A test that PR-A changes must name the resolved divergence that forced the change, in the PR body. Never adjust a test quietly to make the refactor pass.
 - The Lease is UNBUILT. No restore kind calls `clusterclaim.Claim`/`Release`. PR-A puts it in the shared driver: claim when admission passes, release at the terminal transition, hold in `Pending` with `ClusterClaimed` when another holder has it. Copilot thread #122/3822851527 is still open for this and gets answered in PR-A. Thread #123/3822837179 was answered in the closing comment of #123.
 - Base branch `feat/restore-controllers` carries, beyond PR #120: the e2e compile fix (a409a42), the cluster claim moved to `pkg/clusterclaim` with a neutral Lease prefix (e787f7c), a kind-agnostic claim liveness rule (dc01466), an elasticsearchcluster test-flake fix (81ff766), and the merged `PointInTimeRestore` controller (075746a).

@@ -2831,6 +2831,6 @@ Resolved on 2026-08-20, for the amended breakdown:
 
 ## Open questions
 
-- **`PROJECT` has no supported way to remove a kind.** AGENTS.md says never to hand-edit it, and `kubebuilder` has no verb that deletes an API. PR-A hand-edits the file to remove the `LogicalRestore` block, because there is no other path. Ask the user whether to record that exception in AGENTS.md.
+- ~~**`PROJECT` has no supported way to remove a kind.**~~ RESOLVED 2026-08-20 (1734224). AGENTS.md now carries a "One exception: removing a kind" block under *Never Edit These*. It names the hand edit, the files that go with it, and the duty to say so in the PR body. PR-A follows that rule instead of asking again.
 - **The spec header names two CRD pages that do not exist yet.** `docs/crds/logicalrestoreelasticsearch.md` and `docs/crds/logicalrestorerdbms.md` arrive in PR-B and PR-C. Between PR-A and those PRs, no logical restore page exists, and `mkdocs build --strict` fails on any link into one. PR-A therefore removes the links and PR-B and PR-C put them back. An alternative is for PR-A to ship both pages as stubs. The plan takes the first path, because the task breakdown puts each page in the PR that ships its kind.
 - **The `pkg/restore` package name is now wider than "restore rendering".** PR-A rewrites `pkg/restore/doc.go` to say so. If the package grows past one screen of files, split the driver into `pkg/restore/driver` in a follow-up. Do not split it inside this epic.
