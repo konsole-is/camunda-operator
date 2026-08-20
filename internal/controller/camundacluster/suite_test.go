@@ -68,9 +68,6 @@ func serveUserAPI(namespace, endpoint string) {
 	userAPIEndpoints.Store(namespace, endpoint)
 }
 
-func init() {
-}
-
 func TestCamundaClusterController(t *testing.T) {
 	RegisterFailHandler(Fail)
 
