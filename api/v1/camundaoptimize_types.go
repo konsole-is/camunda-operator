@@ -33,6 +33,19 @@ const (
 	// differ from those of the effective version of the referenced cluster.
 	// Camunda supports Optimize only on a matching minor.
 	ReasonVersionMismatch = "VersionMismatch"
+	// ReasonClusterAlreadyAttached means that another CamundaOptimize is
+	// already attached to the referenced cluster. One cluster carries one
+	// Optimize instance: the Optimize index prefix is fixed, so two instances
+	// write the same analytics indices of the same Elasticsearch. The message
+	// names the CamundaOptimize that holds the attachment.
+	ReasonClusterAlreadyAttached = "ClusterAlreadyAttached"
+	// ReasonExporterConflict means that spec.zeebe.extraEnv of the referenced
+	// cluster already carries an entry with the name of an exporter setting,
+	// and that entry supplies its value the other way: a literal where the
+	// operator needs a Secret reference, or the reverse. A container rejects
+	// an entry that carries both, so the operator reports the collision
+	// instead of applying it.
+	ReasonExporterConflict = "ExporterConflict"
 )
 
 // CamundaOptimizeSpec is the desired state of one Optimize instance. It
@@ -57,7 +70,14 @@ type CamundaOptimizeSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	ManagementAuthRef string `json:"managementAuthRef"`
 	// ClusterRef names the CamundaCluster that this Optimize instance reads.
-	// The secondary storage of that cluster must be Elasticsearch.
+	// The secondary storage of that cluster must be Elasticsearch, and no
+	// other CamundaOptimize may be attached to it.
+	//
+	// The reference is immutable. A repoint would apply the exporter settings
+	// to the new cluster while the old cluster keeps the settings this
+	// operator applied, and it would change the pod selectors of the
+	// Deployments, which Kubernetes does not allow.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable: delete this CamundaOptimize and create a new one to attach it to another cluster"
 	ClusterRef ClusterRef `json:"clusterRef"`
 	// Webapp configures the Deployment that serves the Optimize user
 	// interface. It runs with data import off.
@@ -65,9 +85,11 @@ type CamundaOptimizeSpec struct {
 	Webapp *WorkloadSpec `json:"webapp,omitempty"`
 	// Importer configures the Deployment that imports the exported cluster
 	// data into the Optimize indices. Optimize supports one active importer,
-	// so replicas must be 1.
+	// so replicas must be 0 or 1. Set 0 to stop the import, for example while
+	// a restore or an index rewrite runs; the webapp keeps serving what is
+	// already imported.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || self.replicas == 1",message="importer.replicas must be 1: Optimize supports one active importer"
+	// +kubebuilder:validation:XValidation:rule="!has(self.replicas) || self.replicas <= 1",message="importer.replicas must be 0 or 1: Optimize supports one active importer"
 	Importer *WorkloadSpec `json:"importer,omitempty"`
 	// Monitoring configures the monitoring integrations.
 	// +optional

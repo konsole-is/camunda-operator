@@ -49,8 +49,6 @@ const (
 	// rejects the configured credentials.
 	ReasonConnectionFailed = "ConnectionFailed"
 	// ReasonStorageTypeMismatch means that the secondary storage type of the
-	// referenced cluster does not fit this resource. A backup kind reports it
-	// when the kind does not match the storage type. A CamundaOptimize
-	// reports it when the storage is not Elasticsearch.
+	// referenced cluster does not fit this resource.
 	ReasonStorageTypeMismatch = "StorageTypeMismatch"
 )

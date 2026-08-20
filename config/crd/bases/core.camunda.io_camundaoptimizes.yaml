@@ -46,7 +46,13 @@ spec:
               clusterRef:
                 description: |-
                   ClusterRef names the CamundaCluster that this Optimize instance reads.
-                  The secondary storage of that cluster must be Elasticsearch.
+                  The secondary storage of that cluster must be Elasticsearch, and no
+                  other CamundaOptimize may be attached to it.
+
+                  The reference is immutable. A repoint would apply the exporter settings
+                  to the new cluster while the old cluster keeps the settings this
+                  operator applied, and it would change the pod selectors of the
+                  Deployments, which Kubernetes does not allow.
                 properties:
                   name:
                     description: Name of the CamundaCluster, in the namespace of this
@@ -56,11 +62,17 @@ spec:
                 required:
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: 'clusterRef is immutable: delete this CamundaOptimize and
+                    create a new one to attach it to another cluster'
+                  rule: self == oldSelf
               importer:
                 description: |-
                   Importer configures the Deployment that imports the exported cluster
                   data into the Optimize indices. Optimize supports one active importer,
-                  so replicas must be 1.
+                  so replicas must be 0 or 1. Set 0 to stop the import, for example while
+                  a restore or an index rewrite runs; the webapp keeps serving what is
+                  already imported.
                 properties:
                   extraEnv:
                     description: |-
@@ -71,8 +83,13 @@ spec:
 
                       The list merges by name under server-side apply, so each field manager
                       owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One list cannot hold two entries with the
-                      same name.
+                      its own entry next to yours. One applied manifest cannot hold two
+                      entries with the same name.
+
+                      Two field managers that apply the same name do not conflict: the merge
+                      is per field inside the entry, so one manager can own value while the
+                      other owns valueFrom. A container rejects an entry that carries both,
+                      so the rule below refuses to store that combination.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -232,6 +249,9 @@ spec:
                     x-kubernetes-list-map-keys:
                     - name
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: an extraEnv entry sets value or valueFrom, never both
+                      rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -963,9 +983,9 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-validations:
-                - message: 'importer.replicas must be 1: Optimize supports one active
-                    importer'
-                  rule: '!has(self.replicas) || self.replicas == 1'
+                - message: 'importer.replicas must be 0 or 1: Optimize supports one
+                    active importer'
+                  rule: '!has(self.replicas) || self.replicas <= 1'
               managementAuthRef:
                 description: |-
                   ManagementAuthRef names the cluster-scoped ManagementAuthConfig that
@@ -1024,8 +1044,13 @@ spec:
 
                       The list merges by name under server-side apply, so each field manager
                       owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One list cannot hold two entries with the
-                      same name.
+                      its own entry next to yours. One applied manifest cannot hold two
+                      entries with the same name.
+
+                      Two field managers that apply the same name do not conflict: the merge
+                      is per field inside the entry, so one manager can own value while the
+                      other owns valueFrom. A container rejects an entry that carries both,
+                      so the rule below refuses to store that combination.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -1185,6 +1210,9 @@ spec:
                     x-kubernetes-list-map-keys:
                     - name
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: an extraEnv entry sets value or valueFrom, never both
+                      rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the

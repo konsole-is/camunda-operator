@@ -70,8 +70,13 @@ spec:
 
                           The list merges by name under server-side apply, so each field manager
                           owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One list cannot hold two entries with the
-                          same name.
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -231,6 +236,10 @@ spec:
                         x-kubernetes-list-map-keys:
                         - name
                         x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -1111,6 +1120,10 @@ spec:
                               In the spec.backup.dump of the cluster nothing is reserved, and the
                               variables reach every container. The cluster owner sets connection
                               policy, PGSSLMODE included, inside their own boundary.
+
+                              This list stays atomic, unlike the extraEnv of a workload. One field
+                              manager owns the whole list, because nothing else writes it: no
+                              extension attaches to a dump pod.
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -2115,8 +2128,13 @@ spec:
 
                           The list merges by name under server-side apply, so each field manager
                           owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One list cannot hold two entries with the
-                          same name.
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -2276,6 +2294,10 @@ spec:
                         x-kubernetes-list-map-keys:
                         - name
                         x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -3038,8 +3060,13 @@ spec:
 
                       The list merges by name under server-side apply, so each field manager
                       owns only the entries that it applies. An extension controller can add
-                      its own entry next to yours. One list cannot hold two entries with the
-                      same name.
+                      its own entry next to yours. One applied manifest cannot hold two
+                      entries with the same name.
+
+                      Two field managers that apply the same name do not conflict: the merge
+                      is per field inside the entry, so one manager can own value while the
+                      other owns valueFrom. A container rejects an entry that carries both,
+                      so the rule below refuses to store that combination.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -3199,6 +3226,9 @@ spec:
                     x-kubernetes-list-map-keys:
                     - name
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: an extraEnv entry sets value or valueFrom, never both
+                      rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
@@ -3260,8 +3290,13 @@ spec:
 
                           The list merges by name under server-side apply, so each field manager
                           owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One list cannot hold two entries with the
-                          same name.
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -3421,6 +3456,10 @@ spec:
                         x-kubernetes-list-map-keys:
                         - name
                         x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -4209,8 +4248,13 @@ spec:
 
                           The list merges by name under server-side apply, so each field manager
                           owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One list cannot hold two entries with the
-                          same name.
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -4370,6 +4414,10 @@ spec:
                         x-kubernetes-list-map-keys:
                         - name
                         x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -5807,8 +5855,13 @@ spec:
 
                           The list merges by name under server-side apply, so each field manager
                           owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One list cannot hold two entries with the
-                          same name.
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -5968,6 +6021,10 @@ spec:
                         x-kubernetes-list-map-keys:
                         - name
                         x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -6735,8 +6792,13 @@ spec:
 
                           The list merges by name under server-side apply, so each field manager
                           owns only the entries that it applies. An extension controller can add
-                          its own entry next to yours. One list cannot hold two entries with the
-                          same name.
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -6896,6 +6958,10 @@ spec:
                         x-kubernetes-list-map-keys:
                         - name
                         x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
