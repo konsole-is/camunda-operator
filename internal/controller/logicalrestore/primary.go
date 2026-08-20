@@ -58,7 +58,6 @@ func (r *Reconciler) restorePrimaryStorage(
 	if failure != nil {
 		return r.holdRunning(restore, failure), nil
 	}
-	recovered(restore)
 
 	// The broker count is recorded before anything is deleted, so the status
 	// says how many volumes and Jobs this restore covers even if it fails
@@ -166,6 +165,7 @@ func (r *Reconciler) applyRestoreJobs(
 		}
 	}
 
+	recovered(restore)
 	restore.Status.PrimaryJobNames = names
 	conditions.Stage(restore, progressing(
 		restore, "the restore application runs on every broker",
@@ -248,7 +248,6 @@ func (r *Reconciler) trackRestoreJobs(
 	if stuck != nil {
 		return r.holdRunning(restore, stuck), nil
 	}
-	recovered(restore)
 
 	conditions.Stage(restore, progressing(restore, fmt.Sprintf(
 		"the restore application finished on %d of %d brokers", completed, brokers,

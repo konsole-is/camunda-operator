@@ -17,6 +17,8 @@ limitations under the License.
 package logicalrestore
 
 import (
+	"maps"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -224,7 +226,10 @@ var _ = Describe("LogicalRestore of a relational cluster", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("standing in for a kubelet that cannot mount a Secret of the pod")
-		createStuckPod(w, restore, jobName)
+		createStuckPod(w, jobName, map[string]string{
+			"camunda.io/logical-restore-uid": string(restore.UID),
+			"camunda.io/component":           "pg-restore",
+		})
 
 		expectReason(restore, v1.LogicalRestoreRestoringSecondaryStorage, v1.ReasonMissingSecret)
 
@@ -324,6 +329,29 @@ var _ = Describe("LogicalRestore of primary storage", func() {
 		)
 	})
 
+	It("reports a restore pod that cannot start and fails after the grace", func() {
+		w := newRelationalWorld()
+		backup := createRelationalBackup(w)
+		restore := createRestore(w, v1.LogicalBackupKindRDBMS, backup.Name)
+		completeSecondaryStorage(w, restore)
+
+		owner := labels.LogicalRestore(restore.Name)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
+		}, timeout, interval).Should(Succeed())
+
+		By("standing in for a kubelet that cannot mount a Secret of the pod")
+		createStuckPod(w, restorepkg.JobName(owner, 0), restorepkg.JobSelector(owner))
+
+		expectReason(restore, v1.LogicalRestoreRestoringPrimaryStorage, v1.ReasonMissingSecret)
+
+		// The grace runs out only when the clock survives a look that resolved
+		// every reference again. A restore that cleared it on each look would
+		// hold here for ever.
+		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("did not recover"))
+	})
+
 	It("fails and names the broker when one restore Job fails", func() {
 		w := newRelationalWorld()
 		backup := createRelationalBackup(w)
@@ -357,21 +385,21 @@ func completeSecondaryStorage(w *world, restore *v1.LogicalRestore) {
 	markJob(w.namespace, jobName, batchv1.JobComplete)
 }
 
-// createStuckPod creates a pod of the pg_restore Job that reports a container
-// which cannot start. envtest runs no kubelet, so the suite writes the state
-// that a kubelet would report.
-func createStuckPod(w *world, restore *v1.LogicalRestore, jobName string) {
+// createStuckPod creates a pod of a Job of the restore that reports a
+// container which cannot start. The selector labels are the ones that the
+// controller lists the pods of that Job by. envtest runs no kubelet, so the
+// suite writes the state that a kubelet would report.
+func createStuckPod(w *world, jobName string, selector map[string]string) {
 	GinkgoHelper()
+
+	podLabels := map[string]string{"batch.kubernetes.io/job-name": jobName}
+	maps.Copy(podLabels, selector)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName + "-stuck",
 			Namespace: w.namespace,
-			Labels: map[string]string{
-				"batch.kubernetes.io/job-name":   jobName,
-				"camunda.io/logical-restore-uid": string(restore.UID),
-				"camunda.io/component":           "pg-restore",
-			},
+			Labels:    podLabels,
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,

@@ -341,8 +341,11 @@ func (r *Reconciler) holdRunning(
 	return hold{after: r.opts.PollInterval}
 }
 
-// recovered clears the mid-run failure clock. The phase just succeeded at
-// what it needed, so the next failure gets the full grace again.
+// recovered clears the mid-run failure clock, so the next failure gets the
+// full grace again. Only real progress clears it: a phase that advanced, or a
+// side effect that landed. A dependency that resolves once must not, because a
+// restore that resolves its references and then holds on the same failure
+// would restart the grace on every look and never reach a terminal phase.
 func recovered(restore *v1.LogicalRestore) {
 	restore.Status.FirstFailedAt = nil
 }

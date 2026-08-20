@@ -141,7 +141,6 @@ func (r *Reconciler) trackElasticsearchRestore(
 		)), nil
 	}
 	if len(indices) == 0 {
-		recovered(restore)
 		conditions.Stage(restore, progressing(
 			restore, "Elasticsearch did not create the restored indices yet",
 		))
@@ -155,7 +154,6 @@ func (r *Reconciler) trackElasticsearchRestore(
 			"reading the recovery of the restored indices", err,
 		)), nil
 	}
-	recovered(restore)
 
 	if state == esadmin.RestoreInProgress {
 		conditions.Stage(restore, progressing(
@@ -165,6 +163,7 @@ func (r *Reconciler) trackElasticsearchRestore(
 		return hold{after: r.opts.PollInterval}, nil
 	}
 
+	recovered(restore)
 	restore.Status.Phase = v1.LogicalRestoreRestoringPrimaryStorage
 	conditions.Stage(restore, progressing(
 		restore, "the secondary storage is restored; the broker volumes come next",

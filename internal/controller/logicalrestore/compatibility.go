@@ -38,7 +38,6 @@ func (r *Reconciler) validate(ctx context.Context, restore *v1.LogicalRestore) (
 	if failure != nil {
 		return r.holdRunning(restore, failure), nil
 	}
-	recovered(restore)
 
 	if failure := check(compatibility{
 		BackupStorageType: resolved.backup.StorageType,
@@ -58,6 +57,7 @@ func (r *Reconciler) validate(ctx context.Context, restore *v1.LogicalRestore) (
 		return settle, nil
 	}
 
+	recovered(restore)
 	restore.Status.Phase = v1.LogicalRestoreRestoringSecondaryStorage
 	conditions.Stage(restore, progressing(
 		restore, "the restore writes the backup into the secondary storage of the target",

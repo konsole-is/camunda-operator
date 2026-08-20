@@ -66,7 +66,6 @@ func (r *Reconciler) restoreDatabase(ctx context.Context, restore *v1.LogicalRes
 	if failure != nil {
 		return r.holdRunning(restore, failure), nil
 	}
-	recovered(restore)
 
 	job, err := components.BuildJob(components.JobInput{
 		Restore:            restore,
@@ -131,6 +130,7 @@ func (r *Reconciler) claimDatabaseJob(
 		return settle, fmt.Errorf("creating the pg_restore Job: %w", err)
 	}
 
+	recovered(restore)
 	restore.Status.SecondaryJobName = job.Name
 	conditions.Stage(restore, progressing(restore, "the pg_restore Job runs"))
 
@@ -187,6 +187,7 @@ func (r *Reconciler) trackDatabaseJob(ctx context.Context, restore *v1.LogicalRe
 
 	switch status.Status {
 	case concepts.CompletionStatusCompleted:
+		recovered(restore)
 		restore.Status.Phase = v1.LogicalRestoreRestoringPrimaryStorage
 		conditions.Stage(restore, progressing(
 			restore, "the logical database is restored; the broker volumes come next",
@@ -208,7 +209,6 @@ func (r *Reconciler) trackDatabaseJob(ctx context.Context, restore *v1.LogicalRe
 	if stuck != nil {
 		return r.holdRunning(restore, stuck), nil
 	}
-	recovered(restore)
 	conditions.Stage(restore, progressing(restore, status.Reason))
 
 	// The watch on the owned Jobs wakes the restore on progress. The poll also
