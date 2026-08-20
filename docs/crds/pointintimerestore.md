@@ -74,6 +74,8 @@ The operator reads the table under the name that Camunda creates it with, and it
 
 The restore holds in `Pending` with reason `DatabaseNotRestored` when a partition row is missing, or when any `LAST_UPDATED` is later than `spec.timestamp` plus one minute of slack. The slack exists because the clock of the database and the source of your timestamp are not the same clock.
 
+A database that the operator cannot reach at all is a different hold. The restore stays in `ValidatingDatabaseState` with reason `ConnectionFailed` or `MissingSecret`, and it fails after ten minutes. It touches no volume there either.
+
 **Limits of this check.** The check proves that the database is not ahead of the requested point. It cannot prove that the database holds exactly that point. A database that was restored to an earlier point passes the check, and that is safe: Zeebe re-exports the difference after the restore. The check of the restore application stays the authoritative gate. This check only moves the common error before the volume deletion.
 
 ## Primary storage

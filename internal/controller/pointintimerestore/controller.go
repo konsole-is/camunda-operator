@@ -26,9 +26,14 @@ limitations under the License.
 // application on them. This file holds what every phase shares: Reconcile, the
 // terminal transitions, and the wiring.
 //
-// Nothing is destroyed until every check passed. Every failure before
-// primary.go holds the restore in Pending and touches no volume, so the owner
-// can correct the cause and the same resource proceeds.
+// Nothing is destroyed before the RestoringPrimaryStorage phase. A failure of
+// an earlier phase holds the restore and touches no volume, in one of two
+// ways. A rule of the cluster or of the server that does not hold, and a
+// database that is ahead of the requested point, hold the restore in Pending
+// without a bound: the owner corrects the cause, and the same resource
+// continues. A database that the operator cannot reach holds it in
+// ValidatingDatabaseState, where the mid-run grace bounds the wait and the
+// restore fails after it.
 package pointintimerestore
 
 import (
