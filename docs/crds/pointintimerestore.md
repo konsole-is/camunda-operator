@@ -8,9 +8,6 @@ The operator never restores the database server. PostgreSQL point-in-time recove
 
 One resource is one restore. The spec is immutable, and the restore runs once. `kubectl get pitr` lists the restores with their phase, cluster, and timestamp.
 
-!!! warning "Not implemented yet"
-    The operator does not implement this kind yet. This page describes the planned design.
-
 Two things must be true before you create the resource:
 
 - The cluster has `spec.suspend: true`, so no workload writes to primary or secondary storage.
@@ -51,8 +48,8 @@ The operator only reads `spec.suspend` of the cluster. It never writes it. You s
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. The cluster runs, the storage chain does not resolve, or the database is ahead of the requested point. |
-| `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. |
+| `Pending` | The restore waits. The cluster runs, the storage chain does not resolve, a rule of the server does not hold, or the database is ahead of the requested point. The operator touches nothing here. |
+| `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. You see this phase only while the operator cannot reach the database. A check that passes moves on within the same step, and a database that is ahead sends the restore back to `Pending`. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the restore application on them. |
 | `Completed` | The restore finished. You can unsuspend the cluster. |
 | `Failed` | A phase failed. `status.failureMessage` names it. |
@@ -61,21 +58,39 @@ The operator only reads `spec.suspend` of the cluster. It never writes it. You s
 
 The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, which must be `type: rdbms`, then its `DatabaseConfig`, then its `serverRef` to a `DatabaseServerConfig`. A cluster on Elasticsearch is rejected with reason `InvalidReference`. Point-in-time restore does not exist for it.
 
-The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore fails with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
+The cluster must also name a `backupStorageRef`. Without it, Zeebe writes no primary-storage backup, so no restore point exists. Such a cluster holds the restore with reason `InvalidReference`.
 
-Exactly one `Database` can reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it fails the restore with reason `SharedServer`.
+The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore holds with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
+
+Exactly one `Database` must reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it holds the restore with reason `SharedServer`.
+
+A server that **no** `Database` references holds the restore too, with reason `InvalidReference`. The `Database` resources are the only evidence the operator has about the databases of a server. Without one it cannot tell whether the server holds one database or ten, and the restore deletes volumes. Declare the database of the cluster as a `Database` resource on a server of its own.
+
+The operator records the chain it validated in `status.storage`: the two contracts, the server, the logical database, and the endpoint. It checks the record on every later look. A cluster that is repointed at another database after the check fails the restore, because the rules of the server and the state of the database were read against the first chain. Create a new restore for the database the cluster uses now.
+
+Every rule of this section holds the restore in `Pending`. Nothing is deleted while a rule does not hold, so you correct the cause and the same resource continues. You do not create a new one.
 
 ## The database-state check
 
 Before it touches a volume, the operator connects to the logical database with the application credentials of the cluster, resolved through `storageRef` to `SecondaryStorageConfig` to `DatabaseConfig.credentialsSecretRef`. It reads `LAST_UPDATED` for every partition from the `EXPORTER_POSITION` table and records what it saw in `status.observedPositions`.
 
+The operator reads the table under the name that Camunda creates it with, and it reads no table prefix. A cluster that sets `camunda.data.secondary-storage.rdbms.prefix` is outside this check. A database that carries no such table holds the restore with reason `DatabaseNotRestored` too: an empty database is the state that this check exists for.
+
 The restore holds in `Pending` with reason `DatabaseNotRestored` when a partition row is missing, or when any `LAST_UPDATED` is later than `spec.timestamp` plus one minute of slack. The slack exists because the clock of the database and the source of your timestamp are not the same clock.
+
+A database that the operator cannot reach at all is a different hold. The restore stays in `ValidatingDatabaseState` with reason `ConnectionFailed` or `MissingSecret`, and it fails after ten minutes. It touches no volume there either.
+
+**The clocks must match.** The operator compares the two times as UTC. The database records `LAST_UPDATED` with the wall clock of the broker and no time zone, so the two are the same clock only while the brokers run in UTC. A container runs in UTC, and the operator never changes that. A broker west of UTC records a position that reads earlier than it is. The check then lets an unrestored database through.
+
+The operator therefore reads the environment of the broker container before it compares anything. It holds the restore with reason `PitrUnavailable` when the brokers carry a zone other than UTC in `TZ`, or `-Duser.timezone` in `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS`, `JAVA_OPTS`, or `EXTRA_JVM_OPTS`. It reads them from `spec.zeebe.extraEnv` and from every ConfigMap and Secret of `spec.zeebe.extraEnvFrom`, in the order the kubelet applies them: the sources first, then `extraEnv`, which overrides a name that a source carried. A cluster that corrects the zone of a shared ConfigMap in `extraEnv` therefore runs in UTC. A source that the operator cannot read holds the restore too, because an unread source can carry the one variable that makes this check wrong. A source that the cluster marks optional and that does not exist carries nothing, and the restore continues.
 
 **Limits of this check.** The check proves that the database is not ahead of the requested point. It cannot prove that the database holds exactly that point. A database that was restored to an earlier point passes the check, and that is safe: Zeebe re-exports the difference after the restore. The check of the restore application stays the authoritative gate. This check only moves the common error before the volume deletion.
 
 ## Primary storage
 
 The Camunda restore application refuses a non-empty data directory, so the operator deletes the broker data volumes of the cluster and creates them again. The new volume takes the size of the claim template of the broker StatefulSet, together with its storage class, access modes, and labels. The volumes belong to that StatefulSet, not to the restore. Deleting the restore never deletes a broker volume.
+
+The operator refuses a Job that carries the name of one of its Jobs but no owner reference of this restore. Such a Job belongs to an earlier restore of the same name, and its result says nothing about this one. The restore fails, and the message names the Job.
 
 The operator then runs the Camunda restore application once per broker, as a Job with `--to=<spec.timestamp>`. The Jobs copy their configuration from the live broker StatefulSet, so the restore application always runs with the configuration the brokers run with. A cluster whose broker StatefulSet was deleted cannot restore until its own controller applies it again.
 
@@ -96,20 +111,24 @@ When you delete the restore, the operator deletes the Jobs it created. It writes
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
 | `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
 | `Ready` | `ClusterNotSuspended` | The cluster runs. | Set `spec.suspend: true` on the cluster. |
-| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, or the broker StatefulSet is gone. | Correct the reference that the message names. |
-| `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, or `spec.timestamp` lies in the future. | Enable `pitr` on the server, or restore to a point within retention. |
+| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, no `Database` names the server, or the broker StatefulSet is gone. | Correct the reference that the message names. |
+| `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, `spec.timestamp` lies in the future, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, restore to a point within retention, or run the brokers in UTC. |
 | `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
 | `Ready` | `ConnectionFailed` | The database rejects the operator. | Correct the endpoint or the credentials. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 
+A restore that already started keeps a broken dependency for ten minutes. After that it fails, because a restore that recreated a volume must not wait without an end. A restore that still waits in `Pending` has no such limit: it deleted nothing.
+
 The status also records what the restore pinned and what it did:
 
-- `status.clusterUID` pins the identity of the cluster.
+- `status.clusterUID` pins the identity of the cluster, from the first look onwards. A cluster that is deleted and created again under one name fails the restore.
+- `status.storage` pins the storage chain that the restore validated.
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.
 - `status.observedPositions` holds the `LAST_UPDATED` value that the check read for each partition.
 - `status.primaryJobNames` names the per-broker restore Jobs, in broker order.
+- `status.terminalReason` is the `Ready` reason of the terminal phase. The operator stages the condition again from it, so a write conflict cannot lose the reason.
 - `status.recreatedClaims` names the broker data volumes that the operator deleted and created again.
 - `status.completionTime` is when the restore reached `Completed` or `Failed`.
 - `status.observedGeneration` is the last generation the operator reconciled.
