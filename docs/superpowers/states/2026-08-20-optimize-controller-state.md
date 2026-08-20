@@ -73,10 +73,12 @@ Phase 1 is done: #119 self-merged as 4f7a302, #115 closed, CI green on its head 
 
     First hypothesis for the current failure is runner contention rather than a defect: the suite has grown 1436s to 1728s to 2283s as this flow added an Elasticsearch, a Keycloak, and two Optimize workloads to a 4-vCPU runner, and the spec that fails is the one that waits longest. Check whether `camundacluster_test.go:321` fails on `main` too before treating it as this branch's problem, and read the pod events from `dumpDiagnostics` in the failed run rather than assuming. If it is contention, the fix is resource sizing in this flow's fixtures, not a longer timeout. Do not re-run to green.
 
-    When it is green: `gh pr merge 132 --squash`, `gh issue close 117`, fast-forward the feature worktree.
+    **The user's decision on 2026-08-21: settle relatedness first, and do not fix what this branch did not break.** If `camundacluster_test.go:321` fails for a reason this feature did not introduce, say so with the evidence and stop. The user merges #132 themselves and the work moves on. Only fix it here if this branch caused it.
+
+    When it is green, or when the user has merged it: `gh issue close 117`, fast-forward the feature worktree.
 8. **Finally the integration PR** `feat/optimize-controller` → `main` with **`Towards #114`**, not `Closes`. #131 is now a child of the epic, so the epic must outlive this PR; the user closes it after #131 lands. Review-loop it, tear down the plan and this state file in the last commit once CI is green. Leave it open: the user merges it, not you.
 
-Standing constraints: the user runs close to the Fable limit, so dispatch every subagent with an explicit `model` override (`opus`, or `sonnet`/`haiku` for mechanical work) and never a fork. Fresh worktrees need `make setup-envtest`, and `chmod -R u+w bin` before removal. Flakes get root-caused, never re-run to green.
+Standing constraints: fresh worktrees need `make setup-envtest`, and `chmod -R u+w bin` before removal. Flakes get root-caused, never re-run to green, unless the cause sits outside this repository.
 
 ## Resume checklist
 
