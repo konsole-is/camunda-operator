@@ -189,7 +189,7 @@ spec:
 
 ## Related
 
-- [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) and [LogicalRestoreRDBMS](logicalrestorerdbms.md): the backup-based alternative. One kind serves each secondary storage type, and both restore into the cluster the backup was taken from.
+- [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) and [LogicalRestoreRDBMS](logicalrestorerdbms.md): the backup-based alternative. One kind serves each secondary storage type, and both restore a cluster from its own backup.
 - [CamundaCluster](camundacluster.md): referenced through `clusterRef`. You suspend it for the whole restore, and its controller enables the continuous primary-storage backups.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It must be `type: rdbms`.
 - [DatabaseConfig](databaseconfig.md): resolved for the logical database and its `serverRef`. Its `credentialsSecretRef` holds the credentials that read `EXPORTER_POSITION`.

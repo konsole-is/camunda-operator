@@ -28,9 +28,10 @@ type LogicalRestoreRDBMSSpec struct {
 	// in the namespace of this restore.
 	// +required
 	BackupRef LogicalBackupRef `json:"backupRef"`
-	// TargetClusterRef references the CamundaCluster to restore into. It can
-	// differ from the cluster the backup was taken from. The cluster must be
-	// suspended for the whole restore.
+	// TargetClusterRef references the CamundaCluster to restore into. It must
+	// name the cluster the backup was taken from. The restore application
+	// reads the primary-storage backup under the prefix of the cluster it
+	// runs as. The cluster must be suspended for the whole restore.
 	// +required
 	TargetClusterRef ClusterRef `json:"targetClusterRef"`
 }

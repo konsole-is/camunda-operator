@@ -78,9 +78,10 @@ spec:
                 type: object
               targetClusterRef:
                 description: |-
-                  TargetClusterRef references the CamundaCluster to restore into. It can
-                  differ from the cluster the backup was taken from. The cluster must be
-                  suspended for the whole restore.
+                  TargetClusterRef references the CamundaCluster to restore into. It must
+                  name the cluster the backup was taken from. The restore application
+                  reads the primary-storage backup under the prefix of the cluster it
+                  runs as. The cluster must be suspended for the whole restore.
                 properties:
                   name:
                     description: Name of the CamundaCluster, in the namespace of this
