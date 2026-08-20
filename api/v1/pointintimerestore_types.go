@@ -116,10 +116,19 @@ type PointInTimeRestoreStatus struct {
 	// +optional
 	RecreatedClaims []string `json:"recreatedClaims,omitempty"`
 	// FirstFailedAt is when a dependency of the running restore first stopped
-	// resolving.
+	// resolving. The operator measures the mid-run grace from it, and clears
+	// it when the restore recovers.
 	// +optional
 	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
-	// FailureMessage names the failing phase and its error.
+	// TerminalReason is the Ready reason recorded at the terminal transition:
+	// Completed or Failed. The operator stages the terminal condition again
+	// from this field, so a write conflict cannot replace the reason with a
+	// weaker one.
+	// +optional
+	TerminalReason string `json:"terminalReason,omitempty"`
+	// FailureMessage names the failing phase and its error. The Ready
+	// condition carries the same message, and the operator stages the
+	// condition again from this field, so a write conflict cannot lose it.
 	// +optional
 	FailureMessage string `json:"failureMessage,omitempty"`
 	// CompletionTime is when the restore reached a terminal phase.

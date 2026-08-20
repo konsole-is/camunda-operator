@@ -28,6 +28,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -37,10 +38,12 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
-// errRenderFailed reports that the shared package cannot render a resource of
-// this restore. It is a hard failure: the target does not repair itself, and
-// the restore already emptied the broker volumes.
-var errRenderFailed = errors.New("the restore cannot be rendered")
+// errUnrecoverable reports a failure of the primary storage phase that
+// nothing resolves on its own: the shared package cannot render a resource of
+// this restore, or a Job under the name of this restore belongs to somebody
+// else. The restore already emptied the broker volumes, so it must reach a
+// terminal phase instead of waiting.
+var errUnrecoverable = errors.New("the restore cannot continue")
 
 // restorePrimaryStorage gives the brokers empty data volumes and runs the
 // Camunda restore application on them, once per broker. It is the destructive
@@ -97,7 +100,7 @@ func (r *Reconciler) recreateClaims(
 	if err != nil {
 		// A malformed target is a render failure, not a wait. Nothing changes
 		// on its own, and the restore already left the volumes behind.
-		r.fail(pitr, fmt.Sprintf("the broker volumes cannot be recreated: %s", err))
+		r.fail(pitr, v1.ReasonFailed, fmt.Sprintf("the broker volumes cannot be recreated: %s", err))
 
 		return settle, nil
 	}
@@ -149,9 +152,8 @@ func (r *Reconciler) runJobs(
 	done := 0
 	for ordinal := range target.Brokers {
 		job, err := r.ensureJob(ctx, pitr, target, ordinal)
-		if errors.Is(err, errRenderFailed) {
-			// Nothing resolves a Job that cannot be rendered from this target.
-			r.fail(pitr, err.Error())
+		if errors.Is(err, errUnrecoverable) {
+			r.fail(pitr, v1.ReasonFailed, err.Error())
 
 			return settle, nil
 		}
@@ -171,7 +173,7 @@ func (r *Reconciler) runJobs(
 		case concepts.CompletionStatusCompleted:
 			done++
 		case concepts.CompletionStatusFailing:
-			r.fail(pitr, fmt.Sprintf(
+			r.fail(pitr, v1.ReasonFailed, fmt.Sprintf(
 				"the restore of broker %d failed: %s", ordinal, status.Reason,
 			))
 
@@ -232,6 +234,20 @@ func (r *Reconciler) ensureJob(
 	err := r.APIReader.Get(ctx, key, &current)
 	switch {
 	case err == nil:
+		// The name of a Job comes from the name of the restore and the
+		// ordinal, so a restore that somebody deleted and created again under
+		// one name finds the Jobs of its predecessor. Tracking such a Job
+		// counts work that this restore never did, on volumes that it already
+		// emptied. Only the controller reference proves that the Job is this
+		// restore's own.
+		if !ownedBy(&current, pitr) {
+			return nil, fmt.Errorf(
+				"%w: Job %s exists, but no controller reference of this restore owns it. "+
+					"Remove the Job of the earlier restore, then create a new restore",
+				errUnrecoverable, key,
+			)
+		}
+
 		return &current, nil
 	case !apierrors.IsNotFound(err):
 		return nil, fmt.Errorf("reading the restore Job %s: %w", key, err)
@@ -249,7 +265,7 @@ func (r *Reconciler) ensureJob(
 	})
 	if err != nil {
 		return nil, fmt.Errorf(
-			"%w: the restore Job of broker %d cannot be rendered: %s", errRenderFailed, ordinal, err,
+			"%w: the restore Job of broker %d cannot be rendered: %s", errUnrecoverable, ordinal, err,
 		)
 	}
 
@@ -274,4 +290,13 @@ func (r *Reconciler) ensureJob(
 	)
 
 	return nil, nil
+}
+
+// ownedBy reports whether job is a Job that this restore created. The UID
+// answers it, not the name: a restore that somebody deleted and created again
+// carries the same name and another UID.
+func ownedBy(job *batchv1.Job, pitr *v1.PointInTimeRestore) bool {
+	controller := metav1.GetControllerOf(job)
+
+	return controller != nil && controller.UID == pitr.UID
 }

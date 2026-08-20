@@ -642,10 +642,16 @@ var _ = Describe("PointInTimeRestore database-state check", func() {
 // it.
 func markJob(pitr *v1.PointInTimeRestore, ordinal int32, kind batchv1.JobConditionType) {
 	GinkgoHelper()
-	key := types.NamespacedName{
-		Namespace: pitr.Namespace,
-		Name:      restore.JobName(labels.PointInTimeRestore(pitr.Name), ordinal),
-	}
+	markJobNamed(
+		pitr.Namespace, restore.JobName(labels.PointInTimeRestore(pitr.Name), ordinal), kind,
+	)
+}
+
+// markJobNamed is markJob for any Job name, for example a Job that another
+// restore left behind.
+func markJobNamed(namespace, name string, kind batchv1.JobConditionType) {
+	GinkgoHelper()
+	key := types.NamespacedName{Namespace: namespace, Name: name}
 	var job batchv1.Job
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
@@ -776,6 +782,7 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			current := readRestore(pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
 			g.Expect(current.Status.CompletionTime).NotTo(BeNil())
+			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonCompleted))
 			condition := ready(current)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
@@ -794,6 +801,12 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			current := readRestore(pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("broker 1"))
+			// The terminal reason is recorded, so a write conflict on the
+			// terminal flush cannot replace it with a weaker one.
+			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonFailed))
+			condition := ready(current)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(current.Status.TerminalReason))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -813,6 +826,43 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			condition := ready(readRestore(pitr))
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Reason).To(Equal(v1.ReasonClusterNotSuspended))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("refuses a Job that another restore left behind under its name", func() {
+		w := createWorld()
+		name := "pitr-" + strings.ToLower(utilrand.String(6))
+		owner := labels.PointInTimeRestore(name)
+
+		// The restore of a deleted resource of the same name. The garbage
+		// collector has not removed it yet, and it carries the labels and the
+		// name that this restore derives for its own broker 0.
+		foreign := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      restore.JobName(owner, 0),
+				Namespace: w.namespace,
+				Labels:    restore.JobLabels(owner, w.cluster.Name),
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						RestartPolicy: corev1.RestartPolicyNever,
+						Containers: []corev1.Container{{
+							Name: restore.ComponentRestore, Image: "camunda/camunda:8.9.9",
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+		markJobNamed(w.namespace, foreign.Name, batchv1.JobComplete)
+
+		pitr := createRestore(w, func(p *v1.PointInTimeRestore) { p.Name = name })
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(foreign.Name))
 		}, timeout, interval).Should(Succeed())
 	})
 

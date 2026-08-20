@@ -174,12 +174,16 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               failureMessage:
-                description: FailureMessage names the failing phase and its error.
+                description: |-
+                  FailureMessage names the failing phase and its error. The Ready
+                  condition carries the same message, and the operator stages the
+                  condition again from this field, so a write conflict cannot lose it.
                 type: string
               firstFailedAt:
                 description: |-
                   FirstFailedAt is when a dependency of the running restore first stopped
-                  resolving.
+                  resolving. The operator measures the mid-run grace from it, and clears
+                  it when the restore recovers.
                 format: date-time
                 type: string
               observedGeneration:
@@ -238,6 +242,13 @@ spec:
                 items:
                   type: string
                 type: array
+              terminalReason:
+                description: |-
+                  TerminalReason is the Ready reason recorded at the terminal transition:
+                  Completed or Failed. The operator stages the terminal condition again
+                  from this field, so a write conflict cannot replace the reason with a
+                  weaker one.
+                type: string
             type: object
         required:
         - spec

@@ -231,6 +231,7 @@ func (r *Reconciler) complete(pitr *v1.PointInTimeRestore) {
 	now := metav1.Now()
 	pitr.Status.Phase = v1.PointInTimeRestoreCompleted
 	pitr.Status.CompletionTime = &now
+	pitr.Status.TerminalReason = v1.ReasonCompleted
 	r.stageTerminal(pitr)
 	r.EventRecorder.Eventf(
 		pitr,
@@ -245,14 +246,16 @@ func (r *Reconciler) complete(pitr *v1.PointInTimeRestore) {
 	)
 }
 
-// fail ends the restore with message. The message carries an external error
+// fail ends the restore with reason and message. Status keeps the reason, so a
+// later look stages the same one again. The message carries an external error
 // whose size the controller cannot know, for example the reason of a Job or of
 // a pod, so it is bounded before it reaches the free-form status field.
-func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, message string) {
+func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
 	now := metav1.Now()
 	message = conditions.BoundMessage(message)
 	pitr.Status.Phase = v1.PointInTimeRestoreFailed
 	pitr.Status.CompletionTime = &now
+	pitr.Status.TerminalReason = reason
 	pitr.Status.FailureMessage = message
 	r.stageTerminal(pitr)
 	r.EventRecorder.Eventf(
@@ -279,8 +282,12 @@ func (r *Reconciler) stageTerminal(pitr *v1.PointInTimeRestore) {
 			pitr.Generation,
 		))
 	case v1.PointInTimeRestoreFailed:
+		reason := pitr.Status.TerminalReason
+		if reason == "" {
+			reason = v1.ReasonFailed
+		}
 		conditions.Stage(pitr, conditions.Ready(
-			metav1.ConditionFalse, v1.ReasonFailed, pitr.Status.FailureMessage, pitr.Generation,
+			metav1.ConditionFalse, reason, pitr.Status.FailureMessage, pitr.Generation,
 		))
 	}
 }
@@ -317,7 +324,7 @@ func (r *Reconciler) holdStarted(
 		pitr.Status.FirstFailedAt = &now
 	}
 	if now.Sub(pitr.Status.FirstFailedAt.Time) > r.opts.MidRunGrace {
-		r.fail(pitr, fmt.Sprintf(
+		r.fail(pitr, v1.ReasonFailed, fmt.Sprintf(
 			"a dependency stopped resolving and did not recover: %s", failure.Message,
 		))
 
@@ -325,7 +332,10 @@ func (r *Reconciler) holdStarted(
 	}
 	conditions.Stage(pitr, conditions.Failed(pitr, failure))
 
-	return hold{after: r.opts.RetryInterval}
+	// A started restore looks again at the cadence of a running phase, not at
+	// the slower cadence of an admission hold. The grace is measured in this
+	// loop, so the loop has to run inside it.
+	return hold{after: r.opts.PollInterval}
 }
 
 // recovered clears the clock of the mid-run grace. The phase just resolved

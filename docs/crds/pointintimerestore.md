@@ -80,6 +80,8 @@ The restore holds in `Pending` with reason `DatabaseNotRestored` when a partitio
 
 The Camunda restore application refuses a non-empty data directory, so the operator deletes the broker data volumes of the cluster and creates them again. The new volume takes the size of the claim template of the broker StatefulSet, together with its storage class, access modes, and labels. The volumes belong to that StatefulSet, not to the restore. Deleting the restore never deletes a broker volume.
 
+The operator refuses a Job that carries the name of one of its Jobs but no owner reference of this restore. Such a Job belongs to an earlier restore of the same name, and its result says nothing about this one. The restore fails, and the message names the Job.
+
 The operator then runs the Camunda restore application once per broker, as a Job with `--to=<spec.timestamp>`. The Jobs copy their configuration from the live broker StatefulSet, so the restore application always runs with the configuration the brokers run with. A cluster whose broker StatefulSet was deleted cannot restore until its own controller applies it again.
 
 The restore application does the alignment itself. It reads the exporter position of each partition from the restored database with the same credentials the brokers use, and it restores the newest checkpoint at or before that position from the continuous primary-storage backups. The restored Zeebe state is therefore never behind the database.
@@ -115,6 +117,7 @@ The status also records what the restore pinned and what it did:
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.
 - `status.observedPositions` holds the `LAST_UPDATED` value that the check read for each partition.
 - `status.primaryJobNames` names the per-broker restore Jobs, in broker order.
+- `status.terminalReason` is the `Ready` reason of the terminal phase. The operator stages the condition again from it, so a write conflict cannot lose the reason.
 - `status.recreatedClaims` names the broker data volumes that the operator deleted and created again.
 - `status.completionTime` is when the restore reached `Completed` or `Failed`.
 - `status.observedGeneration` is the last generation the operator reconciled.

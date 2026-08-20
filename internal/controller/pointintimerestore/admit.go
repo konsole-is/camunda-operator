@@ -208,7 +208,7 @@ func (r *Reconciler) resolve(
 // retries.
 func (r *Reconciler) resolveFailed(pitr *v1.PointInTimeRestore, err error) (hold, error) {
 	if errors.Is(err, errClusterReplaced) {
-		r.fail(pitr, err.Error())
+		r.fail(pitr, v1.ReasonFailed, err.Error())
 
 		return settle, nil
 	}
