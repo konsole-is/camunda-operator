@@ -25,8 +25,8 @@ status: consumer-wave
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #110 | feat/restore-controllers--api-machinery | .claude/worktrees/restore-controllers--api | #120 → feat/restore-controllers | self-merged |
-| #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | → feat/restore-controllers | not-started |
-| #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | → feat/restore-controllers | not-started |
+| #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | → feat/restore-controllers | in-progress |
+| #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | → feat/restore-controllers | in-progress |
 | #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started |
 
 ## Contracts (from the plan)
