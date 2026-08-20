@@ -327,7 +327,10 @@ func TestLongRestoreNamesRenderAValidJob(t *testing.T) {
 		if length > validation.DNS1123LabelMaxLength-len(jobNameSuffix) {
 			assert.NotEqual(t, job.Name, siblingJob.Name, length)
 		}
-		assert.Equal(t, JobName(in.Restore), JobName(in.Restore), "the name is deterministic")
+		// The builder and the name function answer the same name. A controller
+		// finds the Job it created by asking JobName, and a builder that bounded
+		// the name its own way would hide the Job from it.
+		assert.Equal(t, JobName(in.Restore), job.Name, length)
 	}
 }
 
