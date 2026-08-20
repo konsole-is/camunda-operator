@@ -63,9 +63,32 @@ Optimize is strictly per-cluster, so platform defaults arrive through the refere
 `platformConfigRef`. The controller takes the image registry prefix and the license secret from
 that platform config. A separate reference on this CR would let the two disagree.
 
+### One Optimize per cluster
+
+One `CamundaCluster` carries one `CamundaOptimize`. The Optimize index prefix is fixed, so two
+instances write the same analytics indices of the same Elasticsearch. Their pods would also carry
+identical discovery labels, which makes each Service route to the pods of both, and they would share
+one field manager on the exporter patch, so deleting either would strip the settings the other still
+needs.
+
+Nothing in the schema can express the rule, because it spans resources. The controller resolves it
+instead: it lists the `CamundaOptimize` resources of the namespace that name the same cluster and
+picks the oldest one, with the name breaking a tie. That one holds the attachment and does the work.
+Every other one reports `Ready=False` with reason `ClusterAlreadyAttached`, applies no exporter
+patch, and renders no workload. A resource that does not hold the attachment also withdraws nothing
+when it is deleted.
+
+`spec.clusterRef` is immutable. A repoint would apply the exporter settings to the new cluster while
+the old cluster kept the settings this operator applied, and it would change the pod selectors of the
+Deployments, which Kubernetes does not allow. To attach Optimize to another cluster, delete the
+resource and create a new one.
+
 ### Validation
 
-- CEL rejects `spec.importer.replicas` other than 1. Optimize supports one active importer.
+- CEL rejects `spec.importer.replicas` other than 0 or 1. Optimize supports one active importer, and
+  0 is the shared suspend value of `WorkloadSpec`: it stops the import during a restore or an index
+  rewrite while the webapp keeps serving.
+- CEL rejects a change to `spec.clusterRef`.
 - `spec.version`, `spec.managementAuthRef`, and `spec.clusterRef.name` are required and non-empty.
 
 ## Exporter attach
@@ -84,7 +107,14 @@ improvement. `extraEnvFrom` stays atomic, because `EnvFromSource` has no merge k
 
 A finalizer on the `CamundaOptimize` CR removes the patch on deletion: the controller applies an
 empty entry set with the same field manager, so the exporter turns off when nothing consumes the
-indices.
+indices. Only the resource that holds the attachment withdraws, because every resource applies under
+the same field manager.
+
+A map list merges per field inside an entry, so two field managers that apply the same name do not
+collide: one can own `value` while the other owns `valueFrom`. The result is one entry with both,
+which a container rejects, and the rollout of the cluster stalls while the CR still looks healthy. A
+CEL rule on every `extraEnv` refuses to store that combination. The Optimize controller also reports
+`ExporterConflict` before it applies, so the user reads a condition instead of an admission error.
 
 ## Controller
 
@@ -103,7 +133,15 @@ The controller follows the extension pattern and the ocf conventions of the exis
 6. The importer runs with Zeebe data import on and reads all partitions of the cluster. Webapp
    replicas run with import off.
 7. Write status once per reconcile through `FlushStatus`: `Ready`, `WebappReady`, `ImporterReady`,
-   and `status.observedGeneration`. Reasons follow the draft docs page, plus `VersionMismatch`.
+   `MirroredSecretsReady`, and `status.observedGeneration`. Reasons follow the draft docs page, plus
+   `VersionMismatch`, `ClusterAlreadyAttached`, and `ExporterConflict`.
+
+A pod reads a Secret of its own namespace only, and `ManagementAuthConfig` is cluster-scoped, so its
+client secret reference names one namespace for every consumer. The controller therefore copies every
+referenced Secret that lives elsewhere into the `CamundaOptimize` namespace, the way `CamundaCluster`
+already does, and reports the shared `MirroredSecretsReady` condition. The pod templates carry a
+config hash of the rendered environment and of the resource versions of the referenced Secrets, so a
+rotated credential rolls the pods.
 
 Watches: the referenced cluster, both contract CRs, the referenced secrets, and the owned
 workloads.

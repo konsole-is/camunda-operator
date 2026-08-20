@@ -19,7 +19,9 @@ limitations under the License.
 // references of the cluster, turns on the Elasticsearch exporter that writes
 // the records Optimize reads, and converges the webapp and importer
 // Deployments. It never reads the internals of the cluster controller, and the
-// cluster never knows that an Optimize attached to it.
+// cluster never knows that an Optimize is attached to it.
+//
+// One cluster carries one Optimize instance, see attachmentHolder.
 package camundaoptimize
 
 import (

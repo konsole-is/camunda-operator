@@ -140,6 +140,27 @@ func listByIndex[L any, PL interface {
 	return list
 }
 
+// enqueueSiblings maps an event on one CamundaOptimize to the others attached
+// to the same cluster. One cluster carries one Optimize instance, so the
+// others wait for the holder of the attachment to go. Nothing else tells them
+// that it went: their own watch reports events on themselves only.
+func (r *Reconciler) enqueueSiblings() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		optimize, ok := o.(*v1.CamundaOptimize)
+		if !ok {
+			return nil
+		}
+
+		set := requestSet{}
+		set.addList(ctx, r.Client, client.InNamespace(optimize.Namespace), client.MatchingFields{
+			clusterRefField: refindex.NamespacedKey(optimize.Namespace, optimize.Spec.ClusterRef.Name),
+		})
+		delete(set, client.ObjectKeyFromObject(optimize))
+
+		return set.requests()
+	})
+}
+
 // requestSet collects reconcile requests without duplicates.
 type requestSet map[types.NamespacedName]struct{}
 
@@ -185,7 +206,9 @@ func (s requestSet) requests() []reconcile.Request {
 // copies (metadata only). Every reference is watched: the cluster and the
 // Management Identity contract through the indexes, the storage contract
 // through the storage index of the cluster controller, and Secrets (metadata
-// only) by namespace. ServiceMonitors are not watched: the operator only
+// only) by namespace. It also watches its own kind a second time, so the
+// CamundaOptimizes that wait for an attached cluster hear that the holder of
+// the attachment went. ServiceMonitors are not watched: the operator only
 // checks whether the Kubernetes cluster serves the kind. It also sets
 // EventRecorder to the recorder of the manager and builds the uncached
 // component client when they are nil.
@@ -230,6 +253,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&v1.ManagementAuthConfig{},
 			refindex.Enqueue(cached, list, managementAuthRefField, refindex.ObjectName),
 		).
+		Watches(&v1.CamundaOptimize{}, r.enqueueSiblings()).
 		Watches(&v1.SecondaryStorageConfig{}, r.enqueueForStorage()).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named("camundaoptimize").

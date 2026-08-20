@@ -97,8 +97,19 @@ const (
 	databaseElasticsearch = "elasticsearch"
 	// readinessPath is the readiness endpoint on the HTTP port
 	// (HealthRestService.java: the REST API path plus /readyz). It answers 200
-	// only while Optimize is connected to its database.
+	// only while Optimize is connected to its database, so it also gates the
+	// startup probe: the first start builds the Optimize index schema.
 	readinessPath = "/api/readyz"
+	// livenessPath is the Spring Boot health endpoint on the management port.
+	// Optimize exposes it (management.endpoints.web.exposure.include in
+	// optimize/backend/src/main/resources/application.properties) and
+	// registers no HealthIndicator of its own, and its build pulls in no
+	// spring-boot-starter-data-elasticsearch, so nothing puts an
+	// Elasticsearch check into the aggregate. The liveness probe therefore
+	// answers while Elasticsearch is unreachable, and an Elasticsearch outage
+	// takes the pods out of the Service through readinessPath instead of
+	// restarting them in a loop.
+	livenessPath = "/actuator/health"
 	// metricsPath is the Prometheus endpoint on the management port. Optimize
 	// exposes the prometheus actuator endpoint under /actuator
 	// (optimize/backend/src/main/resources/application.properties).

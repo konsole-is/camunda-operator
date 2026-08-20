@@ -81,6 +81,39 @@ func ExporterEnv(storage v1.ElasticsearchStorage) []corev1.EnvVar {
 	}
 }
 
+// ExporterConflicts returns the names that desired and existing both carry
+// while they supply the value the other way: one holds a literal and the other
+// a reference. Server-side apply merges the two field by field inside the
+// entry and reports no conflict, so the stored entry ends up with both a value
+// and a valueFrom. A container rejects such an entry, and the rollout of the
+// cluster stalls while the CamundaCluster still looks healthy. The schema of
+// the CamundaCluster refuses the combination too; this function reports it
+// before the apply, so the user reads a condition instead of an admission
+// error.
+//
+// A name that both sides supply the same way is not a conflict: the apply
+// takes ownership of that entry with forced ownership, which is the documented
+// behavior.
+func ExporterConflicts(desired, existing []corev1.EnvVar) []string {
+	byName := make(map[string]corev1.EnvVar, len(existing))
+	for _, e := range existing {
+		byName[e.Name] = e
+	}
+
+	var conflicts []string
+	for _, want := range desired {
+		found, ok := byName[want.Name]
+		if !ok {
+			continue
+		}
+		if (want.ValueFrom != nil) != (found.ValueFrom != nil) {
+			conflicts = append(conflicts, want.Name)
+		}
+	}
+
+	return conflicts
+}
+
 // ExporterPatch returns the apply object of the exporter patch: a
 // CamundaCluster that carries its own identity and nothing but
 // spec.zeebe.extraEnv. Applied with ExporterFieldManager, it adds the given

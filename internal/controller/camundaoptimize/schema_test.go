@@ -85,7 +85,18 @@ var _ = Describe("CamundaOptimize schema", func() {
 		optimize := minimalCamundaOptimize()
 		optimize.Spec.Importer = &v1.WorkloadSpec{Replicas: new(int32(2))}
 
-		Expect(k8sClient.Create(ctx, optimize)).To(MatchError(ContainSubstring("importer.replicas must be 1")))
+		Expect(k8sClient.Create(ctx, optimize)).To(MatchError(ContainSubstring("importer.replicas must be 0 or 1")))
+	})
+
+	// Zero is the suspend value of every WorkloadSpec. It satisfies "at most
+	// one active importer", and it is the only way to stop the import while a
+	// restore or an index rewrite runs.
+	It("accepts an importer with no replicas", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.Importer = &v1.WorkloadSpec{Replicas: new(int32(0))}
+
+		Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
 	})
 
 	It("rejects a missing version", func() {

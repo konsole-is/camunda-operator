@@ -19,6 +19,8 @@ package camundaoptimize
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -60,19 +62,27 @@ type resolver struct {
 	scheme   *runtime.Scheme
 	optimize *v1.CamundaOptimize
 	mirrors  mirroredSecrets
+	// inputs are the hash inputs of every object read: the generation of a
+	// custom resource and the resource version of a Secret. They roll the pods
+	// when a referenced object changes behind an unchanged reference.
+	inputs []string
 }
 
 // preCheck resolves every reference of optimize, in the documented order: the
-// referenced cluster, its secondary storage, the version gate, the Management
-// Identity contract and its client Secret, the platform config of the cluster,
-// and the Elasticsearch credentials. A Secret outside the CamundaOptimize
-// namespace is copied into the returned mirrors, and the input references the
-// copy, so the renderer only ever names Secrets of that namespace.
+// attachment to the cluster, the referenced cluster, its secondary storage,
+// the version gate, the Management Identity contract and its client Secret,
+// the platform config of the cluster, the Elasticsearch credentials, and the
+// exporter settings already on the cluster. A Secret outside the
+// CamundaOptimize namespace is copied into the returned mirrors, and the input
+// references the copy, so the renderer only ever names Secrets of that
+// namespace.
 //
-// A failed check returns a *conditions.PreCheckFailure: InvalidReference for a
+// A failed check returns a *conditions.PreCheckFailure: ClusterAlreadyAttached
+// when another CamundaOptimize holds the cluster, InvalidReference for a
 // dangling reference, StorageTypeMismatch for a cluster that is not on
 // Elasticsearch, VersionMismatch for a minor that differs from the cluster's,
-// and MissingSecret for a missing Secret or key. Any other error is a
+// MissingSecret for a missing Secret or key, and ExporterConflict when an
+// exporter setting collides with an entry the user owns. Any other error is a
 // transient API failure.
 func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize) (resolved, error) {
 	res := &resolver{
@@ -84,6 +94,21 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	out := resolved{
 		Input:      components.Input{Optimize: optimize, ClusterName: optimize.Spec.ClusterRef.Name},
 		ClusterKey: client.ObjectKey{Namespace: optimize.Namespace, Name: optimize.Spec.ClusterRef.Name},
+	}
+
+	holder, err := r.attachmentHolder(ctx, optimize)
+	if err != nil {
+		return out, err
+	}
+	if holder != nil && holder.Name != optimize.Name {
+		return out, &conditions.PreCheckFailure{
+			Reason: v1.ReasonClusterAlreadyAttached,
+			Message: fmt.Sprintf(
+				"CamundaOptimize %q is already attached to CamundaCluster %q; one cluster carries one Optimize instance",
+				holder.Name,
+				optimize.Spec.ClusterRef.Name,
+			),
+		}
 	}
 
 	var cluster v1.CamundaCluster
@@ -113,7 +138,14 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err := res.resolveElasticsearch(ctx, &cluster, binding, &out); err != nil {
 		return out, err
 	}
+
+	if err := checkExporterConflicts(&cluster, out.ExporterStorage); err != nil {
+		return out, err
+	}
+
 	out.Mirrors = res.mirrors
+	slices.Sort(res.inputs)
+	out.Input.HashInputs = res.inputs
 
 	return out, nil
 }
@@ -280,6 +312,31 @@ func (res *resolver) resolveElasticsearch(
 	return nil
 }
 
+// checkExporterConflicts refuses to apply the exporter settings when the
+// cluster already carries an entry of the same name that supplies its value
+// the other way. Server-side apply would merge the two into one entry with
+// both a value and a valueFrom, which a container rejects, so the rollout of
+// the cluster would stall while the CamundaCluster still looked healthy.
+func checkExporterConflicts(cluster *v1.CamundaCluster, storage v1.ElasticsearchStorage) error {
+	if cluster.Spec.Zeebe == nil {
+		return nil
+	}
+
+	conflicts := components.ExporterConflicts(components.ExporterEnv(storage), cluster.Spec.Zeebe.ExtraEnv)
+	if len(conflicts) == 0 {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonExporterConflict,
+		Message: fmt.Sprintf(
+			"spec.zeebe.extraEnv of CamundaCluster %q carries %s with the other kind of value; "+
+				"remove the entries or let the operator own them",
+			cluster.Name, strings.Join(conflicts, ", "),
+		),
+	}
+}
+
 // get reads the referenced object without the cache. A missing object maps to
 // InvalidReference, naming the kind and the reference (with its namespace for
 // a namespaced kind). Any other error is a transient API failure.
@@ -293,6 +350,11 @@ func (res *resolver) get(ctx context.Context, key client.ObjectKey, obj client.O
 		}
 		return fmt.Errorf("reading %s %q: %w", res.objectKind(obj), key, err)
 	}
+
+	res.inputs = append(
+		res.inputs,
+		res.objectKind(obj)+"/"+objectPath(key)+"="+strconv.FormatInt(obj.GetGeneration(), 10),
+	)
 
 	return nil
 }
@@ -345,6 +407,7 @@ func (res *resolver) secret(
 	if msg != "" {
 		return client.ObjectKey{}, &conditions.PreCheckFailure{Reason: v1.ReasonMissingSecret, Message: msg}
 	}
+	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+found.ResourceVersion)
 
 	if key.Namespace == res.optimize.Namespace {
 		return key, nil

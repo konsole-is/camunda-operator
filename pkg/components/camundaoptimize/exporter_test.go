@@ -100,7 +100,7 @@ func TestExporterEnvPrefixMatchesTheOptimizeImportPrefix(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, envValue(t, baseEnv(fixtureMinimal(t), true), envZeebeName), prefix)
+	assert.Equal(t, envValueNamed(t, baseEnv(fixtureMinimal(t), true), envZeebeName), prefix)
 }
 
 // The patch object carries the identity of the cluster and its exporter
@@ -134,6 +134,53 @@ func TestExporterPatchCarriesNothingElse(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{"extraEnv"}, sortedKeys(zeebe))
 	assert.Len(t, zeebe["extraEnv"], 5)
+}
+
+// A user entry that supplies its value the other way is the collision that
+// server-side apply merges into one entry with both a value and a valueFrom,
+// which a container rejects.
+func TestExporterConflictsFindsTheMergeHazard(t *testing.T) {
+	t.Parallel()
+
+	desired := ExporterEnv(exporterStorage())
+
+	assert.Empty(t, ExporterConflicts(desired, nil))
+	assert.Empty(t, ExporterConflicts(desired, []corev1.EnvVar{{Name: "USER_MARKER", Value: "keep-me"}}))
+
+	// The operator sets this one from a Secret; a literal on the same name
+	// collides.
+	assert.Equal(
+		t,
+		[]string{"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD"},
+		ExporterConflicts(desired, []corev1.EnvVar{{
+			Name:  "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD",
+			Value: "plain",
+		}}),
+	)
+
+	// The operator sets this one to a literal; a Secret reference on the same
+	// name collides the other way.
+	assert.Equal(
+		t,
+		[]string{"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL"},
+		ExporterConflicts(desired, []corev1.EnvVar{{
+			Name: "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL",
+			ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "es"}, Key: "url",
+			}},
+		}}),
+	)
+
+	// The same name supplied the same way is not a conflict: the apply takes
+	// ownership of that entry.
+	assert.Empty(t, ExporterConflicts(desired, []corev1.EnvVar{{
+		Name:  "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL",
+		Value: "http://elsewhere:9200",
+	}}))
+
+	// The entries the operator applied itself must never read as a conflict,
+	// or the second reconcile of an untouched cluster would report one.
+	assert.Empty(t, ExporterConflicts(desired, desired))
 }
 
 // The finalizer applies the same object with no entries, which removes the

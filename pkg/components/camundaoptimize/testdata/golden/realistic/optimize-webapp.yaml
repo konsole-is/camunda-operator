@@ -18,6 +18,7 @@ spec:
   template:
     metadata:
       annotations:
+        camunda.io/config-hash: 7643fbe9e6801f9a
         prometheus.io/scrape: "true"
       labels:
         camunda.io/cluster: my-cluster
@@ -84,8 +85,8 @@ spec:
         image: registry.example.com/mirror/camunda/optimize:8.9.4
         livenessProbe:
           httpGet:
-            path: /api/readyz
-            port: http
+            path: /actuator/health
+            port: management
           periodSeconds: 30
         name: optimize
         ports:
@@ -103,6 +104,12 @@ spec:
         resources:
           requests:
             memory: 1Gi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /api/readyz
+            port: http
+          periodSeconds: 5
         volumeMounts:
         - mountPath: /etc/camunda/es-ca
           name: es-ca

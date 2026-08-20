@@ -33,6 +33,11 @@ import (
 // Secrets carry an owner reference, so Kubernetes collects them; only the
 // patch on the cluster is outside that chain.
 //
+// Only the CamundaOptimize that holds the attachment withdraws. Every
+// CamundaOptimize applies the patch under the same field manager, so a
+// deletion of one that never applied it would empty-apply that manager and
+// strip the settings the holder still needs.
+//
 // The withdrawal goes first. Once the finalizer is gone the object is gone for
 // good, and no retry can turn the exporter off. The cluster would then keep
 // writing records that nothing reads.
@@ -41,19 +46,26 @@ func (r *Reconciler) finalize(ctx context.Context, optimize *v1.CamundaOptimize)
 		return nil
 	}
 
-	cluster := client.ObjectKey{Namespace: optimize.Namespace, Name: optimize.Spec.ClusterRef.Name}
-	if err := r.withdrawExporter(ctx, cluster); err != nil {
+	holds, err := r.holdsAttachment(ctx, optimize)
+	if err != nil {
 		return err
 	}
-	r.EventRecorder.Eventf(
-		optimize,
-		nil,
-		corev1.EventTypeNormal,
-		eventReasonExporterRemoved,
-		eventActionFinalize,
-		"Removed the Elasticsearch exporter settings from CamundaCluster %q",
-		cluster.Name,
-	)
+
+	cluster := client.ObjectKey{Namespace: optimize.Namespace, Name: optimize.Spec.ClusterRef.Name}
+	if holds {
+		if err := r.withdrawExporter(ctx, cluster); err != nil {
+			return err
+		}
+		r.EventRecorder.Eventf(
+			optimize,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonExporterRemoved,
+			eventActionFinalize,
+			"Removed the Elasticsearch exporter settings from CamundaCluster %q",
+			cluster.Name,
+		)
+	}
 
 	controllerutil.RemoveFinalizer(optimize, Finalizer)
 	if err := r.Update(ctx, optimize); err != nil && !apierrors.IsNotFound(err) {

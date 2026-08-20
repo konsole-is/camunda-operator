@@ -47,6 +47,11 @@ type Input struct {
 	// its client secret reference already pointed at its copy in the
 	// CamundaOptimize namespace.
 	Auth *v1.ManagementAuthConfig
+	// HashInputs are the resource versions of the referenced Secrets and the
+	// generations of the referenced custom resources, as
+	// "kind/namespace/name=version" strings. ConfigHash sorts them, so the
+	// order does not matter.
+	HashInputs []string
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.
 	ServiceMonitorSupported bool

@@ -34,12 +34,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/servicemonitor"
 )
 
-// The probe timings of both workloads. Optimize builds its index schema on
-// first start, so readiness takes a while; the liveness probe polls less often
-// than readiness, so a slow start never restarts the container.
+// The probe timings of both workloads. They match the timings of the
+// CamundaCluster workloads: the startup probe allows five minutes, which
+// covers the first build of the Optimize index schema, and readiness and
+// liveness poll only after it passes.
 const (
-	readinessPeriodSeconds int32 = 10
-	livenessPeriodSeconds  int32 = 30
+	startupFailureThreshold int32 = 60
+	startupPeriodSeconds    int32 = 5
+	readinessPeriodSeconds  int32 = 10
+	livenessPeriodSeconds   int32 = 30
 )
 
 // optimizeUID is the user and group of the camunda/optimize image
@@ -144,11 +147,14 @@ func deploymentFor(in Input, comp string) *appsv1.Deployment {
 }
 
 // podTemplate renders the base pod template of a component: the discovery
-// labels, the container, the Elasticsearch CA volume, and the security context
-// of the image user.
+// labels, the config hash annotation, the container, the Elasticsearch CA
+// volume, and the security context of the image user.
 func podTemplate(in Input, comp string) corev1.PodTemplateSpec {
 	return corev1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{Labels: discoveryLabels(in, comp)},
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:      discoveryLabels(in, comp),
+			Annotations: map[string]string{ConfigHashAnnotation: ConfigHash(in, comp)},
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{container(in, comp)},
 			Volumes:    caVolumes(in),
@@ -166,26 +172,27 @@ func podTemplate(in Input, comp string) corev1.PodTemplateSpec {
 // imports the exported records of the cluster.
 func container(in Input, comp string) corev1.Container {
 	return corev1.Container{
-		Name:         optimizeContainer,
-		Image:        Image(in),
-		Env:          baseEnv(in, comp == ComponentImporter),
-		Ports:        containerPorts(),
-		VolumeMounts: caMounts(in),
-		ReadinessProbe: probe(
-			portNameHTTP, readinessPath, readinessPeriodSeconds,
-		),
-		LivenessProbe: probe(portNameHTTP, readinessPath, livenessPeriodSeconds),
+		Name:           optimizeContainer,
+		Image:          Image(in),
+		Env:            baseEnv(in, comp == ComponentImporter),
+		Ports:          containerPorts(),
+		VolumeMounts:   caMounts(in),
+		StartupProbe:   probe(portNameHTTP, readinessPath, startupPeriodSeconds, startupFailureThreshold),
+		ReadinessProbe: probe(portNameHTTP, readinessPath, readinessPeriodSeconds, 0),
+		LivenessProbe:  probe(portNameManagement, livenessPath, livenessPeriodSeconds, 0),
 	}
 }
 
-// probe builds an HTTP probe on a named port.
-func probe(port, path string, periodSeconds int32) *corev1.Probe {
+// probe builds an HTTP probe on a named port. A zero failureThreshold keeps
+// the Kubernetes default.
+func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
 			Path: path,
 			Port: intstr.FromString(port),
 		}},
-		PeriodSeconds: periodSeconds,
+		PeriodSeconds:    periodSeconds,
+		FailureThreshold: failureThreshold,
 	}
 }
 

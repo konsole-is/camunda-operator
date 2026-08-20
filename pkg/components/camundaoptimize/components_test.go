@@ -98,7 +98,13 @@ func TestCamundaOptimizeGoldens(t *testing.T) {
 				)
 			}
 
-			mirrored, err := MirroredSecretComponent(in.Optimize, goldenMirrors(name))
+			// The mirrored Secrets component is gated off without a copy to
+			// make, so it applies nothing and there is nothing to pin.
+			mirrors := goldenMirrors(name)
+			if len(mirrors) == 0 {
+				return
+			}
+			mirrored, err := MirroredSecretComponent(in.Optimize, mirrors)
 			require.NoError(t, err)
 			golden.AssertComponentYAML(
 				t, filepath.Join(base, mirroredComponentName+".yaml"), mirrored,
@@ -216,8 +222,8 @@ func TestOnlyTheImporterImports(t *testing.T) {
 
 	webapp := previewedPodTemplate(t, previewObjects(t, comps[0]))
 	importer := previewedPodTemplate(t, previewObjects(t, comps[1]))
-	assert.Equal(t, "false", envValue(t, webapp.Spec.Containers[0].Env, envZeebeEnabled))
-	assert.Equal(t, "true", envValue(t, importer.Spec.Containers[0].Env, envZeebeEnabled))
+	assert.Equal(t, "false", envValueNamed(t, webapp.Spec.Containers[0].Env, envZeebeEnabled))
+	assert.Equal(t, "true", envValueNamed(t, importer.Spec.Containers[0].Env, envZeebeEnabled))
 }
 
 // A cluster without the ServiceMonitor CRD must not render one, even when
@@ -272,12 +278,82 @@ func TestProbesUseTheReadinessEndpoint(t *testing.T) {
 
 	for _, comp := range comps {
 		container := previewedPodTemplate(t, previewObjects(t, comp)).Spec.Containers[0]
+		require.NotNil(t, container.StartupProbe, comp.GetName())
 		require.NotNil(t, container.ReadinessProbe, comp.GetName())
 		require.NotNil(t, container.LivenessProbe, comp.GetName())
+
+		// The startup probe carries the whole first schema build, so the
+		// readiness and liveness probes never see it.
+		assert.Equal(t, "/api/readyz", container.StartupProbe.HTTPGet.Path, comp.GetName())
+		assert.Equal(t, "http", container.StartupProbe.HTTPGet.Port.StrVal, comp.GetName())
+		assert.Equal(t, int32(60), container.StartupProbe.FailureThreshold, comp.GetName())
+
 		assert.Equal(t, "/api/readyz", container.ReadinessProbe.HTTPGet.Path, comp.GetName())
 		assert.Equal(t, "http", container.ReadinessProbe.HTTPGet.Port.StrVal, comp.GetName())
-		assert.Equal(t, "/api/readyz", container.LivenessProbe.HTTPGet.Path, comp.GetName())
 	}
+}
+
+// The liveness probe must not depend on Elasticsearch. /api/readyz answers 503
+// while Optimize cannot reach its database, so using it for liveness restarts
+// every pod in a loop for the length of an Elasticsearch outage.
+func TestLivenessDoesNotDependOnElasticsearch(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(fixtureMinimal(t))
+	require.NoError(t, err)
+
+	for _, comp := range comps {
+		liveness := previewedPodTemplate(t, previewObjects(t, comp)).Spec.Containers[0].LivenessProbe
+		require.NotNil(t, liveness, comp.GetName())
+		assert.Equal(t, "/actuator/health", liveness.HTTPGet.Path, comp.GetName())
+		assert.Equal(t, "management", liveness.HTTPGet.Port.StrVal, comp.GetName())
+		assert.NotEqual(t, readinessPath, liveness.HTTPGet.Path, comp.GetName())
+	}
+}
+
+// The config hash rolls the pods when a rendered value or a referenced object
+// changes, and only then. Every credential arrives through a Secret
+// reference, so without the hash a rotated password never reaches the pods.
+func TestConfigHashRollsOnlyOnChange(t *testing.T) {
+	t.Parallel()
+
+	base := fixtureMinimal(t)
+	assert.Equal(t, ConfigHash(base, ComponentWebapp), ConfigHash(fixtureMinimal(t), ComponentWebapp))
+	assert.NotEqual(t, ConfigHash(base, ComponentWebapp), ConfigHash(base, ComponentImporter))
+
+	rotated := fixtureMinimal(t)
+	rotated.HashInputs = []string{"Secret/camunda/es-credentials=1234"}
+	assert.NotEqual(t, ConfigHash(base, ComponentWebapp), ConfigHash(rotated, ComponentWebapp))
+
+	// The order of the inputs is not part of the hash.
+	reordered := fixtureMinimal(t)
+	reordered.HashInputs = []string{"b=2", "a=1"}
+	sorted := fixtureMinimal(t)
+	sorted.HashInputs = []string{"a=1", "b=2"}
+	assert.Equal(t, ConfigHash(reordered, ComponentWebapp), ConfigHash(sorted, ComponentWebapp))
+
+	// No Secret data ever enters the hash, only the reference.
+	partitions := fixtureMinimal(t)
+	partitions.Partitions = 9
+	assert.NotEqual(t, ConfigHash(base, ComponentWebapp), ConfigHash(partitions, ComponentWebapp))
+}
+
+// Every pod template carries the hash, and the two components carry different
+// ones, so a change to one does not roll the other.
+func TestConfigHashAnnotationOnEveryPodTemplate(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureMinimal(t)
+	comps, err := Build(in)
+	require.NoError(t, err)
+
+	hashes := map[string]string{}
+	for _, comp := range comps {
+		template := previewedPodTemplate(t, previewObjects(t, comp))
+		hashes[comp.GetName()] = template.Annotations[ConfigHashAnnotation]
+		assert.Equal(t, ConfigHash(in, comp.GetName()), hashes[comp.GetName()], comp.GetName())
+	}
+	assert.NotEqual(t, hashes[ComponentWebapp], hashes[ComponentImporter])
 }
 
 // The mirrored Secrets component reads Disabled without a copy to make, and

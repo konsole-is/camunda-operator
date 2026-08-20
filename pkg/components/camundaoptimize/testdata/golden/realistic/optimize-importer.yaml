@@ -17,6 +17,8 @@ spec:
     type: RollingUpdate
   template:
     metadata:
+      annotations:
+        camunda.io/config-hash: 45c7bcccf7083e81
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: optimize-importer
@@ -76,8 +78,8 @@ spec:
         image: registry.example.com/mirror/camunda/optimize:8.9.4
         livenessProbe:
           httpGet:
-            path: /api/readyz
-            port: http
+            path: /actuator/health
+            port: management
           periodSeconds: 30
         name: optimize
         ports:
@@ -95,6 +97,12 @@ spec:
         resources:
           requests:
             memory: 2Gi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /api/readyz
+            port: http
+          periodSeconds: 5
         volumeMounts:
         - mountPath: /etc/camunda/es-ca
           name: es-ca

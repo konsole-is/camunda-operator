@@ -59,7 +59,12 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Empty(t, template.Spec.Tolerations, comp.GetName())
 		assert.Empty(t, template.Spec.Containers[0].EnvFrom, comp.GetName())
 		assert.Equal(t, discoveryLabels(in, comp.GetName()), template.Labels, comp.GetName())
-		assert.Empty(t, template.Annotations, comp.GetName())
+		assert.Equal(
+			t,
+			map[string]string{ConfigHashAnnotation: ConfigHash(in, comp.GetName())},
+			template.Annotations,
+			comp.GetName(),
+		)
 	}
 }
 
@@ -102,6 +107,7 @@ func TestMutationsApplyTheOverrides(t *testing.T) {
 	assert.Equal(t, "optimize-webapp", webapp.Labels["camunda.io/component"])
 	assert.Equal(t, "platform", webapp.Labels["team"])
 	assert.Equal(t, "true", webapp.Annotations["prometheus.io/scrape"])
+	assert.NotEmpty(t, webapp.Annotations[ConfigHashAnnotation])
 	assert.Equal(
 		t,
 		resource.MustParse("1Gi"),
@@ -134,7 +140,7 @@ func TestExtraEnvOverridesARenderedVariable(t *testing.T) {
 	require.NoError(t, err)
 
 	template := previewedPodTemplate(t, previewObjects(t, comps[0]))
-	assert.Equal(t, "9", envValue(t, template.Spec.Containers[0].Env, envZeebePartitionCount))
+	assert.Equal(t, "9", envValueNamed(t, template.Spec.Containers[0].Env, envZeebePartitionCount))
 	assert.Len(t, filterEnv(template.Spec.Containers[0].Env, envZeebePartitionCount), 1)
 }
 

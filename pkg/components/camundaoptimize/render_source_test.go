@@ -99,8 +99,20 @@ func TestOptimizeEnvExistsInCamundaSource(t *testing.T) {
 		readSource(t, dir, "optimize/backend/src/main/java/io/camunda/optimize/rest/HealthRestService.java"),
 		`READYZ_PATH = "`+strings.TrimPrefix(readinessPath, "/api")+`"`,
 	)
-	assert.Contains(t, readSource(t, dir, applicationProperties), "management.endpoints.web.base-path=/actuator")
-	assert.Contains(t, readSource(t, dir, applicationProperties), "prometheus")
+	properties := readSource(t, dir, applicationProperties)
+	assert.Contains(t, properties, "management.endpoints.web.base-path=/actuator")
+	assert.Contains(t, properties, "prometheus")
+	// The liveness probe reads the Spring Boot health endpoint, so Optimize
+	// must expose it. Nothing puts an Elasticsearch check into the aggregate:
+	// Optimize registers no HealthIndicator, and it depends on the raw
+	// Elasticsearch client rather than on spring-boot-starter-data-elasticsearch,
+	// which is what would auto-configure one.
+	assert.Contains(t, properties, "health")
+	assert.NotContains(
+		t,
+		readSource(t, dir, "optimize/backend/pom.xml"),
+		"spring-boot-starter-data-elasticsearch",
+	)
 }
 
 // readSource returns the content of a file of the camunda/camunda checkout.

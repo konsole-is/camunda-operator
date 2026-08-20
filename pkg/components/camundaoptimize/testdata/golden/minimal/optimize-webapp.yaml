@@ -17,6 +17,8 @@ spec:
     type: RollingUpdate
   template:
     metadata:
+      annotations:
+        camunda.io/config-hash: ea801b1e0715c132
       labels:
         camunda.io/cluster: my-cluster
         camunda.io/component: optimize-webapp
@@ -67,8 +69,8 @@ spec:
         image: camunda/optimize:8.9.4
         livenessProbe:
           httpGet:
-            path: /api/readyz
-            port: http
+            path: /actuator/health
+            port: management
           periodSeconds: 30
         name: optimize
         ports:
@@ -84,6 +86,12 @@ spec:
             port: http
           periodSeconds: 10
         resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /api/readyz
+            port: http
+          periodSeconds: 5
       securityContext:
         fsGroup: 1001
         runAsGroup: 1001

@@ -26,8 +26,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// envValue returns the literal value of the named variable.
-func envValue(t *testing.T, env []corev1.EnvVar, name string) string {
+// envValueNamed returns the literal value of the named variable.
+func envValueNamed(t *testing.T, env []corev1.EnvVar, name string) string {
 	t.Helper()
 
 	for _, e := range env {
@@ -57,9 +57,9 @@ func TestBaseEnvImporterEnablesImport(t *testing.T) {
 
 	env := baseEnv(newInput(t, func(in *Input) { in.Partitions = 3 }), true)
 
-	assert.Equal(t, "true", envValue(t, env, envZeebeEnabled))
-	assert.Equal(t, "zeebe-record", envValue(t, env, envZeebeName))
-	assert.Equal(t, "3", envValue(t, env, envZeebePartitionCount))
+	assert.Equal(t, "true", envValueNamed(t, env, envZeebeEnabled))
+	assert.Equal(t, "zeebe-record", envValueNamed(t, env, envZeebeName))
+	assert.Equal(t, "3", envValueNamed(t, env, envZeebePartitionCount))
 }
 
 // The webapp serves the user interface and must not import, or two instances
@@ -69,9 +69,9 @@ func TestBaseEnvWebappDisablesImport(t *testing.T) {
 
 	env := baseEnv(fixtureMinimal(t), false)
 
-	assert.Equal(t, "false", envValue(t, env, envZeebeEnabled))
-	assert.Equal(t, "ccsm", envValue(t, env, "SPRING_PROFILES_ACTIVE"))
-	assert.Equal(t, "elasticsearch", envValue(t, env, envDatabase))
+	assert.Equal(t, "false", envValueNamed(t, env, envZeebeEnabled))
+	assert.Equal(t, "ccsm", envValueNamed(t, env, "SPRING_PROFILES_ACTIVE"))
+	assert.Equal(t, "elasticsearch", envValueNamed(t, env, envDatabase))
 }
 
 // Optimize takes the Elasticsearch host and port apart, so the endpoint is
@@ -95,9 +95,9 @@ func TestBaseEnvSplitsTheElasticsearchEndpoint(t *testing.T) {
 			t.Parallel()
 
 			env := baseEnv(newInput(t, func(in *Input) { in.Storage.Endpoint = tc.endpoint }), false)
-			assert.Equal(t, tc.host, envValue(t, env, envElasticsearchHost))
-			assert.Equal(t, tc.port, envValue(t, env, envElasticsearchPort))
-			assert.Equal(t, tc.ssl, envValue(t, env, envElasticsearchSSLEnabled))
+			assert.Equal(t, tc.host, envValueNamed(t, env, envElasticsearchHost))
+			assert.Equal(t, tc.port, envValueNamed(t, env, envElasticsearchPort))
+			assert.Equal(t, tc.ssl, envValueNamed(t, env, envElasticsearchSSLEnabled))
 		})
 	}
 }
@@ -109,8 +109,8 @@ func TestBaseEnvTrustsTheMountedCA(t *testing.T) {
 
 	in := fixtureRealistic(t)
 	env := baseEnv(in, false)
-	assert.Equal(t, "/etc/camunda/es-ca/ca.crt", envValue(t, env, envElasticsearchCAs))
-	assert.Equal(t, "false", envValue(t, env, envElasticsearchSelfSigned))
+	assert.Equal(t, "/etc/camunda/es-ca/ca.crt", envValueNamed(t, env, envElasticsearchCAs))
+	assert.Equal(t, "false", envValueNamed(t, env, envElasticsearchSelfSigned))
 	require.Len(t, caVolumes(in), 1)
 	assert.Equal(t, "es-ca", caVolumes(in)[0].Secret.SecretName)
 	require.Len(t, caMounts(in), 1)
@@ -129,12 +129,12 @@ func TestIssuerBackendURLDefaultsToIssuer(t *testing.T) {
 
 	env := baseEnv(fixtureMinimal(t), false)
 	assert.Equal(
-		t, "https://identity.example.com/realms/camunda", envValue(t, env, envIdentityIssuerBackendURL),
+		t, "https://identity.example.com/realms/camunda", envValueNamed(t, env, envIdentityIssuerBackendURL),
 	)
 
 	env = baseEnv(fixtureRealistic(t), false)
 	assert.Equal(
-		t, "http://identity.camunda.svc:8080/realms/camunda", envValue(t, env, envIdentityIssuerBackendURL),
+		t, "http://identity.camunda.svc:8080/realms/camunda", envValueNamed(t, env, envIdentityIssuerBackendURL),
 	)
 }
 

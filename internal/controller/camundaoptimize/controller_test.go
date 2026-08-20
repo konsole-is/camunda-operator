@@ -17,6 +17,8 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
@@ -26,10 +28,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 )
 
@@ -74,12 +78,15 @@ func createSecret(namespace, name string, data map[string]string) {
 }
 
 // createBinding creates an Elasticsearch binding with its credentials Secret.
-func createBinding(namespace string) *v1.SecondaryStorageConfig {
+// secretNamespace holds that Secret, which is the binding namespace in the
+// normal case and another namespace when the test exercises the copies.
+func createBinding(namespace, secretNamespace string) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
 	binding := fixtures.SecondaryStorageConfigElasticsearch(namespace)
+	binding.Spec.Elasticsearch.CredentialsSecretRef.Namespace = secretNamespace
 	Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, binding) })
-	createSecret(namespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+	createSecret(secretNamespace, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
 		"username": "camunda", "password": "es-password",
 	})
 
@@ -102,8 +109,8 @@ func createRDBMSBinding(namespace string) *v1.SecondaryStorageConfig {
 	return binding
 }
 
-// createAuth creates a Management Identity contract with its client Secret in
-// namespace.
+// createAuth creates a Management Identity contract whose client Secret lives
+// in namespace.
 func createAuth(namespace string, withSecret bool) *v1.ManagementAuthConfig {
 	GinkgoHelper()
 	name := "mac-" + utilrand.String(8)
@@ -166,6 +173,12 @@ func createCluster(namespace string, binding *v1.SecondaryStorageConfig) *v1.Cam
 // field manager, the way a user or a GitOps tool would.
 func applyUserEnv(cluster *v1.CamundaCluster) {
 	GinkgoHelper()
+	Expect(applyZeebeEnv(cluster, userManager, userEnv)).To(Succeed())
+}
+
+// applyZeebeEnv applies one spec.zeebe.extraEnv entry to cluster under the
+// given field manager.
+func applyZeebeEnv(cluster *v1.CamundaCluster, manager string, env corev1.EnvVar) error {
 	patch := &v1.CamundaCluster{
 		TypeMeta: metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaCluster"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -173,12 +186,12 @@ func applyUserEnv(cluster *v1.CamundaCluster) {
 			Namespace: cluster.Namespace,
 		},
 		Spec: v1.CamundaClusterSpec{
-			Zeebe: &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{userEnv}}},
+			Zeebe: &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{env}}},
 		},
 	}
 
 	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
-	Expect(k8sClient.Patch(ctx, patch, client.Apply, client.FieldOwner(userManager))).To(Succeed())
+	return k8sClient.Patch(ctx, patch, client.Apply, client.FieldOwner(manager))
 }
 
 // createOptimize creates a CamundaOptimize attached to cluster and auth, and
@@ -190,8 +203,23 @@ func createOptimize(
 	version string,
 ) *v1.CamundaOptimize {
 	GinkgoHelper()
+
+	return createNamedOptimize("co-"+utilrand.String(8), namespace, cluster, auth, version)
+}
+
+// createNamedOptimize is createOptimize with an explicit name. A
+// creationTimestamp carries whole seconds, so two CamundaOptimizes that a
+// test creates in one go are equally old and the name decides which of them
+// holds the attachment.
+func createNamedOptimize(
+	name, namespace string,
+	cluster *v1.CamundaCluster,
+	auth *v1.ManagementAuthConfig,
+	version string,
+) *v1.CamundaOptimize {
+	GinkgoHelper()
 	optimize := &v1.CamundaOptimize{
-		ObjectMeta: metav1.ObjectMeta{Name: "co-" + utilrand.String(8), Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: v1.CamundaOptimizeSpec{
 			Version:           version,
 			ManagementAuthRef: auth.Name,
@@ -222,7 +250,7 @@ func deleteOptimize(optimize *v1.CamundaOptimize) error {
 func newScenario(version string) scenario {
 	GinkgoHelper()
 	ns := newNamespace()
-	binding := createBinding(ns)
+	binding := createBinding(ns, ns)
 	cluster := createCluster(ns, binding)
 	auth := createAuth(ns, true)
 
@@ -233,6 +261,21 @@ func newScenario(version string) scenario {
 		auth:      auth,
 		optimize:  createOptimize(ns, cluster, auth, version),
 	}
+}
+
+// newAttachedPair builds a scenario whose CamundaOptimize is named so that it
+// holds the attachment, plus a second one that must wait for it.
+func newAttachedPair(version string) (scenario, *v1.CamundaOptimize) {
+	GinkgoHelper()
+	ns := newNamespace()
+	binding := createBinding(ns, ns)
+	cluster := createCluster(ns, binding)
+	auth := createAuth(ns, true)
+
+	holder := createNamedOptimize("co-a-holder", ns, cluster, auth, version)
+	waiting := createNamedOptimize("co-b-waiting", ns, cluster, auth, version)
+
+	return scenario{namespace: ns, cluster: cluster, binding: binding, auth: auth, optimize: holder}, waiting
 }
 
 // expectReady polls until the Ready condition of optimize has the given status
@@ -246,6 +289,30 @@ func expectReady(optimize *v1.CamundaOptimize, status metav1.ConditionStatus, re
 		g.Expect(ready).NotTo(BeNil())
 		g.Expect(ready.Status).To(Equal(status))
 		g.Expect(ready.Reason).To(reason)
+	}, timeout, interval).Should(Succeed())
+}
+
+// fetchSecret polls until the Secret exists and returns it.
+func fetchSecret(key client.ObjectKey) *corev1.Secret {
+	GinkgoHelper()
+	var secret corev1.Secret
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, key, &secret)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	return &secret
+}
+
+// expectCondition polls until the condition of the given type on optimize has
+// a reason that matches.
+func expectCondition(optimize *v1.CamundaOptimize, conditionType string, reason gomegatypes.GomegaMatcher) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaOptimize
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), &latest)).To(Succeed())
+		cond := meta.FindStatusCondition(latest.Status.Conditions, conditionType)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Reason).To(reason)
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -349,6 +416,133 @@ var _ = Describe("CamundaOptimize controller", func() {
 		})
 	})
 
+	Context("with more than one CamundaOptimize on one cluster", func() {
+		It("lets one hold the cluster and parks the other", func() {
+			s, second := newAttachedPair("8.9.4")
+			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
+
+			By("parking the second CamundaOptimize with no workloads of its own")
+			expectReady(second, metav1.ConditionFalse, Equal(v1.ReasonClusterAlreadyAttached))
+			Consistently(func() error {
+				var deployment appsv1.Deployment
+				return k8sClient.Get(
+					ctx, client.ObjectKey{
+						Namespace: s.namespace,
+						Name:      components.WorkloadName(second, components.ComponentWebapp),
+					}, &deployment,
+				)
+			}, 2*time.Second, interval).Should(WithTransform(apierrors.IsNotFound, BeTrue()))
+
+			By("keeping the exporter entries of the holder when the parked one goes")
+			Expect(deleteOptimize(second)).To(Succeed())
+			Consistently(func(g Gomega) {
+				var latest v1.CamundaCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.cluster), &latest)).To(Succeed())
+				g.Expect(latest.Spec.Zeebe.ExtraEnv).To(ContainElement(
+					HaveField("Name", "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"),
+				))
+			}, 2*time.Second, interval).Should(Succeed())
+		})
+
+		It("hands the cluster to the waiting one when the holder goes", func() {
+			s, second := newAttachedPair("8.9.4")
+			expectReady(second, metav1.ConditionFalse, Equal(v1.ReasonClusterAlreadyAttached))
+
+			Expect(deleteOptimize(s.optimize)).To(Succeed())
+
+			fetchDeployment(client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(second, components.ComponentWebapp),
+			})
+			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
+		})
+	})
+
+	Context("with Secrets in another namespace", func() {
+		It("copies them into its own namespace and points the pods at the copies", func() {
+			source := newNamespace()
+			ns := newNamespace()
+			binding := createBinding(ns, source)
+			cluster := createCluster(ns, binding)
+			auth := createAuth(source, true)
+			optimize := createOptimize(ns, cluster, auth, "8.9.4")
+
+			By("applying one copy per referenced Secret")
+			esCopy := fetchSecret(client.ObjectKey{
+				Namespace: ns,
+				Name:      components.MirroredSecretName(optimize, components.MirrorPurposeESCredentials),
+			})
+			Expect(esCopy.Data).To(HaveKeyWithValue("password", []byte("es-password")))
+			authCopy := fetchSecret(client.ObjectKey{
+				Namespace: ns,
+				Name:      components.MirroredSecretName(optimize, components.MirrorPurposeAuthClient),
+			})
+			Expect(authCopy.Data).To(HaveKeyWithValue("client-secret", []byte("s3cret")))
+
+			By("naming the copies on the pods, never the Secret of the other namespace")
+			webapp := fetchDeployment(client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(optimize, components.ComponentWebapp),
+			})
+			sources := map[string]string{}
+			for _, env := range webapp.Spec.Template.Spec.Containers[0].Env {
+				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+					sources[env.Name] = env.ValueFrom.SecretKeyRef.Name
+				}
+			}
+			Expect(sources).To(HaveKeyWithValue(
+				"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD", esCopy.Name,
+			))
+			Expect(sources).To(HaveKeyWithValue("CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET", authCopy.Name))
+
+			By("taking part in Ready while a copy exists")
+			expectCondition(optimize, v1.ConditionMirroredSecretsReady, Equal("Healthy"))
+
+			By("pointing the exporter at the copy that the cluster controller makes")
+			expectClusterEnv(
+				cluster,
+				ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD"),
+			)
+			var latest v1.CamundaCluster
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			for _, env := range latest.Spec.Zeebe.ExtraEnv {
+				if env.Name == "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD" {
+					Expect(env.ValueFrom.SecretKeyRef.Name).To(Equal(
+						clustercomponents.MirroredSecretName(cluster, clustercomponents.MirrorPurposeESCredentials),
+					))
+				}
+			}
+		})
+
+		It("rolls the pods when the data behind a reference changes", func() {
+			s := newScenario("8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+			}
+			before := fetchDeployment(webappKey).Spec.Template.Annotations[components.ConfigHashAnnotation]
+			Expect(before).NotTo(BeEmpty())
+
+			Eventually(func(g Gomega) {
+				var secret corev1.Secret
+				g.Expect(k8sClient.Get(
+					ctx, client.ObjectKey{
+						Namespace: s.namespace,
+						Name:      s.binding.Spec.Elasticsearch.CredentialsSecretRef.Name,
+					}, &secret,
+				)).To(Succeed())
+				secret.StringData = map[string]string{"username": "camunda", "password": "rotated"}
+				g.Expect(k8sClient.Update(ctx, &secret)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				var deployment appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, webappKey, &deployment)).To(Succeed())
+				g.Expect(deployment.Spec.Template.Annotations[components.ConfigHashAnnotation]).NotTo(Equal(before))
+			}, timeout, interval).Should(Succeed())
+		})
+	})
+
 	Context("with a broken reference", func() {
 		It("reports InvalidReference for a cluster that does not exist", func() {
 			ns := newNamespace()
@@ -378,10 +572,42 @@ var _ = Describe("CamundaOptimize controller", func() {
 
 		It("reports MissingSecret when the client Secret is absent", func() {
 			ns := newNamespace()
-			cluster := createCluster(ns, createBinding(ns))
+			cluster := createCluster(ns, createBinding(ns, ns))
 			optimize := createOptimize(ns, cluster, createAuth(ns, false), "8.9.4")
 
 			expectReady(optimize, metav1.ConditionFalse, Equal(v1.ReasonMissingSecret))
+		})
+
+		It("reports ExporterConflict when a user entry supplies the other kind of value", func() {
+			ns := newNamespace()
+			cluster := createCluster(ns, createBinding(ns, ns))
+
+			// The operator sets this one from a Secret, so a literal on the
+			// same name would merge into an entry with both.
+			Expect(applyZeebeEnv(cluster, "e2e-user", corev1.EnvVar{
+				Name:  "CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD",
+				Value: "plain",
+			})).To(Succeed())
+
+			optimize := createOptimize(ns, cluster, createAuth(ns, true), "8.9.4")
+
+			expectReady(optimize, metav1.ConditionFalse, Equal(v1.ReasonExporterConflict))
+		})
+	})
+
+	Context("on update", func() {
+		It("rejects a clusterRef that points at another cluster", func() {
+			s := newScenario("8.9.4")
+
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				var latest v1.CamundaOptimize
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest); err != nil {
+					return err
+				}
+				latest.Spec.ClusterRef.Name = "another-cluster"
+				return k8sClient.Update(ctx, &latest)
+			})
+			Expect(err).To(MatchError(ContainSubstring("clusterRef is immutable")))
 		})
 	})
 })

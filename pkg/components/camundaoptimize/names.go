@@ -44,6 +44,10 @@ const (
 	// it fixed: the two must agree, and nothing else in the operator reads
 	// these indices.
 	ZeebeRecordPrefix = "zeebe-record"
+	// ConfigHashAnnotation is the pod template annotation that carries the
+	// hash of the rendered configuration. A change to it rolls the pods. It is
+	// the same annotation key that the CamundaCluster workloads carry.
+	ConfigHashAnnotation = "camunda.io/config-hash"
 	// CAMountPath is where the Elasticsearch CA certificate is mounted in the
 	// Optimize containers.
 	CAMountPath = "/etc/camunda/es-ca"
