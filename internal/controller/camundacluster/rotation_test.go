@@ -203,14 +203,14 @@ var _ = Describe("Admin password rotation", func() {
 		}, "5s", interval).Should(Succeed())
 	})
 
-	It("keeps the active password and reports Rejected until the cluster accepts the call", func() {
+	It("keeps the active password and reports InvalidCredentials until the cluster accepts it", func() {
 		cluster := createDefaultCluster()
 		serveCluster(cluster)
 		password := fetchAdminPassword(cluster)
 		seedClusterUser("changed-in-the-admin-app")
 
 		requestRotation(cluster, "round-1")
-		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonRejected))
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonInvalidCredentials))
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
@@ -340,7 +340,9 @@ var _ = Describe("Admin password rotation", func() {
 
 		failure := reconciler.updateAdminPassword(ctx, cluster, in, "active-password", "pending-password")
 		Expect(failure).NotTo(BeNil())
-		Expect(failure.reason).To(Equal(v1.ReasonRejected))
+		Expect(failure.reason).To(
+			Equal(v1.ReasonRejected), "the credentials were good; the cluster refused the call itself",
+		)
 		Expect(failure.message).To(ContainSubstring("the profile is not acceptable"))
 		Expect(users.UpdateCalls()).To(Equal(1), "a refusal that is not a stale password must not retry")
 	})
@@ -448,18 +450,18 @@ var _ = Describe("Admin password rotation", func() {
 			g.Expect(latest.Status.AdminPassword).To(BeNil())
 		}, "5s", interval).Should(Succeed())
 
-		By("reporting Rejected, because the operator holds no password that the cluster accepts")
-		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonRejected))
+		By("reporting InvalidCredentials, because it holds no password that the cluster accepts")
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonInvalidCredentials))
 	})
 
-	It("retries a rejected rotation on the timer, not in a hot loop", func() {
+	It("retries a refused rotation on the timer, not in a hot loop", func() {
 		cluster := createDefaultCluster()
 		serveCluster(cluster)
 		fetchAdminPassword(cluster)
 		seedClusterUser("changed-in-the-admin-app")
 
 		requestRotation(cluster, "round-1")
-		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonRejected))
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonInvalidCredentials))
 
 		By("counting the calls of a nine second window")
 		before := users.UpdateCalls()

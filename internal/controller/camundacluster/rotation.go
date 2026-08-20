@@ -351,13 +351,21 @@ func (r *CamundaClusterReconciler) updateAdminPassword(
 }
 
 // rotationFailureFor maps the error of a user API call onto the
-// AdminSecretReady reason that reports it. A nil error is no failure.
+// AdminSecretReady reason that reports it. A nil error is no failure. The
+// reasons separate the three answers a caller acts on differently: no answer
+// at all, an answer that refused the credentials, and an answer that refused
+// the call.
 func rotationFailureFor(err error) *rotationFailure {
 	switch {
 	case err == nil:
 		return nil
 	case errors.Is(err, camundaadmin.ErrUnreachable):
 		return &rotationFailure{reason: v1.ReasonConnectionFailed, message: err.Error()}
+	// Before ErrRejected, which it travels with: a refused credential is the
+	// one refusal that a new password recovers, and it reads differently to
+	// a caller than a call the cluster refused on its content.
+	case errors.Is(err, camundaadmin.ErrUnauthenticated):
+		return &rotationFailure{reason: v1.ReasonInvalidCredentials, message: err.Error()}
 	case errors.Is(err, camundaadmin.ErrRejected):
 		return &rotationFailure{reason: v1.ReasonRejected, message: err.Error()}
 	default:
