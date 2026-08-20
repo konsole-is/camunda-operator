@@ -53,6 +53,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	// +kubebuilder:scaffold:imports
@@ -329,6 +330,12 @@ func main() {
 		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), logicalbackupelasticsearch.Options{},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupElasticsearch")
+		os.Exit(1)
+	}
+	if err := pointintimerestore.New(
+		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), pointintimerestore.Options{},
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "PointInTimeRestore")
 		os.Exit(1)
 	}
 	if err := (&controller.BackupScheduleReconciler{
