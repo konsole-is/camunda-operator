@@ -102,10 +102,12 @@ func (r *Reconciler) restoreDatabase(ctx context.Context, restore *v1.LogicalRes
 
 // claimDatabaseJob creates the Job as an identity claim: create-only, never a
 // forced apply. The create still carries the field manager of this kind, so
-// every resource of a restore names the same owner of its fields. A forced apply after a NotFound is not atomic. It overwrites
-// the UID label and the owner reference of a same-named Job that lands in
-// between, before the adoption check can look at them. A Create is atomic, so
-// the API server decides who owns the name. This is the same reasoning the
+// every resource of a restore names the same owner of its fields.
+//
+// A forced apply after a NotFound is not atomic. It overwrites the UID label
+// and the owner reference of a same-named Job that lands in between, before
+// the adoption check can look at them. A Create is atomic, so the API server
+// decides who owns the name. This is the same reasoning the
 // dump Job of a relational backup follows.
 func (r *Reconciler) claimDatabaseJob(
 	ctx context.Context,

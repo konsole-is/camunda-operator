@@ -70,7 +70,9 @@ The restore fails with reason `IncompatibleTarget` when the target cannot hold t
 
 ## Secondary storage
 
-On the Elasticsearch path the operator deletes the Camunda indices of the target and restores every snapshot of the backup through the Elasticsearch snapshot API. Camunda exposes no restore endpoint, so the operator talks to Elasticsearch itself with the credentials of the target's `SecondaryStorageConfig`. It registers its own snapshot repository on the Elasticsearch of the target, derived from the bucket the backup pinned and the repository prefix the backup recorded. This is what makes a restore into a second cluster work. The index and component templates survive, because the target cluster created them when it first started.
+On the Elasticsearch path the operator deletes the Camunda indices of the target and restores every snapshot of the backup through the Elasticsearch snapshot API. Camunda exposes no restore endpoint, so the operator talks to Elasticsearch itself with the credentials of the target's `SecondaryStorageConfig`. It registers a snapshot repository on the Elasticsearch of the target, derived from the bucket the backup pinned and the repository prefix the backup recorded. This is what makes a restore into a second cluster work.
+
+The operator registers that repository only when the Elasticsearch of the target holds none under the name. A repository that is already there is used as it is, because the operator does not own every registration it finds: the Elasticsearch of a target can be a cluster that somebody else administers. A restore into a cluster that already holds a repository of the same name over another prefix therefore fails on a snapshot that is missing, and the message names the repository. Register the repository yourself before the restore, or give the source cluster another name, when you meet that case. The index and component templates survive, because the target cluster created them when it first started.
 
 The operator deletes the Optimize indices only when the backup holds Optimize snapshots. A backup without them cannot put them back.
 

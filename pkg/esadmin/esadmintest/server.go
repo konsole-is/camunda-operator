@@ -291,10 +291,11 @@ func (s *Server) IndexDeletePaths() []string {
 	return slices.Clone(s.indexDeletePaths)
 }
 
-// IndexDeleteCalls reports how many delete requests the fake accepted. The
-// whole restore set belongs in one request, so a test that resolves three
-// indices and reads three calls has found a client that deletes one index at
-// a time.
+// IndexDeleteCalls reports how many delete requests the fake accepted. A set
+// goes out in as few requests as the request line of Elasticsearch allows, so
+// a small set is one call and a large one is several. A test that resolves
+// three indices and reads three calls has found a client that deletes one
+// index at a time. IndexDeletePaths bounds the requests themselves.
 func (s *Server) IndexDeleteCalls() int {
 	s.Lock()
 	defer s.Unlock()
