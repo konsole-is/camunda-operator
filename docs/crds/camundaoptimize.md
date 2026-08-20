@@ -29,6 +29,10 @@ The operator reconciles a `CamundaOptimize` in the following steps:
 
 No index prefix fields exist on the CRD: the operator controls both the exporter side (on the cluster) and the importer side (on Optimize), so the `zeebe-record` prefix is fixed by design.
 
+The attachment moves between resources in two cases: the holder is deleted, or a resource created in the same second with a name that sorts earlier takes it. On both paths the previous holder deletes its workloads before it lets go, and the new holder reports `WaitingForHandover` and renders nothing until the importer Deployment of the previous one is gone. The pods of that Deployment can take their termination grace period to stop after it goes, so a short overlap remains.
+
+The importer pod is replaced, not rolled. A rolling update starts the new pod before it stops the old one, and two importers that write the same indices at the same time make the analytics data inconsistent. A new image or a changed setting therefore stops the import for the length of the restart. The webapp rolls as usual and keeps serving what is already imported.
+
 Optimize connects directly to Elasticsearch and never talks to the orchestration cluster's API.
 
 ```mermaid
@@ -91,7 +95,7 @@ spec:
     scheduling: {}
   # object. Optional. The Optimize importer deployment; reads zeebe-record indices from Elasticsearch.
   importer:
-    # integer. Optional, default: 1. Number of importer replicas; must be 1 — Optimize supports only one active importer.
+    # integer. Optional, default: 1. Number of importer replicas. Must be 0 or 1. Set 0 to stop the import.
     replicas: 1
     # object. Optional. Kubernetes resource requests and limits for the importer pod.
     resources:
@@ -125,27 +129,33 @@ spec:
 
 ## Status
 
-`Ready` is `True` only when `WebappReady` and `ImporterReady` are both `True`. Its reason and message come from the workload that governs: the one whose status has the highest priority among those that are not `True`, or the highest of both when both are `True`.
+`Ready` is `True` only when every condition that takes part in it is `True`. Its reason and message come from the governing condition: the one whose status has the highest priority among those that are not `True`, or the highest of all of them when all are `True`. `WebappReady` and `ImporterReady` always take part. `MirroredSecretsReady` takes part when a referenced secret lives in another namespace, and reads `Disabled` when none does.
 
-| Type | Reason | Meaning |
-| --- | --- | --- |
-| `WebappReady` | `Healthy` | Every webapp replica is ready. |
-| `ImporterReady` | `Healthy` | The importer replica is ready. |
-| `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. |
-| `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. |
-| `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. |
-| `Ready` | `Healthy` | Both Deployments are healthy. |
-| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing Deployment. The message names it. |
-| `Ready` | `InvalidReference` | The `clusterRef`, `managementAuthRef`, or the cluster's `storageRef` chain could not be resolved. |
-| `Ready` | `StorageTypeMismatch` | The cluster's `storageRef` resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. |
-| `Ready` | `MissingSecret` | A referenced secret (Management Identity client secret or Elasticsearch credentials) does not exist or lacks the required key. |
-| `Ready` | `VersionMismatch` | The major and minor of `spec.version` differ from those of the referenced cluster's effective version; Camunda supports Optimize only on a matching minor. |
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced secret from another namespace is applied, or no such secret exists. | Nothing. |
+| `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
+| `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
+| `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |
+| `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the named Deployment. |
+| `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
+| `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
+| `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. One cluster carries one Optimize instance. | Delete one of the two. The message names the one that holds the cluster. |
+| `Ready` | `WaitingForHandover` | This `CamundaOptimize` now holds the cluster, and the importer of the one that held it before still runs. It renders nothing until that importer goes. | Wait. The message names the Deployment. The state clears on its own. |
+| `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`, because the operator never reconciles such a cluster. | Read the message. Create the missing resource, or correct the field it names on the `CamundaOptimize` or on the cluster. |
+| `Ready` | `StorageTypeMismatch` | The `storageRef` of the cluster resolves to a `SecondaryStorageConfig` of type `rdbms`. Optimize reads Elasticsearch only. | Attach Optimize to a cluster on Elasticsearch secondary storage. |
+| `Ready` | `VersionMismatch` | The major and the minor of `spec.version` differ from those of the effective version of the cluster. Camunda supports Optimize only on a matching minor. | Set `spec.version` to a release on the minor of the cluster. |
+| `Ready` | `MissingSecret` | A referenced secret does not exist or lacks a key. | Create the secret with the named key. |
+| `Ready` | `ExporterConflict` | `spec.zeebe.extraEnv` of the cluster already carries an exporter name, and that entry supplies its value the other way. | Remove the named entries from the cluster. The operator then owns them. |
 
 The operator records the last reconciled generation in `status.observedGeneration`.
 
 ## Validation
 
-- `spec.importer.replicas` must be `1`: Optimize supports at most one active importer per instance, and running more causes data inconsistencies.
+- `spec.importer.replicas` must be `0` or `1`: Optimize supports at most one active importer per instance, and running more causes data inconsistencies. Set `0` to stop the import while a restore or an index rewrite runs. The webapp keeps serving what is already imported.
+- `spec.clusterRef` is immutable. A repoint applies the exporter settings to the new cluster while the old cluster keeps the settings the operator applied. It also changes the pod selectors of the Deployments, which Kubernetes does not allow. To attach Optimize to another cluster, delete this resource and create a new one.
+- One cluster carries one `CamundaOptimize`. The Optimize index prefix is fixed, so two instances write the same analytics indices of the same Elasticsearch. The API server accepts the second resource, and the operator reports `ClusterAlreadyAttached` on it.
 - `spec.version` must be a full semantic version such as `8.9.0`. Optimize has its own patch line, so a two-segment version or an inherited cluster version is rejected.
 - `spec.managementAuthRef` and `spec.clusterRef.name` must be non-empty.
 - Cross-resource: the referenced cluster's `storageRef` must resolve to a `SecondaryStorageConfig` of type `elasticsearch`; a cluster on RDBMS secondary storage is rejected at reconcile time and surfaced as `Ready=False` with reason `StorageTypeMismatch`, because Optimize does not support RDBMS backends.

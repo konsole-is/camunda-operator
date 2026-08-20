@@ -42,9 +42,15 @@ import (
 // The index fields of CamundaClusters, one per reference kind. Cluster-scoped
 // referents are keyed by name, namespaced ones with refindex.NamespacedKey.
 const (
-	presetRefField         = "camundacluster.spec.presetRef"
-	platformConfigRefField = "camundacluster.spec.platformConfigRef"
-	storageRefField        = "camundacluster.spec.storageRef"
+	// PresetRefField is exported: an extension that renders from the effective
+	// spec of a cluster finds the clusters bound to a preset through it.
+	PresetRefField = "camundacluster.spec.presetRef"
+	// PlatformConfigRefField is exported: an extension that reads the platform
+	// defaults of a cluster finds the clusters bound to one through it.
+	PlatformConfigRefField = "camundacluster.spec.platformConfigRef"
+	// StorageRefField is exported: an extension that watches
+	// SecondaryStorageConfigs finds the clusters bound to one through it.
+	StorageRefField        = "camundacluster.spec.storageRef"
 	objectStorageRefsField = "camundacluster.spec.objectStorageRefs"
 	// secretRefsField lists the Secrets that the cluster references on its
 	// own: spec.auth.clientSecretRef.
@@ -57,13 +63,13 @@ const (
 
 // indexers are the index functions of the fields above.
 var indexers = map[string]client.IndexerFunc{
-	presetRefField: func(o client.Object) []string {
+	PresetRefField: func(o client.Object) []string {
 		return nonEmpty(o.(*v1.CamundaCluster).Spec.PresetRef)
 	},
-	platformConfigRefField: func(o client.Object) []string {
+	PlatformConfigRefField: func(o client.Object) []string {
 		return nonEmpty(o.(*v1.CamundaCluster).Spec.PlatformConfigRef)
 	},
-	storageRefField: func(o client.Object) []string {
+	StorageRefField: func(o client.Object) []string {
 		cluster := o.(*v1.CamundaCluster)
 		if cluster.Spec.StorageRef == "" {
 			return nil
@@ -122,18 +128,18 @@ func (r *CamundaClusterReconciler) enqueueForSecret() handler.EventHandler {
 		for _, cfg := range listByIndex[v1.CamundaPlatformConfigList](
 			ctx, r.Client, camundaplatformconfig.SecretRefsField, key,
 		).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{platformConfigRefField: cfg.Name})
+			set.addList(ctx, r.Client, client.MatchingFields{PlatformConfigRefField: cfg.Name})
 		}
 
 		for _, preset := range listByIndex[v1.CamundaClusterPresetList](ctx, r.Client, presetSecretRefsField, key).Items {
-			set.addList(ctx, r.Client, client.MatchingFields{presetRefField: preset.Name})
+			set.addList(ctx, r.Client, client.MatchingFields{PresetRefField: preset.Name})
 		}
 
 		for _, binding := range listByIndex[v1.SecondaryStorageConfigList](
 			ctx, r.Client, secondarystorageconfig.SecretRefsField, key,
 		).Items {
 			set.addList(ctx, r.Client, client.MatchingFields{
-				storageRefField: refindex.NamespacedKey(binding.Namespace, binding.Name),
+				StorageRefField: refindex.NamespacedKey(binding.Namespace, binding.Name),
 			})
 		}
 
@@ -284,15 +290,15 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.PersistentVolumeClaim{}, enqueueForBrokerClaim()).
 		Watches(
 			&v1.CamundaPlatformConfig{},
-			refindex.Enqueue(cached, clusters, platformConfigRefField, refindex.ObjectName),
+			refindex.Enqueue(cached, clusters, PlatformConfigRefField, refindex.ObjectName),
 		).
 		Watches(
 			&v1.CamundaClusterPreset{},
-			refindex.Enqueue(cached, clusters, presetRefField, refindex.ObjectName),
+			refindex.Enqueue(cached, clusters, PresetRefField, refindex.ObjectName),
 		).
 		Watches(
 			&v1.SecondaryStorageConfig{},
-			refindex.Enqueue(cached, clusters, storageRefField, refindex.ObjectNamespacedName),
+			refindex.Enqueue(cached, clusters, StorageRefField, refindex.ObjectNamespacedName),
 		).
 		Watches(
 			&v1.ObjectStorageConfig{},

@@ -28,6 +28,13 @@ package v1
 const (
 	// ConditionReady is the aggregate condition that every CRD reports.
 	ConditionReady = "Ready"
+	// ConditionMirroredSecretsReady reports whether every referenced Secret
+	// that lives outside the namespace of the workloads is copied into it. A
+	// pod reads a Secret of its own namespace only, so a CRD that renders
+	// workloads copies what it references from elsewhere. The condition takes
+	// part in Ready only when such a Secret is referenced and reads Disabled
+	// when none is.
+	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 
 	// ReasonHealthy means that all checks passed. It is also the ocf status
 	// of a healthy component, so a derived Ready reports the same reason.
@@ -42,8 +49,6 @@ const (
 	// rejects the configured credentials.
 	ReasonConnectionFailed = "ConnectionFailed"
 	// ReasonStorageTypeMismatch means that the secondary storage type of the
-	// referenced cluster does not fit this resource. A backup kind reports it
-	// when the kind does not match the storage type. A CamundaOptimize
-	// reports it when the storage is not Elasticsearch.
+	// referenced cluster does not fit this resource.
 	ReasonStorageTypeMismatch = "StorageTypeMismatch"
 )

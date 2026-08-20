@@ -48,11 +48,6 @@ const (
 	// of a basic-auth cluster is applied. It takes part in Ready under basic
 	// authentication and reads Disabled under OIDC.
 	ConditionAdminSecretReady = "AdminSecretReady"
-	// ConditionMirroredSecretsReady reports whether every referenced Secret
-	// that lives outside the cluster namespace is copied into it. It takes
-	// part in Ready only when such a Secret is referenced and reads Disabled
-	// when none is.
-	ConditionMirroredSecretsReady = "MirroredSecretsReady"
 )
 
 // ComponentMode says where a process of the unified binary runs.
@@ -88,10 +83,16 @@ type WorkloadSpec struct {
 	//
 	// The list merges by name under server-side apply, so each field manager
 	// owns only the entries that it applies. An extension controller can add
-	// its own entry next to yours. One list cannot hold two entries with the
-	// same name.
+	// its own entry next to yours. One applied manifest cannot hold two
+	// entries with the same name.
+	//
+	// Two field managers that apply the same name do not conflict: the merge
+	// is per field inside the entry, so one manager can own value while the
+	// other owns valueFrom. A container rejects an entry that carries both,
+	// so the rule below refuses to store that combination.
 	// +listType=map
 	// +listMapKey=name
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !(has(e.value) && has(e.valueFrom)))",message="an extraEnv entry sets value or valueFrom, never both"
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -330,10 +331,16 @@ type CamundaClusterSpec struct {
 	//
 	// The list merges by name under server-side apply, so each field manager
 	// owns only the entries that it applies. An extension controller can add
-	// its own entry next to yours. One list cannot hold two entries with the
-	// same name.
+	// its own entry next to yours. One applied manifest cannot hold two
+	// entries with the same name.
+	//
+	// Two field managers that apply the same name do not conflict: the merge
+	// is per field inside the entry, so one manager can own value while the
+	// other owns valueFrom. A container rejects an entry that carries both,
+	// so the rule below refuses to store that combination.
 	// +listType=map
 	// +listMapKey=name
+	// +kubebuilder:validation:XValidation:rule="self.all(e, !(has(e.value) && has(e.valueFrom)))",message="an extraEnv entry sets value or valueFrom, never both"
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of

@@ -40,6 +40,7 @@ None. The three PRs are strictly sequential (PR 2 needs PR 1's types; PR 3 needs
 | Ocf condition types | `WebappReady` (component `optimize-webapp`), `ImporterReady` (component `optimize-importer`); `Ready` aggregates |
 | Exporter patch field manager | `camunda-operator/camundaoptimize` — explicit `client.FieldOwner` + `client.ForceOwnership` on a minimal apply object. NOT an ocf component (ocf would use `CamundaOptimize/<component>` and own the whole cluster object) |
 | Fixed index prefix | `zeebe-record` — constant `ZeebeRecordPrefix` in `pkg/components/camundaoptimize/names.go`; no CRD field |
+| One Optimize per cluster | The controller elects the holder of the attachment (oldest, name breaks the tie); every other CR reports `ClusterAlreadyAttached` and does nothing. `spec.clusterRef` is immutable |
 | Image | `camunda/optimize` (`OptimizeImage` constant) + `:` + `spec.version`, prefixed by `Platform.ImageRegistry` like `camundacluster.Image` |
 | Ports | container `http` 8090, `management` 8092; Service exposes both by name; ServiceMonitor endpoint port `management`, path `/actuator/prometheus` |
 | Watch index fields | `"camundaoptimize.spec.clusterRef"`, `"camundaoptimize.spec.managementAuthRef"` (naming convention `<kind lowercase>.spec.<field>`) |

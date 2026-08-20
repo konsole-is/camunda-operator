@@ -106,6 +106,10 @@ type DumpPodSpec struct {
 	// In the spec.backup.dump of the cluster nothing is reserved, and the
 	// variables reach every container. The cluster owner sets connection
 	// policy, PGSSLMODE included, inside their own boundary.
+	//
+	// This list stays atomic, unlike the extraEnv of a workload. One field
+	// manager owns the whole list, because nothing else writes it: no
+	// extension attaches to a dump pod.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 	// ExtraEnvFrom are extra environment sources of the dump pod, at most

@@ -121,6 +121,10 @@ spec:
                       In the spec.backup.dump of the cluster nothing is reserved, and the
                       variables reach every container. The cluster owner sets connection
                       policy, PGSSLMODE included, inside their own boundary.
+
+                      This list stays atomic, unlike the extraEnv of a workload. One field
+                      manager owns the whole list, because nothing else writes it: no
+                      extension attaches to a dump pod.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.

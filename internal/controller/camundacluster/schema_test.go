@@ -316,6 +316,19 @@ var _ = Describe("CamundaCluster schema", func() {
 			"Duplicate value",
 		),
 		Entry(
+			"rejects an extraEnv entry that sets both value and valueFrom",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.ExtraEnv = []corev1.EnvVar{{
+					Name:  "LOG_LEVEL",
+					Value: "info",
+					ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "logging"}, Key: "level",
+					}},
+				}}
+			},
+			"value or valueFrom",
+		),
+		Entry(
 			"rejects an unknown retention policy",
 			realisticCamundaCluster, func(o *v1.CamundaCluster) {
 				o.Spec.Zeebe.PersistentVolumeClaimRetentionPolicy = &v1.PersistentVolumeClaimRetentionPolicy{
@@ -341,6 +354,27 @@ var _ = Describe("CamundaCluster schema", func() {
 			corev1.EnvVar{Name: "FIRST", Value: "1"},
 			corev1.EnvVar{Name: "SECOND", Value: "2"},
 		))
+	})
+
+	// Two managers that apply the same name merge field by field inside the
+	// entry, so one can own value while the other owns valueFrom. A container
+	// rejects an entry that carries both, so the schema rule must catch the
+	// combination at the CamundaCluster rather than at the rendered pod.
+	It("rejects a second field manager that adds valueFrom to an entry that already has a value", func() {
+		obj := minimalCamundaCluster()
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		Expect(applyZeebeEnv(obj, "e2e-user", corev1.EnvVar{Name: "SHARED", Value: "plain"})).To(Succeed())
+
+		err := applyZeebeEnv(obj, "camunda-operator/extension", corev1.EnvVar{
+			Name: "SHARED",
+			ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"}, Key: "password",
+			}},
+		})
+		Expect(err).To(MatchError(ContainSubstring("value or valueFrom")))
 	})
 
 	It("rejects a partitions decrease on update and accepts an increase", func() {
