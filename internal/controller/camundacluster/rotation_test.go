@@ -136,6 +136,52 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(users.UpdateCalls()).To(Equal(calls))
 	})
 
+	It("keeps the connectors hash on the published password when the Secret write fails", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		enabled := true
+		cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: &enabled, Version: "8.9.7"}
+		createCluster(cluster)
+
+		password := fetchAdminPassword(cluster)
+		seedClusterUser(password)
+
+		By("stalling the rotation on the pending password")
+		userAPIEndpoint.Store("http://127.0.0.1:1")
+		requestRotation(cluster, "round-1")
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonConnectionFailed))
+
+		var secret corev1.Secret
+		Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+		pending := string(secret.Data[components.AdminPendingPasswordKey])
+		Expect(pending).NotTo(BeEmpty())
+
+		connectorsKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-connectors"}
+		beforeHash := fetchDeployment(connectorsKey).Spec.Template.Annotations[components.ConfigHashAnnotation]
+		Expect(beforeHash).NotTo(BeEmpty())
+
+		By("making every further write of the admin Secret fail")
+		secret.Immutable = new(true)
+		Expect(k8sClient.Update(ctx, &secret)).To(Succeed())
+
+		By("letting the user API accept the call")
+		userAPIEndpoint.Store(users.URL())
+		Eventually(func(g Gomega) {
+			g.Expect(users.Password(components.AdminUsername)).To(Equal(pending))
+		}, timeout, interval).Should(Succeed())
+
+		By("keeping the connectors hash on the password that the Secret still publishes")
+		Consistently(func(g Gomega) {
+			var latest corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &latest)).To(Succeed())
+			g.Expect(string(latest.Data[components.AdminPasswordKey])).To(Equal(password))
+
+			var connectors appsv1.Deployment
+			g.Expect(k8sClient.Get(ctx, connectorsKey, &connectors)).To(Succeed())
+			g.Expect(connectors.Spec.Template.Annotations[components.ConfigHashAnnotation]).To(Equal(beforeHash))
+		}, "5s", interval).Should(Succeed())
+	})
+
 	It("keeps the active password and reports Rejected until the cluster accepts the call", func() {
 		cluster := createDefaultCluster()
 		password := fetchAdminPassword(cluster)

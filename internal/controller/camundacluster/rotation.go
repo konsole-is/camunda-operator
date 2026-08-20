@@ -45,6 +45,12 @@ const eventReasonPasswordRotated = "AdminPasswordRotated"
 type adminCredential struct {
 	// password is the active password, published under the password key.
 	password credentials.Password
+	// published is the active password that the admin Secret already holds,
+	// before this reconcile applies anything. The connectors config hash
+	// takes this value and never password: connectors resolve the Secret
+	// through a secretKeyRef when a pod starts, so a hash that ran ahead of
+	// a Secret write that then failed would never roll them again.
+	published string
 	// pending is the requested password of an in-flight rotation, published
 	// under the pending key. Empty when no rotation is in flight.
 	pending string
@@ -141,15 +147,20 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			return adminCredential{}, err
 		}
 
+		// published stays empty: the Secret holds no password yet, so the
+		// connectors of a new cluster hash on "" for one reconcile. They are
+		// being created in that reconcile anyway.
 		return adminCredential{password: credentials.Password{Value: value}, rotation: requested}, nil
 	}
 
 	if pending == "" && (requested == "" || requested == recorded) {
-		return adminCredential{password: current, rotation: recorded}, nil
+		return adminCredential{password: current, published: current.Value, rotation: recorded}, nil
 	}
 
 	if in.Effective.Suspend {
-		return adminCredential{password: current, pending: pending, rotation: recorded}, nil
+		return adminCredential{
+			password: current, published: current.Value, pending: pending, rotation: recorded,
+		}, nil
 	}
 
 	if pending == "" {
@@ -158,11 +169,13 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			return adminCredential{}, err
 		}
 
-		return adminCredential{password: current, pending: value, rotation: recorded}, nil
+		return adminCredential{password: current, published: current.Value, pending: value, rotation: recorded}, nil
 	}
 
 	if failure := r.updateAdminPassword(ctx, cluster, in, current.Value, pending); failure != nil {
-		return adminCredential{password: current, pending: pending, rotation: recorded, failure: failure}, nil
+		return adminCredential{
+			password: current, published: current.Value, pending: pending, rotation: recorded, failure: failure,
+		}, nil
 	}
 
 	r.EventRecorder.Eventf(
@@ -175,8 +188,9 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 	)
 
 	return adminCredential{
-		password: credentials.Password{Value: pending, SourceUID: current.SourceUID},
-		rotation: requested,
+		password:  credentials.Password{Value: pending, SourceUID: current.SourceUID},
+		published: current.Value,
+		rotation:  requested,
 	}, nil
 }
 

@@ -82,9 +82,11 @@ type Input struct {
 	// Secrets and custom resources, as "kind/namespace/name=version" strings.
 	// ConfigHash sorts them, so the order does not matter.
 	HashInputs []string
-	// AdminPasswordHash is PasswordHash of the active admin password of a
-	// basic-auth cluster, or "" under OIDC. Only the hash of connectors
-	// consumes it; see ConfigHash.
+	// AdminPasswordHash is PasswordHash of the admin password that the admin
+	// Secret of a basic-auth cluster publishes, or "" under OIDC. It is the
+	// password as the Secret already holds it, never one that this reconcile
+	// is still writing. Only the hash of connectors consumes it; see
+	// ConfigHash.
 	AdminPasswordHash string
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.

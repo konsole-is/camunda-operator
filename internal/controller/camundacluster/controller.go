@@ -202,7 +202,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	in.AdminPasswordHash = components.PasswordHash(cred.password.Value)
+	in.AdminPasswordHash = components.PasswordHash(cred.published)
 
 	built, err := r.buildComponents(&cluster, in, mirrors, cred)
 	if err != nil {
