@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -242,7 +241,7 @@ func setPhase(backup *v1.LogicalBackupRDBMS, phase v1.LogicalBackupPhase, comple
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), &current)).To(Succeed())
 		current.Status.Phase = phase
 		if phase == v1.LogicalBackupCompleted || phase == v1.LogicalBackupFailed {
-			current.Status.CompletionTime = ptr.To(metav1.NewTime(completed))
+			current.Status.CompletionTime = new(metav1.NewTime(completed))
 		}
 		g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
@@ -410,7 +409,7 @@ var _ = Describe("BackupSchedule controller", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		schedule, _ := createSchedule(w, func(s *v1.BackupSchedule) {
 			s.Spec.Retained = &v1.RetainedBackups{
-				Completed: ptr.To(int32(2)), Failed: ptr.To(int32(1)),
+				Completed: new(int32(2)), Failed: new(int32(1)),
 			}
 		})
 
@@ -459,7 +458,7 @@ var _ = Describe("BackupSchedule controller", func() {
 	It("keeps pruning while spec.schedule does not parse", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		schedule, _ := createSchedule(w, func(s *v1.BackupSchedule) {
-			s.Spec.Retained = &v1.RetainedBackups{Completed: ptr.To(int32(1))}
+			s.Spec.Retained = &v1.RetainedBackups{Completed: new(int32(1))}
 		})
 
 		By("breaking the cron with a value the schema pattern admits")
@@ -553,7 +552,7 @@ var _ = Describe("BackupSchedule controller", func() {
 	It("warns when the retained dumps outlive the primary-storage retention window", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		schedule, trigger := createSchedule(w, func(s *v1.BackupSchedule) {
-			s.Spec.Retained = &v1.RetainedBackups{Completed: ptr.To(int32(200))}
+			s.Spec.Retained = &v1.RetainedBackups{Completed: new(int32(200))}
 		})
 
 		clock.Set(trigger.Add(30 * time.Second))

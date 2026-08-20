@@ -22,7 +22,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -36,7 +35,7 @@ func TestRetainedBounds(t *testing.T) {
 
 	t.Run("keeps an explicit zero for failed", func(t *testing.T) {
 		completed, failed := retainedBounds(v1.BackupScheduleSpec{
-			Retained: &v1.RetainedBackups{Failed: ptr.To(int32(0))},
+			Retained: &v1.RetainedBackups{Failed: new(int32(0))},
 		})
 		assert.Equal(t, int32(7), completed)
 		assert.Equal(t, int32(0), failed)

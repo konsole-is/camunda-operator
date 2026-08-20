@@ -22,7 +22,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -64,7 +63,7 @@ var _ = Describe("BackupSchedule schema", func() {
 
 	It("keeps an explicit retained.failed of zero and fills the other default", func() {
 		schedule := valid()
-		schedule.Spec.Retained = &v1.RetainedBackups{Failed: ptr.To(int32(0))}
+		schedule.Spec.Retained = &v1.RetainedBackups{Failed: new(int32(0))}
 		Expect(create(schedule)).To(Succeed())
 
 		var created v1.BackupSchedule
@@ -103,11 +102,11 @@ var _ = Describe("BackupSchedule schema", func() {
 
 	It("rejects retained bounds below their minimums", func() {
 		schedule := valid()
-		schedule.Spec.Retained = &v1.RetainedBackups{Completed: ptr.To(int32(0))}
+		schedule.Spec.Retained = &v1.RetainedBackups{Completed: new(int32(0))}
 		Expect(create(schedule)).NotTo(Succeed())
 
 		schedule = valid()
-		schedule.Spec.Retained = &v1.RetainedBackups{Failed: ptr.To(int32(-1))}
+		schedule.Spec.Retained = &v1.RetainedBackups{Failed: new(int32(-1))}
 		Expect(create(schedule)).NotTo(Succeed())
 	})
 
