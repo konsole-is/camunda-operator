@@ -105,7 +105,7 @@ graph LR
 ```
 
 Solid arrows mean "creates". Dotted arrows mean "references".
-`ManagementAuthConfig` has no consumer in the operator yet. The [CRD reference](crds/index.md) lists every kind.
+`CamundaOptimize` consumes `ManagementAuthConfig`. The [CRD reference](crds/index.md) lists every kind.
 
 ## Status conventions
 
