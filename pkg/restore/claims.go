@@ -105,8 +105,8 @@ func (t *Target) ClaimSize(recorded *resource.Quantity) resource.Quantity {
 // the StatefulSet and the PVCAutoResize controller keep working.
 //
 // The claim carries no owner reference. The StatefulSet owns the broker
-// volumes, and an owner reference to a restore would delete a live broker
-// volume as soon as the restore resource is deleted.
+// volumes. An owner reference to a restore deletes a live broker volume as
+// soon as somebody deletes the restore resource.
 func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.PersistentVolumeClaim {
 	spec := *t.ClaimTemplate.Spec.DeepCopy()
 	spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: size}
@@ -129,14 +129,18 @@ func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.Persi
 // is gone. It reports Done only when every claim exists again as an empty
 // volume.
 //
-// A claim is therefore never deleted and created in one call. The caller
-// records Progress.Recreated in status and persists it before it calls again,
-// so the record of the deletion always lands before the new volume does. A
-// reconcile that re-enters after a crash then creates the volume it deleted
-// instead of deleting the volume it created.
+// A claim that still holds data is therefore never deleted and created in one
+// call. A claim that is already gone is recorded and created in the same
+// call, because there is nothing left to lose.
 //
-// The caller stops calling once Progress.Done: from that point the restore
-// Jobs write into these volumes, and a further call would erase their work.
+// The caller has two duties, and the safety of the restore rests on them:
+//
+//   - Persist Progress.Recreated before it applies any restore Job. Until
+//     that write lands, a reconcile that re-enters deletes the empty volume
+//     again and creates it again. That costs a pass and loses nothing. After
+//     a Job starts writing, the same pass erases restored data.
+//   - Stop calling once Progress.Done. Done means the volumes are empty and
+//     the Jobs can run. A later call deletes what the Jobs wrote.
 //
 // The reader must be uncached. A claim that was just deleted or applied is
 // what the next decision reads.

@@ -42,6 +42,12 @@ const ComponentRestore = "restore"
 // Target is everything a restore reads off the live broker StatefulSet of its
 // cluster. The restore never re-renders the broker configuration. It copies
 // it, so the restore application and the brokers cannot disagree.
+//
+// ReadTarget is the only constructor, and it either fills every field or
+// returns an error. The methods on Target read those fields directly, so a
+// Target that a caller built by hand panics in them. BuildJob and
+// RecreateClaims are the two entry points a controller reaches from a
+// reconcile, and both check the Target before they touch it.
 type Target struct {
 	// ClusterName is the CamundaCluster the StatefulSet belongs to. Every
 	// resource a restore renders carries it, so an extension finds the

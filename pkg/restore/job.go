@@ -47,8 +47,8 @@ const (
 	// unique after boundedName truncates it to a DNS label.
 	nameHashLength = 10
 	// noRetries is the backoff limit of every restore Job. The restore
-	// application refuses a non-empty data directory, so a second pod would
-	// find what the first one wrote and fail for the wrong reason. A failed
+	// application refuses a non-empty data directory, so a second pod finds
+	// what the first one wrote and fails for the wrong reason. A failed
 	// restore is retried with a new restore resource, which creates the volume
 	// again first.
 	noRetries = int32(0)
@@ -192,6 +192,13 @@ func boundedName(name string, limit int) string {
 //     the owner and the component name this restore.
 //
 // BuildJob sets no owner reference. See JobInput.Owner.
+//
+// The caller applies the Job once and then tracks it by name. A Job's
+// spec.template is immutable after creation, and BuildJob renders it from the
+// live broker StatefulSet, so a second apply after that StatefulSet changed
+// is a validation error from the API server, not an adoption of the running
+// Job. A controller therefore reads the Job by JobName first and applies only
+// when it finds none.
 func BuildJob(in JobInput) (*batchv1.Job, error) {
 	if err := in.Target.complete(); err != nil {
 		return nil, fmt.Errorf("building the restore Job of broker %d: %w", in.Ordinal, err)
@@ -221,8 +228,8 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	pod.RestartPolicy = corev1.RestartPolicyNever
 	pod.Containers = []corev1.Container{restoreContainer(in)}
 	// A broker init container prepares a broker, and the platform injects its
-	// own again when this pod is created. Carrying the broker's copy over
-	// would run it twice.
+	// own again when this pod is created. The broker's copy therefore runs
+	// twice if it stays.
 	pod.InitContainers = nil
 	pod.TopologySpreadConstraints = spreadOverRestorePods(pod.TopologySpreadConstraints, in.OwnerLabel)
 	pod.Volumes = append(
@@ -263,10 +270,10 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 // spread exactly as the brokers do.
 //
 // The selector has to change. A restore pod carries camunda.io/component:
-// restore, so a constraint that selects the broker component would count no
-// pod at all and let every restore pod land in one zone. With a
-// WaitForFirstConsumer storage class the recreated volumes would then bind in
-// that one zone, and the brokers could not spread over them afterwards.
+// restore, so a constraint that selects the broker component counts no pod at
+// all and lets every restore pod land in one zone. With a
+// WaitForFirstConsumer storage class the recreated volumes then bind in that
+// one zone, and the brokers cannot spread over them afterwards.
 func spreadOverRestorePods(
 	constraints []corev1.TopologySpreadConstraint,
 	owner labels.Owner,
@@ -278,9 +285,9 @@ func spreadOverRestorePods(
 	retargeted := make([]corev1.TopologySpreadConstraint, 0, len(constraints))
 	for _, constraint := range constraints {
 		constraint.LabelSelector = &metav1.LabelSelector{MatchLabels: JobSelector(owner)}
-		// MatchLabelKeys would add the value of a pod label to the selector
-		// above. A Job stamps a per-Job identity onto its pods, so a key that
-		// keeps the broker pods together would keep every restore pod apart.
+		// MatchLabelKeys adds the value of a pod label to the selector above.
+		// A Job stamps a per-Job identity onto its pods, so a key that keeps
+		// the broker pods together keeps every restore pod apart.
 		constraint.MatchLabelKeys = nil
 		retargeted = append(retargeted, constraint)
 	}

@@ -63,7 +63,7 @@ The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, 
 
 The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore fails with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
 
-Exactly one `Database` may reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database, so a shared server would roll back unrelated databases too. A shared server fails the restore with reason `SharedServer`.
+Exactly one `Database` can reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it fails the restore with reason `SharedServer`.
 
 ## The database-state check
 
