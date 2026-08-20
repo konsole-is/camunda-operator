@@ -68,11 +68,21 @@ func (r *Reconciler) restorePrimaryStorage(
 	// A chain that resolves is not progress. Only the work of the phase clears
 	// the clock of the grace: a volume that came back empty, or a Job whose
 	// pods run.
-	if len(pitr.Status.PrimaryJobNames) == 0 {
-		return r.recreateClaims(ctx, pitr, resolved.target)
+	// The restore acts on the brokers it pinned at its first look, not on the
+	// brokers the cluster runs now. status.brokers, status.recreatedClaims,
+	// and status.primaryJobNames are then one truth, whatever the cluster does
+	// while the restore runs. The live count still decides whether a Job can
+	// run at all, which ensureJob checks.
+	pinned := *resolved.target
+	if pitr.Status.Brokers > 0 {
+		pinned.Brokers = pitr.Status.Brokers
 	}
 
-	return r.runJobs(ctx, pitr, resolved.target)
+	if len(pitr.Status.PrimaryJobNames) == 0 {
+		return r.recreateClaims(ctx, pitr, &pinned)
+	}
+
+	return r.runJobs(ctx, pitr, &pinned, resolved.target.Brokers)
 }
 
 // recreateClaims deletes the data volume of every broker and creates it again
@@ -148,6 +158,7 @@ func (r *Reconciler) runJobs(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 	target *restore.Target,
+	liveBrokers int32,
 ) (hold, error) {
 	// The recorded names are the work of this restore. The live broker count
 	// can change while the restore runs. A Job derived from the new count
@@ -156,7 +167,7 @@ func (r *Reconciler) runJobs(
 	done := 0
 	for index, name := range pitr.Status.PrimaryJobNames {
 		ordinal := int32(index)
-		job, err := r.ensureJob(ctx, pitr, target, ordinal, name)
+		job, err := r.ensureJob(ctx, pitr, target, ordinal, name, liveBrokers)
 		if errors.Is(err, errUnrecoverable) {
 			r.fail(pitr, err.Error())
 
@@ -233,8 +244,20 @@ func (r *Reconciler) ensureJob(
 	target *restore.Target,
 	ordinal int32,
 	name string,
+	liveBrokers int32,
 ) (*batchv1.Job, error) {
 	owner := labels.PointInTimeRestore(pitr.Name)
+
+	// The recorded name and the derived name are one truth. A restore that
+	// polls for a Job whose name it never derives waits for ever, so a
+	// mismatch ends it here instead.
+	if derived := restore.JobName(owner, ordinal); derived != name {
+		return nil, fmt.Errorf(
+			"%w: the restore recorded the Job %q for broker %d, but the Job of that broker is named %q",
+			errUnrecoverable, name, ordinal, derived,
+		)
+	}
+
 	key := types.NamespacedName{Namespace: pitr.Namespace, Name: name}
 
 	var current batchv1.Job
@@ -258,6 +281,17 @@ func (r *Reconciler) ensureJob(
 		return &current, nil
 	case !apierrors.IsNotFound(err):
 		return nil, fmt.Errorf("reading the restore Job %s: %w", key, err)
+	}
+
+	// The cluster lost brokers while the restore ran. The restore cannot run
+	// the work it recorded, and the render error underneath names only the
+	// counts, so the real cause is reported here.
+	if ordinal >= liveBrokers {
+		return nil, fmt.Errorf(
+			"%w: the cluster was resized during the restore. It runs %d brokers now, and the restore "+
+				"recorded %d. Create a new restore for the cluster as it is",
+			errUnrecoverable, liveBrokers, len(pitr.Status.PrimaryJobNames),
+		)
 	}
 
 	job, err := restore.BuildJob(restore.JobInput{

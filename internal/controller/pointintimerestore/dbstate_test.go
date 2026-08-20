@@ -22,7 +22,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -137,66 +136,60 @@ func TestClockSlackIsOneMinute(t *testing.T) {
 	assert.Equal(t, time.Minute, clockSlack)
 }
 
-func TestBrokerClockComparable(t *testing.T) {
-	env := func(vars ...corev1.EnvVar) *corev1.Container {
-		return &corev1.Container{Name: "camunda", Env: vars}
-	}
-
+func TestZoneFailure(t *testing.T) {
 	tests := []struct {
-		name       string
-		broker     *corev1.Container
-		comparable bool
-		contains   string
+		name     string
+		variable string
+		value    string
+		utc      bool
+		contains string
 	}{
+		{name: "a variable that carries no zone", variable: "CAMUNDA_CLUSTER_SIZE", value: "3", utc: true},
+		{name: "TZ that names UTC", variable: "TZ", value: "UTC", utc: true},
+		{name: "TZ that names Etc/UTC", variable: "TZ", value: "Etc/UTC", utc: true},
+		{name: "TZ that names GMT", variable: "TZ", value: "GMT", utc: true},
+		{name: "TZ that names Etc/GMT+0", variable: "TZ", value: "Etc/GMT+0", utc: true},
+		{name: "TZ that names Greenwich", variable: "TZ", value: "Greenwich", utc: true},
+		{name: "TZ in lower case", variable: "TZ", value: "utc", utc: true},
+		{name: "TZ that is empty", variable: "TZ", value: "", utc: true},
+		{name: "TZ that names another zone", variable: "TZ", value: "America/New_York", contains: "TZ"},
 		{
-			name:       "a broker that sets no zone runs in UTC",
-			broker:     env(),
-			comparable: true,
+			name: "Java tool options that name another zone", variable: "JAVA_TOOL_OPTIONS",
+			value: "-Xmx2g -Duser.timezone=Europe/Berlin -Xms1g", contains: "user.timezone",
 		},
 		{
-			name:       "a broker that sets TZ to UTC",
-			broker:     env(corev1.EnvVar{Name: "TZ", Value: "UTC"}),
-			comparable: true,
+			name: "Java tool options that name UTC", variable: "JAVA_TOOL_OPTIONS",
+			value: "-Xmx2g -Duser.timezone=UTC", utc: true,
 		},
 		{
-			name:       "a broker that sets TZ to Etc/UTC",
-			broker:     env(corev1.EnvVar{Name: "TZ", Value: "Etc/UTC"}),
-			comparable: true,
+			name: "Java tool options that name no zone", variable: "JAVA_TOOL_OPTIONS",
+			value: "-XX:+ExitOnOutOfMemoryError", utc: true,
 		},
 		{
-			name:     "a broker that runs in another zone",
-			broker:   env(corev1.EnvVar{Name: "TZ", Value: "America/New_York"}),
-			contains: "TZ",
+			// The launcher of the distribution runs
+			// "$JAVACMD" $JAVA_OPTS ... $EXTRA_JVM_OPTS, so both reach the JVM.
+			name: "the options of the launcher", variable: "JAVA_OPTS",
+			value: "-Duser.timezone=Asia/Tokyo", contains: "user.timezone",
 		},
 		{
-			name: "a broker whose Java options set another zone",
-			broker: env(corev1.EnvVar{
-				Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx2g -Duser.timezone=Europe/Berlin -Xms1g",
-			}),
-			contains: "user.timezone",
+			name: "the extra options of the launcher", variable: "EXTRA_JVM_OPTS",
+			value: "-Duser.timezone=Asia/Tokyo", contains: "user.timezone",
 		},
 		{
-			name: "a broker whose Java options set UTC",
-			broker: env(corev1.EnvVar{
-				Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx2g -Duser.timezone=UTC",
-			}),
-			comparable: true,
+			name: "the options of the JDK", variable: "JDK_JAVA_OPTIONS",
+			value: "-Duser.timezone=Asia/Tokyo", contains: "user.timezone",
 		},
 		{
-			name: "a broker whose zone comes from a reference",
-			broker: env(corev1.EnvVar{
-				Name:      "TZ",
-				ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "x"}},
-			}),
-			contains: "TZ",
+			name: "the last zone of a list wins", variable: "JAVA_OPTS",
+			value: "-Duser.timezone=UTC -Duser.timezone=Asia/Tokyo", contains: "Asia/Tokyo",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			failure := brokerClockComparable(tt.broker)
+			failure := zoneFailure(tt.variable, tt.value)
 
-			if tt.comparable {
+			if tt.utc {
 				assert.Nil(t, failure, "the broker writes the exporter position in UTC")
 
 				return

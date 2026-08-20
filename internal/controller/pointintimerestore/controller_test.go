@@ -60,7 +60,10 @@ type world struct {
 	// brokerEnv is added to the broker container of the world, so a spec can
 	// shape the environment that the restore reads its facts from.
 	brokerEnv []corev1.EnvVar
-	claims    []*corev1.PersistentVolumeClaim
+	// brokerEnvFrom is added to the envFrom of the broker container, the way
+	// spec.zeebe.extraEnvFrom reaches it.
+	brokerEnvFrom []corev1.EnvFromSource
+	claims        []*corev1.PersistentVolumeClaim
 }
 
 // brokerCount is how many brokers every world runs. It is what
@@ -93,7 +96,14 @@ func newNamespace() string {
 // database-state check unless a spec says otherwise.
 func createWorld(mutate ...func(*world)) *world {
 	GinkgoHelper()
-	namespace := newNamespace()
+
+	return createWorldIn(newNamespace(), mutate...)
+}
+
+// createWorldIn is createWorld in a namespace that the spec already made, for
+// a spec that has to create a resource of the cluster before the cluster.
+func createWorldIn(namespace string, mutate ...func(*world)) *world {
+	GinkgoHelper()
 	suffix := strings.ToLower(utilrand.String(6))
 
 	platform := fixtures.CamundaPlatformConfigBasic()
@@ -202,6 +212,7 @@ func createBrokers(w *world) {
 							camundaconfig.Var(camundaconfig.KeyClusterSize, "2"),
 							camundaconfig.Var(camundaconfig.KeyClusterPartitionCount, "3"),
 						}, w.brokerEnv...),
+						EnvFrom: w.brokerEnvFrom,
 						VolumeMounts: []corev1.VolumeMount{{
 							Name: components.DataVolumeName, MountPath: "/usr/local/camunda/data",
 						}},
@@ -549,6 +560,89 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 	})
 
+	It("holds a cluster whose brokers take their zone from a ConfigMap", func() {
+		namespace := newNamespace()
+		zones := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "broker-env", Namespace: namespace},
+			Data:       map[string]string{"TZ": "Asia/Tokyo", "OTHER": "x"},
+		}
+		Expect(k8sClient.Create(ctx, zones)).To(Succeed())
+
+		w := createWorldIn(namespace, func(w *world) {
+			w.brokerEnvFrom = []corev1.EnvFromSource{{
+				ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: zones.Name},
+				},
+			}}
+		})
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("Asia/Tokyo"))
+		expectClaimsUntouched(w)
+	})
+
+	It("holds a cluster whose brokers take their zone from a prefixed Secret", func() {
+		namespace := newNamespace()
+		options := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "broker-options", Namespace: namespace},
+			Data:       map[string][]byte{"OPTS": []byte("-Duser.timezone=Europe/Berlin")},
+		}
+		Expect(k8sClient.Create(ctx, options)).To(Succeed())
+
+		w := createWorldIn(namespace, func(w *world) {
+			w.brokerEnvFrom = []corev1.EnvFromSource{{
+				Prefix: "JAVA_",
+				SecretRef: &corev1.SecretEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: options.Name},
+				},
+			}}
+		})
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("Europe/Berlin"))
+		expectClaimsUntouched(w)
+	})
+
+	It("holds a cluster whose broker environment the operator cannot read", func() {
+		w := createWorld(func(w *world) {
+			w.brokerEnvFrom = []corev1.EnvFromSource{{
+				ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "no-such-configmap"},
+				},
+			}}
+		})
+		pitr := createRestore(w)
+
+		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("no-such-configmap"))
+		expectClaimsUntouched(w)
+	})
+
+	It("admits a cluster whose broker environment carries no zone", func() {
+		namespace := newNamespace()
+		other := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "broker-env", Namespace: namespace},
+			Data:       map[string]string{"SOMETHING": "else"},
+		}
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
+
+		w := createWorldIn(namespace, func(w *world) {
+			w.brokerEnvFrom = []corev1.EnvFromSource{
+				{ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: other.Name},
+				}},
+				// A source that the cluster marks optional and that does not
+				// exist carries no variable at all, so it hides no zone.
+				{ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "absent"},
+					Optional:             new(true),
+				}},
+			}
+		})
+		pitr := createRestore(w)
+
+		expectAdmitted(pitr, w)
+	})
+
 	It("holds a server that a second Database references", func() {
 		w := createWorld()
 		second := &v1.Database{
@@ -762,6 +856,10 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			Expect(claim.Labels).To(HaveKeyWithValue("app", w.brokers.Name))
 			Expect(claim.OwnerReferences).To(
 				BeEmpty(), "the StatefulSet owns the broker volumes, never the restore",
+			)
+			Expect(claim.ManagedFields).To(
+				ContainElement(HaveField("Manager", string(restore.FieldManagerPointInTimeRestore))),
+				"the fields of a recreated volume carry the field manager of this kind",
 			)
 		}
 		Expect(readRestore(pitr).Status.RecreatedClaims).To(ConsistOf(claimName(w, 0), claimName(w, 1)))
@@ -992,6 +1090,60 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			}
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &third))).To(BeTrue())
 		}, time.Second, interval).Should(Succeed())
+	})
+
+	// The recorded name and the derived name are one truth. A restore that
+	// polls for a Job it can never create waits for ever, so the mismatch ends
+	// it instead.
+	It("fails when a recorded Job name is not the name of that Job", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		// The controller writes the status of the restore as well, so a single
+		// edit can be overwritten before a reconcile reads it. The edit is
+		// applied again on every look, until the restore reports the mismatch.
+		const wrong = "not-the-name-of-this-job"
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			if current.Status.Phase != v1.PointInTimeRestoreFailed {
+				current.Status.PrimaryJobNames[0] = wrong
+				_ = k8sClient.Status().Update(ctx, current)
+			}
+
+			current = readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(wrong))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A cluster that loses a broker while the restore waits cannot run the
+	// restore that was recorded for it. The message names that, not the render
+	// error underneath.
+	It("fails when the cluster is resized to fewer brokers during the restore", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(-2 * time.Minute)})
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonDatabaseNotRestored)
+
+		Eventually(func(g Gomega) {
+			var brokers appsv1.StatefulSet
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.brokers), &brokers)).To(Succeed())
+			brokers.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
+				camundaconfig.Var(camundaconfig.KeyClusterSize, "1"),
+				camundaconfig.Var(camundaconfig.KeyClusterPartitionCount, "3"),
+			}
+			g.Expect(k8sClient.Update(ctx, &brokers)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(time.Hour)})
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("resized"))
+			g.Expect(current.Status.Brokers).To(Equal(int32(brokerCount)))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("never recreates a broker volume once the Jobs exist", func() {

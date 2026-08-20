@@ -79,7 +79,13 @@ func (r *Reconciler) admit(ctx context.Context, pitr *v1.PointInTimeRestore) (ho
 	// The database-state check compares the wall clock of the broker with
 	// spec.timestamp, so a cluster whose brokers run in another zone never
 	// reaches that check.
-	if failure := brokerClockComparable(resolved.target.Broker); failure != nil {
+	failure, err = brokerClockComparable(
+		ctx, r.APIReader, resolved.cluster.Namespace, resolved.target.Broker,
+	)
+	if err != nil {
+		return settle, err
+	}
+	if failure != nil {
 		return r.waiting(pitr, failure), nil
 	}
 

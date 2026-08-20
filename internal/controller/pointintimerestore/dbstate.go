@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,7 +29,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -251,13 +255,29 @@ func decide(
 	return ahead
 }
 
-// javaOptionsVars are the environment variables that carry Java options to the
-// broker. Each of them can set the default time zone of the JVM.
-var javaOptionsVars = []string{"JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"}
+// zoneVars are the environment variables that set the time zone of the broker.
+// TZ sets the clock of the container. The others reach the JVM through the
+// launcher of the distribution, which runs
+// `exec "$JAVACMD" $JAVA_OPTS @EXTRA_JVM_ARGUMENTS@ $EXTRA_JVM_OPTS`
+// (Camunda 8.9, dist/src/main/scripts/unixBinTemplate), plus the two variables
+// that the JVM itself reads.
+var zoneVars = []string{
+	"TZ",
+	"JAVA_TOOL_OPTIONS",
+	"JDK_JAVA_OPTIONS",
+	"_JAVA_OPTIONS",
+	"JAVA_OPTS",
+	"EXTRA_JVM_OPTS",
+}
 
 // utcZones are the zone names that make the wall clock of the broker the same
-// clock as spec.timestamp.
-var utcZones = []string{"UTC", "UTC0", "Etc/UTC", "Etc/UCT", "UCT", "Universal", "Zulu"}
+// clock as spec.timestamp. The comparison ignores case, as the zone database
+// does.
+var utcZones = []string{
+	"UTC", "UTC0", "UCT", "ZULU", "UNIVERSAL", "GREENWICH", "GMT", "GMT0", "GMT+0", "GMT-0",
+	"ETC/UTC", "ETC/UCT", "ETC/ZULU", "ETC/UNIVERSAL", "ETC/GREENWICH",
+	"ETC/GMT", "ETC/GMT0", "ETC/GMT+0", "ETC/GMT-0",
+}
 
 // brokerClockComparable reports why the operator cannot compare the exporter
 // position of the database with spec.timestamp, or nil when it can.
@@ -269,41 +289,143 @@ var utcZones = []string{"UTC", "UTC0", "Etc/UTC", "Etc/UCT", "UCT", "Universal",
 // same clock only while the brokers run in UTC, which a container does by
 // default and which the operator never changes.
 //
-// A cluster can change it through spec.zeebe.extraEnv. A broker west of UTC
-// then writes a position that reads earlier than it is, a database that is
-// ahead of the requested point passes this check, and the cluster loses its
-// volumes. So a broker that names another zone, or a zone that the operator
-// cannot read, holds the restore instead.
-func brokerClockComparable(broker *corev1.Container) *conditions.PreCheckFailure {
+// A cluster can change it through spec.zeebe.extraEnv and
+// spec.zeebe.extraEnvFrom, so both are read here. A broker west of UTC writes
+// a position that reads earlier than it is, a database that is ahead of the
+// requested point passes the check, and the cluster loses its volumes. So a
+// broker that names another zone, or a zone that the operator cannot read,
+// holds the restore instead.
+//
+// The reader must be uncached, and it reads in the namespace of the cluster,
+// which is where the kubelet resolves these sources too.
+func brokerClockComparable(
+	ctx context.Context,
+	reader client.Reader,
+	namespace string,
+	broker *corev1.Container,
+) (*conditions.PreCheckFailure, error) {
 	for _, env := range broker.Env {
-		if env.Name == "TZ" {
-			if env.ValueFrom != nil {
-				return clockUnreadable(
-					"the broker container takes TZ from a reference, which only the kubelet resolves",
-				)
-			}
-			if !utc(env.Value) {
-				return clockUnreadable(fmt.Sprintf("the broker container runs with TZ %q", env.Value))
-			}
-		}
-
-		if !slices.Contains(javaOptionsVars, env.Name) {
+		if !slices.Contains(zoneVars, env.Name) {
 			continue
 		}
 		if env.ValueFrom != nil {
 			return clockUnreadable(fmt.Sprintf(
 				"the broker container takes %s from a reference, which only the kubelet resolves",
 				env.Name,
-			))
+			)), nil
 		}
-		if zone, set := userTimezone(env.Value); set && !utc(zone) {
-			return clockUnreadable(fmt.Sprintf(
-				"the broker container runs with -Duser.timezone=%s in %s", zone, env.Name,
-			))
+		if failure := zoneFailure(env.Name, env.Value); failure != nil {
+			return failure, nil
+		}
+	}
+
+	for _, source := range broker.EnvFrom {
+		failure, err := sourceClockComparable(ctx, reader, namespace, source)
+		if err != nil || failure != nil {
+			return failure, err
+		}
+	}
+
+	return nil, nil
+}
+
+// sourceClockComparable resolves one envFrom source of the broker and reports
+// a zone that it carries. A source that the cluster marks optional and that
+// does not exist carries no variable, so it hides no zone. Any other source
+// that the operator cannot read holds the restore: an unread source can carry
+// the one variable that makes this check wrong.
+func sourceClockComparable(
+	ctx context.Context,
+	reader client.Reader,
+	namespace string,
+	source corev1.EnvFromSource,
+) (*conditions.PreCheckFailure, error) {
+	switch {
+	case source.ConfigMapRef != nil:
+		var config corev1.ConfigMap
+		key := types.NamespacedName{Namespace: namespace, Name: source.ConfigMapRef.Name}
+		if err := reader.Get(ctx, key, &config); err != nil {
+			return unreadableSource(err, "ConfigMap", key, source.ConfigMapRef.Optional)
+		}
+
+		return zoneInData(source.Prefix, config.Data), nil
+	case source.SecretRef != nil:
+		var secret corev1.Secret
+		key := types.NamespacedName{Namespace: namespace, Name: source.SecretRef.Name}
+		if err := reader.Get(ctx, key, &secret); err != nil {
+			return unreadableSource(err, "Secret", key, source.SecretRef.Optional)
+		}
+
+		data := make(map[string]string, len(secret.Data))
+		for name, value := range secret.Data {
+			data[name] = string(value)
+		}
+
+		return zoneInData(source.Prefix, data), nil
+	}
+
+	return nil, nil
+}
+
+// unreadableSource maps the read error of an envFrom source. A missing source
+// that the cluster marks optional carries nothing. A missing source that it
+// does not mark optional keeps the brokers from starting at all, and the
+// operator cannot read the zone either way. Any other error is transient and
+// goes back to the caller.
+func unreadableSource(
+	err error,
+	kind string,
+	key types.NamespacedName,
+	optional *bool,
+) (*conditions.PreCheckFailure, error) {
+	if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("reading the %s %s of the broker environment: %w", kind, key, err)
+	}
+	if optional != nil && *optional {
+		return nil, nil
+	}
+
+	return clockUnreadable(fmt.Sprintf(
+		"the broker container takes its environment from the %s %s, which does not exist", kind, key,
+	)), nil
+}
+
+// zoneInData reports the first variable of an envFrom source that sets a zone.
+// The keys are sorted, so one source always reports the same variable.
+func zoneInData(prefix string, data map[string]string) *conditions.PreCheckFailure {
+	for _, name := range slices.Sorted(maps.Keys(data)) {
+		if failure := zoneFailure(prefix+name, data[name]); failure != nil {
+			return failure
 		}
 	}
 
 	return nil
+}
+
+// zoneFailure reports why the variable name with the given value makes the
+// wall clock of the broker something other than UTC, or nil when it does not.
+// A variable that carries no zone at all is not this check's business.
+func zoneFailure(name, value string) *conditions.PreCheckFailure {
+	if !slices.Contains(zoneVars, name) {
+		return nil
+	}
+
+	if name == "TZ" {
+		if utc(value) {
+			return nil
+		}
+
+		return clockUnreadable(fmt.Sprintf("the broker container runs with TZ %q", value))
+	}
+
+	zone, set := userTimezone(value)
+	if !set || utc(zone) {
+		return nil
+	}
+
+	return clockUnreadable(fmt.Sprintf(
+		"the broker container runs with -Duser.timezone=%s in %s", zone, name,
+	))
 }
 
 // clockUnreadable builds the hold of a broker whose clock the operator cannot
@@ -339,7 +461,7 @@ func userTimezone(options string) (string, bool) {
 // utc reports whether zone names UTC. An empty value names no zone, and the
 // container then runs in UTC.
 func utc(zone string) bool {
-	return zone == "" || slices.Contains(utcZones, zone)
+	return zone == "" || slices.Contains(utcZones, strings.ToUpper(zone))
 }
 
 // readPositions is the production reader: it opens the logical database with
