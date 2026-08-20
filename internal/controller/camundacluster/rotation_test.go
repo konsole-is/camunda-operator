@@ -41,9 +41,20 @@ var _ = Describe("Admin password rotation", func() {
 	BeforeEach(func() {
 		users = camundaadmintest.NewUserAPI()
 		DeferCleanup(users.Close)
-		userAPIEndpoint.Store(users.URL())
-		DeferCleanup(func() { userAPIEndpoint.Store("http://127.0.0.1:1") })
 	})
+
+	// serveCluster points the namespace of cluster at the fake of this spec.
+	// A namespace that never registers has no user API, which is what a spec
+	// wants while it drives a rotation that cannot reach the cluster.
+	serveCluster := func(cluster *v1.CamundaCluster) {
+		serveUserAPI(cluster.Namespace, users.URL())
+	}
+
+	// silenceCluster takes the user API of the namespace of cluster off the
+	// network again.
+	silenceCluster := func(cluster *v1.CamundaCluster) {
+		serveUserAPI(cluster.Namespace, unreachableUserAPI)
+	}
 
 	// adminSecretKey locates the admin Secret of cluster.
 	adminSecretKey := func(cluster *v1.CamundaCluster) client.ObjectKey {
@@ -101,6 +112,7 @@ var _ = Describe("Admin password rotation", func() {
 		enabled := true
 		cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: &enabled, Version: "8.9.7"}
 		createCluster(cluster)
+		serveCluster(cluster)
 
 		password := fetchAdminPassword(cluster)
 		seedClusterUser(password)
@@ -150,7 +162,7 @@ var _ = Describe("Admin password rotation", func() {
 		seedClusterUser(password)
 
 		By("stalling the rotation on the pending password")
-		userAPIEndpoint.Store("http://127.0.0.1:1")
+		silenceCluster(cluster)
 		requestRotation(cluster, "round-1")
 		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonConnectionFailed))
 
@@ -168,7 +180,7 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(k8sClient.Update(ctx, &secret)).To(Succeed())
 
 		By("letting the user API accept the call")
-		userAPIEndpoint.Store(users.URL())
+		serveCluster(cluster)
 		Eventually(func(g Gomega) {
 			g.Expect(users.Password(components.AdminUsername)).To(Equal(pending))
 		}, timeout, interval).Should(Succeed())
@@ -193,6 +205,7 @@ var _ = Describe("Admin password rotation", func() {
 
 	It("keeps the active password and reports Rejected until the cluster accepts the call", func() {
 		cluster := createDefaultCluster()
+		serveCluster(cluster)
 		password := fetchAdminPassword(cluster)
 		seedClusterUser("changed-in-the-admin-app")
 
@@ -226,11 +239,11 @@ var _ = Describe("Admin password rotation", func() {
 			Cluster:   cluster,
 			Effective: components.Effective{CamundaClusterSpec: v1.CamundaClusterSpec{Version: "8.9.9"}},
 		}
+		serveCluster(cluster)
 		reconciler := &CamundaClusterReconciler{
 			APIReader: k8sClient,
-			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
-				endpoint, _ := userAPIEndpoint.Load().(string)
-				return endpoint
+			RESTEndpoint: func(cluster *v1.CamundaCluster, _ components.Effective) string {
+				return clusterUserAPI(cluster)
 			},
 		}
 
@@ -270,12 +283,12 @@ var _ = Describe("Admin password rotation", func() {
 				},
 			},
 		}
+		serveCluster(cluster)
 		reconciler := &CamundaClusterReconciler{
 			APIReader:     k8sClient,
 			EventRecorder: events.NewFakeRecorder(10),
-			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
-				endpoint, _ := userAPIEndpoint.Load().(string)
-				return endpoint
+			RESTEndpoint: func(cluster *v1.CamundaCluster, _ components.Effective) string {
+				return clusterUserAPI(cluster)
 			},
 		}
 
@@ -311,11 +324,11 @@ var _ = Describe("Admin password rotation", func() {
 			Cluster:   cluster,
 			Effective: components.Effective{CamundaClusterSpec: v1.CamundaClusterSpec{Version: "8.9.9"}},
 		}
+		serveCluster(cluster)
 		reconciler := &CamundaClusterReconciler{
 			APIReader: k8sClient,
-			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
-				endpoint, _ := userAPIEndpoint.Load().(string)
-				return endpoint
+			RESTEndpoint: func(cluster *v1.CamundaCluster, _ components.Effective) string {
+				return clusterUserAPI(cluster)
 			},
 		}
 
@@ -399,7 +412,7 @@ var _ = Describe("Admin password rotation", func() {
 		seedClusterUser(password)
 
 		By("stalling the rotation on the pending password")
-		userAPIEndpoint.Store("http://127.0.0.1:1")
+		silenceCluster(cluster)
 		requestRotation(cluster, "round-1")
 		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonConnectionFailed))
 
@@ -417,7 +430,7 @@ var _ = Describe("Admin password rotation", func() {
 		}, "3s", interval).Should(Succeed())
 
 		By("resuming on a cluster that still holds the first password")
-		userAPIEndpoint.Store(users.URL())
+		serveCluster(cluster)
 		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Pause = false })
 
 		By("publishing a password that the cluster does not hold")
@@ -441,6 +454,7 @@ var _ = Describe("Admin password rotation", func() {
 
 	It("retries a rejected rotation on the timer, not in a hot loop", func() {
 		cluster := createDefaultCluster()
+		serveCluster(cluster)
 		fetchAdminPassword(cluster)
 		seedClusterUser("changed-in-the-admin-app")
 
@@ -462,7 +476,7 @@ var _ = Describe("Admin password rotation", func() {
 	})
 
 	It("reports ConnectionFailed while the cluster does not answer, and retries", func() {
-		userAPIEndpoint.Store("http://127.0.0.1:1")
+		// The namespace registers no user API, so the cluster answers nothing.
 		cluster := createDefaultCluster()
 		password := fetchAdminPassword(cluster)
 
@@ -475,7 +489,7 @@ var _ = Describe("Admin password rotation", func() {
 
 		By("completing the rotation once the cluster answers")
 		seedClusterUser(password)
-		userAPIEndpoint.Store(users.URL())
+		serveCluster(cluster)
 		expectRotated(cluster, "round-1")
 	})
 

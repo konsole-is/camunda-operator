@@ -47,7 +47,9 @@ spec:
 
 The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password; the brokers, the gateway, and the web applications keep running. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly. A suspended cluster serves no user API, so a requested rotation waits and applies after the cluster resumes.
 
-If the call fails, the Secret keeps the active password and `AdminSecretReady` reports why: `ConnectionFailed` when the cluster does not answer, `Rejected` when it refuses the credentials. The operator retries until the call succeeds. `ConnectionFailed` clears on its own when the cluster is `Ready` again; the condition message carries the cause. A `Rejected` rotation usually means that somebody changed the password in the Admin web application. Set the password from the Secret on the `admin` user there, and the next retry succeeds.
+If the call fails, the Secret keeps the active password and `AdminSecretReady` reports why: `ConnectionFailed` when the cluster does not answer, `Rejected` when it answers and refuses the call. The operator retries until the call succeeds. `ConnectionFailed` clears on its own when the cluster is `Ready` again; the condition message carries the cause.
+
+Read the message of a `Rejected` condition before you act, because it carries the answer of the cluster. `bad credentials` means that somebody changed the password in the Admin web application: set the password from the Secret on the `admin` user there, and the next retry succeeds. Any other answer is the cluster refusing the call itself, and the message names the reason.
 
 > **Caution:** Between the update of the user and the restart of the connectors pods, a connectors call with the old password is rejected. Plan a rotation outside of peak hours.
 

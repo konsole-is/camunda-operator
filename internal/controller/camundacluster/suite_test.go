@@ -18,7 +18,7 @@ package camundacluster
 
 import (
 	"context"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,13 +50,23 @@ var (
 	k8sClient client.Client
 )
 
-// userAPIEndpoint is where the reconciler under test calls the user API of
-// every cluster. The rotation tests point it at a fake; the default never
-// answers, and no other test dials it.
-var userAPIEndpoint atomic.Value
+// userAPIEndpoints maps the namespace of a cluster to the user API that
+// serves it. The reconciler is process wide, and envtest runs no namespace
+// controller, so a cluster that an earlier spec left retrying keeps
+// reconciling for the rest of the suite. Keying by namespace means such a
+// cluster can never reach the fake of a later spec and disturb its call
+// counts. A namespace with no entry has no user API.
+var userAPIEndpoints sync.Map
+
+// unreachableUserAPI is the address of a cluster that answers nothing.
+const unreachableUserAPI = "http://127.0.0.1:1"
+
+// serveUserAPI points the clusters of namespace at endpoint.
+func serveUserAPI(namespace, endpoint string) {
+	userAPIEndpoints.Store(namespace, endpoint)
+}
 
 func init() {
-	userAPIEndpoint.Store("http://127.0.0.1:1")
 }
 
 func TestCamundaClusterController(t *testing.T) {
@@ -101,9 +111,8 @@ var _ = BeforeSuite(func() {
 			// The unwatched pre-check must come back within the Eventually
 			// window of the tests.
 			RetryInterval: time.Second,
-			RESTEndpoint: func(*v1.CamundaCluster, components.Effective) string {
-				endpoint, _ := userAPIEndpoint.Load().(string)
-				return endpoint
+			RESTEndpoint: func(cluster *v1.CamundaCluster, _ components.Effective) string {
+				return clusterUserAPI(cluster)
 			},
 		}).SetupWithManager(mgr)
 	})
@@ -115,3 +124,13 @@ var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
 })
+
+// clusterUserAPI returns the user API that serves cluster, or an address
+// that answers nothing when its namespace registered none.
+func clusterUserAPI(cluster *v1.CamundaCluster) string {
+	if endpoint, ok := userAPIEndpoints.Load(cluster.Namespace); ok {
+		return endpoint.(string)
+	}
+
+	return unreachableUserAPI
+}

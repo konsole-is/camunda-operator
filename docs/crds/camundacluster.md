@@ -105,7 +105,7 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` / `Disabled` | The standalone web application is ready, or it is embedded. | Nothing. |
 | `ConnectorsReady` | `Healthy` / `Disabled` | Every connectors replica is ready, or connectors are not enabled. | Nothing. |
 | `AdminSecretReady` | `Healthy` / `Disabled` | The Secret `<name>-camunda-admin` is applied, or the cluster uses OIDC. | Nothing. |
-| `AdminSecretReady` | `ConnectionFailed` / `Rejected` | A password rotation is not applied yet: the cluster did not answer, or it refused the current password. The Secret keeps the active password. | The operator retries. On `Rejected`, set the password from the Secret on the `admin` user in the Admin web application. |
+| `AdminSecretReady` | `ConnectionFailed` / `Rejected` | A password rotation is not applied yet: the cluster did not answer, or it answered and refused the call. The Secret keeps the active password. | The operator retries. Read the condition message, which carries the answer of the cluster. On `bad credentials`, set the password from the Secret on the `admin` user in the Admin web application. |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
 | `Ready` | `Healthy` | Every component that the cluster needs is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` | A component rolls out or scales. | Wait. The message names the component. |
