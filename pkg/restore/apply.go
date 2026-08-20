@@ -22,10 +22,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// FieldManagerPointInTimeRestore owns every Job and every recreated volume
-// that a PointInTimeRestore applies, so the fields a restore owns are visible
-// on the object. Each restore kind has a field manager of its own.
-const FieldManagerPointInTimeRestore client.FieldOwner = "camunda-operator/pointintimerestore"
+// Each restore kind owns every Job and every recreated volume it applies
+// under a field manager of its own, so the fields a restore owns are visible
+// on the object.
+const (
+	// FieldManagerLogicalRestoreRDBMS owns what a LogicalRestoreRDBMS applies.
+	FieldManagerLogicalRestoreRDBMS client.FieldOwner = "camunda-operator/logicalrestorerdbms"
+	// FieldManagerPointInTimeRestore owns what a PointInTimeRestore applies.
+	FieldManagerPointInTimeRestore client.FieldOwner = "camunda-operator/pointintimerestore"
+)
 
 // FieldManagerLogicalRestoreElasticsearch owns every Job and every recreated
 // volume that a LogicalRestoreElasticsearch applies.

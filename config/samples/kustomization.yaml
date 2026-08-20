@@ -19,4 +19,5 @@ resources:
 - core_v1_pvcautoresize.yaml
 - core_v1_logicalbackuprdbms.yaml
 - core_v1_logicalrestoreelasticsearch.yaml
+- core_v1_logicalrestorerdbms.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

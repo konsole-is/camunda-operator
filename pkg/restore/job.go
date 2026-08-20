@@ -100,6 +100,7 @@ func isNil(obj client.Object) bool {
 // a user already types with kubectl.
 var jobKindInfixes = map[string]string{
 	labels.LogicalRestoreElasticsearchKey: "lres",
+	labels.LogicalRestoreRDBMSKey:         "lrrdbms",
 	labels.PointInTimeRestoreKey:          "pitr",
 }
 
