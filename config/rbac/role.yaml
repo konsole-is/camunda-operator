@@ -90,6 +90,7 @@ rules:
   - elasticsearchclusters
   - logicalbackupelasticsearches
   - logicalbackuprdbmses
+  - logicalrestoreelasticsearches
   - pointintimerestores
   - pvcautoresizes
   - secondarystorageconfigs
@@ -112,6 +113,7 @@ rules:
   - elasticsearchclusters/finalizers
   - logicalbackupelasticsearches/finalizers
   - logicalbackuprdbmses/finalizers
+  - logicalrestoreelasticsearches/finalizers
   - pointintimerestores/finalizers
   - pvcautoresizes/finalizers
   verbs:
@@ -130,6 +132,7 @@ rules:
   - elasticsearchclusters/status
   - logicalbackupelasticsearches/status
   - logicalbackuprdbmses/status
+  - logicalrestoreelasticsearches/status
   - managementauthconfigs/status
   - objectstorageconfigs/status
   - pointintimerestores/status
