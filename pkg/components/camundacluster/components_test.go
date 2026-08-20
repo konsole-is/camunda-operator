@@ -78,7 +78,7 @@ func assertGoldens(t *testing.T, dir string, in Input) {
 	}
 
 	if ResolveAuth(in).Method == v1.AuthenticationMethodBasic {
-		admin, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: goldenPassword}, "")
+		admin, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: goldenPassword}, "", "")
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "admin-secret.yaml"), admin,
@@ -322,7 +322,7 @@ func TestAdminSecretComponentCarriesThePassword(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureMinimal(t)
-	comp, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: "s3cret"}, "")
+	comp, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: "s3cret"}, "", "")
 	require.NoError(t, err)
 	assert.Equal(
 		t,
@@ -348,7 +348,7 @@ func TestAdminSecretComponentCarriesTheApplyPrecondition(t *testing.T) {
 
 	in := fixtureMinimal(t)
 	reused := credentials.Password{Value: "s3cret", SourceUID: "uid-1"}
-	comp, err := AdminSecretComponent(in.Cluster, true, reused, "")
+	comp, err := AdminSecretComponent(in.Cluster, true, reused, "", "")
 	require.NoError(t, err)
 
 	objects := previewObjects(t, comp)
@@ -373,25 +373,54 @@ func TestBrokerClaimSelector(t *testing.T) {
 // While a rotation is in flight the Secret carries the requested password
 // next to the active one, so a crash between the user API call and the
 // publish can never lose it. The key disappears when the rotation completes.
-func TestAdminSecretComponentCarriesThePendingPassword(t *testing.T) {
+func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 	t.Parallel()
 
-	in := fixtureMinimal(t)
-	comp, err := AdminSecretComponent(in.Cluster, true, credentials.Password{Value: "s3cret"}, "n3xt")
-	require.NoError(t, err)
+	tests := []struct {
+		name     string
+		pending  string
+		rotation string
+		want     map[string]string
+		absent   []string
+	}{
+		{
+			name:    "a rotation in flight publishes the pending password",
+			pending: "n3xt",
+			want:    map[string]string{"password-pending": "n3xt"},
+			absent:  []string{"password-rotation"},
+		},
+		{
+			name:     "an applied rotation travels with the password it answers",
+			rotation: "2026-08",
+			want:     map[string]string{"password-rotation": "2026-08"},
+			absent:   []string{"password-pending"},
+		},
+		{
+			name:   "a cluster that never rotated carries neither key",
+			absent: []string{"password-pending", "password-rotation"},
+		},
+	}
 
-	objects := previewObjects(t, comp)
-	require.Len(t, objects, 1)
-	secret, ok := objects[0].(*corev1.Secret)
-	require.True(t, ok)
-	assert.Equal(t, []byte("s3cret"), secret.Data["password"])
-	assert.Equal(t, []byte("n3xt"), secret.Data["password-pending"])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := fixtureMinimal(t)
+			comp, err := AdminSecretComponent(
+				in.Cluster, true, credentials.Password{Value: "s3cret"}, tt.pending, tt.rotation,
+			)
+			require.NoError(t, err)
 
-	comp, err = AdminSecretComponent(in.Cluster, true, credentials.Password{Value: "s3cret"}, "")
-	require.NoError(t, err)
-	objects = previewObjects(t, comp)
-	require.Len(t, objects, 1)
-	secret, ok = objects[0].(*corev1.Secret)
-	require.True(t, ok)
-	assert.NotContains(t, secret.Data, "password-pending")
+			objects := previewObjects(t, comp)
+			require.Len(t, objects, 1)
+			secret, ok := objects[0].(*corev1.Secret)
+			require.True(t, ok)
+
+			assert.Equal(t, []byte("s3cret"), secret.Data["password"])
+			for key, value := range tt.want {
+				assert.Equal(t, []byte(value), secret.Data[key])
+			}
+			for _, key := range tt.absent {
+				assert.NotContains(t, secret.Data, key)
+			}
+		})
+	}
 }

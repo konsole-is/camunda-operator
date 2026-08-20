@@ -249,6 +249,33 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(cred.rotation).To(BeEmpty(), "a rotation requested after a delete must reach the user API")
 	})
 
+	It("reads the applied rotation from the Secret, so a lost status never rotates twice", func() {
+		ns := newNamespace()
+		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-token", Namespace: ns}}
+		createSecret(ns, components.AdminSecretName(cluster), map[string]string{
+			components.AdminUsernameKey: components.AdminUsername,
+			components.AdminPasswordKey: "the-active-password",
+			components.AdminRotationKey: "round-1",
+		})
+		in := components.Input{
+			Cluster: cluster,
+			Effective: components.Effective{
+				CamundaClusterSpec: v1.CamundaClusterSpec{
+					Auth: &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "round-1"}},
+				},
+			},
+		}
+		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
+
+		// status.adminPassword is empty here, which is what a lost status
+		// flush or a cache that lags one reconcile behind looks like.
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.pending).To(BeEmpty(), "the Secret already records this rotation")
+		Expect(cred.password.Value).To(Equal("the-active-password"))
+		Expect(cred.rotation).To(Equal("round-1"))
+	})
+
 	It("refuses a rotation that was requested while the admin Secret was gone", func() {
 		cluster := createDefaultCluster()
 		password := fetchAdminPassword(cluster)

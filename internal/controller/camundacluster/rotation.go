@@ -54,8 +54,16 @@ type adminCredential struct {
 	// pending is the requested password of an in-flight rotation, published
 	// under the pending key. Empty when no rotation is in flight.
 	pending string
-	// rotation is the value of status.adminPassword.rotation to record.
+	// rotation is the passwordRotation value that the admin Secret publishes
+	// after this reconcile, under the rotation key, beside the password it
+	// answers. The Secret component writes the two together.
 	rotation string
+	// publishedRotation is the rotation value that the admin Secret already
+	// holds. status.adminPassword.rotation projects it, so the status
+	// follows the Secret exactly as the connectors hash does: a rotation is
+	// reported complete only once its password is durable, and a lost status
+	// write is rebuilt from the Secret on the next reconcile.
+	publishedRotation string
 	// failure is set when the user API rejected the rotation or did not
 	// answer. The Secret keeps its active password, the controller reports
 	// the failure on AdminSecretReady, and a timer retries: no watch fires
@@ -70,25 +78,17 @@ type rotationFailure struct {
 	message string
 }
 
-// recordRotation writes the adminPassword block on cluster, but only once
-// the admin Secret publishes the promoted password. The Secret component
-// reports its apply on AdminSecretReady, and it has already reconciled when
-// the caller runs this. An apply that failed leaves the value that the
-// status was read with: recording the rotation there would report it as
-// complete while the Secret still publishes the old password. The pending
-// password stays in the Secret, so the next reconcile promotes again.
+// recordRotation writes the adminPassword block on cluster from the rotation
+// that the admin Secret already publishes. A rotation whose Secret apply
+// failed is therefore never reported as complete, and a status write that
+// was lost is rebuilt from the Secret on the next reconcile.
 func (c adminCredential) recordRotation(cluster *v1.CamundaCluster) {
-	if c.rotation == "" {
+	if c.publishedRotation == "" {
 		cluster.Status.AdminPassword = nil
 		return
 	}
 
-	cond := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady)
-	if cond == nil || cond.Status != metav1.ConditionTrue {
-		return
-	}
-
-	cluster.Status.AdminPassword = &v1.AdminPasswordStatus{Rotation: c.rotation}
+	cluster.Status.AdminPassword = &v1.AdminPasswordStatus{Rotation: c.publishedRotation}
 }
 
 // stageFailure overwrites the AdminSecretReady condition of cluster, in
@@ -141,7 +141,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		return adminCredential{}, nil
 	}
 
-	current, pending, err := r.readAdminSecret(ctx, cluster)
+	current, pending, applied, err := r.readAdminSecret(ctx, cluster)
 	if err != nil {
 		return adminCredential{}, err
 	}
@@ -149,10 +149,6 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 	requested := ""
 	if auth.Basic != nil {
 		requested = auth.Basic.PasswordRotation
-	}
-	recorded := ""
-	if cluster.Status.AdminPassword != nil {
-		recorded = cluster.Status.AdminPassword.Rotation
 	}
 
 	if current.Value == "" {
@@ -171,7 +167,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// published stays empty: the Secret holds no password yet, so the
 		// connectors of a new cluster hash on "" for one reconcile. They are
 		// being created in that reconcile anyway.
-		rotation := recorded
+		rotation := ""
 		if meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady) == nil {
 			rotation = requested
 		}
@@ -179,13 +175,19 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		return adminCredential{password: credentials.Password{Value: value}, rotation: rotation}, nil
 	}
 
-	if pending == "" && (requested == "" || requested == recorded) {
-		return adminCredential{password: current, published: current.Value, rotation: recorded}, nil
+	if pending == "" && (requested == "" || requested == applied) {
+		return adminCredential{
+			password: current, published: current.Value, rotation: applied, publishedRotation: applied,
+		}, nil
 	}
 
 	if in.Effective.Suspend {
 		return adminCredential{
-			password: current, published: current.Value, pending: pending, rotation: recorded,
+			password:          current,
+			published:         current.Value,
+			pending:           pending,
+			rotation:          applied,
+			publishedRotation: applied,
 		}, nil
 	}
 
@@ -195,12 +197,23 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			return adminCredential{}, err
 		}
 
-		return adminCredential{password: current, published: current.Value, pending: value, rotation: recorded}, nil
+		return adminCredential{
+			password:          current,
+			published:         current.Value,
+			pending:           value,
+			rotation:          applied,
+			publishedRotation: applied,
+		}, nil
 	}
 
 	if failure := r.updateAdminPassword(ctx, cluster, in, current.Value, pending); failure != nil {
 		return adminCredential{
-			password: current, published: current.Value, pending: pending, rotation: recorded, failure: failure,
+			password:          current,
+			published:         current.Value,
+			pending:           pending,
+			rotation:          applied,
+			publishedRotation: applied,
+			failure:           failure,
 		}, nil
 	}
 
@@ -214,36 +227,40 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 	)
 
 	return adminCredential{
-		password:  credentials.Password{Value: pending, SourceUID: current.SourceUID},
-		published: current.Value,
-		rotation:  requested,
+		password:          credentials.Password{Value: pending, SourceUID: current.SourceUID},
+		published:         current.Value,
+		rotation:          requested,
+		publishedRotation: applied,
 	}, nil
 }
 
-// readAdminSecret reads the active and the pending password of the admin
-// Secret without the cache. A missing Secret, key, or value is the zero
-// password, never an error: an empty credential is replaced, not kept.
+// readAdminSecret reads the active password, the pending password, and the
+// applied rotation of the admin Secret without the cache. The three travel
+// in one object, so the applied rotation always describes the password
+// beside it. A missing Secret, key, or value is the zero password, never an
+// error: an empty credential is replaced, not kept.
 func (r *CamundaClusterReconciler) readAdminSecret(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) (current credentials.Password, pending string, err error) {
+) (current credentials.Password, pending string, applied string, err error) {
 	key := client.ObjectKey{Namespace: cluster.Namespace, Name: components.AdminSecretName(cluster)}
 
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return credentials.Password{}, "", nil
+			return credentials.Password{}, "", "", nil
 		}
-		return credentials.Password{}, "", fmt.Errorf("reading Secret %q: %w", key, err)
+		return credentials.Password{}, "", "", fmt.Errorf("reading Secret %q: %w", key, err)
 	}
 
 	value := string(secret.Data[components.AdminPasswordKey])
 	if value == "" {
-		return credentials.Password{}, "", nil
+		return credentials.Password{}, "", "", nil
 	}
 
 	return credentials.Password{Value: value, SourceUID: secret.UID},
 		string(secret.Data[components.AdminPendingPasswordKey]),
+		string(secret.Data[components.AdminRotationKey]),
 		nil
 }
 

@@ -131,7 +131,7 @@ status:
     backupRepository: my-cluster
 ```
 
-`status.adminPassword.rotation` is the last `spec.auth.basic.passwordRotation` value that the operator applied. A rotation is in progress while the spec value is not empty and differs from it.
+`status.adminPassword.rotation` is the last `spec.auth.basic.passwordRotation` value that the operator applied. It follows the Secret: the operator publishes the applied value in the admin Secret together with the password it answers, and the status projects it. A rotation is in progress while the spec value is not empty and differs from it.
 
 `status.serviceAccountName` is the ServiceAccount that the pods run under. It is empty when they run under the default account of the namespace. A backup Job runs under the same account.
 

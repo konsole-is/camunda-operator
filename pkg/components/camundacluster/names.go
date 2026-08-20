@@ -56,6 +56,12 @@ const (
 	// is in flight, next to the active one under AdminPasswordKey. The
 	// workloads never read it.
 	AdminPendingPasswordKey = "password-pending"
+	// AdminRotationKey holds the spec.auth.basic.passwordRotation value that
+	// produced the password under AdminPasswordKey. It travels with the
+	// password, in the same apply, so the operator always knows which
+	// request the published password answers. status.adminPassword.rotation
+	// projects it. The workloads never read it.
+	AdminRotationKey = "password-rotation"
 	// DataVolumeName is the volume claim template of the brokers.
 	DataVolumeName = "data"
 	// DataMountPath is where the brokers keep their data. It is the

@@ -259,7 +259,7 @@ func (r *CamundaClusterReconciler) buildComponents(
 	}
 
 	basic := components.ResolveAuth(in).Method == v1.AuthenticationMethodBasic
-	admin, err := components.AdminSecretComponent(cluster, basic, cred.password, cred.pending)
+	admin, err := components.AdminSecretComponent(cluster, basic, cred.password, cred.pending, cred.rotation)
 	if err != nil {
 		return clusterComponents{}, fmt.Errorf("building admin secret component: %w", err)
 	}

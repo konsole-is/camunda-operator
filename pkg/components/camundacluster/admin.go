@@ -49,6 +49,12 @@ const adminComponentName = "admin-secret"
 // the call and the publish can never lose it. An empty pendingPassword
 // leaves the key out, which removes it when the rotation completes.
 //
+// rotation is the spec.auth.basic.passwordRotation value that produced the
+// password, published under password-rotation. It travels in the same apply
+// as the password it answers, so the record of which request is applied is
+// durable and can never disagree with the password beside it. The
+// controller reads it back to decide whether a rotation is still needed.
+//
 // A reused password carries its apply precondition onto the Secret, so a
 // delete of the Secret always rotates the password. The controller must
 // reconcile the component through credentials.NewApplyClient for the
@@ -58,6 +64,7 @@ func AdminSecretComponent(
 	enabled bool,
 	password credentials.Password,
 	pendingPassword string,
+	rotation string,
 ) (*component.Component, error) {
 	data := map[string][]byte{
 		AdminUsernameKey: []byte(AdminUsername),
@@ -65,6 +72,9 @@ func AdminSecretComponent(
 	}
 	if pendingPassword != "" {
 		data[AdminPendingPasswordKey] = []byte(pendingPassword)
+	}
+	if rotation != "" {
+		data[AdminRotationKey] = []byte(rotation)
 	}
 
 	admin, err := secret.NewBuilder(&corev1.Secret{
