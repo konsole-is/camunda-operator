@@ -146,6 +146,10 @@ func RecreateClaims(
 	reader client.Reader,
 	in ClaimInput,
 ) (Progress, error) {
+	if err := in.Target.complete(); err != nil {
+		return Progress{}, fmt.Errorf("recreating the broker volumes: %w", err)
+	}
+
 	progress := Progress{Done: true, Recreated: slices.Clone(in.Recreated)}
 
 	for ordinal, name := range in.Target.ClaimNames() {

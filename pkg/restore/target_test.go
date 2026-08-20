@@ -101,6 +101,36 @@ func brokerStatefulSet() *appsv1.StatefulSet {
 	}
 }
 
+// incompleteTargets are the Target shapes that ReadTarget never produces.
+// Every entry point that renders from a Target rejects each of them, instead
+// of dereferencing it and taking the manager down.
+func incompleteTargets() map[string]struct {
+	target *Target
+	text   string
+} {
+	noStatefulSet := targetFixture()
+	noStatefulSet.StatefulSet = nil
+
+	noBroker := targetFixture()
+	noBroker.Broker = nil
+
+	noClaimTemplate := targetFixture()
+	noClaimTemplate.ClaimTemplate = nil
+
+	return map[string]struct {
+		target *Target
+		text   string
+	}{
+		"no target":             {target: nil, text: "the target is empty"},
+		"no broker StatefulSet": {target: noStatefulSet, text: "no broker StatefulSet"},
+		"no broker container":   {target: noBroker, text: "no broker container"},
+		"no data claim template": {
+			target: noClaimTemplate,
+			text:   "no data claim template",
+		},
+	}
+}
+
 func TestReadTargetReadsTheFactsOffTheLiveBroker(t *testing.T) {
 	t.Parallel()
 

@@ -246,6 +246,40 @@ func TestRecreateClaimsCreatesAClaimThatIsGone(t *testing.T) {
 	))
 }
 
+// RecreateClaims runs inside a reconcile, and it deletes volumes. A Target
+// that is missing any of its parts reaches it only through misuse, and it
+// must fail before it touches anything rather than panic the manager.
+func TestRecreateClaimsRejectsAnIncompleteTarget(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range incompleteTargets() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			c := fake.NewClientBuilder().
+				WithScheme(testScheme(t)).
+				WithObjects(existingClaim("data-my-cluster-zeebe-0")).
+				Build()
+
+			in := claimInput("10Gi")
+			in.Target = tc.target
+
+			progress, err := RecreateClaims(context.Background(), c, c, in)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.text)
+			assert.Contains(t, err.Error(), "broker volumes")
+			assert.Equal(t, Progress{}, progress)
+
+			// Nothing was deleted on the way out.
+			var claim corev1.PersistentVolumeClaim
+			assert.NoError(t, c.Get(
+				context.Background(),
+				client.ObjectKey{Namespace: "ns", Name: "data-my-cluster-zeebe-0"},
+				&claim,
+			))
+		})
+	}
+}
+
 // A transport error must reach the caller. Reporting progress on a failed
 // delete would let the restore run the Jobs on the old data.
 func TestRecreateClaimsReportsADeleteErrorAsAnError(t *testing.T) {

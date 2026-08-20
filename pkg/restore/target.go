@@ -18,6 +18,7 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -134,6 +135,26 @@ func ReadTarget(
 		Version:       version,
 		ClaimTemplate: claim,
 	}, nil
+}
+
+// complete reports whether the target holds every fact that a render reads
+// off it. ReadTarget fills all of them or returns an error, so a target that
+// fails this check was built by hand. The check exists because the callers
+// run inside a reconcile, where a nil dereference takes the manager down with
+// every other controller. It answers for a nil target too.
+func (t *Target) complete() error {
+	switch {
+	case t == nil:
+		return errors.New("the target is empty")
+	case t.StatefulSet == nil:
+		return errors.New("the target carries no broker StatefulSet")
+	case t.Broker == nil:
+		return errors.New("the target carries no broker container")
+	case t.ClaimTemplate == nil:
+		return errors.New("the target carries no data claim template")
+	}
+
+	return nil
 }
 
 // invalidTarget builds the one failure shape that every unreadable fact of

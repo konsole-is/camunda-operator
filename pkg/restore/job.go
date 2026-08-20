@@ -123,8 +123,8 @@ func boundedName(name string, limit int) string {
 // same secondary storage, the same credentials, the same backup store, the
 // same paths, and the same scheduling as the brokers.
 func BuildJob(in JobInput) (*batchv1.Job, error) {
-	if in.Target == nil || in.Target.Broker == nil {
-		return nil, fmt.Errorf("building the restore Job of broker %d: the target is empty", in.Ordinal)
+	if err := in.Target.complete(); err != nil {
+		return nil, fmt.Errorf("building the restore Job of broker %d: %w", in.Ordinal, err)
 	}
 	if isNil(in.Owner) || in.OwnerLabel.Key == "" || in.OwnerLabel.Name == "" {
 		return nil, fmt.Errorf(

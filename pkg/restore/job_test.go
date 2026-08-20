@@ -315,24 +315,36 @@ func TestBuildJobIsOwnedByTheRestore(t *testing.T) {
 	assert.Equal(t, "my-cluster-restore-restore-0", job.Name)
 }
 
+// A Target that is missing any of its parts reaches BuildJob only through
+// misuse, because ReadTarget fills all of them. It still must not panic.
+func TestBuildJobRejectsAnIncompleteTarget(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range incompleteTargets() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := logicalInput()
+			in.Target = tc.target
+
+			job, err := BuildJob(in)
+			require.Error(t, err)
+			assert.Nil(t, job)
+			assert.Contains(t, err.Error(), tc.text)
+			assert.Contains(t, err.Error(), "restore Job")
+		})
+	}
+}
+
 // BuildJob runs inside a reconcile. A panic there takes the whole manager
-// down with every other controller, so an input that names no owner is an
-// error like an input that names no target.
-func TestBuildJobRejectsAnInputWithoutAnOwner(t *testing.T) {
+// down with every other controller, so every input it cannot render is an
+// error.
+func TestBuildJobRejectsAnInputItCannotRender(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
 		mutate func(*JobInput)
 		text   string
 	}{
-		"no target": {
-			mutate: func(in *JobInput) { in.Target = nil },
-			text:   "target",
-		},
-		"no broker container": {
-			mutate: func(in *JobInput) { in.Target.Broker = nil },
-			text:   "target",
-		},
 		"no owner": {
 			mutate: func(in *JobInput) { in.Owner = nil },
 			text:   "owner",
