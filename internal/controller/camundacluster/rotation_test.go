@@ -385,8 +385,26 @@ var _ = Describe("Admin password rotation", func() {
 
 		Expect(first.password.Value).NotTo(BeEmpty())
 		Expect(first.password.Value).NotTo(Equal(second.password.Value), "each attempt is a new password")
-		Expect(first.published).To(BeEmpty(), "the Secret publishes none, so the hash stays where it is")
-		Expect(second.published).To(Equal(first.published), "and it does not move on the retry")
+
+		// The hash of connectors is what matters, not the value behind it.
+		// It must not move while the repair keeps failing, however many new
+		// passwords the attempts generate.
+		hashOf := func(cred adminCredential) string {
+			hashed := in
+			hashed.Effective.Version = "8.9.9"
+			hashed.AdminPasswordHash = components.PasswordHash(cred.published)
+			connectors := components.Process{Component: components.ComponentConnectors}
+			return components.ConfigHash(hashed, connectors)
+		}
+		Expect(hashOf(second)).To(
+			Equal(hashOf(first)), "a repair that keeps failing must not keep rolling connectors",
+		)
+
+		// It does move once, here, because an empty digest drops the admin
+		// password out of that hash. Holding it still would need the digest
+		// of the password the Secret no longer carries.
+		settled := adminCredential{published: "the-password-it-used-to-publish"}
+		Expect(hashOf(first)).NotTo(Equal(hashOf(settled)))
 	})
 
 	It("seeds a basic credential on a cluster that only ever ran OIDC", func() {

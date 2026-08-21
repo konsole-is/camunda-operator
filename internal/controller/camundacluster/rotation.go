@@ -213,8 +213,16 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// A Secret that exists with no password is the repair path, and its
 		// connectors are already running. Publishing the new password early
 		// would roll them onto a password the Secret may never hold, and
-		// every retry would generate another one and roll them again. They
-		// stay on what the Secret publishes until the repair lands.
+		// every retry generates another one, so they would roll again on
+		// each of them.
+		//
+		// Leaving it empty does not hold their hash still. An empty digest
+		// drops the admin password out of the hash of connectors, which is
+		// a hash of its own, so they roll once here and once more when the
+		// repair lands. Two is the floor: holding the hash would need the
+		// digest of the password that the Secret no longer carries. What
+		// this buys is that the retries in between are all the same, so a
+		// repair that keeps failing does not keep rolling them.
 		early := ""
 		if !found {
 			early = value
