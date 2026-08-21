@@ -192,7 +192,13 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		By("removing the cluster, the platform config, and the test namespace")
+		By("removing the restore, its backup, the cluster, the platform config, and the test namespace")
+		_, _ = utils.Kubectl(
+			"delete", lresResource, esRestore, "-n", ccNamespace, "--ignore-not-found", "--wait=false",
+		)
+		_, _ = utils.Kubectl(
+			"delete", lbesResource, esRestoreBackup, "-n", ccNamespace, "--ignore-not-found", "--wait=false",
+		)
 		_, _ = utils.Kubectl("delete", ccResource, ccName, "-n", ccNamespace, "--ignore-not-found", "--wait=false")
 		_, _ = utils.Kubectl("delete", ccPlatformResource, ccPlatform, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", ccNamespace, "--wait=false")
@@ -204,6 +210,7 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 
 	itRunsTheOrchestrationCluster(cluster)
 	itBacksUpTheElasticsearchCluster(cluster, esName, ccStorageConfig)
+	itRestoresTheElasticsearchCluster(cluster, esName, ccStorageConfig)
 
 	It("runs Operate standalone and folds it back into the gateway", func() {
 		operate := components.WorkloadName(cluster, components.ComponentOperate)
@@ -406,7 +413,17 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		By("removing the cluster, the database, the platform config, and the test namespace")
+		By("removing the restores, their backup, the cluster, the database, the config, and the namespace")
+		_, _ = utils.Kubectl(
+			"delete", pitrResource, pitrCurrent, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
+		)
+		_, _ = utils.Kubectl(
+			"delete", lrrdbmsResource, rdbmsRestore, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
+		)
+		_, _ = utils.Kubectl(
+			"delete", lbrdbmsResource, rdbmsRestoreBackup,
+			"-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
+		)
 		_, _ = utils.Kubectl("delete", ccResource, ccName, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false")
 		_, _ = utils.Kubectl("delete", dbResource, ccRDBMSDatabase, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", dbServerResource, ccRDBMSServer, "--ignore-not-found")
@@ -420,6 +437,11 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 
 	itRunsTheOrchestrationCluster(cluster)
 	itBacksUpTheRelationalCluster(cluster)
+	itRestoresTheRelationalCluster(cluster)
+	// The point-in-time specs come last. They declare point-in-time recovery
+	// on the database server, which the other specs of this flow run without.
+	itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster)
+	itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster)
 })
 
 // itRunsTheOrchestrationCluster registers the specs that both flows share:
