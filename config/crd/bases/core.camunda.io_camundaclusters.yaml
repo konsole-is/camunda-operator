@@ -7644,8 +7644,10 @@ spec:
                       applied: the effective spec.auth.basic.passwordRotation value, after
                       the preset merge, that produced the password in the admin Secret. A
                       rotation is in progress while that effective value is not empty and
-                      differs from this one. A cluster that inherits the value from its
-                      preset carries none of its own in the spec.
+                      differs from this one. A cleared value does not stop a rotation that
+                      the operator already staged. That rotation completes, and this field
+                      then records the value that staged it. A cluster that inherits the
+                      value from its preset carries none of its own in the spec.
                     type: string
                 type: object
               conditions:
