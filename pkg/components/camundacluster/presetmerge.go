@@ -333,7 +333,7 @@ func ValidateMerged(spec v1.CamundaClusterSpec) error {
 
 	if b := spec.Backup; b != nil && b.PrimaryStorage != nil &&
 		b.PrimaryStorage.Continuous != nil && *b.PrimaryStorage.Continuous &&
-		b.PrimaryStorage.Schedule == scheduleNone {
+		b.PrimaryStorage.Schedule == ScheduleNone {
 		problems = append(problems, msgContinuousWithoutSchedule)
 	}
 

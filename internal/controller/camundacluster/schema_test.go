@@ -45,6 +45,28 @@ func updateSpec(obj *v1.CamundaCluster, mutate func(*v1.CamundaCluster)) error {
 	})
 }
 
+// applyZeebeEnv applies one spec.zeebe.extraEnv entry to obj under the given
+// field manager, the way an extension controller attaches to a cluster it does
+// not own.
+func applyZeebeEnv(obj *v1.CamundaCluster, manager string, env corev1.EnvVar) error {
+	patch := &v1.CamundaCluster{
+		TypeMeta: metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaCluster"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      obj.Name,
+			Namespace: obj.Namespace,
+		},
+		Spec: v1.CamundaClusterSpec{
+			Zeebe: &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{env}}},
+		},
+	}
+
+	// No ForceOwnership: with a map list the two managers own different
+	// entries and never conflict. A conflict here means the list went atomic
+	// again, and the test must see that error rather than swallow it.
+	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
+	return k8sClient.Patch(ctx, patch, client.Apply, client.FieldOwner(manager))
+}
+
 // minimalCamundaCluster returns the minimal example of the CRD doc with a
 // unique name in the schema test namespace.
 func minimalCamundaCluster() *v1.CamundaCluster {
@@ -274,6 +296,39 @@ var _ = Describe("CamundaCluster schema", func() {
 			"claimValue",
 		),
 		Entry(
+			"rejects two zeebe extraEnv entries with the same name",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.Zeebe = &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: []corev1.EnvVar{
+					{Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx4g"},
+					{Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx8g"},
+				}}}
+			},
+			"Duplicate value",
+		),
+		Entry(
+			"rejects two top-level extraEnv entries with the same name",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.ExtraEnv = []corev1.EnvVar{
+					{Name: "LOG_LEVEL", Value: "info"},
+					{Name: "LOG_LEVEL", Value: "debug"},
+				}
+			},
+			"Duplicate value",
+		),
+		Entry(
+			"rejects an extraEnv entry that sets both value and valueFrom",
+			minimalCamundaCluster, func(o *v1.CamundaCluster) {
+				o.Spec.ExtraEnv = []corev1.EnvVar{{
+					Name:  "LOG_LEVEL",
+					Value: "info",
+					ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "logging"}, Key: "level",
+					}},
+				}}
+			},
+			"value or valueFrom",
+		),
+		Entry(
 			"rejects an unknown retention policy",
 			realisticCamundaCluster, func(o *v1.CamundaCluster) {
 				o.Spec.Zeebe.PersistentVolumeClaimRetentionPolicy = &v1.PersistentVolumeClaimRetentionPolicy{
@@ -283,6 +338,44 @@ var _ = Describe("CamundaCluster schema", func() {
 			"whenDeleted",
 		),
 	)
+
+	It("keeps the zeebe extraEnv entries of two field managers side by side", func() {
+		obj := minimalCamundaCluster()
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		Expect(applyZeebeEnv(obj, "camunda-operator/first", corev1.EnvVar{Name: "FIRST", Value: "1"})).To(Succeed())
+		Expect(applyZeebeEnv(obj, "camunda-operator/second", corev1.EnvVar{Name: "SECOND", Value: "2"})).To(Succeed())
+
+		var latest v1.CamundaCluster
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &latest)).To(Succeed())
+		Expect(latest.Spec.Zeebe.ExtraEnv).To(ConsistOf(
+			corev1.EnvVar{Name: "FIRST", Value: "1"},
+			corev1.EnvVar{Name: "SECOND", Value: "2"},
+		))
+	})
+
+	// Two managers that apply the same name merge field by field inside the
+	// entry, so one can own value while the other owns valueFrom. A container
+	// rejects an entry that carries both, so the schema rule must catch the
+	// combination at the CamundaCluster rather than at the rendered pod.
+	It("rejects a second field manager that adds valueFrom to an entry that already has a value", func() {
+		obj := minimalCamundaCluster()
+
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		Expect(applyZeebeEnv(obj, "e2e-user", corev1.EnvVar{Name: "SHARED", Value: "plain"})).To(Succeed())
+
+		err := applyZeebeEnv(obj, "camunda-operator/extension", corev1.EnvVar{
+			Name: "SHARED",
+			ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "creds"}, Key: "password",
+			}},
+		})
+		Expect(err).To(MatchError(ContainSubstring("value or valueFrom")))
+	})
 
 	It("rejects a partitions decrease on update and accepts an increase", func() {
 		obj := realisticCamundaCluster()

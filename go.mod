@@ -15,6 +15,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/sourcehawk/operator-component-framework v0.19.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1

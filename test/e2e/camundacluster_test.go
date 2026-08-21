@@ -440,6 +440,7 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 
 	itRunsTheOrchestrationCluster(cluster)
 	itBacksUpTheRelationalCluster(cluster)
+	itSchedulesBackups(cluster)
 	itRestoresTheRelationalCluster(cluster)
 	// The point-in-time specs come last. They declare point-in-time recovery
 	// on the database server, which the other specs of this flow run without.

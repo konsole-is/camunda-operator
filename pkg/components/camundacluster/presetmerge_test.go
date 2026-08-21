@@ -171,21 +171,6 @@ func TestMergePreset(t *testing.T) {
 			},
 		},
 		{
-			"extraEnv duplicate names in the cluster: the last one wins",
-			v1.CamundaClusterSpec{
-				ExtraEnv: []corev1.EnvVar{{Name: "NEW", Value: "first"}, {Name: "NEW", Value: "last"}},
-			},
-			func(t *testing.T, got v1.CamundaClusterSpec) {
-				assert.Equal(
-					t, []corev1.EnvVar{
-						{Name: "TZ", Value: "UTC"},
-						{Name: "KEEP", Value: "preset"},
-						{Name: "NEW", Value: "last"},
-					}, got.ExtraEnv,
-				)
-			},
-		},
-		{
 			"component extraEnv by name",
 			v1.CamundaClusterSpec{Zeebe: &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{
 				ExtraEnv: []corev1.EnvVar{{Name: "JAVA_OPTS", Value: "-Xmx6g"}},
@@ -322,6 +307,33 @@ func TestMergePreset(t *testing.T) {
 			tt.want(t, MergePreset(tt.spec, fullPreset()))
 		})
 	}
+}
+
+// mergeEnv is a pure function and states its own contract, so it holds that
+// contract whatever the caller passes. The schema of the CRD rejects a
+// manifest that repeats a name inside one list, so a repeat cannot arrive
+// through the API today, but the merge must still leave one entry per name.
+func TestMergeEnvKeepsEachNameOnce(t *testing.T) {
+	t.Parallel()
+
+	merged := mergeEnv(
+		[]corev1.EnvVar{{Name: "A", Value: "base"}, {Name: "B", Value: "base"}},
+		[]corev1.EnvVar{
+			{Name: "B", Value: "over"},
+			{Name: "C", Value: "first"},
+			{Name: "C", Value: "second"},
+		},
+	)
+
+	assert.Equal(
+		t,
+		[]corev1.EnvVar{
+			{Name: "A", Value: "base"},
+			{Name: "B", Value: "over"},
+			{Name: "C", Value: "second"},
+		},
+		merged,
+	)
 }
 
 func TestMergePresetNilPresetReturnsSpecUnchanged(t *testing.T) {

@@ -400,7 +400,7 @@ func connectorsEnv(in Input) []corev1.EnvVar {
 
 	if in.Platform.LicenseSecretRef != nil {
 		env = append(env, corev1.EnvVar{
-			Name:      camundaconfig.EnvLicenseKeyConnectors,
+			Name:      camundaconfig.EnvLicenseKey,
 			ValueFrom: secretSource(in.Platform.LicenseSecretRef.Name, in.Platform.LicenseSecretRef.Key),
 		})
 	}

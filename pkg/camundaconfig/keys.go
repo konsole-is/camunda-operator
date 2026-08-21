@@ -66,6 +66,33 @@ const (
 	// KeySecondaryStorageType is camunda.data.secondary-storage.type (SecondaryStorage.java).
 	KeySecondaryStorageType Key = "camunda.data.secondary-storage.type"
 
+	// The legacy Zeebe Elasticsearch exporter. It is the only writer of the
+	// zeebe-record indices that Optimize imports; the Camunda Exporter of the
+	// secondary storage writes different indices. camunda.data.exporters is a
+	// map of exporter id to Exporter (Exporter.java), and "elasticsearch" is
+	// the id that the Camunda documentation and the Helm chart use.
+
+	// KeyExporterElasticsearchClassName is
+	// camunda.data.exporters.elasticsearch.class-name (Exporter.java).
+	KeyExporterElasticsearchClassName Key = "camunda.data.exporters.elasticsearch.class-name"
+	// KeyExporterElasticsearchURL is
+	// camunda.data.exporters.elasticsearch.args.url, a comma-separated list of
+	// Elasticsearch URLs (ElasticsearchExporterConfiguration.java).
+	KeyExporterElasticsearchURL Key = "camunda.data.exporters.elasticsearch.args.url"
+	// KeyExporterElasticsearchIndexPrefix is
+	// camunda.data.exporters.elasticsearch.args.index.prefix, the prefix of
+	// every exported index
+	// (ElasticsearchExporterConfiguration.IndexConfiguration).
+	KeyExporterElasticsearchIndexPrefix Key = "camunda.data.exporters.elasticsearch.args.index.prefix"
+	// KeyExporterElasticsearchUsername is
+	// camunda.data.exporters.elasticsearch.args.authentication.username
+	// (ElasticsearchExporterConfiguration.AuthenticationConfiguration).
+	KeyExporterElasticsearchUsername Key = "camunda.data.exporters.elasticsearch.args.authentication.username"
+	// KeyExporterElasticsearchPassword is
+	// camunda.data.exporters.elasticsearch.args.authentication.password
+	// (ElasticsearchExporterConfiguration.AuthenticationConfiguration).
+	KeyExporterElasticsearchPassword Key = "camunda.data.exporters.elasticsearch.args.authentication.password"
+
 	// KeyElasticsearchURL is camunda.data.secondary-storage.elasticsearch.url (Elasticsearch.java).
 	KeyElasticsearchURL Key = "camunda.data.secondary-storage.elasticsearch.url"
 	// KeyElasticsearchUsername is camunda.data.secondary-storage.elasticsearch.username (Elasticsearch.java).
@@ -303,9 +330,11 @@ const (
 	EnvSpringProfilesActive = "SPRING_PROFILES_ACTIVE"
 	// EnvJavaToolOptions is the variable that the JVM reads its options from.
 	EnvJavaToolOptions = "JAVA_TOOL_OPTIONS"
-	// EnvLicenseKeyConnectors is the license variable of the connectors
-	// runtime (Helm chart templates/connectors/deployment.yaml).
-	EnvLicenseKeyConnectors = "CAMUNDA_LICENSE_KEY"
+	// EnvLicenseKey is the license variable of the components that do not
+	// read camunda.license.key: the connectors runtime (Helm chart
+	// templates/connectors/deployment.yaml) and Optimize
+	// (CamundaLicense.CAMUNDA_LICENSE_ENV_VAR_KEY).
+	EnvLicenseKey = "CAMUNDA_LICENSE_KEY"
 
 	// EnvAWSRequestChecksumCalculation and EnvAWSResponseChecksumCalculation
 	// turn off the chunked encoding and the checksums that AWS SDK 2.30
@@ -362,6 +391,11 @@ var declared = []Key{
 	KeyManagementServerPort,
 	KeyBrokerGatewayEnable,
 	KeySecondaryStorageType,
+	KeyExporterElasticsearchClassName,
+	KeyExporterElasticsearchURL,
+	KeyExporterElasticsearchIndexPrefix,
+	KeyExporterElasticsearchUsername,
+	KeyExporterElasticsearchPassword,
 	KeyElasticsearchURL,
 	KeyElasticsearchUsername,
 	KeyElasticsearchPassword,
@@ -440,7 +474,7 @@ var declared = []Key{
 var plainEnv = []string{
 	EnvSpringProfilesActive,
 	EnvJavaToolOptions,
-	EnvLicenseKeyConnectors,
+	EnvLicenseKey,
 	EnvAWSRequestChecksumCalculation,
 	EnvAWSResponseChecksumCalculation,
 	EnvGoogleApplicationCredentials,

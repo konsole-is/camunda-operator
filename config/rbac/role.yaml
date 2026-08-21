@@ -82,44 +82,16 @@ rules:
   - core.camunda.io
   resources:
   - backupschedules
-  - camundaclusters
-  - camundamanagementclusters
-  - camundaoptimizes
-  - databaseconfigs
-  - databases
-  - elasticsearchclusters
-  - logicalbackupelasticsearches
-  - logicalbackuprdbmses
-  - logicalrestoreelasticsearches
-  - logicalrestorerdbmses
-  - pointintimerestores
-  - pvcautoresizes
-  - secondarystorageconfigs
+  - camundaclusterpresets
+  - camundaplatformconfigs
+  - databaseserverconfigs
+  - elasticsearchclusterpresets
+  - managementauthconfigs
+  - objectstorageconfigs
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - backupschedules/finalizers
-  - camundaclusters/finalizers
-  - camundamanagementclusters/finalizers
-  - camundaoptimizes/finalizers
-  - databases/finalizers
-  - elasticsearchclusters/finalizers
-  - logicalbackupelasticsearches/finalizers
-  - logicalbackuprdbmses/finalizers
-  - logicalrestoreelasticsearches/finalizers
-  - logicalrestorerdbmses/finalizers
-  - pointintimerestores/finalizers
-  - pvcautoresizes/finalizers
-  verbs:
-  - update
 - apiGroups:
   - core.camunda.io
   resources:
@@ -148,16 +120,43 @@ rules:
 - apiGroups:
   - core.camunda.io
   resources:
-  - camundaclusterpresets
-  - camundaplatformconfigs
-  - databaseserverconfigs
-  - elasticsearchclusterpresets
-  - managementauthconfigs
-  - objectstorageconfigs
+  - camundaclusters
+  - camundamanagementclusters
+  - camundaoptimizes
+  - databaseconfigs
+  - databases
+  - elasticsearchclusters
+  - logicalbackupelasticsearches
+  - logicalbackuprdbmses
+  - logicalrestoreelasticsearches
+  - logicalrestorerdbmses
+  - pointintimerestores
+  - pvcautoresizes
+  - secondarystorageconfigs
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
+- apiGroups:
+  - core.camunda.io
+  resources:
+  - camundaclusters/finalizers
+  - camundamanagementclusters/finalizers
+  - camundaoptimizes/finalizers
+  - databases/finalizers
+  - elasticsearchclusters/finalizers
+  - logicalbackupelasticsearches/finalizers
+  - logicalbackuprdbmses/finalizers
+  - logicalrestoreelasticsearches/finalizers
+  - logicalrestorerdbmses/finalizers
+  - pointintimerestores/finalizers
+  - pvcautoresizes/finalizers
+  verbs:
+  - update
 - apiGroups:
   - elasticsearch.k8s.elastic.co
   resources:

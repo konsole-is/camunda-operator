@@ -29,7 +29,13 @@ A contract carries connection details and credential references. The operator va
 | [ObjectStorageConfig](objectstorageconfig.md) | Cluster | One bucket on S3, GCS, or Azure Blob, and how to authenticate. |
 | [DatabaseServerConfig](databaseserverconfig.md) | Cluster | A database server, its admin credentials, and its point-in-time-recovery capability. |
 | [DatabaseConfig](databaseconfig.md) | Namespaced | One logical database and its credentials. |
-| [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. The operator validates it, but nothing reads it yet. |
+| [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. `CamundaOptimize` reads it. |
+
+## Analytics
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
+| [CamundaOptimize](camundaoptimize.md) | Namespaced | Camunda Optimize for one cluster: the webapp, the importer, and the exporter settings they need. |
 
 ## Backup
 
@@ -37,6 +43,7 @@ A contract carries connection details and credential references. The operator va
 | --- | --- | --- |
 | [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) | Namespaced | One backup of a cluster on Elasticsearch. |
 | [LogicalBackupRDBMS](logicalbackuprdbms.md) | Namespaced | One backup of a cluster on a relational database. |
+| [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule and prune the ones it created. |
 
 ## Restore
 
@@ -64,8 +71,11 @@ graph LR
     CC[CamundaCluster]
     LBE[LogicalBackupElasticsearch]
     LBR[LogicalBackupRDBMS]
+    BS[BackupSchedule]
     LRE[LogicalRestoreElasticsearch]
     LRR[LogicalRestoreRDBMS]
+    MAC[ManagementAuthConfig]
+    OPT[CamundaOptimize]
 
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
@@ -87,6 +97,13 @@ graph LR
     LRE -.->|targetClusterRef| CC
     LRR -.->|backupRef| LBR
     LRR -.->|targetClusterRef| CC
+
+    OPT -.->|clusterRef| CC
+    OPT -.->|managementAuthRef| MAC
+
+    BS -.->|clusterRef| CC
+    BS -->|creates| LBE
+    BS -->|creates| LBR
 ```
 
 ## Planned kinds
@@ -95,7 +112,5 @@ These CRDs are installed with the operator, but the operator does not act on the
 
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
-| [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule. |
-| [CamundaOptimize](camundaoptimize.md) | Namespaced | Run Optimize next to a cluster. |
 | [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
 | [PVCAutoResize](pvcautoresize.md) | Namespaced | Grow the volumes of a cluster on their own. |

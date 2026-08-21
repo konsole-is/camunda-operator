@@ -64,9 +64,19 @@ spec:
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
-                          process. A per-component entry wins over a top-level entry with the
-                          same name. For an embedded web application the entries apply to the
-                          host process.
+                          process. On a CamundaCluster, an entry here wins over a top-level entry
+                          with the same name. The entries of an embedded web application apply to
+                          its host process.
+
+                          The list merges by name under server-side apply, so each field manager
+                          owns only the entries that it applies. An extension controller can add
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -223,6 +233,13 @@ spec:
                           - name
                           type: object
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -299,8 +316,8 @@ spec:
                         type: object
                       replicas:
                         description: |-
-                          Replicas is the number of pods of this process. Defaults to 1. It has
-                          no effect on an embedded web application.
+                          Replicas is the number of pods of this process. Defaults to 1. On a
+                          CamundaCluster it has no effect on an embedded web application.
                         format: int32
                         minimum: 0
                         type: integer
@@ -367,8 +384,9 @@ spec:
                       scheduling:
                         description: |-
                           Scheduling constraints of the pods of this process. When set, it
-                          replaces the top-level scheduling block and the scheduling block of a
-                          preset for this process entirely (no merge).
+                          replaces every scheduling block that would otherwise apply to this
+                          process, with no merge. On a CamundaCluster those are the top-level
+                          block and the block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -1102,6 +1120,10 @@ spec:
                               In the spec.backup.dump of the cluster nothing is reserved, and the
                               variables reach every container. The cluster owner sets connection
                               policy, PGSSLMODE included, inside their own boundary.
+
+                              This list stays atomic, unlike the extraEnv of a workload. One field
+                              manager owns the whole list, because nothing else writes it: no
+                              extension attaches to a dump pod.
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -2100,9 +2122,19 @@ spec:
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
-                          process. A per-component entry wins over a top-level entry with the
-                          same name. For an embedded web application the entries apply to the
-                          host process.
+                          process. On a CamundaCluster, an entry here wins over a top-level entry
+                          with the same name. The entries of an embedded web application apply to
+                          its host process.
+
+                          The list merges by name under server-side apply, so each field manager
+                          owns only the entries that it applies. An extension controller can add
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -2259,6 +2291,13 @@ spec:
                           - name
                           type: object
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -2324,8 +2363,8 @@ spec:
                         type: object
                       replicas:
                         description: |-
-                          Replicas is the number of pods of this process. Defaults to 1. It has
-                          no effect on an embedded web application.
+                          Replicas is the number of pods of this process. Defaults to 1. On a
+                          CamundaCluster it has no effect on an embedded web application.
                         format: int32
                         minimum: 0
                         type: integer
@@ -2392,8 +2431,9 @@ spec:
                       scheduling:
                         description: |-
                           Scheduling constraints of the pods of this process. When set, it
-                          replaces the top-level scheduling block and the scheduling block of a
-                          preset for this process entirely (no merge).
+                          replaces every scheduling block that would otherwise apply to this
+                          process, with no merge. On a CamundaCluster those are the top-level
+                          block and the block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -3017,6 +3057,16 @@ spec:
                     description: |-
                       ExtraEnv are extra environment variables of every workload. A
                       per-component entry wins over an entry here with the same name.
+
+                      The list merges by name under server-side apply, so each field manager
+                      owns only the entries that it applies. An extension controller can add
+                      its own entry next to yours. One applied manifest cannot hold two
+                      entries with the same name.
+
+                      Two field managers that apply the same name do not conflict: the merge
+                      is per field inside the entry, so one manager can own value while the
+                      other owns valueFrom. A container rejects an entry that carries both,
+                      so the rule below refuses to store that combination.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -3173,6 +3223,12 @@ spec:
                       - name
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: an extraEnv entry sets value or valueFrom, never both
+                      rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                   extraEnvFrom:
                     description: |-
                       ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
@@ -3228,9 +3284,19 @@ spec:
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
-                          process. A per-component entry wins over a top-level entry with the
-                          same name. For an embedded web application the entries apply to the
-                          host process.
+                          process. On a CamundaCluster, an entry here wins over a top-level entry
+                          with the same name. The entries of an embedded web application apply to
+                          its host process.
+
+                          The list merges by name under server-side apply, so each field manager
+                          owns only the entries that it applies. An extension controller can add
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -3387,6 +3453,13 @@ spec:
                           - name
                           type: object
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -3463,8 +3536,8 @@ spec:
                         type: object
                       replicas:
                         description: |-
-                          Replicas is the number of pods of this process. Defaults to 1. It has
-                          no effect on an embedded web application.
+                          Replicas is the number of pods of this process. Defaults to 1. On a
+                          CamundaCluster it has no effect on an embedded web application.
                         format: int32
                         minimum: 0
                         type: integer
@@ -3531,8 +3604,9 @@ spec:
                       scheduling:
                         description: |-
                           Scheduling constraints of the pods of this process. When set, it
-                          replaces the top-level scheduling block and the scheduling block of a
-                          preset for this process entirely (no merge).
+                          replaces every scheduling block that would otherwise apply to this
+                          process, with no merge. On a CamundaCluster those are the top-level
+                          block and the block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -4168,9 +4242,19 @@ spec:
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
-                          process. A per-component entry wins over a top-level entry with the
-                          same name. For an embedded web application the entries apply to the
-                          host process.
+                          process. On a CamundaCluster, an entry here wins over a top-level entry
+                          with the same name. The entries of an embedded web application apply to
+                          its host process.
+
+                          The list merges by name under server-side apply, so each field manager
+                          owns only the entries that it applies. An extension controller can add
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -4327,6 +4411,13 @@ spec:
                           - name
                           type: object
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -4403,8 +4494,8 @@ spec:
                         type: object
                       replicas:
                         description: |-
-                          Replicas is the number of pods of this process. Defaults to 1. It has
-                          no effect on an embedded web application.
+                          Replicas is the number of pods of this process. Defaults to 1. On a
+                          CamundaCluster it has no effect on an embedded web application.
                         format: int32
                         minimum: 0
                         type: integer
@@ -4471,8 +4562,9 @@ spec:
                       scheduling:
                         description: |-
                           Scheduling constraints of the pods of this process. When set, it
-                          replaces the top-level scheduling block and the scheduling block of a
-                          preset for this process entirely (no merge).
+                          replaces every scheduling block that would otherwise apply to this
+                          process, with no merge. On a CamundaCluster those are the top-level
+                          block and the block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -5757,9 +5849,19 @@ spec:
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
-                          process. A per-component entry wins over a top-level entry with the
-                          same name. For an embedded web application the entries apply to the
-                          host process.
+                          process. On a CamundaCluster, an entry here wins over a top-level entry
+                          with the same name. The entries of an embedded web application apply to
+                          its host process.
+
+                          The list merges by name under server-side apply, so each field manager
+                          owns only the entries that it applies. An extension controller can add
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -5916,6 +6018,13 @@ spec:
                           - name
                           type: object
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -5992,8 +6101,8 @@ spec:
                         type: object
                       replicas:
                         description: |-
-                          Replicas is the number of pods of this process. Defaults to 1. It has
-                          no effect on an embedded web application.
+                          Replicas is the number of pods of this process. Defaults to 1. On a
+                          CamundaCluster it has no effect on an embedded web application.
                         format: int32
                         minimum: 0
                         type: integer
@@ -6060,8 +6169,9 @@ spec:
                       scheduling:
                         description: |-
                           Scheduling constraints of the pods of this process. When set, it
-                          replaces the top-level scheduling block and the scheduling block of a
-                          preset for this process entirely (no merge).
+                          replaces every scheduling block that would otherwise apply to this
+                          process, with no merge. On a CamundaCluster those are the top-level
+                          block and the block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
@@ -6676,9 +6786,19 @@ spec:
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
-                          process. A per-component entry wins over a top-level entry with the
-                          same name. For an embedded web application the entries apply to the
-                          host process.
+                          process. On a CamundaCluster, an entry here wins over a top-level entry
+                          with the same name. The entries of an embedded web application apply to
+                          its host process.
+
+                          The list merges by name under server-side apply, so each field manager
+                          owns only the entries that it applies. An extension controller can add
+                          its own entry next to yours. One applied manifest cannot hold two
+                          entries with the same name.
+
+                          Two field managers that apply the same name do not conflict: the merge
+                          is per field inside the entry, so one manager can own value while the
+                          other owns valueFrom. A container rejects an entry that carries both,
+                          so the rule below refuses to store that combination.
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -6835,6 +6955,13 @@ spec:
                           - name
                           type: object
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: an extraEnv entry sets value or valueFrom, never
+                            both
+                          rule: self.all(e, !(has(e.value) && has(e.valueFrom)))
                       extraEnvFrom:
                         description: |-
                           ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
@@ -6925,8 +7052,8 @@ spec:
                         type: object
                       replicas:
                         description: |-
-                          Replicas is the number of pods of this process. Defaults to 1. It has
-                          no effect on an embedded web application.
+                          Replicas is the number of pods of this process. Defaults to 1. On a
+                          CamundaCluster it has no effect on an embedded web application.
                         format: int32
                         minimum: 0
                         type: integer
@@ -7000,8 +7127,9 @@ spec:
                       scheduling:
                         description: |-
                           Scheduling constraints of the pods of this process. When set, it
-                          replaces the top-level scheduling block and the scheduling block of a
-                          preset for this process entirely (no merge).
+                          replaces every scheduling block that would otherwise apply to this
+                          process, with no merge. On a CamundaCluster those are the top-level
+                          block and the block of a preset.
                         properties:
                           nodeAffinity:
                             description: NodeAffinity rules for the pods.
