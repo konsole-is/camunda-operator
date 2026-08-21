@@ -46,11 +46,10 @@ type backup struct {
 	// Version is the Camunda version that the cluster ran when the backup was
 	// taken. It is empty for a backup that recorded none.
 	Version string
-	// SourceCluster is the name of the CamundaCluster the backup was taken
-	// from. The target must carry the same name, because the restore
-	// application reads the primary-storage backup under the prefix of the
-	// cluster it runs as.
-	SourceCluster string
+	// Cluster is the CamundaCluster that the backup was taken from. The target
+	// must carry the same name, because the restore application reads the
+	// primary-storage backup under the prefix of the cluster it runs as.
+	Cluster string
 	// Bucket is the ObjectStorageConfig that the backup wrote its dump to.
 	// The target must back up through the same one.
 	Bucket string
@@ -99,7 +98,7 @@ func (r *Reconciler) admit(
 	// writes anything on the cluster spec. Two restores of one cluster
 	// therefore never both pass validation.
 	claimed, err := restore.Take(
-		ctx, r.Client, r.APIReader, lrr.Namespace, lrr.Spec.TargetClusterRef.Name, claimant(lrr),
+		ctx, r.Client, r.APIReader, lrr, lrr.Spec.TargetClusterRef.Name,
 	)
 	if err != nil {
 		return restore.Outcome{}, err
@@ -175,7 +174,7 @@ func (r *Reconciler) start(
 }
 
 // notSuspended reports the target that started running again. A restore
-// rewrites the storage of its target, so it may only touch a cluster whose
+// rewrites the storage of its target, so it only touches a cluster whose
 // workloads are scaled down.
 //
 // Only a phase after admission reports it. Admission suspends the cluster
@@ -228,14 +227,14 @@ func (r *Reconciler) readBackup(
 	}
 
 	return &backup{
-		Namespace:     source.Namespace,
-		Name:          source.Name,
-		ID:            source.Status.BackupID,
-		Version:       source.Status.Version,
-		SourceCluster: source.Spec.ClusterRef.Name,
-		Bucket:        source.Status.BucketRef,
-		ObjectKey:     source.Status.ObjectKey,
-		ZeebeSize:     source.Status.StorageSizes.Zeebe,
+		Namespace: source.Namespace,
+		Name:      source.Name,
+		ID:        source.Status.BackupID,
+		Version:   source.Status.Version,
+		Cluster:   source.Spec.ClusterRef.Name,
+		Bucket:    source.Status.BucketRef,
+		ObjectKey: source.Status.ObjectKey,
+		ZeebeSize: source.Status.StorageSizes.Zeebe,
 	}, nil, nil
 }
 
@@ -291,7 +290,7 @@ func (r *Reconciler) resolve(
 		), nil
 	}
 
-	resolved, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
+	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
@@ -301,5 +300,5 @@ func (r *Reconciler) resolve(
 		return nil, failure, err
 	}
 
-	return &resolution{cluster: cluster, backup: source, target: resolved, storage: storage}, nil, nil
+	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
 }

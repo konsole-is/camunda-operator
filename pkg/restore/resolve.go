@@ -104,17 +104,20 @@ func ResolveStorage(
 	return &storage, nil, nil
 }
 
-// ResolveTarget is ReadTarget with the pre-check failure separated from the
-// transient error, which is the shape a phase reports in. Every phase after
-// admission needs the target: the broker count, the partition count, the
-// Camunda version, and the claim template all come from the live broker
-// StatefulSet, because the management binding of a suspended cluster is unset.
+// ResolveTarget reads the facts a restore needs off the live broker
+// StatefulSet of the cluster. Every phase after admission needs them: the
+// broker count, the partition count, the Camunda version, and the claim
+// template all come from that StatefulSet, because the management binding of
+// a suspended cluster is unset.
+//
+// A StatefulSet that cannot answer one of them is a failure the user
+// corrects. A transport error is one the caller retries.
 func ResolveTarget(
 	ctx context.Context,
 	reader client.Reader,
 	cluster *v1.CamundaCluster,
 ) (*Target, *conditions.PreCheckFailure, error) {
-	target, err := ReadTarget(ctx, reader, cluster)
+	target, err := readTarget(ctx, reader, cluster)
 	if err != nil {
 		var failure *conditions.PreCheckFailure
 		if errors.As(err, &failure) {

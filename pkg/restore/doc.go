@@ -16,10 +16,11 @@ limitations under the License.
 
 // Package restore is the shared machinery of every restore kind, in the role
 // that pkg/logicalbackup has for the backup pair. It holds the facts a
-// restore reads off the live broker StatefulSet, the broker data volumes it
-// deletes and creates again, the restore-application Job it runs once per
-// broker, the claim it takes on the cluster, and the mid-run grace and the
-// terminal transitions that every kind shares.
+// restore reads off the live broker StatefulSet, the claim it takes on the
+// cluster, the preparation that carries the cluster to the state a restore
+// needs, the broker data volumes it deletes and creates again, the
+// restore-application Job it runs once per broker, and the mid-run grace and
+// the terminal branch that every kind shares.
 //
 // The restore Jobs never re-render the broker configuration. They copy it
 // from the StatefulSet that the CamundaCluster controller applied, which

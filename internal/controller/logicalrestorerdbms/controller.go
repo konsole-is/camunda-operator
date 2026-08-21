@@ -57,13 +57,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
@@ -204,33 +202,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}()
 
 	if lrr.Terminal() {
-		// A conflict on the terminal flush can restore a stale Ready from the
-		// server. Staging it again on every look heals that. This branch also
-		// gives the claim back the first time, on the look that follows the
-		// terminal transition. A release that failed heals here too.
-		restore.StageTerminal(&lrr, &lrr.Status.RestoreProgress)
-
-		// The Jobs go before the claim. A completed Job keeps its pod, the pod
-		// keeps the broker volume it mounts, and the claim is what tells the
-		// next operation that the cluster is free.
-		if err := restore.CollectJobs(
-			ctx, r.Client, r.APIReader, &lrr, &lrr.Status.RestoreProgress,
-		); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// The Jobs also go before the unsuspend, and that order is the
-		// correctness of it. The pods of the collected Jobs are what hold the
-		// broker volumes, and unsuspending starts the brokers again. A broker
-		// that the scheduler places on another node cannot attach a
-		// ReadWriteOnce volume that a completed pod still counts as a user of,
-		// so an unsuspend that ran first would stall the cluster on the very
-		// volumes this branch is freeing.
-		if err := r.resumeCluster(ctx, &lrr); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, r.releaseClaim(ctx, &lrr)
+		// The terminal branch that every restore kind shares. It stages the
+		// recorded outcome again, and it gives the Jobs, the suspension, and
+		// the claim back in the one order that frees the broker volumes.
+		return ctrl.Result{}, restore.Finish(
+			ctx, r.Client, r.APIReader, &lrr, &lrr.Status.RestoreProgress, lrr.Spec.TargetClusterRef.Name,
+		)
 	}
 
 	var outcome restore.Outcome
@@ -341,36 +318,6 @@ func (r *Reconciler) holdStarted(
 	}
 
 	return outcome
-}
-
-// claimant is the identity under which the restore holds the claim on its
-// target cluster.
-func claimant(lrr *v1.LogicalRestoreRDBMS) clusterclaim.Claimant {
-	return clusterclaim.Claimant{Kind: lrr.GetKind(), Name: lrr.Name, UID: lrr.UID}
-}
-
-// resumeCluster withdraws the suspension that this restore applied to its
-// target. It is a no-op unless this restore completed and this restore is what
-// suspended the target, which restore.Resume decides from the recorded progress.
-//
-// It runs on every look of a terminal restore, so an attempt that failed
-// heals on the next one, and it writes nothing once the field is gone.
-func (r *Reconciler) resumeCluster(ctx context.Context, lrr *v1.LogicalRestoreRDBMS) error {
-	return restore.Resume(
-		ctx,
-		r.Client,
-		r.APIReader,
-		&lrr.Status.RestoreProgress,
-		types.NamespacedName{Namespace: lrr.Namespace, Name: lrr.Spec.TargetClusterRef.Name},
-	)
-}
-
-// releaseClaim gives the claim on the target cluster back. It is a no-op when
-// the restore does not hold it.
-func (r *Reconciler) releaseClaim(ctx context.Context, lrr *v1.LogicalRestoreRDBMS) error {
-	return restore.Give(
-		ctx, r.Client, r.APIReader, lrr.Namespace, lrr.Spec.TargetClusterRef.Name, claimant(lrr),
-	)
 }
 
 // SetupWithManager applies the options, registers the controller, the two

@@ -45,7 +45,7 @@ func (r *Reconciler) validate(
 
 	if failure := check(compatibility{
 		TargetStorageType: resolved.storage.Spec.Type,
-		BackupCluster:     resolved.backup.SourceCluster,
+		BackupCluster:     resolved.backup.Cluster,
 		TargetCluster:     resolved.cluster.Name,
 		BackupBucket:      resolved.backup.Bucket,
 		TargetBucket:      resolved.cluster.Spec.BackupStorageRef,

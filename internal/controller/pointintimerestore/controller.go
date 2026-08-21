@@ -21,14 +21,13 @@ limitations under the License.
 //
 // The files follow the phases. admit.go resolves the storage chain, checks
 // the rules of the server, takes the claim on the cluster, and suspends the
-// cluster. dbstate.go
-// reads the exporter position of every partition and refuses a database that
-// is ahead of the requested point. primary.go runs the shared primary-storage
-// phase of pkg/restore, which recreates the broker data volumes and runs the
-// restore application on them. refusal.go reads the log of a restore Job that
-// failed and names the one refusal that the operator reports for the user.
-// This file holds what every phase shares: Reconcile, the terminal
-// transitions, and the wiring.
+// cluster. dbstate.go reads the exporter position of every partition and
+// refuses a database that is ahead of the requested point. primary.go runs the
+// shared primary-storage phase of pkg/restore, which recreates the broker data
+// volumes and runs the restore application on them. refusal.go reads the log
+// of a restore Job that failed and names the one refusal that the operator
+// reports for the user. This file holds what every phase shares: Reconcile,
+// the terminal transitions, and the wiring.
 //
 // The machinery that every restore kind shares lives in pkg/restore. This
 // package holds the phase vocabulary of this kind, its own rules, and the
@@ -61,14 +60,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
@@ -163,10 +160,11 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/finalizers,verbs=update
-// The restore prepares its own cluster: it suspends the cluster, sets the
-// Camunda version of the backup, and withdraws the suspension when it
-// completes. Each write is a server-side apply of one field under a field
-// manager of its own, so patch is the only verb it needs on a CamundaCluster.
+// The restore prepares its own cluster: it suspends the cluster and withdraws
+// that suspension when it completes. It writes no version, because it restores
+// the primary storage of a cluster from the backups of that same cluster. The
+// write is a server-side apply of one field under a field manager of its own,
+// so patch is the only verb it needs on a CamundaCluster.
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;databaseconfigs;databaseserverconfigs;databases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
@@ -217,33 +215,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}()
 
 	if pitr.Terminal() {
-		// A conflict on the terminal flush can restore a stale Ready from the
-		// server. Staging it again on every look heals that. This branch also
-		// gives the claim back the first time, on the look that follows the
-		// terminal transition. A release that failed heals here too.
-		restore.StageTerminal(&pitr, &pitr.Status.RestoreProgress)
-
-		// The Jobs go before the claim. A completed Job keeps its pod, the pod
-		// keeps the broker volume it mounts, and the claim is what tells the
-		// next operation that the cluster is free.
-		if err := restore.CollectJobs(
-			ctx, r.Client, r.APIReader, &pitr, &pitr.Status.RestoreProgress,
-		); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// The Jobs also go before the unsuspend, and that order is the
-		// correctness of it. The pods of the collected Jobs are what hold the
-		// broker volumes, and unsuspending starts the brokers again. A broker
-		// that the scheduler places on another node cannot attach a
-		// ReadWriteOnce volume that a completed pod still counts as a user of,
-		// so an unsuspend that ran first would stall the cluster on the very
-		// volumes this branch is freeing.
-		if err := r.resumeCluster(ctx, &pitr); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, r.releaseClaim(ctx, &pitr)
+		// The terminal branch that every restore kind shares. It stages the
+		// recorded outcome again, and it gives the Jobs, the suspension, and
+		// the claim back in the one order that frees the broker volumes.
+		return ctrl.Result{}, restore.Finish(
+			ctx, r.Client, r.APIReader, &pitr, &pitr.Status.RestoreProgress, pitr.Spec.ClusterRef.Name,
+		)
 	}
 
 	var outcome restore.Outcome
@@ -353,36 +330,6 @@ func (r *Reconciler) holdStarted(
 	}
 
 	return outcome
-}
-
-// claimant is the identity under which the restore holds the claim on its
-// cluster.
-func claimant(pitr *v1.PointInTimeRestore) clusterclaim.Claimant {
-	return clusterclaim.Claimant{Kind: pitr.GetKind(), Name: pitr.Name, UID: pitr.UID}
-}
-
-// resumeCluster withdraws the suspension that this restore applied to its
-// cluster. It is a no-op unless this restore completed and this restore is what
-// suspended the cluster, which restore.Resume decides from the recorded progress.
-//
-// It runs on every look of a terminal restore, so an attempt that failed
-// heals on the next one, and it writes nothing once the field is gone.
-func (r *Reconciler) resumeCluster(ctx context.Context, pitr *v1.PointInTimeRestore) error {
-	return restore.Resume(
-		ctx,
-		r.Client,
-		r.APIReader,
-		&pitr.Status.RestoreProgress,
-		types.NamespacedName{Namespace: pitr.Namespace, Name: pitr.Spec.ClusterRef.Name},
-	)
-}
-
-// releaseClaim gives the claim on the cluster back. It is a no-op when the
-// restore does not hold it.
-func (r *Reconciler) releaseClaim(ctx context.Context, pitr *v1.PointInTimeRestore) error {
-	return restore.Give(
-		ctx, r.Client, r.APIReader, pitr.Namespace, pitr.Spec.ClusterRef.Name, claimant(pitr),
-	)
 }
 
 // SetupWithManager registers the controller, the field index, and the

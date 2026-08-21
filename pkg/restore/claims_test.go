@@ -36,7 +36,7 @@ import (
 
 const testManager = FieldManagerPointInTimeRestore
 
-// targetFixture is the target that ReadTarget builds from brokerStatefulSet.
+// targetFixture is the target that readTarget builds from brokerStatefulSet.
 func targetFixture() *Target {
 	sts := brokerStatefulSet()
 

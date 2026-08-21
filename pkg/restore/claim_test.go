@@ -35,6 +35,15 @@ import (
 // The cluster that every case here claims, and the restore that claims it.
 const claimNamespace = "ns"
 
+// selfOwner is the restore that claims the cluster. Take and Give derive the
+// claimant from it, so selfClaimant is what the Lease must record afterwards.
+func selfOwner() *v1.PointInTimeRestore {
+	owner := restoreOwner(1)
+	owner.UID = "restore-uid"
+
+	return owner
+}
+
 func selfClaimant() clusterclaim.Claimant {
 	return clusterclaim.Claimant{
 		Kind: "PointInTimeRestore", Name: "my-cluster-pitr", UID: "restore-uid",
@@ -112,7 +121,7 @@ func TestTakeClaimsAnUnclaimedCluster(t *testing.T) {
 
 	c := claimClient(t)
 
-	outcome, err := Take(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant())
+	outcome, err := Take(t.Context(), c, c, selfOwner(), "my-cluster")
 	require.NoError(t, err)
 
 	assert.Equal(t, Outcome{Done: true}, outcome)
@@ -127,7 +136,7 @@ func TestTakeHoldsWhileAnotherOperationRuns(t *testing.T) {
 
 	c := claimClient(t, heldLease(), backupHolder(v1.LogicalBackupRunning))
 
-	outcome, err := Take(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant())
+	outcome, err := Take(t.Context(), c, c, selfOwner(), "my-cluster")
 	require.NoError(t, err)
 
 	require.NotNil(t, outcome.Failure)
@@ -145,7 +154,7 @@ func TestTakeTakesOverATerminalHolder(t *testing.T) {
 
 	c := claimClient(t, heldLease(), backupHolder(v1.LogicalBackupCompleted))
 
-	outcome, err := Take(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant())
+	outcome, err := Take(t.Context(), c, c, selfOwner(), "my-cluster")
 	require.NoError(t, err)
 
 	assert.Equal(t, Outcome{Done: true}, outcome)
@@ -158,10 +167,10 @@ func TestTakeIsIdempotentForTheHolder(t *testing.T) {
 	t.Parallel()
 
 	c := claimClient(t)
-	_, err := Take(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant())
+	_, err := Take(t.Context(), c, c, selfOwner(), "my-cluster")
 	require.NoError(t, err)
 
-	outcome, err := Take(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant())
+	outcome, err := Take(t.Context(), c, c, selfOwner(), "my-cluster")
 	require.NoError(t, err)
 
 	assert.Equal(t, Outcome{Done: true}, outcome)
@@ -172,10 +181,10 @@ func TestGiveReleasesTheClaimOfTheHolder(t *testing.T) {
 	t.Parallel()
 
 	c := claimClient(t)
-	_, err := Take(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant())
+	_, err := Take(t.Context(), c, c, selfOwner(), "my-cluster")
 	require.NoError(t, err)
 
-	require.NoError(t, Give(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant()))
+	require.NoError(t, Give(t.Context(), c, c, selfOwner(), "my-cluster"))
 	assert.Empty(t, leaseHolder(t, c))
 }
 
@@ -186,6 +195,6 @@ func TestGiveLeavesTheClaimOfAnotherHolder(t *testing.T) {
 
 	c := claimClient(t, heldLease(), backupHolder(v1.LogicalBackupRunning))
 
-	require.NoError(t, Give(t.Context(), c, c, claimNamespace, "my-cluster", selfClaimant()))
+	require.NoError(t, Give(t.Context(), c, c, selfOwner(), "my-cluster"))
 	assert.Equal(t, backupClaimant().String(), leaseHolder(t, c))
 }

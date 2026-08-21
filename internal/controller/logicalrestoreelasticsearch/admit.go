@@ -100,7 +100,7 @@ func (r *Reconciler) admit(
 	// writes anything on the cluster spec. Two restores of one cluster
 	// therefore never both pass validation.
 	claimed, err := restore.Take(
-		ctx, r.Client, r.APIReader, lres.Namespace, lres.Spec.TargetClusterRef.Name, claimant(lres),
+		ctx, r.Client, r.APIReader, lres, lres.Spec.TargetClusterRef.Name,
 	)
 	if err != nil {
 		return restore.Outcome{}, err

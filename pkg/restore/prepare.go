@@ -230,8 +230,8 @@ func versionTarget(
 // restore keeps it: its broker volumes can be empty or half written, and
 // brokers that start over them are worse than a cluster that is down.
 //
-// The caller runs this from the terminal branch of its reconcile, after it
-// collected the Jobs and before it gives the cluster claim back. The pods of
+// Finish runs this after it collected the Jobs and before it gives the
+// cluster claim back, and it carries the reason for that order. The pods of
 // those Jobs hold the broker volumes, and this call is what lets a broker ask
 // for one.
 //

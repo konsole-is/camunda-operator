@@ -45,12 +45,9 @@ import (
 // The delete carries foreground propagation. Background propagation returns
 // before the pods are gone, and the pods are what hold the volume.
 //
-// The caller runs this from the terminal branch of its reconcile, before it
-// gives the cluster claim back. The claim is what tells the next operation
-// that the cluster is free, so the volumes are asked for first. An error keeps
-// the claim for one more look, and the terminal branch runs again on the next
-// one. The Jobs belong to the restore, so the delete itself wakes the
-// controller again.
+// Finish runs this first of the three releases of a terminal restore, and it
+// carries the reason for that order. The Jobs belong to the restore, so the
+// delete itself wakes the controller again.
 //
 // It is safe to call again on every look. A Job that is gone, a Job that
 // another writer owns now, and a Job that already terminates are all left as

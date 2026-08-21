@@ -521,7 +521,7 @@ func TestJobSelectorRoundTripsALongRestoreName(t *testing.T) {
 }
 
 // A Target that is missing any of its parts reaches BuildJob only through
-// misuse, because ReadTarget fills all of them. It still must not panic.
+// misuse, because readTarget fills all of them. It still must not panic.
 func TestBuildJobRejectsAnIncompleteTarget(t *testing.T) {
 	t.Parallel()
 

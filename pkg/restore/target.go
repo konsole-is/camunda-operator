@@ -43,12 +43,12 @@ const ComponentRestore = "restore"
 // cluster. The restore never re-renders the broker configuration. It copies
 // it, so the restore application and the brokers cannot disagree.
 //
-// ReadTarget is the only constructor. It either fills every field, with both
-// counts at one or more, or it returns an error. The methods on Target read
-// those fields directly, so a Target that a caller built by hand panics in
-// them. BuildJob and RecreateClaims are the two entry points a controller
-// reaches from a reconcile, and both check the whole Target before they touch
-// it.
+// readTarget is the only constructor, and ResolveTarget is how a caller
+// reaches it. It either fills every field, with both counts at one or more, or
+// it returns an error. The methods on Target read those fields directly, so a
+// Target that a caller built by hand panics in them. Every entry point that
+// renders from a Target checks the whole of it first: Prepare, Primary,
+// BuildJob, and RecreateClaims.
 type Target struct {
 	// ClusterName is the CamundaCluster the StatefulSet belongs to. Every
 	// resource a restore renders carries it, so an extension finds the
@@ -76,16 +76,18 @@ type Target struct {
 	ClaimTemplate *corev1.PersistentVolumeClaim
 }
 
-// ReadTarget reads the broker StatefulSet of cluster and extracts the facts a
+// readTarget reads the broker StatefulSet of cluster and extracts the facts a
 // restore needs from it. Every fact that the StatefulSet cannot answer is a
 // *conditions.PreCheckFailure with v1.ReasonInvalidReference, whose message
-// names what is missing. A transport error is a plain wrapped error, and the
-// caller retries it.
+// names what is missing. A transport error is a plain wrapped error.
+//
+// ResolveTarget is the entry point of every caller: it separates the two, so
+// a phase reports the failure and retries the error.
 //
 // A cluster whose broker StatefulSet was deleted cannot restore until its own
 // controller applies it again. Suspending a cluster keeps the StatefulSet in
 // place, so this is an edge, not a flow.
-func ReadTarget(
+func readTarget(
 	ctx context.Context,
 	reader client.Reader,
 	cluster *v1.CamundaCluster,
@@ -145,7 +147,7 @@ func ReadTarget(
 }
 
 // complete reports whether the target holds every fact that a render reads
-// off it. ReadTarget fills all of them or returns an error, so a target that
+// off it. readTarget fills all of them or returns an error, so a target that
 // fails this check was built by hand. The check exists because the callers
 // run inside a reconcile, where a nil dereference takes the manager down with
 // every other controller. It answers for a nil target too.
