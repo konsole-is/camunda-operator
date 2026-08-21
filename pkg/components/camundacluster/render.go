@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
@@ -477,7 +476,7 @@ func dedupeEnv(env []corev1.EnvVar) []corev1.EnvVar {
 // variable is then unset rather than the pod failing to start.
 func optionalSecretSource(name, key string) *corev1.EnvVarSource {
 	source := secretSource(name, key)
-	source.SecretKeyRef.Optional = ptr.To(true)
+	source.SecretKeyRef.Optional = new(true)
 
 	return source
 }
