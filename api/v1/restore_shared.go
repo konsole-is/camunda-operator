@@ -86,8 +86,10 @@ const (
 	LogicalRestoreCompleted LogicalRestorePhase = "Completed"
 	// LogicalRestoreFailed means that the restore failed. The Ready condition
 	// names the failing phase. The operator keeps the per-broker Jobs, because
-	// their logs are the diagnosis, so the restore holds the broker data
-	// volumes until somebody deletes it.
+	// their logs are the diagnosis, so a restore that reached
+	// RestoringPrimaryStorage holds the broker data volumes until somebody
+	// deletes it. A restore that failed in an earlier phase records no Job in
+	// PrimaryJobNames and holds nothing.
 	LogicalRestoreFailed LogicalRestorePhase = "Failed"
 )
 

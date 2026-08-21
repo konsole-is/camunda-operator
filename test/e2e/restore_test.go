@@ -78,6 +78,10 @@ const (
 	pitrRefusedAge = 24 * time.Hour
 	// pitrHold is how long the refusing restore must keep its hold.
 	pitrHold = 30 * time.Second
+	// watchStopTimeout bounds how long a restore Job watch waits for its last
+	// look to land. One look is one kubectl call, so the bound only fires when
+	// that call hangs.
+	watchStopTimeout = time.Minute
 )
 
 // publicTableCount counts the tables of the schema that a Camunda cluster
@@ -705,6 +709,14 @@ func expectRestoreCollectedItsJobs(namespace, resource, name string, owner label
 // Jobs after the restore is terminal therefore finds nothing. The watch runs
 // from the moment the restore is created, over the whole primary-storage run,
 // and it keeps the first copy it sees of each Job.
+//
+// A sample every second is enough, and no Kubernetes watch is needed. A Job of
+// a restore lives for as long as its pod schedules, starts a JVM, reads a
+// primary-storage backup, and exits, which is tens of seconds at least. The
+// operator also needs several reconciles before the first Job exists, and it
+// creates every Job of the restore in one pass. expectRestoreCompleted then
+// reads the phase on a five-second poll, so the suite cannot even see
+// Completed before the samples below have run many times.
 type restoreJobWatch struct {
 	resource  string
 	name      string
@@ -713,6 +725,9 @@ type restoreJobWatch struct {
 
 	once sync.Once
 	done chan struct{}
+	// stopped closes when the goroutine has left its loop, so close can wait
+	// for the last look to land before expect reads the record.
+	stopped chan struct{}
 
 	mu   sync.Mutex
 	jobs map[string]batchv1.Job
@@ -729,10 +744,13 @@ func watchRestoreJobs(resource, name, namespace string, owner labels.Owner) *res
 		namespace: namespace,
 		owner:     owner,
 		done:      make(chan struct{}),
+		stopped:   make(chan struct{}),
 		jobs:      map[string]batchv1.Job{},
 	}
 
 	go func() {
+		defer close(w.stopped)
+
 		deadline := time.After(restoreTimeout)
 		for {
 			w.capture()
@@ -772,9 +790,24 @@ func (w *restoreJobWatch) capture() {
 	}
 }
 
-// close stops the watch. It is safe to call more than once.
+// close stops the watch and waits for its last look to land. It is safe to
+// call more than once.
+//
+// The wait is what completes the record. A look that listed the Jobs before
+// the stop still holds its result, and it writes that result after the list
+// returns. expect reads the record right after this call, so without the wait
+// the last look can land behind the read and the record can lack a Job that
+// the watch really saw.
+//
+// The wait is bounded. It gives up after watchStopTimeout, because a kubectl
+// call that never returns must not hold a spec open for ever.
 func (w *restoreJobWatch) close() {
 	w.once.Do(func() { close(w.done) })
+
+	select {
+	case <-w.stopped:
+	case <-time.After(watchStopTimeout):
+	}
 }
 
 // captured returns the Jobs the watch kept, by name.
@@ -799,8 +832,12 @@ func (w *restoreJobWatch) captured() map[string]batchv1.Job {
 // capture proves nothing about the restore application.
 func (w *restoreJobWatch) expect(brokers int, args gomegatypes.GomegaMatcher) {
 	Expect(w).NotTo(BeNil(), "no spec of this flow started a watch of the restore Jobs")
+
+	// close waits for the last look, so the record is complete when it
+	// returns. A look of its own here would only read the cluster again, after
+	// the restore already collected its Jobs, and it would add a kubectl call
+	// that nothing bounds.
 	w.close()
-	w.capture()
 
 	var recorded struct {
 		Status struct {

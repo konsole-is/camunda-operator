@@ -171,17 +171,19 @@ The restore runs the Camunda restore application once per broker, as a Job. Each
 
 | Terminal phase | What happens to the Jobs |
 | --- | --- |
-| `Completed` | The operator deletes them, together with their pods. The broker data volumes are free for the next operation. |
+| `Completed` | The operator deletes them, together with their pods. Kubernetes removes the pods first and the Job last, so the delete takes a moment. The broker data volumes are free once the last pod is gone. |
 | `Failed` | The operator keeps them. The logs of a failed Job name the cause, and only the pod keeps them readable. |
 
-**A failed restore holds the broker data volumes.** You read the logs of its Jobs, and then you delete the restore. The delete takes the Jobs and their pods with it, and the volumes are free again. Until you do that, a second restore of the cluster and the deletion of the cluster both wait on a volume that never terminates. The waiting restore reports the pod that holds the volume and names the resource that runs it.
+**A restore that failed after it started the restore application holds the broker data volumes.** `status.primaryJobNames` tells you which case you are in. A restore that failed in an earlier phase names no Job there and holds nothing.
+
+When it does name Jobs, you read their logs, and then you delete the restore. The delete takes the Jobs and their pods with it, and the volumes are free once the last pod is gone. Until you do that, a second restore of the cluster and the deletion of the cluster both wait on a volume that never terminates. The waiting restore reports the pod that holds the volume and names the resource that runs it.
 
 ```bash
 # The Jobs that the restore still holds. status.primaryJobNames lists the same names.
 kubectl get job -n my-cluster-ns -l camunda.io/point-in-time-restore=my-cluster-pitr
 
-# The log of the Job of one broker.
-kubectl logs -n my-cluster-ns job/<job name>
+# The log of the Job of broker 0, named the way the command above lists it.
+kubectl logs -n my-cluster-ns job/my-cluster-pitr-pitr-0
 ```
 
 ## Deletion

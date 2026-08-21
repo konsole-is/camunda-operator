@@ -947,8 +947,44 @@ var _ = Describe("PointInTimeRestore cluster claim", func() {
 		}, timeout, interval).Should(Equal("PointInTimeRestore/" + pitr.Name))
 	})
 
+	// Foreground propagation keeps a Job in place until its last pod is gone,
+	// and a pod that mounts a broker volume is what holds that volume. The
+	// claim is what tells the next operation that the cluster is free, so it
+	// waits for the pods and not for the delete call.
+	It("keeps the claim while the Jobs of the completed restore still terminate", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		for ordinal := range int32(brokerCount) {
+			markJob(pitr, ordinal, batchv1.JobComplete)
+		}
+
+		By("reaching the terminal phase with every Job asked to go")
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			jobs := jobsOf(pitr)
+			g.Expect(jobs).To(HaveLen(brokerCount))
+			for _, job := range jobs {
+				g.Expect(job.DeletionTimestamp).NotTo(BeNil(), "Job %q", job.Name)
+			}
+		}, timeout, interval).Should(Succeed())
+
+		By("holding the claim while the Jobs are still there")
+		Consistently(func() string {
+			return claimHolder(w)
+		}, time.Second, interval).Should(Equal("PointInTimeRestore/" + pitr.Name))
+
+		By("giving the claim back once the collector removed them")
+		collectDeletedJobs(w.namespace)
+		Eventually(func() string {
+			return claimHolder(w)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
 	It("gives the claim back when it completes", func() {
 		w := createWorld()
+		collectDeletedJobs(w.namespace)
 		pitr := createRestore(w)
 		expectJobs(pitr)
 		Expect(claimHolder(w)).To(Equal("PointInTimeRestore/" + pitr.Name))
