@@ -60,6 +60,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
@@ -151,7 +152,7 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // The cluster claim reads the resource of whichever kind holds the Lease,
 // to decide whether that holder still needs the cluster. The list names every
@@ -327,9 +328,10 @@ func (r *Reconciler) releaseClaim(ctx context.Context, lrr *v1.LogicalRestoreRDB
 }
 
 // SetupWithManager applies the options, registers the controller, the two
-// field indexes, and the watches: the restores, the Jobs they own, the target
-// clusters, and the backups they read. A suspend flip and a backup that
-// reaches Completed both wake a waiting restore without a timer.
+// field indexes, and the watches: the restores, the Jobs they own, the pods
+// of those Jobs, the target clusters, and the backups they read. A suspend
+// flip and a backup that reaches Completed both wake a waiting restore
+// without a timer.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	resolved, err := r.opts.withDefaults()
 	if err != nil {
@@ -370,6 +372,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.LogicalRestoreRDBMS{}).
 		Owns(&batchv1.Job{}).
+		// A Job reports nothing about a pod of its own that cannot start,
+		// so the pods are watched next to the Jobs.
+		Watches(
+			&corev1.Pod{},
+			podstate.EnqueueJobOwner(
+				mgr.GetClient(), v1.GroupVersion.WithKind("LogicalRestoreRDBMS").GroupKind(),
+			),
+		).
 		Watches(
 			&v1.CamundaCluster{},
 			refindex.Enqueue(
