@@ -73,10 +73,15 @@ const (
 )
 
 // Owner identifies the custom resource that a rendered resource belongs to:
-// the label key of its kind and its name.
+// the label key of its kind, and its name under the bound that a label value
+// admits.
+//
+// Name is not reversible above that bound. A reader that maps a rendered
+// resource back to its owner compares OwnerName of a candidate name against
+// Name. It never reads Name as the name of the custom resource.
 type Owner struct {
-	// Key is the label key of the owning kind, one of ClusterKey,
-	// ElasticsearchClusterKey, or DatabaseKey.
+	// Key is the label key of the owning kind. Each owning kind has its own
+	// key, and the constructor of that kind sets it.
 	Key string
 	// Name is the name of the owning custom resource, bounded to what a
 	// label value admits. Build an Owner through the constructor of its
@@ -187,6 +192,10 @@ func Merge(user, operator map[string]string) map[string]string {
 // BoundedName returns name when it fits limit, or its head followed by a hash
 // of the whole name otherwise. The result is deterministic, so every render of
 // one resource agrees, and two names that share the head differ in the hash.
+//
+// A limit with no room for a head and a hash gives a different shape: the
+// result is the first limit characters of the hash alone, and a limit of zero
+// or less gives the empty string. No caller passes such a limit.
 //
 // The name of a custom resource can be a full DNS subdomain, and a label value
 // and a Job name are both bounded like a DNS label. Pass
