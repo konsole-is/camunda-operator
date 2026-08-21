@@ -72,13 +72,17 @@ func (b scheduledBackup) terminal() bool {
 // label, live: the pruning deletes data and the overlap check starts backups,
 // so neither decides on a stale list. A terminal backup without a completion
 // time sorts by its creation time, so it still ages out.
+//
+// The selector carries the name of the schedule under the bound of a label
+// value, the way the creation writes it, so a schedule with a long name
+// reaches its own backups.
 func (r *BackupScheduleReconciler) scheduledBackups(
 	ctx context.Context,
 	schedule *v1.BackupSchedule,
 ) ([]scheduledBackup, error) {
 	scope := []client.ListOption{
 		client.InNamespace(schedule.Namespace),
-		client.MatchingLabels{labels.BackupScheduleKey: schedule.Name},
+		client.MatchingLabels{labels.BackupScheduleKey: labels.OwnerName(schedule.Name)},
 	}
 
 	var es v1.LogicalBackupElasticsearchList

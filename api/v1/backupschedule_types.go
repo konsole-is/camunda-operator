@@ -95,10 +95,12 @@ type BackupScheduleStatus struct {
 // schedule and prunes the backups it created. At each trigger the operator
 // creates the backup kind that matches the storage type of the cluster,
 // named <schedule>-<unix-timestamp> and labeled camunda.io/cluster and
-// camunda.io/backup-schedule. The backups carry no owner reference to the
-// schedule, so deleting a schedule never deletes its backups. A trigger is
-// skipped, with an event, while the cluster is suspended or while a backup
-// of this schedule has not reached a terminal phase.
+// camunda.io/backup-schedule. A name that does not fit the bound of a
+// resource name or of a label value is cut, and a hash of the full name is
+// added, so two long names stay apart. The backups carry no owner reference
+// to the schedule, so deleting a schedule never deletes its backups. A
+// trigger is skipped, with an event, while the cluster is suspended or while
+// a backup of this schedule has not reached a terminal phase.
 type BackupSchedule struct {
 	metav1.TypeMeta `json:",inline"`
 
