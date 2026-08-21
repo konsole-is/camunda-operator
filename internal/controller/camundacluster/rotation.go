@@ -59,11 +59,15 @@ type adminCredential struct {
 	// pending is the requested password of an in-flight rotation, published
 	// under the pending key. Empty when no rotation is in flight.
 	pending string
-	// email is the address of the admin user that the Secret publishes after
-	// this reconcile. It is the desired address once the cluster holds it,
-	// and the address the Secret already holds until then, so a refused
-	// address is never recorded as applied.
+	// email is the address that the spec asks for. The Secret publishes it
+	// for the processes to seed from, whether or not the cluster has taken
+	// it yet, because a process that read none would seed an incomplete
+	// user.
 	email string
+	// appliedEmail is the address that the orchestration cluster has
+	// accepted. It stays at what the Secret already records until a call
+	// succeeds, so a refused address is never recorded as applied.
+	appliedEmail string
 	// pendingRotation is the rotation value that staged pending. It travels
 	// with it, so a promote records the request that produced the password
 	// it promotes even when the spec changed, or was cleared, while the
@@ -217,7 +221,11 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		}
 
 		return adminCredential{
-			password: credentials.Password{Value: value}, published: value, rotation: rotation, email: seeded,
+			password:     credentials.Password{Value: value},
+			published:    value,
+			rotation:     rotation,
+			email:        email,
+			appliedEmail: seeded,
 		}, nil
 	}
 
@@ -227,7 +235,8 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			published:         current.Value,
 			rotation:          applied.rotation,
 			publishedRotation: applied.rotation,
-			email:             applied.email,
+			email:             email,
+			appliedEmail:      applied.email,
 		}
 		if applied.email == email || in.Effective.Suspend {
 			return steady, nil
@@ -250,7 +259,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			"Set the admin email to %q through the user API",
 			email,
 		)
-		steady.email = email
+		steady.appliedEmail = email
 
 		return steady, nil
 	}
@@ -263,7 +272,8 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			pendingRotation:   pending.rotation,
 			rotation:          applied.rotation,
 			publishedRotation: applied.rotation,
-			email:             applied.email,
+			email:             email,
+			appliedEmail:      applied.email,
 		}, nil
 	}
 
@@ -280,7 +290,8 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			pendingRotation:   requested,
 			rotation:          applied.rotation,
 			publishedRotation: applied.rotation,
-			email:             applied.email,
+			email:             email,
+			appliedEmail:      applied.email,
 		}, nil
 	}
 
@@ -294,7 +305,8 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			pendingRotation:   pending.rotation,
 			rotation:          applied.rotation,
 			publishedRotation: applied.rotation,
-			email:             applied.email,
+			email:             email,
+			appliedEmail:      applied.email,
 			failure:           failure,
 		}, nil
 	}
@@ -318,6 +330,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		rotation:          pending.rotation,
 		publishedRotation: applied.rotation,
 		email:             email,
+		appliedEmail:      email,
 	}, nil
 }
 
@@ -353,7 +366,7 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 		},
 		appliedIdentity{
 			rotation: string(secret.Data[components.AdminRotationKey]),
-			email:    string(secret.Data[components.AdminEmailKey]),
+			email:    string(secret.Data[components.AdminAppliedEmailKey]),
 		},
 		nil
 }

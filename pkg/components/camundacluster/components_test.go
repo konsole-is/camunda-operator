@@ -81,7 +81,11 @@ func assertGoldens(t *testing.T, dir string, in Input) {
 		admin, err := AdminSecretComponent(
 			in.Cluster,
 			true,
-			AdminSecretState{Password: credentials.Password{Value: goldenPassword}},
+			AdminSecretState{
+				Password:     credentials.Password{Value: goldenPassword},
+				Email:        DefaultAdminEmail,
+				AppliedEmail: DefaultAdminEmail,
+			},
 		)
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
@@ -387,6 +391,7 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 	tests := []struct {
 		name            string
 		email           string
+		appliedEmail    string
 		pending         string
 		pendingRotation string
 		rotation        string
@@ -413,8 +418,16 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 			absent: []string{"password-pending", "password-pending-rotation", "password-rotation"},
 		},
 		{
-			name:   "an address the cluster never accepted is not published",
-			absent: []string{"email"},
+			name:   "an address the cluster never accepted is not recorded as applied",
+			email:  "team@example.com",
+			want:   map[string]string{"email": "team@example.com"},
+			absent: []string{"email-applied"},
+		},
+		{
+			name:         "an accepted address is recorded beside the one the processes read",
+			email:        "team@example.com",
+			appliedEmail: "team@example.com",
+			want:         map[string]string{"email": "team@example.com", "email-applied": "team@example.com"},
 		},
 	}
 
@@ -424,6 +437,7 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 			comp, err := AdminSecretComponent(in.Cluster, true, AdminSecretState{
 				Password:        credentials.Password{Value: "s3cret"},
 				Email:           tt.email,
+				AppliedEmail:    tt.appliedEmail,
 				PendingPassword: tt.pending,
 				PendingRotation: tt.pendingRotation,
 				Rotation:        tt.rotation,

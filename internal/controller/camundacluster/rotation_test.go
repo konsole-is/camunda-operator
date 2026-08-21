@@ -382,7 +382,7 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.rotation).To(Equal("round-1"))
-		Expect(cred.email).To(
+		Expect(cred.appliedEmail).To(
 			Equal(components.DefaultAdminEmail), "the first Secret seeds the address it publishes",
 		)
 
@@ -398,8 +398,11 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.rotation).To(BeEmpty(), "a rotation requested after a delete must reach the user API")
-		Expect(cred.email).To(
+		Expect(cred.appliedEmail).To(
 			BeEmpty(), "and the address of a replacement Secret is not applied either",
+		)
+		Expect(cred.email).To(
+			Equal(components.DefaultAdminEmail), "while the processes still get a seed",
 		)
 	})
 
@@ -596,6 +599,7 @@ var _ = Describe("Admin password rotation", func() {
 			var secret corev1.Secret
 			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
 			g.Expect(string(secret.Data[components.AdminEmailKey])).To(Equal("first@example.com"))
+			g.Expect(string(secret.Data[components.AdminAppliedEmailKey])).To(Equal("first@example.com"))
 		}, timeout, interval).Should(Succeed())
 
 		By("asking for another address")
@@ -609,7 +613,7 @@ var _ = Describe("Admin password rotation", func() {
 
 			var secret corev1.Secret
 			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
-			g.Expect(string(secret.Data[components.AdminEmailKey])).To(Equal("second@example.com"))
+			g.Expect(string(secret.Data[components.AdminAppliedEmailKey])).To(Equal("second@example.com"))
 			g.Expect(string(secret.Data[components.AdminPasswordKey])).To(
 				Equal(password), "a profile update never rotates the password",
 			)
@@ -642,8 +646,11 @@ var _ = Describe("Admin password rotation", func() {
 		Consistently(func(g Gomega) {
 			var secret corev1.Secret
 			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
-			g.Expect(string(secret.Data[components.AdminEmailKey])).To(
+			g.Expect(string(secret.Data[components.AdminAppliedEmailKey])).To(
 				Equal("first@example.com"), "an address the cluster refused is never recorded as applied",
+			)
+			g.Expect(string(secret.Data[components.AdminEmailKey])).To(
+				Equal("second@example.com"), "the processes still read a complete seed",
 			)
 		}, "3s", interval).Should(Succeed())
 	})

@@ -56,10 +56,18 @@ const (
 	// the admin Secret. The email lives here, and not in the rendered pod
 	// template, so that a changed address never restarts a workload: the
 	// processes read it from this Secret, and the orchestration cluster
-	// reads it once, when it seeds the user.
+	// reads it once, when it seeds the user. It always carries an address,
+	// because a process that read none would seed an incomplete user.
 	AdminUsernameKey = "username"
 	AdminEmailKey    = "email"
 	AdminPasswordKey = "password"
+	// AdminAppliedEmailKey holds the address that the orchestration cluster
+	// has accepted, which is not always the one under AdminEmailKey: a
+	// changed address is published for the processes at once and recorded
+	// here only after the user API takes it. The operator compares the two
+	// to decide whether the cluster still has to be told. The workloads
+	// never read it.
+	AdminAppliedEmailKey = "email-applied"
 	// AdminPendingPasswordKey holds the requested password while a rotation
 	// is in flight, next to the active one under AdminPasswordKey. The
 	// workloads never read it.

@@ -10,7 +10,7 @@ If you want the whole picture in one place, read [A complete OIDC example](#a-co
 
 Under basic authentication the orchestration cluster stores its users itself, and every caller sends a username and a password. The operator creates the first administrator for you. The user is named `admin` and is a member of the `admin` role. You manage every other user in the Admin web application.
 
-The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The Secret also carries `email`, the address of that user. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation: `password-rotation` names the request that the current password answers, and `password-pending` with `password-pending-rotation` appear only while a rotation is in flight. Do not read those keys; they are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
+The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The Secret also carries `email`, the address of that user, and `email-applied`, the address the cluster has accepted. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation: `password-rotation` names the request that the current password answers, and `password-pending` with `password-pending-rotation` appear only while a rotation is in flight. Do not read those keys; they are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
 
 The connectors runtime authenticates against the cluster with the same user and password. You configure nothing for it.
 
@@ -74,7 +74,7 @@ spec:
 
 An unset value publishes `admin@example.com`. That domain is reserved for documentation, so an operator that never asked for an address does not claim one that somebody owns.
 
-A changed value is applied to the running cluster. The operator calls the user API, leaves the password alone, and records the new address in the Secret only after the cluster accepts it. The workloads read the address from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot; a refused address surfaces on `AdminSecretReady` with the answer of the cluster, and the Secret keeps the address that the cluster still holds.
+A changed value is applied to the running cluster. The operator publishes the new address in the Secret at once, for the processes to seed from, and calls the user API. It leaves the password alone, and records the address under `email-applied` only after the cluster accepts it, which is what tells it to stop calling. The workloads read the address from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot; a refused address surfaces on `AdminSecretReady` with the answer of the cluster, and the Secret keeps the address that the cluster still holds.
 
 ## OIDC
 

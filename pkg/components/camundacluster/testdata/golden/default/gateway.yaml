@@ -82,7 +82,6 @@ spec:
             secretKeyRef:
               key: email
               name: my-cluster-camunda-admin
-              optional: true
         - name: CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0
           value: admin
         - name: CAMUNDA_LICENSE_KEY

@@ -340,12 +340,7 @@ func adminUserEnv(in Input) []corev1.EnvVar {
 		camundaconfig.Var(camundaconfig.Index(users, 0, "name"), AdminUsername),
 		camundaconfig.VarFrom(
 			camundaconfig.Index(users, 0, "email"),
-			// Optional: a Secret written before the operator recorded an
-			// address carries no such key, and the cluster it belongs to
-			// seeded its user long ago. The operator never invents a value
-			// to fill it, because a value it invented would claim an address
-			// that the cluster never accepted.
-			optionalSecretSource(AdminSecretName(in.Cluster), AdminEmailKey),
+			secretSource(AdminSecretName(in.Cluster), AdminEmailKey),
 		),
 		camundaconfig.Var(camundaconfig.Index(camundaconfig.KeyDefaultRolesAdminUsers, 0, ""), AdminUsername),
 	}
@@ -472,15 +467,6 @@ func dedupeEnv(env []corev1.EnvVar) []corev1.EnvVar {
 
 // secretSource builds the source of an environment variable that reads one
 // key of a Secret in the pod's namespace.
-// optionalSecretSource is secretSource for a key that may be absent. The
-// variable is then unset rather than the pod failing to start.
-func optionalSecretSource(name, key string) *corev1.EnvVarSource {
-	source := secretSource(name, key)
-	source.SecretKeyRef.Optional = new(true)
-
-	return source
-}
-
 func secretSource(name, key string) *corev1.EnvVarSource {
 	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 		LocalObjectReference: corev1.LocalObjectReference{Name: name},

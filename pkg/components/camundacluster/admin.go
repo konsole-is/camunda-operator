@@ -41,12 +41,16 @@ const adminComponentName = "admin-secret"
 type AdminSecretState struct {
 	// Password is the active password, under AdminPasswordKey.
 	Password credentials.Password
-	// Email is the address that the orchestration cluster holds for the
-	// admin user, under AdminEmailKey. The processes read their seed from
-	// this key, so a changed address never touches a pod template. An empty
-	// value leaves the key out: the operator records an address only once
-	// the cluster has accepted it, and never one of its own invention.
+	// Email is the address that the spec asks for, under AdminEmailKey. The
+	// processes read their seed from that key, so it always carries a value
+	// and a changed address never touches a pod template.
 	Email string
+	// AppliedEmail is the address that the orchestration cluster has
+	// accepted, under AdminAppliedEmailKey. An empty value leaves the key
+	// out: the operator records an address only once the cluster has taken
+	// it, never one of its own invention, and the difference between the two
+	// keys is what tells it to call again.
+	AppliedEmail string
 	// PendingPassword is the requested password of a rotation in flight,
 	// under AdminPendingPasswordKey.
 	PendingPassword string
@@ -91,10 +95,11 @@ func AdminSecretComponent(
 ) (*component.Component, error) {
 	data := map[string][]byte{
 		AdminUsernameKey: []byte(AdminUsername),
+		AdminEmailKey:    []byte(state.Email),
 		AdminPasswordKey: []byte(state.Password.Value),
 	}
 	for key, value := range map[string]string{
-		AdminEmailKey:           state.Email,
+		AdminAppliedEmailKey:    state.AppliedEmail,
 		AdminPendingPasswordKey: state.PendingPassword,
 		AdminPendingRotationKey: state.PendingRotation,
 		AdminRotationKey:        state.Rotation,
