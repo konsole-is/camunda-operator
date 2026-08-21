@@ -38,9 +38,12 @@ const (
 	// supports elasticsearch and opensearch; this operator attaches only to
 	// Elasticsearch secondary storage.
 	envDatabase = "CAMUNDA_OPTIMIZE_DATABASE"
-	// envElasticsearchHost is es.connection.nodes[0].host.
+	// envElasticsearchHost is es.connection.nodes[*].host: the host of the
+	// storage endpoint. Optimize takes a list of nodes, and the variable fills
+	// one entry of it.
 	envElasticsearchHost = "OPTIMIZE_ELASTICSEARCH_HOST"
-	// envElasticsearchPort is es.connection.nodes[0].httpPort.
+	// envElasticsearchPort is es.connection.nodes[*].httpPort, of the same
+	// entry.
 	envElasticsearchPort = "OPTIMIZE_ELASTICSEARCH_HTTP_PORT"
 	// envElasticsearchUsername is es.security.username.
 	envElasticsearchUsername = "CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME"
