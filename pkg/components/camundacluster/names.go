@@ -45,9 +45,45 @@ const (
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
-	// AdminUsernameKey and AdminPasswordKey are the keys of the admin Secret.
+	// DefaultAdminEmail is the email of the seeded admin user when
+	// spec.auth.basic.adminEmail names none. The domain is the one that RFC
+	// 2606 reserves for documentation, so an unset value never claims an
+	// address that somebody owns. The user API validates the address on
+	// every update and refuses a domain without a dot, such as
+	// admin@localhost, with 400 INVALID_ARGUMENT.
+	DefaultAdminEmail = "admin@example.com"
+	// AdminUsernameKey, AdminEmailKey, and AdminPasswordKey are the keys of
+	// the admin Secret. The email lives here, and not in the rendered pod
+	// template, so that a changed address never restarts a workload: the
+	// processes read it from this Secret, and the orchestration cluster
+	// reads it once, when it seeds the user. It always carries an address,
+	// because a process that read none would seed an incomplete user.
 	AdminUsernameKey = "username"
+	AdminEmailKey    = "email"
 	AdminPasswordKey = "password"
+	// AdminAppliedEmailKey holds the address that the orchestration cluster
+	// has accepted, which is not always the one under AdminEmailKey: a
+	// changed address is published for the processes at once and recorded
+	// here only after the user API takes it. The operator compares the two
+	// to decide whether the cluster still has to be told. The workloads
+	// never read it.
+	AdminAppliedEmailKey = "email-applied"
+	// AdminPendingPasswordKey holds the requested password while a rotation
+	// is in flight, next to the active one under AdminPasswordKey. The
+	// workloads never read it.
+	AdminPendingPasswordKey = "password-pending"
+	// AdminPendingRotationKey holds the rotation value that staged the
+	// password under AdminPendingPasswordKey. The two travel together, so a
+	// promote records the request that produced the password it promotes,
+	// even when the spec changed while the rotation was in flight. The
+	// workloads never read it.
+	AdminPendingRotationKey = "password-pending-rotation"
+	// AdminRotationKey holds the spec.auth.basic.passwordRotation value that
+	// produced the password under AdminPasswordKey. It travels with the
+	// password, in the same apply, so the operator always knows which
+	// request the published password answers. status.adminPassword.rotation
+	// projects it. The workloads never read it.
+	AdminRotationKey = "password-rotation"
 	// DataVolumeName is the volume claim template of the brokers.
 	DataVolumeName = "data"
 	// DataMountPath is where the brokers keep their data. It is the

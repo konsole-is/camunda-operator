@@ -304,7 +304,7 @@ If the phase is `Failed`, `failureMessage` names the step that failed and why:
 status:
   phase: Failed
   step: BackupRuntime
-  failureMessage: "Step BackupRuntime failed: management API unreachable: Get \"http://my-cluster-zeebe.my-cluster-ns.svc:9600/actuator/backupRuntime/1755640800000\": dial tcp: i/o timeout"
+  failureMessage: "Step BackupRuntime failed: the cluster is unreachable: Get \"http://my-cluster-zeebe.my-cluster-ns.svc:9600/actuator/backupRuntime/1755640800000\": dial tcp: i/o timeout"
   completionTime: "2026-08-19T22:30:02Z"
   conditions:
     - type: Ready

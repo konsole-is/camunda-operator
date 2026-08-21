@@ -38,7 +38,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
-	"github.com/konsole-is/camunda-operator/pkg/credentials"
 )
 
 // eventReasonPaused is recorded on every reconcile of a cluster with
@@ -76,7 +75,17 @@ type CamundaClusterReconciler struct {
 	// RetryInterval overrides how long the controller waits on something no
 	// watch reports. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+	// RESTEndpoint overrides where the user API of a cluster is called
+	// during a password rotation. Nil means components.RESTEndpoint; tests
+	// point it at a fake.
+	RESTEndpoint func(cluster *v1.CamundaCluster, e components.Effective) string
 }
+
+// concurrentReconciles bounds the parallel reconciles. A rotation and an
+// admin profile update are synchronous HTTP calls against the gateway of one
+// cluster, and adminhttp bounds a call at 30 seconds. One black-holed
+// gateway must not hold the only worker and delay every other cluster.
+const concurrentReconciles = 4
 
 // defaultRetryInterval is how long the controller waits before it looks again
 // at an unwatched dependency, such as a pre-existing ServiceAccount.
@@ -116,8 +125,10 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // failed pre-check reports its Ready reason and stops. The broker storage
 // lifecycle then grows the bound broker claims in place and records an
 // ignored shrink; the claim template keeps its applied size, so the
-// StatefulSet is never recreated. Then the components are reconciled in
-// order: the admin Secret, the mirrored Secrets, then every process, each
+// StatefulSet is never recreated. The admin credential resolves next, and a
+// requested password rotation runs there; a failed user API call surfaces on
+// AdminSecretReady and retries on a timer. Then the components are reconciled
+// in order: the admin Secret, the mirrored Secrets, then every process, each
 // gated on whether the cluster needs it. The management binding is published
 // with the status, and cleared while the cluster is suspended. The
 // ServiceAccount the pods run under is published with it and is never
@@ -193,17 +204,38 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	r.recordIgnoredShrink(&cluster, storage, in.Effective.StorageSize())
 
-	built, err := r.buildComponents(ctx, &cluster, in, mirrors)
+	cred, err := r.resolveAdminCredential(ctx, &cluster, in, storage)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	in.AdminPasswordHash = components.PasswordHash(cred.published)
+
+	built, err := r.buildComponents(&cluster, in, mirrors, cred)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	comps = built.all
 
+	// Read before the components stage their own conditions: stageFailure
+	// needs the AdminSecretReady that the server holds, not the healthy one
+	// that the Secret component is about to write over it.
+	priorAdminSecret := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady).
+		DeepCopy()
+
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
+
+	cred.stageFailure(&cluster, priorAdminSecret)
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
+	cred.recordRotation(&cluster)
+
+	// A failed rotation retries on a timer: no watch fires when the user API
+	// recovers or accepts the credentials again.
+	if cred.failure != nil && reconcileErr == nil {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	}
 
 	return ctrl.Result{}, reconcileErr
 }
@@ -222,14 +254,14 @@ type clusterComponents struct {
 // needed through its gate. Only the admin Secret of a basic-auth cluster, the
 // mirrored Secrets when a referenced Secret lives outside the cluster
 // namespace, and the enabled processes take part in Ready, so Ready never
-// reports Disabled. The admin password is read from the existing admin
-// Secret without the cache, so it stays stable after creation; to rotate it,
-// delete the Secret.
+// reports Disabled. The admin credential comes from resolveAdminCredential:
+// the password stays stable after creation, a delete of the Secret replaces
+// it, and spec.auth.basic.passwordRotation rotates it through the user API.
 func (r *CamundaClusterReconciler) buildComponents(
-	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	in components.Input,
 	mirrors mirroredSecrets,
+	cred adminCredential,
 ) (clusterComponents, error) {
 	var comps clusterComponents
 	add := func(comp *component.Component, ready bool) {
@@ -240,19 +272,14 @@ func (r *CamundaClusterReconciler) buildComponents(
 	}
 
 	basic := components.ResolveAuth(in).Method == v1.AuthenticationMethodBasic
-	var password credentials.Password
-	if basic {
-		var err error
-		password, err = credentials.LookupOrNew(
-			ctx, r.APIReader,
-			client.ObjectKey{Namespace: cluster.Namespace, Name: components.AdminSecretName(cluster)},
-			components.AdminPasswordKey,
-		)
-		if err != nil {
-			return clusterComponents{}, fmt.Errorf("looking up admin password: %w", err)
-		}
-	}
-	admin, err := components.AdminSecretComponent(cluster, basic, password)
+	admin, err := components.AdminSecretComponent(cluster, basic, components.AdminSecretState{
+		Password:        cred.password,
+		PendingPassword: cred.pending,
+		PendingRotation: cred.pendingRotation,
+		Rotation:        cred.rotation,
+		Email:           cred.email,
+		AppliedEmail:    cred.appliedEmail,
+	})
 	if err != nil {
 		return clusterComponents{}, fmt.Errorf("building admin secret component: %w", err)
 	}

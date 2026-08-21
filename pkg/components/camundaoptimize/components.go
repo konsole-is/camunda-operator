@@ -81,7 +81,7 @@ func Build(in Input) ([]*component.Component, error) {
 // ServiceMonitor of one component.
 func buildComponent(in Input, name string) (*component.Component, error) {
 	workload, err := deployment.NewBuilder(deploymentFor(in, name)).
-		WithMutation(deploymentMutations(in, name)...).
+		WithMutation(workloadMutations(in, name)...).
 		Build()
 	if err != nil {
 		return nil, err
@@ -130,7 +130,7 @@ func discoveryLabels(in Input, comp string) map[string]string {
 }
 
 // deploymentFor renders the base Deployment of a component.
-// deploymentMutations layer the overrides on top.
+// workloadMutations layers the overrides on top.
 func deploymentFor(in Input, comp string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

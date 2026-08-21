@@ -188,7 +188,7 @@ func TestStuckPodClassifiesWaitingStates(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			r := &LogicalBackupRDBMSReconciler{
-				APIReader: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.pod).Build(),
+				Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.pod).Build(),
 			}
 			failure, err := r.stuckPod(context.Background(), backup)
 			require.NoError(t, err)

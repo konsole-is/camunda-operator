@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -713,4 +714,21 @@ func TestJobGoldenLogicalRestoreRDBMSBroker0(t *testing.T) {
 		t, "testdata/golden/lrrdbms-broker-0.yaml", jobPreview{in},
 		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
 	)
+}
+
+// The manager caches pods through an informer that labels.ManagedSelector
+// scopes. A pod that the selector does not match is a pod that podstate.Stuck
+// cannot see, and a container that cannot start then reads as progress.
+// The operator labels go over the labels of a user, so a user cannot take the
+// key away.
+func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {
+	t.Parallel()
+
+	in := restoreInput()
+	in.Target.StatefulSet.Spec.Template.Labels[labels.ManagedByKey] = "helm"
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.True(t, labels.ManagedSelector().Matches(k8slabels.Set(job.Spec.Template.Labels)))
 }

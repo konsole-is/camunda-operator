@@ -50,6 +50,23 @@ const (
 	ConditionAdminSecretReady = "AdminSecretReady"
 )
 
+// ReasonInvalidCredentials on AdminSecretReady means that the orchestration
+// cluster refused the credentials of an update of the admin user: it does
+// not accept the password that the admin Secret publishes. The operator
+// updates that user to rotate its password and to set its email, and either
+// call reports this. The usual cause is an admin password that changed
+// outside the operator. The operator retries. To recover, set the password
+// from the admin Secret on the admin user in the Admin web application.
+const ReasonInvalidCredentials = "InvalidCredentials"
+
+// ReasonRejected on AdminSecretReady means that the orchestration cluster
+// answered an update of the admin user and refused the call itself, with
+// credentials it accepted. The operator updates that user to rotate its
+// password and to set its email, and either call reports this. The message
+// carries the response, which names the reason. The operator retries, and no
+// change of the password recovers it.
+const ReasonRejected = "Rejected"
+
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
 type ComponentMode string
@@ -194,9 +211,12 @@ type ConnectorsSpec struct {
 	WorkloadSpec `       json:",inline"`
 }
 
-// ClusterAuthSpec holds the OIDC client credentials of one cluster, and the
-// identities that get its admin role. The credentials override the defaults
-// of the platform config and of the preset.
+// ClusterAuthSpec holds the credentials of one cluster and the identities
+// that get its admin role. Under OIDC it carries the client credentials,
+// which override the defaults of the platform config and of the preset, and
+// the identities of the administrators. Under basic authentication it
+// carries the basic block, which configures the admin credential that the
+// operator owns.
 type ClusterAuthSpec struct {
 	// ClientID is the OIDC client ID of this cluster.
 	// +optional
@@ -214,6 +234,47 @@ type ClusterAuthSpec struct {
 	// administrator and ignores this block.
 	// +optional
 	Admin *ClusterAdminSpec `json:"admin,omitempty"`
+	// Basic configures the admin credential that the operator owns. It
+	// applies under basic authentication only. OIDC ignores this block, like
+	// basic authentication ignores admin.
+	// +optional
+	Basic *BasicAuthSpec `json:"basic,omitempty"`
+}
+
+// BasicAuthSpec configures the admin credential of a basic-auth cluster.
+type BasicAuthSpec struct {
+	// AdminEmail is the email address of the admin user that the operator
+	// seeds. The orchestration cluster stores it on that user, and the Admin
+	// web application shows it. Set the address of the person or the team
+	// that owns the cluster.
+	//
+	// When empty the operator uses admin@example.com. The domain is the one
+	// RFC 2606 reserves for documentation, so an unset value never claims an
+	// address that somebody owns.
+	//
+	// A changed value is applied to the running cluster through the user
+	// API. That endpoint validates the address and refuses a domain without
+	// a dot, and an address it refuses surfaces on AdminSecretReady with the
+	// answer of the cluster.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^$|^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$`
+	// +optional
+	AdminEmail string `json:"adminEmail,omitempty"`
+	// PasswordRotation requests one rotation of the admin password. Set it
+	// to a value that differs from the applied one, for example a date. The
+	// operator generates a new password, sets it on the admin user through
+	// the user API of the running cluster, and then publishes it in the
+	// admin Secret. The connectors Deployment restarts with the new
+	// password. An empty value never rotates. A suspended cluster rotates
+	// after it resumes.
+	//
+	// The applied value of a cluster is status.adminPassword.rotation on
+	// that cluster. This field takes its effective value from the preset
+	// merge, so a preset that sets it rotates every cluster that references
+	// the preset, and each of those clusters reports its own status.
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	PasswordRotation string `json:"passwordRotation,omitempty"`
 }
 
 // ClusterAdminSpec holds the identities that get the admin role of one
@@ -236,6 +297,21 @@ type ClusterAdminSpec struct {
 	// a given value.
 	// +optional
 	MappingRules []AdminMappingRule `json:"mappingRules,omitempty"`
+}
+
+// AdminPasswordStatus is the state of the admin credential of a basic-auth
+// cluster.
+type AdminPasswordStatus struct {
+	// Rotation is the last admin password rotation that the operator
+	// applied: the effective spec.auth.basic.passwordRotation value, after
+	// the preset merge, that produced the password in the admin Secret. A
+	// rotation is in progress while that effective value is not empty and
+	// differs from this one. A cleared value does not stop a rotation that
+	// the operator already staged. That rotation completes, and this field
+	// then records the value that staged it. A cluster that inherits the
+	// value from its preset carries none of its own in the spec.
+	// +optional
+	Rotation string `json:"rotation,omitempty"`
 }
 
 // AdminMappingRule gives the admin role to every token in which the claim
@@ -303,8 +379,9 @@ type CamundaClusterSpec struct {
 	// identity.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
-	// Auth holds the OIDC client credentials of this cluster and the
-	// identities that get its admin role.
+	// Auth holds the credentials of this cluster and the identities that get
+	// its admin role: the OIDC client credentials and administrators under
+	// OIDC, the operator-owned admin credential under basic authentication.
 	// +optional
 	Auth *ClusterAuthSpec `json:"auth,omitempty"`
 	// Zeebe configures the brokers.
@@ -410,6 +487,10 @@ type CamundaClusterStatus struct {
 	// sees an unreachable cluster instead of a stale endpoint.
 	// +optional
 	Management *ManagementBinding `json:"management,omitempty"`
+	// AdminPassword is the state of the admin credential of a basic-auth
+	// cluster. It is unset under OIDC.
+	// +optional
+	AdminPassword *AdminPasswordStatus `json:"adminPassword,omitempty"`
 	// ServiceAccountName is the ServiceAccount that the pods of this cluster
 	// run under, or empty when they run under the default account of the
 	// namespace. Extensions that render a pod against this cluster read it

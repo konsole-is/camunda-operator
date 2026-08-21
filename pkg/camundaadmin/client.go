@@ -14,15 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package camundaadmin is the management API client of the orchestration
-// cluster: pure HTTP against the management port, no Kubernetes types. It is
-// constructed from the management binding that a CamundaCluster publishes,
-// and it covers exactly the surface that backups need.
+// Package camundaadmin is the administration client of the orchestration
+// cluster: pure HTTP, no Kubernetes types. Client calls the management port
+// from the management binding that a CamundaCluster publishes, and covers
+// exactly the surface that backups need. UserClient calls the /v2 user API
+// on the gateway HTTP port, which is what a password rotation needs.
 //
 // The Camunda version of the binding selects the endpoint set at
 // construction. One set exists today, 8.9: the unified management API
 // (/actuator/exporting/*, /actuator/backupHistory, /actuator/backupRuntime).
 // An unknown version is a constructor error, never a guess.
+//
+// UserClient is the exception. It calls the /v2 user API on the gateway HTTP
+// port, and those endpoints keep their shape across minors. It checks its
+// version against a floor only, so it calls every version that the operator
+// accepts.
 //
 // The exporting calls and the deletes are idempotent from the caller's
 // view: the backup state machine re-enters after a crash, so "already done"
@@ -59,9 +65,19 @@ import (
 // may poll that backup, while one that just allocated an id must fail rather
 // than adopt the artifacts of another backup.
 var (
-	ErrUnreachable = errors.New("management API unreachable")
-	ErrRejected    = errors.New("management API rejected the call")
+	// The wording of these two names no API: this package calls the
+	// management API and the user API, and the message that wraps them
+	// always carries the method and the path of the call that failed.
+	ErrUnreachable = errors.New("the cluster is unreachable")
+	ErrRejected    = errors.New("the cluster rejected the call")
 	ErrConflict    = errors.New("a backup with the same or a higher id already exists")
+	// ErrUnauthenticated marks the one rejection that another credential can
+	// answer: the cluster refused the call with 401 because the password is
+	// wrong. It travels with ErrRejected, so a caller that only separates a
+	// rejected call from an unreachable one is unaffected, and a caller that
+	// holds a second password can tell a stale credential from a call that
+	// the cluster refused on its content.
+	ErrUnauthenticated = errors.New("the cluster refused the credentials")
 )
 
 // State is the aggregated state of a backup as the management API reports
@@ -131,6 +147,16 @@ type Client struct {
 	api *adminhttp.Client
 }
 
+// checkVersion rejects a Camunda version that no endpoint set of this
+// package covers.
+func checkVersion(version string) error {
+	if !strings.HasPrefix(version, "8.9.") && version != "8.9" {
+		return fmt.Errorf("unsupported Camunda version %q: this client knows 8.9 only", version)
+	}
+
+	return nil
+}
+
 // New builds a client for the cluster that binding describes. It returns an
 // error when the endpoint is empty or the Camunda version is not one the
 // client knows.
@@ -139,8 +165,8 @@ func New(binding Binding) (*Client, error) {
 		return nil, errors.New("management binding has no endpoint")
 	}
 
-	if !strings.HasPrefix(binding.Version, "8.9.") && binding.Version != "8.9" {
-		return nil, fmt.Errorf("unsupported Camunda version %q: this client knows 8.9 only", binding.Version)
+	if err := checkVersion(binding.Version); err != nil {
+		return nil, err
 	}
 
 	api, err := adminhttp.New(adminhttp.Config{

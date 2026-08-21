@@ -242,13 +242,13 @@ A smaller value is rejected at admission. If a preset lowers the size under a ru
 
 ## Rotate passwords
 
-The operator generates each password once and keeps it stable. To rotate one, delete its Secret. The operator generates a new password on the next reconcile and publishes it in a new Secret. The old password is never published again.
+The operator generates each password once and keeps it stable. To rotate one, delete its Secret. The operator generates a new password on the next reconcile and publishes it in a new Secret. The old password is never published again. The admin user of a basic-authentication cluster is the exception: it rotates through the spec, and a deletion does not change it on the cluster.
 
 | Password | Secret to delete | What happens next |
 | --- | --- | --- |
 | The Elasticsearch user of an `ElasticsearchCluster` | `<name>-es-user` | ECK updates the user. Every `CamundaCluster` that references the `SecondaryStorageConfig` of this Elasticsearch rolls its pods. |
 | A role of a `Database` | The application or backup credential Secret that the `Database` created | The operator sets the new password on the server before it publishes the Secret. Every `CamundaCluster` that references the `DatabaseConfig` rolls its pods. |
-| The admin user of a basic-authentication cluster | `<name>-camunda-admin` | The operator writes a new Secret. Nothing rolls, and the `admin` user keeps the old password. See below. |
+| The admin user of a basic-authentication cluster | None. Set `spec.auth.basic.passwordRotation` instead; see below. | The operator sets the new password on the `admin` user and rolls the connectors Deployment. |
 
 ```bash
 kubectl delete secret my-cluster-es-es-user -n my-cluster-ns
@@ -256,11 +256,16 @@ kubectl delete secret my-cluster-es-es-user -n my-cluster-ns
 
 > **Caution:** Between the deletion and the roll, a client with the old password is rejected. Plan the rotation outside of peak hours.
 
-The admin user is different. The orchestration cluster creates the `admin` user once, at first start, and does not change its password from the configuration after that. To rotate it:
+The admin user is different. The orchestration cluster creates the `admin` user once, at first start, and a new Secret alone does not change its password. Rotate it through the spec:
 
-1. Delete the Secret `<name>-camunda-admin`. The operator writes a new Secret with a new password.
-2. Set that password on the `admin` user in the Admin web application.
-3. If connectors are enabled, restart the Deployment `<name>-connectors`. It reads the password from the Secret at start.
+```yaml
+spec:
+  auth:
+    basic:
+      passwordRotation: "2026-08"
+```
+
+A changed value rotates once. The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, publishes it in `<name>-camunda-admin`, and rolls the connectors Deployment. `status.adminPassword.rotation` shows the value when the rotation is complete. A failed rotation surfaces on the condition `AdminSecretReady` and retries; the [authentication guide](authentication.md#rotate-the-password) has the failure modes.
 
 ## Change configuration and referenced Secrets
 
