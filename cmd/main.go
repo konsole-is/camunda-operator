@@ -27,14 +27,10 @@ import (
 
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	batchv1 "k8s.io/api/batch/v1"
-	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -42,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/cacheopts"
 	"github.com/konsole-is/camunda-operator/internal/controller"
 	"github.com/konsole-is/camunda-operator/internal/controller/backupschedule"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundacluster"
@@ -59,7 +56,6 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -224,18 +220,8 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Cache: cache.Options{
-			ByObject: map[client.Object]cache.ByObject{
-				// The operator only tracks its own Jobs. A cache of every Job
-				// in the cluster wastes memory on foreign workloads.
-				&batchv1.Job{}: {
-					Label: k8slabels.SelectorFromSet(k8slabels.Set{
-						labels.ManagedByKey: labels.ManagedBy,
-					}),
-				},
-			},
-		},
+		Scheme:                 scheme,
+		Cache:                  cacheopts.Options(),
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,

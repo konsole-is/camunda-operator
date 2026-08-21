@@ -40,6 +40,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -1551,23 +1552,17 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 	It("holds a restore whose pod cannot start, then fails past the grace", func() {
 		w := createWorld()
 		pitr := createRestore(w)
-		expectJobs(pitr)
+		jobs := expectJobs(pitr)
 
 		// No Job controller runs in envtest, so the suite creates the pod that
-		// a Job creates, in the state that a missing Secret leaves it in.
-		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "restore-pod-" + strings.ToLower(utilrand.String(6)),
-				Namespace: w.namespace,
-				Labels:    restore.JobSelector(labels.PointInTimeRestore(pitr.Name)),
-			},
-			Spec: corev1.PodSpec{
-				RestartPolicy: corev1.RestartPolicyNever,
-				Containers: []corev1.Container{{
-					Name: restore.ComponentRestore, Image: "camunda/camunda:8.9.9",
-				}},
-			},
-		}
+		// a Job creates, in the state that a missing Secret leaves it in. The
+		// pod carries the labels of the pod template of that Job, which is
+		// what the scoped pod cache of the manager selects on.
+		pod := testenv.PodOfJob(
+			&jobs[0],
+			"restore-pod-"+strings.ToLower(utilrand.String(6)),
+			corev1.Container{Name: restore.ComponentRestore, Image: "camunda/camunda:8.9.9"},
+		)
 		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 		pod.Status.Phase = corev1.PodPending
 		pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
@@ -1586,6 +1581,9 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			g.Expect(condition.Message).To(ContainSubstring(pod.Name))
 		}, timeout, interval).Should(Succeed())
 
+		// Nothing writes the pod again from here. The restore reaches its
+		// terminal phase on the poll of the running phase alone, because the
+		// mid-run grace is a deadline that no watch can announce.
 		Eventually(func(g Gomega) {
 			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())

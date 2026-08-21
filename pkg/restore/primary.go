@@ -113,7 +113,9 @@ type JobFailure func(ctx context.Context, job *batchv1.Job, ordinal int32) *cond
 // are never touched again.
 //
 // The reader must be uncached. Every decision here reads live state: a stale
-// claim or a stale Job lets a restore act twice on one volume.
+// claim or a stale Job lets a restore act twice on one volume. The one read
+// that goes through the cached client c is the look at the pods of the
+// running Jobs, which decides nothing on its own. See podstate.Stuck.
 func Primary(
 	ctx context.Context,
 	c client.Client,
@@ -250,7 +252,7 @@ func runJobs(
 		return outcomeOrZero(outcome), err
 	}
 
-	return trackJobs(ctx, reader, p, in, existing)
+	return trackJobs(ctx, c, p, in, existing)
 }
 
 // readJobs reads every recorded Job live and proves that it belongs to this
@@ -446,9 +448,12 @@ func claimedByAnother(
 // failing Job fails the restore and names its broker: the partitions of that
 // broker are not restored, and a second attempt needs empty volumes again,
 // which only a new restore arranges.
+//
+// pods reads the pods of those Jobs. It is the cached client, unlike every
+// other read of this phase. See podstate.Stuck.
 func trackJobs(
 	ctx context.Context,
-	reader client.Reader,
+	pods client.Reader,
 	p *v1.RestoreProgress,
 	in PrimaryInput,
 	jobs []*batchv1.Job,
@@ -488,7 +493,7 @@ func trackJobs(
 	// active and reports nothing. Without this look the restore waits without a
 	// bound on a missing Secret or an image that does not pull.
 	stuck, err := podstate.Stuck(
-		ctx, reader, in.Owner.GetNamespace(), JobSelector(in.OwnerLabel), whatPrimary,
+		ctx, pods, in.Owner.GetNamespace(), JobSelector(in.OwnerLabel), whatPrimary,
 	)
 	if err != nil {
 		return Outcome{}, err

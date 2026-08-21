@@ -28,12 +28,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -651,4 +653,21 @@ func TestDumpObjectKeyCarriesTheIDAndTheUID(t *testing.T) {
 		t, key, DumpObjectKey("/clusters/", "ns", "my-cluster", 1748937221000, "another-uid"),
 		"the same id from another backup names another object",
 	)
+}
+
+// The manager caches pods through an informer that labels.ManagedSelector
+// scopes. A pod that the selector does not match is a pod that podstate.Stuck
+// cannot see, and a container that cannot start then reads as progress.
+// The operator labels go over the labels of a user, so a user cannot take the
+// key away.
+func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Dump = &v1.DumpPodSpec{PodLabels: map[string]string{labels.ManagedByKey: "helm"}}
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.True(t, labels.ManagedSelector().Matches(k8slabels.Set(job.Spec.Template.Labels)))
 }

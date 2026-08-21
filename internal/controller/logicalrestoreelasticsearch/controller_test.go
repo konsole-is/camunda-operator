@@ -431,7 +431,7 @@ var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("standing in for a kubelet that cannot mount a Secret of the pod")
-		stuckPod(w, restorepkg.JobName(owner, 0), restorepkg.JobSelector(owner))
+		stuckPod(w, restorepkg.JobName(owner, 0))
 
 		expectReason(restore, v1.LogicalRestoreRestoringPrimaryStorage, v1.ReasonMissingSecret)
 

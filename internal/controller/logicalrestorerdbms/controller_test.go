@@ -17,8 +17,6 @@ limitations under the License.
 package logicalrestorerdbms
 
 import (
-	"maps"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -30,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/testenv"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
@@ -552,10 +551,7 @@ var _ = Describe("LogicalRestoreRDBMS of the logical database", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("standing in for a kubelet that cannot mount a Secret of the pod")
-		stuckPod(w, jobName, map[string]string{
-			components.RestoreUIDLabel: string(lrr.UID),
-			labels.ComponentKey:        components.ComponentName,
-		})
+		stuckPod(w, jobName)
 
 		expectReason(lrr, v1.LogicalRestoreRestoringSecondaryStorage, v1.ReasonMissingSecret)
 
@@ -702,7 +698,7 @@ var _ = Describe("LogicalRestoreRDBMS of primary storage", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("standing in for a kubelet that cannot mount a Secret of the pod")
-		stuckPod(w, restorepkg.JobName(owner, 0), restorepkg.JobSelector(owner))
+		stuckPod(w, restorepkg.JobName(owner, 0))
 
 		expectReason(lrr, v1.LogicalRestoreRestoringPrimaryStorage, v1.ReasonMissingSecret)
 
@@ -826,26 +822,25 @@ func completeSecondaryStorage(w *world, lrr *v1.LogicalRestoreRDBMS) {
 }
 
 // stuckPod creates a pod of a Job of the restore that reports a container
-// which cannot start. The selector labels are the ones that the controller
-// lists the pods of that Job by. envtest runs no kubelet, so the suite writes
-// the state that a kubelet would report.
-func stuckPod(w *world, jobName string, selector map[string]string) {
+// which cannot start. It copies the labels of the pod template of that Job
+// and takes a controller reference to it, the way the Job controller does.
+// envtest runs no kubelet, so the suite writes the state that a kubelet
+// reports.
+func stuckPod(w *world, jobName string) {
 	GinkgoHelper()
 
-	podLabels := map[string]string{"batch.kubernetes.io/job-name": jobName}
-	maps.Copy(podLabels, selector)
+	// A restore records the name of a Job before it applies the Job, so the
+	// name can reach the status before the Job exists.
+	var job batchv1.Job
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(
+			ctx, types.NamespacedName{Namespace: w.namespace, Name: jobName}, &job,
+		)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName + "-stuck",
-			Namespace: w.namespace,
-			Labels:    podLabels,
-		},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
-			Containers:    []corev1.Container{{Name: "restore", Image: "postgres:17"}},
-		},
-	}
+	pod := testenv.PodOfJob(&job, jobName+"-stuck", corev1.Container{
+		Name: "restore", Image: "postgres:17",
+	})
 	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 
 	pod.Status.Phase = corev1.PodPending
