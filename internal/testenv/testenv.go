@@ -53,9 +53,6 @@ import (
 const (
 	Timeout  = 10 * time.Second
 	Interval = 250 * time.Millisecond
-
-	// jobNameLabel is the label that a Job stamps on the pods it creates.
-	jobNameLabel = "batch.kubernetes.io/job-name"
 )
 
 // Env is a running envtest control plane with a manager started against it.
@@ -223,7 +220,7 @@ func PodOfJob(job *batchv1.Job, name string, container corev1.Container) *corev1
 	if podLabels == nil {
 		podLabels = map[string]string{}
 	}
-	podLabels[jobNameLabel] = job.Name
+	podLabels[batchv1.JobNameLabel] = job.Name
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
