@@ -179,7 +179,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 	if err != nil {
 		return adminCredential{}, err
 	}
-	current, pending, applied, found := read.current, read.pending, read.applied, read.found
+	current, pending, applied := read.current, read.pending, read.applied
 
 	requested := ""
 	if auth.Basic != nil {
@@ -205,30 +205,6 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// branch and report a healthy Secret that the cluster does not
 		// accept.
 		//
-		// published is the password of this apply only when no Secret exists
-		// at all. Connectors would otherwise hash on "" and roll again as
-		// soon as the first Secret lands, and there is nothing to disturb:
-		// they are being created in this reconcile too, and a failed apply
-		// leaves no Secret, so the next reconcile generates another password
-		// and the hash keeps moving until one lands.
-		//
-		// A Secret that exists with no password is the repair path, and its
-		// connectors are already running. Publishing the new password early
-		// would roll them onto a password the Secret may never hold, and
-		// every retry generates another one, so they would roll again on
-		// each of them.
-		//
-		// Leaving it empty does not hold their hash still. An empty digest
-		// drops the admin password out of the hash of connectors, which is
-		// a hash of its own, so they roll once here and once more when the
-		// repair lands. Two is the floor: holding the hash would need the
-		// digest of the password that the Secret no longer carries. What
-		// this buys is that the retries in between are all the same, so a
-		// repair that keeps failing does not keep rolling them.
-		early := ""
-		if !found {
-			early = value
-		}
 		// A cluster that never published an admin Secret is the only one
 		// whose first Secret is applied by definition: its password and its
 		// address seed the initial user at first start. A replacement
@@ -242,6 +218,27 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		rotation, seeded := "", ""
 		if !published {
 			rotation, seeded = requested, email
+		}
+
+		// The same answer decides the hash of connectors. A cluster that
+		// never published has none running, so hashing the password of this
+		// apply costs nothing and saves them a roll as soon as the Secret
+		// lands. Every other cluster has connectors running, whether its
+		// Secret was deleted or only lost its password, and hashing a
+		// password that this apply may never write would roll them onto it,
+		// and again on the next attempt, because each one generates
+		// another.
+		//
+		// Leaving it empty does not hold their hash still: an empty digest
+		// drops the admin password out of that hash, which is a hash of its
+		// own. They roll once here and once more when a password lands. Two
+		// is the floor, because holding it would need the digest of a
+		// password that no longer exists anywhere. What this buys is that
+		// the attempts in between are all the same, so a Secret that cannot
+		// be written does not keep rolling them.
+		early := ""
+		if !published {
+			early = value
 		}
 
 		return adminCredential{
@@ -385,7 +382,7 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 		return adminSecretRead{}, fmt.Errorf("reading Secret %q: %w", key, err)
 	}
 
-	read := adminSecretRead{found: true}
+	var read adminSecretRead
 
 	value := string(secret.Data[components.AdminPasswordKey])
 	if value == "" {
@@ -405,12 +402,11 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 	return read, nil
 }
 
-// adminSecretRead is the admin Secret as one reconcile found it. found says
-// whether the Secret exists at all, which an empty password does not: a
-// Secret that lost its password is a repair, and a missing one is a cluster
-// that has none yet.
+// adminSecretRead is the admin Secret as one reconcile found it. A Secret
+// that is missing and one that lost its password read the same, because the
+// operator answers both the same way: it generates a password, and asks the
+// cluster whether it takes it.
 type adminSecretRead struct {
-	found   bool
 	current credentials.Password
 	pending pendingRotation
 	applied appliedIdentity

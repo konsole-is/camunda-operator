@@ -367,21 +367,19 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(users.UpdateCalls()).To(Equal(1), "a refusal that is not a stale password must not retry")
 	})
 
-	It("holds the connectors hash while it repairs a Secret that lost its password", func() {
+	It("holds the connectors hash while it replaces a Secret of a running cluster", func() {
 		ns := newNamespace()
 		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-repair", Namespace: ns}}
-		createSecret(ns, components.AdminSecretName(cluster), map[string]string{
-			components.AdminUsernameKey: components.AdminUsername,
-			components.AdminPasswordKey: "",
-		})
 		createBrokerStatefulSet(cluster)
 		in := components.Input{Cluster: cluster, Effective: components.Effective{}}
 		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
 
-		// Connectors of this cluster are already running. A repair that
-		// hashed the password it is about to write would roll them onto a
-		// password the Secret may never hold, and again on every retry,
-		// because each retry generates another one.
+		// The Secret of this cluster is gone and its connectors are still
+		// running. An attempt that hashed the password it is about to write
+		// would roll them onto a password the Secret may never hold, and
+		// again on every retry, because each one generates another. The
+		// same holds for a Secret that only lost its password, which reads
+		// the same way.
 		first, err := reconciler.resolveAdminCredential(ctx, cluster, in)
 		Expect(err).NotTo(HaveOccurred())
 		second, err := reconciler.resolveAdminCredential(ctx, cluster, in)
