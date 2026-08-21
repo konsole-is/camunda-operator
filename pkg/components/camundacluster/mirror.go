@@ -28,7 +28,6 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
-	"github.com/konsole-is/camunda-operator/pkg/names"
 )
 
 // The purposes of the mirrored Secrets. A pod can only reference a Secret in
@@ -72,7 +71,7 @@ const mirroredComponentName = "mirrored-secrets"
 func MirroredSecretName(cluster *v1.CamundaCluster, purpose string) string {
 	suffix := "-camunda-" + purpose
 
-	return names.Bounded(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // MirroredSecretComponent renders one Secret per purpose of MirrorPurposes

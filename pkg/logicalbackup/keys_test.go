@@ -130,3 +130,54 @@ func TestObjectKeyPrefix(t *testing.T) {
 func TestFinalizer(t *testing.T) {
 	assert.Equal(t, "core.camunda.io/backup-artifacts", logicalbackup.Finalizer)
 }
+
+// The snapshot name is the contract between the backup and the restore. The
+// backup writes it, and the restore locates the snapshot by the same rule
+// (Camunda 8.9 backup guide, step 6: "camunda_zeebe_records_backup_$BACKUP_ID").
+func TestRecordsSnapshotName(t *testing.T) {
+	assert.Equal(t, "camunda_zeebe_records_backup_42", logicalbackup.RecordsSnapshotName(42))
+}
+
+// A restore deletes the target's Camunda indices before it restores the
+// snapshots. It deletes the Optimize indices only when the backup holds
+// Optimize snapshots, because it cannot put back what it did not back up.
+func TestCamundaIndexPatternsExcludeOptimizeUnlessAsked(t *testing.T) {
+	without := logicalbackup.CamundaIndexPatterns(false)
+	assert.Equal(
+		t,
+		[]string{"camunda-*", "operate-*", "tasklist-*", "zeebe-record*"},
+		without,
+	)
+
+	with := logicalbackup.CamundaIndexPatterns(true)
+	assert.Equal(
+		t,
+		[]string{"camunda-*", "operate-*", "tasklist-*", "zeebe-record*", "optimize-*"},
+		with,
+	)
+	assert.Subset(t, with, without)
+}
+
+// CamundaIndexPatterns returns a copy every time. A caller that appends to
+// the answer must not grow the patterns of the next caller.
+func TestCamundaIndexPatternsReturnsACopy(t *testing.T) {
+	first := logicalbackup.CamundaIndexPatterns(false)
+	first[0] = "mutated"
+
+	assert.Equal(t, "camunda-*", logicalbackup.CamundaIndexPatterns(false)[0])
+}
+
+// Only an Optimize snapshot carries "_optimize_" in its name. The
+// web-application snapshots of the same backup are named camunda_webapps_*
+// (Camunda 8.9 restore guide, "find available backup IDs").
+func TestHasOptimizeSnapshot(t *testing.T) {
+	assert.False(t, logicalbackup.HasOptimizeSnapshot(nil))
+	assert.False(t, logicalbackup.HasOptimizeSnapshot([]string{
+		"camunda_webapps_1748937221_8.9.9_part_1_of_5",
+		"camunda_zeebe_records_backup_1748937221",
+	}))
+	assert.True(t, logicalbackup.HasOptimizeSnapshot([]string{
+		"camunda_webapps_1748937221_8.9.9_part_1_of_5",
+		"camunda_optimize_1748937221_8.9.9_part_1_of_2",
+	}))
+}

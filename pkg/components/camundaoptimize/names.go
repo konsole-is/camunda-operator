@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/names"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // The component values of the camunda.io/component label. They carry the
@@ -90,7 +90,7 @@ const (
 func WorkloadName(o *v1.CamundaOptimize, component string) string {
 	suffix := "-" + shortName(component)
 
-	return names.Bounded(o.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+	return labels.BoundedName(o.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // shortName returns the workload name suffix of a component. An unknown

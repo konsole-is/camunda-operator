@@ -87,6 +87,7 @@ A restore needs these fields:
 - `status.historySnapshots` names the snapshots of the web-application indices.
 - `status.repository` names the snapshot repository.
 - `status.partitionsCount` is the partition count of the cluster. A restore must match it.
+- `status.version` is the Camunda version of the cluster when the backup started. A restore of this backup runs only with the exact same version.
 - `status.storageSizes` holds the recorded volume sizes of Elasticsearch and Zeebe, when the operator can compute them.
 
 `status.history`, `status.records`, and `status.runtime` report the state of each part: `Pending`, `InProgress`, `Completed`, or `Failed`. `status.failureMessage` names the step that failed. `status.resumeFailureMessage` says why exporting did not resume. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.

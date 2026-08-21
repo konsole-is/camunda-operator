@@ -26,16 +26,23 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
 // podTimeout bounds one in-cluster helper pod, image pull included.
 const podTimeout = 3 * time.Minute
+
+// suspendTimeout bounds the wait for a cluster to scale to zero, and for a
+// suspended cluster to run again.
+const suspendTimeout = 5 * time.Minute
 
 // apply applies obj through kubectl. obj must carry its apiVersion and kind.
 func apply(obj client.Object) error {
@@ -62,6 +69,29 @@ func expectCondition(g Gomega, resource, name, namespace, condType, reason strin
 	g.Expect(cond).NotTo(BeNil(), "%s %q has no %s condition yet", resource, name, condType)
 	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue), "%s %q %s: %s", resource, name, condType, cond.Message)
 	g.Expect(cond.Reason).To(Equal(reason), "%s %q %s: %s", resource, name, condType, cond.Message)
+}
+
+// expectConditionFalse asserts that resource name reports condition condType
+// as False with reason. It is written for Eventually and for Consistently: a
+// hold that the operator must keep is read the same way both times.
+func expectConditionFalse(g Gomega, resource, name, namespace, condType, reason string) {
+	cond, err := utils.Condition(resource, name, namespace, condType)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(cond).NotTo(BeNil(), "%s %q has no %s condition yet", resource, name, condType)
+	g.Expect(cond.Status).To(Equal(metav1.ConditionFalse), "%s %q %s: %s", resource, name, condType, cond.Message)
+	g.Expect(cond.Reason).To(Equal(reason), "%s %q %s: %s", resource, name, condType, cond.Message)
+}
+
+// expectPhase asserts that resource name reports status.phase. It is written
+// for Eventually and for Consistently.
+func expectPhase(g Gomega, resource, name, namespace, phase string) {
+	var obj struct {
+		Status struct {
+			Phase string `json:"phase"`
+		} `json:"status"`
+	}
+	g.Expect(utils.Get(resource, name, namespace, &obj)).To(Succeed())
+	g.Expect(obj.Status.Phase).To(Equal(phase), "%s %q reports another phase", resource, name)
 }
 
 // expectReconciledReady asserts that resource name reports Ready as True with
@@ -99,6 +129,108 @@ func expectGone(g Gomega, resource, name, namespace string) {
 	g.Expect(exists).To(BeFalse(), "%s %q still exists", resource, name)
 }
 
+// suspend sets spec.suspend on the cluster and waits until it reports Ready
+// Suspended with every workload of the cluster at zero replicas. A restore
+// rewrites the storage of its cluster, so no workload of the cluster runs
+// while the restore does. Connectors is checked when the cluster enables it.
+func suspend(cluster *v1.CamundaCluster) {
+	By("setting spec.suspend on the CamundaCluster")
+	_, err := utils.Kubectl(
+		"patch", ccResource, cluster.Name, "-n", cluster.Namespace,
+		"--type=merge", "-p", `{"spec":{"suspend":true}}`,
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	By("waiting for Ready Suspended and the workloads at zero replicas")
+	Eventually(func(g Gomega) {
+		expectReady(g, ccResource, cluster.Name, cluster.Namespace, string(component.Suspended))
+		expectScaledToZero(
+			g,
+			"statefulset",
+			components.WorkloadName(cluster, components.ComponentZeebe),
+			cluster.Namespace,
+		)
+		expectScaledToZero(
+			g,
+			"deployment",
+			components.WorkloadName(cluster, components.ComponentGateway),
+			cluster.Namespace,
+		)
+		connectors := cluster.Spec.Connectors
+		if connectors == nil || connectors.Enabled == nil || !*connectors.Enabled {
+			return
+		}
+
+		expectScaledToZero(
+			g,
+			"deployment",
+			components.WorkloadName(cluster, components.ComponentConnectors),
+			cluster.Namespace,
+		)
+	}, suspendTimeout, 5*time.Second).Should(Succeed())
+}
+
+// unsuspend clears spec.suspend and waits for the cluster to report Ready
+// Healthy again.
+func unsuspend(cluster *v1.CamundaCluster) {
+	By("clearing spec.suspend on the CamundaCluster")
+	_, err := utils.Kubectl(
+		"patch", ccResource, cluster.Name, "-n", cluster.Namespace,
+		"--type=merge", "-p", `{"spec":{"suspend":false}}`,
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	By("waiting for Ready Healthy")
+	Eventually(func(g Gomega) {
+		expectReady(g, ccResource, cluster.Name, cluster.Namespace, v1.ReasonHealthy)
+	}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+}
+
+// brokerClaims returns the data volume claims of the brokers of the cluster,
+// by name. The identity of a claim is its UID and its creation time, so a
+// caller that holds the answer can tell a claim that survived from one that
+// was created again under the same name.
+func brokerClaims(cluster *v1.CamundaCluster) map[string]corev1.PersistentVolumeClaim {
+	var list corev1.PersistentVolumeClaimList
+	Expect(utils.List("pvc", cluster.Namespace, brokerClaimSelector(cluster), &list)).To(Succeed())
+
+	claims := make(map[string]corev1.PersistentVolumeClaim, len(list.Items))
+	for _, claim := range list.Items {
+		claims[claim.Name] = claim
+	}
+
+	return claims
+}
+
+// psql runs sql against the logical database of the flow in namespace, as the
+// user whose credentials Secret ref names. It returns the unaligned,
+// tuples-only output.
+//
+// The pod name carries a random suffix. RunPod deletes its pod at the end and
+// swallows the error of that delete, so a fixed name makes the next create
+// fail with AlreadyExists.
+func psql(namespace, name string, ref v1.CredentialsSecretRef, sql string) (string, error) {
+	return utils.RunPod(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "psql-" + name + "-" + utilrand.String(5),
+			Namespace: namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:    "psql",
+				Image:   "postgres:17",
+				Command: []string{"psql", "-v", "ON_ERROR_STOP=1", "-tA", "-c", sql},
+				Env: []corev1.EnvVar{
+					{Name: "PGHOST", Value: postgresService},
+					{Name: "PGDATABASE", Value: dbDatabaseName},
+					utils.SecretEnv("PGUSER", ref.Name, ref.UsernameKey),
+					utils.SecretEnv("PGPASSWORD", ref.Name, ref.PasswordKey),
+				},
+			}},
+		},
+	}, podTimeout)
+}
+
 // dumpDiagnostics writes the controller-manager logs and the events,
 // resources, pod descriptions, and CamundaCluster workload logs of
 // testNamespace to the Ginkgo writer when the current spec failed.
@@ -128,7 +260,8 @@ func dumpDiagnostics(testNamespace string) {
 			"get",
 			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs," +
 				"camundaclusters,camundaoptimizes,logicalbackupelasticsearches," +
-				"logicalbackuprdbmses,backupschedules",
+				"logicalbackuprdbmses,backupschedules," +
+				"logicalrestoreelasticsearches,logicalrestorerdbmses,pointintimerestores",
 			"-n", testNamespace,
 		},
 		"object storage contracts": {"get", "objectstorageconfigs", "-o", "wide"},
@@ -171,7 +304,8 @@ func dumpDiagnostics(testNamespace string) {
 
 // customResourceKinds are the namespaced custom resources of this operator,
 // in the order a reader follows a failure: the storage backends first, then
-// the cluster, then what attaches to it.
+// the cluster, then what attaches to it, then the backups of it, and last the
+// restores that read them.
 var customResourceKinds = []string{
 	"elasticsearchclusters",
 	"secondarystorageconfigs",
@@ -181,6 +315,9 @@ var customResourceKinds = []string{
 	"logicalbackupelasticsearches",
 	"logicalbackuprdbmses",
 	"backupschedules",
+	"logicalrestoreelasticsearches",
+	"logicalrestorerdbmses",
+	"pointintimerestores",
 }
 
 // dumpCustomResources writes every custom resource of this operator in

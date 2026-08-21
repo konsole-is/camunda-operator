@@ -2,7 +2,7 @@
 
 A backup of an orchestration cluster is one consistent set: the secondary storage data and the Zeebe partitions, taken together. The operator writes the set to a bucket that you provide. There is one backup kind per storage backend: `LogicalBackupElasticsearch` for Elasticsearch and `LogicalBackupRDBMS` for PostgreSQL. They are called logical backups because they back up the data through the Camunda and storage APIs, not the volumes. One resource is one backup. You create it, it runs once, and its status records what was written.
 
-The restore kinds are not available yet. The ids and names that a completed backup records in its status are what a restore needs.
+A completed relational backup is restored with a [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md). A completed Elasticsearch backup is restored with a [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md). Each kind restores a cluster from its own backup. The ids and names that a completed backup records in its status are what a restore needs.
 
 ## Set up once
 

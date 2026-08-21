@@ -36,7 +36,6 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
-	"github.com/konsole-is/camunda-operator/pkg/names"
 )
 
 const (
@@ -189,13 +188,11 @@ type JobInput struct {
 // backup name alone. The Job lives in the backup's own namespace, where that
 // name is unique. A reconcile that re-enters after a crash therefore adopts
 // the Job that it already created instead of a second one. A backup name can
-// be a full DNS subdomain, but a Job name is a DNS label. names.Bounded
+// be a full DNS subdomain, but a Job name is a DNS label. BoundedName
 // therefore truncates a long name deterministically and keeps it unique with
 // a hash of the whole name.
 func JobName(backup *v1.LogicalBackupRDBMS) string {
-	limit := validation.DNS1123LabelMaxLength - len(jobNameSuffix)
-
-	return names.Bounded(backup.Name, limit) + jobNameSuffix
+	return labels.BoundedName(backup.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
 }
 
 // JobBelongsTo reports whether job carries the identity of backup, that is
@@ -305,11 +302,14 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		return nil, fmt.Errorf("encoding the bucket spec of %q: %w", in.Bucket.Name, err)
 	}
 
-	// The owner label carries the bounded name that labels.Owner renders,
-	// and the UID label carries the identity that never truncates.
-	managed := labels.Managed(labels.LogicalBackupRDBMS(in.Backup.Name), componentName)
-	cluster := labels.Cluster(in.ClusterName)
-	managed[cluster.Key] = cluster.Name
+	// Label values are bounded like DNS labels. The owner label carries the
+	// bounded name, and the UID label carries the identity that never
+	// truncates.
+	managed := labels.Managed(
+		labels.LogicalBackupRDBMS(in.Backup.Name),
+		componentName,
+	)
+	managed[labels.ClusterKey] = in.ClusterName
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
 	// The workload-identity pod label is operator-required. Without it, the

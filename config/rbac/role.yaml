@@ -7,21 +7,15 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - persistentvolumeclaims
+  - configmaps
   verbs:
   - get
   - list
-  - patch
   - watch
 - apiGroups:
   - ""
   resources:
-  - pods
-  verbs:
-  - list
-- apiGroups:
-  - ""
-  resources:
+  - persistentvolumeclaims
   - secrets
   - serviceaccounts
   - services
@@ -33,6 +27,12 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
 - apiGroups:
   - ""
   - events.k8s.io
@@ -106,7 +106,8 @@ rules:
   - elasticsearchclusters/status
   - logicalbackupelasticsearches/status
   - logicalbackuprdbmses/status
-  - logicalrestores/status
+  - logicalrestoreelasticsearches/status
+  - logicalrestorerdbmses/status
   - managementauthconfigs/status
   - objectstorageconfigs/status
   - pointintimerestores/status
@@ -127,7 +128,8 @@ rules:
   - elasticsearchclusters
   - logicalbackupelasticsearches
   - logicalbackuprdbmses
-  - logicalrestores
+  - logicalrestoreelasticsearches
+  - logicalrestorerdbmses
   - pointintimerestores
   - pvcautoresizes
   - secondarystorageconfigs
@@ -149,7 +151,8 @@ rules:
   - elasticsearchclusters/finalizers
   - logicalbackupelasticsearches/finalizers
   - logicalbackuprdbmses/finalizers
-  - logicalrestores/finalizers
+  - logicalrestoreelasticsearches/finalizers
+  - logicalrestorerdbmses/finalizers
   - pointintimerestores/finalizers
   - pvcautoresizes/finalizers
   verbs:

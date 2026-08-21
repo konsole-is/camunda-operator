@@ -38,8 +38,9 @@ import (
 
 // The container and port names of the rendered workloads.
 const (
-	// camundaContainer is the container of every unified process.
-	camundaContainer = "camunda"
+	// ContainerCamunda is the container of every unified process. A restore
+	// finds the broker container of the live StatefulSet by this name.
+	ContainerCamunda = "camunda"
 	// connectorsContainer is the container of the connectors runtime.
 	connectorsContainer = "connectors"
 
@@ -390,7 +391,7 @@ func containerName(p Process) string {
 	if p.Component == ComponentConnectors {
 		return connectorsContainer
 	}
-	return camundaContainer
+	return ContainerCamunda
 }
 
 // container renders the container of a process from the rendered

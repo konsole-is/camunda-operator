@@ -58,9 +58,45 @@ func TestMergeLetsOperatorLabelsWin(t *testing.T) {
 	assert.Equal(t, "someone-else", user["camunda.io/elasticsearch-cluster"], "the input is not mutated")
 }
 
+func TestRestoreOwners(t *testing.T) {
+	assert.Equal(t, Owner{Key: LogicalRestoreRDBMSKey, Name: "r"}, LogicalRestoreRDBMS("r"))
+	assert.Equal(t, "camunda.io/logical-restore-rdbms", LogicalRestoreRDBMSKey)
+
+	assert.Equal(t, Owner{Key: PointInTimeRestoreKey, Name: "p"}, PointInTimeRestore("p"))
+	assert.Equal(t, "camunda.io/point-in-time-restore", PointInTimeRestoreKey)
+}
+
+func TestBoundedNameKeepsANameThatFits(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "my-cluster", BoundedName("my-cluster", 63))
+	assert.Equal(t, "abcde", BoundedName("abcde", 5), "a name at the limit is kept")
+}
+
+func TestBoundedNameTruncatesAndSuffixesALongName(t *testing.T) {
+	t.Parallel()
+
+	name := strings.Repeat("a", 80)
+	bounded := BoundedName(name, 63)
+
+	assert.Len(t, bounded, 63)
+	assert.Equal(t, strings.Repeat("a", 52)+"-", bounded[:53], "the head is kept")
+	assert.Regexp(t, "^a+-[0-9a-f]{10}$", bounded, "a hash of the whole name ends it")
+	assert.Equal(t, bounded, BoundedName(name, 63), "the result is deterministic")
+}
+
+func TestBoundedNameSeparatesTwoLongNamesThatShareTheirHead(t *testing.T) {
+	t.Parallel()
+
+	head := strings.Repeat("a", 80)
+
+	assert.NotEqual(t, BoundedName(head+"-one", 63), BoundedName(head+"-two", 63))
+}
+
 // A custom resource name reaches 253 characters, but a label value stops at
 // 63. The owner label is part of every selector, so an owner name that does
-// not fit would make the API server reject the whole selector.
+// not fit would make the API server reject the whole selector. The
+// constructor of each kind applies the bound, so no call site can forget it.
 func TestALongOwnerNameFitsALabelValue(t *testing.T) {
 	t.Parallel()
 
@@ -70,11 +106,17 @@ func TestALongOwnerNameFitsALabelValue(t *testing.T) {
 		Database(strings.Repeat("d", 253)),
 		LogicalBackupElasticsearch(strings.Repeat("l", 253)),
 		LogicalBackupRDBMS(strings.Repeat("r", 253)),
+		LogicalRestoreElasticsearch(strings.Repeat("x", 253)),
+		LogicalRestoreRDBMS(strings.Repeat("y", 253)),
 		BackupSchedule(strings.Repeat("s", 253)),
+		PointInTimeRestore(strings.Repeat("p", 253)),
 	}
 
 	for _, owner := range owners {
 		for key, value := range Managed(owner, "component") {
+			assert.Empty(t, validation.IsValidLabelValue(value), "%s=%s", key, value)
+		}
+		for key, value := range Discovery(owner, "component") {
 			assert.Empty(t, validation.IsValidLabelValue(value), "%s=%s", key, value)
 		}
 	}
@@ -84,5 +126,23 @@ func TestALongOwnerNameFitsALabelValue(t *testing.T) {
 		Cluster(strings.Repeat("c", 80)+"one").Name,
 		Cluster(strings.Repeat("c", 80)+"two").Name,
 		"two long owners keep separate label values",
+	)
+}
+
+// A limit with no room for a head and a hash must not index the name
+// negatively. Nothing passes one today, but a panic here would take the whole
+// manager down rather than fail one reconcile.
+func TestBoundedNameHandlesALimitSmallerThanTheHash(t *testing.T) {
+	t.Parallel()
+
+	for _, limit := range []int{0, 1, 5, nameHashLength + 1} {
+		assert.Len(t, BoundedName(strings.Repeat("a", 253), limit), limit, limit)
+	}
+
+	assert.NotEqual(
+		t,
+		BoundedName(strings.Repeat("a", 253), 5),
+		BoundedName(strings.Repeat("b", 253), 5),
+		"a short bound still separates two names",
 	)
 }

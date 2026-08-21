@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/names"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // The component values of the camunda.io/component label. Each one is also
@@ -94,7 +94,7 @@ const (
 func WorkloadName(cluster *v1.CamundaCluster, component string) string {
 	suffix := "-" + component
 
-	return names.Bounded(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // AdminSecretName returns the name of the Secret that holds the admin
@@ -102,7 +102,7 @@ func WorkloadName(cluster *v1.CamundaCluster, component string) string {
 func AdminSecretName(cluster *v1.CamundaCluster) string {
 	limit := validation.DNS1123LabelMaxLength - len(adminSecretSuffix)
 
-	return names.Bounded(cluster.Name, limit) + adminSecretSuffix
+	return labels.BoundedName(cluster.Name, limit) + adminSecretSuffix
 }
 
 // ServiceAccountName returns the name that the ServiceAccount of the cluster
@@ -119,7 +119,7 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 
 	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
 
-	return names.Bounded(cluster.Name, limit) + serviceAccountSuffix
+	return labels.BoundedName(cluster.Name, limit) + serviceAccountSuffix
 }
 
 // PodServiceAccountName returns the ServiceAccount that the pods of the

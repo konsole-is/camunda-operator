@@ -11,14 +11,36 @@ spec:
     kind: PointInTimeRestore
     listKind: PointInTimeRestoreList
     plural: pointintimerestores
+    shortNames:
+    - pitr
     singular: pointintimerestore
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.clusterRef.name
+      name: Cluster
+      type: string
+    - jsonPath: .spec.timestamp
+      name: Timestamp
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
-        description: PointInTimeRestore is the Schema for the pointintimerestores
-          API
+        description: |-
+          PointInTimeRestore aligns the primary storage of a suspended,
+          relational-backed CamundaCluster with a database that was already restored
+          to a point in time. The operator never restores the database server. It
+          reads the exporter position of every partition from the restored database,
+          deletes and creates the broker data volumes again, and runs the Camunda
+          restore application with the requested point once per broker. The operator
+          only reads spec.suspend of the cluster. Whoever owns the cluster suspends
+          it before the restore and unsuspends it after.
         properties:
           apiVersion:
             description: |-
@@ -38,27 +60,56 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of PointInTimeRestore
+            description: |-
+              spec names the cluster to align and the point its database holds. It is
+              immutable: a restore is one-shot, retried by creating a new resource.
             properties:
-              foo:
-                description: foo is an example field of PointInTimeRestore. Edit pointintimerestore_types.go
-                  to remove/update
-                type: string
-            type: object
-          status:
-            description: status defines the observed state of PointInTimeRestore
-            properties:
-              conditions:
+              clusterRef:
                 description: |-
-                  conditions represent the current state of the PointInTimeRestore resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  ClusterRef references the CamundaCluster to align, in the namespace of
+                  this restore. Its secondary storage must be a relational database.
+                properties:
+                  name:
+                    description: Name of the CamundaCluster, in the namespace of this
+                      object.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              timestamp:
+                description: |-
+                  Timestamp is the point the database was already restored to. It must
+                  lie within the retention period the database server declares. It must
+                  not lie in the future either, and the operator checks that at reconcile
+                  time, because a CEL rule has no clock.
+                format: date-time
+                type: string
+            required:
+            - clusterRef
+            - timestamp
+            type: object
+            x-kubernetes-validations:
+            - message: 'spec is immutable: a restore is one-shot, retried by creating
+                a new resource'
+              rule: self == oldSelf
+          status:
+            description: status defines the observed state of the restore
+            properties:
+              brokers:
+                description: |-
+                  Brokers is the broker count read from the live broker StatefulSet and
+                  recorded before the restore deletes a volume. It fixes how many volumes
+                  are recreated and how many Jobs run.
+                format: int32
+                type: integer
+              completionTime:
+                description: CompletionTime is when the restore reached a terminal
+                  phase.
+                format: date-time
+                type: string
+              conditions:
+                description: Conditions represent the current state of the restore.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -117,6 +168,136 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              failureMessage:
+                description: |-
+                  FailureMessage names the failing phase and its error. The Ready
+                  condition carries the same message.
+                type: string
+              firstFailedAt:
+                description: |-
+                  FirstFailedAt is when a dependency of the running restore first stopped
+                  resolving. The operator measures the mid-run grace from it. It stays
+                  set once the restore starts, because a dependency that flaps must not
+                  reset the grace.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last generation reconciled
+                  by the operator.
+                format: int64
+                type: integer
+              observedPositions:
+                description: |-
+                  ObservedPositions are the exporter positions the pre-check read, in
+                  partition order. They record what the operator saw when it let the
+                  restore past the database-state check, or what held it.
+                items:
+                  description: |-
+                    PartitionPosition is the exporter position of one partition, as the
+                    pre-check read it from the restored database.
+                  properties:
+                    lastUpdated:
+                      description: |-
+                        LastUpdated is the LAST_UPDATED value of the partition's row in the
+                        EXPORTER_POSITION table.
+                      format: date-time
+                      type: string
+                    partitionId:
+                      description: PartitionID is the Zeebe partition.
+                      format: int32
+                      type: integer
+                  required:
+                  - lastUpdated
+                  - partitionId
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - partitionId
+                x-kubernetes-list-type: map
+              phase:
+                description: Phase of the restore. It is the resume marker.
+                enum:
+                - Pending
+                - ValidatingDatabaseState
+                - RestoringPrimaryStorage
+                - Completed
+                - Failed
+                type: string
+              primaryJobNames:
+                description: |-
+                  PrimaryJobNames are the per-broker restore-application Jobs, in broker
+                  order. The operator records them before it applies the Jobs, so the
+                  record covers every Job that the next look finds.
+                items:
+                  type: string
+                type: array
+              recreatedClaims:
+                description: |-
+                  RecreatedClaims names the broker data claims that the restore deleted
+                  and created again. A reconcile that re-enters does not delete a claim
+                  twice.
+                items:
+                  type: string
+                type: array
+              storage:
+                description: |-
+                  Storage pins the storage chain that the restore validated. The operator
+                  records it once, before it reads the database, and fails the restore
+                  when a later look disagrees.
+                properties:
+                  databaseConfig:
+                    description: DatabaseConfig is the contract of the logical database.
+                    type: string
+                  databaseConfigUID:
+                    description: DatabaseConfigUID pins the identity of that contract.
+                    type: string
+                  databaseName:
+                    description: |-
+                      DatabaseName is the logical database whose exporter position the
+                      pre-check read.
+                    type: string
+                  databaseServerConfig:
+                    description: |-
+                      DatabaseServerConfig is the contract of the server that holds the
+                      database and declares its point-in-time recovery.
+                    type: string
+                  databaseServerConfigUID:
+                    description: DatabaseServerConfigUID pins the identity of that
+                      contract.
+                    type: string
+                  endpoint:
+                    description: |-
+                      Endpoint is the host and port of the server, as the pre-check reached
+                      it. A server that is repointed in place is another server.
+                    type: string
+                  secondaryStorageConfig:
+                    description: SecondaryStorageConfig is the storage contract of
+                      the cluster.
+                    type: string
+                  secondaryStorageConfigUID:
+                    description: |-
+                      SecondaryStorageConfigUID pins the identity of that contract, so a
+                      contract that was deleted and created again under one name is caught.
+                    type: string
+                required:
+                - databaseConfig
+                - databaseName
+                - databaseServerConfig
+                - endpoint
+                - secondaryStorageConfig
+                type: object
+              targetClusterUID:
+                description: |-
+                  TargetClusterUID pins the identity of the target cluster. A cluster
+                  that is deleted and created again under the same name is another
+                  cluster, and this restore is not its restore.
+                type: string
+              terminalReason:
+                description: |-
+                  TerminalReason is the Ready reason recorded at the terminal transition.
+                  The operator stages the terminal condition again from this field, so a
+                  write conflict cannot replace the reason with a weaker one.
+                type: string
             type: object
         required:
         - spec

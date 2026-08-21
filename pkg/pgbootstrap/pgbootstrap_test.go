@@ -64,11 +64,11 @@ func TestMain(m *testing.M) {
 	}
 
 	adminConn = Connection{
-		Host:          host,
-		Port:          int32(port.Num()),
-		AdminUser:     "postgres",
-		AdminPassword: "admin-secret",
-		SSLMode:       "disable",
+		Host:     host,
+		Port:     int32(port.Num()),
+		User:     "postgres",
+		Password: "admin-secret",
+		SSLMode:  "disable",
 	}
 
 	code := m.Run()
@@ -114,7 +114,7 @@ func mustConnectAs(t *testing.T, user, password, database string) *pgx.Conn {
 
 func TestConnectRejectsBadCredentials(t *testing.T) {
 	bad := adminConn
-	bad.AdminPassword = "wrong"
+	bad.Password = "wrong"
 
 	b, err := Connect(t.Context(), bad)
 	if err == nil {
@@ -287,7 +287,7 @@ func TestBackupUserHoldsRestoreRights(t *testing.T) {
 func adminIsMemberOf(t *testing.T, role string) bool {
 	t.Helper()
 
-	conn := mustConnectAs(t, adminConn.AdminUser, adminConn.AdminPassword, "postgres")
+	conn := mustConnectAs(t, adminConn.User, adminConn.Password, "postgres")
 
 	var member bool
 	require.NoError(t, conn.QueryRow(
@@ -295,7 +295,7 @@ func adminIsMemberOf(t *testing.T, role string) bool {
 		`SELECT EXISTS (
 			SELECT FROM pg_auth_members
 			WHERE roleid = to_regrole($1) AND member = to_regrole($2)
-		)`, role, adminConn.AdminUser,
+		)`, role, adminConn.User,
 	).Scan(&member))
 
 	return member
@@ -327,8 +327,8 @@ func TestBootstrapPreservesPreexistingAdminMembership(t *testing.T) {
 	require.NoError(t, b.EnsureDatabase(ctx, "preex_db"))
 	require.NoError(t, b.EnsureUser(ctx, "preex_app", "app-pw"))
 
-	admin := mustConnectAs(t, adminConn.AdminUser, adminConn.AdminPassword, "postgres")
-	_, err := admin.Exec(ctx, `GRANT preex_app TO `+adminConn.AdminUser)
+	admin := mustConnectAs(t, adminConn.User, adminConn.Password, "postgres")
+	_, err := admin.Exec(ctx, `GRANT preex_app TO `+adminConn.User)
 	require.NoError(t, err)
 
 	require.NoError(t, b.GrantApplication(ctx, "preex_app", "preex_db"))
@@ -358,4 +358,31 @@ func TestEnsureUserRotatesPassword(t *testing.T) {
 
 	_, err := connectAs(ctx, "rot_app", "old-pw", "rot_db")
 	assert.Error(t, err, "the old password must stop working after rotation")
+}
+
+// Open is how a caller that runs its own SQL inside a logical database
+// reaches it. The DSN of this operator is then built in one place, and one
+// place only.
+func TestOpenConnectsToANamedDatabase(t *testing.T) {
+	ctx := t.Context()
+	b := connect(t)
+	require.NoError(t, b.EnsureDatabase(ctx, "opened"))
+
+	conn, err := Open(ctx, adminConn, "opened")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+
+	var name string
+	require.NoError(t, conn.QueryRow(ctx, "SELECT current_database()").Scan(&name))
+	assert.Equal(t, "opened", name)
+}
+
+// The connection carries whatever role the caller holds, so a rejected
+// credential is the caller's error, not a missing database.
+func TestOpenRejectsBadCredentials(t *testing.T) {
+	bad := adminConn
+	bad.Password = "wrong"
+
+	_, err := Open(t.Context(), bad, "postgres")
+	require.Error(t, err)
 }

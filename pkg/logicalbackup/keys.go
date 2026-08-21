@@ -23,11 +23,79 @@ limitations under the License.
 package logicalbackup
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// ZeebeRecordIndices is the index pattern of the exported Zeebe record
+// indices. It is the default prefix of the legacy exporter, and the operator
+// configures no other prefix (Camunda 8.9 "Configure Elasticsearch and
+// OpenSearch index prefixes": global.elasticsearch.prefix defaults to
+// zeebe-record).
+const ZeebeRecordIndices = "zeebe-record*"
+
+// camundaIndices are the index patterns of a Camunda 8.9 cluster that a
+// restore replaces, without the Optimize indices. The Camunda Exporter writes
+// the orchestration cluster indices under the legacy prefixes camunda,
+// operate, and tasklist, and the operator sets no cluster index prefix
+// (Camunda 8.9 "Schema and data migration": the index name is
+// {cluster-index-prefix}-{legacy-prefix}-{datatype}-{schemaversion}). The
+// legacy exporter writes the record indices.
+//
+// The list holds exactly what a backup restores. The web-application
+// snapshots hold the camunda, operate, and tasklist indices, and the record
+// snapshot holds the record indices (Camunda 8.9 "Web applications backup
+// management API" and backup guide step 6).
+var camundaIndices = []string{"camunda-*", "operate-*", "tasklist-*", ZeebeRecordIndices}
+
+// optimizeIndices is the index pattern of the Optimize indices. Optimize
+// prepends the prefix "optimize" to every index and alias name, and the
+// operator sets no other prefix (Camunda 8.9 Optimize system configuration:
+// es.settings.index.prefix defaults to optimize).
+const optimizeIndices = "optimize-*"
+
+// optimizeSnapshotMarker is the fragment that appears in the name of every
+// Optimize snapshot and in no other Camunda snapshot name. An Optimize
+// snapshot is camunda_optimize_<id>_<version>_part_N_of_M, and the
+// web-application snapshots of the same backup are camunda_webapps_...
+// (Camunda 8.9 restore guide, "find available backup IDs").
+const optimizeSnapshotMarker = "_optimize_"
+
+// RecordsSnapshotName returns the name of the Elasticsearch snapshot that
+// holds the exported Zeebe record indices of a backup id. The backup writes
+// it, and a restore locates it by the same rule.
+func RecordsSnapshotName(id int64) string {
+	return "camunda_zeebe_records_backup_" + strconv.FormatInt(id, 10)
+}
+
+// CamundaIndexPatterns returns the index patterns that a restore deletes from
+// the target before it restores the snapshots. It includes the Optimize
+// indices only when the backup holds Optimize snapshots. A backup without
+// them cannot restore them, and deleting them erases Optimize data that the
+// restore cannot put back. The answer is a new slice every time.
+func CamundaIndexPatterns(withOptimize bool) []string {
+	patterns := slices.Clone(camundaIndices)
+	if withOptimize {
+		patterns = append(patterns, optimizeIndices)
+	}
+
+	return patterns
+}
+
+// HasOptimizeSnapshot reports whether a backup's recorded snapshot names hold
+// an Optimize snapshot.
+func HasOptimizeSnapshot(names []string) bool {
+	for _, name := range names {
+		if strings.Contains(name, optimizeSnapshotMarker) {
+			return true
+		}
+	}
+
+	return false
+}
 
 // Finalizer guards the stored artifacts of a logical backup. While it is set,
 // deleting the custom resource first deletes the snapshots or the dump that
