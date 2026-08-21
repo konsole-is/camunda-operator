@@ -206,13 +206,18 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// next reconcile takes this branch again and generates another
 		// password, so the hash keeps moving until one lands. It can never
 		// stall on a password that the Secret does not hold.
-		rotation := ""
+		// A cluster that never published an admin Secret is the only one
+		// whose first Secret is applied by definition: its password and its
+		// address seed the initial user at first start. A replacement
+		// records neither, so the next reconcile takes both to the user API
+		// and reports what the cluster says about them.
+		rotation, seeded := "", ""
 		if meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady) == nil {
-			rotation = requested
+			rotation, seeded = requested, email
 		}
 
 		return adminCredential{
-			password: credentials.Password{Value: value}, published: value, rotation: rotation, email: email,
+			password: credentials.Password{Value: value}, published: value, rotation: rotation, email: seeded,
 		}, nil
 	}
 

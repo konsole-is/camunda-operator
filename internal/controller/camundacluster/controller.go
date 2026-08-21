@@ -81,6 +81,12 @@ type CamundaClusterReconciler struct {
 	RESTEndpoint func(cluster *v1.CamundaCluster, e components.Effective) string
 }
 
+// concurrentReconciles bounds the parallel reconciles. A rotation and an
+// admin profile update are synchronous HTTP calls against the gateway of one
+// cluster, and adminhttp bounds a call at 30 seconds. One black-holed
+// gateway must not hold the only worker and delay every other cluster.
+const concurrentReconciles = 4
+
 // defaultRetryInterval is how long the controller waits before it looks again
 // at an unwatched dependency, such as a pre-existing ServiceAccount.
 const defaultRetryInterval = 30 * time.Second

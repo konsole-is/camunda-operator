@@ -382,6 +382,9 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.rotation).To(Equal("round-1"))
+		Expect(cred.email).To(
+			Equal(components.DefaultAdminEmail), "the first Secret seeds the address it publishes",
+		)
 
 		By("keeping the recorded rotation once the cluster has published a Secret")
 		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
@@ -395,6 +398,9 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.rotation).To(BeEmpty(), "a rotation requested after a delete must reach the user API")
+		Expect(cred.email).To(
+			BeEmpty(), "and the address of a replacement Secret is not applied either",
+		)
 	})
 
 	It("reads the applied rotation from the Secret, so a lost status never rotates twice", func() {
