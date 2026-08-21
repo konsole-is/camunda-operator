@@ -18,7 +18,6 @@ package logicalrestorerdbms
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -72,7 +71,12 @@ func (r *Reconciler) admit(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
 ) (restore.Outcome, error) {
-	cluster, failure, err := r.targetCluster(ctx, lrr)
+	cluster, failure, err := restore.ResolveCluster(
+		ctx,
+		r.APIReader,
+		types.NamespacedName{Namespace: lrr.Namespace, Name: lrr.Spec.TargetClusterRef.Name},
+		lrr.Status.TargetClusterUID,
+	)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -157,38 +161,6 @@ func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
 	}
 }
 
-// targetCluster reads the target of the restore. A cluster that does not
-// exist is a failure the user corrects. After admission the pinned UID must
-// match too: a cluster that was deleted and created again under the same name
-// is another cluster, and this restore is not its restore.
-func (r *Reconciler) targetCluster(
-	ctx context.Context,
-	lrr *v1.LogicalRestoreRDBMS,
-) (*v1.CamundaCluster, *conditions.PreCheckFailure, error) {
-	key := types.NamespacedName{
-		Namespace: lrr.Namespace,
-		Name:      lrr.Spec.TargetClusterRef.Name,
-	}
-
-	var cluster v1.CamundaCluster
-	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference("CamundaCluster %s does not exist", key), nil
-		}
-
-		return nil, nil, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
-	}
-
-	if lrr.Status.TargetClusterUID != "" && cluster.UID != lrr.Status.TargetClusterUID {
-		return nil, logicalbackup.InvalidReference(
-			"CamundaCluster %s has UID %s and the restore started against %s, so it is another cluster",
-			key, cluster.UID, lrr.Status.TargetClusterUID,
-		), nil
-	}
-
-	return &cluster, nil, nil
-}
-
 // readBackup reads the LogicalBackupRDBMS that the restore names, and reports
 // a backup that is not completed as a failure the user corrects. A backup
 // that is deleted after the restore started is a failure too: the restore
@@ -250,7 +222,12 @@ func (r *Reconciler) resolve(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
 ) (*resolution, *conditions.PreCheckFailure, error) {
-	cluster, failure, err := r.targetCluster(ctx, lrr)
+	cluster, failure, err := restore.ResolveCluster(
+		ctx,
+		r.APIReader,
+		types.NamespacedName{Namespace: lrr.Namespace, Name: lrr.Spec.TargetClusterRef.Name},
+		lrr.Status.TargetClusterUID,
+	)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
@@ -279,68 +256,15 @@ func (r *Reconciler) resolve(
 		), nil
 	}
 
-	resolved, failure, err := r.target(ctx, cluster)
+	resolved, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
 
-	storage, failure, err := r.targetStorage(ctx, cluster)
+	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
 
 	return &resolution{cluster: cluster, backup: source, target: resolved, storage: storage}, nil, nil
-}
-
-// targetStorage reads the secondary storage contract of the target. The
-// restore reaches the logical database through it, with the credentials the
-// target's own workloads use.
-func (r *Reconciler) targetStorage(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (*v1.SecondaryStorageConfig, *conditions.PreCheckFailure, error) {
-	// A Get with an empty name is an invalid request, not a NotFound, so an
-	// unset reference would loop as a transient error instead of reporting
-	// itself.
-	if cluster.Spec.StorageRef == "" {
-		return nil, logicalbackup.InvalidReference(
-			"CamundaCluster %s/%s has no spec.storageRef", cluster.Namespace, cluster.Name,
-		), nil
-	}
-
-	key := types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Spec.StorageRef}
-
-	var storage v1.SecondaryStorageConfig
-	if err := r.APIReader.Get(ctx, key, &storage); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference(
-				"SecondaryStorageConfig %s does not exist", key,
-			), nil
-		}
-
-		return nil, nil, fmt.Errorf("reading SecondaryStorageConfig %s: %w", key, err)
-	}
-
-	return &storage, nil, nil
-}
-
-// target reads the live broker StatefulSet of the target cluster. Every phase
-// after admission needs it: the broker count, the partition count, the
-// Camunda version, and the claim template all come from there, because the
-// management binding of a suspended cluster is unset.
-func (r *Reconciler) target(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (*restore.Target, *conditions.PreCheckFailure, error) {
-	resolved, err := restore.ReadTarget(ctx, r.APIReader, cluster)
-	if err != nil {
-		var failure *conditions.PreCheckFailure
-		if errors.As(err, &failure) {
-			return nil, failure, nil
-		}
-
-		return nil, nil, err
-	}
-
-	return resolved, nil, nil
 }

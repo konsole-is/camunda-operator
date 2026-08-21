@@ -232,14 +232,9 @@ func (r *Reconciler) resolve(
 		return nil, nil, err
 	}
 
-	target, err := restore.ReadTarget(ctx, r.APIReader, &cluster)
-	if err != nil {
-		var failure *conditions.PreCheckFailure
-		if errors.As(err, &failure) {
-			return nil, failure, nil
-		}
-
-		return nil, nil, err
+	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, &cluster)
+	if err != nil || failure != nil {
+		return nil, failure, err
 	}
 	// The broker count is pinned at the first look, not followed. A restore
 	// recreates the volumes of the brokers it read and runs a Job for each of
