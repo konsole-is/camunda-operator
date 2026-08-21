@@ -43,11 +43,14 @@ their deviations from the original proposal. This spec adds the mechanisms on to
 the scope of the tests.
 
 `LogicalRestoreElasticsearch` and `LogicalRestoreRDBMS` restore one completed logical backup into a
-suspended target cluster, on the same cluster or a different one. Each kind validates the target and
-the backup reference, checks compatibility (storage type, partition count, version rule), restores
+suspended target cluster. The target must carry the name of the cluster the backup was taken from,
+because the restore application reads the primary-storage backup under the prefix of the cluster it
+runs as. A differently-named target is refused at admission with `IncompatibleTarget`, before any
+data is touched. Issue #140 tracks real support for it. Each kind validates the target and the
+backup reference, checks compatibility (storage type, partition count, version rule), restores
 secondary storage, recreates the Zeebe PVCs, and runs Camunda's standalone restore application once
-per broker as a Job. The Elasticsearch kind restores secondary storage through the snapshot API. The
-relational kind runs a `pg_restore` Job.
+per broker as a Job. The Elasticsearch kind restores secondary storage through the snapshot API.
+The relational kind runs a `pg_restore` Job.
 
 `PointInTimeRestore` aligns an RDBMS-backed cluster's primary storage with a database that was
 already restored to a timestamp, in place. The controller validates the suspend state, the storage

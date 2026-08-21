@@ -287,9 +287,11 @@ type LogicalRestoreSpec struct {
 	// BackupRef references the completed backup to restore from.
 	// +required
 	BackupRef LogicalBackupRef `json:"backupRef"`
-	// TargetClusterRef references the CamundaCluster to restore into. It can
-	// differ from the cluster the backup was taken from. The cluster must be
-	// suspended for the whole restore.
+	// TargetClusterRef references the CamundaCluster to restore into. It must
+	// name the cluster the backup was taken from: the restore application
+	// reads the primary-storage backup under the prefix of the cluster it
+	// runs as. Issue #140 tracks a restore into a differently-named cluster.
+	// The cluster must be suspended for the whole restore.
 	// +required
 	TargetClusterRef ClusterRef `json:"targetClusterRef"`
 }
@@ -1124,7 +1126,7 @@ Load `simple-english:simple-english` first.
 - keep the "Not implemented yet" warning, because PR1 ships no controller
 - keep the phase list unchanged
 - add the compatibility rule that the code enforces and the page does not yet state: **the target's `spec.backupStorageRef` must name the same `ObjectStorageConfig` the backup wrote to.** The restore reads the backup's artifacts through the target's bucket, so a different bucket cannot hold them. It fails with `IncompatibleTarget`.
-- state that the Elasticsearch path registers its own snapshot repository on the target's Elasticsearch, derived from the backup's pinned bucket and its recorded repository prefix, and that this is what makes a restore into a second cluster work
+- state that the Elasticsearch path registers its own snapshot repository on the target's Elasticsearch, derived from the backup's pinned bucket and the prefix the source cluster wrote under, so the snapshots are readable whichever Elasticsearch server the target reads through. This does not make a restore into a second cluster work: the primary-storage half still derives its base path from the target, so the target must carry the name of the source cluster. Issue #140 tracks lifting that.
 - state that the restore Jobs copy the broker configuration from the live broker StatefulSet, and that a cluster whose broker StatefulSet was deleted cannot restore until its controller applies it again
 - state the PVC rule: the operator deletes and creates the broker data volumes again, sized from the backup's recorded restore size, and the volumes belong to the StatefulSet, not to the restore
 
@@ -1997,9 +1999,11 @@ type LogicalRestoreElasticsearchSpec struct {
 	// restore from.
 	// +required
 	BackupRef LogicalBackupRef `json:"backupRef"`
-	// TargetClusterRef references the CamundaCluster to restore into. It can
-	// differ from the cluster the backup was taken from. The cluster must be
-	// suspended for the whole restore.
+	// TargetClusterRef references the CamundaCluster to restore into. It must
+	// name the cluster the backup was taken from: the restore application
+	// reads the primary-storage backup under the prefix of the cluster it
+	// runs as. Issue #140 tracks a restore into a differently-named cluster.
+	// The cluster must be suspended for the whole restore.
 	// +required
 	TargetClusterRef ClusterRef `json:"targetClusterRef"`
 }
@@ -2328,9 +2332,11 @@ type LogicalRestoreRDBMSSpec struct {
 	// BackupRef references the completed LogicalBackupRDBMS to restore from.
 	// +required
 	BackupRef LogicalBackupRef `json:"backupRef"`
-	// TargetClusterRef references the CamundaCluster to restore into. It can
-	// differ from the cluster the backup was taken from. The cluster must be
-	// suspended for the whole restore.
+	// TargetClusterRef references the CamundaCluster to restore into. It must
+	// name the cluster the backup was taken from: the restore application
+	// reads the primary-storage backup under the prefix of the cluster it
+	// runs as. Issue #140 tracks a restore into a differently-named cluster.
+	// The cluster must be suspended for the whole restore.
 	// +required
 	TargetClusterRef ClusterRef `json:"targetClusterRef"`
 }
