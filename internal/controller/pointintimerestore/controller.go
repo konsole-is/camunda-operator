@@ -20,7 +20,8 @@ limitations under the License.
 // point in time. The operator never restores the database server.
 //
 // The files follow the phases. admit.go resolves the storage chain, checks
-// the rules of the server, and takes the claim on the cluster. dbstate.go
+// the rules of the server, takes the claim on the cluster, and suspends the
+// cluster. dbstate.go
 // reads the exporter position of every partition and refuses a database that
 // is ahead of the requested point. primary.go runs the shared primary-storage
 // phase of pkg/restore, which recreates the broker data volumes and runs the
@@ -60,6 +61,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -160,7 +162,12 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;databaseconfigs;databaseserverconfigs;databases,verbs=get;list;watch
+// The restore prepares its own cluster: it suspends the cluster, sets the
+// Camunda version of the backup, and withdraws the suspension when it
+// completes. Each write is a server-side apply of one field under a field
+// manager of its own, so patch is the only verb it needs on a CamundaCluster.
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;databaseconfigs;databaseserverconfigs;databases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
@@ -214,6 +221,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// gives the claim back the first time, on the look that follows the
 		// terminal transition. A release that failed heals here too.
 		restore.StageTerminal(&pitr, &pitr.Status.RestoreProgress)
+
+		if err := r.resumeCluster(ctx, &pitr); err != nil {
+			return ctrl.Result{}, err
+		}
 
 		return ctrl.Result{}, r.releaseClaim(ctx, &pitr)
 	}
@@ -331,6 +342,28 @@ func (r *Reconciler) holdStarted(
 // cluster.
 func claimant(pitr *v1.PointInTimeRestore) clusterclaim.Claimant {
 	return clusterclaim.Claimant{Kind: pitr.GetKind(), Name: pitr.Name, UID: pitr.UID}
+}
+
+// resumeCluster withdraws the suspension that this restore applied to its
+// cluster. Only a restore that completed resumes it: a failed restore leaves
+// broker volumes that are empty or half written, and brokers that start over
+// them are worse than a cluster that is down. A cluster that its owner
+// suspended carries no record of this restore and stays suspended.
+//
+// It runs on every look of a terminal restore, so an attempt that failed
+// heals on the next one, and it writes nothing once the field is gone.
+func (r *Reconciler) resumeCluster(ctx context.Context, pitr *v1.PointInTimeRestore) error {
+	if pitr.Status.Phase != v1.PointInTimeRestoreCompleted {
+		return nil
+	}
+
+	return restore.Resume(
+		ctx,
+		r.Client,
+		r.APIReader,
+		&pitr.Status.RestoreProgress,
+		types.NamespacedName{Namespace: pitr.Namespace, Name: pitr.Spec.ClusterRef.Name},
+	)
 }
 
 // releaseClaim gives the claim on the cluster back. It is a no-op when the

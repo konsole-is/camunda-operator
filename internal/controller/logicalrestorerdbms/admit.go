@@ -62,11 +62,12 @@ type backup struct {
 }
 
 // admit resolves the references of the restore and holds it in Pending until
-// every one of them answers, the target is suspended, and no other operation
-// holds the target. It ends by pinning what the restore reads: the backup id
-// and the identity of the target. From then on the restore never returns
-// here, and a reference that breaks runs through the mid-run grace of its
-// phase instead.
+// every one of them answers and no other operation holds the target. It then
+// claims the cluster and carries it to the state the restore needs:
+// suspended, its brokers stopped, and running the Camunda version of the
+// backup. It ends by pinning what the restore reads: the backup id and the
+// identity of the target. From then on the restore never returns here, and a
+// reference that breaks runs through the mid-run grace of its phase instead.
 func (r *Reconciler) admit(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
@@ -92,17 +93,11 @@ func (r *Reconciler) admit(
 		return r.waiting(lrr, failure), nil
 	}
 
-	// The controller reads spec.suspend and never writes it. Suspending the
-	// target and unsuspending it afterwards belongs to whoever owns the
-	// cluster.
-	if failure := notSuspended(cluster); failure != nil {
-		return r.waiting(lrr, failure), nil
-	}
-
 	// Every rule of this restore holds, so the cluster becomes this restore's
 	// alone. The claim point is the same for all three restore kinds, and it
-	// comes before every phase that touches storage. Two restores of one
-	// cluster therefore never both pass validation.
+	// comes before every phase that touches storage, and before the restore
+	// writes anything on the cluster spec. Two restores of one cluster
+	// therefore never both pass validation.
 	claimed, err := restore.Take(
 		ctx, r.Client, r.APIReader, lrr.Namespace, lrr.Spec.TargetClusterRef.Name, claimant(lrr),
 	)
@@ -111,6 +106,42 @@ func (r *Reconciler) admit(
 	}
 	if claimed.Failure != nil {
 		return r.waiting(lrr, claimed.Failure), nil
+	}
+
+	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lrr, failure), nil
+	}
+
+	// The restore carries the cluster to the state it needs: suspended, its
+	// brokers stopped, and running the Camunda version of the backup. It
+	// holds here until the cluster is there, and it has destroyed nothing
+	// yet, so the hold costs nothing.
+	prepared, err := restore.Prepare(
+		ctx, r.Client, &lrr.Status.RestoreProgress, restore.PrepareInput{
+			Owner:   lrr,
+			Cluster: cluster,
+			Target:  target,
+			Version: source.Version,
+			Poll:    r.opts.PollInterval,
+		},
+	)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if prepared.Failure != nil {
+		return r.waiting(lrr, prepared.Failure), nil
+	}
+	if !prepared.Done {
+		// The restore stays in Pending while it prepares its cluster. It has
+		// erased nothing, and it recovers on its own once the cluster
+		// converges.
+		lrr.Status.Phase = v1.LogicalRestorePending
+
+		return prepared, nil
 	}
 
 	r.start(lrr, cluster, source)
@@ -143,9 +174,13 @@ func (r *Reconciler) start(
 	)
 }
 
-// notSuspended reports the target that still runs. A restore rewrites the
-// storage of its target, so it may only touch a cluster whose workloads are
-// scaled down. The controller reads spec.suspend and never writes it.
+// notSuspended reports the target that started running again. A restore
+// rewrites the storage of its target, so it may only touch a cluster whose
+// workloads are scaled down.
+//
+// Only a phase after admission reports it. Admission suspends the cluster
+// itself, so a cluster that is not suspended there is one that the restore
+// is about to suspend.
 func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
 	if cluster.Spec.Suspend {
 		return nil

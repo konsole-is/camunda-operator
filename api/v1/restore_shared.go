@@ -24,10 +24,13 @@ import (
 // The condition vocabulary that every restore kind reports. A reason that only
 // one restore kind reports is declared next to that kind, in its types file.
 const (
-	// ReasonClusterNotSuspended means that the target cluster still runs. A
-	// restore rewrites primary storage, so it waits in Pending until the
-	// owner of the cluster suspends it. The restore controllers never write
-	// spec.suspend.
+	// ReasonClusterNotSuspended means that the target cluster started running
+	// again while the restore ran. A restore rewrites primary storage, so it
+	// holds until the cluster is suspended again, and it fails after the
+	// mid-run grace.
+	//
+	// Admission never reports the reason. A restore suspends its own cluster
+	// there, and it unsuspends the cluster again when it completes.
 	ReasonClusterNotSuspended = "ClusterNotSuspended"
 	// ReasonClusterClaimed means that another backup or another restore holds
 	// the cluster. The restore waits in Pending until that holder reaches a
@@ -124,6 +127,12 @@ type RestoreProgress struct {
 	// reset the grace.
 	// +optional
 	FirstFailedAt *metav1.Time `json:"firstFailedAt,omitempty"`
+	// ClusterSuspended records that this restore suspended its target
+	// cluster. The restore withdraws that suspension when it reaches
+	// Completed. A cluster that its owner suspended carries no such record,
+	// so it stays suspended, and so does the cluster of a failed restore.
+	// +optional
+	ClusterSuspended bool `json:"clusterSuspended,omitempty"`
 	// TerminalReason is the Ready reason recorded at the terminal transition.
 	// The operator stages the terminal condition again from this field, so a
 	// write conflict cannot replace the reason with a weaker one.

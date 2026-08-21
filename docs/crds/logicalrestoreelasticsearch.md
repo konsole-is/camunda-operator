@@ -6,10 +6,9 @@ The target is the cluster the backup was taken from. The operator rebuilds both 
 
 One resource is one restore. The spec is immutable, and the restore runs once. To retry, create a new resource. `kubectl get lres` lists the restores with their phase, backup, and target.
 
-Two things must be true before you create the resource:
+One thing must be true before you create the resource: the backup reports `status.phase: Completed`.
 
-- The target cluster has `spec.suspend: true`, and it stays suspended for the whole restore. The operator only reads this field. It never writes it.
-- The backup reports `status.phase: Completed`.
+You do not suspend the target first, and you do not change its Camunda version first. The restore does both. Read "The restore prepares the target" below.
 
 The smallest restore names the backup and the target:
 
@@ -44,7 +43,7 @@ graph LR
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. The target is not suspended, a reference does not resolve, the backup is not completed, or another operation holds the cluster. Nothing is deleted. |
+| `Pending` | The restore waits. A reference does not resolve, the backup is not completed, another operation holds the cluster, or the operator is still preparing the target. Nothing is deleted. |
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | The operator deletes the Camunda indices of the target and restores every snapshot of the backup. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker. |
@@ -61,7 +60,66 @@ Before the operator deletes anything, it compares the backup against the target.
 - The target is the cluster that the backup was taken from, which the backup names in `spec.clusterRef`. The restore application reads the partition backup under the prefix of the cluster it runs as. No other cluster reads that prefix.
 - The partition count of the target is the partition count that the backup recorded in `status.partitionsCount`.
 - The `spec.backupStorageRef` of the target names the same `ObjectStorageConfig` that the backup wrote to. The operator reads the artifacts through the bucket of the target, and the `CamundaCluster` controller copies the credentials of that bucket alone into the namespace.
-- The target runs the exact Camunda version that the backup recorded in `status.version`. An Elasticsearch backup carries that version in the name of every snapshot, so a target one patch release newer cannot read it. A backup that recorded no version fails this rule.
+- The target runs the exact Camunda version that the backup recorded in `status.version`. An Elasticsearch backup carries that version in the name of every snapshot, so a target one patch release newer cannot read it. The restore moves the target to that version before this rule runs, so a version that differs is a wait and not a failure. Only a backup that recorded no version, or that recorded a value which is not of the form `x.y.z`, fails this rule: the operator cannot write such a value.
+
+## The restore prepares the target
+
+The operator carries the target to the state that the restore needs. You do not suspend the cluster by hand, and you do not change its Camunda version by hand.
+
+When the restore is admitted, the operator does this, in this order:
+
+1. It takes the cluster claim, so that no other backup or restore of that cluster runs.
+2. It records in `status.clusterSuspended` that it is about to suspend the target.
+3. It applies `spec.suspend: true` on the target.
+4. It waits until the broker `StatefulSet` reports zero replicas. `spec.suspend` says what was asked for. The `StatefulSet` says what happened.
+5. It applies `spec.version` with the Camunda version that the backup recorded in `status.version`. It does this every time, even when the version rule of this kind would already accept the target.
+6. It waits until the tag of the broker image is that version.
+
+The restore stays in `Pending` for all of it. It erased nothing yet, so nothing bounds this wait. `Ready` reports `Progressing`, and the message says what the operator waits for.
+
+The operator writes nothing else on the target. It writes no credential, and no reference to one.
+
+### What the operator writes, and what it keeps
+
+Each write is a server-side apply of one field, under a field manager of its own:
+
+| Field | Field manager | What happens at the end |
+| --- | --- | --- |
+| `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
+| `spec.version` | `camunda-operator/restore-version` | The restore keeps it. |
+
+The restore keeps `spec.version` on purpose. The cluster runs the version of the backup from then on, which is the point of writing it. Your next `kubectl apply` or GitOps sync of the `CamundaCluster` takes the field back, and that is correct: it is your declaration of the version again.
+
+### Why the downgrade is safe here
+
+Camunda does not support a running cluster that moves to an older version. A broker compares the version in its data directory against its own binary at startup, reports a downgrade, and applies no migration.
+
+No broker does that comparison here. The order above is what makes it safe: nothing runs while the version changes, and the broker volumes are erased before a broker of the older version starts. The first broker that starts again finds the state of the backup at the version of the backup.
+
+CAUTION: A downgrade that you do by hand on a running cluster, outside a restore, is still unsupported. The operator accepts the change to `spec.version`, and the brokers then report themselves unhealthy.
+
+### When the restore unsuspends the target
+
+The restore withdraws its suspension when it reaches `Completed`, and only when `status.clusterSuspended` is `true`.
+
+- **A target that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
+- **A failed restore leaves the target suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore.
+- **A restore that you delete while it runs leaves the target suspended.** The restore writes nothing outside the cluster, so it needs no finalizer, and it gets none for this either. A finalizer that unsuspended the target on delete would start brokers over volumes that the restore already erased. Suspended is the safe state to be left in. Unsuspend the cluster yourself once you know what its volumes hold.
+
+The withdrawal is a server-side apply of an object without `spec.suspend`. Kubernetes removes the field that `camunda-operator/restore-suspend` owns, and it leaves the value of every other field manager in place.
+
+### A GitOps tool that owns the CamundaCluster
+
+The operator uses its own field managers, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares, and the operator keeps the fields that it declares.
+
+A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore reads the old value on its next look and writes again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
+
+- Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore, or mark `spec.suspend` and `spec.version` as an ignored difference.
+- Put `spec.version` back after the restore, with the version that you want the cluster to run.
+
+### The layer above
+
+This operator is the bottom layer of a stack. A layer above it, for example a `CloudCamundaCluster` of `camunda-cloud-operator`, can consider itself the author of the fields above. While a restore runs, it is not. That layer keys on the field manager names above to tell a write of a restore from a write of a user.
 
 ## One operation at a time
 
@@ -107,6 +165,8 @@ The restore pins the backup ID and the identity of the target when it starts. A 
 
 Deleting the restore removes its Jobs. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch. The operator writes nothing outside the cluster, so the restore needs no finalizer.
 
+A target that the restore suspended stays suspended. That is deliberate. Unsuspending it here would start brokers over volumes that the restore already erased. Unsuspend the cluster yourself once you know what its volumes hold.
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
@@ -114,7 +174,7 @@ Deleting the restore removes its Jobs. The recreated broker volumes stay, and so
 | `Ready` | `Progressing` | A phase of the restore runs. | Wait. The message names the work. |
 | `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
-| `Ready` | `ClusterNotSuspended` | The target still runs. | Set `spec.suspend` of the cluster to `true`. |
+| `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. The message names both values. | Read "Compatibility" above. A backup restores into the cluster it was taken from alone. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the backup is not completed. | Read the message. Create the resource, or wait for the backup. |
@@ -126,6 +186,7 @@ These status fields report what the restore did:
 - `status.backupId` is the backup that the restore reads.
 - `status.repository` is the snapshot repository on the Elasticsearch of the target.
 - `status.restoredSnapshots` names every snapshot that the operator asked Elasticsearch to restore.
+- `status.clusterSuspended` records that this restore suspended the target. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the restore recorded before it deleted a volume.
 - `status.recreatedClaims` names the broker data volumes that the restore deleted and created again.
 - `status.primaryJobNames` names the restore Job of every broker, in broker order.

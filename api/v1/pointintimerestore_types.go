@@ -165,9 +165,18 @@ type PointInTimeRestoreStatus struct {
 // to a point in time. The operator never restores the database server. It
 // reads the exporter position of every partition from the restored database,
 // deletes and creates the broker data volumes again, and runs the Camunda
-// restore application with the requested point once per broker. The operator
-// only reads spec.suspend of the cluster. Whoever owns the cluster suspends
-// it before the restore and unsuspends it after.
+// restore application with the requested point once per broker.
+//
+// The restore prepares the cluster itself. It suspends the cluster and waits
+// for its brokers to stop. It withdraws the suspension when it completes, and
+// only when it applied that suspension itself. A failed restore leaves the
+// cluster suspended, and so does a restore that somebody deletes while it
+// runs: broker volumes that are empty or half written are worse under running
+// brokers than under none.
+//
+// It writes no version. This kind restores the primary storage of the cluster
+// from the continuous backups of that same cluster, so no backup names a
+// version that the cluster is not already running.
 type PointInTimeRestore struct {
 	metav1.TypeMeta `json:",inline"`
 

@@ -323,6 +323,26 @@ These are the effects that you notice while a backup runs.
 - The operator runs one backup of a cluster at a time, across both kinds. A second backup waits as `Pending` with reason `BackupInProgress` and starts when the first one ends.
 - If the cluster is suspended, the backup waits with reason `ClusterSuspended`. The management API of a suspended cluster is not reachable.
 
+## What an upgrade does to the backups you hold
+
+A backup records the Camunda version it was taken with, in `status.version`. Every restore compares that version against the version the target really runs, which is the tag of the broker image.
+
+The two storage paths differ:
+
+- **Elasticsearch.** A `LogicalRestoreElasticsearch` needs the exact version. Elasticsearch carries that version in the name of every snapshot, so a cluster one patch release newer cannot read a snapshot of the older one.
+- **PostgreSQL.** A `LogicalRestoreRDBMS` accepts the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time.
+
+**The restore carries the cluster back to the version of the backup.** You do not lower `spec.version` by hand, and you do not suspend the cluster by hand. The restore suspends the cluster, waits for the brokers to stop, sets `spec.version` to the version of the backup, and erases the broker volumes before a broker of that version starts again. That order is what makes the change safe. A downgrade that you do by hand on a *running* cluster is still unsupported, and the brokers then report themselves unhealthy.
+
+Before this behaviour existed, a patch upgrade of an Elasticsearch-backed cluster made every backup taken before it unrestorable into that cluster. That is no longer true.
+
+Two things follow that are worth knowing:
+
+- On the PostgreSQL path, a cluster that the version rule would already accept is still moved back to the version of the backup. The cluster comes back one minor behind where it was, and you upgrade it forward again after the restore.
+- The restore keeps `spec.version`. Your next `kubectl apply` or GitOps sync of the `CamundaCluster` takes the field back, with the version you declare. Declare the version you want the cluster to run once the restore is `Completed`.
+
+**Take a backup before every upgrade.** The most common reason to restore is an upgrade that went wrong, and the backup you want is the one from just before it.
+
 ## Delete a backup
 
 Deleting a backup resource removes what the backup wrote. A finalizer holds the resource until the artifacts are gone.

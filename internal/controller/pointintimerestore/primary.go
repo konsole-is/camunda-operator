@@ -45,6 +45,12 @@ func (r *Reconciler) restorePrimaryStorage(
 	if failure != nil {
 		return r.holdStarted(pitr, failure), nil
 	}
+	// Suspension is a standing condition of this phase, and admission proved
+	// it once. A cluster that is unsuspended mid-run starts its brokers over
+	// the volumes that the restore is erasing.
+	if failure := notSuspended(resolved.cluster); failure != nil {
+		return r.holdStarted(pitr, failure), nil
+	}
 
 	outcome, err := restore.Primary(
 		ctx,

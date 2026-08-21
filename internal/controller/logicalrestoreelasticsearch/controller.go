@@ -28,8 +28,12 @@ limitations under the License.
 // RestoringPrimaryStorage gives the brokers empty data volumes and runs the
 // Camunda restore application on them, once per broker.
 //
-// The controller only reads spec.suspend of the target. Whoever owns the
-// cluster suspends it before the restore and unsuspends it after.
+// Admission prepares the target: it claims the cluster, suspends it, waits
+// for the brokers to stop, and sets spec.version to the Camunda version of the
+// backup. The controller withdraws the suspension when the restore completes,
+// and only when it applied that suspension itself. Every phase after
+// admission reads spec.suspend again, because a target that is unsuspended
+// mid-run starts its workloads over storage that the restore is rewriting.
 //
 // The files follow the phases. admit.go resolves the references, holds the
 // restore in Pending, and takes the claim on the cluster. compatibility.go
@@ -54,6 +58,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -138,7 +143,12 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=logicalrestoreelasticsearches/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;objectstorageconfigs;logicalbackupelasticsearches,verbs=get;list;watch
+// The restore prepares its own cluster: it suspends the cluster, sets the
+// Camunda version of the backup, and withdraws the suspension when it
+// completes. Each write is a server-side apply of one field under a field
+// manager of its own, so patch is the only verb it needs on a CamundaCluster.
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;objectstorageconfigs;logicalbackupelasticsearches,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
@@ -190,6 +200,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// gives the claim back the first time, on the look that follows the
 		// terminal transition. A release that failed heals here too.
 		restore.StageTerminal(&lres, &lres.Status.RestoreProgress)
+
+		if err := r.resumeCluster(ctx, &lres); err != nil {
+			return ctrl.Result{}, err
+		}
 
 		return ctrl.Result{}, r.releaseClaim(ctx, &lres)
 	}
@@ -307,6 +321,28 @@ func (r *Reconciler) holdStarted(
 // cluster.
 func claimant(lres *v1.LogicalRestoreElasticsearch) clusterclaim.Claimant {
 	return clusterclaim.Claimant{Kind: lres.GetKind(), Name: lres.Name, UID: lres.UID}
+}
+
+// resumeCluster withdraws the suspension that this restore applied to its
+// cluster. Only a restore that completed resumes it: a failed restore leaves
+// broker volumes that are empty or half written, and brokers that start over
+// them are worse than a cluster that is down. A cluster that its owner
+// suspended carries no record of this restore and stays suspended.
+//
+// It runs on every look of a terminal restore, so an attempt that failed
+// heals on the next one, and it writes nothing once the field is gone.
+func (r *Reconciler) resumeCluster(ctx context.Context, lres *v1.LogicalRestoreElasticsearch) error {
+	if lres.Status.Phase != v1.LogicalRestoreCompleted {
+		return nil
+	}
+
+	return restore.Resume(
+		ctx,
+		r.Client,
+		r.APIReader,
+		&lres.Status.RestoreProgress,
+		types.NamespacedName{Namespace: lres.Namespace, Name: lres.Spec.TargetClusterRef.Name},
+	)
 }
 
 // releaseClaim gives the claim on the cluster back. It is a no-op when the

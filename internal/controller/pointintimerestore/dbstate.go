@@ -87,6 +87,9 @@ func (r *Reconciler) enterDatabaseState(
 	if failure != nil {
 		return r.holdStarted(pitr, failure), nil
 	}
+	if failure := notSuspended(resolved.cluster); failure != nil {
+		return r.holdStarted(pitr, failure), nil
+	}
 
 	// The clock of the grace runs until the phase itself makes progress. A
 	// chain that resolves is not progress here: the database read is the work

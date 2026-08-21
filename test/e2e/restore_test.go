@@ -140,7 +140,12 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 		Expect(backup.Status.HistorySnapshots).NotTo(BeEmpty())
 	})
 
-	It("suspends the cluster before anything of its state is erased", func() {
+	// A user never does this. The spec erases the state of the cluster to
+	// prove that the restore rebuilds it from the backup alone, and only a
+	// suspended cluster loses its storage without a workload writing over the
+	// gap. The suspension is given back before the restore is created, so the
+	// restore is what suspends the cluster from then on.
+	It("suspends the cluster so the spec can erase its state", func() {
 		claims = brokerClaims(cluster)
 		Expect(claims).NotTo(BeEmpty(), "the cluster has no broker volume")
 
@@ -182,6 +187,8 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 	})
 
 	It("brings the cluster back from the backup alone", func() {
+		letTheRestoreTakeOver(cluster)
+
 		By("creating the LogicalRestoreElasticsearch")
 		Expect(apply(&v1.LogicalRestoreElasticsearch{
 			TypeMeta: metav1.TypeMeta{
@@ -228,7 +235,7 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 	})
 
 	It("finds the process instance of the backup after the cluster runs again", func() {
-		unsuspend(cluster)
+		expectUnsuspended(cluster)
 
 		By("searching the instance that was started before the backup")
 		expectInstanceSearchable(cluster)
@@ -280,7 +287,12 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 		Expect(backup.Status.ObjectKey).NotTo(BeEmpty())
 	})
 
-	It("suspends the cluster before anything of its state is erased", func() {
+	// A user never does this. The spec erases the state of the cluster to
+	// prove that the restore rebuilds it from the backup alone, and only a
+	// suspended cluster loses its storage without a workload writing over the
+	// gap. The suspension is given back before the restore is created, so the
+	// restore is what suspends the cluster from then on.
+	It("suspends the cluster so the spec can erase its state", func() {
 		claims = brokerClaims(cluster)
 		Expect(claims).NotTo(BeEmpty(), "the cluster has no broker volume")
 
@@ -319,6 +331,8 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 	})
 
 	It("brings the cluster back from the backup alone", func() {
+		letTheRestoreTakeOver(cluster)
+
 		By("creating the LogicalRestoreRDBMS")
 		Expect(apply(&v1.LogicalRestoreRDBMS{
 			TypeMeta: metav1.TypeMeta{
@@ -359,7 +373,7 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 	})
 
 	It("finds the process instance of the backup after the cluster runs again", func() {
-		unsuspend(cluster)
+		expectUnsuspended(cluster)
 
 		By("searching the instance that was started before the backup")
 		expectInstanceSearchable(cluster)
@@ -377,9 +391,12 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 // rolled back holds the restore, and the restore touches no broker volume
 // while it waits.
 //
-// The cluster is suspended first. Admission reads spec.suspend before it reads
-// the database, so a cluster that still runs would hold the restore with
-// ClusterNotSuspended and the specs would pass for the wrong reason.
+// The cluster is suspended by hand here, and it stays that way for the
+// point-in-time specs that follow. That is the one flow where the spec keeps
+// the suspension: it rewinds the exporter position of the database by hand,
+// and brokers that run would export past that position again at once. The
+// restore therefore records no suspension of its own, and it unsuspends
+// nothing at the end.
 func itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster *v1.CamundaCluster) {
 	// claims are the broker volumes as the restore found them.
 	var claims map[string]corev1.PersistentVolumeClaim
@@ -568,6 +585,8 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 		)
 	})
 
+	// The spec suspended this cluster by hand, so the restore recorded no
+	// suspension of its own and withdrew none. The spec gives it back.
 	It("converges when the cluster runs again", func() {
 		unsuspend(cluster)
 
