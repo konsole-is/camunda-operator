@@ -686,6 +686,14 @@ func expectRestoreCollectedItsJobs(namespace, resource, name string, owner label
 // Jobs after the restore is terminal therefore finds nothing. The watch runs
 // from the moment the restore is created, over the whole primary-storage run,
 // and it keeps the first copy it sees of each Job.
+//
+// A sample every second is enough, and no Kubernetes watch is needed. A Job of
+// a restore lives for as long as its pod schedules, starts a JVM, reads a
+// primary-storage backup, and exits, which is tens of seconds at least. The
+// operator also needs several reconciles before the first Job exists, and it
+// creates every Job of the restore in one pass. expectRestoreCompleted then
+// reads the phase on a five-second poll, so the suite cannot even see
+// Completed before the samples below have run many times.
 type restoreJobWatch struct {
 	resource  string
 	name      string
