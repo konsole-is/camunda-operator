@@ -34,17 +34,19 @@ import (
 // for server-level statements. Per-database grants open their own connection.
 const maintenanceDatabase = "postgres"
 
-// Connection carries the values that open an admin connection to a PostgreSQL
-// server. An empty SSLMode defaults to "prefer".
+// Connection carries the values that open a connection to a PostgreSQL
+// server. The role it names is whichever role the caller holds: Connect needs
+// one that can create databases and roles, and Open takes the role of the
+// caller as it is. An empty SSLMode defaults to "prefer".
 type Connection struct {
 	// Host is the address of the server.
 	Host string
 	// Port is the port that the server listens on.
 	Port int32
-	// AdminUser is a role that can create databases and roles.
-	AdminUser string
-	// AdminPassword authenticates AdminUser.
-	AdminPassword string
+	// User is the login role.
+	User string
+	// Password authenticates User.
+	Password string
 	// SSLMode is the libpq sslmode parameter for every connection that this
 	// package opens.
 	SSLMode string
@@ -104,6 +106,14 @@ func Connect(ctx context.Context, c Connection) (Bootstrapper, error) {
 	return &bootstrapper{conn: c, admin: admin}, nil
 }
 
+// Open dials database on the server that c describes and returns the live
+// connection. It is how a caller that must run its own SQL inside a logical
+// database reaches it, so the DSN of this operator is built in one place and
+// one place only. The caller closes the connection.
+func Open(ctx context.Context, c Connection, database string) (*pgx.Conn, error) {
+	return dial(ctx, c, database)
+}
+
 // dial opens a connection to database on the server that c describes.
 func dial(ctx context.Context, c Connection, database string) (*pgx.Conn, error) {
 	sslMode := c.SSLMode
@@ -113,7 +123,7 @@ func dial(ctx context.Context, c Connection, database string) (*pgx.Conn, error)
 
 	u := url.URL{
 		Scheme:   "postgres",
-		User:     url.UserPassword(c.AdminUser, c.AdminPassword),
+		User:     url.UserPassword(c.User, c.Password),
 		Host:     fmt.Sprintf("%s:%d", c.Host, c.Port),
 		Path:     "/" + database,
 		RawQuery: url.Values{"sslmode": {sslMode}, "connect_timeout": {"5"}}.Encode(),

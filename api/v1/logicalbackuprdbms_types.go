@@ -125,6 +125,15 @@ type LogicalBackupRDBMSStatus struct {
 	// of a replacement.
 	// +optional
 	ClusterUID types.UID `json:"clusterUID,omitempty"`
+	// Version is the Camunda version of the cluster when the backup started,
+	// as the management binding reported it. A restore compares it against
+	// the version of its target: an Elasticsearch backup restores only with
+	// the exact same version, and a relational backup restores with the same
+	// version or one minor newer. It is the only place a restore can read
+	// the version, because the management binding of a suspended cluster is
+	// unset.
+	// +optional
+	Version string `json:"version,omitempty"`
 	// FirstFailedAt is when a dependency of the running backup first stopped
 	// resolving, or the management API first stopped answering. The operator
 	// measures the mid-run grace from it. It clears when the backup recovers.

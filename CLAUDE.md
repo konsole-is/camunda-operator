@@ -112,7 +112,22 @@ creates labeled workloads. Extensions find them and attach through `clusterRef` 
 
 ## Commands
 
+Run every gate below before you open a pull request. Each one catches something the
+others do not.
+
 ```bash
-go test ./...   # run the tests
-make all        # lint and format
+make setup-envtest          # writes KUBEBUILDER_ASSETS; every envtest suite fails without it
+go test ./...               # the root module only
+go -C api test ./...        # ./... never crosses a module boundary
+make lint                   # both modules, expect 0 issues
+make manifests generate     # then `git status --porcelain config api` prints nothing
+go vet -tags=e2e ./test/e2e/  # go test ./... never compiles this package
+mkdocs build --strict       # catches a broken link or a missing nav entry
 ```
+
+Two traps that cost time before:
+
+- `make all` builds. It does not lint. Run `make lint` yourself.
+- `test/e2e` sits behind the `e2e` build tag, so `go test ./...` never compiles it. A moved
+  or renamed symbol breaks CI while every other gate stays green. `go vet -tags=e2e` is the
+  cheap check.

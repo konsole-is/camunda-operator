@@ -13,10 +13,11 @@ resources:
 - core_v1_backupschedule.yaml
 - core_v1_pointintimerestore.yaml
 - core_v1_logicalbackupelasticsearch.yaml
-- core_v1_logicalrestore.yaml
 - core_v1_camundaoptimize.yaml
 - core_v1_camundamanagementcluster.yaml
 - core_v1_managementauthconfig.yaml
 - core_v1_pvcautoresize.yaml
 - core_v1_logicalbackuprdbms.yaml
+- core_v1_logicalrestoreelasticsearch.yaml
+- core_v1_logicalrestorerdbms.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

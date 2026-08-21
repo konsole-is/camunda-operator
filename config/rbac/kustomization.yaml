@@ -22,6 +22,12 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the camunda-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- logicalrestorerdbms_admin_role.yaml
+- logicalrestorerdbms_editor_role.yaml
+- logicalrestorerdbms_viewer_role.yaml
+- logicalrestoreelasticsearch_admin_role.yaml
+- logicalrestoreelasticsearch_editor_role.yaml
+- logicalrestoreelasticsearch_viewer_role.yaml
 - logicalbackuprdbms_admin_role.yaml
 - logicalbackuprdbms_editor_role.yaml
 - logicalbackuprdbms_viewer_role.yaml
@@ -40,9 +46,6 @@ resources:
 - logicalbackupelasticsearch_admin_role.yaml
 - logicalbackupelasticsearch_editor_role.yaml
 - logicalbackupelasticsearch_viewer_role.yaml
-- logicalrestore_admin_role.yaml
-- logicalrestore_editor_role.yaml
-- logicalrestore_viewer_role.yaml
 - pointintimerestore_admin_role.yaml
 - pointintimerestore_editor_role.yaml
 - pointintimerestore_viewer_role.yaml

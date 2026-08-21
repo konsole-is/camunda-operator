@@ -35,6 +35,7 @@ import (
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/podstate"
 )
 
 // dump applies the Job once and tracks it to completion. A dependency that
@@ -390,18 +391,6 @@ func (r *LogicalBackupRDBMSReconciler) trackJob(
 	return hold{after: r.opts.RetryInterval}, nil
 }
 
-// stuckWaitingReasons are the container waiting states that mean the pod
-// will not start on its own. Either the configuration that it mounts does
-// not resolve, or its image does not pull. The kubelet retries them without
-// end, the Job stays active, and the Job consumes no backoff.
-var stuckWaitingReasons = map[string]string{
-	"CreateContainerConfigError": v1.ReasonMissingSecret,
-	"CreateContainerError":       v1.ReasonMissingSecret,
-	"ErrImagePull":               v1.ReasonInvalidReference,
-	"ImagePullBackOff":           v1.ReasonInvalidReference,
-	"InvalidImageName":           v1.ReasonInvalidReference,
-}
-
 // podsOf lists the pods of this backup's dump Job in the live API, by the
 // backup UID that the pod template carries.
 func (r *LogicalBackupRDBMSReconciler) podsOf(
@@ -420,55 +409,18 @@ func (r *LogicalBackupRDBMSReconciler) podsOf(
 }
 
 // stuckPod reports the first pod of the backup's Job that cannot start as a
-// mid-run failure that names the pod and the reason. Such a pod has a
-// container in a non-progressing waiting state, or the scheduler cannot
-// place it, for example on a volume that never binds. When every pod
-// progresses, stuckPod returns nil.
+// mid-run failure that names the pod and the reason. It selects the pods by
+// the backup UID that the pod template carries, so a leftover pod of another
+// backup of the same name never holds this one.
 func (r *LogicalBackupRDBMSReconciler) stuckPod(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) (*conditions.PreCheckFailure, error) {
-	pods, err := r.podsOf(ctx, backup)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range pods {
-		pod := &pods[i]
-		if pod.Status.Phase != corev1.PodPending && pod.Status.Phase != corev1.PodRunning {
-			continue
-		}
-		statuses := append(
-			append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...),
-			pod.Status.ContainerStatuses...,
-		)
-		for _, cs := range statuses {
-			waiting := cs.State.Waiting
-			if waiting == nil {
-				continue
-			}
-			if reason, stuck := stuckWaitingReasons[waiting.Reason]; stuck {
-				return &conditions.PreCheckFailure{
-					Reason: reason,
-					Message: fmt.Sprintf(
-						"pod %s of the dump Job cannot start: container %s reports %s: %s",
-						pod.Name, cs.Name, waiting.Reason, waiting.Message,
-					),
-				}, nil
-			}
-		}
-		for _, cond := range pod.Status.Conditions {
-			if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse &&
-				cond.Reason == corev1.PodReasonUnschedulable {
-				return &conditions.PreCheckFailure{
-					Reason: v1.ReasonProgressing,
-					Message: fmt.Sprintf(
-						"pod %s of the dump Job cannot be scheduled: %s", pod.Name, cond.Message,
-					),
-				}, nil
-			}
-		}
-	}
-
-	return nil, nil
+	return podstate.Stuck(
+		ctx,
+		r.APIReader,
+		backup.Namespace,
+		map[string]string{components.BackupUIDLabel: string(backup.UID)},
+		"the dump Job",
+	)
 }

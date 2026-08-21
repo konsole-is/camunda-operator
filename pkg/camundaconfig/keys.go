@@ -369,6 +369,10 @@ const (
 	// ProfileConsolidatedAuth activates the security filter chain of every
 	// process (Profile.java, WebSecurityConfig.java).
 	ProfileConsolidatedAuth = "consolidated-auth"
+	// ProfileRestore runs the standalone restore application. It replaces the
+	// broker profile in a restore Job, and the Camunda 8.9 restore guides set
+	// it next to every command that runs bin/restore.
+	ProfileRestore = "restore"
 )
 
 // declared lists every key the operator may set. IsDeclared and Declared read

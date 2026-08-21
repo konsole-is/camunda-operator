@@ -1,0 +1,13 @@
+apiVersion: core.camunda.io/v1
+kind: LogicalRestoreElasticsearch
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+    camunda.io/cluster: camundacluster-sample
+  name: camundacluster-sample-lres
+spec:
+  backupRef:
+    name: camundacluster-sample-backup
+  targetClusterRef:
+    name: camundacluster-sample

@@ -45,6 +45,14 @@ A contract carries connection details and credential references. The operator va
 | [LogicalBackupRDBMS](logicalbackuprdbms.md) | Namespaced | One backup of a cluster on a relational database. |
 | [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule and prune the ones it created. |
 
+## Restore
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
+| [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) | Namespaced | Restore one Elasticsearch backup into one suspended cluster. |
+| [LogicalRestoreRDBMS](logicalrestorerdbms.md) | Namespaced | Restore one relational logical backup into a suspended cluster. |
+| [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
+
 ## How the kinds relate
 
 Solid arrows mean "creates". Dotted arrows mean "references".
@@ -63,9 +71,11 @@ graph LR
     CC[CamundaCluster]
     LBE[LogicalBackupElasticsearch]
     LBR[LogicalBackupRDBMS]
+    BS[BackupSchedule]
+    LRE[LogicalRestoreElasticsearch]
+    LRR[LogicalRestoreRDBMS]
     MAC[ManagementAuthConfig]
     OPT[CamundaOptimize]
-    BS[BackupSchedule]
 
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
@@ -83,6 +93,10 @@ graph LR
 
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
+    LRE -.->|backupRef| LBE
+    LRE -.->|targetClusterRef| CC
+    LRR -.->|backupRef| LBR
+    LRR -.->|targetClusterRef| CC
 
     OPT -.->|clusterRef| CC
     OPT -.->|managementAuthRef| MAC
@@ -98,7 +112,5 @@ These CRDs are installed with the operator, but the operator does not act on the
 
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
-| [LogicalRestore](logicalrestore.md) | Namespaced | Restore a completed logical backup into a suspended cluster. |
-| [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 | [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
 | [PVCAutoResize](pvcautoresize.md) | Namespaced | Grow the volumes of a cluster on their own. |
