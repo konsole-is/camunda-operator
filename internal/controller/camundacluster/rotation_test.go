@@ -363,6 +363,37 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(users.UpdateCalls()).To(Equal(1), "a refusal that is not a stale password must not retry")
 	})
 
+	It("seeds a basic credential on a cluster that only ever ran OIDC", func() {
+		cluster := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cc-switch", Namespace: newNamespace()},
+		}
+		in := components.Input{
+			Cluster: cluster,
+			Effective: components.Effective{
+				CamundaClusterSpec: v1.CamundaClusterSpec{
+					Auth: &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "round-1"}},
+				},
+			},
+		}
+		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
+
+		// An OIDC cluster reports the admin Secret component as Disabled
+		// while it owns no Secret at all, so the condition says published
+		// and the flag says the truth.
+		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
+			Type:    v1.ConditionAdminSecretReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  string(component.Disabled),
+			Message: "Component is disabled.",
+		})
+
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.password.Value).NotTo(BeEmpty())
+		Expect(cred.rotation).To(Equal("round-1"), "the first basic credential of a cluster is its seed")
+		Expect(cred.appliedEmail).To(Equal(components.DefaultAdminEmail))
+	})
+
 	It("records a requested rotation only while the cluster never published an admin Secret", func() {
 		cluster := &v1.CamundaCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "cc-seam", Namespace: newNamespace()},
@@ -387,12 +418,7 @@ var _ = Describe("Admin password rotation", func() {
 		)
 
 		By("keeping the recorded rotation once the cluster has published a Secret")
-		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
-			Type:    v1.ConditionAdminSecretReady,
-			Status:  metav1.ConditionTrue,
-			Reason:  string(component.Healthy),
-			Message: "the admin Secret is published",
-		})
+		cluster.Status.AdminSecretPublished = true
 
 		cred, err = reconciler.resolveAdminCredential(ctx, cluster, in)
 		Expect(err).NotTo(HaveOccurred())

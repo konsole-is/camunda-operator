@@ -29,6 +29,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/events"
@@ -223,6 +224,17 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		DeepCopy()
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
+
+	// Sticky, and read on the reconcile that finds no password to tell a new
+	// cluster from one whose Secret was deleted. It is set from the healthy
+	// component rather than from the condition, because the condition of an
+	// OIDC cluster reports Disabled while no Secret exists at all.
+	if cond := meta.FindStatusCondition(
+		cluster.Status.Conditions, v1.ConditionAdminSecretReady,
+	); cond != nil && cond.Status == metav1.ConditionTrue {
+		cluster.Status.AdminSecretPublished = true
+	}
+
 	cred.stageFailure(&cluster, priorAdminSecret)
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()

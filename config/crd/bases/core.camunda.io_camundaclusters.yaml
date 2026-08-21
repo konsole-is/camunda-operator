@@ -7648,6 +7648,27 @@ spec:
                       preset carries none of its own in the spec.
                     type: string
                 type: object
+              adminSecretPublished:
+                description: |-
+                  AdminSecretPublished reports that the operator has published the admin
+                  Secret of this cluster at least once. It never returns to false.
+
+                  It separates the two clusters that arrive at the same place, a
+                  basic-auth cluster with no admin password to read. A cluster that
+                  never published one is new: the password the operator generates now
+                  seeds the initial user at first start, and the cluster holds it by
+                  definition. A cluster that published one before has lost it, because
+                  somebody deleted the Secret, and the orchestration cluster still holds
+                  the password that went with it. The operator must not record the
+                  replacement as applied; it takes it to the user API instead, and
+                  reports what the cluster answers on AdminSecretReady.
+
+                  The condition alone cannot separate them. An OIDC cluster reports
+                  AdminSecretReady as Disabled while it owns no admin Secret, so a
+                  cluster switched to basic authentication would look like a
+                  replacement, and a cluster switched away and back again would look
+                  like one too.
+                type: boolean
               conditions:
                 description: |-
                   Conditions represent the current state. Ready carries a pre-check

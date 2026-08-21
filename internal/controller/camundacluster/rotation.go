@@ -216,7 +216,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// records neither, so the next reconcile takes both to the user API
 		// and reports what the cluster says about them.
 		rotation, seeded := "", ""
-		if meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady) == nil {
+		if !cluster.Status.AdminSecretPublished {
 			rotation, seeded = requested, email
 		}
 
