@@ -63,15 +63,17 @@ The operator creates no Ingress and no route from outside the Kubernetes cluster
 
 ## The exporter settings on the cluster
 
-The operator adds five entries to `spec.zeebe.extraEnv` of the referenced cluster:
+The operator adds five entries to `spec.zeebe.extraEnv` of the referenced cluster. Three carry a value. The two credentials carry a reference to the Secret that `credentialsSecretRef` of the storage contract names:
 
-```
-CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME
-CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL
-CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX
-CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME
-CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD
-```
+| Entry | What it carries |
+| --- | --- |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME` | The exporter class, as a value. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL` | The Elasticsearch endpoint of the contract, as a value. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX` | `zeebe-record`, as a value. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME` | A `secretKeyRef` to the username key. |
+| `CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD` | A `secretKeyRef` to the password key. |
+
+No credential is written to the `CamundaCluster`. The kubelet reads the Secret and gives the value to the broker container, so the password never appears in the spec of the cluster, and rotating the Secret does not change these entries.
 
 It owns those five entries, under its own field manager. Every other entry on the list stays as it is, whether you or a GitOps tool put it there. The operator changes nothing else on the cluster.
 
