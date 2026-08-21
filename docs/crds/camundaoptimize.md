@@ -127,6 +127,13 @@ Set `spec.importer.replicas` to `0` to stop the import. Use it while a restore o
 
 Zero replicas is the state you asked for, so `ImporterReady` stays healthy and `Ready` stays `True` while the import is off. Do not use `Ready` alone to tell you that data still arrives. Watch the ready replicas of the `<name>-importer` Deployment, or the age of the newest document in the Optimize indices.
 
+!!! warning "Do not set the importer variables through `extraEnv`"
+    An entry of `extraEnv` replaces the entry of the same name that the operator renders. Two of those names decide what a pod does.
+
+    `CAMUNDA_OPTIMIZE_ZEEBE_ENABLED` is the switch that makes a pod an importer. A webapp that carries it becomes a second importer on the same indices, which is the state that one Optimize per cluster exists to prevent. `CAMUNDA_OPTIMIZE_ZEEBE_NAME` is the index prefix the importer reads. A changed prefix makes Optimize read indices that no exporter writes.
+
+    The operator does not refuse those entries. `extraEnv` is the same escape hatch on every kind of this operator, and it overrides a rendered setting by design.
+
 ## Rollouts
 
 The importer is replaced, not rolled: the old pod stops before the new one starts. A rolling update does the reverse. Two importers that write the same indices at the same time make the analytics data inconsistent. A new version or a changed setting therefore stops the import for the length of one restart.
