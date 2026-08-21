@@ -61,7 +61,7 @@ Do not rotate by deletion. A deleted Secret gets a new password, but the `admin`
 
 The operator publishes the new password and rolls the connectors Deployment onto it by itself. Connectors then fail to authenticate, because the `admin` user still has the old password, and they keep failing until you repair it: sign in to the Admin web application with the old password and set the new password from the new Secret on the `admin` user. You do not need to restart connectors afterwards. A `passwordRotation` requested after the deletion fails with `InvalidCredentials` until the same repair, because the operator no longer holds a password that the cluster accepts.
 
-The extra steps of a deletion come from the orchestration cluster, not from the operator. The operator passes the user and the password as the initial user of the cluster. The cluster creates that user once, at first start. After that it checks only that the username exists, and it ignores the password in the configuration. `passwordRotation` exists because of that: it sets the password through the user API of the running cluster, which is the only path that changes it.
+The extra steps of a deletion come from the orchestration cluster, not from the operator. The operator passes the user and the password as the initial user of the cluster. The cluster creates that user at start if it does not exist, and it decides that by the username alone: a user that is already there keeps the password it has, and the one in the configuration is ignored. `passwordRotation` exists because of that: it sets the password through the user API of the running cluster, which is the only path that changes it.
 
 ### Set the address of the administrator
 

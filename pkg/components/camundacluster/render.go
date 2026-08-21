@@ -338,7 +338,10 @@ func adminUserEnv(in Input) []corev1.EnvVar {
 			secretSource(AdminSecretName(in.Cluster), AdminPasswordKey),
 		),
 		camundaconfig.Var(camundaconfig.Index(users, 0, "name"), AdminUsername),
-		adminEmailEnv(in),
+		camundaconfig.VarFrom(
+			camundaconfig.Index(users, 0, "email"),
+			secretSource(AdminSecretName(in.Cluster), AdminEmailKey),
+		),
 		camundaconfig.Var(camundaconfig.Index(camundaconfig.KeyDefaultRolesAdminUsers, 0, ""), AdminUsername),
 	}
 }
@@ -464,21 +467,6 @@ func dedupeEnv(env []corev1.EnvVar) []corev1.EnvVar {
 
 // secretSource builds the source of an environment variable that reads one
 // key of a Secret in the pod's namespace.
-// adminEmailEnv renders the seed address of the admin user. It reads the
-// admin Secret, so that a changed address never touches a pod template. A
-// Secret that does not carry the key yet keeps the value in the template
-// instead: a workload patched onto a key that is not there would fail to
-// start, and the apply that writes it can fail while the reconcile carries
-// on to the workloads.
-func adminEmailEnv(in Input) corev1.EnvVar {
-	key := camundaconfig.Index(camundaconfig.KeyInitializationUsers, 0, "email")
-	if !in.AdminEmailFromSecret {
-		return camundaconfig.Var(key, ResolveAdminEmail(ResolveAuth(in)))
-	}
-
-	return camundaconfig.VarFrom(key, secretSource(AdminSecretName(in.Cluster), AdminEmailKey))
-}
-
 func secretSource(name, key string) *corev1.EnvVarSource {
 	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 		LocalObjectReference: corev1.LocalObjectReference{Name: name},

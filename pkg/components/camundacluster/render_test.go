@@ -44,11 +44,8 @@ func newInput(t *testing.T, mutate func(*Input)) Input {
 		},
 	}
 	in := Input{
-		Cluster: cluster,
-		// The steady state of every cluster: the admin Secret carries the
-		// seed address, so the processes reference it.
-		AdminEmailFromSecret: true,
-		Effective:            NewEffective(MergePreset(cluster.Spec, nil)),
+		Cluster:   cluster,
+		Effective: NewEffective(MergePreset(cluster.Spec, nil)),
 		Storage: Storage{
 			Type: v1.SecondaryStorageTypeElasticsearch,
 			Elasticsearch: &v1.ElasticsearchStorage{
@@ -758,16 +755,4 @@ func TestResolveAuthBasic(t *testing.T) {
 		in.Effective = NewEffective(in.Cluster.Spec)
 	}))
 	assert.Nil(t, oidc.Basic, "the basic block has no effect under OIDC")
-}
-
-// A cluster that upgraded into this operator has a Secret with no seed key.
-// Its workloads keep the address in the template until the key is written,
-// because the reconcile patches them even when that apply fails.
-func TestRenderKeepsTheAdminEmailInTheTemplateUntilTheKeyExists(t *testing.T) {
-	t.Parallel()
-
-	in := newInput(t, func(in *Input) { in.AdminEmailFromSecret = false })
-	r := render(in, Resolve(in.Effective)[0])
-
-	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL", DefaultAdminEmail)
 }
