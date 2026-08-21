@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -48,6 +49,9 @@ var (
 	// exporter answers the database-state check of every spec. The suite
 	// needs no PostgreSQL.
 	exporter = &exporterPositions{}
+	// jobLogs answers the log read of every failed restore Job. envtest runs
+	// no pod, so no real log exists.
+	jobLogs = &restoreJobLogs{}
 )
 
 // answer is what the fake reader returns for one logical database.
@@ -84,6 +88,31 @@ func (e *exporterPositions) read(
 	return a.positions, a.err
 }
 
+// restoreJobLogs is the fake restore-Job log reader of the suite. A spec
+// registers the log of the Job it wants read, and every other Job answers an
+// empty log, which names no cause.
+type restoreJobLogs struct {
+	mu   sync.Mutex
+	logs map[string]string
+}
+
+// set records the log that the reader answers for the Job named name.
+func (l *restoreJobLogs) set(name, output string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.logs == nil {
+		l.logs = map[string]string{}
+	}
+	l.logs[name] = output
+}
+
+func (l *restoreJobLogs) read(_ context.Context, job types.NamespacedName) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.logs[job.Name], nil
+}
+
 func TestPointInTimeRestoreController(t *testing.T) {
 	RegisterFailHandler(Fail)
 
@@ -105,6 +134,7 @@ var _ = BeforeSuite(func() {
 			// the test timeout.
 			MidRunGrace:   3 * time.Second,
 			ReadPositions: exporter.read,
+			ReadJobLog:    jobLogs.read,
 		}).SetupWithManager(mgr)
 	})
 

@@ -68,6 +68,11 @@ func (r *Reconciler) restorePrimaryStorage(
 			Args:  []string{"--to=" + pitr.Spec.Timestamp.UTC().Format(time.RFC3339)},
 			Poll:  r.opts.PollInterval,
 			Grace: r.opts.MidRunGrace,
+			// The operator compares timestamps and the restore application
+			// compares log positions, so a restore that passes every rule of
+			// this kind can still be refused. Only the application knows, and
+			// only its log says so.
+			JobFailure: r.jobRefusal,
 		},
 	)
 	if err != nil {

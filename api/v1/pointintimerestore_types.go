@@ -35,6 +35,13 @@ const (
 	// spec.timestamp, or that it reports no exporter position for a
 	// partition. The restore holds in Pending and touches no volume.
 	ReasonDatabaseNotRestored = "DatabaseNotRestored"
+	// ReasonExporterPositionNotCovered means that the restore application
+	// found no primary-storage checkpoint that covers the exporter position
+	// of the restored database, so it restored no partition. The restore
+	// fails, and the remedy is to roll the database back further and create
+	// a new restore. The operator reads this cause from the log of the failed
+	// restore Job, because only the restore application compares the two.
+	ReasonExporterPositionNotCovered = "ExporterPositionNotCovered"
 )
 
 // PointInTimeRestorePhase tracks the one-shot restore. Completed and Failed

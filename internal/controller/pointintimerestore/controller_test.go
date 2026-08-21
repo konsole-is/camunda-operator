@@ -1215,6 +1215,45 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("names the refusal when no backup covers the exporter position", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		jobs := expectJobs(pitr)
+
+		// Only the restore application compares the exporter position of the
+		// database against the log ranges of the backups. Its refusal reaches
+		// the user through the status of the restore, not through a pod log.
+		jobLogs.set(jobs[0].Name, refusalLast)
+		markJob(pitr, 0, batchv1.JobFailed)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonExporterPositionNotCovered))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("required exported position 451"))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("Roll the database back"))
+			condition := ready(current)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonExporterPositionNotCovered))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("reports the plain cause when a Job fails for an unrelated reason", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		jobs := expectJobs(pitr)
+
+		jobLogs.set(jobs[1].Name, unrelatedLog)
+		markJob(pitr, 1, batchv1.JobFailed)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("broker 1"))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("holds a restore whose cluster was unsuspended under it", func() {
 		w := createWorld()
 		pitr := createRestore(w)

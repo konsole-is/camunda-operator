@@ -17,6 +17,7 @@ limitations under the License.
 package restore
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -552,4 +554,77 @@ func TestPrimaryCreatesTheJobsItOwns(t *testing.T) {
 		t.Context(), types.NamespacedName{Namespace: "ns", Name: "my-cluster-pitr-pitr-3"}, &gone,
 	)
 	assert.True(t, apierrors.IsNotFound(err), "the phase runs the brokers it recorded, no more")
+}
+
+// The hook runs only after a Job already failed, and its answer replaces the
+// generic failure of the phase. It is how a kind reports a refusal that only
+// the restore application can see.
+func TestPrimaryReportsTheFailureThatTheKindNames(t *testing.T) {
+	t.Parallel()
+
+	w := newPrimaryWorld(t)
+
+	var sawJob string
+	var sawOrdinal int32
+	w.input.JobFailure = func(_ context.Context, job *batchv1.Job, ordinal int32) *conditions.PreCheckFailure {
+		sawJob, sawOrdinal = job.Name, ordinal
+
+		return &conditions.PreCheckFailure{Reason: "NamedByTheKind", Message: "the kind read the log"}
+	}
+
+	w.runToTheJobs(t)
+	finish(t, w.client, w.progress().PrimaryJobNames[1], batchv1.JobFailed)
+
+	outcome := w.look(t)
+
+	require.NotNil(t, outcome.Failure)
+	assert.Equal(t, "NamedByTheKind", outcome.Failure.Reason)
+	assert.Equal(t, "the kind read the log", outcome.Failure.Message)
+	assert.Equal(t, w.progress().PrimaryJobNames[1], sawJob)
+	assert.Equal(t, int32(1), sawOrdinal)
+}
+
+// A hook that recognises nothing must leave the failure the phase already
+// found. A restore that failed for an unrelated reason keeps that reason.
+func TestPrimaryKeepsItsOwnFailureWhenTheKindNamesNone(t *testing.T) {
+	t.Parallel()
+
+	w := newPrimaryWorld(t)
+	w.input.JobFailure = func(context.Context, *batchv1.Job, int32) *conditions.PreCheckFailure {
+		return nil
+	}
+
+	w.runToTheJobs(t)
+	finish(t, w.client, w.progress().PrimaryJobNames[1], batchv1.JobFailed)
+
+	outcome := w.look(t)
+
+	require.NotNil(t, outcome.Failure)
+	assert.Equal(t, v1.ReasonFailed, outcome.Failure.Reason)
+	assert.Contains(t, outcome.Failure.Message, "broker 1")
+}
+
+// The hook belongs to the failure path alone. A restore whose Jobs all
+// completed never reads a log.
+func TestPrimaryNeverAsksTheKindAboutAJobThatCompleted(t *testing.T) {
+	t.Parallel()
+
+	w := newPrimaryWorld(t)
+
+	asked := false
+	w.input.JobFailure = func(context.Context, *batchv1.Job, int32) *conditions.PreCheckFailure {
+		asked = true
+
+		return nil
+	}
+
+	w.runToTheJobs(t)
+	for _, name := range w.progress().PrimaryJobNames {
+		finish(t, w.client, name, batchv1.JobComplete)
+	}
+
+	outcome := w.look(t)
+
+	assert.True(t, outcome.Done)
+	assert.False(t, asked, "the phase read a log of a restore that worked")
 }

@@ -24,8 +24,10 @@ limitations under the License.
 // reads the exporter position of every partition and refuses a database that
 // is ahead of the requested point. primary.go runs the shared primary-storage
 // phase of pkg/restore, which recreates the broker data volumes and runs the
-// restore application on them. This file holds what every phase shares:
-// Reconcile, the terminal transitions, and the wiring.
+// restore application on them. refusal.go reads the log of a restore Job that
+// failed and names the one refusal that the operator reports for the user.
+// This file holds what every phase shares: Reconcile, the terminal
+// transitions, and the wiring.
 //
 // The machinery that every restore kind shares lives in pkg/restore. This
 // package holds the phase vocabulary of this kind, its own rules, and the
@@ -39,6 +41,12 @@ limitations under the License.
 // continues. A database that the operator cannot reach holds it in
 // ValidatingDatabaseState, where the mid-run grace bounds the wait and the
 // restore fails after it.
+//
+// One refusal cannot be caught before the destruction. The operator compares
+// timestamps, and the restore application compares log positions, so only the
+// application knows whether a primary-storage checkpoint covers the exporter
+// position of the database. That answer arrives in the log of a failed Job,
+// after the volumes are erased. refusal.go reads it and reports the remedy.
 package pointintimerestore
 
 import (
@@ -52,6 +60,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -101,6 +110,12 @@ type Options struct {
 	// logical database. Nil means the production reader, which connects with
 	// pgbootstrap. The tests point it at a fake.
 	ReadPositions ReadPositions
+	// ReadJobLog reads the log of a restore Job that already failed, so that
+	// the controller can name the cause. Nil means the production reader,
+	// which SetupWithManager builds from the REST configuration of the
+	// manager. The tests point it at a fake, because envtest serves no pod
+	// log.
+	ReadJobLog ReadJobLog
 }
 
 // withDefaults fills the zero fields of o with the production configuration.
@@ -151,6 +166,10 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps;secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// The log of a failed restore Job carries the one refusal that the operator
+// names for the user: no primary-storage checkpoint covers the exporter
+// position of the restored database.
+// +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // The cluster claim reads the resource of whichever kind holds the Lease,
 // to decide whether that holder still needs the cluster.
@@ -327,6 +346,18 @@ func (r *Reconciler) releaseClaim(ctx context.Context, pitr *v1.PointInTimeResto
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder("pointintimerestore")
+	}
+
+	// A pod log is a stream, so it needs a typed REST client that the
+	// client.Client of the manager cannot give. The reader is built here
+	// rather than in withDefaults, because only the manager holds the REST
+	// configuration.
+	if r.opts.ReadJobLog == nil {
+		clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			return fmt.Errorf("building the client that reads restore Job logs: %w", err)
+		}
+		r.opts.ReadJobLog = podLogReader(clientset.CoreV1())
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(
