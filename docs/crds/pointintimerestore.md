@@ -89,7 +89,7 @@ Suspension is a standing condition, not a gate that admission passes once. A clu
 
 ## One operation at a time
 
-A cluster holds one backup or one restore at a time. The operator records the holder in a Lease next to the cluster. A restore takes that Lease when every rule of its admission holds, and it gives the Lease back when it reaches `Completed` or `Failed`.
+A cluster holds one backup or one restore at a time. The operator records the holder in a Lease next to the cluster. A restore takes that Lease before it suspends the cluster and before every phase that erases something, and it gives the Lease back when it reaches `Completed` or `Failed`. It therefore holds the cluster while it prepares it, which it reports as `Pending`.
 
 A cluster that another backup or another restore holds keeps this restore in `Pending` with reason `ClusterClaimed`. The message names the holder. Nothing bounds this wait, and you change nothing: the restore starts on its own when the holder reaches a terminal phase. No watch wakes this hold. The controller wakes it on its retry timer alone, so the restore can start up to one retry interval after the holder finished.
 

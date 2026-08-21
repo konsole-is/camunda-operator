@@ -123,7 +123,7 @@ This operator is the bottom layer of a stack. A layer above it, for example a `C
 
 ## One operation at a time
 
-The operator lets one backup or one restore of a cluster run at a time. A restore whose target another operation holds waits in `Pending` with the reason `ClusterClaimed`, and the message names the holder. Nothing bounds this wait. The restore starts on its own when the holder reaches a terminal phase. No watch wakes this hold. The controller wakes it on its retry timer alone, so the restore can start up to one retry interval after the holder finished. A restore takes the cluster for itself when its last admission check passes, which is before every phase that deletes something.
+The operator lets one backup or one restore of a cluster run at a time. A restore whose target another operation holds waits in `Pending` with the reason `ClusterClaimed`, and the message names the holder. Nothing bounds this wait. The restore starts on its own when the holder reaches a terminal phase. No watch wakes this hold. The controller wakes it on its retry timer alone, so the restore can start up to one retry interval after the holder finished. A restore takes the cluster for itself before it writes anything on that cluster and before every phase that deletes something. It therefore holds the cluster while it prepares it, which it reports as `Pending`.
 
 ## The snapshot repository
 
