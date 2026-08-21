@@ -274,8 +274,11 @@ chart is the source for the values.
 Probes on the management port 9600 (`application.properties`,
 `HealthConfigurationInitializer.java`): liveness `/actuator/health/liveness`, readiness
 `/actuator/health/readiness`, startup `/actuator/health/startup`; connectors: readiness
-`/actuator/health/readiness` and liveness `/actuator/health/liveness` on port 8080 (Helm chart
-`templates/connectors/deployment.yaml:108-119`). ocf's workload primitives turn pod
+`/actuator/health/readiness` and startup `/actuator/health/startup` on port 8080, and no
+liveness probe. Its liveness group holds the `zeebeClient` indicator alone
+(`connector-runtime-bundle` `application.properties`), so a liveness probe restarts a working
+container for the whole time the gateway is away; the Helm chart ships
+`connectors.livenessProbe.enabled` false for the same reason. ocf's workload primitives turn pod
 readiness into the component condition: `ZeebeReady`, `GatewayReady`, `OperateReady`,
 `TasklistReady`, `AdminReady`, `ConnectorsReady`. Every process has a component on every
 reconcile, gated with `WithFeatureGate` on whether the topology enables it, so an embedded or

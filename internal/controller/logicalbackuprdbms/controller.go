@@ -57,6 +57,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
+	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
 
@@ -175,7 +176,7 @@ type LogicalBackupRDBMSReconciler struct {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters;secondarystorageconfigs;databaseconfigs;databaseserverconfigs;objectstorageconfigs;camundaclusterpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // The cluster claim reads the resource of whichever kind holds the Lease,
 // to decide whether that holder still needs the cluster.
@@ -324,8 +325,8 @@ func progressing(backup *v1.LogicalBackupRDBMS, message string) metav1.Condition
 }
 
 // SetupWithManager applies opts, registers the controller, the cluster-key
-// index, and the watches: the backups, the Jobs they own, and the referenced
-// clusters.
+// index, and the watches: the backups, the Jobs they own, the pods of those
+// Jobs, and the referenced clusters.
 func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts Options) error {
 	resolved, err := opts.withDefaults()
 	if err != nil {
@@ -350,6 +351,14 @@ func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts O
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.LogicalBackupRDBMS{}).
 		Owns(&batchv1.Job{}).
+		// A Job reports nothing about a pod of its own that cannot start,
+		// so the pods are watched next to the Jobs.
+		Watches(
+			&corev1.Pod{},
+			podstate.EnqueueJobOwner(
+				mgr.GetClient(), v1.GroupVersion.WithKind("LogicalBackupRDBMS").GroupKind(),
+			),
+		).
 		Watches(
 			&v1.CamundaCluster{},
 			r.enqueueForCluster(),

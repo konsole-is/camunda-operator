@@ -107,9 +107,22 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 	var preset *v1.CamundaClusterPresetSpec
 	if res.cluster.Spec.PresetRef != "" {
 		var obj v1.CamundaClusterPreset
-		if err := res.get(ctx, client.ObjectKey{Name: res.cluster.Spec.PresetRef}, &obj); err != nil {
+		key := client.ObjectKey{Name: res.cluster.Spec.PresetRef}
+		if err := res.exists(ctx, key, &obj); err != nil {
 			return err
 		}
+
+		// The fingerprint, not the generation: the generation moves for
+		// every spec change, and this input is hashed into every process, so
+		// a passwordRotation set on a preset would restart the brokers of
+		// every cluster that inherits it. Only connectors follow the admin
+		// password, through Input.AdminPasswordHash.
+		fingerprint, err := components.PresetFingerprint(obj.Spec)
+		if err != nil {
+			return err
+		}
+		res.inputs = append(res.inputs, res.objectKind(&obj)+"/"+objectPath(key)+"="+fingerprint)
+
 		preset = &obj.Spec
 	}
 

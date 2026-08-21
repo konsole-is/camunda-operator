@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 func TestManagedCarriesOwnerComponentAndManager(t *testing.T) {
@@ -90,4 +91,58 @@ func TestBoundedNameSeparatesTwoLongNamesThatShareTheirHead(t *testing.T) {
 	head := strings.Repeat("a", 80)
 
 	assert.NotEqual(t, BoundedName(head+"-one", 63), BoundedName(head+"-two", 63))
+}
+
+// A custom resource name reaches 253 characters, but a label value stops at
+// 63. The owner label is part of every selector, so an owner name that does
+// not fit would make the API server reject the whole selector. The
+// constructor of each kind applies the bound, so no call site can forget it.
+func TestALongOwnerNameFitsALabelValue(t *testing.T) {
+	t.Parallel()
+
+	owners := []Owner{
+		Cluster(strings.Repeat("c", 253)),
+		ElasticsearchCluster(strings.Repeat("e", 253)),
+		Database(strings.Repeat("d", 253)),
+		LogicalBackupElasticsearch(strings.Repeat("l", 253)),
+		LogicalBackupRDBMS(strings.Repeat("r", 253)),
+		LogicalRestoreElasticsearch(strings.Repeat("x", 253)),
+		LogicalRestoreRDBMS(strings.Repeat("y", 253)),
+		BackupSchedule(strings.Repeat("s", 253)),
+		PointInTimeRestore(strings.Repeat("p", 253)),
+	}
+
+	for _, owner := range owners {
+		for key, value := range Managed(owner, "component") {
+			assert.Empty(t, validation.IsValidLabelValue(value), "%s=%s", key, value)
+		}
+		for key, value := range Discovery(owner, "component") {
+			assert.Empty(t, validation.IsValidLabelValue(value), "%s=%s", key, value)
+		}
+	}
+
+	assert.NotEqual(
+		t,
+		Cluster(strings.Repeat("c", 80)+"one").Name,
+		Cluster(strings.Repeat("c", 80)+"two").Name,
+		"two long owners keep separate label values",
+	)
+}
+
+// A limit with no room for a head and a hash must not index the name
+// negatively. Nothing passes one today, but a panic here would take the whole
+// manager down rather than fail one reconcile.
+func TestBoundedNameHandlesALimitSmallerThanTheHash(t *testing.T) {
+	t.Parallel()
+
+	for _, limit := range []int{0, 1, 5, nameHashLength + 1} {
+		assert.Len(t, BoundedName(strings.Repeat("a", 253), limit), limit, limit)
+	}
+
+	assert.NotEqual(
+		t,
+		BoundedName(strings.Repeat("a", 253), 5),
+		BoundedName(strings.Repeat("b", 253), 5),
+		"a short bound still separates two names",
+	)
 }

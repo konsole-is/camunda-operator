@@ -292,7 +292,15 @@ func TestRenderBasicAuthSeedsAdmin(t *testing.T) {
 		"password",
 	)
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME", "admin")
-	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL", "admin@localhost")
+	// The address comes from the Secret, like the password: a changed
+	// address then never touches a pod template.
+	assertSecretEnv(
+		t,
+		r.env,
+		"CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL",
+		"my-cluster-camunda-admin",
+		"email",
+	)
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0", "admin")
 	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_ISSUERURI")
 	assertNoEnv(t, r.env, "CAMUNDA_LICENSE_KEY")
@@ -725,4 +733,26 @@ func TestRenderConnectorsRoleGrant(t *testing.T) {
 	in = input("client_id", false)
 	r = render(in, process(t, in, ComponentGateway))
 	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_CONNECTORS_CLIENTS_0")
+}
+
+func TestResolveAuthBasic(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, ResolveAuth(newInput(t, nil)).Basic)
+
+	block := &v1.BasicAuthSpec{PasswordRotation: "2026-08"}
+
+	basic := ResolveAuth(newInput(t, func(in *Input) {
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Basic: block}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	require.NotNil(t, basic.Basic)
+	assert.Equal(t, "2026-08", basic.Basic.PasswordRotation)
+
+	oidc := ResolveAuth(newInput(t, func(in *Input) {
+		in.Platform = oidcPlatform()
+		in.Cluster.Spec.Auth = &v1.ClusterAuthSpec{Basic: block}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	}))
+	assert.Nil(t, oidc.Basic, "the basic block has no effect under OIDC")
 }

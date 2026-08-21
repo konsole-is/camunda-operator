@@ -11,8 +11,16 @@ COPY go.sum go.sum
 COPY api/go.mod api/go.mod
 COPY api/go.sum api/go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
-# and so that source changes don't invalidate our downloaded layer
-RUN go mod download
+# and so that source changes don't invalidate our downloaded layer.
+# The module proxy sometimes resets a stream in the middle of a download. That
+# fails the whole image build, and with it the e2e run that builds it, so give
+# the download a few attempts before it gives up.
+RUN for attempt in 1 2 3; do \
+        go mod download && break; \
+        if [ "$attempt" = 3 ]; then echo "go mod download failed after 3 attempts" >&2; exit 1; fi; \
+        echo "go mod download failed, retrying in 5s" >&2; \
+        sleep 5; \
+    done
 
 # Copy the Go source (relies on .dockerignore to filter)
 COPY . .

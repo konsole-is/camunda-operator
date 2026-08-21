@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -518,6 +519,53 @@ func expectClusterEnv(cluster *v1.CamundaCluster, match gomegatypes.GomegaMatche
 	}, timeout, interval).Should(Succeed())
 }
 
+// setClusterSuspend writes spec.suspend on the cluster of a scenario.
+func setClusterSuspend(cluster *v1.CamundaCluster, suspend bool) {
+	GinkgoHelper()
+	Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var latest v1.CamundaCluster
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest); err != nil {
+			return err
+		}
+		latest.Spec.Suspend = suspend
+
+		return k8sClient.Update(ctx, &latest)
+	})).To(Succeed())
+}
+
+// expectReplicas polls until every named Deployment carries want replicas.
+func expectReplicas(want int32, keys ...client.ObjectKey) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		for _, key := range keys {
+			var deployment appsv1.Deployment
+			g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+			g.Expect(deployment.Spec.Replicas).NotTo(BeNil(), key.Name)
+			g.Expect(*deployment.Spec.Replicas).To(Equal(want), key.Name)
+		}
+	}, timeout, interval).Should(Succeed())
+}
+
+// suspensionEvents returns the reasons of the suspension events recorded on
+// optimize, in the order the API server returns them.
+func suspensionEvents(optimize *v1.CamundaOptimize) []string {
+	GinkgoHelper()
+	var events corev1.EventList
+	Expect(k8sClient.List(ctx, &events, client.InNamespace(optimize.Namespace))).To(Succeed())
+
+	var reasons []string
+	for _, event := range events.Items {
+		if event.InvolvedObject.Name != optimize.Name || event.Action != eventActionSuspend {
+			continue
+		}
+		for range max(int(event.Count), 1) {
+			reasons = append(reasons, event.Reason)
+		}
+	}
+
+	return reasons
+}
+
 var _ = Describe("CamundaOptimize controller", func() {
 	Context("with every reference resolved", func() {
 		It("deploys the workloads, patches the exporter, and reports Ready", func() {
@@ -573,6 +621,52 @@ var _ = Describe("CamundaOptimize controller", func() {
 				return k8sClient.Update(ctx, &latest)
 			})).To(Succeed())
 			expectStableRender(webappKey, importerKey)
+		})
+
+		It("follows the suspension of its cluster to zero replicas and back", func() {
+			s := newScenario("8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: s.namespace,
+				Name:      components.WorkloadName(s.optimize, components.ComponentImporter),
+			}
+			expectReplicas(1, webappKey, importerKey)
+
+			By("scaling both workloads to zero while the cluster is suspended")
+			setClusterSuspend(s.cluster, true)
+			expectReplicas(0, webappKey, importerKey)
+
+			By("reporting Ready True with reason Suspended, which is not an error")
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.optimize), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(ready.Reason).To(Equal(string(component.Suspended)))
+			}, timeout, interval).Should(Succeed())
+			expectCondition(s.optimize, v1.ConditionWebappReady, Equal(string(component.Suspended)))
+			expectCondition(s.optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+
+			By("keeping the exporter patch, because the suspension is not a detachment")
+			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
+
+			By("naming the cluster in an event, once for the transition")
+			Expect(suspensionEvents(s.optimize)).To(Equal([]string{eventReasonClusterSuspended}))
+			Consistently(func(g Gomega) {
+				g.Expect(suspensionEvents(s.optimize)).To(Equal([]string{eventReasonClusterSuspended}))
+			}, 3*time.Second, interval).Should(Succeed())
+
+			By("starting both workloads again when the suspension is cleared")
+			setClusterSuspend(s.cluster, false)
+			expectReplicas(1, webappKey, importerKey)
+			expectReadyWhileStamping(s.optimize, webappKey, importerKey)
+			Expect(suspensionEvents(s.optimize)).To(Equal([]string{
+				eventReasonClusterSuspended, eventReasonClusterResumed,
+			}))
 		})
 
 		It("withdraws the exporter entries on deletion and keeps the entry of the user", func() {

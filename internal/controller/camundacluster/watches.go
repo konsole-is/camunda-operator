@@ -26,6 +26,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -192,15 +193,55 @@ func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
 	})
 }
 
+// ClusterNameFromLabel returns the name of the CamundaCluster in the
+// namespace whose rendered resources carry the given camunda.io/cluster label
+// value, or the empty string when no cluster in the namespace does.
+//
+// The label carries labels.OwnerName of the cluster name, which is not the
+// name once the name passes 63 characters. So a caller that maps a rendered
+// resource back to its cluster resolves it here, by comparing forward over
+// the clusters of the namespace. It never reads the label value as a name.
+//
+// It is exported because the Optimize controller maps the same label on the
+// Deployments this operator renders.
+func ClusterNameFromLabel(
+	ctx context.Context,
+	c client.Client,
+	namespace, value string,
+) (string, error) {
+	var clusters v1.CamundaClusterList
+	if err := c.List(ctx, &clusters, client.InNamespace(namespace)); err != nil {
+		return "", fmt.Errorf("listing the clusters of namespace %q: %w", namespace, err)
+	}
+
+	for i := range clusters.Items {
+		if labels.OwnerName(clusters.Items[i].Name) == value {
+			return clusters.Items[i].Name, nil
+		}
+	}
+
+	return "", nil
+}
+
 // enqueueForBrokerClaim maps a PersistentVolumeClaim event to the cluster
 // that labels it, so a resize or a binding outside the spec updates
 // status.volumes.
-func enqueueForBrokerClaim() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
-		name, ok := o.GetLabels()[labels.ClusterKey]
+func (r *CamundaClusterReconciler) enqueueForBrokerClaim() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		value, ok := o.GetLabels()[labels.ClusterKey]
 		if !ok {
 			return nil
 		}
+
+		name, err := ClusterNameFromLabel(ctx, r.Client, o.GetNamespace(), value)
+		if err != nil {
+			logf.FromContext(ctx).Error(err, "Resolving the cluster of a broker claim", "label", value)
+			return nil
+		}
+		if name == "" {
+			return nil
+		}
+
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: name}}}
 	})
 }
@@ -281,13 +322,14 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	cached := mgr.GetClient()
 	clusters := &v1.CamundaClusterList{}
 	return ctrl.NewControllerManagedBy(mgr).
+		WithOptions(controller.Options{MaxConcurrentReconciles: concurrentReconciles}).
 		For(&v1.CamundaCluster{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.Secret{}, builder.OnlyMetadata).
-		Watches(&corev1.PersistentVolumeClaim{}, enqueueForBrokerClaim()).
+		Watches(&corev1.PersistentVolumeClaim{}, r.enqueueForBrokerClaim()).
 		Watches(
 			&v1.CamundaPlatformConfig{},
 			refindex.Enqueue(cached, clusters, PlatformConfigRefField, refindex.ObjectName),

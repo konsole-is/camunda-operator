@@ -104,11 +104,22 @@ func newCluster(
 	}
 }
 
-// createCluster creates cluster and registers its deletion.
+// createCluster creates cluster and registers its deletion. The cleanup
+// waits for the object to go: a cluster whose rotation keeps failing
+// requeues on a timer for as long as it exists, and a spec must not run
+// beside the reconciles of the one before it. The delete is checked, so a
+// cleanup that cannot remove the cluster fails its spec instead of leaving
+// it running for the rest of the suite.
 func createCluster(cluster *v1.CamundaCluster) {
 	GinkgoHelper()
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
-	DeferCleanup(func() { _ = k8sClient.Delete(ctx, cluster) })
+	DeferCleanup(func() {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, cluster))).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &v1.CamundaCluster{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the cluster is still reconciling")
+		}, timeout, interval).Should(Succeed())
+	})
 }
 
 // createDefaultCluster creates a platform config, a binding with credentials,

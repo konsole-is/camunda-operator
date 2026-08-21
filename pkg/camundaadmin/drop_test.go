@@ -44,3 +44,20 @@ func TestDroppedCallsAreUnreachableWhileOthersAreServed(t *testing.T) {
 	require.NoError(t, err, "one drop, then reachable again")
 	assert.Equal(t, camundaadmin.StateCompleted, status.State)
 }
+
+// A drop schedule replaces the one before it. A DropAfter whose skips are
+// not consumed must not make a later DropNext serve its call.
+func TestDropNextReplacesTheSkipsOfAnEarlierSchedule(t *testing.T) {
+	ctx := context.Background()
+	client, server := newClient(t)
+	server.SetRuntimeState(7, "COMPLETED", "")
+
+	server.DropAfter("runtimeStatus", 2, 1)
+	server.DropNext("runtimeStatus", 1)
+
+	_, err := client.RuntimeBackupStatus(ctx, 7)
+	require.ErrorIs(t, err, camundaadmin.ErrUnreachable, "the new schedule drops the next call")
+
+	_, err = client.RuntimeBackupStatus(ctx, 7)
+	assert.NoError(t, err, "and only that one")
+}

@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -519,6 +520,26 @@ func TestJobSelectorRoundTripsALongRestoreName(t *testing.T) {
 	assert.Subset(t, full, selector)
 }
 
+// The cluster label sits beside the owner label and is bounded with it. A
+// cluster name is a DNS subdomain and can pass what a label value admits, and
+// the API server rejects a whole selector over one long value, so an
+// unbounded cluster label would stop every Job of the restore from applying.
+func TestJobLabelsBoundsALongClusterName(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("c", 100)
+	labelled := JobLabels(labels.PointInTimeRestore("restore"), long)
+
+	assert.Equal(t, labels.OwnerName(long), labelled[labels.ClusterKey])
+	assert.LessOrEqual(t, len(labelled[labels.ClusterKey]), validation.LabelValueMaxLength)
+	assert.Empty(t, validation.IsValidLabelValue(labelled[labels.ClusterKey]))
+
+	// The bound ends in a hash of the whole name, so two clusters that share
+	// a head still label their Jobs apart.
+	other := JobLabels(labels.PointInTimeRestore("restore"), long+"x")
+	assert.NotEqual(t, labelled[labels.ClusterKey], other[labels.ClusterKey])
+}
+
 // A Target that is missing any of its parts reaches BuildJob only through
 // misuse, because ReadTarget fills all of them. It still must not panic.
 func TestBuildJobRejectsAnIncompleteTarget(t *testing.T) {
@@ -713,4 +734,21 @@ func TestJobGoldenLogicalRestoreRDBMSBroker0(t *testing.T) {
 		t, "testdata/golden/lrrdbms-broker-0.yaml", jobPreview{in},
 		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
 	)
+}
+
+// The manager caches pods through an informer that labels.ManagedSelector
+// scopes. A pod that the selector does not match is a pod that podstate.Stuck
+// cannot see, and a container that cannot start then reads as progress.
+// The operator labels go over the labels of a user, so a user cannot take the
+// key away.
+func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {
+	t.Parallel()
+
+	in := restoreInput()
+	in.Target.StatefulSet.Spec.Template.Labels[labels.ManagedByKey] = "helm"
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.True(t, labels.ManagedSelector().Matches(k8slabels.Set(job.Spec.Template.Labels)))
 }
