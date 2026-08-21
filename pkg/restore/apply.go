@@ -36,8 +36,10 @@ const (
 )
 
 // Apply server-side applies obj under manager, forcing ownership of every
-// field the operator sets. Every resource a restore manages goes through it,
-// so the field manager of a restore is one string in one place.
+// field the operator sets. The recreated broker volumes are what goes through
+// it. A restore Job does not: its pod template is immutable after creation,
+// so every Job is created rather than applied. A Create carries the same
+// field manager, which keeps one string per restore kind on both.
 func Apply(ctx context.Context, c client.Client, obj client.Object, manager client.FieldOwner) error {
 	//nolint:staticcheck // ocf applies through the deprecated client.Apply patch
 	return c.Patch(ctx, obj, client.Apply, manager, client.ForceOwnership)
