@@ -56,17 +56,20 @@ const (
 )
 
 // ReasonInvalidCredentials on AdminSecretReady means that the orchestration
-// cluster refused the credentials of a password rotation: it does not accept
-// the password that the admin Secret publishes. The usual cause is an admin
-// password that changed outside the operator. The operator retries. To
-// recover, set the password from the admin Secret on the admin user in the
-// Admin web application.
+// cluster refused the credentials of an update of the admin user: it does
+// not accept the password that the admin Secret publishes. The operator
+// updates that user to rotate its password and to set its email, and either
+// call reports this. The usual cause is an admin password that changed
+// outside the operator. The operator retries. To recover, set the password
+// from the admin Secret on the admin user in the Admin web application.
 const ReasonInvalidCredentials = "InvalidCredentials"
 
 // ReasonRejected on AdminSecretReady means that the orchestration cluster
-// answered a password rotation and refused the call itself, with credentials
-// it accepted. The message carries the response, which names the reason. The
-// operator retries, and no change of the password recovers it.
+// answered an update of the admin user and refused the call itself, with
+// credentials it accepted. The operator updates that user to rotate its
+// password and to set its email, and either call reports this. The message
+// carries the response, which names the reason. The operator retries, and no
+// change of the password recovers it.
 const ReasonRejected = "Rejected"
 
 // ComponentMode says where a process of the unified binary runs.

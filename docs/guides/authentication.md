@@ -47,11 +47,11 @@ spec:
 
 The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password; the brokers, the gateway, and the web applications keep running. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly. A suspended cluster serves no user API, so a requested rotation waits and applies after the cluster resumes.
 
-If the call fails, the Secret keeps the active password and the operator retries until the call succeeds. `AdminSecretReady` reports which of the three failures it is, and each one asks for something different from you:
+If the call fails, the Secret keeps the active password and the operator retries until the call succeeds. `AdminSecretReady` reports which of the three failures it is, and each one asks for something different from you. The same three reasons report a failed change of `adminEmail`, because that is an update of the same user.
 
 | Reason | What happened | What to do |
 | --- | --- | --- |
-| `ConnectionFailed` | The cluster did not answer. | Nothing. It clears on its own when the cluster is `Ready` again. |
+| `ConnectionFailed` | The cluster did not answer. | Nothing. It clears when the user API of the gateway answers again. `AdminSecretReady` takes part in `Ready`, so the cluster stays not `Ready` until it does. |
 | `InvalidCredentials` | The cluster refused the password that the Secret publishes. Somebody changed it in the Admin web application. | Set the password from the Secret on the `admin` user there. The next retry succeeds. |
 | `Rejected` | The cluster accepted the password and refused the call itself. | Read the condition message, which carries the answer of the cluster and names the reason. A new password does not help. |
 
