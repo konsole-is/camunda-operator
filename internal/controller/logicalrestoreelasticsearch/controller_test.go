@@ -492,8 +492,42 @@ var _ = Describe("LogicalRestoreElasticsearch cluster claim", func() {
 		}, timeout, interval).Should(Equal("LogicalRestoreElasticsearch/" + restore.Name))
 	})
 
+	// Foreground propagation keeps a Job in place until its last pod is gone,
+	// and a pod that mounts a broker volume is what holds that volume. The
+	// claim is what tells the next operation that the cluster is free, so it
+	// waits for the pods and not for the delete call.
+	It("keeps the claim while the Jobs of the completed restore still terminate", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+
+		owner := labels.LogicalRestoreElasticsearch(restore.Name)
+		names := []string{restorepkg.JobName(owner, 0), restorepkg.JobName(owner, 1)}
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(Equal(names))
+		}, timeout, interval).Should(Succeed())
+
+		for _, name := range names {
+			markJob(w.namespace, name, batchv1.JobComplete)
+		}
+		expectReason(restore, v1.LogicalRestoreCompleted, v1.ReasonCompleted)
+		expectJobsCollected(w.namespace, names)
+
+		By("holding the claim while the Jobs are still there")
+		Consistently(func() string {
+			return claimHolder(w)
+		}, "1s", interval).Should(Equal("LogicalRestoreElasticsearch/" + restore.Name))
+
+		By("giving the claim back once the collector removed them")
+		collectDeletedJobs(w.namespace)
+		Eventually(func() string {
+			return claimHolder(w)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
 	It("gives the claim back when it completes", func() {
 		w := newWorld()
+		collectDeletedJobs(w.namespace)
 		backup := createBackup(w)
 		restore := startedRestore(w, backup)
 

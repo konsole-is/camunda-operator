@@ -699,3 +699,37 @@ func expectJobsKept(namespace string, names []string) {
 		}
 	}, "1s", interval).Should(Succeed())
 }
+
+// collectDeletedJobs plays the garbage collector of a real cluster, for as long
+// as the spec runs. Foreground propagation makes the API server stamp the
+// foregroundDeletion finalizer on a deleted Job and keep the Job until its pods
+// are gone. envtest runs no collector that removes it again, so a spec that
+// waits for the Jobs of a completed restore to go needs this loop.
+func collectDeletedJobs(namespace string) {
+	stop := make(chan struct{})
+	DeferCleanup(func() { close(stop) })
+
+	go func() {
+		defer GinkgoRecover()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+
+			var jobs batchv1.JobList
+			if err := k8sClient.List(ctx, &jobs, client.InNamespace(namespace)); err != nil {
+				continue
+			}
+			for i := range jobs.Items {
+				job := &jobs.Items[i]
+				if job.DeletionTimestamp == nil || len(job.Finalizers) == 0 {
+					continue
+				}
+				job.Finalizers = nil
+				_ = k8sClient.Update(ctx, job)
+			}
+		}
+	}()
+}

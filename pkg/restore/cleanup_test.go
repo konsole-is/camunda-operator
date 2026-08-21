@@ -115,6 +115,10 @@ func collectWorld(t *testing.T, recorder *deleteRecorder, jobs ...*batchv1.Job) 
 //
 // The propagation policy is the point of the delete. Background propagation
 // returns before the pods are gone, and the pods are what hold the volume.
+//
+// The look that asks for the delete is therefore never the look that reports
+// the volumes free. Under foreground propagation the Job outlives its pods, so
+// only a look that finds no Job left is done.
 func TestCollectJobsRemovesEveryJobOfACompletedRestore(t *testing.T) {
 	t.Parallel()
 
@@ -129,11 +133,20 @@ func TestCollectJobsRemovesEveryJobOfACompletedRestore(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	require.NoError(t, CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress))
+	asked, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.False(t, asked.Done, "the look that asks for the delete cannot report the pods gone")
+	assert.Positive(t, asked.Wait)
 
 	var left batchv1.JobList
 	require.NoError(t, c.List(ctx, &left, client.InNamespace("ns")))
 	assert.Empty(t, left.Items)
+
+	// The next look finds nothing of this restore, which is what frees the
+	// broker volumes and lets the caller go on.
+	done, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.Equal(t, Outcome{Done: true}, done)
 
 	for _, name := range owner.Status.PrimaryJobNames {
 		options, deleted := recorder.options[name]
@@ -167,7 +180,9 @@ func TestCollectJobsKeepsTheJobsOfAFailedRestore(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	require.NoError(t, CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress))
+	collected, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.Equal(t, Outcome{Done: true}, collected, "a failed restore has nothing to collect")
 
 	assert.Empty(t, recorder.options)
 
@@ -177,7 +192,8 @@ func TestCollectJobsKeepsTheJobsOfAFailedRestore(t *testing.T) {
 }
 
 // The terminal branch runs on every look, so the call repeats until the Jobs
-// are gone. A Job that is already gone is the outcome this call wants.
+// are gone. A Job that is already gone is the outcome this call wants, and a
+// restore whose Jobs are all gone is complete.
 func TestCollectJobsTreatsAMissingJobAsDone(t *testing.T) {
 	t.Parallel()
 
@@ -186,8 +202,17 @@ func TestCollectJobsTreatsAMissingJobAsDone(t *testing.T) {
 	c := collectWorld(t, recorder, recordedJob("my-cluster-pitr-pitr-1", owner.UID))
 
 	ctx := context.Background()
-	require.NoError(t, CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress))
+	asked, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.False(t, asked.Done, "one recorded Job was still here")
 
+	// Only the one Job that existed was deleted. The two names that resolve to
+	// nothing are complete already.
+	assert.Equal(t, []string{"my-cluster-pitr-pitr-1"}, keysOf(recorder.options))
+
+	done, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.Equal(t, Outcome{Done: true}, done)
 	assert.Equal(t, []string{"my-cluster-pitr-pitr-1"}, keysOf(recorder.options))
 }
 
@@ -206,7 +231,9 @@ func TestCollectJobsLeavesAJobOfAnotherOwner(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	require.NoError(t, CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress))
+	collected, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.Equal(t, Outcome{Done: true}, collected, "a Job of another owner is not this restore's")
 
 	assert.Empty(t, recorder.options)
 
@@ -217,7 +244,8 @@ func TestCollectJobsLeavesAJobOfAnotherOwner(t *testing.T) {
 
 // Foreground propagation keeps the Job in place until its pods are gone, so
 // every later look reads a Job that already terminates. A second delete of it
-// buys nothing.
+// buys nothing, and the collection is not done: the pods that hold the broker
+// volumes are exactly what the Job is waiting for.
 func TestCollectJobsSkipsAJobThatAlreadyTerminates(t *testing.T) {
 	t.Parallel()
 
@@ -230,9 +258,15 @@ func TestCollectJobsSkipsAJobThatAlreadyTerminates(t *testing.T) {
 	c := collectWorld(t, recorder, terminating)
 
 	ctx := context.Background()
-	require.NoError(t, CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress))
+	collected, err := CollectJobs(ctx, c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
 
 	assert.Empty(t, recorder.options)
+	assert.False(
+		t, collected.Done,
+		"the Job is still here, so its pods can still hold the broker volumes",
+	)
+	assert.Positive(t, collected.Wait, "an incomplete collection has to be looked at again")
 }
 
 // keysOf returns the names of every recorded delete, in name order.
@@ -263,7 +297,7 @@ func TestCollectJobsAcceptsAConflictOnTheDelete(t *testing.T) {
 		}).
 		Build()
 
-	require.NoError(t, CollectJobs(
-		context.Background(), c, c, owner, &owner.Status.RestoreProgress,
-	))
+	collected, err := CollectJobs(context.Background(), c, c, owner, &owner.Status.RestoreProgress)
+	require.NoError(t, err)
+	assert.False(t, collected.Done, "the Job of the winner is read again on the next look")
 }
