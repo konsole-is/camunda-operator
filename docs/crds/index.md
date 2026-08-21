@@ -64,6 +64,7 @@ graph LR
     CC[CamundaCluster]
     LBE[LogicalBackupElasticsearch]
     LBR[LogicalBackupRDBMS]
+    LRE[LogicalRestoreElasticsearch]
     LRR[LogicalRestoreRDBMS]
 
     ESC -.->|presetRef| ESCP
@@ -82,6 +83,8 @@ graph LR
 
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
+    LRE -.->|backupRef| LBE
+    LRE -.->|targetClusterRef| CC
     LRR -.->|backupRef| LBR
     LRR -.->|targetClusterRef| CC
 ```
