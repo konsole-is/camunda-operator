@@ -125,13 +125,16 @@ func newCluster(namespace, platform, storageRef, backupRef string, connectors bo
 	}
 
 	if connectors {
-		// The connectors Deployment rolls when the admin password changes,
-		// and a rolling update runs a second pod before it stops the first.
-		// The request is small enough for both pods to fit on the node.
+		// The connectors runtime is a Spring Boot JVM and needs a real share
+		// of the node to start inside the readiness window; 100m starved it
+		// on a contended node. The rolling update of a password rotation
+		// runs a second pod beside the first, and the room for it comes from
+		// the rotation spec waiting for a Ready cluster before it patches,
+		// not from starving the pod that has to boot.
 		cluster.Spec.Connectors = &v1.ConnectorsSpec{
 			Enabled:      new(true),
 			Version:      ccConnectorsVersion,
-			WorkloadSpec: v1.WorkloadSpec{Resources: requests("100m", "512Mi")},
+			WorkloadSpec: v1.WorkloadSpec{Resources: requests("250m", "512Mi")},
 		}
 	}
 
