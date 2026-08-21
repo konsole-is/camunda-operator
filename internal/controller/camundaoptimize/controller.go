@@ -173,9 +173,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	res.Input.ServiceMonitorSupported = r.serviceMonitorSupported()
-	// Before anything stages a new Ready, which is where the previous
-	// suspension state is read from.
-	r.recordSuspensionChange(&optimize, res.Input.Suspended)
+	// The previous suspension state lives in Ready, so it is read before
+	// anything stages a new one. The event is recorded at the end, once the
+	// reconcile has acted on the change.
+	suspendedBefore := wasSuspending(&optimize)
 
 	if err := r.patchExporter(ctx, res); err != nil {
 		return ctrl.Result{}, err
@@ -189,6 +190,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
+	r.recordSuspensionChange(&optimize, suspendedBefore, res.Input.Suspended)
 
 	return ctrl.Result{}, reconcileErr
 }

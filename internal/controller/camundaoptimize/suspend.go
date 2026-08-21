@@ -50,11 +50,16 @@ const (
 // component from its own suspension state, and the reason is Suspended, the
 // same reason that a suspended CamundaCluster reports.
 //
-// suspended is spec.suspend of the referenced cluster. The Ready condition of
-// the CamundaOptimize as it was read is the previous state, so this runs
-// before the reconcile stages a new one.
-func (r *Reconciler) recordSuspensionChange(optimize *v1.CamundaOptimize, suspended bool) {
-	if suspended == wasSuspending(optimize) {
+// before is what wasSuspending read at the top of the reconcile, and suspended
+// is spec.suspend of the referenced cluster. The caller runs this after it
+// stages the new Ready, so a reconcile that returns early on an error records
+// nothing: it changed no workload, and the next reconcile still sees the same
+// transition to record.
+func (r *Reconciler) recordSuspensionChange(
+	optimize *v1.CamundaOptimize,
+	before, suspended bool,
+) {
+	if suspended == before {
 		return
 	}
 
