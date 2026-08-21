@@ -54,7 +54,8 @@ import (
 //
 // It is safe to call again on every look. A Job that is gone, a Job that
 // another writer owns now, and a Job that already terminates are all left as
-// they are.
+// they are. A name that another writer takes between the read and the delete
+// answers the same way, because the delete carries a UID precondition.
 //
 // The reader must be uncached. Only the controller reference proves that a Job
 // under a recorded name belongs to this restore, and a stale read of that
@@ -95,7 +96,10 @@ func CollectJobs(
 			client.PropagationPolicy(metav1.DeletePropagationForeground),
 			client.Preconditions{UID: &job.UID},
 		)
-		if err != nil && !apierrors.IsNotFound(err) {
+		// A Conflict says that the precondition did not hold, so another writer
+		// owns the name now. That Job is not this restore's to remove, and it
+		// is the same answer as a Job that is already gone.
+		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 			return fmt.Errorf("removing the restore Job %s: %w", key, err)
 		}
 	}

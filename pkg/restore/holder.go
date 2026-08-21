@@ -95,7 +95,7 @@ func claimHolder(
 			return fmt.Sprintf("pod %s holds it. Remove that pod to free the volume", pod.Name), nil
 		case !isJob(controller):
 			return fmt.Sprintf(
-				"pod %s of %s %s holds it. Suspend the cluster to release the volume",
+				"pod %s of %s %s holds it. Suspend the cluster to free the volume",
 				pod.Name, controller.Kind, controller.Name,
 			), nil
 		}

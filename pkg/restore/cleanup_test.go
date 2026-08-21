@@ -18,6 +18,7 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"slices"
 	"testing"
@@ -25,7 +26,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -228,4 +231,32 @@ func TestCollectJobsSkipsAJobThatAlreadyTerminates(t *testing.T) {
 // keysOf returns the names of every recorded delete, in name order.
 func keysOf(options map[string]client.DeleteOptions) []string {
 	return slices.Sorted(maps.Keys(options))
+}
+
+// The delete carries a UID precondition, so a name that another writer takes
+// between the read and the delete comes back as a Conflict. That Job is not
+// this restore's to remove, and the restore goes on.
+func TestCollectJobsAcceptsAConflictOnTheDelete(t *testing.T) {
+	t.Parallel()
+
+	owner := terminalOwner(v1.ReasonCompleted)
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(recordedJob("my-cluster-pitr-pitr-0", owner.UID)).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(
+				_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.DeleteOption,
+			) error {
+				return apierrors.NewConflict(
+					schema.GroupResource{Group: "batch", Resource: "jobs"},
+					obj.GetName(),
+					errors.New("the UID in the precondition does not match"),
+				)
+			},
+		}).
+		Build()
+
+	require.NoError(t, CollectJobs(
+		context.Background(), c, c, owner, &owner.Status.RestoreProgress,
+	))
 }
