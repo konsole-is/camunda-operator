@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -339,10 +340,21 @@ func holdingPod(name string, controller *metav1.OwnerReference) *corev1.Pod {
 	return pod
 }
 
+// The identities of a terminating-hold world. The holder lookup answers on
+// the UID of a controller reference, not on its name, so every case pins one.
+const (
+	// brokersUID is the broker StatefulSet of the target.
+	brokersUID types.UID = "brokers-uid"
+	// restoreJobUID is the Job of the restore that holds the volume.
+	restoreJobUID types.UID = "restore-job-uid"
+	// strangerUID belongs to no resource of the target.
+	strangerUID types.UID = "stranger-uid"
+)
+
 // controllerRef is the controller reference that a pod or a Job carries.
-func controllerRef(apiVersion, kind, name string) *metav1.OwnerReference {
+func controllerRef(apiVersion, kind, name string, uid types.UID) *metav1.OwnerReference {
 	return &metav1.OwnerReference{
-		APIVersion: apiVersion, Kind: kind, Name: name, Controller: new(true),
+		APIVersion: apiVersion, Kind: kind, Name: name, UID: uid, Controller: new(true),
 	}
 }
 
@@ -365,6 +377,7 @@ func terminatingHold(t *testing.T, objects ...client.Object) string {
 
 	in := claimInput("10Gi")
 	in.Recreated = targetFixture().ClaimNames()
+	in.Target.StatefulSet.UID = brokersUID
 
 	progress, err := RecreateClaims(context.Background(), c, c, in)
 	require.NoError(t, err)
@@ -383,14 +396,16 @@ func TestRecreateClaimsNamesTheRestoreThatHoldsATerminatingClaim(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "camunda-es-restore-lres-1",
 			Namespace: "ns",
+			UID:       restoreJobUID,
 			OwnerReferences: []metav1.OwnerReference{*controllerRef(
 				v1.GroupVersion.String(), "LogicalRestoreElasticsearch", "camunda-es-restore",
+				strangerUID,
 			)},
 		},
 	}
 	pod := holdingPod(
 		"camunda-es-restore-lres-1-x8k2p",
-		controllerRef("batch/v1", "Job", job.Name),
+		controllerRef("batch/v1", "Job", job.Name, restoreJobUID),
 	)
 
 	message := terminatingHold(t, job, pod)
@@ -408,7 +423,7 @@ func TestRecreateClaimsNamesTheWorkloadThatHoldsATerminatingClaim(t *testing.T) 
 
 	pod := holdingPod(
 		"my-cluster-zeebe-1",
-		controllerRef("apps/v1", "StatefulSet", "my-cluster-zeebe"),
+		controllerRef("apps/v1", "StatefulSet", "my-cluster-zeebe", brokersUID),
 	)
 
 	message := terminatingHold(t, pod)
@@ -472,7 +487,7 @@ func TestRecreateClaimsAsksForAPodOfAForeignWorkload(t *testing.T) {
 
 	pod := holdingPod(
 		"debug-shell-7f9c",
-		controllerRef("apps/v1", "Deployment", "debug-shell"),
+		controllerRef("apps/v1", "Deployment", "debug-shell", strangerUID),
 	)
 
 	message := terminatingHold(t, pod)
@@ -527,12 +542,74 @@ func TestRecreateClaimsNamesTheSameHolderOnEveryLook(t *testing.T) {
 	t.Parallel()
 
 	second := holdingPod(
-		"zzz-debug", controllerRef("apps/v1", "Deployment", "debug"),
+		"zzz-debug", controllerRef("apps/v1", "Deployment", "debug", strangerUID),
 	)
 	first := holdingPod(
-		"aaa-debug", controllerRef("apps/v1", "Deployment", "debug"),
+		"aaa-debug", controllerRef("apps/v1", "Deployment", "debug", strangerUID),
 	)
 
 	assert.Contains(t, terminatingHold(t, second, first), "aaa-debug")
 	assert.Contains(t, terminatingHold(t, first, second), "aaa-debug")
+}
+
+// A StatefulSet that somebody deleted and created again under one name leaves
+// the pods of its predecessor behind, and suspending the cluster removes none
+// of them. The name is therefore not enough to promise that remedy.
+func TestRecreateClaimsRefusesTheSuspendRemedyForAnOldBrokerPod(t *testing.T) {
+	t.Parallel()
+
+	pod := holdingPod(
+		"my-cluster-zeebe-1",
+		controllerRef("apps/v1", "StatefulSet", "my-cluster-zeebe", strangerUID),
+	)
+
+	message := terminatingHold(t, pod)
+
+	assert.Contains(t, message, "my-cluster-zeebe-1")
+	assert.Contains(t, message, "Remove that pod, or the workload that runs it")
+	assert.NotContains(t, message, "Suspend the cluster")
+}
+
+// A restore that somebody deleted and created again derives the names of its
+// predecessor's Jobs. A Job read by name alone therefore belongs to another
+// restore, and asking the user to delete it frees nothing.
+func TestRecreateClaimsRefusesAJobThatOnlySharesTheNameOfTheHolder(t *testing.T) {
+	t.Parallel()
+
+	successor := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "camunda-es-restore-lres-1",
+			Namespace: "ns",
+			UID:       strangerUID,
+			OwnerReferences: []metav1.OwnerReference{*controllerRef(
+				v1.GroupVersion.String(), "LogicalRestoreElasticsearch", "another-restore", strangerUID,
+			)},
+		},
+	}
+	pod := holdingPod(
+		"camunda-es-restore-lres-1-x8k2p",
+		controllerRef("batch/v1", "Job", successor.Name, restoreJobUID),
+	)
+
+	message := terminatingHold(t, successor, pod)
+
+	assert.Contains(t, message, "camunda-es-restore-lres-1-x8k2p")
+	assert.Contains(t, message, "Remove that pod to free the volume")
+	assert.NotContains(t, message, "another-restore")
+}
+
+// The Job of a pod can be gone while the pod is not. Nothing names a restore
+// then, and the pod is what has to go.
+func TestRecreateClaimsNamesThePodWhenItsJobIsGone(t *testing.T) {
+	t.Parallel()
+
+	pod := holdingPod(
+		"camunda-es-restore-lres-1-x8k2p",
+		controllerRef("batch/v1", "Job", "camunda-es-restore-lres-1", restoreJobUID),
+	)
+
+	message := terminatingHold(t, pod)
+
+	assert.Contains(t, message, "The Job camunda-es-restore-lres-1 that ran it is gone")
+	assert.Contains(t, message, "Remove that pod to free the volume")
 }

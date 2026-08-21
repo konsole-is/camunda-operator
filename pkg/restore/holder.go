@@ -22,8 +22,10 @@ import (
 	"slices"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -110,10 +112,10 @@ func claimHolder(
 		case controller == nil:
 			return fmt.Sprintf("pod %s holds it. Remove that pod to free the volume", pod.Name), nil
 		case !isJob(controller):
-			return workloadHolder(pod.Name, target.StatefulSet.Name, controller), nil
+			return workloadHolder(pod.Name, target.StatefulSet, controller), nil
 		}
 
-		return jobHolder(ctx, reader, namespace, pod.Name, controller.Name)
+		return jobHolder(ctx, reader, namespace, pod.Name, controller)
 	}
 
 	return "", nil
@@ -125,11 +127,15 @@ func claimHolder(
 // operator knows: a suspended cluster runs no broker pod, so the volume goes
 // free. Any other workload belongs to somebody else, and the message asks for
 // the pod instead of naming a remedy the operator cannot promise.
-func workloadHolder(pod, brokers string, controller *metav1.OwnerReference) string {
-	if controller.Kind == "StatefulSet" && controller.Name == brokers {
+//
+// The UID decides, not the name. A StatefulSet that somebody deleted and
+// created again under one name leaves the pods of its predecessor behind, and
+// suspending the cluster removes none of them.
+func workloadHolder(pod string, brokers *appsv1.StatefulSet, controller *metav1.OwnerReference) string {
+	if brokers.UID != "" && controller.UID == brokers.UID {
 		return fmt.Sprintf(
 			"pod %s of StatefulSet %s holds it. Suspend the cluster to free the volume",
-			pod, brokers,
+			pod, brokers.Name,
 		)
 	}
 
@@ -140,23 +146,40 @@ func workloadHolder(pod, brokers string, controller *metav1.OwnerReference) stri
 }
 
 // jobHolder names the resource that runs the pod, through the Job that owns
-// it. A Job that no resource owns names itself.
+// it.
+//
+// The UID of the reference decides which Job that is. A restore that somebody
+// deleted and created again derives the names of its predecessor's Jobs, so a
+// Job read by name alone can belong to another restore, and the message would
+// ask the user to delete a resource that holds nothing.
+//
+// Three answers name the pod itself: a Job that is gone, a Job under that name
+// with another UID, and a Job that no resource owns. Removing the pod frees
+// the volume in all three.
 func jobHolder(
 	ctx context.Context,
 	reader client.Reader,
-	namespace, pod, name string,
+	namespace, pod string,
+	ref *metav1.OwnerReference,
 ) (string, error) {
-	key := types.NamespacedName{Namespace: namespace, Name: name}
+	key := types.NamespacedName{Namespace: namespace, Name: ref.Name}
 
 	var job batchv1.Job
-	if err := reader.Get(ctx, key, &job); err != nil {
+	err := reader.Get(ctx, key, &job)
+	switch {
+	case apierrors.IsNotFound(err):
+		return podOfGoneJob(pod, ref.Name), nil
+	case err != nil:
 		return "", fmt.Errorf("reading the Job %s: %w", key, err)
 	}
 
 	owner := metav1.GetControllerOf(&job)
-	if owner == nil {
+	switch {
+	case job.UID != ref.UID:
+		return podOfGoneJob(pod, ref.Name), nil
+	case owner == nil:
 		return fmt.Sprintf(
-			"pod %s of Job %s holds it. Remove that Job to free the volume", pod, name,
+			"pod %s of Job %s holds it. Remove that Job to free the volume", pod, ref.Name,
 		), nil
 	}
 
@@ -164,6 +187,16 @@ func jobHolder(
 		"pod %s holds it. The pod belongs to a Job of the %s %s. Delete that %s to free the volume",
 		pod, owner.Kind, owner.Name, owner.Kind,
 	), nil
+}
+
+// podOfGoneJob names a pod whose Job the operator cannot read any more: the
+// Job is gone, or another Job holds its name now. The pod outlived it and
+// still holds the volume, so the pod is what has to go.
+func podOfGoneJob(pod, name string) string {
+	return fmt.Sprintf(
+		"pod %s holds it. The Job %s that ran it is gone. Remove that pod to free the volume",
+		pod, name,
+	)
 }
 
 // mountsClaim reports whether pod uses the named claim as one of its volumes.
