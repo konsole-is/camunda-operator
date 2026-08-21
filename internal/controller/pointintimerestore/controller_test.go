@@ -1017,6 +1017,45 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		}, time.Second, interval).Should(Succeed())
 	})
 
+	// A failed restore leaves the cluster suspended, and the remedy is a new
+	// restore. That restore takes the suspension over, so the cluster comes
+	// back when it completes. envtest is the real API server here, so the
+	// managed fields that the takeover reads are the ones a restore wrote.
+	It("takes over the suspension that a failed restore left, and gives it back", func() {
+		w := createWorld(func(w *world) { w.cluster.Spec.Suspend = false })
+		failed := createRestore(w)
+		expectJobs(failed)
+		Expect(readRestore(failed).Status.ClusterSuspended).To(BeTrue())
+
+		By("failing the first restore, which leaves the cluster suspended")
+		markJob(failed, 0, batchv1.JobFailed)
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(failed).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(claimHolder(w)).To(BeEmpty())
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Suspend).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		By("creating the restore that the remedy asks for")
+		retry := createRestore(w)
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(retry).Status.ClusterSuspended).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		for ordinal := range int32(brokerCount) {
+			markJob(retry, ordinal, batchv1.JobComplete)
+		}
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(retry).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Suspend).To(BeFalse(), "the retry left the cluster suspended")
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A cluster that its owner suspended stays suspended. The restore
 	// recorded no suspension of its own, so it withdraws none.
 	It("leaves a cluster that its owner suspended suspended", func() {

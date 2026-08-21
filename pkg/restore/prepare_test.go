@@ -464,3 +464,110 @@ func TestWritesVersionAnswersForTheValuesARestoreCanWrite(t *testing.T) {
 		})
 	}
 }
+
+// suspendedBy stamps a managed-fields entry that declares spec.suspend under
+// manager, the way the API server records an apply that set the field.
+func suspendedBy(cluster *v1.CamundaCluster, manager string) {
+	cluster.ManagedFields = append(cluster.ManagedFields, metav1.ManagedFieldsEntry{
+		Manager:    manager,
+		Operation:  metav1.ManagedFieldsOperationApply,
+		FieldsType: "FieldsV1",
+		FieldsV1:   &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:suspend":{}}}`)},
+	})
+}
+
+// A restore that failed leaves the cluster suspended, and the remedy is a new
+// restore. That restore has to give the suspension back when it finishes, so
+// it takes over the one an earlier restore left.
+func TestPrepareTakesOverTheSuspensionOfAnEarlierRestore(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	suspendedBy(w.cluster, string(FieldManagerTargetSuspend))
+
+	outcome := w.look(t)
+
+	assert.False(t, outcome.Done, "the record has to be durable before the restore goes on")
+	assert.True(t, w.progress().ClusterSuspended)
+	assert.Empty(t, *w.applies, "the cluster is already suspended, so nothing is applied")
+	assert.Contains(t, ready(w.restore).Message, "took over the suspension")
+}
+
+// A cluster that its owner suspended carries the manager of the owner. No
+// restore adopts it, and it stays suspended when the restore finishes.
+func TestPrepareLeavesTheSuspensionOfTheOwnerAlone(t *testing.T) {
+	t.Parallel()
+
+	for name, manager := range map[string]string{
+		"an apply of the owner": "kubectl-client-side-apply",
+		"a GitOps tool":         "argocd-controller",
+		"the version manager":   string(FieldManagerTargetVersion),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			w := newPrepareWorld(t)
+			suspendedBy(w.cluster, manager)
+
+			outcome := w.look(t)
+
+			assert.True(t, outcome.Done)
+			assert.False(t, w.progress().ClusterSuspended)
+			assert.Empty(t, *w.applies)
+		})
+	}
+}
+
+// A cluster that carries no managed fields for spec.suspend answers no. The
+// restore records nothing rather than guessing.
+func TestPrepareAdoptsNothingWithoutAManagedField(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+
+	outcome := w.look(t)
+
+	assert.True(t, outcome.Done)
+	assert.False(t, w.progress().ClusterSuspended)
+}
+
+// The takeover happens once. A restore that already recorded the suspension
+// does not stage the message again on every look.
+func TestPrepareTakesOverOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	suspendedBy(w.cluster, string(FieldManagerTargetSuspend))
+
+	w.look(t)
+	outcome := w.look(t)
+
+	assert.True(t, outcome.Done)
+	assert.True(t, w.progress().ClusterSuspended)
+	assert.Empty(t, *w.applies)
+}
+
+// A managed-fields entry that names other fields of the spec is not a
+// suspension, and one that does not parse names nothing.
+func TestSuspendedByARestoreReadsTheFieldSet(t *testing.T) {
+	t.Parallel()
+
+	for name, raw := range map[string]string{
+		"another field of the spec": `{"f:spec":{"f:version":{}}}`,
+		"metadata only":             `{"f:metadata":{"f:labels":{}}}`,
+		"an empty set":              `{}`,
+		"not JSON":                  `not json`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cluster := &v1.CamundaCluster{}
+			cluster.ManagedFields = []metav1.ManagedFieldsEntry{{
+				Manager:  string(FieldManagerTargetSuspend),
+				FieldsV1: metav1.NewFieldsV1(raw),
+			}}
+
+			assert.False(t, suspendedByARestore(cluster))
+		})
+	}
+}

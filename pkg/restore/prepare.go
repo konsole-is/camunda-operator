@@ -18,6 +18,7 @@ package restore
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"time"
@@ -131,6 +132,25 @@ func Prepare(
 		return suspendTarget(ctx, c, p, in, key)
 	}
 
+	// A restore that failed leaves the cluster suspended, and so does one that
+	// somebody deleted while it ran. The remedy for both is a new restore, and
+	// that restore has to give the suspension back when it finishes. Without
+	// the takeover it never applied the field, so it would record nothing,
+	// withdraw nothing, and leave the cluster down for good.
+	//
+	// The field manager is what tells the two apart. A suspension that only a
+	// restore declares carries the suspend manager of this package. One that
+	// the owner declared carries theirs, and no restore adopts it.
+	if !p.ClusterSuspended && suspendedByARestore(in.Cluster) {
+		p.ClusterSuspended = true
+		progressing(in.Owner, fmt.Sprintf(
+			"the restore took over the suspension that an earlier restore left on CamundaCluster "+
+				"%s, and it gives that suspension back when it completes", key,
+		))
+
+		return Outcome{Wait: Shortly}, nil
+	}
+
 	// spec.suspend says what was asked for. The StatefulSet says what
 	// happened. A version that reaches the brokers while they still run is
 	// the downgrade of a running cluster that this order exists to avoid.
@@ -144,6 +164,50 @@ func Prepare(
 	}
 
 	return versionTarget(ctx, c, in, key)
+}
+
+// suspendedByARestore reports whether the suspension of the cluster came from
+// a restore rather than from its owner. It reads the managed fields: the
+// suspend manager of this package owns spec.suspend only where a restore
+// applied it.
+//
+// Co-ownership answers true as well, and that is safe. Server-side apply keeps
+// a field that another manager still declares, so a withdrawal by a restore
+// leaves the value of that other manager in place.
+func suspendedByARestore(cluster *v1.CamundaCluster) bool {
+	for _, entry := range cluster.ManagedFields {
+		if entry.Manager != string(FieldManagerTargetSuspend) || entry.FieldsV1 == nil {
+			continue
+		}
+		if declaresSuspend(entry.FieldsV1.GetRawBytes()) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// declaresSuspend reports whether a managed-fields entry names spec.suspend.
+// The encoding is the field set of the API server, where every key carries the
+// "f:" prefix of a field name. An entry that does not parse names nothing.
+func declaresSuspend(raw []byte) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return false
+	}
+
+	spec, ok := fields["f:spec"]
+	if !ok {
+		return false
+	}
+
+	var inSpec map[string]json.RawMessage
+	if err := json.Unmarshal(spec, &inSpec); err != nil {
+		return false
+	}
+	_, ok = inSpec["f:suspend"]
+
+	return ok
 }
 
 // suspendTarget suspends the cluster of the restore. It records that this
