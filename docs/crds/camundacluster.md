@@ -40,9 +40,11 @@ Camunda 8.9 ships the orchestration cluster as one binary. Zeebe, the gateway, a
 
 ## Endpoints
 
-Each enabled process gets a workload and a Service named `<name>-<component>`. The gateway Service (`<name>-zeebe` when the gateway is `Embedded`) serves gRPC on port `26500` and HTTP on port `8080`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`. A Kubernetes name stops at 63 characters, so a cluster name that is too long to carry the suffix is cut, and a hash of the full name is added to keep two such clusters apart. The same applies to the Secrets that the operator derives from the cluster name. Read the names back with `kubectl get deploy,sts,svc -l camunda.io/cluster=<name>`.
+Each enabled process gets a workload and a Service named `<name>-<component>`. The gateway Service (`<name>-zeebe` when the gateway is `Embedded`) serves gRPC on port `26500` and HTTP on port `8080`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`. A Kubernetes name stops at 63 characters. A cluster name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such clusters stay apart. The same bound applies to the Secrets that the operator derives from the cluster name, and to the value of the `camunda.io/cluster` label.
 
-Every resource carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, where the component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
+Read the names back with `kubectl get deploy,sts,svc -l camunda.io/cluster=<name>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
+
+Every resource carries the labels `camunda.io/cluster` and `camunda.io/component`. The cluster label carries the cluster name under the same bound. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
 
 The operator creates no Ingress. You route traffic to the cluster, and `spec.externalUrl` tells the cluster its public base URL for OIDC redirects and links.
 
