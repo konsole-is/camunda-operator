@@ -18,6 +18,11 @@ limitations under the License.
 // retries such a pod without end, the Job that owns it stays active, and the
 // Job consumes no backoff. A controller that waits on a Job therefore never
 // learns about it from the Job alone.
+//
+// Stuck classifies the pods. EnqueueJobOwner wakes the resource that owns
+// them from a pod event. A controller that uses both still polls: a pod that
+// no node can schedule sits in Pending without a further event, and a mid-run
+// grace is a deadline that no watch can announce.
 package podstate
 
 import (
@@ -51,8 +56,12 @@ var stuckWaitingReasons = map[string]string{
 // Job". It goes into the message. Stuck returns nil when every pod
 // progresses.
 //
-// The reader must be uncached. A pod that just entered a waiting state is the
-// reason to call this at all.
+// The caller passes the cached client of the manager. That cache holds the
+// pods of the operator, scoped by the managed-by label, and every builder
+// whose pods reach here puts the label on its pod template. A cached look
+// can be one event behind, and it cannot end a restore on its own: the
+// mid-run grace ends a restore only after ten minutes of continuous failure,
+// and every look inside that grace reads the pods again.
 func Stuck(
 	ctx context.Context,
 	reader client.Reader,

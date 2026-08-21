@@ -177,6 +177,19 @@ func GatewayHost(cluster *v1.CamundaCluster, e Effective) string {
 // so an extension calls the actuator endpoints without knowing which process
 // hosts them.
 func ManagementEndpoint(cluster *v1.CamundaCluster, e Effective) string {
-	host := GatewayHost(cluster, e) + "." + cluster.Namespace + ".svc"
-	return "http://" + host + ":" + strconv.Itoa(int(PortManagement))
+	return "http://" + gatewayServiceHost(cluster, e) + ":" + strconv.Itoa(int(PortManagement))
+}
+
+// RESTEndpoint returns the base URL of the orchestration cluster REST API
+// (/v2) of a cluster: the Service of the process that runs the gateway, on
+// the HTTP port. Connectors call it, and the controller sets a rotated
+// admin password through its user API.
+func RESTEndpoint(cluster *v1.CamundaCluster, e Effective) string {
+	return "http://" + gatewayServiceHost(cluster, e) + ":" + strconv.Itoa(int(PortHTTP))
+}
+
+// gatewayServiceHost returns the cluster-internal DNS name of the Service
+// that hosts the gateway ports.
+func gatewayServiceHost(cluster *v1.CamundaCluster, e Effective) string {
+	return GatewayHost(cluster, e) + "." + cluster.Namespace + ".svc"
 }

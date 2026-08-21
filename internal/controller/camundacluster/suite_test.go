@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,10 +30,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/testenv"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
 // timeout and interval bound the Eventually polling of every envtest assertion.
@@ -46,6 +49,24 @@ var (
 	ctx       context.Context
 	k8sClient client.Client
 )
+
+// userAPIEndpoints maps the namespace of a cluster to the user API that
+// serves it. The reconciler is process wide, so one fake for the whole suite
+// would let a reconcile of an earlier cluster count against the fake of a
+// later spec. createCluster waits for its cluster to go, which closes that
+// window for everything but a reconcile already in flight; keying the
+// endpoint by namespace closes it for that one too. A namespace with no
+// entry has no user API, which is what a spec wants while it drives a
+// rotation that cannot reach the cluster.
+var userAPIEndpoints sync.Map
+
+// unreachableUserAPI is the address of a cluster that answers nothing.
+const unreachableUserAPI = "http://127.0.0.1:1"
+
+// serveUserAPI points the clusters of namespace at endpoint.
+func serveUserAPI(namespace, endpoint string) {
+	userAPIEndpoints.Store(namespace, endpoint)
+}
 
 func TestCamundaClusterController(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -89,6 +110,9 @@ var _ = BeforeSuite(func() {
 			// The unwatched pre-check must come back within the Eventually
 			// window of the tests.
 			RetryInterval: time.Second,
+			RESTEndpoint: func(cluster *v1.CamundaCluster, _ components.Effective) string {
+				return clusterUserAPI(cluster)
+			},
 		}).SetupWithManager(mgr)
 	})
 
@@ -99,3 +123,13 @@ var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
 })
+
+// clusterUserAPI returns the user API that serves cluster, or an address
+// that answers nothing when its namespace registered none.
+func clusterUserAPI(cluster *v1.CamundaCluster) string {
+	if endpoint, ok := userAPIEndpoints.Load(cluster.Namespace); ok {
+		return endpoint.(string)
+	}
+
+	return unreachableUserAPI
+}

@@ -52,7 +52,7 @@ The operator creates no Ingress. You route traffic to the cluster, and `spec.ext
 
 Under basic authentication the operator creates the admin user `admin` and stores the password in the Secret `<name>-camunda-admin` (keys `username` and `password`). Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator. A cluster whose only administrator is a client still shows the setup page in the browser, so list a user too. The [authentication guide](../guides/authentication.md) explains both methods.
 
-The operator generates the admin password once and keeps it stable. To get a new password, delete the Secret `<name>-camunda-admin`. The operator writes a new Secret with a new password. The orchestration cluster does not change the password of the existing `admin` user from its configuration, so set the new password on the user in the Admin web application, then restart the connectors Deployment. The [operations guide](../guides/operations.md#rotate-passwords) has the steps.
+The operator generates the admin password once and keeps it stable. To rotate it, set `spec.auth.basic.passwordRotation` to a new value. The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, publishes it in the Secret, and restarts the connectors Deployment. `status.adminPassword.rotation` records the applied value. The [authentication guide](../guides/authentication.md#rotate-the-password) has the details and the failure modes.
 
 ## Storage
 
@@ -111,6 +111,9 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `OperateReady` / `TasklistReady` / `AdminReady` | `Healthy` / `Disabled` | The standalone web application is ready, or it is embedded. | Nothing. |
 | `ConnectorsReady` | `Healthy` / `Disabled` | Every connectors replica is ready, or connectors are not enabled. | Nothing. |
 | `AdminSecretReady` | `Healthy` / `Disabled` | The Secret `<name>-camunda-admin` is applied, or the cluster uses OIDC. | Nothing. |
+| `AdminSecretReady` | `ConnectionFailed` | An update of the `admin` user, of its password or of its email, is not applied yet: the cluster did not answer. The Secret keeps the active password, and `email-applied` the address the cluster holds; `email` already shows the address you asked for. | The operator retries. It clears when the user API of the gateway answers again. |
+| `AdminSecretReady` | `InvalidCredentials` | An update of the `admin` user is not applied yet: the cluster refused the password that the Secret publishes. The Secret keeps the active password, and `email-applied` the address the cluster holds. | The operator retries. Set the password from the Secret on the `admin` user in the Admin web application. |
+| `AdminSecretReady` | `Rejected` | An update of the `admin` user is not applied yet: the cluster accepted the password and refused the call itself. The Secret keeps the active password, and `email-applied` the address the cluster holds. | The operator retries. Read the condition message, which names the reason. |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
 | `Ready` | `Healthy` | Every component that the cluster needs is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` | A component rolls out or scales. | Wait. The message names the component. |
@@ -135,6 +138,8 @@ status:
     # Elasticsearch path with a backupStorageRef only: the snapshot repository of the storage contract.
     backupRepository: my-cluster
 ```
+
+`status.adminPassword.rotation` is the last admin password rotation that the operator applied: the effective `spec.auth.basic.passwordRotation` value, after the preset merge, that produced the password in the admin Secret. It follows the Secret: the operator publishes the applied value there together with the password it answers, and the status projects it. A rotation is in progress while the effective value is not empty and differs from it. Clearing the field does not stop a rotation that the operator already staged. That rotation completes, and the status then records the value that staged it. A cluster that inherits the value from its preset carries none of its own in the spec, so compare the preset value with the status of each cluster.
 
 `status.serviceAccountName` is the ServiceAccount that the pods run under. It is empty when they run under the default account of the namespace. A backup Job runs under the same account.
 
@@ -198,6 +203,12 @@ spec:
           claimName: "groups"
           # string. Value that the claim must hold.
           claimValue: "camunda-admins"
+    # object. Optional. The admin credential that the operator owns. Applies under basic authentication only. OIDC ignores it.
+    basic:
+      # string. Optional, max 253 characters. The email address of the admin user. Defaults to admin@example.com. A changed value is applied to the running cluster.
+      adminEmail: "platform-team@example.com"
+      # string. Optional, max 253 characters. A changed value requests one rotation of the admin password. status.adminPassword.rotation records the applied value.
+      passwordRotation: "2026-08"
   # object. Optional. The brokers. Always a StatefulSet.
   zeebe:
     # integer. Optional, default: 1. Number of brokers.

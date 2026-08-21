@@ -45,11 +45,6 @@ spec:
         - name: TZ
           value: UTC
         image: camunda/connectors-bundle:8.9.7
-        livenessProbe:
-          httpGet:
-            path: /actuator/health/liveness
-            port: http
-          periodSeconds: 30
         name: connectors
         ports:
         - containerPort: 8080
@@ -61,6 +56,12 @@ spec:
             port: http
           periodSeconds: 10
         resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /actuator/health/startup
+            port: http
+          periodSeconds: 5
       securityContext:
         fsGroup: 1001
         runAsGroup: 1001

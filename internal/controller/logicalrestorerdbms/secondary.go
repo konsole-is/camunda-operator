@@ -219,10 +219,11 @@ func (r *Reconciler) trackDatabaseJob(
 
 	// The pods are selected by the restore UID that the pod template carries,
 	// so a leftover pod of another restore of the same name never holds this
-	// one.
+	// one. The read goes through the cache, which the pod watch of this
+	// controller keeps current. See podstate.Stuck.
 	stuck, err := podstate.Stuck(
 		ctx,
-		r.APIReader,
+		r.Client,
 		lrr.Namespace,
 		map[string]string{components.RestoreUIDLabel: string(lrr.UID)},
 		whatSecondary,

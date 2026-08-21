@@ -17,7 +17,6 @@ limitations under the License.
 package logicalrestoreelasticsearch
 
 import (
-	"maps"
 	"strconv"
 	"time"
 
@@ -37,6 +36,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
@@ -566,26 +566,25 @@ func claimNamed(namespace, name string) *corev1.PersistentVolumeClaim {
 }
 
 // stuckPod creates a pod of a Job of the restore that reports a container
-// which cannot start. The selector labels are the ones that the controller
-// lists the pods of that Job by. envtest runs no kubelet, so the suite writes
-// the state that a kubelet would report.
-func stuckPod(w *world, jobName string, selector map[string]string) *corev1.Pod {
+// which cannot start. It copies the labels of the pod template of that Job
+// and takes a controller reference to it, the way the Job controller does.
+// envtest runs no kubelet, so the suite writes the state that a kubelet
+// reports.
+func stuckPod(w *world, jobName string) {
 	GinkgoHelper()
 
-	podLabels := map[string]string{"batch.kubernetes.io/job-name": jobName}
-	maps.Copy(podLabels, selector)
+	// A restore records the name of a Job before it applies the Job, so the
+	// name can reach the status before the Job exists.
+	var job batchv1.Job
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(
+			ctx, types.NamespacedName{Namespace: w.namespace, Name: jobName}, &job,
+		)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName + "-stuck",
-			Namespace: w.namespace,
-			Labels:    podLabels,
-		},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
-			Containers:    []corev1.Container{{Name: "restore", Image: "camunda/camunda:" + worldVersion}},
-		},
-	}
+	pod := testenv.PodOfJob(&job, jobName+"-stuck", corev1.Container{
+		Name: "restore", Image: "camunda/camunda:" + worldVersion,
+	})
 	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 
 	pod.Status.Phase = corev1.PodPending
@@ -597,8 +596,6 @@ func stuckPod(w *world, jobName string, selector map[string]string) *corev1.Pod 
 		}},
 	}}
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
-
-	return pod
 }
 
 // createForeignJob creates a completed Job under name that no restore of the
