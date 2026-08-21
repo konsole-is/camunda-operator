@@ -324,23 +324,21 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 
 		// A resume starts every process of the cluster in the same second,
 		// so this wait is where connectors races the gateway. When it times
-		// out on "connectors: Waiting for replicas: 0/1 ready" and the
-		// connectors container never restarted, the cause is in the
-		// connectors runtime, not in this operator (issue #144).
+		// out on "connectors: Waiting for replicas: 0/1 ready", read the
+		// "actuator health of ..." block that dumpDiagnostics writes for the
+		// connectors pod. Read it first, because the connectors container
+		// writes no log of its own (issue #144).
 		//
-		// The readiness group of the runtime holds zeebeClient and
-		// processDefinitionImport, and its liveness group holds zeebeClient
-		// alone. A container that never restarts therefore answered for the
-		// gateway the whole time, which leaves processDefinitionImport: the
-		// inbound import that polls POST /v2/process-definitions/search on
-		// the REST API of the gateway every five seconds. The import holds
-		// no failed state. It reports up again on the first poll that
-		// answers, so a readiness that stays down means the REST calls kept
-		// failing.
+		// The readiness group of the runtime holds two indicators and the
+		// document reports both. zeebeClient down means the gateway does not
+		// answer. processDefinitionImport down means the inbound import that
+		// polls POST /v2/process-definitions/search on the REST API of the
+		// gateway every five seconds does not complete. That import holds no
+		// failed state and reports up again on the first poll that answers,
+		// so a readiness that stays down means the REST calls kept failing.
 		//
-		// dumpDiagnostics reads /actuator/health from every pod that is not
-		// ready and names the indicator. Read that document first: the
-		// connectors container writes no log of its own.
+		// Either indicator puts the cause in the connectors runtime rather
+		// than in this operator.
 		By("waiting for Ready Healthy")
 		Eventually(func(g Gomega) {
 			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)

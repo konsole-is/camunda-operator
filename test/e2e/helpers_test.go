@@ -22,6 +22,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -49,6 +50,11 @@ const suspendTimeout = 5 * time.Minute
 // costs a helper pod, and a namespace whose storage is gone holds every pod
 // not ready at once.
 const maxHealthDumps = 3
+
+// actuatorHealthPath is the Spring Boot health endpoint. Every group of a
+// process, such as /actuator/health/readiness, sits under it, and the path
+// itself reports every indicator the process has.
+const actuatorHealthPath = "/actuator/health"
 
 // apply applies obj through kubectl. obj must carry its apiVersion and kind.
 func apply(obj client.Object) error {
@@ -320,11 +326,11 @@ func dumpDiagnostics(testNamespace string) {
 // which indicator is down.
 //
 // The distinction it makes is the one that matters for connectors. Its
-// readiness group holds zeebeClient and processDefinitionImport, and its
-// liveness group holds zeebeClient alone. A readiness that is down while the
-// container never restarts therefore names processDefinitionImport, which is
-// the inbound import of the process definitions over the REST API of the
-// gateway, not anything this operator applies.
+// readiness group holds zeebeClient and processDefinitionImport, and the
+// document reports each of them on its own line. zeebeClient down means the
+// gateway does not answer. processDefinitionImport down means the inbound
+// import of the process definitions over the REST API of the gateway does not
+// complete. Neither is a resource this operator applies.
 //
 // It reads the endpoint from a curl pod, over the pod IP. Two other routes do
 // not work here. The pod proxy of the API server is one call, but kubectl
@@ -342,7 +348,7 @@ func dumpNotReadyPodHealth(namespace string) {
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 
-		port := notReadyProbePort(pod)
+		port := actuatorHealthPort(pod)
 		if port == 0 || pod.Status.PodIP == "" {
 			continue
 		}
@@ -359,7 +365,7 @@ func dumpNotReadyPodHealth(namespace string) {
 			Namespace: namespace,
 			Name:      "health",
 			Method:    "GET",
-			URL:       fmt.Sprintf("http://%s:%d/actuator/health", pod.Status.PodIP, port),
+			URL:       fmt.Sprintf("http://%s:%d%s", pod.Status.PodIP, port, actuatorHealthPath),
 			Timeout:   podTimeout,
 		})
 		if err != nil {
@@ -374,10 +380,20 @@ func dumpNotReadyPodHealth(namespace string) {
 	}
 }
 
-// notReadyProbePort returns the port that the readiness probe of the first
-// container of pod which is not ready reads. It returns zero when every
-// container is ready, and when that probe is not an HTTP probe.
-func notReadyProbePort(pod *corev1.Pod) int32 {
+// actuatorHealthPort returns the port that serves /actuator/health on the
+// first container of pod which is not ready. It returns zero when every
+// container is ready, and when no probe of that container reads an actuator
+// health endpoint.
+//
+// It reads the port off a probe rather than off a constant, because the port
+// differs by process: the connectors runtime serves the actuator on its HTTP
+// port, the unified binary and Optimize on their management port.
+//
+// The readiness probe alone does not answer the question. Optimize reads
+// /api/readyz on its HTTP port and serves the actuator on its management port,
+// so its readiness port would point the dump at the wrong endpoint. Only a
+// probe whose own path is an actuator health endpoint names the right port.
+func actuatorHealthPort(pod *corev1.Pod) int32 {
 	for _, status := range pod.Status.ContainerStatuses {
 		if status.Ready {
 			continue
@@ -388,11 +404,17 @@ func notReadyProbePort(pod *corev1.Pod) int32 {
 				continue
 			}
 
-			if container.ReadinessProbe == nil || container.ReadinessProbe.HTTPGet == nil {
-				continue
+			probes := []*corev1.Probe{
+				container.ReadinessProbe, container.LivenessProbe, container.StartupProbe,
 			}
+			for _, p := range probes {
+				if p == nil || p.HTTPGet == nil ||
+					!strings.HasPrefix(p.HTTPGet.Path, actuatorHealthPath) {
+					continue
+				}
 
-			return containerPortNumber(container, container.ReadinessProbe.HTTPGet.Port)
+				return containerPortNumber(container, p.HTTPGet.Port)
+			}
 		}
 	}
 
