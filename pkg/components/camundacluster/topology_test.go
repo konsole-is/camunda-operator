@@ -216,3 +216,22 @@ func TestNames(t *testing.T) {
 	named := NewEffective(v1.CamundaClusterSpec{ServiceAccount: &v1.ServiceAccountSpec{Name: "camunda-prod"}})
 	assert.Equal(t, "camunda-prod", ServiceAccountName(cluster, named))
 }
+
+func TestRESTEndpoint(t *testing.T) {
+	t.Parallel()
+
+	cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "my-cluster-ns"}}
+
+	assert.Equal(
+		t,
+		"http://my-cluster-gateway.my-cluster-ns.svc:8080",
+		RESTEndpoint(cluster, NewEffective(v1.CamundaClusterSpec{})),
+	)
+	assert.Equal(
+		t,
+		"http://my-cluster-zeebe.my-cluster-ns.svc:8080",
+		RESTEndpoint(cluster, NewEffective(v1.CamundaClusterSpec{
+			Gateway: &v1.GatewaySpec{Mode: v1.ComponentModeEmbedded},
+		})),
+	)
+}

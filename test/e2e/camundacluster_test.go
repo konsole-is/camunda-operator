@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -124,6 +125,12 @@ func newCluster(namespace, platform, storageRef, backupRef string, connectors bo
 	}
 
 	if connectors {
+		// The connectors runtime is a Spring Boot JVM and needs a real share
+		// of the node to start inside the readiness window; 100m starved it
+		// on a contended node. The rolling update of a password rotation
+		// runs a second pod beside the first, and the room for it comes from
+		// the rotation spec waiting for a Ready cluster before it patches,
+		// not from starving the pod that has to boot.
 		cluster.Spec.Connectors = &v1.ConnectorsSpec{
 			Enabled:      new(true),
 			Version:      ccConnectorsVersion,
@@ -268,6 +275,85 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 
 	It("runs the connectors runtime against the gateway", func() {
 		Eventually(func(g Gomega) {
+			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionConnectorsReady, v1.ReasonHealthy)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+	})
+
+	It("rotates the admin password through the user API and rolls connectors", func() {
+		adminSecret := components.AdminSecretName(cluster)
+		connectors := components.WorkloadName(cluster, components.ComponentConnectors)
+
+		By("waiting for a Ready cluster, because a rotation needs the user API of the gateway")
+		Eventually(func(g Gomega) {
+			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+
+		By("reading the password and the connectors config hash before the rotation")
+		var secret corev1.Secret
+		Expect(utils.Get("secret", adminSecret, ccNamespace, &secret)).To(Succeed())
+		before := string(secret.Data[components.AdminPasswordKey])
+		Expect(before).NotTo(BeEmpty())
+
+		var deployment appsv1.Deployment
+		Expect(utils.Get("deployment", connectors, ccNamespace, &deployment)).To(Succeed())
+		beforeHash := deployment.Spec.Template.Annotations[components.ConfigHashAnnotation]
+		Expect(beforeHash).NotTo(BeEmpty())
+
+		By("requesting one rotation")
+		_, err := utils.Kubectl(
+			"patch", ccResource, ccName, "-n", ccNamespace,
+			"--type=merge", "-p", `{"spec":{"auth":{"basic":{"passwordRotation":"e2e-round-1"}}}}`,
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting for the recorded rotation and the new password in the Secret")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(utils.Get(ccResource, ccName, ccNamespace, &latest)).To(Succeed())
+			g.Expect(latest.Status.AdminPassword).NotTo(BeNil())
+			g.Expect(latest.Status.AdminPassword.Rotation).To(Equal("e2e-round-1"))
+
+			g.Expect(utils.Get("secret", adminSecret, ccNamespace, &secret)).To(Succeed())
+			g.Expect(string(secret.Data[components.AdminPasswordKey])).NotTo(Equal(before))
+			g.Expect(secret.Data).NotTo(HaveKey(components.AdminPendingPasswordKey))
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+
+		By("authenticating on the gateway with the rotated password")
+		Eventually(func(g Gomega) {
+			resp, err := camundaREST(cluster, "rotated", http.MethodGet, pathTopology, nil)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+		}, ccAPITimeout).Should(Succeed())
+
+		By("refusing the old password")
+		Eventually(func(g Gomega) {
+			resp, err := utils.CamundaREST(utils.CamundaRequest{
+				Namespace: ccNamespace,
+				Name:      "old-password",
+				Method:    http.MethodGet,
+				URL: fmt.Sprintf(
+					"http://%s.%s.svc:%d%s",
+					components.WorkloadName(cluster, components.ComponentGateway),
+					ccNamespace, components.PortHTTP, pathTopology,
+				),
+				Args:    []string{"-u", "admin:" + before},
+				Timeout: podTimeout,
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(resp.Status).To(Equal(http.StatusUnauthorized), resp.Body)
+		}, ccAPITimeout).Should(Succeed())
+
+		By("rolling connectors onto the new password")
+		Eventually(func(g Gomega) {
+			g.Expect(utils.Get("deployment", connectors, ccNamespace, &deployment)).To(Succeed())
+			g.Expect(deployment.Spec.Template.Annotations[components.ConfigHashAnnotation]).NotTo(Equal(beforeHash))
+
+			// The template alone proves nothing: the operator writes it
+			// before any pod runs it, and the condition of the reconcile
+			// that wrote it still reports the replicas of the old one. Wait
+			// for the rollout itself, so that a connectors pod has started
+			// and passed its readiness probe against the rotated password.
+			expectRolledOut(g, deployment)
 			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionConnectorsReady, v1.ReasonHealthy)
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 	})
@@ -593,6 +679,30 @@ func camundaRESTOn(
 // cluster, as kubectl takes it.
 func brokerClaimSelector(cluster *v1.CamundaCluster) string {
 	return k8slabels.SelectorFromSet(components.BrokerClaimSelector(cluster)).String()
+}
+
+// expectRolledOut asserts that the rollout of deployment is complete: the
+// Deployment controller has seen the current revision, every replica runs the
+// current template, no replica of the previous one is left, and they are
+// available. It is written for Eventually.
+func expectRolledOut(g Gomega, deployment appsv1.Deployment) {
+	replicas := int32(1)
+	if deployment.Spec.Replicas != nil {
+		replicas = *deployment.Spec.Replicas
+	}
+
+	g.Expect(deployment.Status.ObservedGeneration).To(
+		BeNumerically(">=", deployment.Generation), "the current revision is not observed yet",
+	)
+	g.Expect(deployment.Status.UpdatedReplicas).To(
+		Equal(replicas), "not every replica runs the current template",
+	)
+	g.Expect(deployment.Status.Replicas).To(
+		Equal(replicas), "a replica of the previous template is still running",
+	)
+	g.Expect(deployment.Status.AvailableReplicas).To(
+		Equal(replicas), "the rolled replicas are not available",
+	)
 }
 
 // expectScaledToZero asserts that the workload asks for zero replicas and

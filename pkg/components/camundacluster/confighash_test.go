@@ -21,6 +21,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 func TestConfigHashStableAndSensitive(t *testing.T) {
@@ -55,4 +58,85 @@ func TestConfigHashStableAndSensitive(t *testing.T) {
 	envFrom.Cluster.Spec.ExtraEnvFrom = nil
 	envFrom.Effective = NewEffective(MergePreset(envFrom.Cluster.Spec, mediumPreset()))
 	assert.NotEqual(t, base, hash(envFrom), "an envFrom change rolls the pods")
+}
+
+// The active admin password feeds the hash of connectors only: connectors
+// authenticate every call with it at runtime, while the unified processes
+// read it once as the create-once initial user seed, so rolling them on a
+// rotation would restart the brokers for nothing.
+func TestConfigHashAdminPassword(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureDefault(t)
+	processes := Resolve(in.Effective)
+	connectors := processes[len(processes)-1]
+	require.Equal(t, ComponentConnectors, connectors.Component)
+	zeebe := processes[0]
+
+	base := ConfigHash(in, connectors)
+	zeebeBase := ConfigHash(in, zeebe)
+
+	rotated := fixtureDefault(t)
+	rotated.AdminPasswordHash = PasswordHash("the-new-password")
+	assert.NotEqual(t, base, ConfigHash(rotated, connectors), "a password change rolls connectors")
+	assert.Equal(t, zeebeBase, ConfigHash(rotated, zeebe), "a password change does not roll the brokers")
+
+	same := fixtureDefault(t)
+	same.AdminPasswordHash = rotated.AdminPasswordHash
+	assert.Equal(t, ConfigHash(rotated, connectors), ConfigHash(same, connectors), "same password, same hash")
+}
+
+// PasswordHash never returns the password itself, and equal passwords hash
+// equal so the config hash stays stable across reconciles.
+func TestPasswordHash(t *testing.T) {
+	t.Parallel()
+
+	hash := PasswordHash("s3cret")
+	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{16}$`), hash)
+	assert.NotContains(t, hash, "s3cret")
+	assert.Equal(t, hash, PasswordHash("s3cret"))
+	assert.NotEqual(t, hash, PasswordHash("other"))
+	assert.Empty(t, PasswordHash(""), "no password, no hash input")
+}
+
+func TestPresetFingerprintIgnoresThePasswordRotation(t *testing.T) {
+	t.Parallel()
+
+	base := v1.CamundaClusterPresetSpec{
+		Cluster: v1.CamundaClusterSpec{
+			Version: "8.9.9",
+			Auth:    &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: "2026-08"}},
+		},
+	}
+
+	rotated := *base.DeepCopy()
+	rotated.Cluster.Auth.Basic.PasswordRotation = "2026-09"
+
+	other := *base.DeepCopy()
+	other.Cluster.Version = "8.9.8"
+
+	first, err := PresetFingerprint(base)
+	require.NoError(t, err)
+	second, err := PresetFingerprint(rotated)
+	require.NoError(t, err)
+	third, err := PresetFingerprint(other)
+	require.NoError(t, err)
+
+	assert.Equal(t, first, second, "a rotation renders nothing, so no process may roll for it")
+	assert.NotEqual(t, first, third, "every other preset change still rolls the workloads")
+
+	// The first rotation of a preset adds the block that carries it, so the
+	// fingerprint must not see the wrapper either.
+	none := v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{Version: "8.9.9"}}
+	bare, err := PresetFingerprint(none)
+	require.NoError(t, err)
+	assert.Equal(t, bare, first, "adding the first rotation to a preset may not roll the workloads")
+
+	// The address reaches the processes through the admin Secret, so it
+	// renders nothing either.
+	addressed := *base.DeepCopy()
+	addressed.Cluster.Auth.Basic.AdminEmail = "team@example.com"
+	withEmail, err := PresetFingerprint(addressed)
+	require.NoError(t, err)
+	assert.Equal(t, first, withEmail, "an admin email may not roll the workloads either")
 }
