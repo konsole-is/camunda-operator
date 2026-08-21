@@ -31,11 +31,11 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/test/utils"
@@ -80,30 +80,30 @@ const (
 	optimizeImportTimeout = 10 * time.Minute
 )
 
-// The Elasticsearch of this flow. It is a plain single-node Deployment that
-// serves HTTP, not an ElasticsearchCluster, and the flow writes the storage
-// contract of it by hand. The legacy Zeebe Elasticsearch exporter carries no
-// TLS settings and trusts what the JVM trusts, so it cannot reach an
-// ElasticsearchCluster: that one serves HTTPS with the private CA of ECK, and
-// nothing puts that CA in the trust store of the broker. An Elasticsearch on
-// HTTP is the shape the contract documents for a cluster this operator does
-// not manage.
-const (
-	esFixtureName        = "elasticsearch"
-	esFixtureSecret      = "elasticsearch-user"
-	esFixtureUsername    = "elastic"
-	esFixturePassword    = "camunda-optimize-e2e"
-	esFixtureUsernameKey = "username"
-	esFixturePasswordKey = "password"
-	esFixturePort        = 9200
-)
+// optimizeContract is the SecondaryStorageConfig that the
+// ElasticsearchCluster of this flow publishes. BeforeAll reads it, and every
+// call against Elasticsearch authenticates and trusts through it.
+var optimizeContract v1.SecondaryStorageConfig
 
-// esFixtureLabels select the pods of the Elasticsearch Deployment.
-var esFixtureLabels = map[string]string{"e2e": esFixtureName}
-
-// esFixtureEndpoint is the address of the Elasticsearch of this flow.
-func esFixtureEndpoint() string {
-	return fmt.Sprintf("http://%s.%s.svc:%d", esFixtureName, optimizeNamespace, esFixturePort)
+// optimizeElasticsearch is the Elasticsearch of this flow. It is an
+// ElasticsearchCluster, so its endpoint is HTTPS with the private
+// certificate authority of ECK, and the storage contract it publishes names
+// that authority. This is the shape that the trust store of the brokers
+// exists for: the legacy Zeebe Elasticsearch exporter carries no TLS setting
+// of its own, so the records reach Elasticsearch only when the JVM of the
+// broker trusts that authority.
+func optimizeElasticsearch() *v1.ElasticsearchCluster {
+	return &v1.ElasticsearchCluster{
+		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
+		ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: optimizeNamespace},
+		Spec: v1.ElasticsearchClusterSpec{
+			Version:                esVersion,
+			Replicas:               new(int32(1)),
+			StorageSize:            new(resource.MustParse(esStorageSize)),
+			Resources:              requests("500m", "1Gi"),
+			SecondaryStorageConfig: optimizeStorage,
+		},
+	}
 }
 
 // optimizeIssuerURL is the issuer of the realm that testdata/keycloak.yaml
@@ -122,106 +122,6 @@ func optimizeIssuerURL() string {
 // contract names.
 func optimizeIdentityBaseURL() string {
 	return fmt.Sprintf("http://keycloak.%s.svc:8080", optimizeNamespace)
-}
-
-// esFixtureCredentials returns the Secret that the storage contract names. It
-// holds the superuser of the Elasticsearch Deployment, which starts with the
-// password of ELASTIC_PASSWORD.
-func esFixtureCredentials() *corev1.Secret {
-	return &corev1.Secret{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
-		ObjectMeta: metav1.ObjectMeta{Name: esFixtureSecret, Namespace: optimizeNamespace},
-		Type:       corev1.SecretTypeOpaque,
-		StringData: map[string]string{
-			esFixtureUsernameKey: esFixtureUsername,
-			esFixturePasswordKey: esFixturePassword,
-		},
-	}
-}
-
-// esFixtureDeployment returns the single-node Elasticsearch of the flow. A
-// single-node discovery skips the bootstrap checks, so the node starts on a
-// kind node without a sysctl change, and the data lives in the container: the
-// flow indexes what it needs from scratch.
-func esFixtureDeployment() *appsv1.Deployment {
-	return &appsv1.Deployment{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
-		ObjectMeta: metav1.ObjectMeta{Name: esFixtureName, Namespace: optimizeNamespace},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: new(int32(1)),
-			Selector: &metav1.LabelSelector{MatchLabels: esFixtureLabels},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: esFixtureLabels},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{
-						Name:  esFixtureName,
-						Image: "docker.elastic.co/elasticsearch/elasticsearch:" + esVersion,
-						Env: []corev1.EnvVar{
-							{Name: "discovery.type", Value: "single-node"},
-							{Name: "xpack.security.enabled", Value: "true"},
-							{Name: "xpack.security.http.ssl.enabled", Value: "false"},
-							{Name: "xpack.security.transport.ssl.enabled", Value: "false"},
-							{Name: "ELASTIC_PASSWORD", Value: esFixturePassword},
-							{Name: "ES_JAVA_OPTS", Value: "-Xms512m -Xmx512m"},
-							// The runner shares one disk with every image that
-							// the suite pulls. Above the flood-stage watermark
-							// Elasticsearch turns its indices read-only, and
-							// the exporter of the broker then fails for a
-							// reason outside this flow.
-							{Name: "cluster.routing.allocation.disk.threshold_enabled", Value: "false"},
-						},
-						Ports:     []corev1.ContainerPort{{Name: "http", ContainerPort: esFixturePort}},
-						Resources: *requests("250m", "1Gi"),
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(esFixturePort)},
-							},
-							InitialDelaySeconds: 10,
-							PeriodSeconds:       5,
-						},
-					}},
-				},
-			},
-		},
-	}
-}
-
-// esFixtureService returns the Service that the storage contract points at.
-func esFixtureService() *corev1.Service {
-	return &corev1.Service{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
-		ObjectMeta: metav1.ObjectMeta{Name: esFixtureName, Namespace: optimizeNamespace},
-		Spec: corev1.ServiceSpec{
-			Selector: esFixtureLabels,
-			Ports: []corev1.ServicePort{{
-				Name:       "http",
-				Port:       esFixturePort,
-				TargetPort: intstr.FromInt32(esFixturePort),
-			}},
-		},
-	}
-}
-
-// optimizeStorageContract returns the secondary storage of the flow: the
-// Elasticsearch Deployment, its superuser, and no CA, because the endpoint is
-// HTTP.
-func optimizeStorageContract() *v1.SecondaryStorageConfig {
-	return &v1.SecondaryStorageConfig{
-		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "SecondaryStorageConfig"},
-		ObjectMeta: metav1.ObjectMeta{Name: optimizeStorage, Namespace: optimizeNamespace},
-		Spec: v1.SecondaryStorageConfigSpec{
-			Type: v1.SecondaryStorageTypeElasticsearch,
-			Elasticsearch: &v1.ElasticsearchStorage{
-				Endpoint: esFixtureEndpoint(),
-				CredentialsSecretRef: v1.CredentialsSecretRef{
-					Name:        esFixtureSecret,
-					Namespace:   optimizeNamespace,
-					UsernameKey: esFixtureUsernameKey,
-					PasswordKey: esFixturePasswordKey,
-				},
-			},
-		},
-	}
 }
 
 // optimizeClientSecret returns the Secret that holds the client secret of the
@@ -285,7 +185,7 @@ var _ = Describe("CamundaOptimize", Ordered, func() {
 		// spec.zeebe.extraEnv of the cluster. The credentials of the contract
 		// live in the namespace of the cluster, so the broker reads them
 		// directly and the applied entries are these.
-		exporterEnv = components.ExporterEnv(*optimizeStorageContract().Spec.Elasticsearch)
+		exporterEnv []corev1.EnvVar
 	)
 
 	BeforeAll(func() {
@@ -297,27 +197,26 @@ var _ = Describe("CamundaOptimize", Ordered, func() {
 		_, err = utils.Kubectl("apply", "-n", optimizeNamespace, "-f", "test/e2e/testdata/keycloak.yaml")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("deploying Elasticsearch")
-		Expect(apply(esFixtureCredentials())).To(Succeed())
-		Expect(apply(esFixtureService())).To(Succeed())
-		Expect(apply(esFixtureDeployment())).To(Succeed())
-		_, err = utils.Kubectl(
-			"rollout", "status", "deployment/"+esFixtureName, "-n", optimizeNamespace, "--timeout", "6m",
-		)
-		Expect(err).NotTo(HaveOccurred())
+		By("creating the ElasticsearchCluster and waiting for Ready Healthy")
+		Expect(apply(optimizeElasticsearch())).To(Succeed())
+		Eventually(func(g Gomega) {
+			expectReady(g, esResource, esName, optimizeNamespace, v1.ReasonHealthy)
+			expectReady(g, sscResource, optimizeStorage, optimizeNamespace, v1.ReasonHealthy)
+		}, esReadyTimeout, 5*time.Second).Should(Succeed())
+
+		By("reading the published storage contract")
+		Expect(utils.Get(sscResource, optimizeStorage, optimizeNamespace, &optimizeContract)).To(Succeed())
+		Expect(optimizeContract.Spec.Elasticsearch).NotTo(BeNil())
+		Expect(optimizeContract.Spec.Elasticsearch.Endpoint).To(HavePrefix("https://"))
+		Expect(optimizeContract.Spec.Elasticsearch.CASecretRef).NotTo(BeNil())
+		exporterEnv = components.ExporterEnv(*optimizeContract.Spec.Elasticsearch)
 
 		By("waiting for Elasticsearch to answer with the credentials of the contract")
 		Eventually(func(g Gomega) {
-			out, err := curlOptimizeElasticsearch("health", "/_cluster/health")
+			out, err := curlElasticsearch(&optimizeContract, "health", "/_cluster/health")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(out).To(ContainSubstring(`"status":"green"`))
 		}, 5*time.Minute).Should(Succeed())
-
-		By("creating the storage contract and waiting for Ready Healthy")
-		Expect(apply(optimizeStorageContract())).To(Succeed())
-		Eventually(func(g Gomega) {
-			expectReady(g, sscResource, optimizeStorage, optimizeNamespace, v1.ReasonHealthy)
-		}, 3*time.Minute).Should(Succeed())
 
 		By("creating the platform config")
 		Expect(apply(basicPlatform(optimizePlatform))).To(Succeed())
@@ -348,6 +247,9 @@ var _ = Describe("CamundaOptimize", Ordered, func() {
 		_, _ = utils.Kubectl(
 			"delete", ccResource, ccName, "-n", optimizeNamespace, "--ignore-not-found", "--wait=false",
 		)
+		_, _ = utils.Kubectl(
+			"delete", esResource, esName, "-n", optimizeNamespace, "--ignore-not-found", "--wait=false",
+		)
 		_, _ = utils.Kubectl("delete", authConfigResource, optimizeAuthConfig, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", ccPlatformResource, optimizePlatform, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", optimizeNamespace, "--wait=false")
@@ -355,6 +257,37 @@ var _ = Describe("CamundaOptimize", Ordered, func() {
 
 	AfterEach(func() {
 		dumpDiagnostics(optimizeNamespace)
+	})
+
+	// The brokers reach the HTTPS endpoint of the ElasticsearchCluster only
+	// because the operator builds a JVM trust store from the certificate
+	// authority that the contract names. The exporter of the broker carries
+	// no TLS setting of its own, so without that store the export below
+	// never writes a record.
+	It("runs the brokers with a JVM trust store built from the private authority", func() {
+		var brokers appsv1.StatefulSet
+		Expect(utils.Get(
+			"statefulset",
+			clustercomponents.WorkloadName(cluster, clustercomponents.ComponentZeebe),
+			optimizeNamespace,
+			&brokers,
+		)).To(Succeed())
+
+		pod := brokers.Spec.Template.Spec
+		Expect(pod.InitContainers).To(ContainElement(
+			HaveField("Name", clustercomponents.InitContainerTrustStore),
+		))
+		Expect(pod.Containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
+			Name:      clustercomponents.InitContainerTrustStore,
+			MountPath: clustercomponents.TrustStoreMountPath,
+			ReadOnly:  true,
+		}))
+		Expect(pod.Containers[0].Env).To(ContainElement(SatisfyAll(
+			HaveField("Name", "JAVA_TOOL_OPTIONS"),
+			HaveField("Value", ContainSubstring(
+				"-Djavax.net.ssl.trustStore="+clustercomponents.TrustStorePath,
+			)),
+		)))
 	})
 
 	It("reaches Ready Healthy", func() {
@@ -471,7 +404,9 @@ var _ = Describe("CamundaOptimize", Ordered, func() {
 
 		By("waiting for the deployed process definition to arrive in them")
 		Eventually(func(g Gomega) {
-			out, err := curlOptimizeElasticsearch("definitions", "/*optimize*process-definition*/_count")
+			out, err := curlElasticsearch(
+				&optimizeContract, "definitions", "/*optimize*process-definition*/_count",
+			)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			var result struct {
@@ -526,7 +461,7 @@ func envNames(env []corev1.EnvVar) []string {
 // elasticsearchIndices returns the indices of the Elasticsearch of this flow
 // that match pattern. It is written for Eventually.
 func elasticsearchIndices(g Gomega, name, pattern string) []string {
-	out, err := curlOptimizeElasticsearch(name, "/_cat/indices/"+pattern+"?format=json")
+	out, err := curlElasticsearch(&optimizeContract, name, "/_cat/indices/"+pattern+"?format=json")
 	g.Expect(err).NotTo(HaveOccurred())
 
 	var indices []struct {
@@ -540,41 +475,4 @@ func elasticsearchIndices(g Gomega, name, pattern string) []string {
 	}
 
 	return names
-}
-
-// curlOptimizeElasticsearch runs curl against path on the Elasticsearch of
-// this flow, with the credentials that its storage contract names. extra are
-// further curl arguments. It returns the response body.
-//
-// The flow has its own helper because curlElasticsearch always mounts the CA
-// of the contract, and the contract of an HTTP endpoint names none.
-//
-// The pod name carries a random suffix, for the reason that
-// curlElasticsearch documents: a left-behind pod of a failed cleanup must not
-// fail the next call with AlreadyExists.
-func curlOptimizeElasticsearch(name, path string, extra ...string) (string, error) {
-	env := []corev1.EnvVar{
-		utils.SecretEnv("ES_USERNAME", esFixtureSecret, esFixtureUsernameKey),
-		utils.SecretEnv("ES_PASSWORD", esFixtureSecret, esFixturePasswordKey),
-	}
-
-	// $0 is "curl", the remaining arguments are the curl arguments.
-	script := `exec curl -fsS -u "$ES_USERNAME:$ES_PASSWORD" "$@"`
-	args := append([]string{"-ec", script, "curl", esFixtureEndpoint() + path}, extra...)
-
-	return utils.RunPod(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "curl-" + name + "-" + utilrand.String(5),
-			Namespace: optimizeNamespace,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{
-				Name:    "curl",
-				Image:   utils.CurlImage,
-				Command: []string{"sh"},
-				Args:    args,
-				Env:     env,
-			}},
-		},
-	}, podTimeout)
 }
