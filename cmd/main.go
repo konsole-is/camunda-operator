@@ -43,6 +43,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/controller"
+	"github.com/konsole-is/camunda-operator/internal/controller/backupschedule"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundacluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
@@ -332,10 +333,11 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupElasticsearch")
 		os.Exit(1)
 	}
-	if err := (&controller.BackupScheduleReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err := (&backupschedule.BackupScheduleReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr, backupschedule.Options{}); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BackupSchedule")
 		os.Exit(1)
 	}

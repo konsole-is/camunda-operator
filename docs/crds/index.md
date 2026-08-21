@@ -43,6 +43,7 @@ A contract carries connection details and credential references. The operator va
 | --- | --- | --- |
 | [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) | Namespaced | One backup of a cluster on Elasticsearch. |
 | [LogicalBackupRDBMS](logicalbackuprdbms.md) | Namespaced | One backup of a cluster on a relational database. |
+| [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule and prune the ones it created. |
 
 ## How the kinds relate
 
@@ -64,6 +65,7 @@ graph LR
     LBR[LogicalBackupRDBMS]
     MAC[ManagementAuthConfig]
     OPT[CamundaOptimize]
+    BS[BackupSchedule]
 
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
@@ -84,6 +86,10 @@ graph LR
 
     OPT -.->|clusterRef| CC
     OPT -.->|managementAuthRef| MAC
+
+    BS -.->|clusterRef| CC
+    BS -->|creates| LBE
+    BS -->|creates| LBR
 ```
 
 ## Planned kinds
@@ -92,7 +98,6 @@ These CRDs are installed with the operator, but the operator does not act on the
 
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
-| [BackupSchedule](backupschedule.md) | Namespaced | Create logical backups of a cluster on a cron schedule. |
 | [LogicalRestore](logicalrestore.md) | Namespaced | Restore a completed logical backup into a suspended cluster. |
 | [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 | [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
