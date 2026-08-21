@@ -39,8 +39,10 @@ import (
 //
 // The recorded terminal reason decides. A completed restore gives its Jobs up,
 // and a failed restore keeps them, because the logs of a failed Job are the
-// diagnosis. A failed restore therefore holds the broker data volumes until
-// somebody deletes the restore, which takes its Jobs with it.
+// diagnosis. A restore that failed after it started the restore application
+// therefore holds the broker data volumes until somebody deletes the restore,
+// which takes its Jobs with it. A restore that failed earlier recorded no Job,
+// so it holds nothing and there is nothing here to remove.
 //
 // The delete carries foreground propagation. Background propagation returns
 // before the pods are gone, and the pods are what hold the volume.

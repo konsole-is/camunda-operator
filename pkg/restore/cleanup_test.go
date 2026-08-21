@@ -138,8 +138,15 @@ func TestCollectJobsRemovesEveryJobOfACompletedRestore(t *testing.T) {
 	for _, name := range owner.Status.PrimaryJobNames {
 		options, deleted := recorder.options[name]
 		require.True(t, deleted, "the restore left the Job %s behind", name)
+
 		require.NotNil(t, options.PropagationPolicy, "Job %s", name)
 		assert.Equal(t, metav1.DeletePropagationForeground, *options.PropagationPolicy, "Job %s", name)
+
+		// The precondition is what keeps the delete off a Job that another
+		// writer created under this name after the read.
+		require.NotNil(t, options.Preconditions, "Job %s", name)
+		require.NotNil(t, options.Preconditions.UID, "Job %s", name)
+		assert.Equal(t, types.UID(name+"-uid"), *options.Preconditions.UID, "Job %s", name)
 	}
 }
 

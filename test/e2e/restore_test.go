@@ -813,8 +813,12 @@ func (w *restoreJobWatch) captured() map[string]batchv1.Job {
 // capture proves nothing about the restore application.
 func (w *restoreJobWatch) expect(brokers int, args gomegatypes.GomegaMatcher) {
 	Expect(w).NotTo(BeNil(), "no spec of this flow started a watch of the restore Jobs")
+
+	// close waits for the last look, so the record is complete when it
+	// returns. A look of its own here would only read the cluster again, after
+	// the restore already collected its Jobs, and it would add a kubectl call
+	// that nothing bounds.
 	w.close()
-	w.capture()
 
 	var recorded struct {
 		Status struct {
