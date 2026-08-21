@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -59,6 +60,10 @@ type adminCredential struct {
 	// pending is the requested password of an in-flight rotation, published
 	// under the pending key. Empty when no rotation is in flight.
 	pending string
+	// emailFromSecret says that the admin Secret already carries the key
+	// that the processes read their seed address from, so their template may
+	// reference it.
+	emailFromSecret bool
 	// email is the address that the spec asks for. The Secret publishes it
 	// for the processes to seed from, whether or not the cluster has taken
 	// it yet, because a process that read none would seed an incomplete
@@ -174,10 +179,17 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		return adminCredential{}, nil
 	}
 
-	current, pending, applied, found, err := r.readAdminSecret(ctx, cluster)
+	read, err := r.readAdminSecret(ctx, cluster)
 	if err != nil {
 		return adminCredential{}, err
 	}
+	current, pending, applied, found := read.current, read.pending, read.applied, read.found
+
+	// A Secret that exists without the seed key is a cluster upgrading into
+	// this operator. Its workloads keep the address in their template until
+	// the key is written, so an apply that fails cannot patch them onto a
+	// key that is not there.
+	emailFromSecret := !found || read.seedEmail
 
 	requested := ""
 	if auth.Basic != nil {
@@ -233,16 +245,17 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// records neither, so the next reconcile takes both to the user API
 		// and reports what the cluster says about them.
 		rotation, seeded := "", ""
-		if !cluster.Status.AdminSecretPublished {
+		if !publishedBefore(cluster) {
 			rotation, seeded = requested, email
 		}
 
 		return adminCredential{
-			password:     credentials.Password{Value: value},
-			published:    early,
-			rotation:     rotation,
-			email:        email,
-			appliedEmail: seeded,
+			password:        credentials.Password{Value: value},
+			published:       early,
+			rotation:        rotation,
+			email:           email,
+			appliedEmail:    seeded,
+			emailFromSecret: emailFromSecret,
 		}, nil
 	}
 
@@ -254,6 +267,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			publishedRotation: applied.rotation,
 			email:             email,
 			appliedEmail:      applied.email,
+			emailFromSecret:   emailFromSecret,
 		}
 		if applied.email == email || in.Effective.Suspend {
 			return steady, nil
@@ -291,6 +305,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			publishedRotation: applied.rotation,
 			email:             email,
 			appliedEmail:      applied.email,
+			emailFromSecret:   emailFromSecret,
 		}, nil
 	}
 
@@ -309,6 +324,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			publishedRotation: applied.rotation,
 			email:             email,
 			appliedEmail:      applied.email,
+			emailFromSecret:   emailFromSecret,
 		}, nil
 	}
 
@@ -324,6 +340,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			publishedRotation: applied.rotation,
 			email:             email,
 			appliedEmail:      applied.email,
+			emailFromSecret:   emailFromSecret,
 			failure:           failure,
 		}, nil
 	}
@@ -356,6 +373,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		publishedRotation: applied.rotation,
 		email:             email,
 		appliedEmail:      email,
+		emailFromSecret:   emailFromSecret,
 	}, nil
 }
 
@@ -367,34 +385,52 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 func (r *CamundaClusterReconciler) readAdminSecret(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) (current credentials.Password, pending pendingRotation, applied appliedIdentity, found bool, err error) {
+) (adminSecretRead, error) {
 	key := client.ObjectKey{Namespace: cluster.Namespace, Name: components.AdminSecretName(cluster)}
 
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return credentials.Password{}, pendingRotation{}, appliedIdentity{}, false, nil
+			return adminSecretRead{}, nil
 		}
-		return credentials.Password{}, pendingRotation{}, appliedIdentity{}, false,
-			fmt.Errorf("reading Secret %q: %w", key, err)
+		return adminSecretRead{}, fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+
+	read := adminSecretRead{
+		found:     true,
+		seedEmail: string(secret.Data[components.AdminEmailKey]) != "",
 	}
 
 	value := string(secret.Data[components.AdminPasswordKey])
 	if value == "" {
-		return credentials.Password{}, pendingRotation{}, appliedIdentity{}, true, nil
+		return read, nil
 	}
 
-	return credentials.Password{Value: value, SourceUID: secret.UID},
-		pendingRotation{
-			password: string(secret.Data[components.AdminPendingPasswordKey]),
-			rotation: string(secret.Data[components.AdminPendingRotationKey]),
-		},
-		appliedIdentity{
-			rotation: string(secret.Data[components.AdminRotationKey]),
-			email:    string(secret.Data[components.AdminAppliedEmailKey]),
-		},
-		true,
-		nil
+	read.current = credentials.Password{Value: value, SourceUID: secret.UID}
+	read.pending = pendingRotation{
+		password: string(secret.Data[components.AdminPendingPasswordKey]),
+		rotation: string(secret.Data[components.AdminPendingRotationKey]),
+	}
+	read.applied = appliedIdentity{
+		rotation: string(secret.Data[components.AdminRotationKey]),
+		email:    string(secret.Data[components.AdminAppliedEmailKey]),
+	}
+
+	return read, nil
+}
+
+// adminSecretRead is the admin Secret as one reconcile found it. found says
+// whether the Secret exists at all, which an empty password does not: a
+// Secret that lost its password is a repair, and a missing one is a cluster
+// that has none yet. seedEmail says whether the key that the processes read
+// their address from is already there, which decides whether their template
+// may reference it.
+type adminSecretRead struct {
+	found     bool
+	seedEmail bool
+	current   credentials.Password
+	pending   pendingRotation
+	applied   appliedIdentity
 }
 
 // appliedIdentity is what the admin Secret records about the admin user as
@@ -520,4 +556,21 @@ func putAdminUser(ctx context.Context, endpoint, version, authPassword, email, p
 	}
 
 	return users.UpdateUserPassword(ctx, user, password)
+}
+
+// publishedBefore reports whether the operator has published the admin
+// Secret of cluster at least once. status.adminSecretPublished says so, and
+// it is the exact answer, but it is new: a cluster that upgraded into this
+// operator reads false until its first reconcile writes it. Until then the
+// AdminSecretReady condition stands in, because a cluster that published a
+// Secret has reported that component ready. Disabled does not count, because
+// an OIDC cluster reports it while owning no Secret at all.
+func publishedBefore(cluster *v1.CamundaCluster) bool {
+	if cluster.Status.AdminSecretPublished {
+		return true
+	}
+
+	cond := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady)
+
+	return cond != nil && cond.Reason != string(component.Disabled)
 }

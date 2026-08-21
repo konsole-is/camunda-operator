@@ -93,6 +93,13 @@ type Input struct {
 	// reconcile generates another password, so the hash keeps moving until
 	// one lands. Only the hash of connectors consumes it; see ConfigHash.
 	AdminPasswordHash string
+	// AdminEmailFromSecret says that the processes may read their seed
+	// address from the admin Secret. It is false only while a Secret that
+	// exists carries no such key, which is the first reconcile of a cluster
+	// that upgraded into this operator. The template keeps the literal until
+	// the key is there, because a workload patched onto a key that a failed
+	// apply never wrote would not start at all.
+	AdminEmailFromSecret bool
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.
 	ServiceMonitorSupported bool

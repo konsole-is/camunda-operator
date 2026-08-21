@@ -367,6 +367,44 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(users.UpdateCalls()).To(Equal(1), "a refusal that is not a stale password must not retry")
 	})
 
+	It("keeps the seed address in the template until the Secret carries the key", func() {
+		ns := newNamespace()
+		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-seedkey", Namespace: ns}}
+		createSecret(ns, components.AdminSecretName(cluster), map[string]string{
+			components.AdminUsernameKey: components.AdminUsername,
+			components.AdminPasswordKey: "the-active-password",
+		})
+		cluster.Status.AdminSecretPublished = true
+		in := components.Input{Cluster: cluster, Effective: components.Effective{}}
+		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
+
+		// A cluster that upgraded into this operator has a Secret with no
+		// seed key. Its workloads must not be patched onto that key before
+		// the apply that writes it has succeeded, because the reconcile
+		// carries on to them when it fails.
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.emailFromSecret).To(BeFalse(), "the key is not there yet")
+
+		By("referencing the key once it is written")
+		Eventually(func(g Gomega) {
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+			secret.Data[components.AdminEmailKey] = []byte(components.DefaultAdminEmail)
+			g.Expect(k8sClient.Update(ctx, &secret)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		cred, err = reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.emailFromSecret).To(BeTrue())
+
+		By("and referencing it from the first reconcile of a cluster with no Secret at all")
+		fresh := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-fresh", Namespace: newNamespace()}}
+		cred, err = reconciler.resolveAdminCredential(ctx, fresh, components.Input{Cluster: fresh})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.emailFromSecret).To(BeTrue(), "its Secret is written with the key in this reconcile")
+	})
+
 	It("holds the connectors hash while it repairs a Secret that lost its password", func() {
 		ns := newNamespace()
 		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-repair", Namespace: ns}}
@@ -467,6 +505,24 @@ var _ = Describe("Admin password rotation", func() {
 
 		By("keeping the recorded rotation once the cluster has published a Secret")
 		cluster.Status.AdminSecretPublished = true
+
+		By("and on a cluster that upgraded before the flag existed")
+		upgraded := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cc-upgraded", Namespace: newNamespace()},
+		}
+		meta.SetStatusCondition(upgraded.GetStatusConditions(), metav1.Condition{
+			Type:   v1.ConditionAdminSecretReady,
+			Status: metav1.ConditionTrue,
+			Reason: string(component.Healthy),
+		})
+		upgradedIn := in
+		upgradedIn.Cluster = upgraded
+
+		before, err := reconciler.resolveAdminCredential(ctx, upgraded, upgradedIn)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(before.rotation).To(
+			BeEmpty(), "the condition stands in for the flag until the first reconcile writes it",
+		)
 
 		cred, err = reconciler.resolveAdminCredential(ctx, cluster, in)
 		Expect(err).NotTo(HaveOccurred())
