@@ -52,8 +52,19 @@ const (
 )
 
 // The health endpoints (HealthConfigurationInitializer.java:58-61 for the
-// unified binary on the management port; helm chart 14.8.3
-// values.yaml:2383,2402 for connectors on its HTTP port).
+// unified binary on the management port; connector-runtime-bundle 8.9.7
+// BOOT-INF/classes/application.properties for connectors on its HTTP port).
+//
+// The connectors runtime puts a different health indicator behind each group:
+//
+//	readiness = zeebeClient, processDefinitionImport
+//	liveness  = zeebeClient
+//	startup   = startupCheck
+//
+// Only startupCheck answers from the process itself. zeebeClient and
+// processDefinitionImport both go over the network to the gateway, so they
+// report the state of the cluster around the container as much as the state
+// of the container.
 const (
 	healthStartupPath   = "/actuator/health/startup"
 	healthReadinessPath = "/actuator/health/readiness"
@@ -411,12 +422,33 @@ func container(in Input, p Process, r rendered) corev1.Container {
 	}
 
 	if p.Component == ComponentConnectors {
-		c.StartupProbe = nil
-		c.ReadinessProbe = probe(portNameHTTP, healthReadinessPath, readinessPeriodSeconds, 0)
-		c.LivenessProbe = probe(portNameHTTP, healthLivenessPath, livenessPeriodSeconds, 0)
+		connectorsProbes(&c)
 	}
 
 	return c
+}
+
+// connectorsProbes sets the probes of the connectors container. The runtime
+// serves them on its HTTP port, not on a management port, and it groups its
+// health indicators differently from the unified binary.
+//
+// It gets no liveness probe. The liveness group of the runtime holds one
+// indicator, zeebeClient, so the probe reports whether the gateway answers,
+// not whether the container is healthy. A gateway that is away for 90
+// seconds, which one rolling update of the gateway can take, then kills a
+// connectors container that works correctly, and the restart does not bring
+// the gateway back. The Camunda chart ships connectors.livenessProbe.enabled
+// false for the same reason.
+//
+// It gets a startup probe on the startup group, which holds startupCheck
+// alone. That group answers from the process, so it reports when the runtime
+// is up and says nothing about the gateway. The probe also holds the
+// readiness probe back until then, which keeps a booting JVM out of the pod
+// events.
+func connectorsProbes(c *corev1.Container) {
+	c.StartupProbe = probe(portNameHTTP, healthStartupPath, startupPeriodSeconds, startupFailureThreshold)
+	c.ReadinessProbe = probe(portNameHTTP, healthReadinessPath, readinessPeriodSeconds, 0)
+	c.LivenessProbe = nil
 }
 
 // probe builds an HTTP probe on a named port. A zero failureThreshold keeps
