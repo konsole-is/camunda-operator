@@ -216,7 +216,11 @@ func TestStageTerminalStagesTheRecordedOutcome(t *testing.T) {
 	require.NotNil(t, condition)
 	assert.Equal(t, metav1.ConditionTrue, condition.Status)
 	assert.Equal(t, v1.ReasonCompleted, condition.Reason)
-	assert.Contains(t, condition.Message, "unsuspended")
+	// The message no longer tells the reader to unsuspend the cluster. A
+	// restore that suspended it has already withdrawn that suspension by the
+	// time anybody reads this, and a cluster that its owner suspended is
+	// theirs to unsuspend.
+	assert.Equal(t, "The restore finished", condition.Message)
 	assert.Equal(t, int64(4), completed.Status.ObservedGeneration)
 
 	failed := restoreOwner(2)

@@ -63,8 +63,9 @@ const (
 	// recreated the broker data volumes and runs the restore application on
 	// them.
 	PointInTimeRestoreRestoringPrimaryStorage PointInTimeRestorePhase = "RestoringPrimaryStorage"
-	// PointInTimeRestoreCompleted means that the restore finished. The
-	// cluster can be unsuspended.
+	// PointInTimeRestoreCompleted means that the restore finished. The restore
+	// withdraws the suspension it applied when it reaches this phase, so the
+	// cluster runs again unless its owner suspended it.
 	PointInTimeRestoreCompleted PointInTimeRestorePhase = "Completed"
 	// PointInTimeRestoreFailed means that the restore failed. The Ready
 	// condition names the failing phase.

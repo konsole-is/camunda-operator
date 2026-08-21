@@ -79,8 +79,9 @@ const (
 	// LogicalRestoreRestoringPrimaryStorage means that the operator recreated
 	// the broker data volumes and runs the restore application on them.
 	LogicalRestoreRestoringPrimaryStorage LogicalRestorePhase = "RestoringPrimaryStorage"
-	// LogicalRestoreCompleted means that the restore finished. The target can
-	// be unsuspended.
+	// LogicalRestoreCompleted means that the restore finished. The restore
+	// withdraws the suspension it applied when it reaches this phase, so the
+	// target runs again unless its owner suspended it.
 	LogicalRestoreCompleted LogicalRestorePhase = "Completed"
 	// LogicalRestoreFailed means that the restore failed. The Ready condition
 	// names the failing phase.

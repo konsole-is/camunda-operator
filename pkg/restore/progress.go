@@ -26,8 +26,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// completedMessage is the Ready message of every restore that finished.
-const completedMessage = "The restore finished. The cluster can be unsuspended"
+// completedMessage is the Ready message of every restore that finished. It
+// says nothing about the suspension of the cluster: a restore that suspended
+// the cluster has already withdrawn that suspension by the time a reader sees
+// this, and a cluster that its owner suspended is theirs to unsuspend.
+const completedMessage = "The restore finished"
 
 // HoldRunning holds a started restore on a dependency that stopped resolving.
 // It stages the failure as the Ready condition of owner, records when the

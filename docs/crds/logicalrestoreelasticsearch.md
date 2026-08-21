@@ -47,7 +47,7 @@ graph LR
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | The operator deletes the Camunda indices of the target and restores every snapshot of the backup. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker. |
-| `Completed` | The restore finished. You can unsuspend the cluster. |
+| `Completed` | The restore finished. The restore unsuspended the target, unless you suspended it yourself. |
 | `Failed` | The restore ended. `status.failureMessage` says why. |
 
 `Completed` and `Failed` are terminal.
@@ -172,7 +172,7 @@ A target that the restore suspended stays suspended. That is deliberate. Unsuspe
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A phase of the restore runs. | Wait. The message names the work. |
-| `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
+| `Ready` | `Completed` | The restore finished, and it withdrew the suspension it applied. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |

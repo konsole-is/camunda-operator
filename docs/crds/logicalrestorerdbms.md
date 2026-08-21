@@ -114,7 +114,7 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | One Job downloads the dump from the backup bucket and runs `pg_restore` against the logical database of the target. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the Camunda restore application on them. |
-| `Completed` | The restore finished. You can unsuspend the target. |
+| `Completed` | The restore finished. The restore unsuspended the target, unless you suspended it yourself. |
 | `Failed` | A phase failed. `status.failureMessage` names it. |
 
 ## Compatibility
@@ -180,7 +180,7 @@ A target that the restore suspended stays suspended. That is deliberate. Unsuspe
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
-| `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the target. |
+| `Ready` | `Completed` | The restore finished, and it withdrew the suspension it applied. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the target again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. See "Compatibility". | Create a new restore against a target that fits. |
