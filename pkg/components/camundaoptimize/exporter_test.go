@@ -106,11 +106,16 @@ func TestExporterEnvPrefixMatchesTheOptimizeImportPrefix(t *testing.T) {
 // The patch object carries the identity of the cluster and its exporter
 // entries, and nothing else. Any other field would take ownership of that
 // field away from whoever set it.
+//
+// The identity includes the UID. Server-side apply creates what it does not
+// find, so the UID is the precondition that makes the apply fail rather than
+// put a deleted cluster back.
 func TestExporterPatchCarriesNothingElse(t *testing.T) {
 	t.Parallel()
 
 	patch := ExporterPatch(
 		types.NamespacedName{Namespace: "camunda", Name: "my-cluster"},
+		types.UID("9f1d6f4e-1c2b-4a7d-9d3e-0b5a6c7d8e9f"),
 		ExporterEnv(exporterStorage()),
 	)
 
@@ -122,7 +127,11 @@ func TestExporterPatchCarriesNothingElse(t *testing.T) {
 	assert.Equal(t, []string{"apiVersion", "kind", "metadata", "spec"}, sortedKeys(fields))
 	assert.Equal(
 		t,
-		map[string]any{"name": "my-cluster", "namespace": "camunda"},
+		map[string]any{
+			"name":      "my-cluster",
+			"namespace": "camunda",
+			"uid":       "9f1d6f4e-1c2b-4a7d-9d3e-0b5a6c7d8e9f",
+		},
 		fields["metadata"],
 	)
 
@@ -188,7 +197,9 @@ func TestExporterConflictsFindsTheMergeHazard(t *testing.T) {
 func TestExporterPatchWithoutEntriesCarriesAnEmptyList(t *testing.T) {
 	t.Parallel()
 
-	patch := ExporterPatch(types.NamespacedName{Namespace: "camunda", Name: "my-cluster"}, nil)
+	patch := ExporterPatch(
+		types.NamespacedName{Namespace: "camunda", Name: "my-cluster"}, types.UID("some-uid"), nil,
+	)
 
 	require.NotNil(t, patch.Spec.Zeebe)
 	assert.Empty(t, patch.Spec.Zeebe.ExtraEnv)

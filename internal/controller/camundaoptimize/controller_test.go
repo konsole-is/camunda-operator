@@ -883,4 +883,50 @@ var _ = Describe("CamundaOptimize controller", func() {
 			Expect(err).To(MatchError(ContainSubstring("clusterRef is immutable")))
 		})
 	})
+
+	// Server-side apply creates the object it does not find. The withdrawal
+	// reads the cluster first, but the cluster can go between that read and
+	// the apply, and a CamundaCluster that holds nothing but exporter entries
+	// would then take its place. Deleting a namespace removes both resources
+	// at once, so the race is ordinary rather than rare.
+	Context("with a cluster that goes while the exporter patch is in flight", func() {
+		It("does not put the cluster back", func() {
+			ns := newNamespace()
+			cluster := createCluster(ns, createBinding(ns, ns))
+			key := client.ObjectKeyFromObject(cluster)
+			staleUID := cluster.UID
+
+			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
+			Eventually(func() bool {
+				var gone v1.CamundaCluster
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key, &gone))
+			}, timeout, interval).Should(BeTrue())
+
+			r := &Reconciler{Client: k8sClient, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
+			Expect(r.applyExporterPatch(ctx, key, staleUID, nil)).To(
+				WithTransform(apierrors.IsConflict, BeTrue()),
+			)
+
+			var after v1.CamundaCluster
+			Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &after))).To(BeTrue())
+		})
+
+		It("treats the lost cluster as nothing left to withdraw", func() {
+			ns := newNamespace()
+			cluster := createCluster(ns, createBinding(ns, ns))
+			key := client.ObjectKeyFromObject(cluster)
+
+			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
+			Eventually(func() bool {
+				var gone v1.CamundaCluster
+				return apierrors.IsNotFound(k8sClient.Get(ctx, key, &gone))
+			}, timeout, interval).Should(BeTrue())
+
+			r := &Reconciler{Client: k8sClient, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
+			Expect(r.withdrawExporter(ctx, key)).To(Succeed())
+
+			var after v1.CamundaCluster
+			Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &after))).To(BeTrue())
+		})
+	})
 })

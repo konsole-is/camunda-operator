@@ -27,7 +27,10 @@ differ, this spec wins, and the docs page changes in the same epic.
 - No OpenSearch support beyond what the `SecondaryStorageConfig` contract already models. A cluster
   on RDBMS secondary storage is rejected at reconcile time.
 - No Ingress. The platform routes traffic outside this operator.
-- No backup or restore changes. The existing backup CRDs already cover the Optimize indices.
+- No backup or restore changes. `LogicalBackupElasticsearch` covers the `zeebe-record` indices that
+  Optimize reads, so a restored cluster can import again. It does not cover the Optimize analytics
+  indices, which sit behind a backup API of Optimize that no controller calls. That gap is real and
+  it stays out of this epic.
 
 ## API
 

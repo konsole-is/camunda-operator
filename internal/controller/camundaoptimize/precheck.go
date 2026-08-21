@@ -25,6 +25,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
@@ -48,6 +49,9 @@ type resolved struct {
 	Mirrors mirroredSecrets
 	// ClusterKey is the CamundaCluster that the exporter patch targets.
 	ClusterKey client.ObjectKey
+	// ClusterUID is the UID that the exporter patch carries as a
+	// precondition, so an apply cannot put a deleted cluster back.
+	ClusterUID types.UID
 	// ExporterStorage is the storage contract with the credentials reference
 	// as the cluster resolves it. The exporter runs in the broker container,
 	// so it reads the copy that the cluster's own controller makes, not the
@@ -130,7 +134,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 		return out, &conditions.PreCheckFailure{
 			Reason: v1.ReasonWaitingForHandover,
 			Message: fmt.Sprintf(
-				"Deployment %q of the previous Optimize instance still runs; waiting for its pods to go",
+				"Deployment %q of the previous Optimize instance still exists, waiting for it to go",
 				other,
 			),
 		}
@@ -140,6 +144,7 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	if err := res.exists(ctx, out.ClusterKey, &cluster); err != nil {
 		return out, err
 	}
+	out.ClusterUID = cluster.UID
 
 	binding, err := res.resolveStorage(ctx, &cluster)
 	if err != nil {

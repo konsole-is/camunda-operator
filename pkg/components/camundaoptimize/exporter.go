@@ -120,12 +120,17 @@ func ExporterConflicts(desired, existing []corev1.EnvVar) []string {
 // entries to that list and leaves every other field of the cluster to whoever
 // owns it. An empty env removes the entries this manager owns, which is what
 // the finalizer applies.
-func ExporterPatch(cluster types.NamespacedName, env []corev1.EnvVar) *v1.CamundaCluster {
+func ExporterPatch(
+	cluster types.NamespacedName,
+	uid types.UID,
+	env []corev1.EnvVar,
+) *v1.CamundaCluster {
 	return &v1.CamundaCluster{
 		TypeMeta: metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaCluster"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
 			Namespace: cluster.Namespace,
+			UID:       uid,
 		},
 		Spec: v1.CamundaClusterSpec{
 			Zeebe: &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{ExtraEnv: env}},
