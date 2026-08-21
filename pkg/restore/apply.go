@@ -26,15 +26,14 @@ import (
 // under a field manager of its own, so the fields a restore owns are visible
 // on the object.
 const (
+	// FieldManagerLogicalRestoreElasticsearch owns what a
+	// LogicalRestoreElasticsearch applies.
+	FieldManagerLogicalRestoreElasticsearch client.FieldOwner = "camunda-operator/logicalrestoreelasticsearch"
 	// FieldManagerLogicalRestoreRDBMS owns what a LogicalRestoreRDBMS applies.
 	FieldManagerLogicalRestoreRDBMS client.FieldOwner = "camunda-operator/logicalrestorerdbms"
 	// FieldManagerPointInTimeRestore owns what a PointInTimeRestore applies.
 	FieldManagerPointInTimeRestore client.FieldOwner = "camunda-operator/pointintimerestore"
 )
-
-// FieldManagerLogicalRestoreElasticsearch owns every Job and every recreated
-// volume that a LogicalRestoreElasticsearch applies.
-const FieldManagerLogicalRestoreElasticsearch client.FieldOwner = "camunda-operator/logicalrestoreelasticsearch"
 
 // Apply server-side applies obj under manager, forcing ownership of every
 // field the operator sets. Every resource a restore manages goes through it,
