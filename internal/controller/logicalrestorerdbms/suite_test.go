@@ -49,12 +49,12 @@ const midRunGrace = 3 * time.Second
 
 // retryInterval paces a hold that no watch resolves. It is short enough that
 // a spec which waits the timer out fits in the test timeout, and long enough
-// that watchTimeout can tell a watch from the timer.
+// that watchWindow can tell a watch from the timer.
 const retryInterval = 5 * time.Second
 
-// watchTimeout is shorter than retryInterval. A hold that resolves inside it
+// watchWindow is shorter than retryInterval. A hold that resolves inside it
 // therefore proves that a watch woke the restore, and not the timer.
-const watchTimeout = 2 * time.Second
+const watchWindow = 2 * time.Second
 
 var (
 	env       *testenv.Env

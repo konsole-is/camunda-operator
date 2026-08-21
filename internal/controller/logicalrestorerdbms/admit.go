@@ -244,9 +244,9 @@ type resolution struct {
 	storage *v1.SecondaryStorageConfig
 }
 
-// resolveTarget resolves everything a running phase needs and reports the
-// first failure that the user must see.
-func (r *Reconciler) resolveTarget(
+// resolve resolves everything a running phase needs and reports the first
+// failure that the user must see.
+func (r *Reconciler) resolve(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
 ) (*resolution, *conditions.PreCheckFailure, error) {

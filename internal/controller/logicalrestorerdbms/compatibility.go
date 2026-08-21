@@ -35,7 +35,7 @@ func (r *Reconciler) validate(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
 ) (restore.Outcome, error) {
-	resolved, failure, err := r.resolveTarget(ctx, lrr)
+	resolved, failure, err := r.resolve(ctx, lrr)
 	if err != nil {
 		return restore.Outcome{}, err
 	}

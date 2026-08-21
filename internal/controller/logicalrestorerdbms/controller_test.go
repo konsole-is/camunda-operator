@@ -112,11 +112,11 @@ var _ = Describe("LogicalRestoreRDBMS admission", func() {
 		By("suspending the target")
 		w.suspend(true)
 
-		// watchTimeout is shorter than the retry interval of the suite, so
+		// watchWindow is shorter than the retry interval of the suite, so
 		// only the watch can move the restore in time.
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
-		}, watchTimeout, interval).Should(Succeed())
+		}, watchWindow, interval).Should(Succeed())
 	})
 
 	It("wakes a waiting restore through the backup watch when the backup completes", func() {
@@ -136,11 +136,11 @@ var _ = Describe("LogicalRestoreRDBMS admission", func() {
 			g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		// watchTimeout is shorter than the retry interval of the suite, so
+		// watchWindow is shorter than the retry interval of the suite, so
 		// only the watch can move the restore in time.
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
-		}, watchTimeout, interval).Should(Succeed())
+		}, watchWindow, interval).Should(Succeed())
 	})
 })
 

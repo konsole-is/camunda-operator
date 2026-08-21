@@ -56,7 +56,7 @@ func (r *Reconciler) restoreDatabase(
 	// a cluster that is unsuspended under it and a backup that was replaced
 	// under its name both have to reach the restore, and the mid-run grace
 	// bounds how long either can hold it.
-	resolved, failure, err := r.resolveTarget(ctx, lrr)
+	resolved, failure, err := r.resolve(ctx, lrr)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
