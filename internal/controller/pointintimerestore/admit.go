@@ -30,6 +30,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
@@ -144,7 +145,7 @@ func (r *Reconciler) resolve(
 	key := types.NamespacedName{Namespace: namespace, Name: name}
 	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, invalidReference("CamundaCluster %s does not exist", key), nil
+			return nil, logicalbackup.InvalidReference("CamundaCluster %s does not exist", key), nil
 		}
 
 		return nil, nil, fmt.Errorf("reading CamundaCluster %s: %w", key, err)
@@ -178,27 +179,27 @@ func (r *Reconciler) resolve(
 	}
 
 	if cluster.Spec.BackupStorageRef == "" {
-		return nil, invalidReference(
+		return nil, logicalbackup.InvalidReference(
 			"CamundaCluster %s has no spec.backupStorageRef, so Zeebe holds no primary storage "+
 				"backup for the restore to read", key,
 		), nil
 	}
 
 	if cluster.Spec.StorageRef == "" {
-		return nil, invalidReference("CamundaCluster %s has no spec.storageRef", key), nil
+		return nil, logicalbackup.InvalidReference("CamundaCluster %s has no spec.storageRef", key), nil
 	}
 
 	var storage v1.SecondaryStorageConfig
 	storageKey := types.NamespacedName{Namespace: namespace, Name: cluster.Spec.StorageRef}
 	if err := r.APIReader.Get(ctx, storageKey, &storage); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, invalidReference("SecondaryStorageConfig %s does not exist", storageKey), nil
+			return nil, logicalbackup.InvalidReference("SecondaryStorageConfig %s does not exist", storageKey), nil
 		}
 
 		return nil, nil, fmt.Errorf("reading SecondaryStorageConfig %s: %w", storageKey, err)
 	}
 	if storage.Spec.Type != v1.SecondaryStorageTypeRDBMS || storage.Spec.RDBMS == nil {
-		return nil, invalidReference(
+		return nil, logicalbackup.InvalidReference(
 			"SecondaryStorageConfig %s stores the data of CamundaCluster %s in %s. A point-in-time "+
 				"restore exists only for a relational database, because an Elasticsearch cluster has "+
 				"no point-in-time recovery. Use a LogicalRestoreElasticsearch or a "+
@@ -211,7 +212,7 @@ func (r *Reconciler) resolve(
 	dbKey := types.NamespacedName{Namespace: namespace, Name: storage.Spec.RDBMS.DatabaseConfigRef}
 	if err := r.APIReader.Get(ctx, dbKey, &dbConfig); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, invalidReference("DatabaseConfig %s does not exist", dbKey), nil
+			return nil, logicalbackup.InvalidReference("DatabaseConfig %s does not exist", dbKey), nil
 		}
 
 		return nil, nil, fmt.Errorf("reading DatabaseConfig %s: %w", dbKey, err)
@@ -221,7 +222,7 @@ func (r *Reconciler) resolve(
 	serverKey := types.NamespacedName{Name: dbConfig.Spec.ServerRef}
 	if err := r.APIReader.Get(ctx, serverKey, &server); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, invalidReference("DatabaseServerConfig %q does not exist", serverKey.Name), nil
+			return nil, logicalbackup.InvalidReference("DatabaseServerConfig %q does not exist", serverKey.Name), nil
 		}
 
 		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %q: %w", serverKey.Name, err)
@@ -412,7 +413,7 @@ func (r *Reconciler) dedicatedServer(
 	// or ten, and point-in-time recovery rolls back all of them. On a path
 	// that deletes volumes, the absence of evidence holds the restore.
 	if len(names) == 0 {
-		return invalidReference(
+		return logicalbackup.InvalidReference(
 			"no Database resource names DatabaseServerConfig %q, so the operator cannot tell which "+
 				"databases the server holds. Point-in-time recovery rolls back the whole server. "+
 				"Declare the database of the cluster as a Database resource on a server of its own",
@@ -434,14 +435,6 @@ func (r *Reconciler) dedicatedServer(
 			server.Name, strings.Join(names, ", "),
 		),
 	}, nil
-}
-
-// invalidReference builds the failure of a reference that does not resolve.
-func invalidReference(format string, args ...any) *conditions.PreCheckFailure {
-	return &conditions.PreCheckFailure{
-		Reason:  v1.ReasonInvalidReference,
-		Message: fmt.Sprintf(format, args...),
-	}
 }
 
 // credentials reads the application credentials of the logical database. They
