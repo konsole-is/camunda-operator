@@ -322,6 +322,25 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 
+		// A resume starts every process of the cluster in the same second,
+		// so this wait is where connectors races the gateway. When it times
+		// out on "connectors: Waiting for replicas: 0/1 ready" and the
+		// connectors container never restarted, the cause is in the
+		// connectors runtime, not in this operator (issue #144).
+		//
+		// The readiness group of the runtime holds zeebeClient and
+		// processDefinitionImport, and its liveness group holds zeebeClient
+		// alone. A container that never restarts therefore answered for the
+		// gateway the whole time, which leaves processDefinitionImport: the
+		// inbound import that polls POST /v2/process-definitions/search on
+		// the REST API of the gateway every five seconds. The import holds
+		// no failed state. It reports up again on the first poll that
+		// answers, so a readiness that stays down means the REST calls kept
+		// failing.
+		//
+		// dumpDiagnostics reads /actuator/health from every pod that is not
+		// ready and names the indicator. Read that document first: the
+		// connectors container writes no log of its own.
 		By("waiting for Ready Healthy")
 		Eventually(func(g Gomega) {
 			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)

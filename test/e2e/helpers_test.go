@@ -29,6 +29,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -43,6 +44,11 @@ const podTimeout = 3 * time.Minute
 // suspendTimeout bounds the wait for a cluster to scale to zero, and for a
 // suspended cluster to run again.
 const suspendTimeout = 5 * time.Minute
+
+// maxHealthDumps caps how many pods dumpNotReadyPodHealth reads. Each one
+// costs a helper pod, and a namespace whose storage is gone holds every pod
+// not ready at once.
+const maxHealthDumps = 3
 
 // apply applies obj through kubectl. obj must carry its apiVersion and kind.
 func apply(obj client.Object) error {
@@ -298,8 +304,116 @@ func dumpDiagnostics(testNamespace string) {
 	}
 
 	dumpCustomResources(testNamespace)
+	dumpNotReadyPodHealth(testNamespace)
 	dumpRestartedPodLogs(testNamespace)
 	dumpRestartedPodLogs(namespace)
+}
+
+// dumpNotReadyPodHealth writes the actuator health document of every pod of
+// namespace that holds a container which is not ready.
+//
+// A pod that stays not ready explains itself nowhere else. The pod state says
+// only that the readiness probe answered 503, and the connectors runtime
+// writes no application log at all: its logback configuration wraps every
+// appender in a condition that resolves to none, so the root logger discards
+// the whole startup of the process. The health document is the one record of
+// which indicator is down.
+//
+// The distinction it makes is the one that matters for connectors. Its
+// readiness group holds zeebeClient and processDefinitionImport, and its
+// liveness group holds zeebeClient alone. A readiness that is down while the
+// container never restarts therefore names processDefinitionImport, which is
+// the inbound import of the process definitions over the REST API of the
+// gateway, not anything this operator applies.
+//
+// It reads the endpoint from a curl pod, over the pod IP. Two other routes do
+// not work here. The pod proxy of the API server is one call, but kubectl
+// discards the body of an answer that is not 2xx, and this endpoint answers
+// 503 in exactly the case worth reading. A Service is the other, and a pod
+// that is not ready has no endpoint behind one.
+func dumpNotReadyPodHealth(namespace string) {
+	var pods corev1.PodList
+	if err := utils.List("pods", namespace, "", &pods); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Failed to list the pods of %s: %s\n", namespace, err)
+		return
+	}
+
+	probed := 0
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+
+		port := notReadyProbePort(pod)
+		if port == 0 || pod.Status.PodIP == "" {
+			continue
+		}
+
+		if probed == maxHealthDumps {
+			_, _ = fmt.Fprintf(
+				GinkgoWriter, "More pods are not ready; stopped after %d health dumps\n", probed,
+			)
+			return
+		}
+		probed++
+
+		res, err := utils.CamundaREST(utils.CamundaRequest{
+			Namespace: namespace,
+			Name:      "health",
+			Method:    "GET",
+			URL:       fmt.Sprintf("http://%s:%d/actuator/health", pod.Status.PodIP, port),
+			Timeout:   podTimeout,
+		})
+		if err != nil {
+			_, _ = fmt.Fprintf(
+				GinkgoWriter, "Failed to get the actuator health of %s: %s\n", pod.Name, err,
+			)
+			continue
+		}
+		_, _ = fmt.Fprintf(
+			GinkgoWriter, "actuator health of %s (%d):\n%s\n", pod.Name, res.Status, res.Body,
+		)
+	}
+}
+
+// notReadyProbePort returns the port that the readiness probe of the first
+// container of pod which is not ready reads. It returns zero when every
+// container is ready, and when that probe is not an HTTP probe.
+func notReadyProbePort(pod *corev1.Pod) int32 {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Ready {
+			continue
+		}
+
+		for _, container := range pod.Spec.Containers {
+			if container.Name != status.Name {
+				continue
+			}
+
+			if container.ReadinessProbe == nil || container.ReadinessProbe.HTTPGet == nil {
+				continue
+			}
+
+			return containerPortNumber(container, container.ReadinessProbe.HTTPGet.Port)
+		}
+	}
+
+	return 0
+}
+
+// containerPortNumber resolves port against the ports of container. A probe
+// gives the name of a port as often as its number, and the pod proxy of the
+// API server takes a number.
+func containerPortNumber(container corev1.Container, port intstr.IntOrString) int32 {
+	if port.Type == intstr.Int {
+		return port.IntVal
+	}
+
+	for _, declared := range container.Ports {
+		if declared.Name == port.StrVal {
+			return declared.ContainerPort
+		}
+	}
+
+	return 0
 }
 
 // customResourceKinds are the namespaced custom resources of this operator,
