@@ -186,6 +186,12 @@ func suspend(cluster *v1.CamundaCluster) {
 
 // unsuspend clears spec.suspend and waits for the cluster to report Ready
 // Healthy again.
+//
+// A resume starts every process of the cluster in the same second, so this
+// wait is one of the two places where connectors races the gateway. When it
+// times out on "connectors: Waiting for replicas: 0/1 ready", read the
+// "actuator health of ..." block of the connectors pod; the resume spec of
+// CamundaCluster carries the full reading of it (issue #144).
 func unsuspend(cluster *v1.CamundaCluster) {
 	By("clearing spec.suspend on the CamundaCluster")
 	_, err := utils.Kubectl(
@@ -371,7 +377,7 @@ func dumpNotReadyPodHealth(namespace string) {
 			URL: "http://" + net.JoinHostPort(
 				pod.Status.PodIP, strconv.Itoa(int(port)),
 			) + actuatorHealthPath,
-			Timeout:   podTimeout,
+			Timeout: podTimeout,
 		})
 		if err != nil {
 			_, _ = fmt.Fprintf(
