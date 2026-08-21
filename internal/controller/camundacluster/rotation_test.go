@@ -363,6 +363,32 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(users.UpdateCalls()).To(Equal(1), "a refusal that is not a stale password must not retry")
 	})
 
+	It("holds the connectors hash while it repairs a Secret that lost its password", func() {
+		ns := newNamespace()
+		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-repair", Namespace: ns}}
+		createSecret(ns, components.AdminSecretName(cluster), map[string]string{
+			components.AdminUsernameKey: components.AdminUsername,
+			components.AdminPasswordKey: "",
+		})
+		cluster.Status.AdminSecretPublished = true
+		in := components.Input{Cluster: cluster, Effective: components.Effective{}}
+		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
+
+		// Connectors of this cluster are already running. A repair that
+		// hashed the password it is about to write would roll them onto a
+		// password the Secret may never hold, and again on every retry,
+		// because each retry generates another one.
+		first, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+		second, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(first.password.Value).NotTo(BeEmpty())
+		Expect(first.password.Value).NotTo(Equal(second.password.Value), "each attempt is a new password")
+		Expect(first.published).To(BeEmpty(), "the Secret publishes none, so the hash stays where it is")
+		Expect(second.published).To(Equal(first.published), "and it does not move on the retry")
+	})
+
 	It("seeds a basic credential on a cluster that only ever ran OIDC", func() {
 		cluster := &v1.CamundaCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "cc-switch", Namespace: newNamespace()},

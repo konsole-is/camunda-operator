@@ -174,7 +174,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		return adminCredential{}, nil
 	}
 
-	current, pending, applied, err := r.readAdminSecret(ctx, cluster)
+	current, pending, applied, found, err := r.readAdminSecret(ctx, cluster)
 	if err != nil {
 		return adminCredential{}, err
 	}
@@ -203,13 +203,22 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// branch and report a healthy Secret that the cluster does not
 		// accept.
 		//
-		// published is the password of this apply, not the empty value that
-		// the Secret holds now: connectors would otherwise hash on "" and
-		// roll again as soon as the first Secret lands. Hashing it early is
-		// safe only here. A failed apply leaves no Secret at all, and the
-		// next reconcile takes this branch again and generates another
-		// password, so the hash keeps moving until one lands. It can never
-		// stall on a password that the Secret does not hold.
+		// published is the password of this apply only when no Secret exists
+		// at all. Connectors would otherwise hash on "" and roll again as
+		// soon as the first Secret lands, and there is nothing to disturb:
+		// they are being created in this reconcile too, and a failed apply
+		// leaves no Secret, so the next reconcile generates another password
+		// and the hash keeps moving until one lands.
+		//
+		// A Secret that exists with no password is the repair path, and its
+		// connectors are already running. Publishing the new password early
+		// would roll them onto a password the Secret may never hold, and
+		// every retry would generate another one and roll them again. They
+		// stay on what the Secret publishes until the repair lands.
+		early := ""
+		if !found {
+			early = value
+		}
 		// A cluster that never published an admin Secret is the only one
 		// whose first Secret is applied by definition: its password and its
 		// address seed the initial user at first start. A replacement
@@ -222,7 +231,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 
 		return adminCredential{
 			password:     credentials.Password{Value: value},
-			published:    value,
+			published:    early,
 			rotation:     rotation,
 			email:        email,
 			appliedEmail: seeded,
@@ -342,21 +351,21 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 func (r *CamundaClusterReconciler) readAdminSecret(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) (current credentials.Password, pending pendingRotation, applied appliedIdentity, err error) {
+) (current credentials.Password, pending pendingRotation, applied appliedIdentity, found bool, err error) {
 	key := client.ObjectKey{Namespace: cluster.Namespace, Name: components.AdminSecretName(cluster)}
 
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return credentials.Password{}, pendingRotation{}, appliedIdentity{}, nil
+			return credentials.Password{}, pendingRotation{}, appliedIdentity{}, false, nil
 		}
-		return credentials.Password{}, pendingRotation{}, appliedIdentity{},
+		return credentials.Password{}, pendingRotation{}, appliedIdentity{}, false,
 			fmt.Errorf("reading Secret %q: %w", key, err)
 	}
 
 	value := string(secret.Data[components.AdminPasswordKey])
 	if value == "" {
-		return credentials.Password{}, pendingRotation{}, appliedIdentity{}, nil
+		return credentials.Password{}, pendingRotation{}, appliedIdentity{}, true, nil
 	}
 
 	return credentials.Password{Value: value, SourceUID: secret.UID},
@@ -368,6 +377,7 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 			rotation: string(secret.Data[components.AdminRotationKey]),
 			email:    string(secret.Data[components.AdminAppliedEmailKey]),
 		},
+		true,
 		nil
 }
 
