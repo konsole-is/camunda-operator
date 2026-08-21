@@ -9,7 +9,7 @@ sub_pr_approval: autonomous for the e2e PR; manual for every controller PR (the 
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: split-rebreak
+status: review
 ---
 
 # Restore controllers — orchestration state
@@ -37,9 +37,9 @@ its branch is the raw material for PR-B and PR-C.
 | #112 | feat/restore-controllers--pointintimerestore | .claude/worktrees/restore-controllers--pitr | #122 → feat/restore-controllers | MERGED (075746a) |
 | #111 | feat/restore-controllers--logicalrestore | .claude/worktrees/restore-controllers--logical | #123 | CLOSED — raw material for PR-B and PR-C, head 14a1545 |
 | #129 (PR-A) | feat/restore-controllers--unify | .claude/worktrees/restore-controllers--unify | #134 → feat/restore-controllers | MERGED (1316df0) |
-| #111 (PR-B) | feat/restore-controllers--lres | .claude/worktrees/restore-controllers--lres | #136 → feat/restore-controllers | OPEN, gates green, no review loop yet |
-| #130 (PR-C) | feat/restore-controllers--lrrdbms | .claude/worktrees/restore-controllers--lrrdbms | #135 → feat/restore-controllers | OPEN, gates green, no review loop yet |
-| #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | not-started; must cover BOTH new kinds |
+| #111 (PR-B) | feat/restore-controllers--lres | .claude/worktrees/restore-controllers--lres | #136 → feat/restore-controllers | MERGED (3b9484c), issue closed |
+| #130 (PR-C) | feat/restore-controllers--lrrdbms | .claude/worktrees/restore-controllers--lrrdbms | #135 → feat/restore-controllers | MERGED (e91a619), issue closed |
+| #113 | test/restore-controllers--e2e | .claude/worktrees/restore-controllers--e2e | → feat/restore-controllers | in progress, covers BOTH new kinds plus the PITR refusal |
 
 ## Contracts (from the plan)
 
@@ -66,6 +66,61 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 
 - 2026-08-20 (orchestrator): the plan agent raised four open questions; resolved in the plan's `## Resolved questions` section, each in the plan's own safe direction (same-bucket cross-cluster scope, fail-closed on a versionless backup, short PITR e2e fallback, DROP SCHEMA wipe with manual re-grant). The user was AFK with full autonomy granted.
 
+## Session log, 2026-08-21 (autonomous, user asleep, full autonomy granted)
+
+Both controller PRs are MERGED into `feat/restore-controllers` and their issues are closed. What the
+review loops found is worth keeping, because two of the four defects destroyed data before failing.
+
+- **#136 round 1 found two real defects, both verified against the code before any fix.**
+    1. **A cross-cluster restore wiped both halves of the target and then failed.** The per-broker
+       restore Job inherits the broker env from the TARGET StatefulSet, and the primary-storage
+       backup base path is built from the target's own name (`BackupBasePath` ->
+       `logicalbackup.ClusterPrefix`). Restoring a backup of cluster A into cluster B therefore
+       looked under B's prefix, where A's partition backup does not exist — after deleting the
+       indices and wiping every broker volume. The secondary half already pinned the SOURCE prefix,
+       which is what showed this was an oversight and not a decision. The recorded scope resolution
+       excludes a different BUCKET, not a different PREFIX, so it never covered this.
+       RESOLUTION: fail closed. A new rule in `check()` refuses a differently-named target during
+       `ValidatingCompatibility`, before the first destructive step. Both kinds carry it, with the
+       same wording. The docs that promised "or another cluster", and both worked clone examples,
+       are removed. `#140` tracks real cross-cluster support, with the mechanism, the Azure
+       constraint (`rejectSharedAzureContainer`), and acceptance criteria.
+    2. **The mid-run grace reset after a destructive step.** `restore.Recovered` only refuses to
+       clear `FirstFailedAt` when a PRIMARY-storage marker exists, but the Elasticsearch kind
+       deletes indices in the SECONDARY phase, before any such marker. Copilot named one call site.
+       The audit found three. Both calls in `logicalrestoreelasticsearch/secondary.go` are gone, and
+       the call in the shared `pkg/restore/primary.go` moved after the claim record — that one
+       cleared the clock in the very pass that deleted the volumes, and it affected the
+       already-merged `PointInTimeRestore` too. A regression spec was ADDED and proven against a
+       negative control. Severity correction for the record: the reset was bounded at about two,
+       not unbounded.
+- **#135 round 1 found the helper ClusterRoles used the SINGULAR resource name** where the CRD serves
+  `logicalrestorerdbmses`, so all three granted nothing. Six lines were wrong, not the three flagged.
+- **#135's post-fix round found a stale `TargetClusterRef` GoDoc.** That one matters beyond a
+  comment: controller-gen compiles it into the CRD schema description, so the false promise shipped
+  into the API surface and into `kubectl explain`.
+- **A review round was run on the REBASED #135 even though the loop had hit its 3-round cap**, on the
+  reasoning that a rebase onto a new base is new material rather than another lap. It found two
+  contradictions that exist ONLY in the merged state: `docs/guides/backup.md` still said the
+  Elasticsearch restore kind was unavailable, and both restore controllers' claim RBAC markers had
+  fallen behind a `holderKinds` map that grew from three kinds to five. Neither PR's own diff
+  contained either problem. Verified there was NO live permission gap first — the manager role
+  unions markers across controllers — and regeneration left `role.yaml` byte-identical, proving the
+  fix was readability only.
+
+REVIEW LEVEL: could not be set programmatically. No flag, endpoint, or ruleset parameter exposes it,
+and nothing in the review payload records which level ran, so the repository default governed every
+round. Mechanics confirmed this session: the repository does NOT auto-review on push (ruleset
+`default-open-source-protection`, id 20405876, carries no `copilot_code_review` rule), so every round
+needs an explicit remove-then-re-add. And `gh pr view --json reviewRequests` returns EMPTY even when
+the bot IS attached — confirm through the GraphQL `reviewRequests` query instead.
+
+The quality sweep is merged: ten focused commits, every item applied, including hoisting three
+byte-identical reference helpers into `pkg/restore` (152 lines removed) after confirming their
+messages are identical. `PointInTimeRestore` deliberately keeps its own cluster and storage reads,
+because it pins the UID lazily and fails TERMINALLY through `errClusterReplaced` while the logical
+restores HOLD. That difference must never be collapsed.
+
 ## Pending snapshot
 
 - The split is DECIDED and recorded. Spec amended at d53f70a, plan rebroken at a325561. Both are on the feature branch. Read them before dispatching any worker.
@@ -73,7 +128,15 @@ The plan's `## Contracts` table names seven contracts. All but one realize as "m
 - Issues are filed and parented to #109: `#129` (PR-A, unify), `#111` (PR-B, `LogicalRestoreElasticsearch`, reconciled through Step 2D), `#130` (PR-C, `LogicalRestoreRDBMS`).
 - PR-A is MERGED (#134, 1316df0). `pkg/restore` is now the shared driver of every restore kind, `PointInTimeRestore` runs on it, the cluster claim is wired, and the `LogicalRestore` kind is gone. One balanced Copilot round found a real defect, fixed in f814756: the claim and the broker count were trusted before they were durable.
 - CORRECTION to an earlier note in this file: PR-B and PR-C do NOT touch disjoint files. Their controllers, types, and secondary phases are disjoint, but both edit `PROJECT`, `config/{crd,rbac,samples}/kustomization.yaml`, `cmd/main.go`, `mkdocs.yml`, `pkg/labels/labels.go`, `pkg/restore/{apply,job}.go`, `pkg/clusterclaim/claim.go`, `api/v1/restore_shared.go`, and the generated `zz_generated.deepcopy.go` and `role.yaml`. They still run in parallel. Whichever merges SECOND rebases onto the first and re-runs `make manifests generate`. This is the same collision #122 and #123 hit.
-- NEXT ACTION: run a BALANCED Copilot review loop on #136 and on #135 until each comes back clean. THE USER SETS THE REVIEW LEVEL. Do not set it, and do not settle for lite. Ask before the first request when it is not clear that the level is balanced. A lite round costs 6 to 8 minutes and finds nits alone. Then merge both into `feat/restore-controllers`. Then a quality and clarity sweep over the merged restore code. Then #113 (e2e, both new kinds) and any filed follow-up worth pulling in. Then the integration PR `feat/restore-controllers` -> main with `Closes #109`, left OPEN for the user.
+- NEXT ACTION (2026-08-21, current): #113 is the last planned work and is in flight in
+  `.claude/worktrees/restore-controllers--e2e` on `test/restore-controllers--e2e`. When it lands,
+  open its PR into `feat/restore-controllers`, then open the integration PR
+  `feat/restore-controllers` -> `main` with `Closes #109` and LEAVE IT OPEN for the user. An agent
+  never merges to main. Remaining cleanup: prune the spent worktrees `--api`, `--pitr`, `--unify`,
+  `--logical`, `--lres`, `--lrrdbms` (chmod -R u+w bin first, the envtest binaries are read-only).
+  Still unfiled: the follow-up to hoist BOTH `BackupUIDLabel` and `RestoreUIDLabel` into
+  `pkg/labels` (decision 2), on the same standard as #139.
+- SUPERSEDED, kept for the record: run a BALANCED Copilot review loop on #136 and on #135 until each comes back clean. THE USER SETS THE REVIEW LEVEL. Do not set it, and do not settle for lite. Ask before the first request when it is not clear that the level is balanced. A lite round costs 6 to 8 minutes and finds nits alone. Then merge both into `feat/restore-controllers`. Then a quality and clarity sweep over the merged restore code. Then #113 (e2e, both new kinds) and any filed follow-up worth pulling in. Then the integration PR `feat/restore-controllers` -> main with `Closes #109`, left OPEN for the user.
 - IN FLIGHT 2026-08-21 (autonomous session, user asleep, full autonomy granted): review loops requested on BOTH PRs. Round 1 requested at 22:50:33Z (#136) and 22:53:02Z (#135). Effort level could NOT be set programmatically — no flag, endpoint, or ruleset parameter exposes it, and nothing in the review payload records which level ran; the repository default governed. The repository does NOT auto-review on push: ruleset `default-open-source-protection` (id 20405876) carries no `copilot_code_review` rule, so every round needs an explicit request. `gh pr view --json reviewRequests` returns empty even when the bot IS attached — confirm through the GraphQL `reviewRequests` query instead.
 - #135 REPAIR DONE 2026-08-21, pushed as 2f1d989. The interrupted worker's half-applied extraction is finished, not reverted. The shared mirrored-Secret rule now lives at `pkg/mirror` (top level, next to the other shared primitives), NOT at the worker's chosen `pkg/logicalbackup/mirror`: nothing about the rule concerns logical backup, one of its two consumers is a restore, and `pkg/` is otherwise flat except `pkg/components/*`. The moved package also dropped the paragraph that existed only to justify the nesting. The two drifted messages collapsed onto the restore's ". The " form, so the user-visible message of `LogicalBackupRDBMS` changed from "; the CamundaCluster controller ..." to ". The CamundaCluster controller ...". Signature deliberately narrow; the other ~18 secretref consumers stay untouched. All five gates pass on the branch.
 - APPROVAL CHANGE, 2026-08-21: the user granted autonomous merge of #135 and #136 INTO THE FEATURE BRANCH. This replaces the earlier "an agent never merges a controller PR" rule for these two only. The integration PR to `main` is still never merged by an agent. It is opened and left for the user's review.
