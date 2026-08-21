@@ -36,9 +36,10 @@ const (
 	ReasonClusterClaimed = "ClusterClaimed"
 	// ReasonIncompatibleTarget means that the target cluster cannot hold the
 	// backup: the target is not the cluster the backup was taken from, the
-	// secondary storage types differ, the partition counts differ,
-	// the backup bucket differs, or the Camunda versions break the version
-	// rule. Only a logical restore reports it.
+	// secondary storage types differ, the backup bucket differs, or the
+	// Camunda versions break the version rule. Only the Elasticsearch kind
+	// also compares the partition counts, because a relational backup records
+	// none. Only a logical restore reports the reason.
 	ReasonIncompatibleTarget = "IncompatibleTarget"
 )
 
@@ -66,8 +67,8 @@ const (
 	// holds the cluster, or the backup is not completed.
 	LogicalRestorePending LogicalRestorePhase = "Pending"
 	// LogicalRestoreValidatingCompatibility means that the operator compares
-	// the backup against the target: the storage type, the partition count,
-	// the backup bucket, and the Camunda version.
+	// the backup against the target: the storage type, the backup bucket, the
+	// Camunda version, and, on the Elasticsearch kind, the partition count.
 	LogicalRestoreValidatingCompatibility LogicalRestorePhase = "ValidatingCompatibility"
 	// LogicalRestoreRestoringSecondaryStorage means that the operator writes
 	// the backup into the target's secondary storage.
@@ -89,10 +90,13 @@ const (
 // flattens an inline embedded struct the same way encoding/json does.
 //
 // pkg/restore reads and writes this struct in place, through the driver
-// calls that every restore kind makes. TargetClusterUID and Brokers are the
-// two exceptions: a controller pins them during its own admission, before the
-// driver first runs, so that every rule it checks is measured against one
-// cluster. Each kind owns its own phase and the fields of its own procedure.
+// calls that every restore kind makes. TargetClusterUID is the exception:
+// each controller pins it during its own admission, before the driver first
+// runs, so that every rule it checks is measured against one cluster. A
+// PointInTimeRestore pins Brokers in its admission too, because its rules
+// read the live broker StatefulSet there. For the other kinds the driver
+// pins Brokers on its first primary-storage pass. Each kind owns its own
+// phase and the fields of its own procedure.
 type RestoreProgress struct {
 	// TargetClusterUID pins the identity of the target cluster. A cluster
 	// that is deleted and created again under the same name is another
