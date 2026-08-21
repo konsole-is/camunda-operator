@@ -38,6 +38,11 @@ import (
 // admin password on the orchestration cluster.
 const eventReasonPasswordRotated = "AdminPasswordRotated"
 
+// eventReasonAdminProfileUpdated is recorded when the operator set the
+// profile of the admin user on the orchestration cluster without touching
+// the password.
+const eventReasonAdminProfileUpdated = "AdminProfileUpdated"
+
 // adminCredential is the resolved admin credential of one reconcile: what
 // the admin Secret publishes, the rotation value to record in status, and
 // how an in-flight rotation went. The zero value is an OIDC cluster, which
@@ -54,6 +59,11 @@ type adminCredential struct {
 	// pending is the requested password of an in-flight rotation, published
 	// under the pending key. Empty when no rotation is in flight.
 	pending string
+	// email is the address of the admin user that the Secret publishes after
+	// this reconcile. It is the desired address once the cluster holds it,
+	// and the address the Secret already holds until then, so a refused
+	// address is never recorded as applied.
+	email string
 	// pendingRotation is the rotation value that staged pending. It travels
 	// with it, so a promote records the request that produced the password
 	// it promotes even when the spec changed, or was cleared, while the
@@ -169,6 +179,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 	if auth.Basic != nil {
 		requested = auth.Basic.PasswordRotation
 	}
+	email := components.ResolveAdminEmail(auth)
 
 	if current.Value == "" {
 		value, err := credentials.NewPassword()
@@ -201,14 +212,42 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		}
 
 		return adminCredential{
-			password: credentials.Password{Value: value}, published: value, rotation: rotation,
+			password: credentials.Password{Value: value}, published: value, rotation: rotation, email: email,
 		}, nil
 	}
 
-	if pending.password == "" && (requested == "" || requested == applied) {
-		return adminCredential{
-			password: current, published: current.Value, rotation: applied, publishedRotation: applied,
-		}, nil
+	if pending.password == "" && (requested == "" || requested == applied.rotation) {
+		steady := adminCredential{
+			password:          current,
+			published:         current.Value,
+			rotation:          applied.rotation,
+			publishedRotation: applied.rotation,
+			email:             applied.email,
+		}
+		if applied.email == email || in.Effective.Suspend {
+			return steady, nil
+		}
+
+		// The address changed and no rotation carries it, so it travels on
+		// its own. The call keeps the password, and the Secret records the
+		// new address only once the cluster holds it.
+		if failure := r.updateAdminProfile(ctx, cluster, in, current.Value, email); failure != nil {
+			steady.failure = failure
+			return steady, nil
+		}
+
+		r.EventRecorder.Eventf(
+			cluster,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonAdminProfileUpdated,
+			eventActionReconcile,
+			"Set the admin email to %q through the user API",
+			email,
+		)
+		steady.email = email
+
+		return steady, nil
 	}
 
 	if in.Effective.Suspend {
@@ -217,8 +256,9 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			published:         current.Value,
 			pending:           pending.password,
 			pendingRotation:   pending.rotation,
-			rotation:          applied,
-			publishedRotation: applied,
+			rotation:          applied.rotation,
+			publishedRotation: applied.rotation,
+			email:             applied.email,
 		}, nil
 	}
 
@@ -233,19 +273,23 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 			published:         current.Value,
 			pending:           value,
 			pendingRotation:   requested,
-			rotation:          applied,
-			publishedRotation: applied,
+			rotation:          applied.rotation,
+			publishedRotation: applied.rotation,
+			email:             applied.email,
 		}, nil
 	}
 
-	if failure := r.updateAdminPassword(ctx, cluster, in, current.Value, pending.password); failure != nil {
+	if failure := r.updateAdminPassword(
+		ctx, cluster, in, current.Value, pending.password, email,
+	); failure != nil {
 		return adminCredential{
 			password:          current,
 			published:         current.Value,
 			pending:           pending.password,
 			pendingRotation:   pending.rotation,
-			rotation:          applied,
-			publishedRotation: applied,
+			rotation:          applied.rotation,
+			publishedRotation: applied.rotation,
+			email:             applied.email,
 			failure:           failure,
 		}, nil
 	}
@@ -267,7 +311,8 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		password:          credentials.Password{Value: pending.password, SourceUID: current.SourceUID},
 		published:         current.Value,
 		rotation:          pending.rotation,
-		publishedRotation: applied,
+		publishedRotation: applied.rotation,
+		email:             email,
 	}, nil
 }
 
@@ -279,20 +324,21 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 func (r *CamundaClusterReconciler) readAdminSecret(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) (current credentials.Password, pending pendingRotation, applied string, err error) {
+) (current credentials.Password, pending pendingRotation, applied appliedIdentity, err error) {
 	key := client.ObjectKey{Namespace: cluster.Namespace, Name: components.AdminSecretName(cluster)}
 
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return credentials.Password{}, pendingRotation{}, "", nil
+			return credentials.Password{}, pendingRotation{}, appliedIdentity{}, nil
 		}
-		return credentials.Password{}, pendingRotation{}, "", fmt.Errorf("reading Secret %q: %w", key, err)
+		return credentials.Password{}, pendingRotation{}, appliedIdentity{},
+			fmt.Errorf("reading Secret %q: %w", key, err)
 	}
 
 	value := string(secret.Data[components.AdminPasswordKey])
 	if value == "" {
-		return credentials.Password{}, pendingRotation{}, "", nil
+		return credentials.Password{}, pendingRotation{}, appliedIdentity{}, nil
 	}
 
 	return credentials.Password{Value: value, SourceUID: secret.UID},
@@ -300,8 +346,19 @@ func (r *CamundaClusterReconciler) readAdminSecret(
 			password: string(secret.Data[components.AdminPendingPasswordKey]),
 			rotation: string(secret.Data[components.AdminPendingRotationKey]),
 		},
-		string(secret.Data[components.AdminRotationKey]),
+		appliedIdentity{
+			rotation: string(secret.Data[components.AdminRotationKey]),
+			email:    string(secret.Data[components.AdminEmailKey]),
+		},
 		nil
+}
+
+// appliedIdentity is what the admin Secret records about the admin user as
+// the orchestration cluster holds it: the rotation that produced the active
+// password, and the address that the cluster was last told.
+type appliedIdentity struct {
+	rotation string
+	email    string
 }
 
 // pendingRotation is the rotation that the admin Secret has staged but not
@@ -327,13 +384,14 @@ func (r *CamundaClusterReconciler) updateAdminPassword(
 	in components.Input,
 	active string,
 	pending string,
+	email string,
 ) *rotationFailure {
 	endpoint := components.RESTEndpoint(cluster, in.Effective)
 	if r.RESTEndpoint != nil {
 		endpoint = r.RESTEndpoint(cluster, in.Effective)
 	}
 
-	err := putAdminPassword(ctx, endpoint, in.Effective.Version, active, pending)
+	err := putAdminUser(ctx, endpoint, in.Effective.Version, active, email, pending)
 	if errors.Is(err, camundaadmin.ErrUnauthenticated) {
 		// Only a refused credential is worth a second password: the cluster
 		// already holds the pending one when an earlier reconcile got its
@@ -345,7 +403,7 @@ func (r *CamundaClusterReconciler) updateAdminPassword(
 		// The retry decides this reconcile, so its own failure is the one to
 		// report: a cluster that goes away during the retry must read
 		// ConnectionFailed and clear on its own.
-		err = putAdminPassword(ctx, endpoint, in.Effective.Version, pending, pending)
+		err = putAdminUser(ctx, endpoint, in.Effective.Version, pending, email, pending)
 	}
 
 	return rotationFailureFor(err)
@@ -374,10 +432,31 @@ func rotationFailureFor(err error) *rotationFailure {
 	}
 }
 
-// putAdminPassword sends one update of the admin user, authenticated as that
-// user with authPassword. The seeded name and email travel with it, because
-// the endpoint replaces the whole profile.
-func putAdminPassword(ctx context.Context, endpoint, version, authPassword, password string) error {
+// updateAdminProfile sets email on the admin user through the user API,
+// authenticated with the active password, and leaves the password alone. It
+// runs when the spec asks for an address that the cluster does not hold and
+// no rotation is carrying one. It returns nil on success and the failure to
+// report otherwise.
+func (r *CamundaClusterReconciler) updateAdminProfile(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+	in components.Input,
+	active string,
+	email string,
+) *rotationFailure {
+	endpoint := components.RESTEndpoint(cluster, in.Effective)
+	if r.RESTEndpoint != nil {
+		endpoint = r.RESTEndpoint(cluster, in.Effective)
+	}
+
+	return rotationFailureFor(putAdminUser(ctx, endpoint, in.Effective.Version, active, email, ""))
+}
+
+// putAdminUser sends one update of the admin user, authenticated as that user
+// with authPassword. The name and the email travel with it, because the
+// endpoint replaces the whole profile. An empty password leaves the password
+// of the user unchanged.
+func putAdminUser(ctx context.Context, endpoint, version, authPassword, email, password string) error {
 	users, err := camundaadmin.NewUserClient(camundaadmin.UserBinding{
 		Endpoint: endpoint,
 		Version:  version,
@@ -387,11 +466,14 @@ func putAdminPassword(ctx context.Context, endpoint, version, authPassword, pass
 		return err
 	}
 
-	return users.UpdateUserPassword(
-		ctx, camundaadmin.User{
-			Username: components.AdminUsername,
-			Name:     components.AdminUsername,
-			Email:    components.AdminEmail,
-		}, password,
-	)
+	user := camundaadmin.User{
+		Username: components.AdminUsername,
+		Name:     components.AdminUsername,
+		Email:    email,
+	}
+	if password == "" {
+		return users.UpdateUserProfile(ctx, user)
+	}
+
+	return users.UpdateUserPassword(ctx, user, password)
 }

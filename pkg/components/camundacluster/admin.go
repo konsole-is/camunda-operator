@@ -41,6 +41,10 @@ const adminComponentName = "admin-secret"
 type AdminSecretState struct {
 	// Password is the active password, under AdminPasswordKey.
 	Password credentials.Password
+	// Email is the address of the admin user, under AdminEmailKey. The
+	// processes read their seed from this key, so a changed address never
+	// touches a pod template. An empty value publishes DefaultAdminEmail.
+	Email string
 	// PendingPassword is the requested password of a rotation in flight,
 	// under AdminPendingPasswordKey.
 	PendingPassword string
@@ -83,8 +87,16 @@ func AdminSecretComponent(
 	enabled bool,
 	state AdminSecretState,
 ) (*component.Component, error) {
+	// The processes read their seed address from this key, so it always
+	// carries one: an empty value would seed the cluster with no address.
+	email := state.Email
+	if email == "" {
+		email = DefaultAdminEmail
+	}
+
 	data := map[string][]byte{
 		AdminUsernameKey: []byte(AdminUsername),
+		AdminEmailKey:    []byte(email),
 		AdminPasswordKey: []byte(state.Password.Value),
 	}
 	for key, value := range map[string]string{

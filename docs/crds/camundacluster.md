@@ -199,6 +199,8 @@ spec:
           claimValue: "camunda-admins"
     # object. Optional. The admin credential that the operator owns. Applies under basic authentication only. OIDC ignores it.
     basic:
+      # string. Optional, max 253 characters. The email address of the admin user. Defaults to admin@example.com. A changed value is applied to the running cluster.
+      adminEmail: "platform-team@example.com"
       # string. Optional, max 253 characters. A changed value requests one rotation of the admin password. status.adminPassword.rotation records the applied value.
       passwordRotation: "2026-08"
   # object. Optional. The brokers. Always a StatefulSet.

@@ -34,6 +34,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 var _ = Describe("Admin password rotation", func() {
@@ -77,7 +78,7 @@ var _ = Describe("Admin password rotation", func() {
 	// seedClusterUser tells the fake that the running cluster holds the
 	// given admin password, the way the initial user seed does.
 	seedClusterUser := func(password string) {
-		users.SetUser(components.AdminUsername, components.AdminUsername, components.AdminEmail, password)
+		users.SetUser(components.AdminUsername, components.AdminUsername, components.DefaultAdminEmail, password)
 	}
 
 	// requestRotation sets spec.auth.basic.passwordRotation on cluster.
@@ -254,7 +255,14 @@ var _ = Describe("Admin password rotation", func() {
 		seedClusterUser("pending-password")
 		users.DropAfter("updateUser", 1, 1)
 
-		failure := reconciler.updateAdminPassword(ctx, cluster, in, "active-password", "pending-password")
+		failure := reconciler.updateAdminPassword(
+			ctx,
+			cluster,
+			in,
+			"active-password",
+			"pending-password",
+			components.DefaultAdminEmail,
+		)
 		Expect(failure).NotTo(BeNil())
 		Expect(failure.reason).To(
 			Equal(v1.ReasonConnectionFailed), "a cluster that went away must not read as bad credentials",
@@ -339,7 +347,14 @@ var _ = Describe("Admin password rotation", func() {
 		seedClusterUser("active-password")
 		users.RefuseNext(1, "the profile is not acceptable")
 
-		failure := reconciler.updateAdminPassword(ctx, cluster, in, "active-password", "pending-password")
+		failure := reconciler.updateAdminPassword(
+			ctx,
+			cluster,
+			in,
+			"active-password",
+			"pending-password",
+			components.DefaultAdminEmail,
+		)
 		Expect(failure).NotTo(BeNil())
 		Expect(failure.reason).To(
 			Equal(v1.ReasonRejected), "the credentials were good; the cluster refused the call itself",
@@ -469,12 +484,14 @@ var _ = Describe("Admin password rotation", func() {
 		time.Sleep(9 * time.Second)
 		calls := users.UpdateCalls() - before
 
-		// The retry timer of this suite is one second and each attempt calls
-		// twice: the active password, then the pending one. That is about 18
-		// calls. A failure that writes its own status every reconcile
-		// enqueues a second reconcile per retry and doubles the rate.
+		// A coarse backstop only. The rate moves with the load of the suite,
+		// from about 16 calls alone to about 28 beside the rest, so it
+		// cannot separate a timer from one extra reconcile per retry. It
+		// separates a timer from a spin, which is unbounded. The precise
+		// guarantee belongs to `stages an unchanged failure as the condition
+		// the server already holds`, which needs no clock.
 		Expect(calls).To(
-			BeNumerically("<=", 24), "the failed rotation is enqueuing itself instead of waiting",
+			BeNumerically("<=", 80), "the failed rotation is spinning instead of waiting for its timer",
 		)
 	})
 
@@ -494,6 +511,35 @@ var _ = Describe("Admin password rotation", func() {
 		seedClusterUser(password)
 		serveCluster(cluster)
 		expectRotated(cluster, "round-1")
+	})
+
+	It("stages an unchanged failure as the condition the server already holds", func() {
+		stamped := metav1.NewTime(time.Now().Add(-time.Hour).Truncate(time.Second))
+		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-same", Generation: 3}}
+		failure := &rotationFailure{
+			reason: v1.ReasonConnectionFailed, message: "dial tcp 10.0.0.1:8080: i/o timeout",
+		}
+		prior := &metav1.Condition{
+			Type:               v1.ConditionAdminSecretReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             failure.reason,
+			Message:            conditions.BoundMessage(failure.message),
+			ObservedGeneration: 3,
+			LastTransitionTime: stamped,
+		}
+
+		meta.SetStatusCondition(cluster.GetStatusConditions(), metav1.Condition{
+			Type:   v1.ConditionAdminSecretReady,
+			Status: metav1.ConditionTrue,
+			Reason: string(component.Healthy),
+		})
+		adminCredential{failure: failure}.stageFailure(cluster, prior)
+
+		// Identical to the server copy means the flush writes nothing, which
+		// is what keeps the retry on its timer instead of enqueuing itself.
+		Expect(meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionAdminSecretReady)).To(
+			Equal(prior), "an unchanged failure must stage no change at all",
+		)
 	})
 
 	It("keeps the transition time of a failure that only changed its message", func() {
@@ -527,6 +573,73 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(cond.LastTransitionTime).To(
 			Equal(stamped), "the condition never left False, so it never transitioned",
 		)
+	})
+
+	It("sets a changed admin email on the cluster without touching the password", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.Auth = &v1.ClusterAuthSpec{
+			Basic: &v1.BasicAuthSpec{AdminEmail: "first@example.com"},
+		}
+		createCluster(cluster)
+		serveCluster(cluster)
+
+		password := fetchAdminPassword(cluster)
+		seedClusterUser(password)
+		Eventually(func(g Gomega) {
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+			g.Expect(string(secret.Data[components.AdminEmailKey])).To(Equal("first@example.com"))
+		}, timeout, interval).Should(Succeed())
+
+		By("asking for another address")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Auth = &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{AdminEmail: "second@example.com"}}
+		})
+
+		Eventually(func(g Gomega) {
+			_, email := users.Profile(components.AdminUsername)
+			g.Expect(email).To(Equal("second@example.com"), "the cluster holds the new address")
+
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+			g.Expect(string(secret.Data[components.AdminEmailKey])).To(Equal("second@example.com"))
+			g.Expect(string(secret.Data[components.AdminPasswordKey])).To(
+				Equal(password), "a profile update never rotates the password",
+			)
+		}, timeout, interval).Should(Succeed())
+
+		Expect(users.Password(components.AdminUsername)).To(Equal(password))
+		expectEvent(cluster, "AdminProfileUpdated", corev1.EventTypeNormal)
+	})
+
+	It("keeps the applied admin email when the cluster refuses the new one", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.Auth = &v1.ClusterAuthSpec{
+			Basic: &v1.BasicAuthSpec{AdminEmail: "first@example.com"},
+		}
+		createCluster(cluster)
+		serveCluster(cluster)
+
+		password := fetchAdminPassword(cluster)
+		seedClusterUser(password)
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(string(component.Healthy)))
+
+		By("asking for an address that the cluster refuses")
+		users.RefuseNext(20, "the provided email is not valid")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Auth = &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{AdminEmail: "second@example.com"}}
+		})
+
+		expectCondition(cluster, v1.ConditionAdminSecretReady, Equal(v1.ReasonRejected))
+		Consistently(func(g Gomega) {
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+			g.Expect(string(secret.Data[components.AdminEmailKey])).To(
+				Equal("first@example.com"), "an address the cluster refused is never recorded as applied",
+			)
+		}, "3s", interval).Should(Succeed())
 	})
 
 	It("does not roll the unified processes when a preset asks for the rotation", func() {

@@ -230,6 +230,23 @@ type ClusterAuthSpec struct {
 
 // BasicAuthSpec configures the admin credential of a basic-auth cluster.
 type BasicAuthSpec struct {
+	// AdminEmail is the email address of the admin user that the operator
+	// seeds. The orchestration cluster stores it on that user, and the Admin
+	// web application shows it. Set the address of the person or the team
+	// that owns the cluster.
+	//
+	// When empty the operator uses admin@example.com. The domain is the one
+	// RFC 2606 reserves for documentation, so an unset value never claims an
+	// address that somebody owns.
+	//
+	// A changed value is applied to the running cluster through the user
+	// API. That endpoint validates the address and refuses a domain without
+	// a dot, and an address it refuses surfaces on AdminSecretReady with the
+	// answer of the cluster.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^$|^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$`
+	// +optional
+	AdminEmail string `json:"adminEmail,omitempty"`
 	// PasswordRotation requests one rotation of the admin password. Set it
 	// to a value that differs from the applied one, for example a date. The
 	// operator generates a new password, sets it on the admin user through

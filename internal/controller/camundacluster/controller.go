@@ -270,6 +270,7 @@ func (r *CamundaClusterReconciler) buildComponents(
 		PendingPassword: cred.pending,
 		PendingRotation: cred.pendingRotation,
 		Rotation:        cred.rotation,
+		Email:           cred.email,
 	})
 	if err != nil {
 		return clusterComponents{}, fmt.Errorf("building admin secret component: %w", err)

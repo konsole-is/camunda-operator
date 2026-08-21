@@ -10,7 +10,7 @@ If you want the whole picture in one place, read [A complete OIDC example](#a-co
 
 Under basic authentication the orchestration cluster stores its users itself, and every caller sends a username and a password. The operator creates the first administrator for you. The user is named `admin` and is a member of the `admin` role. You manage every other user in the Admin web application.
 
-The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation: `password-rotation` names the request that the current password answers, and `password-pending` with `password-pending-rotation` appear only while a rotation is in flight. Do not read those keys; they are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
+The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The Secret also carries `email`, the address of that user. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation: `password-rotation` names the request that the current password answers, and `password-pending` with `password-pending-rotation` appear only while a rotation is in flight. Do not read those keys; they are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
 
 The connectors runtime authenticates against the cluster with the same user and password. You configure nothing for it.
 
@@ -60,6 +60,21 @@ If the call fails, the Secret keeps the active password and the operator retries
 Do not rotate by deletion. A deleted Secret gets a new password, but the `admin` user keeps the old one. The old password is not published again, so read and keep it before you delete the Secret. You then sign in to the Admin web application with the old password, set the new password from the new Secret on the `admin` user, and run `kubectl rollout restart deployment/<name>-connectors`. A `passwordRotation` requested after the deletion fails with `InvalidCredentials`, because the operator no longer holds a password that the cluster accepts.
 
 The extra steps of a deletion come from the orchestration cluster, not from the operator. The operator passes the user and the password as the initial user of the cluster. The cluster creates that user once, at first start. After that it checks only that the username exists, and it ignores the password in the configuration. `passwordRotation` exists because of that: it sets the password through the user API of the running cluster, which is the only path that changes it.
+
+### Set the address of the administrator
+
+The operator gives the `admin` user an email address, because the orchestration cluster stores one on every user and the Admin web application shows it. Name the address of the person or the team that owns the cluster:
+
+```yaml
+spec:
+  auth:
+    basic:
+      adminEmail: platform-team@example.com
+```
+
+An unset value publishes `admin@example.com`. That domain is reserved for documentation, so an operator that never asked for an address does not claim one that somebody owns.
+
+A changed value is applied to the running cluster. The operator calls the user API, leaves the password alone, and records the new address in the Secret only after the cluster accepts it. The workloads read the address from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot; a refused address surfaces on `AdminSecretReady` with the answer of the cluster, and the Secret keeps the address that the cluster still holds.
 
 ## OIDC
 

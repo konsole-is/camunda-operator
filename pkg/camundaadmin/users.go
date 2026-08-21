@@ -96,21 +96,17 @@ func NewUserClient(binding UserBinding) (*UserClient, error) {
 	return &UserClient{api: api}, nil
 }
 
-// UpdateUserPassword sets the password of user through PUT
-// /v2/users/{username}, authenticated with the credentials of the client. A
-// wrong credential is ErrUnauthenticated, which travels with ErrRejected;
-// every other refusal, such as a profile that the cluster does not accept,
-// is ErrRejected alone. A caller that holds a second password retries on the
-// first and reports the second, whose message carries the answer of the
-// cluster. An empty
-// password is an error before any call: the endpoint reads an empty
-// password as "keep the current one", so the call would report success and
-// change nothing.
-func (c *UserClient) UpdateUserPassword(ctx context.Context, user User, password string) error {
-	if password == "" {
-		return errors.New("an empty password never updates: the endpoint keeps the current one")
-	}
+// UpdateUserProfile sets the name and the email of user through PUT
+// /v2/users/{username} and leaves the password alone: the endpoint keeps the
+// current password when the request carries none. The errors are the ones of
+// UpdateUserPassword, because it is the same call.
+func (c *UserClient) UpdateUserProfile(ctx context.Context, user User) error {
+	return c.putUser(ctx, user, "")
+}
 
+// putUser sends one update of user. An empty password leaves the password of
+// the user unchanged, which is what the endpoint does with a blank one.
+func (c *UserClient) putUser(ctx context.Context, user User, password string) error {
 	body, err := json.Marshal(struct {
 		Name     string `json:"name"`
 		Email    string `json:"email"`
@@ -131,6 +127,24 @@ func (c *UserClient) UpdateUserPassword(ctx context.Context, user User, password
 	}
 
 	return err
+}
+
+// UpdateUserPassword sets the password of user through PUT
+// /v2/users/{username}, authenticated with the credentials of the client. A
+// wrong credential is ErrUnauthenticated, which travels with ErrRejected;
+// every other refusal, such as a profile that the cluster does not accept,
+// is ErrRejected alone. A caller that holds a second password retries on the
+// first and reports the second, whose message carries the answer of the
+// cluster. An empty
+// password is an error before any call: the endpoint reads an empty
+// password as "keep the current one", so the call would report success and
+// change nothing.
+func (c *UserClient) UpdateUserPassword(ctx context.Context, user User, password string) error {
+	if password == "" {
+		return errors.New("an empty password never updates: the endpoint keeps the current one")
+	}
+
+	return c.putUser(ctx, user, password)
 }
 
 // checkUserAPIVersion rejects a Camunda version below userAPIVersionFloor. A

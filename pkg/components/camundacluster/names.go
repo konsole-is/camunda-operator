@@ -45,15 +45,20 @@ const (
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
-	// AdminEmail is the email of the seeded admin user. No mail is ever sent
-	// to it. A password rotation sends it again, because the user API
-	// replaces the whole profile, and that endpoint validates the address:
-	// it refuses a domain without a dot, such as admin@localhost, with 400
-	// INVALID_ARGUMENT. The domain is the one that RFC 2606 reserves for
-	// documentation, so the address can never reach a real mailbox.
-	AdminEmail = "admin@example.com"
-	// AdminUsernameKey and AdminPasswordKey are the keys of the admin Secret.
+	// DefaultAdminEmail is the email of the seeded admin user when
+	// spec.auth.basic.adminEmail names none. The domain is the one that RFC
+	// 2606 reserves for documentation, so an unset value never claims an
+	// address that somebody owns. The user API validates the address on
+	// every update and refuses a domain without a dot, such as
+	// admin@localhost, with 400 INVALID_ARGUMENT.
+	DefaultAdminEmail = "admin@example.com"
+	// AdminUsernameKey, AdminEmailKey, and AdminPasswordKey are the keys of
+	// the admin Secret. The email lives here, and not in the rendered pod
+	// template, so that a changed address never restarts a workload: the
+	// processes read it from this Secret, and the orchestration cluster
+	// reads it once, when it seeds the user.
 	AdminUsernameKey = "username"
+	AdminEmailKey    = "email"
 	AdminPasswordKey = "password"
 	// AdminPendingPasswordKey holds the requested password while a rotation
 	// is in flight, next to the active one under AdminPasswordKey. The

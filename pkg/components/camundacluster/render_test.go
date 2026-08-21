@@ -292,7 +292,15 @@ func TestRenderBasicAuthSeedsAdmin(t *testing.T) {
 		"password",
 	)
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_NAME", "admin")
-	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL", "admin@example.com")
+	// The address comes from the Secret, like the password: a changed
+	// address then never touches a pod template.
+	assertSecretEnv(
+		t,
+		r.env,
+		"CAMUNDA_SECURITY_INITIALIZATION_USERS_0_EMAIL",
+		"my-cluster-camunda-admin",
+		"email",
+	)
 	assertEnv(t, r.env, "CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_ADMIN_USERS_0", "admin")
 	assertNoEnv(t, r.env, "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_ISSUERURI")
 	assertNoEnv(t, r.env, "CAMUNDA_LICENSE_KEY")

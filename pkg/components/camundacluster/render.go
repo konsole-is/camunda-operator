@@ -338,7 +338,10 @@ func adminUserEnv(in Input) []corev1.EnvVar {
 			secretSource(AdminSecretName(in.Cluster), AdminPasswordKey),
 		),
 		camundaconfig.Var(camundaconfig.Index(users, 0, "name"), AdminUsername),
-		camundaconfig.Var(camundaconfig.Index(users, 0, "email"), AdminEmail),
+		camundaconfig.VarFrom(
+			camundaconfig.Index(users, 0, "email"),
+			secretSource(AdminSecretName(in.Cluster), AdminEmailKey),
+		),
 		camundaconfig.Var(camundaconfig.Index(camundaconfig.KeyDefaultRolesAdminUsers, 0, ""), AdminUsername),
 	}
 }

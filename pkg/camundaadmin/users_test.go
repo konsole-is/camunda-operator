@@ -146,3 +146,15 @@ func TestUpdateUserPasswordReportsAnUnreachableEndpoint(t *testing.T) {
 
 	assert.Equal(t, currentPassword, server.Password("admin"))
 }
+
+func TestUpdateUserProfileKeepsThePassword(t *testing.T) {
+	client, server := newUserClient(t)
+
+	updated := adminUser
+	updated.Email = "team@example.com"
+	require.NoError(t, client.UpdateUserProfile(context.Background(), updated))
+
+	_, email := server.Profile("admin")
+	assert.Equal(t, "team@example.com", email)
+	assert.Equal(t, currentPassword, server.Password("admin"), "a profile update never touches the password")
+}
