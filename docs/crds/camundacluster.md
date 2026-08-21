@@ -60,6 +60,20 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster: `Delete` (the default) removes them, `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
 
+## Secondary storage over TLS
+
+An Elasticsearch endpoint on HTTPS can carry a certificate from a private certificate authority. An [ElasticsearchCluster](elasticsearchcluster.md) always does, because ECK signs its endpoint with a certificate authority of its own. When the storage contract names that authority under `elasticsearch.caSecretRef`, the operator gives every process a JVM trust store:
+
+- An init container named `es-truststore` copies the `cacerts` file of the JDK in the process image. It then imports every certificate of the referenced bundle into the copy. The copy keeps the trust in every public authority, and a bundle with more than one certificate keeps all of them.
+- The store lands on an `emptyDir` volume at `/etc/camunda/es-truststore/cacerts`. The process container mounts it read only.
+- The operator appends `-Djavax.net.ssl.trustStore` and `-Djavax.net.ssl.trustStorePassword` to `JAVA_TOOL_OPTIONS`, so the JVM of the process trusts the authority.
+
+The Zeebe Elasticsearch exporter is what needs this. That exporter writes the `zeebe-record` indices that [CamundaOptimize](camundaoptimize.md) reads. It carries no TLS setting of its own and trusts what the JVM trusts ([camunda/camunda#9839](https://github.com/camunda/camunda/issues/9839)). Without the trust store the export fails and Optimize reads nothing.
+
+A contract without `caSecretRef` costs nothing. The pods then carry no init container, no extra volume, and the JVM options of the base. The connectors runtime never reads the secondary storage, so it never gets a trust store.
+
+The password of the store is `changeit`, the password of the JDK file that the init container copies. The store holds public certificates only, and the process container mounts it read only.
+
 ## Backups
 
 Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket, under the prefix `<basePath>/<namespace>/<name>` on S3 and GCS, so two clusters never share a prefix. Azure Blob has no prefix: every cluster needs an `ObjectStorageConfig` with its own container, and a second cluster on the same Azure contract reports `InvalidReference`.
@@ -78,7 +92,7 @@ The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by nam
 
 Two field managers that apply the same name do not collide. The merge is per field inside the entry, so one manager can own `value` while the other owns `valueFrom`. The result would be one entry that carries both, which a container rejects. The API server refuses to store that combination, so the second apply fails with a clear message instead of stalling a rollout. Give your entry a name that no operator writes, or let the operator own the name.
 
-Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process.
+Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process. The trust store options are the one exception to the order above. When the storage contract names a certificate authority, the operator appends them to `JAVA_TOOL_OPTIONS` after your entry. Your value stands, and the process still reads the store.
 
 ## Monitoring
 
