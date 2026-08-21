@@ -224,6 +224,12 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 		By("searching the instance that was started before the backup")
 		expectInstanceSearchable(cluster)
 	})
+
+	It("releases the broker volumes when the finished restore is removed", func() {
+		removeFinishedRestore(
+			cluster.Namespace, lresResource, esRestore, labels.LogicalRestoreElasticsearch(esRestore),
+		)
+	})
 }
 
 // itRestoresTheRelationalCluster registers the restore specs of the RDBMS
@@ -349,6 +355,12 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 
 		By("searching the instance that was started before the backup")
 		expectInstanceSearchable(cluster)
+	})
+
+	It("releases the broker volumes when the finished restore is removed", func() {
+		removeFinishedRestore(
+			cluster.Namespace, lrrdbmsResource, rdbmsRestore, labels.LogicalRestoreRDBMS(rdbmsRestore),
+		)
 	})
 }
 
@@ -548,6 +560,37 @@ func applicationCredentials(cluster *v1.CamundaCluster) v1.CredentialsSecretRef 
 	)).To(Succeed())
 
 	return config.Spec.CredentialsSecretRef
+}
+
+// removeFinishedRestore deletes a restore that reached a terminal phase and
+// waits until its Jobs and their pods are gone.
+//
+// A pod that completed still counts as a user of its volume under the
+// kubernetes.io/pvc-protection finalizer. The Job pods of a finished restore
+// mount the broker volumes, so those volumes never terminate while the pods
+// exist, and whatever deletes one next waits without end: another restore of
+// the cluster, or the garbage collection of the cluster itself. A restore
+// carries no finalizer, and its Jobs carry a controller reference to it, so
+// deleting the restore takes the Jobs and their pods with it.
+func removeFinishedRestore(namespace, resource, name string, owner labels.Owner) {
+	By("deleting the finished restore")
+	_, err := utils.Kubectl("delete", resource, name, "-n", namespace, "--wait=false")
+	Expect(err).NotTo(HaveOccurred())
+
+	By("waiting for its Jobs and their pods to be gone")
+	Eventually(func(g Gomega) {
+		expectGone(g, resource, name, namespace)
+
+		jobs, err := restoreJobs(namespace, owner)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(jobs).To(BeEmpty())
+
+		var pods corev1.PodList
+		g.Expect(utils.List(
+			"pods", namespace, k8slabels.SelectorFromSet(restore.JobSelector(owner)).String(), &pods,
+		)).To(Succeed())
+		g.Expect(pods.Items).To(BeEmpty())
+	}, 3*time.Minute, 5*time.Second).Should(Succeed())
 }
 
 // expectRestoreJobs asserts that the restore ran the restore application once
