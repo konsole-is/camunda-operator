@@ -53,6 +53,10 @@ The operator creates two Deployments in the namespace of the resource, and one S
 | `<name>-webapp` | Serves the Optimize user interface. | `http` 8090, `management` 8092 |
 | `<name>-importer` | Reads the exported records and writes the analytics indices. | `http` 8090, `management` 8092 |
 
+A Service name stops at 63 characters, which is the tightest bound of the derived names. A `CamundaOptimize` name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such resources stay apart. The operator applies the same bound to the Secrets that it mirrors into the namespace, and to the value of the `camunda.io/cluster` label.
+
+Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`. The selector matches while the cluster name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get deploy --show-labels` shows the value to select on.
+
 `kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read. The kind carries no printer columns yet, so `kubectl get camundaoptimize` shows the name and the age alone. To see the state of every one at once, ask for the condition:
 
 ```bash

@@ -33,6 +33,7 @@ import (
 	"strings"
 
 	k8slabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -72,57 +73,88 @@ const (
 )
 
 // Owner identifies the custom resource that a rendered resource belongs to:
-// the label key of its kind and its name.
+// the label key of its kind, and its name under the bound that a label value
+// admits.
+//
+// Name is not reversible above that bound. A reader that maps a rendered
+// resource back to its owner compares OwnerName of a candidate name against
+// Name. It never reads Name as the name of the custom resource.
 type Owner struct {
-	// Key is the label key of the owning kind, one of ClusterKey,
-	// ElasticsearchClusterKey, or DatabaseKey.
+	// Key is the label key of the owning kind. Each owning kind has its own
+	// key, and the constructor of that kind sets it.
 	Key string
-	// Name is the name of the owning custom resource.
+	// Name is the name of the owning custom resource, bounded to what a
+	// label value admits. Build an Owner through the constructor of its
+	// kind, which applies the bound.
 	Name string
+}
+
+// OwnerName bounds the name of an owning custom resource to what a label
+// value admits. A custom resource name is a DNS subdomain of up to 253
+// characters, but a label value stops at 63. The owner label is also part of
+// every selector, which the API server rejects whole when one value is too
+// long, so the resources of an owner with a long name never apply.
+//
+// The Owner constructors below apply it, so a caller that builds its labels
+// through Managed or Discovery never calls it. Call it directly in the two
+// places that step outside those constructors:
+//
+//   - to add a second owner label to a map that Managed built, for example
+//     the cluster label on a backup Job.
+//   - to read an owner label back. The value is not the name of the custom
+//     resource once the name passes 63 characters, so a reader that maps a
+//     rendered resource to its owner compares OwnerName(candidate) against
+//     the value. It never reads the value as a name.
+func OwnerName(name string) string {
+	return BoundedName(name, validation.LabelValueMaxLength)
 }
 
 // Cluster returns the Owner of resources that a CamundaCluster with the given
 // name renders.
-func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: name} }
+func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: OwnerName(name)} }
 
 // ElasticsearchCluster returns the Owner of resources that an
 // ElasticsearchCluster with the given name renders.
-func ElasticsearchCluster(name string) Owner { return Owner{Key: ElasticsearchClusterKey, Name: name} }
+func ElasticsearchCluster(name string) Owner {
+	return Owner{Key: ElasticsearchClusterKey, Name: OwnerName(name)}
+}
 
 // Database returns the Owner of resources that a Database with the given name
 // renders.
-func Database(name string) Owner { return Owner{Key: DatabaseKey, Name: name} }
+func Database(name string) Owner { return Owner{Key: DatabaseKey, Name: OwnerName(name)} }
 
 // LogicalBackupElasticsearch returns the Owner of resources that a
 // LogicalBackupElasticsearch with the given name renders.
 func LogicalBackupElasticsearch(name string) Owner {
-	return Owner{Key: LogicalBackupElasticsearchKey, Name: name}
+	return Owner{Key: LogicalBackupElasticsearchKey, Name: OwnerName(name)}
 }
 
 // LogicalBackupRDBMS returns the Owner of resources that a LogicalBackupRDBMS
 // with the given name renders.
-func LogicalBackupRDBMS(name string) Owner { return Owner{Key: LogicalBackupRDBMSKey, Name: name} }
+func LogicalBackupRDBMS(name string) Owner {
+	return Owner{Key: LogicalBackupRDBMSKey, Name: OwnerName(name)}
+}
 
 // LogicalRestoreElasticsearch returns the Owner of resources that a
 // LogicalRestoreElasticsearch with the given name renders.
 func LogicalRestoreElasticsearch(name string) Owner {
-	return Owner{Key: LogicalRestoreElasticsearchKey, Name: name}
+	return Owner{Key: LogicalRestoreElasticsearchKey, Name: OwnerName(name)}
 }
 
 // BackupSchedule returns the Owner of resources that a BackupSchedule with
 // the given name renders.
-func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: name} }
+func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: OwnerName(name)} }
 
 // LogicalRestoreRDBMS returns the Owner of resources that a
 // LogicalRestoreRDBMS with the given name renders.
 func LogicalRestoreRDBMS(name string) Owner {
-	return Owner{Key: LogicalRestoreRDBMSKey, Name: name}
+	return Owner{Key: LogicalRestoreRDBMSKey, Name: OwnerName(name)}
 }
 
 // PointInTimeRestore returns the Owner of resources that a PointInTimeRestore
 // with the given name renders.
 func PointInTimeRestore(name string) Owner {
-	return Owner{Key: PointInTimeRestoreKey, Name: name}
+	return Owner{Key: PointInTimeRestoreKey, Name: OwnerName(name)}
 }
 
 // Managed returns the labels of a resource that the operator applies: the
@@ -161,6 +193,10 @@ func Merge(user, operator map[string]string) map[string]string {
 // of the whole name otherwise. The result is deterministic, so every render of
 // one resource agrees, and two names that share the head differ in the hash.
 //
+// A limit with no room for a head and a hash gives a different shape: the
+// result is the first limit characters of the hash alone, and a limit of zero
+// or less gives the empty string. No caller passes such a limit.
+//
 // The name of a custom resource can be a full DNS subdomain, and a label value
 // and a Job name are both bounded like a DNS label. Pass
 // validation.LabelValueMaxLength or validation.DNS1123LabelMaxLength as limit,
@@ -170,9 +206,16 @@ func BoundedName(name string, limit int) string {
 		return name
 	}
 	sum := sha256.Sum256([]byte(name))
-	hash := hex.EncodeToString(sum[:])[:nameHashLength]
+	hash := hex.EncodeToString(sum[:])
 
-	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
+	// A limit with no room for a head and a hash would index name
+	// negatively. No caller passes one, and a panic here would take the whole
+	// manager down rather than fail one reconcile.
+	if limit < nameHashLength+2 {
+		return hash[:max(limit, 0)]
+	}
+
+	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash[:nameHashLength]
 }
 
 // ManagedSelector selects every resource that the operator applies. The
