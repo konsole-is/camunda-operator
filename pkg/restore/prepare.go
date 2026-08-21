@@ -254,6 +254,13 @@ func Resume(
 
 		return fmt.Errorf("reading CamundaCluster %s: %w", cluster, err)
 	}
+	// A cluster that already runs has nothing to withdraw. The terminal branch
+	// of a controller looks on every event of the restore and of its cluster,
+	// and a cluster that starts again produces many of those, so an apply that
+	// changes nothing is still an apply worth not making.
+	if !existing.Spec.Suspend {
+		return nil
+	}
 
 	if err := applySuspend(ctx, c, cluster, existing.UID, false); err != nil {
 		// The cluster went between the read and the write, which is the one

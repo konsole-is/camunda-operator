@@ -129,8 +129,11 @@ func (w *prepareWorld) progress() *v1.RestoreProgress {
 func (w *prepareWorld) unsuspended(t *testing.T) {
 	t.Helper()
 
+	current := w.live(t)
+	current.Spec.Suspend = false
+	require.NoError(t, w.client.Update(t.Context(), current))
 	w.cluster.Spec.Suspend = false
-	require.NoError(t, w.client.Update(t.Context(), w.cluster))
+	w.cluster.ResourceVersion = current.ResourceVersion
 }
 
 // live reads the cluster as it is now.
@@ -374,6 +377,25 @@ func TestResumeWithdrawsTheSuspensionItApplied(t *testing.T) {
 	assert.Equal(t, string(FieldManagerTargetSuspend), (*w.applies)[0].manager)
 	assert.False(t, (*w.applies)[0].cluster.Spec.Suspend)
 	assert.Equal(t, clusterUID, (*w.applies)[0].cluster.UID)
+}
+
+// The terminal branch of a controller looks on every event of the restore and
+// of its cluster. Once the cluster runs again there is nothing left to
+// withdraw, and a second apply is one the operator does not make.
+func TestResumeWritesNothingOnceTheClusterRunsAgain(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.progress().ClusterSuspended = true
+	key := client.ObjectKeyFromObject(w.cluster)
+
+	require.NoError(t, Resume(t.Context(), w.client, w.client, w.progress(), key))
+	require.Len(t, *w.applies, 1)
+
+	w.unsuspended(t)
+	require.NoError(t, Resume(t.Context(), w.client, w.client, w.progress(), key))
+
+	assert.Len(t, *w.applies, 1, "the restore withdrew a suspension that was already gone")
 }
 
 // An apply against a cluster that is gone would put an empty CamundaCluster
