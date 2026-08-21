@@ -83,6 +83,12 @@ The restore of a snapshot is asynchronous. The operator waits until the restored
 
 CAUTION: A failure between the delete and the restore leaves the secondary storage of the target empty. The backup itself stays whole. The next look deletes what is there and asks for the restore again, so a retry converges. Do not delete the backup while the restore runs.
 
+### An Optimize attached to the target
+
+A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster, so its webapp and its importer are already at zero when this phase deletes the indices. You do not have to stop the import by hand.
+
+This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that kept running would read indices that are half restored, write analytics from them, and hold an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
+
 ## Primary storage
 
 The operator deletes the data volume of every broker and creates it again, then runs the Camunda restore application once per broker with `--backupId=<status.backupId>`.
@@ -167,5 +173,6 @@ spec:
 - [CamundaCluster](camundacluster.md): referenced through `targetClusterRef`. You suspend it for the whole restore.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the target. It must be `type: elasticsearch`, and it carries the endpoint and the credentials.
 - [ObjectStorageConfig](objectstorageconfig.md): resolved through the `backupStorageRef` of the target. It holds the snapshots and the partition backup.
+- [CamundaOptimize](camundaoptimize.md): an Optimize attached to the target suspends with it, so its import stops for the whole restore.
 - [PointInTimeRestore](pointintimerestore.md): the restore kind for a relational cluster that a database administrator already restored to a point in time.
 - [Backup guide](../guides/backup.md): how to set up backup storage and take a backup.

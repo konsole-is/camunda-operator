@@ -127,9 +127,19 @@ The major and the minor must match the effective version of the cluster. Camunda
 
 The effective version of the cluster is `spec.version` of the `CamundaCluster`, or the value its `presetRef` supplies when the cluster sets none. An upgrade of the cluster to a new minor therefore puts Optimize into `VersionMismatch` until you raise `spec.version` here as well. The workloads that already run stay as they are while the versions disagree. The operator applies nothing new until they match again.
 
+## Suspension
+
+The importer reads Elasticsearch directly. It does not go through the orchestration cluster, so it keeps reading whether or not that cluster runs.
+
+`spec.suspend` on the referenced `CamundaCluster` therefore reaches the Optimize workloads too. The operator scales the webapp and the importer to zero with the workloads of the cluster, and starts them again when you clear the field. `suspend` means "stop everything attached to this cluster", not "stop the workloads of this cluster".
+
+`Ready` reads `True` with reason `Suspended` while the suspension holds, the same as the cluster itself reports. Zero replicas is the state you asked for, so this is not an error. The condition does not name the cluster, but the events do: `kubectl describe camundaoptimize <name>` shows `ClusterSuspended` when the workloads go to zero and `ClusterResumed` when they start again.
+
+The operator keeps the exporter settings on the cluster while the suspension holds. A suspension is not a detachment, and the brokers are at zero, so nothing exports. Only deletion withdraws the settings.
+
 ## Stopping the import
 
-Set `spec.importer.replicas` to `0` to stop the import. Use it while a restore or an index rewrite runs. The webapp keeps serving what is already imported. Set it back to `1` to start the import again.
+Set `spec.importer.replicas` to `0` to stop the import while the cluster keeps running. Use it for an index rewrite. The webapp keeps serving what is already imported. Set it back to `1` to start the import again.
 
 Zero replicas is the state you asked for, so `ImporterReady` stays healthy and `Ready` stays `True` while the import is off. Do not use `Ready` alone to tell you that data still arrives. Watch the ready replicas of the `<name>-importer` Deployment, or the age of the newest document in the Optimize indices.
 
@@ -174,10 +184,12 @@ A `CamundaOptimize` that never held the attachment removes nothing from the clus
 | `WebappReady` | `Healthy` | Every webapp replica is ready. | Nothing. |
 | `ImporterReady` | `Healthy` | The importer replica is ready, or `spec.importer.replicas` is `0`. | Nothing. |
 | `WebappReady` / `ImporterReady` | `Creating` / `Updating` / `Scaling` | The Deployment rolls out or scales. | Wait. |
+| `WebappReady` / `ImporterReady` | `Suspended` | The referenced cluster is suspended, so the Deployment is at zero. | Nothing. See [Suspension](#suspension). |
 | `WebappReady` / `ImporterReady` | `Failing` | The Deployment has replicas that do not become ready. | Read the pods of the named Deployment. |
 | `WebappReady` / `ImporterReady` | `Degraded` / `Down` | Some or no replicas are ready after the grace period. | Read the pods and events of the named Deployment. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy. | Nothing. |
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` | The reason of the governing condition. The message names it. | Read the row of that condition. |
+| `Ready` | `Suspended` | `spec.suspend` of the referenced cluster is `true`, and both workloads are at zero. `Ready` is `True`. | Nothing. Set `suspend` back to `false` on the cluster to start Optimize again. |
 | `Ready` | `ClusterAlreadyAttached` | Another `CamundaOptimize` is already attached to the referenced cluster. | Delete one of the two. The message names the one that holds the cluster. |
 | `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. | Wait. The message names the Deployment. The state clears on its own. |
 | `Ready` | `InvalidReference` | The `clusterRef`, the `managementAuthRef`, or the `storageRef` chain of the cluster does not resolve. It also reports a referenced cluster whose effective spec is invalid, such as a version below `8.9.0`. | Read the message. Create the missing resource, or correct the field it names. |
@@ -320,7 +332,13 @@ spec:
       enabled: true
 ```
 
-### Stopping the import during a restore
+### The import during a restore
+
+A [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) needs a suspended target cluster, and it replaces the Elasticsearch indices under it. An importer that keeps running through that restore reads indices that are half restored, writes analytics from them, and keeps an import position that disagrees with the restored data. The analytics are then wrong, and nothing reports it, because zero replicas was never asked for.
+
+The operator closes that for you. A restore suspends the cluster, and the Optimize workloads follow it to zero, as [Suspension](#suspension) describes. You do not have to stop the import by hand.
+
+Set `spec.importer.replicas` to `0` yourself only when you rewrite the indices without suspending the cluster:
 
 ```yaml
 apiVersion: core.camunda.io/v1
