@@ -111,6 +111,20 @@ func restoreHolder(claimant clusterclaim.Claimant, terminal bool) client.Object 
 	}
 }
 
+// logicalRestoreHolder fakes the resource of a logical restore claimant.
+// terminal picks a phase the restore never leaves.
+func logicalRestoreHolder(claimant clusterclaim.Claimant, terminal bool) client.Object {
+	phase := v1.LogicalRestoreRestoringPrimaryStorage
+	if terminal {
+		phase = v1.LogicalRestoreCompleted
+	}
+
+	return &v1.LogicalRestoreRDBMS{
+		ObjectMeta: objectMeta(claimant),
+		Status:     v1.LogicalRestoreRDBMSStatus{Phase: phase},
+	}
+}
+
 // leaseHolder returns the exact identity that the Lease records in its
 // annotations. For a Lease without them it returns the holderIdentity
 // field. Without a Lease it returns "".
@@ -391,7 +405,8 @@ func TestReleaseOnlyByTheHolder(t *testing.T) {
 // read blocks and is never taken over.
 func TestTakeoverIsTheSameForEveryClaimantKind(t *testing.T) {
 	for _, kind := range []string{
-		"LogicalBackupElasticsearch", "LogicalBackupRDBMS", "PointInTimeRestore",
+		"LogicalBackupElasticsearch", "LogicalBackupRDBMS", "LogicalRestoreRDBMS",
+		"PointInTimeRestore",
 	} {
 		t.Run(kind, func(t *testing.T) {
 			holder := clusterclaim.Claimant{Kind: kind, Name: "holder", UID: types.UID("uid-holder")}
@@ -456,6 +471,8 @@ func kindHolders(claimant clusterclaim.Claimant) (live, ended client.Object) {
 	case "LogicalBackupElasticsearch", "LogicalBackupRDBMS":
 		return holderResource(claimant, v1.LogicalBackupRunning),
 			holderResource(claimant, v1.LogicalBackupCompleted)
+	case "LogicalRestoreRDBMS":
+		return logicalRestoreHolder(claimant, false), logicalRestoreHolder(claimant, true)
 	default:
 		return restoreHolder(claimant, false), restoreHolder(claimant, true)
 	}

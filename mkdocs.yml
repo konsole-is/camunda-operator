@@ -107,6 +107,7 @@ nav:
           - LogicalBackupRDBMS: crds/logicalbackuprdbms.md
       - Restore:
           - LogicalRestoreElasticsearch: crds/logicalrestoreelasticsearch.md
+          - LogicalRestoreRDBMS: crds/logicalrestorerdbms.md
           - PointInTimeRestore: crds/pointintimerestore.md
       - Planned:
           - BackupSchedule: crds/backupschedule.md

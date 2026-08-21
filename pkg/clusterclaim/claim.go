@@ -400,6 +400,7 @@ var holderKinds = map[string]func() claimHolder{
 	"LogicalBackupElasticsearch":  func() claimHolder { return &v1.LogicalBackupElasticsearch{} },
 	"LogicalBackupRDBMS":          func() claimHolder { return &v1.LogicalBackupRDBMS{} },
 	"LogicalRestoreElasticsearch": func() claimHolder { return &v1.LogicalRestoreElasticsearch{} },
+	"LogicalRestoreRDBMS":         func() claimHolder { return &v1.LogicalRestoreRDBMS{} },
 	"PointInTimeRestore":          func() claimHolder { return &v1.PointInTimeRestore{} },
 }
 

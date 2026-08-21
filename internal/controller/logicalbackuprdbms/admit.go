@@ -37,7 +37,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/management"
-	"github.com/konsole-is/camunda-operator/pkg/secretref"
+	"github.com/konsole-is/camunda-operator/pkg/mirror"
 )
 
 // admit runs the full pre-checks and starts the backup when they pass. The
@@ -522,24 +522,22 @@ func serverProbedForCurrentSpec(server *v1.DatabaseServerConfig) bool {
 }
 
 // resolveCredentials locates the two Secrets that the Job mounts, as reachable
-// from the cluster namespace. It obeys the rule of the CamundaCluster
-// controller. The Job uses a Secret in the cluster namespace where it is. It
-// reads a Secret anywhere else through the local copy that the CamundaCluster
-// controller maintains. resolveCredentials returns the dump credentials
-// reference rewritten to the local location, and the local name of the bucket
-// credentials. That name is empty for workload identity.
+// from the cluster namespace. It applies the mirrored-Secret rule of pkg/mirror
+// to both. resolveCredentials returns the dump credentials reference rewritten
+// to the local location, and the local name of the bucket credentials. That
+// name is empty for workload identity.
 func (r *LogicalBackupRDBMSReconciler) resolveCredentials(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	bucket *v1.ObjectStorageConfig,
 	dbSecret v1.CredentialsSecretRef,
 ) (v1.CredentialsSecretRef, string, *conditions.PreCheckFailure, error) {
-	local := localSecretName(
+	local := mirror.LocalSecretName(
 		cluster, dbSecret.Namespace, dbSecret.Name, camundacluster.MirrorPurposeDumpCredentials,
 	)
 	dbSecret.Name, dbSecret.Namespace = local, cluster.Namespace
-	failure, err := r.checkLocalSecret(
-		ctx, cluster.Namespace, local, v1.ReasonMissingSecret, "dump",
+	failure, err := mirror.CheckLocalSecret(
+		ctx, r.APIReader, cluster.Namespace, local, v1.ReasonMissingSecret, "dump",
 		dbSecret.UsernameKey, dbSecret.PasswordKey,
 	)
 	if err != nil || failure != nil {
@@ -550,11 +548,11 @@ func (r *LogicalBackupRDBMSReconciler) resolveCredentials(
 	if credentials == nil {
 		return dbSecret, "", nil, nil
 	}
-	bucketSecret := localSecretName(
+	bucketSecret := mirror.LocalSecretName(
 		cluster, credentials.Namespace, credentials.Name, camundacluster.MirrorPurposeBackupCredentials,
 	)
-	failure, err = r.checkLocalSecret(
-		ctx, cluster.Namespace, bucketSecret, v1.ReasonMissingCredentials, "bucket",
+	failure, err = mirror.CheckLocalSecret(
+		ctx, r.APIReader, cluster.Namespace, bucketSecret, v1.ReasonMissingCredentials, "bucket",
 		credentials.Keys...,
 	)
 	if err != nil || failure != nil {
@@ -562,47 +560,6 @@ func (r *LogicalBackupRDBMSReconciler) resolveCredentials(
 	}
 
 	return dbSecret, bucketSecret, nil, nil
-}
-
-// checkLocalSecret checks that the Secret at namespace/name carries keys and
-// maps a miss to a pre-check failure with the given reason. purpose names the
-// credentials in the message. The message also says who keeps the copy when
-// the Secret is one.
-func (r *LogicalBackupRDBMSReconciler) checkLocalSecret(
-	ctx context.Context,
-	namespace, name, reason, purpose string,
-	keys ...string,
-) (*conditions.PreCheckFailure, error) {
-	message, err := secretref.CheckKeys(
-		ctx, r.APIReader, types.NamespacedName{Namespace: namespace, Name: name}, keys...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("checking the %s credentials: %w", purpose, err)
-	}
-	if message == "" {
-		return nil, nil
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: reason,
-		Message: fmt.Sprintf(
-			"%s; the CamundaCluster controller keeps the local copy of %s credentials that live "+
-				"outside the cluster namespace",
-			message, purpose,
-		),
-	}, nil
-}
-
-// localSecretName resolves where a referenced Secret is reachable from the
-// cluster namespace. It obeys the rule of the CamundaCluster controller. When
-// the source lives in the cluster namespace, the result is the source itself.
-// Otherwise the result is its purpose-named copy.
-func localSecretName(cluster *v1.CamundaCluster, namespace, name, purpose string) string {
-	if namespace == cluster.Namespace {
-		return name
-	}
-
-	return camundacluster.MirroredSecretName(cluster, purpose)
 }
 
 // podResolution is what resolvePod produces: the pod settings, the image, and

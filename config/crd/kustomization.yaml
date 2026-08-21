@@ -21,6 +21,7 @@ resources:
 - bases/core.camunda.io_pvcautoresizes.yaml
 - bases/core.camunda.io_logicalbackuprdbmses.yaml
 - bases/core.camunda.io_logicalrestoreelasticsearches.yaml
+- bases/core.camunda.io_logicalrestorerdbmses.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

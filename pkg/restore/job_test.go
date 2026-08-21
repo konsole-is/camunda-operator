@@ -462,6 +462,8 @@ func TestBuildJobRejectsAnOwnerThatDisagreesWithItsLabel(t *testing.T) {
 // a Job name can reach the restore with the kubectl alias they already know.
 // The marker is the source of truth:
 //
+//	api/v1/logicalrestoreelasticsearch_types.go: +kubebuilder:resource:path=logicalrestoreelasticsearches,shortName=lres
+//	api/v1/logicalrestorerdbms_types.go: +kubebuilder:resource:path=logicalrestorerdbmses,shortName=lrrdbms
 //	api/v1/pointintimerestore_types.go: +kubebuilder:resource:path=pointintimerestores,shortName=pitr
 //
 // Changing a marker without changing the infix breaks that promise, and this
@@ -472,6 +474,7 @@ func TestJobNameInfixesMatchTheCRDShortNames(t *testing.T) {
 	assert.Equal(
 		t, map[string]string{
 			labels.LogicalRestoreElasticsearchKey: "lres",
+			labels.LogicalRestoreRDBMSKey:         "lrrdbms",
 			labels.PointInTimeRestoreKey:          "pitr",
 		}, jobKindInfixes,
 	)
@@ -680,6 +683,34 @@ func TestJobGoldenNoArgs(t *testing.T) {
 
 	golden.AssertYAML(
 		t, "testdata/golden/pitr-no-args.yaml", jobPreview{in},
+		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
+	)
+}
+
+// The whole rendered Job of a LogicalRestoreRDBMS: the owner label of that
+// kind, the lrrdbms infix in the Job name, and no arguments.
+func TestJobGoldenLogicalRestoreRDBMSBroker0(t *testing.T) {
+	t.Parallel()
+
+	const name = "my-cluster-lrrdbms"
+
+	in := restoreInput()
+	in.Owner = &v1.LogicalRestoreRDBMS{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "ns",
+			UID:       "9d4c1f77-2b3e-4a58-8c0d-7e5f6a1b2c34",
+		},
+		Spec: v1.LogicalRestoreRDBMSSpec{
+			BackupRef:        v1.LogicalBackupRef{Name: "my-cluster-backup"},
+			TargetClusterRef: v1.ClusterRef{Name: "my-cluster"},
+		},
+	}
+	in.OwnerLabel = labels.LogicalRestoreRDBMS(name)
+	in.Args = nil
+
+	golden.AssertYAML(
+		t, "testdata/golden/lrrdbms-broker-0.yaml", jobPreview{in},
 		golden.WithScheme(testScheme(t)), golden.Update(*updateGolden),
 	)
 }
