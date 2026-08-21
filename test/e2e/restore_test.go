@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -195,6 +196,13 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 			},
 		})).To(Succeed())
 
+		// The Jobs of a completed restore are gone by the time the wait below
+		// returns, and they carry the backup id. The watch starts here, before
+		// anything waits, so it sees them while they run.
+		jobs := watchRestoreJobs(
+			lresResource, esRestore, cluster.Namespace, labels.LogicalRestoreElasticsearch(esRestore),
+		)
+
 		expectRestoreCompleted(
 			lresResource, esRestore, cluster.Namespace, string(v1.LogicalRestoreFailed),
 		)
@@ -219,11 +227,8 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 		Expect(names).NotTo(BeEmpty())
 
 		By("running the restore application once per broker with the backup id")
-		expectRestoreJobs(
-			cluster.Namespace,
-			labels.LogicalRestoreElasticsearch(esRestore),
-			len(claims),
-			ConsistOf("--backupId="+strconv.FormatInt(backup.Status.BackupID, 10)),
+		jobs.expect(
+			len(claims), ConsistOf("--backupId="+strconv.FormatInt(backup.Status.BackupID, 10)),
 		)
 	})
 
@@ -332,6 +337,13 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 			},
 		})).To(Succeed())
 
+		// The Jobs of a completed restore are gone by the time the wait below
+		// returns. The watch starts here, before anything waits, so it sees
+		// them while they run.
+		jobs := watchRestoreJobs(
+			lrrdbmsResource, rdbmsRestore, cluster.Namespace, labels.LogicalRestoreRDBMS(rdbmsRestore),
+		)
+
 		expectRestoreCompleted(
 			lrrdbmsResource, rdbmsRestore, cluster.Namespace, string(v1.LogicalRestoreFailed),
 		)
@@ -353,9 +365,7 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 		// database and picks the primary-storage backups itself, so it takes no
 		// argument on this path.
 		By("running the restore application once per broker without an argument")
-		expectRestoreJobs(
-			cluster.Namespace, labels.LogicalRestoreRDBMS(rdbmsRestore), len(claims), BeEmpty(),
-		)
+		jobs.expect(len(claims), BeEmpty())
 	})
 
 	It("finds the process instance of the backup after the cluster runs again", func() {
@@ -504,6 +514,11 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 	// nothing exports after it.
 	var at time.Time
 
+	// jobs keeps a copy of the restore Jobs while they run. The restore
+	// removes them when it completes, and the spec that reads their arguments
+	// runs after that.
+	var jobs *restoreJobWatch
+
 	It("runs against a cluster whose earlier restore is still in place", func() {
 		exists, err := utils.Exists(lrrdbmsResource, rdbmsRestore, cluster.Namespace)
 		Expect(err).NotTo(HaveOccurred())
@@ -554,6 +569,10 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 			},
 		})).To(Succeed())
 
+		jobs = watchRestoreJobs(
+			pitrResource, pitrCurrent, cluster.Namespace, labels.PointInTimeRestore(pitrCurrent),
+		)
+
 		// ValidatingDatabaseState is visible only while the database is
 		// unreachable, so the restore is past the check once it reports either
 		// of the phases that follow it.
@@ -575,12 +594,7 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 			pitrResource, pitrCurrent, cluster.Namespace, string(v1.PointInTimeRestoreFailed),
 		)
 
-		expectRestoreJobs(
-			cluster.Namespace,
-			labels.PointInTimeRestore(pitrCurrent),
-			len(brokerClaims(cluster)),
-			ConsistOf("--to="+at.Format(time.RFC3339)),
-		)
+		jobs.expect(len(brokerClaims(cluster)), ConsistOf("--to="+at.Format(time.RFC3339)))
 	})
 
 	It("converges when the cluster runs again", func() {
@@ -664,24 +678,138 @@ func expectRestoreCollectedItsJobs(namespace, resource, name string, owner label
 	}, 3*time.Minute, 5*time.Second).Should(Succeed())
 }
 
-// expectRestoreJobs asserts that the restore ran the restore application once
-// per broker, and that every Job carried the arguments of its path.
-func expectRestoreJobs(
-	namespace string,
-	owner labels.Owner,
-	brokers int,
-	args gomegatypes.GomegaMatcher,
-) {
-	jobs, err := restoreJobs(namespace, owner)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(jobs).To(HaveLen(brokers))
+// restoreJobWatch keeps a copy of the restore Jobs of one restore while they
+// exist.
+//
+// A restore that completes removes its Jobs, and a Job object is the only
+// place the arguments of the restore application appear. A spec that reads the
+// Jobs after the restore is terminal therefore finds nothing. The watch runs
+// from the moment the restore is created, over the whole primary-storage run,
+// and it keeps the first copy it sees of each Job.
+type restoreJobWatch struct {
+	resource  string
+	name      string
+	namespace string
+	owner     labels.Owner
 
-	for i := range jobs {
-		containers := jobs[i].Spec.Template.Spec.Containers
-		Expect(containers).To(HaveLen(1), "Job %q runs more than the restore container", jobs[i].Name)
+	once sync.Once
+	done chan struct{}
+
+	mu   sync.Mutex
+	jobs map[string]batchv1.Job
+}
+
+// watchRestoreJobs starts the watch of one restore. The caller starts it right
+// after it creates the restore, so the window is the whole run and not a phase
+// edge. The watch stops when expect reads it, and after restoreTimeout in any
+// case, so it never outlives the flow.
+func watchRestoreJobs(resource, name, namespace string, owner labels.Owner) *restoreJobWatch {
+	w := &restoreJobWatch{
+		resource:  resource,
+		name:      name,
+		namespace: namespace,
+		owner:     owner,
+		done:      make(chan struct{}),
+		jobs:      map[string]batchv1.Job{},
+	}
+
+	go func() {
+		deadline := time.After(restoreTimeout)
+		for {
+			w.capture()
+
+			select {
+			case <-w.done:
+				return
+			case <-deadline:
+				return
+			case <-time.After(time.Second):
+			}
+		}
+	}()
+
+	return w
+}
+
+// capture records every restore Job that exists now and that the watch has not
+// seen yet.
+//
+// It reports no error and it asserts nothing. A list that fails is a look that
+// saw nothing, and it runs on a goroutine that no spec owns. expect is where a
+// watch that saw too little fails.
+func (w *restoreJobWatch) capture() {
+	jobs, err := restoreJobs(w.namespace, w.owner)
+	if err != nil {
+		return
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, job := range jobs {
+		if _, seen := w.jobs[job.Name]; !seen {
+			w.jobs[job.Name] = job
+		}
+	}
+}
+
+// close stops the watch. It is safe to call more than once.
+func (w *restoreJobWatch) close() {
+	w.once.Do(func() { close(w.done) })
+}
+
+// captured returns the Jobs the watch kept, by name.
+func (w *restoreJobWatch) captured() map[string]batchv1.Job {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return maps.Clone(w.jobs)
+}
+
+// expect asserts that the restore ran the restore application once per broker,
+// and that every Job carried the arguments of its path.
+//
+// The count comes from status.primaryJobNames. The operator records those
+// names before it applies the Jobs and it never removes them, so the record
+// answers after the restore is terminal, whatever happened to the Jobs
+// themselves.
+//
+// The arguments come from the Jobs that the watch kept. The names it captured
+// must be exactly the names the restore recorded, so a watch that missed a Job
+// and a watch that never ran both fail here. A spec that asserts over an empty
+// capture proves nothing about the restore application.
+func (w *restoreJobWatch) expect(brokers int, args gomegatypes.GomegaMatcher) {
+	Expect(w).NotTo(BeNil(), "no spec of this flow started a watch of the restore Jobs")
+	w.close()
+	w.capture()
+
+	var recorded struct {
+		Status struct {
+			PrimaryJobNames []string `json:"primaryJobNames"`
+		} `json:"status"`
+	}
+	Expect(utils.Get(w.resource, w.name, w.namespace, &recorded)).To(Succeed())
+	Expect(recorded.Status.PrimaryJobNames).To(
+		HaveLen(brokers),
+		"%s %q recorded no restore Job for every one of its %d brokers", w.resource, w.name, brokers,
+	)
+
+	captured := w.captured()
+	names := slices.Sorted(maps.Keys(captured))
+	Expect(names).To(
+		Equal(slices.Sorted(slices.Values(recorded.Status.PrimaryJobNames))),
+		"the watch of %s %q kept %d of its %d restore Jobs. A restore that completes removes its "+
+			"Jobs, so the arguments of the restore application can only be read from a Job that the "+
+			"watch kept while the restore ran",
+		w.resource, w.name, len(captured), len(recorded.Status.PrimaryJobNames),
+	)
+
+	for _, name := range names {
+		containers := captured[name].Spec.Template.Spec.Containers
+		Expect(containers).To(HaveLen(1), "Job %q runs more than the restore container", name)
 		Expect(containers[0].Name).To(Equal(restore.ComponentRestore))
 		Expect(containers[0].Command).To(ConsistOf(restore.RestoreEntrypoint))
-		Expect(containers[0].Args).To(args, "Job %q", jobs[i].Name)
+		Expect(containers[0].Args).To(args, "Job %q", name)
 	}
 }
 
