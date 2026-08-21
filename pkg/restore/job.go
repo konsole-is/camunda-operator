@@ -104,10 +104,11 @@ var jobKindInfixes = map[string]string{
 // and the ordinal alone, so a reconcile that re-enters after a crash finds the
 // Job it already created.
 //
-// A restore name can be a full DNS subdomain, but a Job name is a DNS label,
-// so a long name truncates deterministically and stays unique through a hash
-// of the whole name. Pass the owner as pkg/labels builds it, with the name of
-// the restore resource unshortened.
+// A restore name can be a full DNS subdomain, but a Job name is a DNS label.
+// Build the owner through the constructor of its kind in pkg/labels, which
+// bounds the name to what a label value admits. This bounds it a second time,
+// to leave room for the suffix. Each step ends in a hash of the value that it
+// cuts, so two long restore names still get two Job names.
 //
 // JobName returns the empty string for an owner of any other kind, for an
 // owner without a name, and for a negative ordinal. BuildJob rejects all
