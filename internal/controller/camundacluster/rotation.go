@@ -341,8 +341,16 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 	// applies, whatever the spec asks for now. A value that changed, or was
 	// cleared, while the call was in flight never loses the request that the
 	// cluster just accepted.
+	//
+	// The promoted password carries no apply precondition. The precondition
+	// exists so that deleting the Secret rotates a password the operator
+	// only read, but this one the orchestration cluster has just taken, and
+	// this apply holds the only other copy of it. A Secret deleted between
+	// the accepted call and this write would otherwise reject the promotion,
+	// take the pending password with it, and leave the operator generating
+	// values that the cluster will never accept again.
 	return adminCredential{
-		password:          credentials.Password{Value: pending.password, SourceUID: current.SourceUID},
+		password:          credentials.Password{Value: pending.password},
 		published:         current.Value,
 		rotation:          pending.rotation,
 		publishedRotation: applied.rotation,

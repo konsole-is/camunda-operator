@@ -76,7 +76,7 @@ spec:
 
 An unset value publishes `admin@example.com`. That domain is reserved for documentation, so an operator that never asked for an address does not claim one that somebody owns.
 
-A changed value is applied to the running cluster. The operator publishes the new address in the Secret at once, for the processes to seed from, and calls the user API. It leaves the password alone, and records the address under `email-applied` only after the cluster accepts it, which is what tells it to stop calling. The workloads read the address from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot; a refused address surfaces on `AdminSecretReady` with the answer of the cluster, and the Secret keeps the address that the cluster still holds.
+A changed value is applied to the running cluster. The operator publishes the new address in the Secret at once, for the processes to seed from, and calls the user API. It leaves the password alone, and records the address under `email-applied` only after the cluster accepts it, which is what tells it to stop calling. The workloads read `email` from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot; a refused address surfaces on `AdminSecretReady` with the answer of the cluster. `email` still shows the address you asked for, and `email-applied` still shows the one the cluster holds, until a call succeeds and the two agree again.
 
 ## OIDC
 

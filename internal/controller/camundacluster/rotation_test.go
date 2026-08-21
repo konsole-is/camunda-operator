@@ -307,6 +307,10 @@ var _ = Describe("Admin password rotation", func() {
 		Expect(cred.password.Value).To(Equal("pending-password"))
 		Expect(cred.pending).To(BeEmpty())
 		Expect(cred.rotation).To(Equal("round-1"), "a cleared field must not lose the applied request")
+		Expect(cred.password.SourceUID).To(
+			BeEmpty(),
+			"the cluster holds this password now, so the apply must not be conditional on the old Secret",
+		)
 	})
 
 	It("hashes the password it is about to publish on a cluster with no Secret", func() {
