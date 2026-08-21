@@ -1,0 +1,117 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package pointintimerestore
+
+import (
+	"context"
+	"sync"
+	"testing"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/testenv"
+	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
+)
+
+// timeout and interval bound the Eventually polling of every envtest
+// assertion.
+const (
+	timeout  = testenv.Timeout
+	interval = testenv.Interval
+)
+
+var (
+	env       *testenv.Env
+	ctx       context.Context
+	k8sClient client.Client
+	// exporter answers the database-state check of every spec. The suite
+	// needs no PostgreSQL.
+	exporter = &exporterPositions{}
+)
+
+// answer is what the fake reader returns for one logical database.
+type answer struct {
+	positions []v1.PartitionPosition
+	err       error
+}
+
+// exporterPositions is the fake exporter-position reader of the suite. Every
+// world registers the answer for its own logical database, so the specs stay
+// independent of each other and of their order.
+type exporterPositions struct {
+	mu      sync.Mutex
+	answers map[string]answer
+}
+
+// set records what the reader answers for database.
+func (e *exporterPositions) set(database string, a answer) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.answers == nil {
+		e.answers = map[string]answer{}
+	}
+	e.answers[database] = a
+}
+
+func (e *exporterPositions) read(
+	_ context.Context, _ pgbootstrap.Connection, database string,
+) ([]v1.PartitionPosition, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	a := e.answers[database]
+
+	return a.positions, a.err
+}
+
+func TestPointInTimeRestoreController(t *testing.T) {
+	RegisterFailHandler(Fail)
+
+	RunSpecs(t, "PointInTimeRestore Controller Suite")
+}
+
+var _ = BeforeSuite(func() {
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	env = testenv.Start(func(mgr ctrl.Manager) error {
+		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), Options{
+			// Short, so a poll of the restore and a hold that no watch
+			// resolves both fit inside the test timeout.
+			PollInterval:  100 * time.Millisecond,
+			RetryInterval: 250 * time.Millisecond,
+			// Wide enough that a spec which arranges a broken dependency for
+			// one look does not terminalize before it asserts the hold, and
+			// short enough that the spec which waits out the grace fits in
+			// the test timeout.
+			MidRunGrace:   3 * time.Second,
+			ReadPositions: exporter.read,
+		}).SetupWithManager(mgr)
+	})
+
+	ctx, k8sClient = env.Ctx, env.Client
+})
+
+var _ = AfterSuite(func() {
+	By("tearing down the test environment")
+	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
+})

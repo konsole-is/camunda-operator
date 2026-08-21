@@ -36,6 +36,7 @@ import (
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 )
 
@@ -231,14 +232,11 @@ func (r *LogicalBackupRDBMSReconciler) deleteObject(
 
 	var creds *objectstore.Credentials
 	{
-		// This is the rule that the Job used. When the source Secret lives in
-		// the cluster namespace, the finalizer reads it directly. Otherwise it
-		// reads the local copy that the CamundaCluster controller keeps.
-		// Either way the finalizer reads exactly the credentials that the
-		// upload used.
+		// The finalizer applies the same mirrored-Secret rule that the Job
+		// applied, so it reads exactly the credentials that the upload used.
 		local := types.NamespacedName{
 			Namespace: cluster.Namespace,
-			Name: localSecretName(
+			Name: mirror.LocalSecretName(
 				&cluster,
 				credentials.Namespace,
 				credentials.Name,

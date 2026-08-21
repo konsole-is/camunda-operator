@@ -314,10 +314,10 @@ func connect(
 	ctx context.Context, server *v1.DatabaseServerConfig, user, password string,
 ) (pgbootstrap.Bootstrapper, error) {
 	bootstrapper, err := pgbootstrap.Connect(ctx, pgbootstrap.Connection{
-		Host:          server.Spec.Host,
-		Port:          server.Spec.Port,
-		AdminUser:     user,
-		AdminPassword: password,
+		Host:     server.Spec.Host,
+		Port:     server.Spec.Port,
+		User:     user,
+		Password: password,
 	})
 	if err == nil {
 		if err = bootstrapper.Ping(ctx); err != nil {

@@ -68,7 +68,7 @@ type CleanupJobInput struct {
 // A finalizer that re-enters therefore adopts the Job that it already
 // created.
 func CleanupJobName(backup *v1.LogicalBackupRDBMS) string {
-	return boundedName(backup.Name, validation.DNS1123LabelMaxLength-len(cleanupNameSuffix)) +
+	return labels.BoundedName(backup.Name, validation.DNS1123LabelMaxLength-len(cleanupNameSuffix)) +
 		cleanupNameSuffix
 }
 
@@ -96,7 +96,7 @@ func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 	}
 
 	managed := labels.Managed(
-		labels.LogicalBackupRDBMS(boundedName(in.Backup.Name, validation.LabelValueMaxLength)),
+		labels.LogicalBackupRDBMS(labels.BoundedName(in.Backup.Name, validation.LabelValueMaxLength)),
 		"cleanup",
 	)
 	managed[labels.ClusterKey] = in.ClusterName

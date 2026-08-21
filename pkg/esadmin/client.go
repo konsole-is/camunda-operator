@@ -15,13 +15,17 @@ limitations under the License.
 */
 
 // Package esadmin is the Elasticsearch administration client of the backup
-// flows: snapshot repositories, snapshots, secure-settings reload, and node
-// filesystem statistics. It is pure HTTP with no Kubernetes types; the
+// and restore flows: snapshot repositories, snapshots, snapshot restores,
+// index resolution and deletion, index recovery, secure-settings reload, and
+// node filesystem statistics. It is pure HTTP with no Kubernetes types; the
 // caller resolves the endpoint, the CA, and the credentials from the
 // SecondaryStorageConfig contract and passes them in.
 //
-// Deletion always names one exact snapshot. There is no delete-by-prefix on
-// purpose: a backup finalizer must only ever remove its own artifacts.
+// Snapshot deletion always names one exact snapshot. There is no
+// delete-by-prefix on purpose: a backup finalizer must only ever remove its
+// own artifacts. Index deletion takes patterns, because a restore must clear
+// the whole set of indices that it brings back, and it resolves them to their
+// concrete names before it deletes them.
 package esadmin
 
 import (

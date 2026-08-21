@@ -167,6 +167,15 @@ type LogicalBackupElasticsearchStatus struct {
 	// replacement.
 	// +optional
 	ClusterUID string `json:"clusterUID,omitempty"`
+	// Version is the Camunda version of the cluster when the backup started,
+	// as the management binding reported it. A restore compares it against
+	// the version of its target: an Elasticsearch backup restores only with
+	// the exact same version, and a relational backup restores with the same
+	// version or one minor newer. It is the only place a restore can read
+	// the version, because the management binding of a suspended cluster is
+	// unset.
+	// +optional
+	Version string `json:"version,omitempty"`
 	// HistoryRequestedTime is when the controller decided to request the
 	// backup of the web-application indices. It is written before the
 	// request is sent, so the intent survives a lost response or a restart.

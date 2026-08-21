@@ -4,6 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/name: camunda-operator
     app.kubernetes.io/managed-by: kustomize
-  name: pointintimerestore-sample
+    camunda.io/cluster: camundacluster-sample
+  name: camundacluster-sample-pitr
 spec:
-  # TODO(user): Add fields here
+  clusterRef:
+    name: camundacluster-sample
+  timestamp: "2026-07-30T14:30:00Z"

@@ -25,7 +25,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -159,13 +158,16 @@ var _ = Describe("Database", Ordered, func() {
 	It("lets the application user own the database and the backup user read it", func() {
 		By("creating a table and a row as the application user")
 		_, err := psql(
-			"app", config.Spec.CredentialsSecretRef,
+			dbNamespace, "app", config.Spec.CredentialsSecretRef,
 			"CREATE TABLE "+dbTable+" (id int PRIMARY KEY); INSERT INTO "+dbTable+" VALUES (1);",
 		)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("counting the rows as the backup user")
-		out, err := psql("backup", *config.Spec.BackupCredentialsSecretRef, "SELECT count(*) FROM "+dbTable)
+		out, err := psql(
+			dbNamespace, "backup", *config.Spec.BackupCredentialsSecretRef,
+			"SELECT count(*) FROM "+dbTable,
+		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.TrimSpace(out)).To(Equal("1"))
 	})
@@ -185,6 +187,7 @@ var _ = Describe("Database", Ordered, func() {
 
 		By("reading the row as the server admin")
 		out, err := psql(
+			dbNamespace,
 			"admin",
 			v1.CredentialsSecretRef{Name: postgresAdminSecret, UsernameKey: "username", PasswordKey: "password"},
 			"SELECT count(*) FROM "+dbTable,
@@ -193,25 +196,3 @@ var _ = Describe("Database", Ordered, func() {
 		Expect(strings.TrimSpace(out)).To(Equal("1"))
 	})
 })
-
-// psql runs sql against the logical database of the flow as the user whose
-// credentials Secret ref names, from a pod in the test namespace. It returns
-// the unaligned, tuples-only output.
-func psql(name string, ref v1.CredentialsSecretRef, sql string) (string, error) {
-	return utils.RunPod(&corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "psql-" + name, Namespace: dbNamespace},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{
-				Name:    "psql",
-				Image:   "postgres:17",
-				Command: []string{"psql", "-v", "ON_ERROR_STOP=1", "-tA", "-c", sql},
-				Env: []corev1.EnvVar{
-					{Name: "PGHOST", Value: postgresService},
-					{Name: "PGDATABASE", Value: dbDatabaseName},
-					utils.SecretEnv("PGUSER", ref.Name, ref.UsernameKey),
-					utils.SecretEnv("PGPASSWORD", ref.Name, ref.PasswordKey),
-				},
-			}},
-		},
-	}, podTimeout)
-}
