@@ -340,6 +340,13 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 		Eventually(func(g Gomega) {
 			g.Expect(utils.Get("deployment", connectors, ccNamespace, &deployment)).To(Succeed())
 			g.Expect(deployment.Spec.Template.Annotations[components.ConfigHashAnnotation]).NotTo(Equal(beforeHash))
+
+			// The template alone proves nothing: the operator writes it
+			// before any pod runs it, and the condition of the reconcile
+			// that wrote it still reports the replicas of the old one. Wait
+			// for the rollout itself, so that a connectors pod has started
+			// and passed its readiness probe against the rotated password.
+			expectRolledOut(g, deployment)
 			expectCondition(g, ccResource, ccName, ccNamespace, v1.ConditionConnectorsReady, v1.ReasonHealthy)
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 	})
@@ -646,6 +653,30 @@ func camundaRESTOn(
 // cluster, as kubectl takes it.
 func brokerClaimSelector(cluster *v1.CamundaCluster) string {
 	return k8slabels.SelectorFromSet(components.BrokerClaimSelector(cluster)).String()
+}
+
+// expectRolledOut asserts that the rollout of deployment is complete: the
+// Deployment controller has seen the current revision, every replica runs the
+// current template, no replica of the previous one is left, and they are
+// available. It is written for Eventually.
+func expectRolledOut(g Gomega, deployment appsv1.Deployment) {
+	replicas := int32(1)
+	if deployment.Spec.Replicas != nil {
+		replicas = *deployment.Spec.Replicas
+	}
+
+	g.Expect(deployment.Status.ObservedGeneration).To(
+		BeNumerically(">=", deployment.Generation), "the current revision is not observed yet",
+	)
+	g.Expect(deployment.Status.UpdatedReplicas).To(
+		Equal(replicas), "not every replica runs the current template",
+	)
+	g.Expect(deployment.Status.Replicas).To(
+		Equal(replicas), "a replica of the previous template is still running",
+	)
+	g.Expect(deployment.Status.AvailableReplicas).To(
+		Equal(replicas), "the rolled replicas are not available",
+	)
 }
 
 // expectScaledToZero asserts that the workload asks for zero replicas and
