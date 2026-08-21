@@ -110,7 +110,7 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. The backup does not exist or is not completed, the target does not exist, another backup or restore holds the target, or the operator is still preparing the target. The operator touches nothing here. |
+| `Pending` | The restore waits. The backup does not exist or is not completed, the target does not exist, another backup or restore holds the target, or the operator is still preparing the target. Nothing of the target is erased here. Preparation does write `spec.suspend` and `spec.version` on the target, which the section above describes. |
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | One Job downloads the dump from the backup bucket and runs `pg_restore` against the logical database of the target. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the Camunda restore application on them. |

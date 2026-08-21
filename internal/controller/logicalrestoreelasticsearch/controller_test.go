@@ -140,13 +140,45 @@ var _ = Describe("LogicalRestoreElasticsearch admission", func() {
 		Expect(readyMessage(reached)).To(ContainSubstring("brokers still run"))
 
 		// Nothing bounds this hold. The restore erased nothing, so it waits
-		// for the cluster instead of ending itself.
+		// for the cluster instead of ending itself. It pinned what it reads
+		// before it wrote to the target, so the pins are set while it waits
+		// and the phase is what says it has not started.
 		Consistently(func(g Gomega) {
 			current := latest(g, restore)
 			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestorePending))
-			g.Expect(current.Status.BackupID).To(BeZero())
+			g.Expect(current.Status.BackupID).To(Equal(backupID))
+			g.Expect(current.Status.TargetClusterUID).To(Equal(w.cluster.UID))
+			g.Expect(current.Status.RestoredSnapshots).To(BeEmpty())
 			g.Expect(w.search.IndexDeleteCalls()).To(BeZero())
 		}, "2s", interval).Should(Succeed())
+	})
+
+	// Preparation holds for as many looks as the brokers and the version
+	// rollout need, and admission re-enters from the top on every one of them.
+	// The pins are what keep a replacement out during that hold.
+	It("refuses a target that is replaced while it prepares it", func() {
+		w := newWorld()
+		w.setRunningBrokers(worldBrokers)
+		backup := createBackup(w)
+
+		restore := createRestore(w, backup.Name)
+		expectReason(restore, v1.LogicalRestorePending, v1.ReasonProgressing)
+
+		By("replacing the target under its name while the brokers still run")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
+		reached := expectReason(restore, v1.LogicalRestorePending, v1.ReasonInvalidReference)
+		Expect(readyMessage(reached)).To(ContainSubstring("another cluster"))
 	})
 
 	// The controller watches CamundaCluster and enqueues the restores that
@@ -297,6 +329,26 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonIncompatibleTarget)
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("another-bucket"))
 	})
+})
+
+var _ = Describe("LogicalRestoreElasticsearch standing version", func() {
+	// The restore owns spec.version, and another manager can still take it
+	// back. The restore Jobs copy the broker image, so a version that moves
+	// mid-run would reach the restore application itself.
+	It("holds when the version of the target moves while the restore runs", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := createRestore(w, backup.Name)
+		expectPhase(restore, v1.LogicalRestoreRestoringSecondaryStorage)
+
+		By("rolling another broker image under the running restore")
+		w.rollBrokerImage("8.10.0")
+
+		reached := expectReason(restore, v1.LogicalRestoreRestoringSecondaryStorage, v1.ReasonIncompatibleTarget)
+		Expect(readyMessage(reached)).To(ContainSubstring("8.10.0"))
+		Expect(readyMessage(reached)).To(ContainSubstring("another manager moved it"))
+	})
+
 })
 
 var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {

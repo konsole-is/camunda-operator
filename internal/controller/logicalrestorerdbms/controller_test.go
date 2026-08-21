@@ -141,15 +141,46 @@ var _ = Describe("LogicalRestoreRDBMS admission", func() {
 		Expect(readyMessage(reached)).To(ContainSubstring("brokers still run"))
 
 		// Nothing bounds this hold. The restore erased nothing, so it waits
-		// for the cluster instead of ending itself.
+		// for the cluster instead of ending itself. It pinned what it reads
+		// before it wrote to the target, so the pins are set while it waits
+		// and the phase is what says it has not started.
 		Consistently(func(g Gomega) {
 			current := latest(g, lrr)
 			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestorePending))
-			g.Expect(current.Status.BackupID).To(BeZero())
+			g.Expect(current.Status.BackupID).To(Equal(backupID))
+			g.Expect(current.Status.TargetClusterUID).To(Equal(w.cluster.UID))
 			var jobs batchv1.JobList
 			g.Expect(k8sClient.List(ctx, &jobs, client.InNamespace(w.namespace))).To(Succeed())
 			g.Expect(jobs.Items).To(BeEmpty())
 		}, "2s", interval).Should(Succeed())
+	})
+
+	// Preparation holds for as many looks as the brokers and the version
+	// rollout need, and admission re-enters from the top on every one of them.
+	// The pins are what keep a replacement out during that hold.
+	It("refuses a target that is replaced while it prepares it", func() {
+		w := newWorld()
+		w.setRunningBrokers(worldBrokers)
+		backup := createBackup(w)
+
+		lrr := createRestore(w, backup.Name)
+		expectReason(lrr, v1.LogicalRestorePending, v1.ReasonProgressing)
+
+		By("replacing the target under its name while the brokers still run")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
+		reached := expectReason(lrr, v1.LogicalRestorePending, v1.ReasonInvalidReference)
+		Expect(readyMessage(reached)).To(ContainSubstring("another cluster"))
 	})
 
 	// The controller watches CamundaCluster and enqueues the restores that

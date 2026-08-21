@@ -441,3 +441,26 @@ func TestResumeLeavesTheClusterOfAFailedRestoreSuspended(t *testing.T) {
 	assert.Empty(t, *w.applies)
 	assert.True(t, w.live(t).Spec.Suspend)
 }
+
+// A phase that holds its cluster to the version of the backup asks this
+// first. Holding for a version that the restore never writes would wait for
+// something nothing brings about.
+func TestWritesVersionAnswersForTheValuesARestoreCanWrite(t *testing.T) {
+	t.Parallel()
+
+	for value, writes := range map[string]bool{
+		"8.9.9":   true,
+		"8.10.0":  true,
+		"":        false,
+		"latest":  false,
+		"8.9":     false,
+		"8.9.9-1": false,
+		"v8.9.9":  false,
+	} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, writes, WritesVersion(value))
+		})
+	}
+}

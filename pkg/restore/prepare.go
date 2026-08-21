@@ -55,6 +55,18 @@ const (
 // write, and the version rule of the restore kind reports what that means.
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
+// WritesVersion reports whether a restore writes version on the cluster it
+// prepares. A backup that recorded no version, and one whose recorded value is
+// not of the form x.y.z, name nothing that the restore can write, and the
+// version rule of the restore kind reports what such a backup means.
+//
+// A phase that holds the cluster to the version of its backup asks this
+// first. Holding a cluster to a version that the restore never wrote would
+// wait for something nothing brings about.
+func WritesVersion(version string) bool {
+	return versionPattern.MatchString(version)
+}
+
 // PrepareInput is what the preparation step of a restore reads. Every value
 // is live, read in this look: the step decides from the state of the cluster
 // now, and it writes to that cluster.
@@ -186,6 +198,19 @@ func suspendTarget(
 //
 // A version that has not converged yet is a wait, not a failure. The restore
 // has destroyed nothing at this point, so the wait costs nothing.
+//
+// The apply carries the UID of the cluster and no resource version, so it does
+// not fail when the cluster changed since the read that proved the suspension.
+// A resource version would: the cluster carries the status its own controller
+// writes, that status moves on nearly every reconcile, and an apply that
+// refused every such change would never land. What bounds the gap instead is
+// that a broker of the older version cannot reach the state of the newer one.
+// A manager that clears spec.suspend between the read and this write starts
+// brokers on the older version, and suspendTarget takes the suspension back on
+// the next look. Such a broker reads a snapshot that a newer version wrote,
+// reports the downgrade, and goes unhealthy without writing. The volumes it
+// found are erased before the restore application runs, and the phase that
+// erases them reads the suspension again on every look.
 func versionTarget(
 	ctx context.Context,
 	c client.Client,

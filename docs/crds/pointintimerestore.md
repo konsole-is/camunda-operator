@@ -99,7 +99,7 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. Another backup or restore holds the cluster, the storage chain does not resolve, a rule of the server does not hold, the database is ahead of the requested point, or the operator is still preparing the cluster. The operator touches nothing here. |
+| `Pending` | The restore waits. Another backup or restore holds the cluster, the storage chain does not resolve, a rule of the server does not hold, the database is ahead of the requested point, or the operator is still preparing the cluster. Nothing of the cluster is erased here. Preparation does write `spec.suspend` on the cluster, which the section above describes. |
 | `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. You see this phase only while the operator cannot reach the database. A check that passes moves on within the same step, and a database that is ahead sends the restore back to `Pending`. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the restore application on them. |
 | `Completed` | The restore finished. The restore unsuspended the cluster, unless you suspended it yourself. |
