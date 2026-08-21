@@ -213,8 +213,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// The Jobs go before the claim. A completed Job keeps its pod, the pod
 		// keeps the broker volume it mounts, and the claim is what tells the
 		// next operation that the cluster is free. Foreground propagation
-		// finishes after this look, so the claim waits for the look that finds
-		// the Jobs gone.
+		// finishes after this look, so the claim and the unsuspend both wait
+		// for the look that finds the Jobs gone.
 		collected, err := restore.CollectJobs(
 			ctx, r.Client, r.APIReader, &lrr, &lrr.Status.RestoreProgress,
 		)
@@ -222,13 +222,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			return ctrl.Result{RequeueAfter: collected.Wait}, err
 		}
 
-		// The Jobs also go before the unsuspend, and that order is the
-		// correctness of it. The pods of the collected Jobs are what hold the
-		// broker volumes, and unsuspending starts the brokers again. A broker
-		// that the scheduler places on another node cannot attach a
-		// ReadWriteOnce volume that a completed pod still counts as a user of,
-		// so an unsuspend that ran first would stall the cluster on the very
-		// volumes this branch is freeing.
+		// The unsuspend sits behind that gate, and holding it there is the
+		// reason the gate reports at all. Done says that no pod of a recorded
+		// Job is left, and those pods are what hold the broker volumes.
+		// Unsuspending earlier starts brokers again, and a broker that the
+		// scheduler places on another node cannot attach a ReadWriteOnce
+		// volume that a completed pod still counts as a user of, so the
+		// cluster would stall on the very volumes this branch is freeing.
 		if err := r.resumeCluster(ctx, &lrr); err != nil {
 			return ctrl.Result{}, err
 		}

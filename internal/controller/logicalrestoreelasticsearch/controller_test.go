@@ -615,6 +615,11 @@ var _ = Describe("LogicalRestoreElasticsearch suspension of its target", func() 
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
 		}, timeout, interval).Should(Succeed())
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
 		for ordinal := range worldBrokers {
 			markJob(w.namespace, restorepkg.JobName(owner, ordinal), batchv1.JobComplete)
 		}
@@ -656,6 +661,11 @@ var _ = Describe("LogicalRestoreElasticsearch suspension of its target", func() 
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
 		}, timeout, interval).Should(Succeed())
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
 		for ordinal := range worldBrokers {
 			markJob(w.namespace, restorepkg.JobName(owner, ordinal), batchv1.JobComplete)
 		}

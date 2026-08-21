@@ -1022,6 +1022,11 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		expectJobs(pitr)
 		Expect(readRestore(pitr).Status.ClusterSuspended).To(BeTrue())
 
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
 		for ordinal := range int32(brokerCount) {
 			markJob(pitr, ordinal, batchv1.JobComplete)
 		}
@@ -1081,6 +1086,11 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 			g.Expect(readRestore(retry).Status.ClusterSuspended).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
 		for ordinal := range int32(brokerCount) {
 			markJob(retry, ordinal, batchv1.JobComplete)
 		}
@@ -1093,6 +1103,46 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The pods of a Job that still terminates are what hold the broker
+	// volumes, and unsuspending would start brokers that cannot attach them.
+	// No stand-in collector runs here, so the Jobs keep the finalizer that
+	// foreground propagation puts on them and the collection never reports
+	// the volumes free.
+	It("keeps the cluster suspended while its Jobs still terminate", func() {
+		w := createWorld(func(w *world) { w.cluster.Spec.Suspend = false })
+		pitr := createRestore(w)
+		expectJobs(pitr)
+		Expect(readRestore(pitr).Status.ClusterSuspended).To(BeTrue())
+
+		for ordinal := range int32(brokerCount) {
+			markJob(pitr, ordinal, batchv1.JobComplete)
+		}
+
+		By("reaching Completed and asking for the Jobs with foreground propagation")
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			for _, job := range expectJobs(pitr) {
+				g.Expect(job.DeletionTimestamp).NotTo(BeNil(), "the Job of %s was never asked for", job.Name)
+			}
+		}, timeout, interval).Should(Succeed())
+
+		By("holding the suspension while those Jobs are still there")
+		Consistently(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Suspend).To(BeTrue(), "the brokers start over volumes the pods still hold")
+			g.Expect(claimHolder(w)).NotTo(BeEmpty(), "the claim went before the volumes were free")
+		}, "2s", interval).Should(Succeed())
+
+		By("unsuspending once the Jobs are gone")
+		collectDeletedJobs(w.namespace)
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Suspend).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A cluster that its owner suspended stays suspended. The restore
 	// recorded no suspension of its own, so it withdraws none.
 	It("leaves a cluster that its owner suspended suspended", func() {
@@ -1100,6 +1150,11 @@ var _ = Describe("PointInTimeRestore suspension of its cluster", func() {
 		pitr := createRestore(w)
 		expectJobs(pitr)
 		Expect(readRestore(pitr).Status.ClusterSuspended).To(BeFalse())
+
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
 
 		for ordinal := range int32(brokerCount) {
 			markJob(pitr, ordinal, batchv1.JobComplete)
