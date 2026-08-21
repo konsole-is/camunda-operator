@@ -64,6 +64,33 @@ func expectCondition(g Gomega, resource, name, namespace, condType, reason strin
 	g.Expect(cond.Reason).To(Equal(reason), "%s %q %s: %s", resource, name, condType, cond.Message)
 }
 
+// expectReconciledReady asserts that resource name reports Ready as True with
+// reason Healthy for the generation it currently carries. It is written for
+// Eventually.
+//
+// expectReady alone accepts a Ready condition that the operator wrote before
+// the last edit of the spec. A spec that edits a resource and then waits for it
+// therefore passes on the answer to the previous question. Comparing
+// status.observedGeneration with metadata.generation is what makes the wait
+// mean "reconciled since my edit".
+func expectReconciledReady(g Gomega, resource, name, namespace string) {
+	var obj struct {
+		Metadata struct {
+			Generation int64 `json:"generation"`
+		} `json:"metadata"`
+		Status struct {
+			ObservedGeneration int64 `json:"observedGeneration"`
+		} `json:"status"`
+	}
+	g.Expect(utils.Get(resource, name, namespace, &obj)).To(Succeed())
+	g.Expect(obj.Status.ObservedGeneration).To(
+		Equal(obj.Metadata.Generation),
+		"%s %q has not reconciled generation %d yet", resource, name, obj.Metadata.Generation,
+	)
+
+	expectReady(g, resource, name, namespace, v1.ReasonHealthy)
+}
+
 // expectGone asserts that resource name no longer exists. It is written for
 // Eventually.
 func expectGone(g Gomega, resource, name, namespace string) {
@@ -100,10 +127,17 @@ func dumpDiagnostics(testNamespace string) {
 		"resources": {
 			"get",
 			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs," +
-				"camundaclusters,logicalbackupelasticsearches,logicalbackuprdbmses,backupschedules",
+				"camundaclusters,camundaoptimizes,logicalbackupelasticsearches," +
+				"logicalbackuprdbmses,backupschedules",
 			"-n", testNamespace,
 		},
 		"object storage contracts": {"get", "objectstorageconfigs", "-o", "wide"},
+		// The Management Identity contract is cluster-scoped, so it never
+		// appears in the resource table of a namespace. YAML rather than wide:
+		// the kind has no print columns, and its Ready reason is what tells a
+		// CamundaOptimize with a dangling reference from one with a Secret
+		// that lacks the key.
+		"management identity contracts": {"get", "managementauthconfigs", "-o", "yaml"},
 		// A Service answers on its ClusterIP only once kube-proxy programmed
 		// an endpoint for it. A ready pod is not enough, so the slices are
 		// the only record of whether a refused connection had a target. YAML
@@ -137,12 +171,13 @@ func dumpDiagnostics(testNamespace string) {
 
 // customResourceKinds are the namespaced custom resources of this operator,
 // in the order a reader follows a failure: the storage backends first, then
-// the cluster, then the backups of it.
+// the cluster, then what attaches to it.
 var customResourceKinds = []string{
 	"elasticsearchclusters",
 	"secondarystorageconfigs",
 	"databaseconfigs",
 	"camundaclusters",
+	"camundaoptimizes",
 	"logicalbackupelasticsearches",
 	"logicalbackuprdbmses",
 	"backupschedules",

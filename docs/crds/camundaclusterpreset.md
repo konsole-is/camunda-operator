@@ -39,7 +39,7 @@ The cluster starts from `spec.cluster` of the preset. Each field then merges as 
 | --- | --- |
 | `version`, `auth.clientId`, `auth.audience`, `auth.clientSecretRef`, per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `connectors.enabled`, `connectors.version` | The cluster value replaces the preset value. An unset cluster field inherits the preset value. |
 | `resources` | Merged per request and limit entry. A cluster entry replaces the matching preset entry. Unset entries inherit. |
-| `extraEnv` | Merged by variable name. Preset entries come first. A cluster entry with the same name replaces the preset entry. |
+| `extraEnv` | Merged by variable name. Preset entries come first. A cluster entry with the same name replaces the preset entry. The list carries the same server-side apply semantics as the cluster field, see [CamundaCluster](camundacluster.md#environment-and-jvm). |
 | `extraEnvFrom` | Concatenated: preset entries first, then cluster entries. |
 | `podLabels`, `podAnnotations` | Merged by key. The cluster wins on a conflict. |
 | `scheduling` (top-level, per component, and `backup.dump.scheduling`) | Never merged. A block set on the cluster replaces the preset block at that level entirely. |

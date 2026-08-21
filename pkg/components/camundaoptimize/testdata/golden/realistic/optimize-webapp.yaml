@@ -1,0 +1,173 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: optimize-webapp
+  name: my-optimize-webapp
+  namespace: camunda
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: optimize-webapp
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: 7643fbe9e6801f9a
+        prometheus.io/scrape: "true"
+      labels:
+        camunda.io/cluster: my-cluster
+        camunda.io/component: optimize-webapp
+        team: platform
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: ccsm
+        - name: CAMUNDA_OPTIMIZE_DATABASE
+          value: elasticsearch
+        - name: OPTIMIZE_ELASTICSEARCH_HOST
+          value: elasticsearch.camunda.svc
+        - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+          value: "9200"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: es-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: es-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_SSL_CERTIFICATE_AUTHORITIES
+          value: /etc/camunda/es-ca/ca.crt
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_SSL_SELF_SIGNED
+          value: "false"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+          value: "false"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+          value: zeebe-record
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+          value: "3"
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+          value: https://identity.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+          value: http://identity.camunda.svc:8080/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+          value: http://identity.camunda.svc:8080
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+          value: optimize
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: optimize-client
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+          value: optimize-api
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license
+              name: camunda-license
+        - name: OPTIMIZE_JAVA_OPTS
+          value: -Xmx2048m
+        envFrom:
+        - configMapRef:
+            name: optimize-extra
+        image: registry.example.com/mirror/camunda/optimize:8.9.4
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: management
+          periodSeconds: 30
+        name: optimize
+        ports:
+        - containerPort: 8090
+          name: http
+          protocol: TCP
+        - containerPort: 8092
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /api/readyz
+            port: http
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: 1Gi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /api/readyz
+            port: http
+          periodSeconds: 5
+        volumeMounts:
+        - mountPath: /etc/camunda/es-ca
+          name: es-ca
+          readOnly: true
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      volumes:
+      - name: es-ca
+        secret:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          secretName: es-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: optimize-webapp
+  name: my-optimize-webapp
+  namespace: camunda
+spec:
+  ports:
+  - name: http
+    port: 8090
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 8092
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/cluster: my-cluster
+    camunda.io/component: optimize-webapp
+status:
+  loadBalancer: {}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: my-cluster
+    camunda.io/component: optimize-webapp
+    prometheus: platform
+  name: my-optimize-webapp
+  namespace: camunda
+spec:
+  endpoints:
+  - path: /actuator/prometheus
+    port: management
+  namespaceSelector: {}
+  selector:
+    matchLabels:
+      camunda.io/cluster: my-cluster
+      camunda.io/component: optimize-webapp

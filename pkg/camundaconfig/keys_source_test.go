@@ -43,6 +43,12 @@ var notInDefaultsYAML = map[Key]string{
 	KeyManagementServerPort: "Spring Boot property, set in dist application.properties",
 	KeyBrokerGatewayEnable:  "legacy broker property; defaults.yaml lists zeebe.broker.gateway as one block",
 
+	KeyExporterElasticsearchClassName:   "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchURL:         "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchIndexPrefix: "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchUsername:    "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+	KeyExporterElasticsearchPassword:    "camunda.data.exporters is a map; defaults.yaml lists the map, not its entries",
+
 	KeyElasticsearchSecurityEnabled:         "SecondaryStorageSecurity fields are not generated into defaults.yaml",
 	KeyElasticsearchSecurityCertificatePath: "SecondaryStorageSecurity fields are not generated into defaults.yaml",
 	KeyElasticsearchSecurityVerifyHostname:  "SecondaryStorageSecurity fields are not generated into defaults.yaml",
@@ -114,7 +120,10 @@ const (
 	modesProcessorFile   = "dist/src/main/java/io/camunda/application/ModesAndProfilesProcessor.java"
 	myBatisConfigFile    = "dist/src/main/java/io/camunda/application/commons/rdbms/MyBatisConfiguration.java"
 	esSecurityFile       = "configuration/src/main/java/io/camunda/configuration/SecondaryStorageSecurity.java"
-	clientPropsFile      = "clients/camunda-spring-boot-starter/src/main/java/io/camunda/" +
+	exporterFile         = "configuration/src/main/java/io/camunda/configuration/Exporter.java"
+	esExporterConfigFile = "zeebe/exporters/elasticsearch-exporter/src/main/java/io/camunda/zeebe/exporter/" +
+		"ElasticsearchExporterConfiguration.java"
+	clientPropsFile = "clients/camunda-spring-boot-starter/src/main/java/io/camunda/" +
 		"client/spring/properties/CamundaClientProperties.java"
 	clientAuthPropsFile = "clients/camunda-spring-boot-starter/src/main/java/io/camunda/" +
 		"client/spring/properties/CamundaClientAuthProperties.java"
@@ -148,6 +157,16 @@ var sourceEvidence = map[Key]sourceRef{
 	KeyServerPort:           {applicationPropsFile, `server\.port=8080`},
 	KeyManagementServerPort: {applicationPropsFile, `management\.server\.port=9600`},
 	KeyBrokerGatewayEnable:  {modesProcessorFile, `zeebe\.broker\.gateway\.enable`},
+
+	// The exporter id "elasticsearch" is a map key, so the evidence is the
+	// Exporter class that every map entry binds to, and the exporter's own
+	// configuration class for the args. The two args fields that are public
+	// take a literal pattern; fieldRef only matches a private declaration.
+	KeyExporterElasticsearchClassName:   fieldRef(exporterFile, "className"),
+	KeyExporterElasticsearchURL:         {esExporterConfigFile, `public String url`},
+	KeyExporterElasticsearchIndexPrefix: {esExporterConfigFile, `public String prefix`},
+	KeyExporterElasticsearchUsername:    fieldRef(esExporterConfigFile, "username"),
+	KeyExporterElasticsearchPassword:    fieldRef(esExporterConfigFile, "password"),
 
 	KeyElasticsearchSecurityEnabled:         fieldRef(esSecurityFile, "enabled"),
 	KeyElasticsearchSecurityCertificatePath: fieldRef(esSecurityFile, "certificatePath"),

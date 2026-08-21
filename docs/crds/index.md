@@ -29,7 +29,13 @@ A contract carries connection details and credential references. The operator va
 | [ObjectStorageConfig](objectstorageconfig.md) | Cluster | One bucket on S3, GCS, or Azure Blob, and how to authenticate. |
 | [DatabaseServerConfig](databaseserverconfig.md) | Cluster | A database server, its admin credentials, and its point-in-time-recovery capability. |
 | [DatabaseConfig](databaseconfig.md) | Namespaced | One logical database and its credentials. |
-| [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. The operator validates it, but nothing reads it yet. |
+| [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. `CamundaOptimize` reads it. |
+
+## Analytics
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
+| [CamundaOptimize](camundaoptimize.md) | Namespaced | Camunda Optimize for one cluster: the webapp, the importer, and the exporter settings they need. |
 
 ## Backup
 
@@ -57,6 +63,8 @@ graph LR
     CC[CamundaCluster]
     LBE[LogicalBackupElasticsearch]
     LBR[LogicalBackupRDBMS]
+    MAC[ManagementAuthConfig]
+    OPT[CamundaOptimize]
     BS[BackupSchedule]
 
     ESC -.->|presetRef| ESCP
@@ -75,6 +83,10 @@ graph LR
 
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
+
+    OPT -.->|clusterRef| CC
+    OPT -.->|managementAuthRef| MAC
+
     BS -.->|clusterRef| CC
     BS -->|creates| LBE
     BS -->|creates| LBR
@@ -88,6 +100,5 @@ These CRDs are installed with the operator, but the operator does not act on the
 | --- | --- | --- |
 | [LogicalRestore](logicalrestore.md) | Namespaced | Restore a completed logical backup into a suspended cluster. |
 | [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
-| [CamundaOptimize](camundaoptimize.md) | Namespaced | Run Optimize next to a cluster. |
 | [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
 | [PVCAutoResize](pvcautoresize.md) | Namespaced | Grow the volumes of a cluster on their own. |
