@@ -421,7 +421,7 @@ func itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster *v1.CamundaClust
 			ObjectMeta: metav1.ObjectMeta{Name: pitrRefused, Namespace: cluster.Namespace},
 			Spec: v1.PointInTimeRestoreSpec{
 				ClusterRef: v1.ClusterRef{Name: cluster.Name},
-				Timestamp:  metav1.NewTime(time.Now().Add(-pitrRefusedAge)),
+				Timestamp:  metav1.NewTime(time.Now().UTC().Add(-pitrRefusedAge)),
 			},
 		})).To(Succeed())
 

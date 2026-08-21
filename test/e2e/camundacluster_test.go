@@ -415,6 +415,9 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 	AfterAll(func() {
 		By("removing the restores, their backup, the cluster, the database, the config, and the namespace")
 		_, _ = utils.Kubectl(
+			"delete", pitrResource, pitrRefused, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
+		)
+		_, _ = utils.Kubectl(
 			"delete", pitrResource, pitrCurrent, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
