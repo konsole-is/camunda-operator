@@ -20,7 +20,6 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/mutation/editors"
 	"github.com/sourcehawk/operator-component-framework/pkg/mutation/selectors"
-	"github.com/sourcehawk/operator-component-framework/pkg/primitives"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/deployment"
 	corev1 "k8s.io/api/core/v1"
 
@@ -48,20 +47,17 @@ const (
 	MutationExtraEnvFrom = "ExtraEnvFrom"
 )
 
-// workloadMutation is a mutation of the pod workload of a component.
-type workloadMutation = feature.Mutation[primitives.WorkloadMutator]
-
 // workloadMutations returns the override mutations of a component, each gated
 // on its field. Every Deployment registers all of them, so a component with no
 // overrides renders the base workload only.
-func workloadMutations(in Input, component string) []workloadMutation {
+func workloadMutations(in Input, component string) []deployment.Mutation {
 	spec := in.workload(component)
 
-	return []workloadMutation{
+	return []deployment.Mutation{
 		{
 			Name:    MutationResources,
 			Feature: feature.NewBooleanGate(spec.Resources != nil),
-			Mutate: func(m primitives.WorkloadMutator) error {
+			Mutate: func(m *deployment.Mutator) error {
 				m.EditContainers(selectors.ContainerNamed(optimizeContainer), func(c *editors.ContainerEditor) error {
 					c.SetResources(*spec.Resources)
 					return nil
@@ -72,7 +68,7 @@ func workloadMutations(in Input, component string) []workloadMutation {
 		{
 			Name:    MutationSchedulingConstraints,
 			Feature: feature.NewBooleanGate(spec.Scheduling != nil),
-			Mutate: func(m primitives.WorkloadMutator) error {
+			Mutate: func(m *deployment.Mutator) error {
 				m.EditPodSpec(func(pod *editors.PodSpecEditor) error {
 					if spec.Scheduling.NodeAffinity != nil || spec.Scheduling.PodAffinity != nil {
 						pod.Raw().Affinity = &corev1.Affinity{
@@ -89,7 +85,7 @@ func workloadMutations(in Input, component string) []workloadMutation {
 		{
 			Name:    MutationPodMetadata,
 			Feature: feature.NewBooleanGate(len(spec.PodLabels) > 0 || len(spec.PodAnnotations) > 0),
-			Mutate: func(m primitives.WorkloadMutator) error {
+			Mutate: func(m *deployment.Mutator) error {
 				m.EditPodTemplateMetadata(func(meta *editors.ObjectMetaEditor) error {
 					// The discovery labels of the base template win over a
 					// user entry with the same key.
@@ -103,17 +99,18 @@ func workloadMutations(in Input, component string) []workloadMutation {
 		{
 			Name:    MutationExtraEnv,
 			Feature: feature.NewBooleanGate(len(spec.ExtraEnv) > 0),
-			Mutate: func(m primitives.WorkloadMutator) error {
-				for _, env := range spec.ExtraEnv {
-					m.EnsureContainerEnvVar(env)
-				}
+			Mutate: func(m *deployment.Mutator) error {
+				m.EditContainers(selectors.ContainerNamed(optimizeContainer), func(c *editors.ContainerEditor) error {
+					c.EnsureEnvVars(spec.ExtraEnv)
+					return nil
+				})
 				return nil
 			},
 		},
 		{
 			Name:    MutationExtraEnvFrom,
 			Feature: feature.NewBooleanGate(len(spec.ExtraEnvFrom) > 0),
-			Mutate: func(m primitives.WorkloadMutator) error {
+			Mutate: func(m *deployment.Mutator) error {
 				m.EditContainers(selectors.ContainerNamed(optimizeContainer), func(c *editors.ContainerEditor) error {
 					c.Raw().EnvFrom = append(c.Raw().EnvFrom, spec.ExtraEnvFrom...)
 					return nil
@@ -122,16 +119,4 @@ func workloadMutations(in Input, component string) []workloadMutation {
 			},
 		},
 	}
-}
-
-// deploymentMutations lifts the workload mutations of a component onto the
-// Deployment builder.
-func deploymentMutations(in Input, component string) []deployment.Mutation {
-	shared := workloadMutations(in, component)
-	mutations := make([]deployment.Mutation, 0, len(shared))
-	for _, m := range shared {
-		mutations = append(mutations, deployment.LiftMutation(m))
-	}
-
-	return mutations
 }
