@@ -321,6 +321,22 @@ func RepositoryConfig(
 	cluster *v1.ElasticsearchCluster,
 	storage *SnapshotStorage,
 ) esadmin.RepositoryConfig {
+	return RepositoryConfigAt(
+		storage,
+		logicalbackup.ClusterPrefix(storage.Config.BasePath(), cluster.Namespace, cluster.Name),
+	)
+}
+
+// RepositoryConfigAt is RepositoryConfig with the prefix given by the caller.
+// A restore registers a repository over the prefix that the backup wrote
+// under, which is the prefix of the source cluster and not of the cluster the
+// repository is registered on. Everything else is the same: the type and the
+// bucket settings come from the contract, and the credentials reach the nodes
+// through the keystore.
+//
+// A bucket that does not resolve yields the zero value, which esadmin rejects
+// before it reaches Elasticsearch.
+func RepositoryConfigAt(storage *SnapshotStorage, basePath string) esadmin.RepositoryConfig {
 	repo := storage.repositoryOrNil()
 	if repo == nil {
 		return esadmin.RepositoryConfig{}
@@ -329,7 +345,7 @@ func RepositoryConfig(
 	return esadmin.RepositoryConfig{
 		Type:            repo.repositoryType,
 		Bucket:          repo.bucket,
-		BasePath:        logicalbackup.ClusterPrefix(storage.Config.BasePath(), cluster.Namespace, cluster.Name),
+		BasePath:        basePath,
 		Endpoint:        repo.endpoint,
 		Region:          repo.region,
 		PathStyleAccess: repo.pathStyle,

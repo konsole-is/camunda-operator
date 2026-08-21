@@ -53,8 +53,11 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
+	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestoreelasticsearch"
+	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	// +kubebuilder:scaffold:imports
@@ -333,26 +336,18 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupElasticsearch")
 		os.Exit(1)
 	}
+	if err := pointintimerestore.New(
+		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), pointintimerestore.Options{},
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "PointInTimeRestore")
+		os.Exit(1)
+	}
 	if err := (&backupschedule.BackupScheduleReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr, backupschedule.Options{}); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BackupSchedule")
-		os.Exit(1)
-	}
-	if err := (&controller.PointInTimeRestoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "PointInTimeRestore")
-		os.Exit(1)
-	}
-	if err := (&controller.LogicalRestoreReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestore")
 		os.Exit(1)
 	}
 	if err := (&camundaoptimize.Reconciler{
@@ -383,6 +378,24 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "PVCAutoResize")
+		os.Exit(1)
+	}
+	if err := logicalrestoreelasticsearch.New(
+		mgr.GetClient(),
+		mgr.GetAPIReader(),
+		mgr.GetScheme(),
+		logicalrestoreelasticsearch.Options{},
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreElasticsearch")
+		os.Exit(1)
+	}
+	if err := logicalrestorerdbms.New(
+		mgr.GetClient(),
+		mgr.GetAPIReader(),
+		mgr.GetScheme(),
+		logicalrestorerdbms.Options{CLIImage: cliImage},
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreRDBMS")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

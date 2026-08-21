@@ -26,9 +26,18 @@ limitations under the License.
 // resources of one kind without knowing the component vocabulary of the other.
 package labels
 
-import "maps"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"maps"
+	"strings"
+)
 
 const (
+	// nameHashLength is the hex length of the hash that keeps a long name
+	// unique after BoundedName truncates it.
+	nameHashLength = 10
+
 	// ClusterKey names the owning CamundaCluster.
 	ClusterKey = "camunda.io/cluster"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
@@ -40,8 +49,15 @@ const (
 	LogicalBackupElasticsearchKey = "camunda.io/logical-backup-elasticsearch"
 	// LogicalBackupRDBMSKey names the owning LogicalBackupRDBMS.
 	LogicalBackupRDBMSKey = "camunda.io/logical-backup-rdbms"
+	// LogicalRestoreElasticsearchKey names the owning
+	// LogicalRestoreElasticsearch.
+	LogicalRestoreElasticsearchKey = "camunda.io/logical-restore-elasticsearch"
 	// BackupScheduleKey names the owning BackupSchedule.
 	BackupScheduleKey = "camunda.io/backup-schedule"
+	// LogicalRestoreRDBMSKey names the owning LogicalRestoreRDBMS.
+	LogicalRestoreRDBMSKey = "camunda.io/logical-restore-rdbms"
+	// PointInTimeRestoreKey names the owning PointInTimeRestore.
+	PointInTimeRestoreKey = "camunda.io/point-in-time-restore"
 	// ComponentKey names the role of a resource inside its owner, for example
 	// "elasticsearch" or "elasticsearch-exporter".
 	ComponentKey = "camunda.io/component"
@@ -85,9 +101,27 @@ func LogicalBackupElasticsearch(name string) Owner {
 // with the given name renders.
 func LogicalBackupRDBMS(name string) Owner { return Owner{Key: LogicalBackupRDBMSKey, Name: name} }
 
+// LogicalRestoreElasticsearch returns the Owner of resources that a
+// LogicalRestoreElasticsearch with the given name renders.
+func LogicalRestoreElasticsearch(name string) Owner {
+	return Owner{Key: LogicalRestoreElasticsearchKey, Name: name}
+}
+
 // BackupSchedule returns the Owner of resources that a BackupSchedule with
 // the given name renders.
 func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: name} }
+
+// LogicalRestoreRDBMS returns the Owner of resources that a
+// LogicalRestoreRDBMS with the given name renders.
+func LogicalRestoreRDBMS(name string) Owner {
+	return Owner{Key: LogicalRestoreRDBMSKey, Name: name}
+}
+
+// PointInTimeRestore returns the Owner of resources that a PointInTimeRestore
+// with the given name renders.
+func PointInTimeRestore(name string) Owner {
+	return Owner{Key: PointInTimeRestoreKey, Name: name}
+}
 
 // Managed returns the labels of a resource that the operator applies: the
 // owner, the component, and the operator as manager.
@@ -119,4 +153,22 @@ func Merge(user, operator map[string]string) map[string]string {
 	maps.Copy(merged, user)
 	maps.Copy(merged, operator)
 	return merged
+}
+
+// BoundedName returns name when it fits limit, or its head followed by a hash
+// of the whole name otherwise. The result is deterministic, so every render of
+// one resource agrees, and two names that share the head differ in the hash.
+//
+// The name of a custom resource can be a full DNS subdomain, and a label value
+// and a Job name are both bounded like a DNS label. Pass
+// validation.LabelValueMaxLength or validation.DNS1123LabelMaxLength as limit,
+// less the length of any suffix the caller appends.
+func BoundedName(name string, limit int) string {
+	if len(name) <= limit {
+		return name
+	}
+	sum := sha256.Sum256([]byte(name))
+	hash := hex.EncodeToString(sum[:])[:nameHashLength]
+
+	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
 }

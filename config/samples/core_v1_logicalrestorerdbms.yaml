@@ -1,0 +1,13 @@
+apiVersion: core.camunda.io/v1
+kind: LogicalRestoreRDBMS
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+    camunda.io/cluster: camundacluster-sample
+  name: camundacluster-sample-restore
+spec:
+  backupRef:
+    name: logicalbackuprdbms-sample
+  targetClusterRef:
+    name: camundacluster-sample

@@ -41,6 +41,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -447,11 +448,11 @@ func publishServiceAccount(cluster *v1.CamundaCluster, name string) {
 // raw holderIdentity. When the Lease is absent, it returns "".
 func leaseHolder(lease *coordinationv1.Lease) string {
 	annotations := lease.GetAnnotations()
-	kind, name, uid := annotations[logicalbackup.ClaimHolderKindAnnotation],
-		annotations[logicalbackup.ClaimHolderNameAnnotation],
-		annotations[logicalbackup.ClaimHolderUIDAnnotation]
+	kind, name, uid := annotations[clusterclaim.ClaimHolderKindAnnotation],
+		annotations[clusterclaim.ClaimHolderNameAnnotation],
+		annotations[clusterclaim.ClaimHolderUIDAnnotation]
 	if kind != "" && name != "" && uid != "" {
-		return logicalbackup.Claimant{Kind: kind, Name: name, UID: types.UID(uid)}.String()
+		return clusterclaim.Claimant{Kind: kind, Name: name, UID: types.UID(uid)}.String()
 	}
 	if lease.Spec.HolderIdentity == nil {
 		return ""
@@ -463,16 +464,16 @@ func leaseHolder(lease *coordinationv1.Lease) string {
 // staleLease writes the claim Lease of the cluster in the shape that a backup
 // of this kind leaves behind when it no longer exists. That shape is a bounded
 // holderIdentity plus the exact identity in the holder annotations.
-func staleLease(w *world, holder logicalbackup.Claimant) *coordinationv1.Lease {
+func staleLease(w *world, holder clusterclaim.Claimant) *coordinationv1.Lease {
 	identity := holder.HolderIdentity()
 
 	return &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: logicalbackup.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
+			Name: clusterclaim.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
 			Annotations: map[string]string{
-				logicalbackup.ClaimHolderKindAnnotation: holder.Kind,
-				logicalbackup.ClaimHolderNameAnnotation: holder.Name,
-				logicalbackup.ClaimHolderUIDAnnotation:  string(holder.UID),
+				clusterclaim.ClaimHolderKindAnnotation: holder.Kind,
+				clusterclaim.ClaimHolderNameAnnotation: holder.Name,
+				clusterclaim.ClaimHolderUIDAnnotation:  string(holder.UID),
 			},
 		},
 		Spec: coordinationv1.LeaseSpec{HolderIdentity: &identity},
@@ -502,7 +503,7 @@ func gateState(w *world, sibling, waiting *v1.LogicalBackupRDBMS) string {
 	var lease coordinationv1.Lease
 	if err := k8sClient.Get(
 		ctx, types.NamespacedName{
-			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+			Namespace: w.namespace, Name: clusterclaim.ClaimLeaseName(w.cluster.Name),
 		}, &lease,
 	); err == nil {
 		holder = leaseHolder(&lease)
@@ -614,6 +615,12 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		By("pinning the bucket the backup writes through")
 		Expect(backup.Status.BucketRef).To(Equal(w.bucket.Name))
+
+		// A restore reads the Camunda version here. The management binding of
+		// the cluster is unset while a restore runs, because the restore runs
+		// against a suspended cluster.
+		By("recording the Camunda version the backup was taken with")
+		Expect(backup.Status.Version).To(Equal("8.9.9"))
 
 		By("keying the dump on the id and on the UID, so a reused id never names another backup's dump")
 		Expect(backup.Status.ObjectKey).To(Equal(components.DumpObjectKey(
@@ -742,7 +749,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		// holds the Lease behind it.
 		Expect(readyCondition(second).Message).To(ContainSubstring(first.Name))
 		leaseKey := types.NamespacedName{
-			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+			Namespace: w.namespace, Name: clusterclaim.ClaimLeaseName(w.cluster.Name),
 		}
 		var lease coordinationv1.Lease
 		Expect(k8sClient.Get(ctx, leaseKey, &lease)).To(Succeed())
@@ -776,7 +783,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		w := createWorld()
 		backup := createBackup(w)
 		leaseKey := types.NamespacedName{
-			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+			Namespace: w.namespace, Name: clusterclaim.ClaimLeaseName(w.cluster.Name),
 		}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, leaseKey, &coordinationv1.Lease{})).To(Succeed())
@@ -798,7 +805,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		holder := "someone-else"
 		lease := &coordinationv1.Lease{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: logicalbackup.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
+				Name: clusterclaim.ClaimLeaseName(w.cluster.Name), Namespace: w.namespace,
 			},
 			Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder},
 		}
@@ -819,7 +826,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 	// cluster.
 	It("takes over the Lease of a holder that no longer exists", func() {
 		w := createWorld()
-		lease := staleLease(w, logicalbackup.Claimant{
+		lease := staleLease(w, clusterclaim.Claimant{
 			Kind: "LogicalBackupRDBMS", Name: "ghost", UID: "00000000-0000-0000-0000-000000000000",
 		})
 		Expect(k8sClient.Create(ctx, lease)).To(Succeed())
@@ -838,7 +845,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		w := createWorld()
 		backup := createBackup(w)
 		leaseKey := types.NamespacedName{
-			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+			Namespace: w.namespace, Name: clusterclaim.ClaimLeaseName(w.cluster.Name),
 		}
 		Eventually(func(g Gomega) {
 			var current coordinationv1.Lease
@@ -861,7 +868,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		renderZeebe(w.cluster, "", worldRDBMSURL)
 		backup := createBackup(w)
 		leaseKey := types.NamespacedName{
-			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+			Namespace: w.namespace, Name: clusterclaim.ClaimLeaseName(w.cluster.Name),
 		}
 
 		expectPending(backup, v1.ReasonProgressing)
@@ -909,7 +916,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		By("letting the first backup finish through the controller, so it is quiescent")
 		markJob(first, w, batchv1.JobFailed)
 		leaseKey := types.NamespacedName{
-			Namespace: w.namespace, Name: logicalbackup.ClaimLeaseName(w.cluster.Name),
+			Namespace: w.namespace, Name: clusterclaim.ClaimLeaseName(w.cluster.Name),
 		}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(first), first)).To(Succeed())

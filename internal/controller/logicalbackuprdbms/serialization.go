@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
@@ -37,7 +38,7 @@ import (
 // block each other.
 func (r *LogicalBackupRDBMSReconciler) inProgress(backup *v1.LogicalBackupRDBMS) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
-		holds, err := logicalbackup.Holds(
+		holds, err := clusterclaim.Holds(
 			ctx, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
 		)
 		if err != nil {
@@ -89,8 +90,8 @@ func blocks(other, backup *v1.LogicalBackupRDBMS) bool {
 
 // claimant is the identity under which the backup holds the claim on its
 // cluster.
-func claimant(backup *v1.LogicalBackupRDBMS) logicalbackup.Claimant {
-	return logicalbackup.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
+func claimant(backup *v1.LogicalBackupRDBMS) clusterclaim.Claimant {
+	return clusterclaim.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
 }
 
 // claimCluster takes the claim on the cluster for the backup. It returns
@@ -101,7 +102,7 @@ func (r *LogicalBackupRDBMSReconciler) claimCluster(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) (string, error) {
-	holder, err := logicalbackup.Claim(
+	holder, err := clusterclaim.Claim(
 		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
 	)
 	if err != nil {
@@ -112,7 +113,7 @@ func (r *LogicalBackupRDBMSReconciler) claimCluster(
 	if holder == "" {
 		return "", nil
 	}
-	if parsed, err := logicalbackup.ParseClaimant(holder); err == nil {
+	if parsed, err := clusterclaim.ParseClaimant(holder); err == nil {
 		return parsed.Display(), nil
 	}
 
@@ -125,7 +126,7 @@ func (r *LogicalBackupRDBMSReconciler) releaseClaim(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) error {
-	err := logicalbackup.Release(
+	err := clusterclaim.Release(
 		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
 	)
 	if err != nil {

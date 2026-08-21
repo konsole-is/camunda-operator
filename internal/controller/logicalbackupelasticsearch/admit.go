@@ -227,6 +227,7 @@ func (r *Reconciler) start(
 
 	backup.Status.BackupID = logicalbackup.AllocateBackupIDAfter(metav1.Now(), highestSiblingID)
 	backup.Status.ClusterUID = string(res.Cluster.UID)
+	backup.Status.Version = binding.Version
 	backup.Status.Repository = binding.BackupRepository
 	// The endpoint is pinned in the form the client reaches: esadmin.New
 	// trims trailing slashes, so a slash never reads as a retarget.

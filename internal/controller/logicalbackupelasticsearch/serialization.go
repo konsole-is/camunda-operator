@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
@@ -35,7 +36,7 @@ import (
 // tie-break says. Otherwise the tie-break and the claim block each other.
 func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalbackup.InProgress {
 	return func(ctx context.Context) (string, error) {
-		holds, err := logicalbackup.Holds(
+		holds, err := clusterclaim.Holds(
 			ctx,
 			r.APIReader,
 			backup.Namespace,
@@ -75,8 +76,8 @@ func (r *Reconciler) inProgress(backup *v1.LogicalBackupElasticsearch) logicalba
 
 // claimant is the identity under which the backup holds the claim on its
 // cluster.
-func claimant(backup *v1.LogicalBackupElasticsearch) logicalbackup.Claimant {
-	return logicalbackup.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
+func claimant(backup *v1.LogicalBackupElasticsearch) clusterclaim.Claimant {
+	return clusterclaim.Claimant{Kind: backup.GetKind(), Name: backup.Name, UID: backup.UID}
 }
 
 // claimCluster takes the claim on the cluster for the backup. It returns
@@ -90,7 +91,7 @@ func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupE
 	cluster := backup.Spec.ClusterRef.Name
 	// Writes go through the client, reads through the API reader: the claim
 	// is never decided from the cache.
-	holder, err := logicalbackup.Claim(
+	holder, err := clusterclaim.Claim(
 		ctx, r.Client, r.APIReader, backup.Namespace, cluster, claimant(backup),
 	)
 	if err != nil {
@@ -100,14 +101,14 @@ func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupE
 		return "", nil
 	}
 
-	parsed, err := logicalbackup.ParseClaimant(holder)
+	parsed, err := clusterclaim.ParseClaimant(holder)
 	if err != nil {
 		return fmt.Sprintf(
 			"%q holds CamundaCluster %s/%s; backups of one cluster run one at a time",
 			holder, backup.Namespace, cluster,
 		), nil
 	}
-	paused, err := logicalbackup.HolderKeepsClusterPaused(ctx, r.APIReader, backup.Namespace, parsed)
+	paused, err := clusterclaim.HolderKeepsClusterPaused(ctx, r.APIReader, backup.Namespace, parsed)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +128,7 @@ func (r *Reconciler) claimCluster(ctx context.Context, backup *v1.LogicalBackupE
 // releaseClaim gives the claim on the cluster back. It is a no-op when the
 // backup does not hold it.
 func (r *Reconciler) releaseClaim(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
-	err := logicalbackup.Release(
+	err := clusterclaim.Release(
 		ctx, r.Client, r.APIReader, backup.Namespace, backup.Spec.ClusterRef.Name, claimant(backup),
 	)
 	if err != nil {

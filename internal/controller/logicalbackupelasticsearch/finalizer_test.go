@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 )
 
@@ -60,11 +61,11 @@ func TestFinalizeRemovesTheFinalizerBeforeReleasingTheClaim(t *testing.T) {
 	identity := holder.HolderIdentity()
 	lease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "ns", Name: logicalbackup.ClaimLeaseName("cc"),
+			Namespace: "ns", Name: clusterclaim.ClaimLeaseName("cc"),
 			Annotations: map[string]string{
-				logicalbackup.ClaimHolderKindAnnotation: holder.Kind,
-				logicalbackup.ClaimHolderNameAnnotation: holder.Name,
-				logicalbackup.ClaimHolderUIDAnnotation:  string(holder.UID),
+				clusterclaim.ClaimHolderKindAnnotation: holder.Kind,
+				clusterclaim.ClaimHolderNameAnnotation: holder.Name,
+				clusterclaim.ClaimHolderUIDAnnotation:  string(holder.UID),
 			},
 		},
 		Spec: coordinationv1.LeaseSpec{HolderIdentity: &identity},
@@ -110,8 +111,8 @@ func TestFinalizeRemovesTheFinalizerBeforeReleasingTheClaim(t *testing.T) {
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(lease), &left), "the Lease survived the interruption")
 
 	// The next claimant reclaims it: the holder resource is gone.
-	sibling := logicalbackup.Claimant{Kind: "LogicalBackupElasticsearch", Name: "next", UID: types.UID("uid-next")}
-	blocked, err := logicalbackup.Claim(ctx, c, c, "ns", "cc", sibling)
+	sibling := clusterclaim.Claimant{Kind: "LogicalBackupElasticsearch", Name: "next", UID: types.UID("uid-next")}
+	blocked, err := clusterclaim.Claim(ctx, c, c, "ns", "cc", sibling)
 	require.NoError(t, err)
 	assert.Empty(t, blocked, "the stale holder was taken over")
 }
