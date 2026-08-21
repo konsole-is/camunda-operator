@@ -179,10 +179,12 @@ func BoundedName(name string, limit int) string {
 // scoped informers of the manager use it, so a cached read reaches the
 // resources of the operator and nothing else.
 //
-// Managed puts ManagedByKey on every resource that a builder renders, and
-// Merge gives the operator labels priority over the labels of a user. No
-// resource the operator applies can therefore lose the key that this
-// selector reads.
+// Managed puts ManagedByKey on the resources that the operator applies, and
+// Merge gives the operator labels priority over the labels of a user, so a
+// user cannot take the key away. Discovery leaves the key out. A cache that
+// this selector scopes therefore holds no object whose labels come from
+// Discovery alone, and a caller that reads such an object needs the live
+// API.
 func ManagedSelector() k8slabels.Selector {
 	return k8slabels.SelectorFromSet(k8slabels.Set{ManagedByKey: ManagedBy})
 }

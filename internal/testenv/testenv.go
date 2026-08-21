@@ -133,9 +133,9 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	ginkgo.By("starting the manager with the suite's controllers")
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
-		// The suites read through the scoped informers of the operator. A
-		// fixture that a scoped informer hides is a fixture that production
-		// would hide too.
+		// The suites read through the scoped informers of the operator. An
+		// informer that hides a fixture of a suite hides the same object in
+		// production.
 		Cache:   cacheopts.Options(),
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})

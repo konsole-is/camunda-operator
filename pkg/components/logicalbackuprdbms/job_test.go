@@ -657,7 +657,7 @@ func TestDumpObjectKeyCarriesTheIDAndTheUID(t *testing.T) {
 
 // The manager caches pods through an informer that labels.ManagedSelector
 // scopes. A pod that the selector does not match is a pod that podstate.Stuck
-// cannot see, and a container that cannot start would then read as progress.
+// cannot see, and a container that cannot start then reads as progress.
 // The operator labels go over the labels of a user, so a user cannot take the
 // key away.
 func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {

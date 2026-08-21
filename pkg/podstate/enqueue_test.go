@@ -117,7 +117,7 @@ func TestEnqueueJobOwnerWakesTheRestoreThatOwnsThePod(t *testing.T) {
 }
 
 // The pod cache holds every pod that the operator manages, so a controller
-// sees the pods of every other kind too. Only its own pods may wake it.
+// sees the pods of every other kind too. Only its own pods can wake it.
 func TestEnqueueJobOwnerIgnoresAPodOfAnotherKind(t *testing.T) {
 	t.Parallel()
 

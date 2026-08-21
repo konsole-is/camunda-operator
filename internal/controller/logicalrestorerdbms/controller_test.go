@@ -593,9 +593,9 @@ func completeSecondaryStorage(w *world, lrr *v1.LogicalRestoreRDBMS) {
 
 // stuckPod creates a pod of a Job of the restore that reports a container
 // which cannot start. It copies the labels of the pod template of that Job
-// and takes a controller reference to it, the way the Job controller does, so
-// the pod is the pod that production renders. envtest runs no kubelet, so the
-// suite writes the state that a kubelet would report.
+// and takes a controller reference to it, the way the Job controller does.
+// envtest runs no kubelet, so the suite writes the state that a kubelet
+// reports.
 func stuckPod(w *world, jobName string) {
 	GinkgoHelper()
 
