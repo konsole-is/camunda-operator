@@ -103,9 +103,9 @@ func expectGone(g Gomega, resource, name, namespace string) {
 }
 
 // suspend sets spec.suspend on the cluster and waits until it reports Ready
-// Suspended with the broker and the gateway at zero replicas. A restore
+// Suspended with every workload of the cluster at zero replicas. A restore
 // rewrites the storage of its cluster, so no workload of the cluster runs
-// while the restore does.
+// while the restore does. Connectors is checked when the cluster declares it.
 func suspend(cluster *v1.CamundaCluster) {
 	By("setting spec.suspend on the CamundaCluster")
 	_, err := utils.Kubectl(
@@ -127,6 +127,16 @@ func suspend(cluster *v1.CamundaCluster) {
 			g,
 			"deployment",
 			components.WorkloadName(cluster, components.ComponentGateway),
+			cluster.Namespace,
+		)
+		if cluster.Spec.Connectors == nil {
+			return
+		}
+
+		expectScaledToZero(
+			g,
+			"deployment",
+			components.WorkloadName(cluster, components.ComponentConnectors),
 			cluster.Namespace,
 		)
 	}, suspendTimeout, 5*time.Second).Should(Succeed())
