@@ -337,8 +337,13 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 		// failed state and reports up again on the first poll that answers,
 		// so a readiness that stays down means the REST calls kept failing.
 		//
-		// Either indicator puts the cause in the connectors runtime rather
-		// than in this operator.
+		// Each indicator narrows the search rather than ending it. A down
+		// zeebeClient covers a gateway address this operator rendered wrong
+		// and a gateway workload it did not bring up, as well as a gateway
+		// that is merely slow. A down processDefinitionImport covers the
+		// admin credentials this operator supplies, as well as the REST API
+		// of the gateway. Read the indicator, then check what this operator
+		// put in front of it.
 		By("waiting for Ready Healthy")
 		Eventually(func(g Gomega) {
 			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)

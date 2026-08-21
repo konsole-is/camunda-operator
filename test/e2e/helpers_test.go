@@ -22,6 +22,8 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -330,7 +332,8 @@ func dumpDiagnostics(testNamespace string) {
 // document reports each of them on its own line. zeebeClient down means the
 // gateway does not answer. processDefinitionImport down means the inbound
 // import of the process definitions over the REST API of the gateway does not
-// complete. Neither is a resource this operator applies.
+// complete. Either one narrows the search without ending it: the address of
+// the gateway and the admin credentials both come from this operator.
 //
 // It reads the endpoint from a curl pod, over the pod IP. Two other routes do
 // not work here. The pod proxy of the API server is one call, but kubectl
@@ -365,7 +368,9 @@ func dumpNotReadyPodHealth(namespace string) {
 			Namespace: namespace,
 			Name:      "health",
 			Method:    "GET",
-			URL:       fmt.Sprintf("http://%s:%d%s", pod.Status.PodIP, port, actuatorHealthPath),
+			URL: "http://" + net.JoinHostPort(
+				pod.Status.PodIP, strconv.Itoa(int(port)),
+			) + actuatorHealthPath,
 			Timeout:   podTimeout,
 		})
 		if err != nil {

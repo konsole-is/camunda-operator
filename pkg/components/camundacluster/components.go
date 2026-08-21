@@ -442,9 +442,10 @@ func container(in Input, p Process, r rendered) corev1.Container {
 //
 // It gets a startup probe on the startup group, which holds startupCheck
 // alone. That group answers from the process, so it reports when the runtime
-// is up and says nothing about the gateway. The probe also holds the
-// readiness probe back until then, which keeps a booting JVM out of the pod
-// events.
+// is up and says nothing about the gateway. Kubernetes runs no readiness
+// probe until a startup probe succeeds, so the boot of the JVM is measured
+// against the budget of this probe, 60 tries five seconds apart, rather than
+// against the readiness probe.
 func connectorsProbes(c *corev1.Container) {
 	c.StartupProbe = probe(portNameHTTP, healthStartupPath, startupPeriodSeconds, startupFailureThreshold)
 	c.ReadinessProbe = probe(portNameHTTP, healthReadinessPath, readinessPeriodSeconds, 0)
