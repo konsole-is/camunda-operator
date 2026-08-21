@@ -1025,25 +1025,3 @@ var _ = Describe("CamundaCluster controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 })
-
-// createBrokerStatefulSet creates the broker StatefulSet of cluster, which is
-// how the operator knows that it has published an admin Secret before.
-func createBrokerStatefulSet(cluster *v1.CamundaCluster) {
-	GinkgoHelper()
-	selector := map[string]string{"app": "brokers"}
-	brokers := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: cluster.Namespace,
-			Name:      components.WorkloadName(cluster, components.ComponentZeebe),
-		},
-		Spec: appsv1.StatefulSetSpec{
-			Selector: &metav1.LabelSelector{MatchLabels: selector},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: selector},
-				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "zeebe", Image: "zeebe"}}},
-			},
-		},
-	}
-	Expect(k8sClient.Create(ctx, brokers)).To(Succeed())
-	DeferCleanup(func() { _ = k8sClient.Delete(ctx, brokers) })
-}

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -169,6 +168,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 	in components.Input,
+	storage brokerStorage,
 ) (adminCredential, error) {
 	auth := components.ResolveAuth(in)
 	if auth.Method != v1.AuthenticationMethodBasic {
@@ -210,10 +210,7 @@ func (r *CamundaClusterReconciler) resolveAdminCredential(
 		// address seed the initial user at first start. A replacement
 		// records neither, so the next reconcile takes both to the user API
 		// and reports what the cluster says about them.
-		published, err := r.publishedBefore(ctx, cluster)
-		if err != nil {
-			return adminCredential{}, err
-		}
+		published := publishedBefore(storage)
 
 		rotation, seeded := "", ""
 		if !published {
@@ -537,32 +534,21 @@ func putAdminUser(ctx context.Context, endpoint, version, authPassword, email, p
 	return users.UpdateUserPassword(ctx, user, password)
 }
 
-// publishedBefore reports whether this operator has already published an
-// admin Secret for cluster. It asks the API server, and not the status of
-// the cluster: the flush that would record it lands after the components
-// have created the Secret and the workloads, so a manager that stops in
-// between, while somebody deletes the Secret, would forget that it ever
-// published and take the replacement for a first password.
+// publishedBefore reports whether an admin user of this cluster may already
+// exist with a password that the operator no longer holds. It reads the
+// brokers, and not the status of the cluster: the flush that would record it
+// lands after the components have created the Secret and the workloads, so a
+// manager that stops in between, while somebody deletes the Secret, would
+// forget that it ever published and take the replacement for a first
+// password.
 //
-// The brokers are the evidence. The admin Secret is applied before them, so
-// a cluster whose brokers exist has had one, and a cluster whose brokers do
-// not cannot have started a process that seeded a user from one.
-func (r *CamundaClusterReconciler) publishedBefore(
-	ctx context.Context,
-	cluster *v1.CamundaCluster,
-) (bool, error) {
-	key := client.ObjectKey{
-		Namespace: cluster.Namespace,
-		Name:      components.WorkloadName(cluster, components.ComponentZeebe),
-	}
-
-	var brokers appsv1.StatefulSet
-	if err := r.APIReader.Get(ctx, key, &brokers); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("reading StatefulSet %q: %w", key, err)
-	}
-
-	return true, nil
+// The brokers are the evidence twice over. The admin Secret is applied
+// before the StatefulSet, so a cluster whose brokers run has had one. And
+// the users live in the broker state, so volumes that outlived a deleted
+// cluster carry the admin user into the cluster that reattaches them, which
+// spec.zeebe.persistentVolumeClaimRetentionPolicy exists to allow. Either
+// one means the operator must ask the user API rather than assume its
+// password is the first.
+func publishedBefore(storage brokerStorage) bool {
+	return storage.statefulSet != nil || len(storage.claims) > 0
 }

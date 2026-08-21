@@ -301,7 +301,8 @@ var _ = Describe("Admin password rotation", func() {
 			},
 		}
 
-		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		storage := brokerStorage{}
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.failure).To(BeNil())
 		Expect(cred.password.Value).To(Equal("pending-password"))
@@ -320,7 +321,8 @@ var _ = Describe("Admin password rotation", func() {
 		in := components.Input{Cluster: cluster, Effective: components.Effective{}}
 		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
 
-		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		storage := brokerStorage{}
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.published).To(
@@ -370,7 +372,7 @@ var _ = Describe("Admin password rotation", func() {
 	It("holds the connectors hash while it replaces a Secret of a running cluster", func() {
 		ns := newNamespace()
 		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc-repair", Namespace: ns}}
-		createBrokerStatefulSet(cluster)
+		storage := brokerStorage{statefulSet: &appsv1.StatefulSet{}}
 		in := components.Input{Cluster: cluster, Effective: components.Effective{}}
 		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
 
@@ -380,9 +382,9 @@ var _ = Describe("Admin password rotation", func() {
 		// again on every retry, because each one generates another. The
 		// same holds for a Secret that only lost its password, which reads
 		// the same way.
-		first, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		first, err := reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
-		second, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		second, err := reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(first.password.Value).NotTo(BeEmpty())
@@ -428,9 +430,9 @@ var _ = Describe("Admin password rotation", func() {
 		// which makes the generated password work. The operator does not
 		// take that on trust: its brokers are running, so it records
 		// nothing until the user API answers for the credential.
-		createBrokerStatefulSet(cluster)
+		storage := brokerStorage{statefulSet: &appsv1.StatefulSet{}}
 
-		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.rotation).To(BeEmpty(), "a running cluster is asked, never assumed")
@@ -452,7 +454,8 @@ var _ = Describe("Admin password rotation", func() {
 		reconciler := &CamundaClusterReconciler{APIReader: k8sClient}
 
 		By("seeding the initial user of a new cluster with the requested rotation")
-		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		storage := brokerStorage{}
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.rotation).To(Equal("round-1"))
@@ -461,12 +464,20 @@ var _ = Describe("Admin password rotation", func() {
 		)
 
 		By("keeping the recorded rotation once the brokers of the cluster exist")
-		createBrokerStatefulSet(cluster)
+		storage = brokerStorage{statefulSet: &appsv1.StatefulSet{}}
 
-		cred, err = reconciler.resolveAdminCredential(ctx, cluster, in)
+		cred, err = reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.password.Value).NotTo(BeEmpty())
 		Expect(cred.rotation).To(BeEmpty(), "a rotation requested after a delete must reach the user API")
+
+		By("and on a cluster rebuilt on volumes that outlived the one before it")
+		retained := brokerStorage{claims: []corev1.PersistentVolumeClaim{{}}}
+		cred, err = reconciler.resolveAdminCredential(ctx, cluster, in, retained)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cred.rotation).To(
+			BeEmpty(), "the admin user came back with the broker state, so its password is not ours to assume",
+		)
 		Expect(cred.appliedEmail).To(
 			BeEmpty(), "and the address of a replacement Secret is not applied either",
 		)
@@ -495,7 +506,8 @@ var _ = Describe("Admin password rotation", func() {
 
 		// status.adminPassword is empty here, which is what a lost status
 		// flush or a cache that lags one reconcile behind looks like.
-		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in)
+		storage := brokerStorage{}
+		cred, err := reconciler.resolveAdminCredential(ctx, cluster, in, storage)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cred.pending).To(BeEmpty(), "the Secret already records this rotation")
 		Expect(cred.password.Value).To(Equal("the-active-password"))

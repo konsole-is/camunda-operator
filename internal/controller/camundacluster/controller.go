@@ -204,7 +204,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	r.recordIgnoredShrink(&cluster, storage, in.Effective.StorageSize())
 
-	cred, err := r.resolveAdminCredential(ctx, &cluster, in)
+	cred, err := r.resolveAdminCredential(ctx, &cluster, in, storage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
