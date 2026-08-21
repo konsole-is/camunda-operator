@@ -354,8 +354,6 @@ func ready(pitr *v1.PointInTimeRestore) *metav1.Condition {
 	return meta.FindStatusCondition(pitr.Status.Conditions, v1.ConditionReady)
 }
 
-// expectHeld asserts that the restore waits in Pending with the given reason,
-
 // setRunningBrokers stands in for the StatefulSet controller, which envtest
 // does not run. A restore reads status.replicas of the broker StatefulSet to
 // learn whether the brokers of a suspended cluster really stopped.
@@ -370,6 +368,7 @@ func setRunningBrokers(w *world, running int32) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectHeld asserts that the restore waits in Pending with the given reason,
 // and returns the message it reported.
 func expectHeld(pitr *v1.PointInTimeRestore, reason string) string {
 	GinkgoHelper()
