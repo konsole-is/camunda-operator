@@ -24,6 +24,7 @@ package testenv
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -32,6 +33,9 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,6 +45,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/cacheopts"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
@@ -48,6 +53,9 @@ import (
 const (
 	Timeout  = 10 * time.Second
 	Interval = 250 * time.Millisecond
+
+	// jobNameLabel is the label that a Job stamps on the pods it creates.
+	jobNameLabel = "batch.kubernetes.io/job-name"
 )
 
 // Env is a running envtest control plane with a manager started against it.
@@ -124,7 +132,11 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 
 	ginkgo.By("starting the manager with the suite's controllers")
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:  scheme.Scheme,
+		Scheme: scheme.Scheme,
+		// The suites read through the scoped informers of the operator. A
+		// fixture that a scoped informer hides is a fixture that production
+		// would hide too.
+		Cache:   cacheopts.Options(),
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -197,4 +209,34 @@ func firstEnvtestBinaryDir(basePath string) string {
 	}
 
 	return ""
+}
+
+// PodOfJob returns the pod that the Job controller creates from the template
+// of job: the labels of that template, the job-name label that a Job stamps
+// on its pods, and a controller reference to the Job. envtest runs no Job
+// controller, so a suite that needs the pods of a Job creates them itself.
+//
+// The pod runs container alone. The caller writes the pod status after it
+// creates the pod, because envtest runs no kubelet either.
+func PodOfJob(job *batchv1.Job, name string, container corev1.Container) *corev1.Pod {
+	podLabels := maps.Clone(job.Spec.Template.Labels)
+	if podLabels == nil {
+		podLabels = map[string]string{}
+	}
+	podLabels[jobNameLabel] = job.Name
+
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: job.Namespace,
+			Labels:    podLabels,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job")),
+			},
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers:    []corev1.Container{container},
+		},
+	}
 }

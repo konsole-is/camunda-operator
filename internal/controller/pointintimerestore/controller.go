@@ -60,6 +60,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
+	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
@@ -150,7 +151,7 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps;secrets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=list
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // The cluster claim reads the resource of whichever kind holds the Lease,
 // to decide whether that holder still needs the cluster.
@@ -322,8 +323,9 @@ func (r *Reconciler) releaseClaim(ctx context.Context, pitr *v1.PointInTimeResto
 	)
 }
 
-// SetupWithManager registers the controller, the two field indexes, and the
-// watches: the restores, the Jobs they own, and the clusters they name.
+// SetupWithManager registers the controller, the field index, and the
+// watches: the restores, the Jobs they own, the pods of those Jobs, and the
+// clusters they name.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder("pointintimerestore")
@@ -345,6 +347,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.PointInTimeRestore{}).
 		Owns(&batchv1.Job{}).
+		// A Job reports nothing about a pod of its own that cannot start,
+		// so the pods are watched next to the Jobs.
+		Watches(
+			&corev1.Pod{},
+			podstate.EnqueueJobOwner(
+				mgr.GetClient(), v1.GroupVersion.WithKind("PointInTimeRestore").GroupKind(),
+			),
+		).
 		Watches(
 			&v1.CamundaCluster{},
 			refindex.Enqueue(

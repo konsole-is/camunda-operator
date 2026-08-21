@@ -412,13 +412,17 @@ func (r *LogicalBackupRDBMSReconciler) podsOf(
 // mid-run failure that names the pod and the reason. It selects the pods by
 // the backup UID that the pod template carries, so a leftover pod of another
 // backup of the same name never holds this one.
+//
+// The read goes through the cache. The pod watch of this controller keeps it
+// current, and a look that is one event behind cannot end a backup on its
+// own. See podstate.Stuck.
 func (r *LogicalBackupRDBMSReconciler) stuckPod(
 	ctx context.Context,
 	backup *v1.LogicalBackupRDBMS,
 ) (*conditions.PreCheckFailure, error) {
 	return podstate.Stuck(
 		ctx,
-		r.APIReader,
+		r.Client,
 		backup.Namespace,
 		map[string]string{components.BackupUIDLabel: string(backup.UID)},
 		"the dump Job",

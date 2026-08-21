@@ -31,6 +31,8 @@ import (
 	"encoding/hex"
 	"maps"
 	"strings"
+
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 )
 
 const (
@@ -171,4 +173,16 @@ func BoundedName(name string, limit int) string {
 	hash := hex.EncodeToString(sum[:])[:nameHashLength]
 
 	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
+}
+
+// ManagedSelector selects every resource that the operator applies. The
+// scoped informers of the manager use it, so a cached read reaches the
+// resources of the operator and nothing else.
+//
+// Managed puts ManagedByKey on every resource that a builder renders, and
+// Merge gives the operator labels priority over the labels of a user. No
+// resource the operator applies can therefore lose the key that this
+// selector reads.
+func ManagedSelector() k8slabels.Selector {
+	return k8slabels.SelectorFromSet(k8slabels.Set{ManagedByKey: ManagedBy})
 }

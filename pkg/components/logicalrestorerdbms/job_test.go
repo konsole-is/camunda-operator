@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -445,4 +446,21 @@ func secretRef(t *testing.T, container corev1.Container, name string) *corev1.Se
 	require.Fail(t, "the container sets no "+name)
 
 	return nil
+}
+
+// The manager caches pods through an informer that labels.ManagedSelector
+// scopes. A pod that the selector does not match is a pod that podstate.Stuck
+// cannot see, and a container that cannot start would then read as progress.
+// The operator labels go over the labels of a user, so a user cannot take the
+// key away.
+func TestBuildJobPodsMatchTheManagedSelector(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Pod = &v1.DumpPodSpec{PodLabels: map[string]string{labels.ManagedByKey: "helm"}}
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.True(t, labels.ManagedSelector().Matches(k8slabels.Set(job.Spec.Template.Labels)))
 }

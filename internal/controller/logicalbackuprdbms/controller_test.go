@@ -39,6 +39,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	"github.com/konsole-is/camunda-operator/internal/testenv"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/clusterclaim"
@@ -515,19 +516,12 @@ func gateState(w *world, sibling, waiting *v1.LogicalBackupRDBMS) string {
 }
 
 // podOfBackup builds a pod the way the Job controller creates it from the
-// template of the dump Job. The pod is labeled with the Job name and the
-// backup UID.
-func podOfBackup(backup *v1.LogicalBackupRDBMS, job *batchv1.Job, suffix string) *corev1.Pod {
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: job.Name + "-" + suffix, Namespace: backup.Namespace,
-			Labels: map[string]string{
-				"batch.kubernetes.io/job-name": job.Name,
-				components.BackupUIDLabel:      string(backup.UID),
-			},
-		},
-		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "upload", Image: "cli"}}},
-	}
+// template of the dump Job: the labels of that template, the job-name label,
+// and a controller reference to the Job.
+func podOfBackup(job *batchv1.Job, suffix string) *corev1.Pod {
+	return testenv.PodOfJob(
+		job, job.Name+"-"+suffix, corev1.Container{Name: "upload", Image: "cli"},
+	)
 }
 
 // envValueOf returns the literal value of a container's env variable, or "".
@@ -1710,7 +1704,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		backup := createBackup(w)
 		job := jobOf(backup, w)
 
-		pod := podOfBackup(backup, job, "stuck")
+		pod := podOfBackup(job, "stuck")
 		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0)) })
 		pod.Status.Phase = corev1.PodPending
@@ -1861,7 +1855,7 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 
 		// A pod of the Job that is still around. envtest runs no kubelet, so
 		// the pod stays until it is deleted by hand.
-		pod := podOfBackup(backup, job, "x1")
+		pod := podOfBackup(job, "x1")
 		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 
 		Expect(k8sClient.Delete(ctx, backup)).To(Succeed())
@@ -1947,9 +1941,9 @@ var _ = Describe("LogicalBackupRDBMS controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("leaving this backup's uploader terminating while a foreign Job takes the name")
-		own := podOfBackup(backup, job, "own")
+		own := podOfBackup(job, "own")
 		Expect(k8sClient.Create(ctx, own)).To(Succeed())
-		foreignPod := podOfBackup(backup, job, "foreign")
+		foreignPod := podOfBackup(job, "foreign")
 		foreignPod.Labels[components.BackupUIDLabel] = "someone-else"
 		Expect(k8sClient.Create(ctx, foreignPod)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, foreignPod, client.GracePeriodSeconds(0)) })

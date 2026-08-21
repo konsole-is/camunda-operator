@@ -151,6 +151,10 @@ func JobLabels(owner labels.Owner, cluster string) map[string]string {
 // podstate.Stuck. It carries no cluster label, so it keeps selecting after a
 // restore moved between clusters, and it carries no manager label, which a
 // selector must not depend on.
+//
+// The pod informer of the manager is scoped by the manager label. That scope
+// belongs to the cache, not to this selector: a caller that lists through the
+// live API reads the same pods with these labels alone.
 func JobSelector(owner labels.Owner) map[string]string {
 	return labels.Discovery(boundedOwner(owner), ComponentRestore)
 }
