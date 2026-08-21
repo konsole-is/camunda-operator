@@ -346,6 +346,15 @@ func TestPrepareRejectsAnIncompleteTarget(t *testing.T) {
 	assert.Contains(t, outcome.Failure.Message, "cannot prepare its cluster")
 }
 
+// completed records the terminal outcome of a restore that finished, the way
+// the complete step of a controller records it. Resume reads the recorded
+// reason, so a case that does not record one is not a terminal restore at all.
+func (w *prepareWorld) completed() *v1.RestoreProgress {
+	Complete(w.progress(), metav1.Now())
+
+	return w.progress()
+}
+
 // A restore that did not suspend its cluster withdraws nothing. That is what
 // keeps a cluster suspended that its owner suspended.
 func TestResumeWritesNothingWithoutTheRecord(t *testing.T) {
@@ -354,7 +363,7 @@ func TestResumeWritesNothingWithoutTheRecord(t *testing.T) {
 	w := newPrepareWorld(t)
 
 	require.NoError(t, Resume(
-		t.Context(), w.client, w.client, w.progress(), client.ObjectKeyFromObject(w.cluster),
+		t.Context(), w.client, w.client, w.completed(), client.ObjectKeyFromObject(w.cluster),
 	))
 
 	assert.Empty(t, *w.applies)
@@ -370,7 +379,7 @@ func TestResumeWithdrawsTheSuspensionItApplied(t *testing.T) {
 	w.progress().ClusterSuspended = true
 
 	require.NoError(t, Resume(
-		t.Context(), w.client, w.client, w.progress(), client.ObjectKeyFromObject(w.cluster),
+		t.Context(), w.client, w.client, w.completed(), client.ObjectKeyFromObject(w.cluster),
 	))
 
 	require.Len(t, *w.applies, 1)
@@ -389,7 +398,7 @@ func TestResumeWritesNothingOnceTheClusterRunsAgain(t *testing.T) {
 	w.progress().ClusterSuspended = true
 	key := client.ObjectKeyFromObject(w.cluster)
 
-	require.NoError(t, Resume(t.Context(), w.client, w.client, w.progress(), key))
+	require.NoError(t, Resume(t.Context(), w.client, w.client, w.completed(), key))
 	require.Len(t, *w.applies, 1)
 
 	w.unsuspended(t)
@@ -408,9 +417,27 @@ func TestResumeWritesNothingForAClusterThatIsGone(t *testing.T) {
 	require.NoError(t, w.client.Delete(t.Context(), w.cluster))
 
 	require.NoError(t, Resume(
-		t.Context(), w.client, w.client, w.progress(),
+		t.Context(), w.client, w.client, w.completed(),
 		types.NamespacedName{Namespace: "ns", Name: "my-cluster"},
 	))
 
 	assert.Empty(t, *w.applies)
+}
+
+// The broker volumes of a failed restore can be empty or half written, and
+// brokers that start over them are worse than a cluster that is down. The
+// recorded terminal reason is what decides, the same field CollectJobs reads.
+func TestResumeLeavesTheClusterOfAFailedRestoreSuspended(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.progress().ClusterSuspended = true
+	Fail(w.progress(), v1.ReasonFailed, "a broker could not restore", metav1.Now())
+
+	require.NoError(t, Resume(
+		t.Context(), w.client, w.client, w.progress(), client.ObjectKeyFromObject(w.cluster),
+	))
+
+	assert.Empty(t, *w.applies)
+	assert.True(t, w.live(t).Spec.Suspend)
 }

@@ -222,6 +222,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// terminal transition. A release that failed heals here too.
 		restore.StageTerminal(&pitr, &pitr.Status.RestoreProgress)
 
+		// The Jobs go before the claim. A completed Job keeps its pod, the pod
+		// keeps the broker volume it mounts, and the claim is what tells the
+		// next operation that the cluster is free.
+		if err := restore.CollectJobs(
+			ctx, r.Client, r.APIReader, &pitr, &pitr.Status.RestoreProgress,
+		); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// The Jobs also go before the unsuspend, and that order is the
+		// correctness of it. The pods of the collected Jobs are what hold the
+		// broker volumes, and unsuspending starts the brokers again. A broker
+		// that the scheduler places on another node cannot attach a
+		// ReadWriteOnce volume that a completed pod still counts as a user of,
+		// so an unsuspend that ran first would stall the cluster on the very
+		// volumes this branch is freeing.
 		if err := r.resumeCluster(ctx, &pitr); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -345,18 +361,12 @@ func claimant(pitr *v1.PointInTimeRestore) clusterclaim.Claimant {
 }
 
 // resumeCluster withdraws the suspension that this restore applied to its
-// cluster. Only a restore that completed resumes it: a failed restore leaves
-// broker volumes that are empty or half written, and brokers that start over
-// them are worse than a cluster that is down. A cluster that its owner
-// suspended carries no record of this restore and stays suspended.
+// cluster. It is a no-op unless this restore completed and this restore is what
+// suspended the cluster, which restore.Resume decides from the recorded progress.
 //
 // It runs on every look of a terminal restore, so an attempt that failed
 // heals on the next one, and it writes nothing once the field is gone.
 func (r *Reconciler) resumeCluster(ctx context.Context, pitr *v1.PointInTimeRestore) error {
-	if pitr.Status.Phase != v1.PointInTimeRestoreCompleted {
-		return nil
-	}
-
 	return restore.Resume(
 		ctx,
 		r.Client,

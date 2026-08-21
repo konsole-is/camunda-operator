@@ -161,9 +161,28 @@ A restore in `Pending` waits without a bound, because it deleted nothing yet.
 
 The restore pins the backup ID and the identity of the target when it starts. A backup that somebody deletes and creates again under the same name holds other artifacts, and a cluster that somebody deletes and creates again under the same name is another cluster. Both end the restore. Create a new restore for the resources as they are now.
 
+## The restore Jobs
+
+The restore runs the Camunda restore application once per broker, as a Job. Each Job pod mounts the data volume of its broker. A pod that finished still counts as a user of that volume, so the volume cannot terminate while the pod exists.
+
+| Terminal phase | What happens to the Jobs |
+| --- | --- |
+| `Completed` | The operator deletes them, together with their pods. The broker data volumes are free for the next operation. |
+| `Failed` | The operator keeps them. The logs of a failed Job name the cause, and only the pod keeps them readable. |
+
+**A failed restore holds the broker data volumes.** You read the logs of its Jobs, and then you delete the restore. The delete takes the Jobs and their pods with it, and the volumes are free again. Until you do that, a second restore of the cluster and the deletion of the cluster both wait on a volume that never terminates. The waiting restore reports the pod that holds the volume and names the resource that runs it.
+
+```bash
+# The Jobs that the restore still holds. status.primaryJobNames lists the same names.
+kubectl get job -n my-cluster-ns -l camunda.io/logical-restore-elasticsearch=my-cluster-restore
+
+# The log of the Job of one broker.
+kubectl logs -n my-cluster-ns job/<job name>
+```
+
 ## Deletion
 
-Deleting the restore removes its Jobs. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch. The operator writes nothing outside the cluster, so the restore needs no finalizer.
+Deleting the restore removes its Jobs. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch. The operator writes nothing outside the cluster, so the restore needs no finalizer.
 
 A target that the restore suspended stays suspended. That is deliberate. Unsuspending it here would start brokers over volumes that the restore already erased. Unsuspend the cluster yourself once you know what its volumes hold.
 

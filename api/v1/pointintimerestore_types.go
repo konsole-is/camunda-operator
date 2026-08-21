@@ -63,12 +63,15 @@ const (
 	// recreated the broker data volumes and runs the restore application on
 	// them.
 	PointInTimeRestoreRestoringPrimaryStorage PointInTimeRestorePhase = "RestoringPrimaryStorage"
-	// PointInTimeRestoreCompleted means that the restore finished. The restore
-	// withdraws the suspension it applied when it reaches this phase, so the
+	// PointInTimeRestoreCompleted means that the restore finished. The
+	// operator removes the per-broker Jobs here, so their pods release the
+	// broker data volumes, and it withdraws the suspension it applied, so the
 	// cluster runs again unless its owner suspended it.
 	PointInTimeRestoreCompleted PointInTimeRestorePhase = "Completed"
 	// PointInTimeRestoreFailed means that the restore failed. The Ready
-	// condition names the failing phase.
+	// condition names the failing phase. The operator keeps the per-broker
+	// Jobs, because their logs are the diagnosis, so the restore holds the
+	// broker data volumes until somebody deletes it.
 	PointInTimeRestoreFailed PointInTimeRestorePhase = "Failed"
 )
 

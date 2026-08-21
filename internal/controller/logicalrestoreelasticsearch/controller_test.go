@@ -361,6 +361,48 @@ var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
 		}, "2s", interval).Should(Succeed())
 	})
 
+	// A Job that completed keeps its pod, and a pod that mounts a broker
+	// volume holds that volume under the pvc-protection finalizer. The next
+	// operation on the cluster then waits on that volume without end.
+	It("removes its restore Jobs when it completes", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+
+		owner := labels.LogicalRestoreElasticsearch(restore.Name)
+		names := []string{restorepkg.JobName(owner, 0), restorepkg.JobName(owner, 1)}
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(Equal(names))
+		}, timeout, interval).Should(Succeed())
+
+		for _, name := range names {
+			markJob(w.namespace, name, batchv1.JobComplete)
+		}
+		expectReason(restore, v1.LogicalRestoreCompleted, v1.ReasonCompleted)
+
+		expectJobsCollected(w.namespace, names)
+	})
+
+	// The logs of a failed Job are the diagnosis of the failure, and only the
+	// pod keeps them readable. A failed restore therefore holds the broker
+	// volumes until somebody deletes the restore.
+	It("keeps its restore Jobs when it fails", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+
+		owner := labels.LogicalRestoreElasticsearch(restore.Name)
+		names := []string{restorepkg.JobName(owner, 0), restorepkg.JobName(owner, 1)}
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(Equal(names))
+		}, timeout, interval).Should(Succeed())
+
+		markJob(w.namespace, names[1], batchv1.JobFailed)
+		expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
+
+		expectJobsKept(w.namespace, names)
+	})
+
 	It("sizes the volumes from the claim template when the backup recorded no size", func() {
 		w := newWorld()
 		backup := createBackup(w, func(b *v1.LogicalBackupElasticsearch) {

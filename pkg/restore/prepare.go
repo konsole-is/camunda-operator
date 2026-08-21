@@ -225,10 +225,15 @@ func versionTarget(
 // cluster, so a cluster that its owner suspended for reasons of their own
 // stays suspended.
 //
-// Only a restore that reached its Completed phase calls it. A failed restore
-// leaves the cluster suspended: its broker volumes can be empty or half
-// written, and brokers that start over them are worse than a cluster that is
-// down.
+// The recorded terminal reason decides, the same way it decides for
+// CollectJobs. A completed restore gives the suspension back. A failed
+// restore keeps it: its broker volumes can be empty or half written, and
+// brokers that start over them are worse than a cluster that is down.
+//
+// The caller runs this from the terminal branch of its reconcile, after it
+// collected the Jobs and before it gives the cluster claim back. The pods of
+// those Jobs hold the broker volumes, and this call is what lets a broker ask
+// for one.
 //
 // The withdrawal applies an object without spec.suspend, so server-side apply
 // removes the field that this manager owns and leaves the value of any other
@@ -242,7 +247,7 @@ func Resume(
 	p *v1.RestoreProgress,
 	cluster types.NamespacedName,
 ) error {
-	if !p.ClusterSuspended {
+	if p.TerminalReason != v1.ReasonCompleted || !p.ClusterSuspended {
 		return nil
 	}
 
