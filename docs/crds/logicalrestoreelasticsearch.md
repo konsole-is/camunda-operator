@@ -43,7 +43,7 @@ graph LR
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. A reference does not resolve, the backup is not completed, another operation holds the cluster, or the operator is still preparing the target. Nothing is deleted. |
+| `Pending` | The restore waits. A reference does not resolve, the backup is not completed, another operation holds the cluster, or the operator is still preparing the target. Nothing of the target is erased here. Preparation does write `spec.suspend` and `spec.version` on the target, which [The restore prepares the target](#the-restore-prepares-the-target) describes. |
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | The operator deletes the Camunda indices of the target and restores every snapshot of the backup. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker. |
@@ -88,7 +88,19 @@ Each write is a server-side apply of one field, under a field manager of its own
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
 | `spec.version` | `camunda-operator/restore-version` | The restore keeps it. |
 
-The restore keeps `spec.version` on purpose. The cluster runs the version of the backup from then on, which is the point of writing it. Your next `kubectl apply` or GitOps sync of the `CamundaCluster` takes the field back, and that is correct: it is your declaration of the version again.
+The restore keeps `spec.version` on purpose. The cluster runs the version of the backup from then on, which is the point of writing it.
+
+To move the cluster off that version, declare the version you want:
+
+- A client-side `kubectl apply` that sets `spec.version` takes the field back. It writes the field, and the API server gives ownership to the manager that wrote it.
+- A server-side apply, which is what Argo CD and Flux use, reports a conflict on the field. Force the conflict, and the tool owns `spec.version` again.
+
+CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a preset: an explicit `spec.version` always wins over the preset, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the preset control again:
+
+```bash
+kubectl patch camundacluster my-cluster -n my-cluster-ns \
+  --type=json -p '[{"op":"remove","path":"/spec/version"}]'
+```
 
 ### Why the downgrade is safe here
 
@@ -141,6 +153,12 @@ The restore of a snapshot is asynchronous. The operator waits until the restored
 
 CAUTION: A failure between the delete and the restore leaves the secondary storage of the target empty. The backup itself stays whole. The next look deletes what is there and asks for the restore again, so a retry converges. Do not delete the backup while the restore runs.
 
+### An Optimize attached to the target
+
+A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` of that cluster, so its webapp and its importer are already at zero when this phase deletes the indices. You do not have to stop the import by hand.
+
+This matters because the Optimize importer reads Elasticsearch directly, not through the orchestration cluster. An importer that kept running would read indices that are half restored, write analytics from them, and hold an import position that disagrees with the restored data. Both workloads start again when you unsuspend the cluster, and the importer reads the restored indices.
+
 ## Primary storage
 
 The operator deletes the data volume of every broker and creates it again, then runs the Camunda restore application once per broker with `--backupId=<status.backupId>`.
@@ -167,17 +185,19 @@ The restore runs the Camunda restore application once per broker, as a Job. Each
 
 | Terminal phase | What happens to the Jobs |
 | --- | --- |
-| `Completed` | The operator deletes them, together with their pods. The broker data volumes are free for the next operation. |
+| `Completed` | The operator deletes them, together with their pods. Kubernetes removes the pods first and the Job last, so the delete takes a moment. The broker data volumes are free once the last pod is gone. |
 | `Failed` | The operator keeps them. The logs of a failed Job name the cause, and only the pod keeps them readable. |
 
-**A failed restore holds the broker data volumes.** You read the logs of its Jobs, and then you delete the restore. The delete takes the Jobs and their pods with it, and the volumes are free again. Until you do that, a second restore of the cluster and the deletion of the cluster both wait on a volume that never terminates. The waiting restore reports the pod that holds the volume and names the resource that runs it.
+**A restore that failed after it started the restore application holds the broker data volumes.** `status.primaryJobNames` tells you which case you are in. A restore that failed in an earlier phase names no Job there and holds nothing.
+
+When it does name Jobs, you read their logs, and then you delete the restore. The delete takes the Jobs and their pods with it, and the volumes are free once the last pod is gone. Until you do that, a second restore of the cluster and the deletion of the cluster both wait on a volume that never terminates. The waiting restore reports the pod that holds the volume and names the resource that runs it.
 
 ```bash
 # The Jobs that the restore still holds. status.primaryJobNames lists the same names.
 kubectl get job -n my-cluster-ns -l camunda.io/logical-restore-elasticsearch=my-cluster-restore
 
-# The log of the Job of one broker.
-kubectl logs -n my-cluster-ns job/<job name>
+# The log of the Job of broker 0, named the way the command above lists it.
+kubectl logs -n my-cluster-ns job/my-cluster-restore-lres-0
 ```
 
 ## Deletion
@@ -191,7 +211,7 @@ A target that the restore suspended stays suspended. That is deliberate. Unsuspe
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A phase of the restore runs. | Wait. The message names the work. |
-| `Ready` | `Completed` | The restore finished, and it withdrew the suspension it applied. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
+| `Ready` | `Completed` | The restore finished. It withdraws the suspension it applied on the look that follows, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |
@@ -247,5 +267,6 @@ spec:
 - [CamundaCluster](camundacluster.md): referenced through `targetClusterRef`. You suspend it for the whole restore.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the target. It must be `type: elasticsearch`, and it carries the endpoint and the credentials.
 - [ObjectStorageConfig](objectstorageconfig.md): resolved through the `backupStorageRef` of the target. It holds the snapshots and the partition backup.
+- [CamundaOptimize](camundaoptimize.md): an Optimize attached to the target suspends with it, so its import stops for the whole restore.
 - [PointInTimeRestore](pointintimerestore.md): the restore kind for a relational cluster that a database administrator already restored to a point in time.
 - [Backup guide](../guides/backup.md): how to set up backup storage and take a backup.

@@ -306,10 +306,10 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	// bounded name, and the UID label carries the identity that never
 	// truncates.
 	managed := labels.Managed(
-		labels.LogicalBackupRDBMS(labels.BoundedName(in.Backup.Name, validation.LabelValueMaxLength)),
+		labels.LogicalBackupRDBMS(in.Backup.Name),
 		componentName,
 	)
-	managed[labels.ClusterKey] = in.ClusterName
+	managed[labels.ClusterKey] = labels.OwnerName(in.ClusterName)
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
 	// The workload-identity pod label is operator-required. Without it, the

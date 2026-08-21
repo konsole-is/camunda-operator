@@ -196,10 +196,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if lres.Terminal() {
 		// The terminal branch that every restore kind shares. It stages the
 		// recorded outcome again, and it gives the Jobs, the suspension, and
-		// the claim back in the one order that frees the broker volumes.
-		return ctrl.Result{}, restore.Finish(
+		// the claim back in the one order that frees the broker volumes. The
+		// Jobs of a completed restore take more than one look to go, so an
+		// answer that is not Done holds the two steps behind them.
+		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &lres, &lres.Status.RestoreProgress, lres.Spec.TargetClusterRef.Name,
 		)
+
+		return ctrl.Result{RequeueAfter: finished.Wait}, err
 	}
 
 	var outcome restore.Outcome

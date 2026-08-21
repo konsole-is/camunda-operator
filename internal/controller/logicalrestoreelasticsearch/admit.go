@@ -63,12 +63,12 @@ type backup struct {
 }
 
 // admit resolves the references of the restore and holds it in Pending until
-// every one of them answers and no other operation holds the cluster. It then
+// every one of them answers and no other operation holds the cluster. It pins
+// what the restore reads, the backup id and the identity of the target, then
 // claims the cluster and carries it to the state the restore needs:
 // suspended, its brokers stopped, and running the Camunda version of the
-// backup. It ends by pinning what the restore reads: the backup id and the
-// identity of the target. From then on the restore never returns here, and a
-// reference that breaks runs through the mid-run grace of its phase instead.
+// backup. From then on the restore never returns here, and a reference that
+// breaks runs through the mid-run grace of its phase instead.
 func (r *Reconciler) admit(
 	ctx context.Context,
 	lres *v1.LogicalRestoreElasticsearch,
@@ -92,6 +92,25 @@ func (r *Reconciler) admit(
 	}
 	if failure != nil {
 		return r.waiting(lres, failure), nil
+	}
+	if failure := pinnedBackup(lres.Status.BackupID, source); failure != nil {
+		return r.waiting(lres, failure), nil
+	}
+
+	// The identities are pinned before the restore writes anything, and this
+	// look returns here so the record is durable before that write.
+	//
+	// Preparation holds for as many looks as the brokers and the version
+	// rollout need, and admission re-enters from the top on every one of
+	// them. A cluster or a backup that somebody deletes and creates again
+	// under one name during that hold would otherwise read as the original,
+	// because both guards compare against a pin that is not there yet.
+	if lres.Status.TargetClusterUID == "" || lres.Status.BackupID == 0 {
+		lres.Status.TargetClusterUID = cluster.UID
+		lres.Status.BackupID = source.ID
+		r.progressing(lres, "the restore pinned the backup and the target it prepares")
+
+		return restore.Outcome{Wait: restore.Shortly}, nil
 	}
 
 	// Every rule of this restore holds, so the cluster becomes this restore's
@@ -145,23 +164,34 @@ func (r *Reconciler) admit(
 		return prepared, nil
 	}
 
-	r.start(lres, cluster, source)
+	r.start(lres)
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
 }
 
-// start pins what the restore reads and moves it into the validation phase.
-// The pins are written before the first side effect, so a backup that is
-// deleted afterwards cannot move the restore to another set of artifacts.
-func (r *Reconciler) start(
-	lres *v1.LogicalRestoreElasticsearch,
-	cluster *v1.CamundaCluster,
-	source *backup,
-) {
+// start moves the restore into the validation phase. It pins nothing:
+// admission pinned the backup id and the identity of the target earlier, on
+// the look before it first wrote to the cluster.
+func (r *Reconciler) start(lres *v1.LogicalRestoreElasticsearch) {
 	lres.Status.Phase = v1.LogicalRestoreValidatingCompatibility
-	lres.Status.BackupID = source.ID
-	lres.Status.TargetClusterUID = cluster.UID
 	r.progressing(lres, "the restore compares the backup against the target")
+}
+
+// pinnedBackup reports the backup that is not the backup the restore pinned.
+// The pinned id is the identity of the backup, and the name alone is not: a
+// backup that somebody deleted and created again under one name is another set
+// of artifacts, whose snapshots lie under other names and pair with another
+// record snapshot. A restore that has pinned nothing yet passes.
+func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
+	if pinned == 0 || source.ID == pinned {
+		return nil
+	}
+
+	return logicalbackup.InvalidReference(
+		"LogicalBackupElasticsearch %s/%s holds backup %d and the restore started against %d, "+
+			"so it is another backup",
+		source.Namespace, source.Name, source.ID, pinned,
+	)
 }
 
 // notSuspended reports the target that started running again. A restore
@@ -288,21 +318,19 @@ func (r *Reconciler) resolve(
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
-	// The pinned id is the identity of the backup, and the name alone is not.
-	// A backup that somebody deleted and created again under the same name is
-	// another set of artifacts: its snapshots lie under other names and pair
-	// with another record snapshot.
-	if lres.Status.BackupID != 0 && source.ID != lres.Status.BackupID {
-		return nil, logicalbackup.InvalidReference(
-			"LogicalBackupElasticsearch %s/%s holds backup %d and the restore started against %d, "+
-				"so it is another backup",
-			source.Namespace, source.Name, source.ID, lres.Status.BackupID,
-		), nil
+	if failure := pinnedBackup(lres.Status.BackupID, source); failure != nil {
+		return nil, failure, nil
 	}
 
 	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return nil, failure, err
+	}
+	// The version of the target is a standing condition too, for the same
+	// reason its suspension is. The restore Jobs copy the broker image, so a
+	// version that moves mid-run reaches the restore application itself.
+	if failure := restore.MovedVersion(source.Version, target.Version); failure != nil {
+		return nil, failure, nil
 	}
 
 	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)

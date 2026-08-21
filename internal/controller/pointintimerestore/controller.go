@@ -161,10 +161,11 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/finalizers,verbs=update
 // The restore prepares its own cluster: it suspends the cluster and withdraws
-// that suspension when it completes. It writes no version, because it restores
-// the primary storage of a cluster from the backups of that same cluster. The
-// write is a server-side apply of one field under a field manager of its own,
-// so patch is the only verb it needs on a CamundaCluster.
+// that suspension when it completes. This kind writes no version, because it
+// restores the primary storage of a cluster from the continuous backups of
+// that same cluster. The write is a server-side apply of one field under a
+// field manager of its own, so patch is the only verb it needs on a
+// CamundaCluster.
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;databaseconfigs;databaseserverconfigs;databases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
@@ -217,10 +218,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if pitr.Terminal() {
 		// The terminal branch that every restore kind shares. It stages the
 		// recorded outcome again, and it gives the Jobs, the suspension, and
-		// the claim back in the one order that frees the broker volumes.
-		return ctrl.Result{}, restore.Finish(
+		// the claim back in the one order that frees the broker volumes. The
+		// Jobs of a completed restore take more than one look to go, so an
+		// answer that is not Done holds the two steps behind them.
+		finished, err := restore.Finish(
 			ctx, r.Client, r.APIReader, &pitr, &pitr.Status.RestoreProgress, pitr.Spec.ClusterRef.Name,
 		)
+
+		return ctrl.Result{RequeueAfter: finished.Wait}, err
 	}
 
 	var outcome restore.Outcome

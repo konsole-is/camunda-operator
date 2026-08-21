@@ -188,9 +188,22 @@ func (r *Reconciler) enqueueForClusterDefaults(field string) handler.EventHandle
 // that waits for a handover waits for a Deployment of another CamundaOptimize,
 // which no other watch reports. Without this watch it waits until an unrelated
 // event arrives.
+// The Deployment carries the owner label of the cluster, which is the bounded
+// name and not the name itself once the cluster name passes 63 characters.
+// The clusterRef index is keyed by the name, so the label is resolved to a
+// cluster first rather than looked up as one.
 func (r *Reconciler) enqueueForOptimizeWorkload() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		cluster := o.GetLabels()[labels.ClusterKey]
+		value := o.GetLabels()[labels.ClusterKey]
+		if value == "" {
+			return nil
+		}
+
+		cluster, err := camundacluster.ClusterNameFromLabel(ctx, r.Client, o.GetNamespace(), value)
+		if err != nil {
+			logf.FromContext(ctx).Error(err, "Resolving the cluster of an Optimize Deployment", "label", value)
+			return nil
+		}
 		if cluster == "" {
 			return nil
 		}

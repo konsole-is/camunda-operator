@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,9 +35,9 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// terminalWorld is one look of the terminal branch: the restore that ended,
-// the cluster it suspended, the Jobs it ran, and the order in which the
-// releases reached the API server.
+// terminalWorld is the state a terminal restore looks at: the restore that
+// ended, the cluster it suspended, the Jobs it ran, and the writes that its
+// looks made.
 type terminalWorld struct {
 	restore *v1.PointInTimeRestore
 	cluster *v1.CamundaCluster
@@ -45,13 +46,25 @@ type terminalWorld struct {
 	applies *[]applied
 }
 
-// newTerminalWorld builds a restore that ended with reason, holding
-// everything a restore can hold: three Jobs, a suspended cluster it recorded
-// as its own, and the claim on that cluster.
-func newTerminalWorld(t *testing.T, reason string, extra ...interceptor.Funcs) *terminalWorld {
+// terminalOptions shape one case of the terminal branch.
+type terminalOptions struct {
+	// reason is the recorded terminal reason of the restore.
+	reason string
+	// terminating keeps every Job in the state that foreground propagation
+	// leaves behind: deleted, and held by the foreground finalizer until its
+	// pods are gone.
+	terminating bool
+	// jobReadError fails every read of a Job.
+	jobReadError error
+}
+
+// newTerminalWorld builds a restore that ended, holding everything a restore
+// can hold: three Jobs, a suspended cluster it recorded as its own, and the
+// claim on that cluster.
+func newTerminalWorld(t *testing.T, opts terminalOptions) *terminalWorld {
 	t.Helper()
 
-	owner := terminalOwner(reason)
+	owner := terminalOwner(opts.reason)
 	owner.Status.ClusterSuspended = true
 
 	cluster := &v1.CamundaCluster{
@@ -62,46 +75,63 @@ func newTerminalWorld(t *testing.T, reason string, extra ...interceptor.Funcs) *
 	objects := make([]client.Object, 0, len(owner.Status.PrimaryJobNames)+1)
 	objects = append(objects, cluster)
 	for _, name := range owner.Status.PrimaryJobNames {
-		objects = append(objects, recordedJob(name, owner.UID))
+		job := recordedJob(name, owner.UID)
+		if opts.terminating {
+			// The API server stamps the finalizer and keeps the Job until the
+			// collector reports its pods gone. Until then the pods can exist,
+			// and a pod is what holds a broker volume.
+			job.DeletionTimestamp = new(metav1.NewTime(time.Now()))
+			job.Finalizers = []string{metav1.FinalizerDeleteDependents}
+		}
+		objects = append(objects, job)
 	}
 
 	touched := &[]string{}
 	applies := &[]applied{}
-	funcs := interceptor.Funcs{
-		Delete: func(
-			ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption,
-		) error {
-			*touched = append(*touched, touch(obj))
-
-			return c.Delete(ctx, obj, opts...)
-		},
-		Patch: func(
-			ctx context.Context,
-			c client.WithWatch,
-			obj client.Object,
-			patch client.Patch,
-			opts ...client.PatchOption,
-		) error {
-			*touched = append(*touched, touch(obj))
-			if patched, isCluster := obj.(*v1.CamundaCluster); isCluster {
-				var options client.PatchOptions
-				options.ApplyOptions(opts)
-				*applies = append(*applies, applied{
-					manager: options.FieldManager, cluster: patched.DeepCopy(),
-				})
-			}
-
-			return c.Patch(ctx, obj, patch, opts...)
-		},
-	}
-	if len(extra) == 1 {
-		funcs.Get = extra[0].Get
-	}
 
 	c := fake.NewClientBuilder().
 		WithScheme(testScheme(t)).
 		WithObjects(objects...).
-		WithInterceptorFuncs(funcs).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				key client.ObjectKey,
+				obj client.Object,
+				opt ...client.GetOption,
+			) error {
+				if _, isJob := obj.(*batchv1.Job); isJob && opts.jobReadError != nil {
+					return opts.jobReadError
+				}
+
+				return cl.Get(ctx, key, obj, opt...)
+			},
+			Delete: func(
+				ctx context.Context, cl client.WithWatch, obj client.Object, opt ...client.DeleteOption,
+			) error {
+				*touched = append(*touched, touch(obj))
+
+				return cl.Delete(ctx, obj, opt...)
+			},
+			Patch: func(
+				ctx context.Context,
+				cl client.WithWatch,
+				obj client.Object,
+				patch client.Patch,
+				opt ...client.PatchOption,
+			) error {
+				*touched = append(*touched, touch(obj))
+				if patched, isCluster := obj.(*v1.CamundaCluster); isCluster {
+					var options client.PatchOptions
+					options.ApplyOptions(opt)
+					*applies = append(*applies, applied{
+						manager: options.FieldManager, cluster: patched.DeepCopy(),
+					})
+				}
+
+				return cl.Patch(ctx, obj, patch, opt...)
+			},
+		}).
 		Build()
 
 	// The restore holds the claim from its admission on, so the terminal
@@ -130,12 +160,18 @@ func touch(obj client.Object) string {
 	}
 }
 
-func (w *terminalWorld) finish(t *testing.T) error {
+// look runs one look of the terminal branch and returns what it wrote, in
+// order, beside the outcome. Each look reports its own writes, so a case can
+// prove which look made them.
+func (w *terminalWorld) look(t *testing.T) (Outcome, []string, error) {
 	t.Helper()
 
-	return Finish(
+	*w.touched = nil
+	outcome, err := Finish(
 		t.Context(), w.client, w.client, w.restore, &w.restore.Status.RestoreProgress, "my-cluster",
 	)
+
+	return outcome, *w.touched, err
 }
 
 // jobsLeft counts the recorded Jobs that still exist.
@@ -169,13 +205,21 @@ func (w *terminalWorld) withdrawals() []applied {
 }
 
 // A restore that completed gives back everything it held, and it stages the
-// outcome it recorded.
+// outcome it recorded. It takes two looks: the first asks for the Jobs, and
+// the second finds them gone.
 func TestFinishReleasesEverythingOfACompletedRestore(t *testing.T) {
 	t.Parallel()
 
-	w := newTerminalWorld(t, v1.ReasonCompleted)
+	w := newTerminalWorld(t, terminalOptions{reason: v1.ReasonCompleted})
 
-	require.NoError(t, w.finish(t))
+	asked, _, err := w.look(t)
+	require.NoError(t, err)
+	assert.False(t, asked.Done, "the volumes are not free while the Jobs are still being removed")
+	assert.Equal(t, Shortly, asked.Wait)
+
+	done, _, err := w.look(t)
+	require.NoError(t, err)
+	assert.True(t, done.Done)
 
 	assert.Zero(t, w.jobsLeft(t), "the Jobs of a completed restore hold its broker volumes")
 	assert.Len(t, w.withdrawals(), 1, "the restore left the cluster it suspended suspended")
@@ -187,34 +231,71 @@ func TestFinishReleasesEverythingOfACompletedRestore(t *testing.T) {
 	assert.Equal(t, v1.ReasonCompleted, condition.Reason)
 }
 
-// The order is the correctness of this branch. The Jobs hold the broker
-// volumes, so they go before the brokers are allowed to ask for one, and both
-// go before the cluster is reported free.
+// The order is the correctness of this branch, and it spans the two looks.
+// The Jobs hold the broker volumes, so nothing else is written until a look
+// finds them gone.
 func TestFinishFreesTheVolumesBeforeItFreesTheCluster(t *testing.T) {
 	t.Parallel()
 
-	w := newTerminalWorld(t, v1.ReasonCompleted)
+	w := newTerminalWorld(t, terminalOptions{reason: v1.ReasonCompleted})
 
-	require.NoError(t, w.finish(t))
-
+	_, first, err := w.look(t)
+	require.NoError(t, err)
 	assert.Equal(
 		t,
-		[]string{"Job", "Job", "Job", "CamundaCluster", "Lease"},
-		*w.touched,
+		[]string{"Job", "Job", "Job"},
+		first,
 		"a broker that starts before its volume is free cannot attach it",
 	)
+
+	_, second, err := w.look(t)
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		[]string{"CamundaCluster", "Lease"},
+		second,
+		"the cluster is reported free before its volumes are",
+	)
+}
+
+// The gate is the point of the collection answer. A Job that still carries the
+// foreground finalizer can still have pods, and those pods hold the broker
+// volumes, so the unsuspend waits however many looks that takes.
+func TestFinishDoesNotUnsuspendWhileAJobStillTerminates(t *testing.T) {
+	t.Parallel()
+
+	w := newTerminalWorld(t, terminalOptions{reason: v1.ReasonCompleted, terminating: true})
+
+	for range 3 {
+		outcome, written, err := w.look(t)
+		require.NoError(t, err)
+
+		assert.False(t, outcome.Done)
+		assert.Equal(t, Shortly, outcome.Wait)
+		assert.Empty(t, written, "a Job that already terminates is asked for again")
+	}
+
+	assert.Equal(t, len(w.restore.Status.PrimaryJobNames), w.jobsLeft(t))
+	assert.Empty(t, w.withdrawals(), "the brokers started over volumes that the Job pods still hold")
+	assert.Equal(t, selfClaimant().String(), leaseHolder(t, w.client))
 }
 
 // A failed restore keeps its Jobs, because their logs are the diagnosis, and
 // it keeps the cluster suspended, because the broker volumes can be half
-// written. The claim goes back either way: the restore is over.
+// written. The claim goes back either way: the restore is over. Nothing is
+// collected, so one look finishes it.
 func TestFinishKeepsTheJobsAndTheSuspensionOfAFailedRestore(t *testing.T) {
 	t.Parallel()
 
-	w := newTerminalWorld(t, v1.ReasonFailed)
+	w := newTerminalWorld(t, terminalOptions{reason: v1.ReasonFailed})
 
-	require.NoError(t, w.finish(t))
+	outcome, written, err := w.look(t)
+	require.NoError(t, err)
 
+	assert.True(t, outcome.Done)
+	assert.Equal(
+		t, []string{"Lease"}, written, "a failed restore wrote to the cluster it left suspended",
+	)
 	assert.Equal(t, len(w.restore.Status.PrimaryJobNames), w.jobsLeft(t))
 	assert.Empty(t, w.withdrawals())
 	assert.Empty(t, leaseHolder(t, w.client))
@@ -227,24 +308,14 @@ func TestFinishKeepsTheClaimWhenAStepFails(t *testing.T) {
 	t.Parallel()
 
 	unreadable := errors.New("the API server does not answer")
-	w := newTerminalWorld(t, v1.ReasonCompleted, interceptor.Funcs{
-		Get: func(
-			ctx context.Context,
-			c client.WithWatch,
-			key client.ObjectKey,
-			obj client.Object,
-			opts ...client.GetOption,
-		) error {
-			if _, isJob := obj.(*batchv1.Job); isJob {
-				return unreadable
-			}
-
-			return c.Get(ctx, key, obj, opts...)
-		},
+	w := newTerminalWorld(t, terminalOptions{
+		reason: v1.ReasonCompleted, jobReadError: unreadable,
 	})
 
-	require.ErrorIs(t, w.finish(t), unreadable)
+	outcome, _, err := w.look(t)
+	require.ErrorIs(t, err, unreadable)
 
+	assert.False(t, outcome.Done)
 	assert.Empty(t, w.withdrawals())
 	assert.Equal(t, selfClaimant().String(), leaseHolder(t, w.client))
 }

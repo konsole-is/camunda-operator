@@ -18,6 +18,7 @@ package restore
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"time"
@@ -54,6 +55,48 @@ const (
 // A backup that recorded anything else names no version that the restore can
 // write, and the version rule of the restore kind reports what that means.
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// WritesVersion reports whether a restore writes version on the cluster it
+// prepares. A backup that recorded no version, and one whose recorded value is
+// not of the form x.y.z, name nothing that the restore can write, and the
+// version rule of the restore kind reports what such a backup means.
+//
+// A phase that holds the cluster to the version of its backup asks this
+// first. Holding a cluster to a version that the restore never wrote would
+// wait for something nothing brings about.
+func WritesVersion(version string) bool {
+	return versionPattern.MatchString(version)
+}
+
+// MovedVersion reports the target whose brokers no longer carry the Camunda
+// version of the backup. Prepare carried the cluster to that version and the
+// restore owns spec.version, but another manager can take the field back while
+// the restore runs, and the restore Jobs copy the broker image, so a version
+// that moves under a running restore would run the wrong binary against the
+// backup.
+//
+// Every restore kind that writes a version holds its target to it, and each
+// reports the same reason and the same message, so the rule lives here rather
+// than once per kind.
+//
+// It answers nil for a backup whose version the restore never wrote. The
+// version rule of the restore kind reports such a backup and ends the restore,
+// and holding for a version that nothing writes would wait without end.
+func MovedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailure {
+	if !WritesVersion(backupVersion) || targetVersion == backupVersion {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonIncompatibleTarget,
+		Message: fmt.Sprintf(
+			"the brokers of the target carry Camunda %s and the backup was taken with %s. The "+
+				"restore set the version of the backup on the cluster before it started, so "+
+				"another manager moved it while the restore ran",
+			targetVersion, backupVersion,
+		),
+	}
+}
 
 // PrepareInput is what the preparation step of a restore reads. Every value
 // is live, read in this look: the step decides from the state of the cluster
@@ -119,6 +162,25 @@ func Prepare(
 		return suspendTarget(ctx, c, p, in, key)
 	}
 
+	// A restore that failed leaves the cluster suspended, and so does one that
+	// somebody deleted while it ran. The remedy for both is a new restore, and
+	// that restore has to give the suspension back when it finishes. Without
+	// the takeover it never applied the field, so it would record nothing,
+	// withdraw nothing, and leave the cluster down for good.
+	//
+	// The field manager is what tells the two apart. A suspension that only a
+	// restore declares carries the suspend manager of this package. One that
+	// the owner declared carries theirs, and no restore adopts it.
+	if !p.ClusterSuspended && suspendedByARestore(in.Cluster) {
+		p.ClusterSuspended = true
+		progressing(in.Owner, fmt.Sprintf(
+			"the restore took over the suspension that an earlier restore left on CamundaCluster "+
+				"%s, and it gives that suspension back when it completes", key,
+		))
+
+		return Outcome{Wait: Shortly}, nil
+	}
+
 	// spec.suspend says what was asked for. The StatefulSet says what
 	// happened. A version that reaches the brokers while they still run is
 	// the downgrade of a running cluster that this order exists to avoid.
@@ -132,6 +194,50 @@ func Prepare(
 	}
 
 	return versionTarget(ctx, c, in, key)
+}
+
+// suspendedByARestore reports whether the suspension of the cluster came from
+// a restore rather than from its owner. It reads the managed fields: the
+// suspend manager of this package owns spec.suspend only where a restore
+// applied it.
+//
+// Co-ownership answers true as well, and that is safe. Server-side apply keeps
+// a field that another manager still declares, so a withdrawal by a restore
+// leaves the value of that other manager in place.
+func suspendedByARestore(cluster *v1.CamundaCluster) bool {
+	for _, entry := range cluster.ManagedFields {
+		if entry.Manager != string(FieldManagerTargetSuspend) || entry.FieldsV1 == nil {
+			continue
+		}
+		if declaresSuspend(entry.FieldsV1.GetRawBytes()) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// declaresSuspend reports whether a managed-fields entry names spec.suspend.
+// The encoding is the field set of the API server, where every key carries the
+// "f:" prefix of a field name. An entry that does not parse names nothing.
+func declaresSuspend(raw []byte) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return false
+	}
+
+	spec, ok := fields["f:spec"]
+	if !ok {
+		return false
+	}
+
+	var inSpec map[string]json.RawMessage
+	if err := json.Unmarshal(spec, &inSpec); err != nil {
+		return false
+	}
+	_, ok = inSpec["f:suspend"]
+
+	return ok
 }
 
 // suspendTarget suspends the cluster of the restore. It records that this
@@ -186,6 +292,19 @@ func suspendTarget(
 //
 // A version that has not converged yet is a wait, not a failure. The restore
 // has destroyed nothing at this point, so the wait costs nothing.
+//
+// The apply carries the UID of the cluster and no resource version, so it does
+// not fail when the cluster changed since the read that proved the suspension.
+// A resource version would: the cluster carries the status its own controller
+// writes, that status moves on nearly every reconcile, and an apply that
+// refused every such change would never land. What bounds the gap instead is
+// that a broker of the older version cannot reach the state of the newer one.
+// A manager that clears spec.suspend between the read and this write starts
+// brokers on the older version, and suspendTarget takes the suspension back on
+// the next look. Such a broker reads a snapshot that a newer version wrote,
+// reports the downgrade, and goes unhealthy without writing. The volumes it
+// found are erased before the restore application runs, and the phase that
+// erases them reads the suspension again on every look.
 func versionTarget(
 	ctx context.Context,
 	c client.Client,

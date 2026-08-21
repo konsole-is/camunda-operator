@@ -35,6 +35,12 @@ type Input struct {
 	// Partitions is the partition count of the referenced cluster. Optimize
 	// reads every partition of the exported records.
 	Partitions int32
+	// Suspended is spec.suspend of the referenced cluster. Optimize follows
+	// it: a suspended cluster scales both Optimize workloads to zero, the way
+	// it scales its own. The importer reads Elasticsearch directly, so it
+	// would otherwise keep importing while the cluster is down, and a restore
+	// of that cluster would write analytics from half-restored indices.
+	Suspended bool
 	// Platform is the spec of the CamundaPlatformConfig that the referenced
 	// cluster names. It gives the image registry prefix and the license. It is
 	// the zero value when the cluster names none.

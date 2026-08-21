@@ -10,7 +10,7 @@ If you want the whole picture in one place, read [A complete OIDC example](#a-co
 
 Under basic authentication the orchestration cluster stores its users itself, and every caller sends a username and a password. The operator creates the first administrator for you. The user is named `admin` and is a member of the `admin` role. You manage every other user in the Admin web application.
 
-The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. The Secret has two keys: `username` (`admin`) and `password`. The operator generates the password once and keeps it. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
+The credentials live in the Secret `<name>-camunda-admin`, in the namespace of the `CamundaCluster`. Read `username` (`admin`) and `password`. The Secret also carries `email`, the address of that user, and `email-applied`, the address the cluster has accepted. The operator generates the password once and keeps it. The Secret also holds the bookkeeping of a rotation: `password-rotation` names the request that the current password answers, and `password-pending` with `password-pending-rotation` appear only while a rotation is in flight. Do not read those keys; they are for the operator. The condition `AdminSecretReady` reports that the Secret is applied, and it takes part in `Ready`.
 
 The connectors runtime authenticates against the cluster with the same user and password. You configure nothing for it.
 
@@ -36,11 +36,47 @@ A platform config with no `auth` block has the same effect.
 
 ### Rotate the password
 
-To get a new password, delete the Secret. The operator creates a new Secret with a new password on the next reconcile.
+Set `spec.auth.basic.passwordRotation` on the `CamundaCluster` to a value that differs from the last one, for example a date:
 
-> **Caution:** After you delete the Secret, the new password works only after you set it on the `admin` user in the Admin web application. Then restart the connectors Deployment `<name>-connectors`, so that it reads the new password.
+```yaml
+spec:
+  auth:
+    basic:
+      passwordRotation: "2026-08"
+```
 
-The extra steps come from the orchestration cluster, not from the operator. The operator passes the user and the password as the initial user of the cluster. The cluster creates that user once, at first start. After that it checks only that the username exists, and it ignores the password in the configuration. The operator does not call the user API of the cluster to set the new password, so you set it yourself.
+The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, and publishes it in the Secret. The connectors Deployment restarts with the new password; the brokers, the gateway, and the web applications keep running. Every other user keeps its password. `status.adminPassword.rotation` shows the value when the rotation is complete. The same value never rotates twice, so a GitOps tool can apply it repeatedly. A suspended cluster serves no user API, so a requested rotation waits and applies after the cluster resumes.
+
+If the call fails, the Secret keeps the active password and the operator retries until the call succeeds. `AdminSecretReady` reports which of the three failures it is, and each one asks for something different from you. The same three reasons report a failed change of `adminEmail`, because that is an update of the same user.
+
+| Reason | What happened | What to do |
+| --- | --- | --- |
+| `ConnectionFailed` | The cluster did not answer. | Nothing. It clears when the user API of the gateway answers again. `AdminSecretReady` takes part in `Ready`, so the cluster stays not `Ready` until it does. |
+| `InvalidCredentials` | The cluster refused the password that the Secret publishes. Somebody changed it in the Admin web application. | Set the password from the Secret on the `admin` user there. The next retry succeeds. |
+| `Rejected` | The cluster accepted the password and refused the call itself. | Read the condition message, which carries the answer of the cluster and names the reason. A new password does not help. |
+
+> **Caution:** Between the update of the user and the restart of the connectors pods, a connectors call with the old password is rejected. Plan a rotation outside of peak hours.
+
+Do not rotate by deletion. A deleted Secret gets a new password, but the `admin` user keeps the old one. The old password is not published again, so read and keep it before you delete the Secret.
+
+The operator publishes the new password and rolls the connectors Deployment onto it by itself. Connectors then fail to authenticate, because the `admin` user still has the old password, and they keep failing until you repair it: sign in to the Admin web application with the old password and set the new password from the new Secret on the `admin` user. You do not need to restart connectors afterwards. A `passwordRotation` requested after the deletion fails with `InvalidCredentials` until the same repair, because the operator no longer holds a password that the cluster accepts.
+
+The extra steps of a deletion come from the orchestration cluster, not from the operator. The operator passes the user and the password as the initial user of the cluster. The cluster creates that user at start if it does not exist, and it decides that by the username alone: a user that is already there keeps the password it has, and the one in the configuration is ignored. `passwordRotation` exists because of that: it sets the password through the user API of the running cluster, which is the only path that changes it.
+
+### Set the address of the administrator
+
+The operator gives the `admin` user an email address, because the orchestration cluster stores one on every user and the Admin web application shows it. Name the address of the person or the team that owns the cluster:
+
+```yaml
+spec:
+  auth:
+    basic:
+      adminEmail: platform-team@example.com
+```
+
+An unset value publishes `admin@example.com`. That domain is reserved for documentation, so an operator that never asked for an address does not claim one that somebody owns.
+
+A changed value is applied to the running cluster. The operator publishes the new address in the Secret at once, for the processes to seed from, and calls the user API. It leaves the password alone, and records the address under `email-applied` only after the cluster accepts it, which is what tells it to stop calling. The workloads read `email` from the Secret, so a change restarts nothing. The user API validates the address and refuses a domain without a dot; a refused address surfaces on `AdminSecretReady` with the answer of the cluster. `email` still shows the address you asked for, and `email-applied` still shows the one the cluster holds, until a call succeeds and the two agree again.
 
 ## OIDC
 

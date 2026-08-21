@@ -140,13 +140,45 @@ var _ = Describe("LogicalRestoreElasticsearch admission", func() {
 		Expect(readyMessage(reached)).To(ContainSubstring("brokers still run"))
 
 		// Nothing bounds this hold. The restore erased nothing, so it waits
-		// for the cluster instead of ending itself.
+		// for the cluster instead of ending itself. It pinned what it reads
+		// before it wrote to the target, so the pins are set while it waits
+		// and the phase is what says it has not started.
 		Consistently(func(g Gomega) {
 			current := latest(g, restore)
 			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestorePending))
-			g.Expect(current.Status.BackupID).To(BeZero())
+			g.Expect(current.Status.BackupID).To(Equal(backupID))
+			g.Expect(current.Status.TargetClusterUID).To(Equal(w.cluster.UID))
+			g.Expect(current.Status.RestoredSnapshots).To(BeEmpty())
 			g.Expect(w.search.IndexDeleteCalls()).To(BeZero())
 		}, "2s", interval).Should(Succeed())
+	})
+
+	// Preparation holds for as many looks as the brokers and the version
+	// rollout need, and admission re-enters from the top on every one of them.
+	// The pins are what keep a replacement out during that hold.
+	It("refuses a target that is replaced while it prepares it", func() {
+		w := newWorld()
+		w.setRunningBrokers(worldBrokers)
+		backup := createBackup(w)
+
+		restore := createRestore(w, backup.Name)
+		expectReason(restore, v1.LogicalRestorePending, v1.ReasonProgressing)
+
+		By("replacing the target under its name while the brokers still run")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
+		reached := expectReason(restore, v1.LogicalRestorePending, v1.ReasonInvalidReference)
+		Expect(readyMessage(reached)).To(ContainSubstring("another cluster"))
 	})
 
 	// The controller watches CamundaCluster and enqueues the restores that
@@ -297,6 +329,26 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonIncompatibleTarget)
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("another-bucket"))
 	})
+})
+
+var _ = Describe("LogicalRestoreElasticsearch standing version", func() {
+	// The restore owns spec.version, and another manager can still take it
+	// back. The restore Jobs copy the broker image, so a version that moves
+	// mid-run would reach the restore application itself.
+	It("holds when the version of the target moves while the restore runs", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := createRestore(w, backup.Name)
+		expectPhase(restore, v1.LogicalRestoreRestoringSecondaryStorage)
+
+		By("rolling another broker image under the running restore")
+		w.rollBrokerImage("8.10.0")
+
+		reached := expectReason(restore, v1.LogicalRestoreRestoringSecondaryStorage, v1.ReasonIncompatibleTarget)
+		Expect(readyMessage(reached)).To(ContainSubstring("8.10.0"))
+		Expect(readyMessage(reached)).To(ContainSubstring("another manager moved it"))
+	})
+
 })
 
 var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
@@ -563,6 +615,11 @@ var _ = Describe("LogicalRestoreElasticsearch suspension of its target", func() 
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
 		}, timeout, interval).Should(Succeed())
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
 		for ordinal := range worldBrokers {
 			markJob(w.namespace, restorepkg.JobName(owner, ordinal), batchv1.JobComplete)
 		}
@@ -604,6 +661,11 @@ var _ = Describe("LogicalRestoreElasticsearch suspension of its target", func() 
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
 		}, timeout, interval).Should(Succeed())
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
 		for ordinal := range worldBrokers {
 			markJob(w.namespace, restorepkg.JobName(owner, ordinal), batchv1.JobComplete)
 		}
@@ -653,8 +715,42 @@ var _ = Describe("LogicalRestoreElasticsearch cluster claim", func() {
 		}, timeout, interval).Should(Equal("LogicalRestoreElasticsearch/" + restore.Name))
 	})
 
+	// Foreground propagation keeps a Job in place until its last pod is gone,
+	// and a pod that mounts a broker volume is what holds that volume. The
+	// claim is what tells the next operation that the cluster is free, so it
+	// waits for the pods and not for the delete call.
+	It("keeps the claim while the Jobs of the completed restore still terminate", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+
+		owner := labels.LogicalRestoreElasticsearch(restore.Name)
+		names := []string{restorepkg.JobName(owner, 0), restorepkg.JobName(owner, 1)}
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(Equal(names))
+		}, timeout, interval).Should(Succeed())
+
+		for _, name := range names {
+			markJob(w.namespace, name, batchv1.JobComplete)
+		}
+		expectReason(restore, v1.LogicalRestoreCompleted, v1.ReasonCompleted)
+		expectJobsCollected(w.namespace, names)
+
+		By("holding the claim while the Jobs are still there")
+		Consistently(func() string {
+			return claimHolder(w)
+		}, "1s", interval).Should(Equal("LogicalRestoreElasticsearch/" + restore.Name))
+
+		By("giving the claim back once the collector removed them")
+		collectDeletedJobs(w.namespace)
+		Eventually(func() string {
+			return claimHolder(w)
+		}, timeout, interval).Should(BeEmpty())
+	})
+
 	It("gives the claim back when it completes", func() {
 		w := newWorld()
+		collectDeletedJobs(w.namespace)
 		backup := createBackup(w)
 		restore := startedRestore(w, backup)
 

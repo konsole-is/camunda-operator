@@ -82,6 +82,17 @@ type Input struct {
 	// Secrets and custom resources, as "kind/namespace/name=version" strings.
 	// ConfigHash sorts them, so the order does not matter.
 	HashInputs []string
+	// AdminPasswordHash is PasswordHash of the admin password that the admin
+	// Secret of a basic-auth cluster publishes, or "" under OIDC. It is the
+	// password the Secret already holds, never one that this reconcile is
+	// promoting: connectors resolve the Secret when a pod starts, so a hash
+	// that ran ahead of a Secret write that then failed would never roll
+	// them again. A cluster whose Secret does not exist yet is the
+	// exception, and the controller passes the password it is about to
+	// publish there: a failed apply leaves no Secret at all, and the next
+	// reconcile generates another password, so the hash keeps moving until
+	// one lands. Only the hash of connectors consumes it; see ConfigHash.
+	AdminPasswordHash string
 	// ServiceMonitorSupported reports whether the Kubernetes cluster serves
 	// the ServiceMonitor kind. When false, no ServiceMonitor is rendered.
 	ServiceMonitorSupported bool
@@ -102,16 +113,37 @@ type EffectiveAuth struct {
 	// cluster auth and is set only when Method is oidc, because basic
 	// authentication seeds its own administrator.
 	Admin *v1.ClusterAdminSpec
+	// Basic is the basic block of the effective cluster auth. It is set only
+	// when Method is basic, because OIDC has no operator-owned credential.
+	Basic *v1.BasicAuthSpec
+}
+
+// ResolveAdminEmail returns the address of the seeded admin user that auth
+// asks for, or DefaultAdminEmail when it names none. It is meaningful under
+// basic authentication only; OIDC seeds no user.
+func ResolveAdminEmail(auth EffectiveAuth) string {
+	if auth.Basic != nil && auth.Basic.AdminEmail != "" {
+		return auth.Basic.AdminEmail
+	}
+
+	return DefaultAdminEmail
 }
 
 // ResolveAuth layers the authentication settings: the platform config gives
 // the method and the identity provider connection, the effective cluster
 // auth (preset then cluster) overrides the client id, the audience, and the
-// client secret reference, and provides the members of the admin role. The
-// platform spec is not mutated.
+// client secret reference, and provides the members of the admin role.
+// Under basic authentication the effective cluster auth provides the basic
+// block instead. The platform spec is not mutated.
 func ResolveAuth(in Input) EffectiveAuth {
 	auth := EffectiveAuth{Method: in.Platform.Method()}
-	if auth.Method != v1.AuthenticationMethodOIDC || in.Platform.Auth == nil || in.Platform.Auth.OIDC == nil {
+	if auth.Method != v1.AuthenticationMethodOIDC {
+		if in.Effective.Auth != nil {
+			auth.Basic = in.Effective.Auth.Basic
+		}
+		return auth
+	}
+	if in.Platform.Auth == nil || in.Platform.Auth.OIDC == nil {
 		return auth
 	}
 

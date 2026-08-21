@@ -304,7 +304,7 @@ If the phase is `Failed`, `failureMessage` names the step that failed and why:
 status:
   phase: Failed
   step: BackupRuntime
-  failureMessage: "Step BackupRuntime failed: management API unreachable: Get \"http://my-cluster-zeebe.my-cluster-ns.svc:9600/actuator/backupRuntime/1755640800000\": dial tcp: i/o timeout"
+  failureMessage: "Step BackupRuntime failed: the cluster is unreachable: Get \"http://my-cluster-zeebe.my-cluster-ns.svc:9600/actuator/backupRuntime/1755640800000\": dial tcp: i/o timeout"
   completionTime: "2026-08-19T22:30:02Z"
   conditions:
     - type: Ready
@@ -339,7 +339,7 @@ Before this behaviour existed, a patch upgrade of an Elasticsearch-backed cluste
 Two things follow that are worth knowing:
 
 - On the PostgreSQL path, a cluster that the version rule would already accept is still moved back to the version of the backup. The cluster comes back one minor behind where it was, and you upgrade it forward again after the restore.
-- The restore keeps `spec.version`. Your next `kubectl apply` or GitOps sync of the `CamundaCluster` takes the field back, with the version you declare. Declare the version you want the cluster to run once the restore is `Completed`.
+- The restore keeps `spec.version`. Declare the version you want the cluster to run once the restore is `Completed`. A manifest that omits the field does not take it back, because server-side apply removes a field only from the manager that declared it. A cluster that took its version from a preset needs the field removed by hand. The CRD page of each restore kind shows both.
 
 **Take a backup before every upgrade.** The most common reason to restore is an upgrade that went wrong, and the backup you want is the one from just before it.
 

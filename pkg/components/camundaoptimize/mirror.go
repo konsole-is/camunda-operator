@@ -24,6 +24,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -55,9 +56,12 @@ var MirrorPurposes = []string{
 const mirroredComponentName = "optimize-secrets"
 
 // MirroredSecretName returns the name of the copy of a referenced Secret in
-// the CamundaOptimize namespace: <name>-optimize-<purpose>.
+// the CamundaOptimize namespace: <name>-optimize-<purpose>. A long
+// CamundaOptimize name truncates, the way WorkloadName truncates.
 func MirroredSecretName(o *v1.CamundaOptimize, purpose string) string {
-	return o.Name + "-optimize-" + purpose
+	suffix := "-optimize-" + purpose
+
+	return labels.BoundedName(o.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // MirroredSecretComponent renders one Secret per purpose of MirrorPurposes in

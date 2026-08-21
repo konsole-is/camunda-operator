@@ -24,6 +24,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -65,9 +66,12 @@ var MirrorPurposes = []string{
 const mirroredComponentName = "mirrored-secrets"
 
 // MirroredSecretName returns the name of the copy of a referenced Secret in
-// the cluster namespace: <name>-camunda-<purpose>.
+// the cluster namespace: <name>-camunda-<purpose>. A long cluster name
+// truncates, the way WorkloadName truncates.
 func MirroredSecretName(cluster *v1.CamundaCluster, purpose string) string {
-	return cluster.Name + "-camunda-" + purpose
+	suffix := "-camunda-" + purpose
+
+	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // MirroredSecretComponent renders one Secret per purpose of MirrorPurposes

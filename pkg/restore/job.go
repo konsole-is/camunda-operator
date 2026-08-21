@@ -104,10 +104,11 @@ var jobKindInfixes = map[string]string{
 // and the ordinal alone, so a reconcile that re-enters after a crash finds the
 // Job it already created.
 //
-// A restore name can be a full DNS subdomain, but a Job name is a DNS label,
-// so a long name truncates deterministically and stays unique through a hash
-// of the whole name. Pass the owner as pkg/labels builds it, with the name of
-// the restore resource unshortened.
+// A restore name can be a full DNS subdomain, but a Job name is a DNS label.
+// Build the owner through the constructor of its kind in pkg/labels, which
+// bounds the name to what a label value admits. This bounds it a second time,
+// to leave room for the suffix. Each step ends in a hash of the value that it
+// cuts, so two long restore names still get two Job names.
 //
 // JobName returns the empty string for an owner of any other kind, for an
 // owner without a name, and for a negative ordinal. BuildJob rejects all
@@ -123,25 +124,17 @@ func JobName(owner labels.Owner, ordinal int32) string {
 	return labels.BoundedName(owner.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
-// boundedOwner returns owner with its name bounded to a label value. A label
-// value is bounded like a DNS label, and a restore name can be longer.
-func boundedOwner(owner labels.Owner) labels.Owner {
-	owner.Name = labels.BoundedName(owner.Name, validation.LabelValueMaxLength)
-
-	return owner
-}
-
 // JobLabels returns every label that a restore Job and its pods carry: the
 // owner of the restore, the restore component, the operator as manager, and
 // the cluster the restore runs against.
 //
 // A consumer that selects these Jobs must build the labels here rather than
-// by hand. The owner label value is bounded to a DNS label, and a restore
-// name can be longer, so a hand-built selector misses every Job of a restore
-// whose name passes 63 characters.
+// by hand. Both owner label values are bounded to a DNS label, and a restore
+// name and a cluster name can both be longer, so a hand-built selector misses
+// every Job of a restore or a cluster whose name passes 63 characters.
 func JobLabels(owner labels.Owner, cluster string) map[string]string {
-	managed := labels.Managed(boundedOwner(owner), ComponentRestore)
-	managed[labels.ClusterKey] = cluster
+	managed := labels.Managed(owner, ComponentRestore)
+	managed[labels.ClusterKey] = labels.OwnerName(cluster)
 
 	return managed
 }
@@ -156,7 +149,7 @@ func JobLabels(owner labels.Owner, cluster string) map[string]string {
 // belongs to the cache, not to this selector: a caller that lists through the
 // live API reads the same pods with these labels alone.
 func JobSelector(owner labels.Owner) map[string]string {
-	return labels.Discovery(boundedOwner(owner), ComponentRestore)
+	return labels.Discovery(owner, ComponentRestore)
 }
 
 // BuildJob renders the Job that runs the restore application for one broker.
@@ -206,7 +199,12 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	// The Job takes its name from the label and its namespace from the object.
 	// Two different resources there put the Job under one name in the other's
 	// namespace, where neither controller looks for it.
-	if in.Owner.GetName() != in.OwnerLabel.Name {
+	//
+	// The comparison bounds the name of the object, because an Owner carries
+	// the bounded name that a label value admits. A long name and its bound
+	// are the same resource. Two different long names are not: the bound ends
+	// in a hash of the whole name, so they stay apart.
+	if labels.BoundedName(in.Owner.GetName(), validation.LabelValueMaxLength) != in.OwnerLabel.Name {
 		return nil, fmt.Errorf(
 			"building the restore Job of broker %d: the owner is %q but the owner label names %q",
 			in.Ordinal, in.Owner.GetName(), in.OwnerLabel.Name,

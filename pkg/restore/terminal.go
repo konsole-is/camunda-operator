@@ -37,6 +37,12 @@ import (
 // flush can restore a stale Ready from the server, and staging it again on
 // every look heals that.
 //
+// It reports Done only when all three are given back, and it converges over
+// more than one look. Collecting the Jobs deletes them with foreground
+// propagation, which outlives the call: a Job that still exists means its pods
+// can still exist. Outcome.Wait then paces the look that finds them gone, and
+// the two steps behind the Jobs do not run until that look.
+//
 // The order of the three releases is the correctness of this branch, and a
 // tidy-up must not change it:
 //
@@ -59,18 +65,23 @@ func Finish(
 	owner conditions.Owner,
 	p *v1.RestoreProgress,
 	cluster string,
-) error {
+) (Outcome, error) {
 	StageTerminal(owner, p)
 
-	if err := CollectJobs(ctx, c, reader, owner, p); err != nil {
-		return err
+	collected, err := CollectJobs(ctx, c, reader, owner, p)
+	if err != nil || !collected.Done {
+		return collected, err
 	}
 
 	if err := Resume(ctx, c, reader, p, types.NamespacedName{
 		Namespace: owner.GetNamespace(), Name: cluster,
 	}); err != nil {
-		return err
+		return Outcome{}, err
 	}
 
-	return Give(ctx, c, reader, owner, cluster)
+	if err := Give(ctx, c, reader, owner, cluster); err != nil {
+		return Outcome{}, err
+	}
+
+	return Outcome{Done: true}, nil
 }

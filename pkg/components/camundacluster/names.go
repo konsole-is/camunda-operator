@@ -17,7 +17,10 @@ limitations under the License.
 package camundacluster
 
 import (
+	"k8s.io/apimachinery/pkg/util/validation"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // The component values of the camunda.io/component label. Each one is also
@@ -45,9 +48,45 @@ const (
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
-	// AdminUsernameKey and AdminPasswordKey are the keys of the admin Secret.
+	// DefaultAdminEmail is the email of the seeded admin user when
+	// spec.auth.basic.adminEmail names none. The domain is the one that RFC
+	// 2606 reserves for documentation, so an unset value never claims an
+	// address that somebody owns. The user API validates the address on
+	// every update and refuses a domain without a dot, such as
+	// admin@localhost, with 400 INVALID_ARGUMENT.
+	DefaultAdminEmail = "admin@example.com"
+	// AdminUsernameKey, AdminEmailKey, and AdminPasswordKey are the keys of
+	// the admin Secret. The email lives here, and not in the rendered pod
+	// template, so that a changed address never restarts a workload: the
+	// processes read it from this Secret, and the orchestration cluster
+	// reads it once, when it seeds the user. It always carries an address,
+	// because a process that read none would seed an incomplete user.
 	AdminUsernameKey = "username"
+	AdminEmailKey    = "email"
 	AdminPasswordKey = "password"
+	// AdminAppliedEmailKey holds the address that the orchestration cluster
+	// has accepted, which is not always the one under AdminEmailKey: a
+	// changed address is published for the processes at once and recorded
+	// here only after the user API takes it. The operator compares the two
+	// to decide whether the cluster still has to be told. The workloads
+	// never read it.
+	AdminAppliedEmailKey = "email-applied"
+	// AdminPendingPasswordKey holds the requested password while a rotation
+	// is in flight, next to the active one under AdminPasswordKey. The
+	// workloads never read it.
+	AdminPendingPasswordKey = "password-pending"
+	// AdminPendingRotationKey holds the rotation value that staged the
+	// password under AdminPendingPasswordKey. The two travel together, so a
+	// promote records the request that produced the password it promotes,
+	// even when the spec changed while the rotation was in flight. The
+	// workloads never read it.
+	AdminPendingRotationKey = "password-pending-rotation"
+	// AdminRotationKey holds the spec.auth.basic.passwordRotation value that
+	// produced the password under AdminPasswordKey. It travels with the
+	// password, in the same apply, so the operator always knows which
+	// request the published password answers. status.adminPassword.rotation
+	// projects it. The workloads never read it.
+	AdminRotationKey = "password-rotation"
 	// DataVolumeName is the volume claim template of the brokers.
 	DataVolumeName = "data"
 	// DataMountPath is where the brokers keep their data. It is the
@@ -85,15 +124,21 @@ const (
 )
 
 // WorkloadName returns the name of the workload and Service of a component:
-// the cluster name and the component, joined by a dash.
+// the cluster name and the component, joined by a dash. The Service is the
+// tightest bound of the three, a DNS label of 63 characters, so a long
+// cluster name truncates and keeps its identity in a hash.
 func WorkloadName(cluster *v1.CamundaCluster, component string) string {
-	return cluster.Name + "-" + component
+	suffix := "-" + component
+
+	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // AdminSecretName returns the name of the Secret that holds the admin
 // credentials of a basic-auth cluster.
 func AdminSecretName(cluster *v1.CamundaCluster) string {
-	return cluster.Name + adminSecretSuffix
+	limit := validation.DNS1123LabelMaxLength - len(adminSecretSuffix)
+
+	return labels.BoundedName(cluster.Name, limit) + adminSecretSuffix
 }
 
 // ServiceAccountName returns the name that the ServiceAccount of the cluster
@@ -108,7 +153,9 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 		return e.ServiceAccount.Name
 	}
 
-	return cluster.Name + serviceAccountSuffix
+	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
+
+	return labels.BoundedName(cluster.Name, limit) + serviceAccountSuffix
 }
 
 // PodServiceAccountName returns the ServiceAccount that the pods of the
