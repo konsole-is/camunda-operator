@@ -39,6 +39,11 @@ func TestFieldManagersAreStable(t *testing.T) {
 
 	assert.Equal(
 		t,
+		client.FieldOwner("camunda-operator/logicalrestoreelasticsearch"),
+		FieldManagerLogicalRestoreElasticsearch,
+	)
+	assert.Equal(
+		t,
 		client.FieldOwner("camunda-operator/logicalrestorerdbms"),
 		FieldManagerLogicalRestoreRDBMS,
 	)
