@@ -26,9 +26,18 @@ limitations under the License.
 // resources of one kind without knowing the component vocabulary of the other.
 package labels
 
-import "maps"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"maps"
+	"strings"
+)
 
 const (
+	// nameHashLength is the hex length of the hash that keeps a long name
+	// unique after BoundedName truncates it.
+	nameHashLength = 10
+
 	// ClusterKey names the owning CamundaCluster.
 	ClusterKey = "camunda.io/cluster"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
@@ -144,4 +153,22 @@ func Merge(user, operator map[string]string) map[string]string {
 	maps.Copy(merged, user)
 	maps.Copy(merged, operator)
 	return merged
+}
+
+// BoundedName returns name when it fits limit, or its head followed by a hash
+// of the whole name otherwise. The result is deterministic, so every render of
+// one resource agrees, and two names that share the head differ in the hash.
+//
+// The name of a custom resource can be a full DNS subdomain, and a label value
+// and a Job name are both bounded like a DNS label. Pass
+// validation.LabelValueMaxLength or validation.DNS1123LabelMaxLength as limit,
+// less the length of any suffix the caller appends.
+func BoundedName(name string, limit int) string {
+	if len(name) <= limit {
+		return name
+	}
+	sum := sha256.Sum256([]byte(name))
+	hash := hex.EncodeToString(sum[:])[:nameHashLength]
+
+	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
 }

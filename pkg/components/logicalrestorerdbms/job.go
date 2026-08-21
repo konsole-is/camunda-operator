@@ -23,8 +23,6 @@ limitations under the License.
 package logicalrestorerdbms
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -77,9 +75,6 @@ const (
 	// operatorUID is the uid of the distroless nonroot user that the operator
 	// image runs as.
 	operatorUID = int64(65532)
-	// nameHashLength is the hex length of the hash that keeps a long name
-	// unique after boundedName truncates it to a DNS label.
-	nameHashLength = 10
 )
 
 // The environment contract of the download subcommand. The Job renders these
@@ -152,24 +147,11 @@ type JobInput struct {
 // restore name alone. The Job lives in the restore's own namespace, where that
 // name is unique. A reconcile that re-enters after a crash therefore adopts
 // the Job that it already created instead of a second one. A restore name can
-// be a full DNS subdomain, but a Job name is a DNS label. boundedName
+// be a full DNS subdomain, but a Job name is a DNS label. BoundedName
 // therefore truncates a long name deterministically and keeps it unique with a
 // hash of the whole name.
 func JobName(restore *v1.LogicalRestoreRDBMS) string {
-	return boundedName(restore.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
-}
-
-// boundedName returns name when it fits limit, or its head followed by a hash
-// of the whole name otherwise. The result is deterministic, so every render of
-// one restore agrees, and two names that share the head differ in the hash.
-func boundedName(name string, limit int) string {
-	if len(name) <= limit {
-		return name
-	}
-	sum := sha256.Sum256([]byte(name))
-	hash := hex.EncodeToString(sum[:])[:nameHashLength]
-
-	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
+	return labels.BoundedName(restore.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
 }
 
 // JobBelongsTo reports whether job carries the identity of restore, that is
@@ -219,7 +201,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	// bounded name, and the UID label carries the identity that never
 	// truncates.
 	managed := labels.Managed(
-		labels.LogicalRestoreRDBMS(boundedName(in.Restore.Name, validation.LabelValueMaxLength)),
+		labels.LogicalRestoreRDBMS(labels.BoundedName(in.Restore.Name, validation.LabelValueMaxLength)),
 		ComponentName,
 	)
 	managed[labels.ClusterKey] = in.ClusterName

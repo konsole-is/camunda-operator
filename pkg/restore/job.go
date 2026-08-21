@@ -17,14 +17,11 @@ limitations under the License.
 package restore
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"maps"
 	"reflect"
 	"slices"
 	"strconv"
-	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,9 +40,6 @@ const (
 	// so a restore can never run another version than the brokers (Camunda 8.9
 	// restore guides: command "/usr/local/camunda/bin/restore").
 	RestoreEntrypoint = "/usr/local/camunda/bin/restore"
-	// nameHashLength is the hex length of the hash that keeps a long name
-	// unique after boundedName truncates it to a DNS label.
-	nameHashLength = 10
 	// noRetries is the backoff limit of every restore Job. The restore
 	// application refuses a non-empty data directory, so a second pod finds
 	// what the first one wrote and fails for the wrong reason. A failed
@@ -126,13 +120,13 @@ func JobName(owner labels.Owner, ordinal int32) string {
 
 	suffix := "-" + kind + "-" + strconv.FormatInt(int64(ordinal), 10)
 
-	return boundedName(owner.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
+	return labels.BoundedName(owner.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // boundedOwner returns owner with its name bounded to a label value. A label
 // value is bounded like a DNS label, and a restore name can be longer.
 func boundedOwner(owner labels.Owner) labels.Owner {
-	owner.Name = boundedName(owner.Name, validation.LabelValueMaxLength)
+	owner.Name = labels.BoundedName(owner.Name, validation.LabelValueMaxLength)
 
 	return owner
 }
@@ -159,19 +153,6 @@ func JobLabels(owner labels.Owner, cluster string) map[string]string {
 // selector must not depend on.
 func JobSelector(owner labels.Owner) map[string]string {
 	return labels.Discovery(boundedOwner(owner), ComponentRestore)
-}
-
-// boundedName returns name when it fits limit, or its head followed by a hash
-// of the whole name otherwise. The result is deterministic, so every render of
-// one restore agrees, and two names that share the head differ in the hash.
-func boundedName(name string, limit int) string {
-	if len(name) <= limit {
-		return name
-	}
-	sum := sha256.Sum256([]byte(name))
-	hash := hex.EncodeToString(sum[:])[:nameHashLength]
-
-	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
 }
 
 // BuildJob renders the Job that runs the restore application for one broker.
