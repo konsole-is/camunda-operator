@@ -217,7 +217,16 @@ func (r *Reconciler) trackDatabaseJob(
 		return restore.Outcome{}, nil
 	}
 
-	stuck, err := r.stuckDatabasePod(ctx, lrr)
+	// The pods are selected by the restore UID that the pod template carries,
+	// so a leftover pod of another restore of the same name never holds this
+	// one.
+	stuck, err := podstate.Stuck(
+		ctx,
+		r.APIReader,
+		lrr.Namespace,
+		map[string]string{components.RestoreUIDLabel: string(lrr.UID)},
+		whatSecondary,
+	)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -494,21 +503,4 @@ func (r *Reconciler) dumpBlock(
 	}
 
 	return &merged.Backup.Dump.DumpPodSpec, merged.Backup.Dump.PostgresImage, nil, nil
-}
-
-// stuckDatabasePod reports the first pod of the pg_restore Job that cannot
-// start. It selects the pods by the restore UID that the pod template
-// carries, so a leftover pod of another restore of the same name never holds
-// this one.
-func (r *Reconciler) stuckDatabasePod(
-	ctx context.Context,
-	lrr *v1.LogicalRestoreRDBMS,
-) (*conditions.PreCheckFailure, error) {
-	return podstate.Stuck(
-		ctx,
-		r.APIReader,
-		lrr.Namespace,
-		map[string]string{components.RestoreUIDLabel: string(lrr.UID)},
-		whatSecondary,
-	)
 }
