@@ -462,3 +462,61 @@ func TestRecreateClaimsKeepsWaitingWhenThePodLookupFails(t *testing.T) {
 	assert.False(t, progress.Done)
 	assert.Contains(t, progress.Message, "delete the restore that ran before this one")
 }
+
+// A workload that is not the broker StatefulSet of the target belongs to
+// somebody else. The message names it and asks for the pod, because
+// suspending the cluster does not remove it.
+func TestRecreateClaimsAsksForAPodOfAForeignWorkload(t *testing.T) {
+	t.Parallel()
+
+	pod := holdingPod(
+		"debug-shell-7f9c",
+		"data-my-cluster-zeebe-1",
+		controllerRef("apps/v1", "Deployment", "debug-shell"),
+	)
+
+	message := terminatingHold(t, pod)
+
+	assert.Contains(t, message, "Deployment debug-shell")
+	assert.Contains(t, message, "Remove that pod, or the workload that runs it")
+	assert.NotContains(t, message, "Suspend the cluster")
+}
+
+// Naming the holder lists the pods of the namespace, and only the first hold
+// reaches the caller. A restore whose volumes all terminate must not pay for
+// that list once per volume.
+func TestRecreateClaimsListsThePodsOnceWhileEveryClaimTerminates(t *testing.T) {
+	t.Parallel()
+
+	lists := 0
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(
+			terminatingClaim("data-my-cluster-zeebe-0"),
+			terminatingClaim("data-my-cluster-zeebe-1"),
+			terminatingClaim("data-my-cluster-zeebe-2"),
+		).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				ctx context.Context,
+				c client.WithWatch,
+				list client.ObjectList,
+				opts ...client.ListOption,
+			) error {
+				if _, pods := list.(*corev1.PodList); pods {
+					lists++
+				}
+
+				return c.List(ctx, list, opts...)
+			},
+		}).
+		Build()
+
+	in := claimInput("10Gi")
+	in.Recreated = targetFixture().ClaimNames()
+
+	progress, err := RecreateClaims(context.Background(), c, c, in)
+	require.NoError(t, err)
+	assert.False(t, progress.Done)
+	assert.Equal(t, 1, lists)
+}

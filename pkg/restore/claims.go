@@ -144,7 +144,9 @@ func (t *Target) BuildClaim(ordinal int32, size resource.Quantity) *corev1.Persi
 //
 // The reader must be uncached. A claim that was just deleted or applied is
 // what the next decision reads. The same reader also reads the pods of the
-// namespace, to name what holds a volume that still terminates.
+// namespace, to name what holds a volume that still terminates. That read
+// happens at most once per call, whatever the number of terminating volumes,
+// because only the first hold names the reported reason.
 func RecreateClaims(
 	ctx context.Context,
 	c client.Client,
@@ -190,9 +192,13 @@ func RecreateClaims(
 			// it alive. The pod is a broker pod of a cluster that nobody
 			// suspended, or a Job pod of a restore that failed, and the two
 			// need different remedies. The message names the one it found.
-			progress.hold(terminatingMessage(
-				ctx, reader, in.Target.StatefulSet.Namespace, name,
-			))
+			//
+			// The guard is what bounds the cost. Naming the holder lists the
+			// pods of the namespace, and only the first hold reaches the
+			// caller, so a later terminating volume pays for nothing.
+			if progress.Done {
+				progress.hold(terminatingMessage(ctx, reader, in.Target, name))
+			}
 		default:
 			claim := in.Target.BuildClaim(int32(ordinal), in.Size)
 			if err := Apply(ctx, c, claim, in.FieldManager); err != nil {

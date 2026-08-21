@@ -43,7 +43,8 @@ const unknownHolder = "a pod still holds it. A cluster that is not suspended kee
 // kubernetes.io/pvc-protection finalizer, so the message names that pod and
 // the resource that runs it. Two causes reach here. A cluster that nobody
 // suspended still runs its broker pods, and a restore that failed still keeps
-// its Jobs.
+// its Jobs. The remedy follows the holder, and a pod of any other workload
+// gets no remedy that the operator cannot promise.
 //
 // A lookup that finds no pod, and a lookup that fails, both report the two
 // causes together. The wording of a wait is never worth a failed restore, so
@@ -51,9 +52,10 @@ const unknownHolder = "a pod still holds it. A cluster that is not suspended kee
 func terminatingMessage(
 	ctx context.Context,
 	reader client.Reader,
-	namespace, claim string,
+	target *Target,
+	claim string,
 ) string {
-	holder, err := claimHolder(ctx, reader, namespace, claim)
+	holder, err := claimHolder(ctx, reader, target, claim)
 	if err != nil {
 		logf.FromContext(ctx).Error(
 			err, "Could not read the pod that holds a terminating broker volume", "claim", claim,
@@ -76,8 +78,11 @@ func terminatingMessage(
 func claimHolder(
 	ctx context.Context,
 	reader client.Reader,
-	namespace, claim string,
+	target *Target,
+	claim string,
 ) (string, error) {
+	namespace := target.StatefulSet.Namespace
+
 	var pods corev1.PodList
 	if err := reader.List(ctx, &pods, client.InNamespace(namespace)); err != nil {
 		return "", fmt.Errorf("listing the pods of namespace %s: %w", namespace, err)
@@ -94,16 +99,33 @@ func claimHolder(
 		case controller == nil:
 			return fmt.Sprintf("pod %s holds it. Remove that pod to free the volume", pod.Name), nil
 		case !isJob(controller):
-			return fmt.Sprintf(
-				"pod %s of %s %s holds it. Suspend the cluster to free the volume",
-				pod.Name, controller.Kind, controller.Name,
-			), nil
+			return workloadHolder(pod.Name, target.StatefulSet.Name, controller), nil
 		}
 
 		return jobHolder(ctx, reader, namespace, pod.Name, controller.Name)
 	}
 
 	return "", nil
+}
+
+// workloadHolder names a pod that a workload runs.
+//
+// The broker StatefulSet of the target is the one workload whose remedy the
+// operator knows: a suspended cluster runs no broker pod, so the volume goes
+// free. Any other workload belongs to somebody else, and the message asks for
+// the pod instead of naming a remedy the operator cannot promise.
+func workloadHolder(pod, brokers string, controller *metav1.OwnerReference) string {
+	if controller.Kind == "StatefulSet" && controller.Name == brokers {
+		return fmt.Sprintf(
+			"pod %s of StatefulSet %s holds it. Suspend the cluster to free the volume",
+			pod, brokers,
+		)
+	}
+
+	return fmt.Sprintf(
+		"pod %s of %s %s holds it. Remove that pod, or the workload that runs it, to free the volume",
+		pod, controller.Kind, controller.Name,
+	)
 }
 
 // jobHolder names the resource that runs the pod, through the Job that owns
