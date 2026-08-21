@@ -237,21 +237,70 @@ func TestPrepareWritesTheVersionOfTheBackup(t *testing.T) {
 	assert.Equal(t, "8.9.8", w.live(t).Spec.Version)
 }
 
-// The tag of the broker image is what a broker really runs, and it is what
-// the restore Jobs run too. A cluster that takes its version from a preset
-// carries no spec.version at all.
-func TestPrepareIsDoneWhenTheBrokerImageCarriesTheVersion(t *testing.T) {
+// The step is done only when spec.version and the tag of the broker image
+// both carry the version of the backup.
+func TestPrepareIsDoneWhenTheSpecAndTheImageBothCarryTheVersion(t *testing.T) {
 	t.Parallel()
 
 	w := newPrepareWorld(t)
-	w.input.Version = "8.9.9"
-	w.input.Target.Version = "8.9.9"
-	w.cluster.Spec.Version = ""
 
 	outcome := w.look(t)
 
 	assert.True(t, outcome.Done)
 	assert.Empty(t, *w.applies)
+}
+
+// A cluster that takes its version from a preset carries no spec.version at
+// all. The restore writes the field, so the cluster keeps the version of the
+// backup once the restore is over.
+func TestPrepareWritesTheVersionOfAClusterThatDeclaresNone(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.cluster.Spec.Version = ""
+	require.NoError(t, w.client.Update(t.Context(), w.cluster))
+
+	outcome := w.look(t)
+
+	assert.False(t, outcome.Done)
+	require.Len(t, *w.applies, 1)
+	assert.Equal(t, "8.9.9", (*w.applies)[0].cluster.Spec.Version)
+}
+
+// The write is made once. A step that applied the same value on every poll
+// would write to the cluster for as long as the rollout takes.
+func TestPrepareWaitsForTheImageWithoutWritingAgain(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.input.Target.Version = "8.10.0"
+
+	outcome := w.look(t)
+
+	assert.False(t, outcome.Done)
+	assert.Equal(t, testPrepPoll, outcome.Wait)
+	assert.Empty(t, *w.applies, "the step wrote a version that the cluster already declares")
+	assert.Contains(t, ready(w.restore).Message, "brokers carry 8.10.0")
+}
+
+// A cluster part way through an upgrade declares the newer version and still
+// runs the older image. Reading the image alone would call it converged, and
+// the cluster controller would then roll the newer image in under the
+// restore.
+func TestPrepareWritesTheVersionOfAClusterThatIsMidUpgrade(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.cluster.Spec.Version = "8.10.0"
+	require.NoError(t, w.client.Update(t.Context(), w.cluster))
+	w.input.Target.Version = "8.9.9"
+	w.input.Version = "8.9.9"
+
+	outcome := w.look(t)
+
+	assert.False(t, outcome.Done, "the cluster still declares the version it was upgrading to")
+	require.Len(t, *w.applies, 1)
+	assert.Equal(t, "8.9.9", (*w.applies)[0].cluster.Spec.Version)
 }
 
 // A backup that recorded no version, and one whose recorded version is not a

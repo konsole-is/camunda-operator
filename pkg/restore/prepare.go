@@ -170,11 +170,19 @@ func suspendTarget(
 // versionTarget sets the Camunda version of the backup on the cluster and
 // waits until the brokers carry it.
 //
-// The comparison reads the tag of the broker image, not spec.version. A
+// The two comparisons answer two questions. spec.version says which version
+// the cluster was asked to run, and it decides whether the step still has a
+// write to make. The tag of the broker image says which version a broker
+// would really start on, and it alone decides that the cluster converged: a
 // cluster that takes its version from a preset carries no spec.version at
 // all, and a spec.version that the cluster controller has not rolled out yet
-// says nothing about what a broker would run. The tag is what the restore
-// Jobs themselves run, because they copy the broker image.
+// says nothing about a broker. The tag is also what the restore Jobs run,
+// because they copy the broker image.
+//
+// Both are needed. A cluster that is part way through an upgrade carries the
+// newer version in spec.version and the older one on its image. Reading the
+// image alone would call that cluster converged, and the cluster controller
+// would then roll the newer image in under the restore.
 //
 // A version that has not converged yet is a wait, not a failure. The restore
 // has destroyed nothing at this point, so the wait costs nothing.
@@ -184,19 +192,32 @@ func versionTarget(
 	in PrepareInput,
 	key types.NamespacedName,
 ) (Outcome, error) {
-	if !versionPattern.MatchString(in.Version) || in.Version == in.Target.Version {
+	if !versionPattern.MatchString(in.Version) {
 		return Outcome{Done: true}, nil
 	}
 
-	if err := applyVersion(ctx, c, key, in.Cluster.UID, in.Version); err != nil {
-		return Outcome{}, err
-	}
-	progressing(in.Owner, fmt.Sprintf(
-		"CamundaCluster %s moves to Camunda %s, the version its backup was taken with. Its brokers "+
-			"carry %s", key, in.Version, in.Target.Version,
-	))
+	if in.Cluster.Spec.Version != in.Version {
+		if err := applyVersion(ctx, c, key, in.Cluster.UID, in.Version); err != nil {
+			return Outcome{}, err
+		}
+		progressing(in.Owner, fmt.Sprintf(
+			"the restore set CamundaCluster %s to Camunda %s, the version its backup was taken "+
+				"with", key, in.Version,
+		))
 
-	return Outcome{Wait: in.Poll}, nil
+		return Outcome{Wait: in.Poll}, nil
+	}
+
+	if in.Target.Version != in.Version {
+		progressing(in.Owner, fmt.Sprintf(
+			"CamundaCluster %s moves to Camunda %s, the version its backup was taken with. Its "+
+				"brokers carry %s", key, in.Version, in.Target.Version,
+		))
+
+		return Outcome{Wait: in.Poll}, nil
+	}
+
+	return Outcome{Done: true}, nil
 }
 
 // Resume withdraws the suspension that this restore applied to its cluster.
