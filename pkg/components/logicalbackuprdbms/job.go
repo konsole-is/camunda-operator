@@ -21,8 +21,6 @@ limitations under the License.
 package logicalbackuprdbms
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -38,6 +36,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
+	"github.com/konsole-is/camunda-operator/pkg/names"
 )
 
 const (
@@ -78,9 +77,6 @@ const (
 	BackupUIDLabel = "camunda.io/logical-backup-rdbms-uid"
 	// jobNameSuffix ends every dump Job name.
 	jobNameSuffix = "-dump"
-	// nameHashLength is the hex length of the hash that keeps a long name
-	// unique after boundedName truncates it to a DNS label.
-	nameHashLength = 10
 )
 
 // DumpObjectKey returns the key of the dump of one backup in the bucket:
@@ -193,25 +189,13 @@ type JobInput struct {
 // backup name alone. The Job lives in the backup's own namespace, where that
 // name is unique. A reconcile that re-enters after a crash therefore adopts
 // the Job that it already created instead of a second one. A backup name can
-// be a full DNS subdomain, but a Job name is a DNS label. boundedName
+// be a full DNS subdomain, but a Job name is a DNS label. names.Bounded
 // therefore truncates a long name deterministically and keeps it unique with
 // a hash of the whole name.
 func JobName(backup *v1.LogicalBackupRDBMS) string {
-	return boundedName(backup.Name, validation.DNS1123LabelMaxLength-len(jobNameSuffix)) + jobNameSuffix
-}
+	limit := validation.DNS1123LabelMaxLength - len(jobNameSuffix)
 
-// boundedName returns name when it fits limit, or its head followed by a
-// hash of the whole name otherwise. The result is deterministic, so every
-// render of one backup agrees, and two names that share the head differ in
-// the hash.
-func boundedName(name string, limit int) string {
-	if len(name) <= limit {
-		return name
-	}
-	sum := sha256.Sum256([]byte(name))
-	hash := hex.EncodeToString(sum[:])[:nameHashLength]
-
-	return strings.TrimRight(name[:limit-1-nameHashLength], "-.") + "-" + hash
+	return names.Bounded(backup.Name, limit) + jobNameSuffix
 }
 
 // JobBelongsTo reports whether job carries the identity of backup, that is
@@ -321,14 +305,11 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		return nil, fmt.Errorf("encoding the bucket spec of %q: %w", in.Bucket.Name, err)
 	}
 
-	// Label values are bounded like DNS labels. The owner label carries the
-	// bounded name, and the UID label carries the identity that never
-	// truncates.
-	managed := labels.Managed(
-		labels.LogicalBackupRDBMS(boundedName(in.Backup.Name, validation.LabelValueMaxLength)),
-		componentName,
-	)
-	managed[labels.ClusterKey] = in.ClusterName
+	// The owner label carries the bounded name that labels.Owner renders,
+	// and the UID label carries the identity that never truncates.
+	managed := labels.Managed(labels.LogicalBackupRDBMS(in.Backup.Name), componentName)
+	cluster := labels.Cluster(in.ClusterName)
+	managed[cluster.Key] = cluster.Name
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
 	// The workload-identity pod label is operator-required. Without it, the

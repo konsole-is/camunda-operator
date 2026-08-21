@@ -53,6 +53,8 @@ The operator creates two Deployments in the namespace of the resource, and one S
 | `<name>-webapp` | Serves the Optimize user interface. | `http` 8090, `management` 8092 |
 | `<name>-importer` | Reads the exported records and writes the analytics indices. | `http` 8090, `management` 8092 |
 
+A Kubernetes name stops at 63 characters, so a `CamundaOptimize` name that is too long to carry the suffix is cut, and a hash of the full name is added to keep two such resources apart. The same applies to the Secrets that the operator mirrors into the namespace. Read the names back with `kubectl get deploy,svc -l camunda.io/cluster=<cluster>`.
+
 `kubectl describe camundaoptimize <name>` shows the condition messages that the table under [Status](#status) tells you to read. The kind carries no printer columns yet, so `kubectl get camundaoptimize` shows the name and the age alone. To see the state of every one at once, ask for the condition:
 
 ```bash

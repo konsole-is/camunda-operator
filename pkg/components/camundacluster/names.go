@@ -17,7 +17,10 @@ limitations under the License.
 package camundacluster
 
 import (
+	"k8s.io/apimachinery/pkg/util/validation"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/names"
 )
 
 // The component values of the camunda.io/component label. Each one is also
@@ -85,15 +88,21 @@ const (
 )
 
 // WorkloadName returns the name of the workload and Service of a component:
-// the cluster name and the component, joined by a dash.
+// the cluster name and the component, joined by a dash. The Service is the
+// tightest bound of the three, a DNS label of 63 characters, so a long
+// cluster name truncates and keeps its identity in a hash.
 func WorkloadName(cluster *v1.CamundaCluster, component string) string {
-	return cluster.Name + "-" + component
+	suffix := "-" + component
+
+	return names.Bounded(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // AdminSecretName returns the name of the Secret that holds the admin
 // credentials of a basic-auth cluster.
 func AdminSecretName(cluster *v1.CamundaCluster) string {
-	return cluster.Name + adminSecretSuffix
+	limit := validation.DNS1123LabelMaxLength - len(adminSecretSuffix)
+
+	return names.Bounded(cluster.Name, limit) + adminSecretSuffix
 }
 
 // ServiceAccountName returns the name that the ServiceAccount of the cluster
@@ -108,7 +117,9 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 		return e.ServiceAccount.Name
 	}
 
-	return cluster.Name + serviceAccountSuffix
+	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
+
+	return names.Bounded(cluster.Name, limit) + serviceAccountSuffix
 }
 
 // PodServiceAccountName returns the ServiceAccount that the pods of the

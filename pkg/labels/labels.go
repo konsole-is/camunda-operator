@@ -26,7 +26,13 @@ limitations under the License.
 // resources of one kind without knowing the component vocabulary of the other.
 package labels
 
-import "maps"
+import (
+	"maps"
+
+	"k8s.io/apimachinery/pkg/util/validation"
+
+	"github.com/konsole-is/camunda-operator/pkg/names"
+)
 
 const (
 	// ClusterKey names the owning CamundaCluster.
@@ -59,35 +65,50 @@ type Owner struct {
 	// Key is the label key of the owning kind, one of ClusterKey,
 	// ElasticsearchClusterKey, or DatabaseKey.
 	Key string
-	// Name is the name of the owning custom resource.
+	// Name is the name of the owning custom resource, bounded to what a
+	// label value admits. Build an Owner through the constructor of its
+	// kind, which applies the bound.
 	Name string
+}
+
+// ownerName bounds the name of an owning custom resource to what a label
+// value admits. A custom resource name is a DNS subdomain of up to 253
+// characters, but a label value stops at 63. The owner label is also part of
+// every selector, which the API server rejects whole when one value is too
+// long, so the resources of an owner with a long name never apply.
+func ownerName(name string) string {
+	return names.Bounded(name, validation.LabelValueMaxLength)
 }
 
 // Cluster returns the Owner of resources that a CamundaCluster with the given
 // name renders.
-func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: name} }
+func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: ownerName(name)} }
 
 // ElasticsearchCluster returns the Owner of resources that an
 // ElasticsearchCluster with the given name renders.
-func ElasticsearchCluster(name string) Owner { return Owner{Key: ElasticsearchClusterKey, Name: name} }
+func ElasticsearchCluster(name string) Owner {
+	return Owner{Key: ElasticsearchClusterKey, Name: ownerName(name)}
+}
 
 // Database returns the Owner of resources that a Database with the given name
 // renders.
-func Database(name string) Owner { return Owner{Key: DatabaseKey, Name: name} }
+func Database(name string) Owner { return Owner{Key: DatabaseKey, Name: ownerName(name)} }
 
 // LogicalBackupElasticsearch returns the Owner of resources that a
 // LogicalBackupElasticsearch with the given name renders.
 func LogicalBackupElasticsearch(name string) Owner {
-	return Owner{Key: LogicalBackupElasticsearchKey, Name: name}
+	return Owner{Key: LogicalBackupElasticsearchKey, Name: ownerName(name)}
 }
 
 // LogicalBackupRDBMS returns the Owner of resources that a LogicalBackupRDBMS
 // with the given name renders.
-func LogicalBackupRDBMS(name string) Owner { return Owner{Key: LogicalBackupRDBMSKey, Name: name} }
+func LogicalBackupRDBMS(name string) Owner {
+	return Owner{Key: LogicalBackupRDBMSKey, Name: ownerName(name)}
+}
 
 // BackupSchedule returns the Owner of resources that a BackupSchedule with
 // the given name renders.
-func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: name} }
+func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: ownerName(name)} }
 
 // Managed returns the labels of a resource that the operator applies: the
 // owner, the component, and the operator as manager.

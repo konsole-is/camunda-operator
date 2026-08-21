@@ -17,7 +17,10 @@ limitations under the License.
 package camundaoptimize
 
 import (
+	"k8s.io/apimachinery/pkg/util/validation"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/names"
 )
 
 // The component values of the camunda.io/component label. They carry the
@@ -81,9 +84,13 @@ const (
 // ServiceMonitor of a component: the CamundaOptimize name and the short name
 // of the component, joined by a dash. It is derived from the CamundaOptimize
 // and not from the cluster, so two instances attached to one cluster cannot
-// collide.
+// collide. The Service is the tightest bound of the three, a DNS label of 63
+// characters, so a long CamundaOptimize name truncates and keeps its identity
+// in a hash.
 func WorkloadName(o *v1.CamundaOptimize, component string) string {
-	return o.Name + "-" + shortName(component)
+	suffix := "-" + shortName(component)
+
+	return names.Bounded(o.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
 // shortName returns the workload name suffix of a component. An unknown

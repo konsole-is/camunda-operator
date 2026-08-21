@@ -40,7 +40,7 @@ Camunda 8.9 ships the orchestration cluster as one binary. Zeebe, the gateway, a
 
 ## Endpoints
 
-Each enabled process gets a workload and a Service named `<name>-<component>`. The gateway Service (`<name>-zeebe` when the gateway is `Embedded`) serves gRPC on port `26500` and HTTP on port `8080`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`.
+Each enabled process gets a workload and a Service named `<name>-<component>`. The gateway Service (`<name>-zeebe` when the gateway is `Embedded`) serves gRPC on port `26500` and HTTP on port `8080`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`. A Kubernetes name stops at 63 characters, so a cluster name that is too long to carry the suffix is cut, and a hash of the full name is added to keep two such clusters apart. The same applies to the Secrets that the operator derives from the cluster name. Read the names back with `kubectl get deploy,sts,svc -l camunda.io/cluster=<name>`.
 
 Every resource carries the labels `camunda.io/cluster: <name>` and `camunda.io/component: <component>`, where the component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`.
 

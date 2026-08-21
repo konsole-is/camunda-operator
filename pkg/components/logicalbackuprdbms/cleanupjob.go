@@ -27,6 +27,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/names"
 )
 
 // cleanupNameSuffix ends every cleanup Job name.
@@ -68,8 +69,9 @@ type CleanupJobInput struct {
 // A finalizer that re-enters therefore adopts the Job that it already
 // created.
 func CleanupJobName(backup *v1.LogicalBackupRDBMS) string {
-	return boundedName(backup.Name, validation.DNS1123LabelMaxLength-len(cleanupNameSuffix)) +
-		cleanupNameSuffix
+	limit := validation.DNS1123LabelMaxLength - len(cleanupNameSuffix)
+
+	return names.Bounded(backup.Name, limit) + cleanupNameSuffix
 }
 
 // BuildCleanupJob renders the Job that removes the dump object of a deleted
@@ -95,11 +97,9 @@ func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 		dump = &v1.DumpPodSpec{}
 	}
 
-	managed := labels.Managed(
-		labels.LogicalBackupRDBMS(boundedName(in.Backup.Name, validation.LabelValueMaxLength)),
-		"cleanup",
-	)
-	managed[labels.ClusterKey] = in.ClusterName
+	managed := labels.Managed(labels.LogicalBackupRDBMS(in.Backup.Name), "cleanup")
+	cluster := labels.Cluster(in.ClusterName)
+	managed[cluster.Key] = cluster.Name
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
 	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
