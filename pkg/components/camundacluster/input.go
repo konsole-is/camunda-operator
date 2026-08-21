@@ -118,12 +118,6 @@ type EffectiveAuth struct {
 	Basic *v1.BasicAuthSpec
 }
 
-// ResolveAuth layers the authentication settings: the platform config gives
-// the method and the identity provider connection, the effective cluster
-// auth (preset then cluster) overrides the client id, the audience, and the
-// client secret reference, and provides the members of the admin role.
-// Under basic authentication the effective cluster auth provides the basic
-// block instead. The platform spec is not mutated.
 // ResolveAdminEmail returns the address of the seeded admin user that auth
 // asks for, or DefaultAdminEmail when it names none. It is meaningful under
 // basic authentication only; OIDC seeds no user.
@@ -135,6 +129,12 @@ func ResolveAdminEmail(auth EffectiveAuth) string {
 	return DefaultAdminEmail
 }
 
+// ResolveAuth layers the authentication settings: the platform config gives
+// the method and the identity provider connection, the effective cluster
+// auth (preset then cluster) overrides the client id, the audience, and the
+// client secret reference, and provides the members of the admin role.
+// Under basic authentication the effective cluster auth provides the basic
+// block instead. The platform spec is not mutated.
 func ResolveAuth(in Input) EffectiveAuth {
 	auth := EffectiveAuth{Method: in.Platform.Method()}
 	if auth.Method != v1.AuthenticationMethodOIDC {

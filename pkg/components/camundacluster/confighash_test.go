@@ -131,4 +131,12 @@ func TestPresetFingerprintIgnoresThePasswordRotation(t *testing.T) {
 	bare, err := PresetFingerprint(none)
 	require.NoError(t, err)
 	assert.Equal(t, bare, first, "adding the first rotation to a preset may not roll the workloads")
+
+	// The address reaches the processes through the admin Secret, so it
+	// renders nothing either.
+	addressed := *base.DeepCopy()
+	addressed.Cluster.Auth.Basic.AdminEmail = "team@example.com"
+	withEmail, err := PresetFingerprint(addressed)
+	require.NoError(t, err)
+	assert.Equal(t, first, withEmail, "an admin email may not roll the workloads either")
 }

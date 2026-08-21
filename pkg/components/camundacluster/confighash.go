@@ -125,11 +125,13 @@ func envFromValue(source corev1.EnvFromSource) string {
 // generation moves for every spec change, and the fingerprint of a preset is
 // an input of every process hash.
 //
-// spec.cluster.auth.basic.passwordRotation is the field this exists for. It
-// requests a rotation of the admin password and renders nothing, so the
-// unified processes must not restart for it; only connectors follow the
-// password, through Input.AdminPasswordHash. Every other change of a preset
-// still moves the fingerprint and rolls the workloads that inherit it.
+// The whole of spec.cluster.auth.basic is what this exists for, and neither
+// of its fields renders into a pod template. passwordRotation requests a
+// rotation of the admin password, and only connectors follow that password,
+// through Input.AdminPasswordHash. adminEmail travels to the processes
+// through the admin Secret. Neither may restart a workload, so neither may
+// reach the fingerprint. Every other change of a preset still moves it and
+// rolls the workloads that inherit it.
 func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
 	rendered := spec.DeepCopy()
 	// The wrappers go with the value. The first rotation of a preset adds
@@ -138,6 +140,7 @@ func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
 	if auth := rendered.Cluster.Auth; auth != nil {
 		if auth.Basic != nil {
 			auth.Basic.PasswordRotation = ""
+			auth.Basic.AdminEmail = ""
 			if *auth.Basic == (v1.BasicAuthSpec{}) {
 				auth.Basic = nil
 			}

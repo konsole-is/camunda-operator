@@ -386,6 +386,7 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 
 	tests := []struct {
 		name            string
+		email           string
 		pending         string
 		pendingRotation string
 		rotation        string
@@ -411,6 +412,10 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 			name:   "a cluster that never rotated carries no bookkeeping",
 			absent: []string{"password-pending", "password-pending-rotation", "password-rotation"},
 		},
+		{
+			name:   "an address the cluster never accepted is not published",
+			absent: []string{"email"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -418,6 +423,7 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 			in := fixtureMinimal(t)
 			comp, err := AdminSecretComponent(in.Cluster, true, AdminSecretState{
 				Password:        credentials.Password{Value: "s3cret"},
+				Email:           tt.email,
 				PendingPassword: tt.pending,
 				PendingRotation: tt.pendingRotation,
 				Rotation:        tt.rotation,
