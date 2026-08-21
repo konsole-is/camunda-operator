@@ -84,6 +84,16 @@ const (
 // Camunda table would report an error instead.
 const publicTableCount = `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'`
 
+// sqlTimestampLayout writes an instant the way the exporter position column
+// holds one: a wall clock without a zone. The RDBMS exporter writes the local
+// time of the broker into it, and the brokers run in UTC.
+const sqlTimestampLayout = "2006-01-02 15:04:05"
+
+// rolledBackPosition is the exporter position of a database that was rolled
+// back to the start of the log. Zeebe numbers the first record of a partition
+// 1, and the earliest checkpoint of a cluster covers it.
+const rolledBackPosition = 1
+
 // itRestoresTheElasticsearchCluster registers the restore specs of the
 // Elasticsearch flow. The CamundaCluster flow calls it while its cluster is
 // healthy and has exported a process instance, so the specs prove the round
@@ -185,10 +195,9 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 			},
 		})).To(Succeed())
 
-		By("waiting for Ready Completed")
-		Eventually(func(g Gomega) {
-			expectReady(g, lresResource, esRestore, cluster.Namespace, v1.ReasonCompleted)
-		}, restoreTimeout, 5*time.Second).Should(Succeed())
+		expectRestoreCompleted(
+			lresResource, esRestore, cluster.Namespace, string(v1.LogicalRestoreFailed),
+		)
 
 		By("reading what the restore recorded")
 		var restored v1.LogicalRestoreElasticsearch
@@ -323,10 +332,9 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 			},
 		})).To(Succeed())
 
-		By("waiting for Ready Completed")
-		Eventually(func(g Gomega) {
-			expectReady(g, lrrdbmsResource, rdbmsRestore, cluster.Namespace, v1.ReasonCompleted)
-		}, restoreTimeout, 5*time.Second).Should(Succeed())
+		expectRestoreCompleted(
+			lrrdbmsResource, rdbmsRestore, cluster.Namespace, string(v1.LogicalRestoreFailed),
+		)
 
 		By("reading what the restore recorded")
 		var restored v1.LogicalRestoreRDBMS
@@ -491,9 +499,33 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 	// nothing exports after it.
 	var at time.Time
 
-	It("reaches the broker volumes with the database at the requested point", func() {
+	// The operator never rolls a database back. It reads the exporter position
+	// of a database that somebody else already restored, and it aligns the
+	// broker volumes with that position. Nothing archives a write-ahead log in
+	// kind, so this spec plays that other party and rewinds the position.
+	//
+	// The rewind is what makes the point restorable, not a convenience. The
+	// restore application takes a primary-storage checkpoint whose log covers
+	// the exporter position of the database, first position and last position
+	// both. The brokers of a running cluster export past the last position of
+	// every checkpoint that exists, so a live database is always outside that
+	// window. rolledBackPosition is the first position of the log, which the
+	// earliest checkpoint of the cluster always covers.
+	It("presents a database that somebody rolled back to the requested point", func() {
 		at = time.Now().UTC().Truncate(time.Second)
 
+		By("rewinding the exporter position of the logical database")
+		_, err := psql(
+			cluster.Namespace, "rollback", applicationCredentials(cluster),
+			fmt.Sprintf(
+				"UPDATE exporter_position SET last_exported_position = %d, last_updated = '%s'",
+				rolledBackPosition, at.Format(sqlTimestampLayout),
+			),
+		)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("reaches the broker volumes with the database at the requested point", func() {
 		By("creating a PointInTimeRestore for the point the database holds")
 		Expect(apply(&v1.PointInTimeRestore{
 			TypeMeta: metav1.TypeMeta{
@@ -524,10 +556,9 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 	})
 
 	It("runs the restore application with the requested point once per broker", func() {
-		By("waiting for Ready Completed")
-		Eventually(func(g Gomega) {
-			expectReady(g, pitrResource, pitrCurrent, cluster.Namespace, v1.ReasonCompleted)
-		}, restoreTimeout, 5*time.Second).Should(Succeed())
+		expectRestoreCompleted(
+			pitrResource, pitrCurrent, cluster.Namespace, string(v1.PointInTimeRestoreFailed),
+		)
 
 		expectRestoreJobs(
 			cluster.Namespace,
@@ -560,6 +591,32 @@ func applicationCredentials(cluster *v1.CamundaCluster) v1.CredentialsSecretRef 
 	)).To(Succeed())
 
 	return config.Spec.CredentialsSecretRef
+}
+
+// expectRestoreCompleted waits until the restore reports Ready Completed.
+//
+// Failed is terminal, so a restore that reports it never reaches Completed and
+// the wait ends there with the recorded message. Without that, a failed
+// restore costs the whole timeout and reports a stale condition instead of the
+// cause.
+func expectRestoreCompleted(resource, name, namespace, failed string) {
+	By("waiting for Ready Completed")
+	Eventually(func(g Gomega) {
+		var restored struct {
+			Status struct {
+				Phase          string `json:"phase"`
+				FailureMessage string `json:"failureMessage"`
+			} `json:"status"`
+		}
+		g.Expect(utils.Get(resource, name, namespace, &restored)).To(Succeed())
+		if restored.Status.Phase == failed {
+			StopTrying(fmt.Sprintf(
+				"%s %q reached %s: %s", resource, name, failed, restored.Status.FailureMessage,
+			)).Now()
+		}
+
+		expectReady(g, resource, name, namespace, v1.ReasonCompleted)
+	}, restoreTimeout, 5*time.Second).Should(Succeed())
 }
 
 // removeFinishedRestore deletes a restore that reached a terminal phase and
