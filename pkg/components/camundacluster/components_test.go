@@ -292,6 +292,72 @@ func TestServiceMonitorScrapesPrometheusEndpoint(t *testing.T) {
 	assert.Equal(t, 3, seen)
 }
 
+// Connectors gets no liveness probe, because the liveness group of the
+// runtime holds the zeebeClient indicator alone. A probe on that group
+// restarts a working container for the whole time the gateway is away, and
+// the restart does not bring the gateway back.
+//
+// A unified process keeps its liveness probe: its liveness group answers from
+// the process itself.
+func TestConnectorsHasNoLivenessProbe(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(fixtureDefault(t))
+	require.NoError(t, err)
+
+	seen := 0
+	for _, pc := range comps {
+		if !pc.Process.Enabled {
+			continue
+		}
+
+		container := previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.Containers[0]
+		seen++
+
+		if pc.Process.Component == ComponentConnectors {
+			assert.Nil(t, container.LivenessProbe, pc.Process.Component)
+			continue
+		}
+
+		assert.NotNil(t, container.LivenessProbe, pc.Process.Component)
+	}
+	assert.Equal(t, 3, seen)
+}
+
+// Every process, connectors included, gets a startup probe on the startup
+// group. The group answers from the process, so it holds the readiness probe
+// back over a slow boot without an opinion about the gateway.
+func TestEveryProcessHasAStartupProbe(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(fixtureDefault(t))
+	require.NoError(t, err)
+
+	seen := 0
+	for _, pc := range comps {
+		if !pc.Process.Enabled {
+			continue
+		}
+
+		container := previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.Containers[0]
+		seen++
+
+		require.NotNil(t, container.StartupProbe, pc.Process.Component)
+		assert.Equal(
+			t, healthStartupPath, container.StartupProbe.HTTPGet.Path, pc.Process.Component,
+		)
+
+		want := portNameManagement
+		if pc.Process.Component == ComponentConnectors {
+			want = portNameHTTP
+		}
+		assert.Equal(
+			t, want, container.StartupProbe.HTTPGet.Port.StrVal, pc.Process.Component,
+		)
+	}
+	assert.Equal(t, 3, seen)
+}
+
 // The service account is rendered by the first component only when the spec
 // asks for it, and every pod template names it.
 func TestServiceAccount(t *testing.T) {

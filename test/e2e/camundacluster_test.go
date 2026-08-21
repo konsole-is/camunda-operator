@@ -408,6 +408,28 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 
+		// A resume starts every process of the cluster in the same second,
+		// so this wait is where connectors races the gateway. When it times
+		// out on "connectors: Waiting for replicas: 0/1 ready", read the
+		// "actuator health of ..." block that dumpDiagnostics writes for the
+		// connectors pod. Read it first, because the connectors container
+		// writes no log of its own (issue #144).
+		//
+		// The readiness group of the runtime holds two indicators and the
+		// document reports both. zeebeClient down means the gateway does not
+		// answer. processDefinitionImport down means the inbound import that
+		// polls POST /v2/process-definitions/search on the REST API of the
+		// gateway every five seconds does not complete. That import holds no
+		// failed state and reports up again on the first poll that answers,
+		// so a readiness that stays down means the REST calls kept failing.
+		//
+		// Each indicator narrows the search rather than ending it. A down
+		// zeebeClient covers a gateway address this operator rendered wrong
+		// and a gateway workload it did not bring up, as well as a gateway
+		// that is merely slow. A down processDefinitionImport covers the
+		// admin credentials this operator supplies, as well as the REST API
+		// of the gateway. Read the indicator, then check what this operator
+		// put in front of it.
 		By("waiting for Ready Healthy")
 		Eventually(func(g Gomega) {
 			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)
