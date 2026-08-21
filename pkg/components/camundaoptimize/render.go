@@ -79,8 +79,10 @@ const (
 	// envIdentityIssuerBackendURL is security.auth.ccsm.issuerBackendUrl: the
 	// issuer that the container reaches from inside the Kubernetes cluster.
 	envIdentityIssuerBackendURL = "CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL"
-	// envIdentityBaseURL is security.auth.ccsm.baseUrl: the base URL of the
-	// Management Identity service.
+	// envIdentityBaseURL is camunda.identity.baseUrl of
+	// application-ccsm.yaml: the base URL of the Management Identity service.
+	// The same variable also binds security.auth.ccsm.baseUrl, which no code
+	// in 8.9 reads.
 	envIdentityBaseURL = "CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL"
 	// envIdentityClientID is security.auth.ccsm.clientId.
 	envIdentityClientID = "CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID"
@@ -199,6 +201,12 @@ func identityEnv(in Input) []corev1.EnvVar {
 	return []corev1.EnvVar{
 		{Name: envIdentityIssuerURL, Value: auth.IssuerURL},
 		{Name: envIdentityIssuerBackendURL, Value: backend},
+		// The Identity SDK bean of Optimize reads this URL. The SDK calls
+		// /api/tenants/for-token and /api/users, which Management Identity
+		// serves. The Camunda multi-tenancy page tells you to put the
+		// Identity URL of the orchestration cluster here. That instruction
+		// does not match the 8.9 code or the official Camunda Helm chart, so
+		// the contract stays the correct source (#133).
 		{Name: envIdentityBaseURL, Value: auth.BaseURL},
 		{Name: envIdentityClientID, Value: auth.ClientID},
 		{

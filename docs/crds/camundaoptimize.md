@@ -117,6 +117,8 @@ Pods that are already ordered to stop can run for their termination grace period
 
 A pod reads a Secret of its own namespace only. When a referenced Secret lives in another namespace, the operator copies it into the namespace of the `CamundaOptimize` and points the pods at the copy. `MirroredSecretsReady` reports on those copies.
 
+Optimize connects its Identity SDK to `spec.baseUrl` of the contract. The SDK reads tenants and users from the API of Management Identity, so `baseUrl` is the root of that service. It is not the Identity URL of the orchestration cluster.
+
 See the [ManagementAuthConfig](managementauthconfig.md) page for the fields of the contract and the keys its Secret must carry.
 
 ## Versions
