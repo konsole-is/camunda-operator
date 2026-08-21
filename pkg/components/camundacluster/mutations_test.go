@@ -30,6 +30,7 @@ import (
 // order; the brokers add VolumeRetention.
 var workloadMutationNames = []string{
 	MutationResources, MutationSchedulingConstraints, MutationPodMetadata, MutationServiceAccount,
+	MutationTrustStore,
 }
 
 // A process without overrides registers every mutation and fires none: the
@@ -88,15 +89,23 @@ func TestMutationsFireOnOverrides(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		[]string{MutationResources, MutationSchedulingConstraints, MutationPodMetadata, MutationServiceAccount},
+		[]string{
+			MutationResources, MutationSchedulingConstraints, MutationPodMetadata, MutationServiceAccount,
+			MutationTrustStore,
+		},
 		zeebe,
 	)
 
 	// The gateway inherits the preset resources and the cluster pod labels
-	// but has no scheduling of its own and the cluster sets none.
+	// but has no scheduling of its own and the cluster sets none. It reads
+	// the same Elasticsearch, so TrustStore fires on it too.
 	gateway, err := byName[ComponentGateway].Component.FiringSet()
 	require.NoError(t, err)
-	assert.Equal(t, []string{MutationResources, MutationPodMetadata, MutationServiceAccount}, gateway)
+	assert.Equal(
+		t,
+		[]string{MutationResources, MutationPodMetadata, MutationServiceAccount, MutationTrustStore},
+		gateway,
+	)
 
 	template := previewedPodTemplate(t, previewObjects(t, byName[ComponentZeebe].Component))
 	assert.Equal(t, "my-cluster-camunda", template.Spec.ServiceAccountName)

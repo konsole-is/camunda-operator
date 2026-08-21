@@ -76,6 +76,11 @@ type rendered struct {
 // extraEnv of the embedded gateway and web applications the process hosts,
 // then the extraEnv of the process's own component). Connectors get only the client
 // layer, the license, and the user overrides.
+//
+// The trust store options of the JVM are the one value that no layer can
+// take away. They are appended to JAVA_TOOL_OPTIONS after the layering, so
+// the tuning of a user stands and the process still reads the store that its
+// init container builds. See appendTrustStoreOptions.
 func render(in Input, p Process) rendered {
 	if p.Component == ComponentConnectors {
 		return rendered{
@@ -96,6 +101,9 @@ func render(in Input, p Process) rendered {
 	env = append(env, roleEnv(p)...)
 	env = append(env, userEnv(in, p)...)
 	r.env = dedupeEnv(env)
+	if usesTrustStore(in, p) {
+		appendTrustStoreOptions(r.env)
+	}
 	r.envFrom = userEnvFrom(in, p)
 
 	if p.Component == ComponentZeebe {
@@ -444,6 +452,24 @@ func userEnvFrom(in Input, p Process) []corev1.EnvFromSource {
 		envFrom = append(envFrom, in.Effective.Workload(component).ExtraEnvFrom...)
 	}
 	return envFrom
+}
+
+// appendTrustStoreOptions appends the trust store options to the
+// JAVA_TOOL_OPTIONS entry of env, in place.
+//
+// It runs after the user layer, because JAVA_TOOL_OPTIONS is the one variable
+// the JVM reads for its options. A user who sets it replaces the value of the
+// operator. The pods then carry the trust store and never read it, and the
+// export fails again without a sign. That is the failure this removes. An
+// entry that reads its value from a reference is left alone: a variable
+// cannot hold a value and a reference at the same time.
+func appendTrustStoreOptions(env []corev1.EnvVar) {
+	for i, e := range env {
+		if e.Name != camundaconfig.EnvJavaToolOptions || e.ValueFrom != nil {
+			continue
+		}
+		env[i].Value = strings.TrimSpace(e.Value + " " + trustStoreOptions)
+	}
 }
 
 // dedupeEnv keeps the last occurrence of every name and preserves the order
