@@ -26,6 +26,8 @@ The operator drives the restore through the phases in `status.phase`; each phase
 
 **Version compatibility rule.** Elasticsearch-backed backups must be restored with the exact Camunda version they were taken with — the version is embedded in every snapshot name. RDBMS-backed backups may be restored with the same version or up to one minor newer (a backup taken with 8.9.x restores with 8.9.x or 8.10.x). Camunda's `--allow-version-mismatch` escape hatch is deliberately not exposed in this API.
 
+**An Optimize attached to the target.** The Optimize importer reads Elasticsearch directly, not through the orchestration cluster, so it would keep importing while the cluster is down. An importer that runs through step 4 reads indices that are half restored, writes analytics from them, and keeps an import position that disagrees with the restored data. Suspending the target closes this: a [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names the target follows `spec.suspend` and scales its webapp and its importer to zero with the workloads of the cluster. Both start again in step 6, when the cluster is unsuspended, and the importer resumes from the restored indices. Nothing has to be stopped by hand.
+
 **Cross-cluster restores.** The target cluster's `backupStorageRef` must point at a bucket containing the source backup's artifacts — for a cross-cluster restore this means the source cluster's backup bucket, or a replica of it. The operator resolves all restore inputs from the backup's recorded location, never from the source cluster, so the source cluster may no longer exist.
 
 ```mermaid

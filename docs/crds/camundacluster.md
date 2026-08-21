@@ -92,6 +92,8 @@ The operator checks every reference at reconcile time, not at admission, so you 
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
+`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down.
+
 `spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
 ## Deletion
