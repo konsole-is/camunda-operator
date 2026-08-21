@@ -111,8 +111,9 @@ ECK_VERSION ?= 3.5.0
 
 # E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the
 # Elasticsearch image and bootstraps a node, which takes longer than the
-# default 10 minutes of go test.
-E2E_TIMEOUT ?= 60m
+# default 10 minutes of go test. The restore specs of both storage paths add
+# two backups, two restores, and two point-in-time restores on top of that.
+E2E_TIMEOUT ?= 120m
 
 # setup-test-e2e ends with an unconditional context switch. The e2e suite
 # drives kubectl through the current context, and only a cluster that kind
