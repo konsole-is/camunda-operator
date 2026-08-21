@@ -42,6 +42,15 @@ const (
 	interval = testenv.Interval
 )
 
+// retryInterval paces a hold in Pending that no watch resolves. It is short
+// enough that a spec which waits for the timer finishes inside the test
+// timeout, and long enough that watchWindow can tell a watch from the timer.
+const retryInterval = 2 * time.Second
+
+// watchWindow is shorter than retryInterval. A hold that ends inside it was
+// ended by a watch, because the timer cannot have fired yet.
+const watchWindow = 750 * time.Millisecond
+
 var (
 	env       *testenv.Env
 	ctx       context.Context
@@ -127,7 +136,7 @@ var _ = BeforeSuite(func() {
 			// Short, so a poll of the restore and a hold that no watch
 			// resolves both fit inside the test timeout.
 			PollInterval:  100 * time.Millisecond,
-			RetryInterval: 250 * time.Millisecond,
+			RetryInterval: retryInterval,
 			// Wide enough that a spec which arranges a broken dependency for
 			// one look does not terminalize before it asserts the hold, and
 			// short enough that the spec which waits out the grace fits in

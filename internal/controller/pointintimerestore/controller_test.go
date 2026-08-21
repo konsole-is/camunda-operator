@@ -487,6 +487,39 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 	})
 
+	// The controller watches CamundaCluster and enqueues the restores that
+	// name it. Without that watch, a restore whose cluster appears later waits
+	// for the retry timer instead. watchWindow is shorter than the retry
+	// interval of the suite, so a restore that moves inside it was woken by
+	// the watch and by nothing else.
+	It("wakes a waiting restore through the cluster watch when its cluster appears", func() {
+		w := createWorld()
+
+		By("removing the cluster of the restore")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonInvalidReference)
+
+		By("creating the cluster again")
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestorePending))
+			g.Expect(current.Status.TargetClusterUID).To(Equal(replacement.UID))
+		}, watchWindow, interval).Should(Succeed())
+	})
+
 	It("holds a restore whose clusterRef names no cluster", func() {
 		w := createWorld()
 		pitr := createRestore(w, func(p *v1.PointInTimeRestore) {

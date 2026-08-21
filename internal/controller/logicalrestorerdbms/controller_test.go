@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -149,6 +150,38 @@ var _ = Describe("LogicalRestoreRDBMS admission", func() {
 			g.Expect(k8sClient.List(ctx, &jobs, client.InNamespace(w.namespace))).To(Succeed())
 			g.Expect(jobs.Items).To(BeEmpty())
 		}, "2s", interval).Should(Succeed())
+	})
+
+	// The controller watches CamundaCluster and enqueues the restores that
+	// name it. Without that watch, a restore whose target appears later waits
+	// for the retry timer instead. watchWindow is shorter than the retry
+	// interval of the suite, so a restore that moves inside it was woken by
+	// the watch and by nothing else.
+	It("wakes a waiting restore through the cluster watch when its target appears", func() {
+		w := newWorld()
+		backup := createBackup(w)
+
+		By("removing the target of the restore")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		lrr := createRestore(w, backup.Name)
+		expectReason(lrr, v1.LogicalRestorePending, v1.ReasonInvalidReference)
+
+		By("creating the target again")
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, lrr).Status.BackupID).To(Equal(backupID))
+		}, watchWindow, interval).Should(Succeed())
 	})
 
 	It("wakes a waiting restore through the backup watch when the backup completes", func() {
