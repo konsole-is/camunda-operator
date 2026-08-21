@@ -360,6 +360,8 @@ spec:
       whenDeleted: Retain
 ```
 
+A restore of the cluster that reached `Failed` keeps its per-broker Jobs, and the pods of those Jobs hold the broker volumes. The delete of the cluster then waits on a volume that never terminates. Delete the failed restore first. A restore that reached `Completed` already removed its Jobs, and it holds nothing.
+
 The `ElasticsearchCluster` and the `Database` are separate resources with their own lifecycle. Deleting the `CamundaCluster` leaves them in place. Deleting an `ElasticsearchCluster` removes the ECK resource, its Secrets, and its `SecondaryStorageConfig`, and its data volumes follow its own `persistentVolumeClaimRetentionPolicy`. Deleting a `Database` removes its `DatabaseConfig`, its `SecondaryStorageConfig`, and its credential Secrets, but it never drops the logical database or the SQL roles. Data removal on the server is a manual act.
 
 ## Related

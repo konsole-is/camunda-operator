@@ -214,7 +214,9 @@ spec:
                 description: |-
                   PrimaryJobNames are the per-broker restore-application Jobs, in broker
                   order. The operator records them before it applies the Jobs, so the
-                  record covers every Job that the next look finds.
+                  record covers every Job that the next look finds. It is also the list
+                  that a restore which completed removes, and the list whose logs explain
+                  a restore that failed.
                 items:
                   type: string
                 type: array

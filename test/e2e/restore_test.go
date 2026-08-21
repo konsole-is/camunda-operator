@@ -234,8 +234,8 @@ func itRestoresTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch
 		expectInstanceSearchable(cluster)
 	})
 
-	It("releases the broker volumes when the finished restore is removed", func() {
-		removeFinishedRestore(
+	It("collects its restore Jobs when it completes", func() {
+		expectRestoreCollectedItsJobs(
 			cluster.Namespace, lresResource, esRestore, labels.LogicalRestoreElasticsearch(esRestore),
 		)
 	})
@@ -365,8 +365,8 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 		expectInstanceSearchable(cluster)
 	})
 
-	It("releases the broker volumes when the finished restore is removed", func() {
-		removeFinishedRestore(
+	It("collects its restore Jobs when it completes", func() {
+		expectRestoreCollectedItsJobs(
 			cluster.Namespace, lrrdbmsResource, rdbmsRestore, labels.LogicalRestoreRDBMS(rdbmsRestore),
 		)
 	})
@@ -494,10 +494,25 @@ func itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster *v1.CamundaClust
 // suspended cluster holds no state after the requested point, which is what a
 // caller who restored the server to that point presents. The operator never
 // restores the database itself, so this is the whole of its side.
+//
+// This is also the second restore of this cluster. The LogicalRestoreRDBMS of
+// the earlier flow is still there, and no spec deleted it. Its Jobs are
+// collected, so its pods hold no broker volume and this restore can empty
+// them.
 func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaCluster) {
 	// at is the point the restore asks for. The cluster is suspended, so
 	// nothing exports after it.
 	var at time.Time
+
+	It("runs against a cluster whose earlier restore is still in place", func() {
+		exists, err := utils.Exists(lrrdbmsResource, rdbmsRestore, cluster.Namespace)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(exists).To(
+			BeTrue(),
+			"LogicalRestoreRDBMS %q is gone, so this flow proves no sequence of two restores",
+			rdbmsRestore,
+		)
+	})
 
 	// The operator never rolls a database back. It reads the exporter position
 	// of a database that somebody else already restored, and it aligns the
@@ -619,25 +634,24 @@ func expectRestoreCompleted(resource, name, namespace, failed string) {
 	}, restoreTimeout, 5*time.Second).Should(Succeed())
 }
 
-// removeFinishedRestore deletes a restore that reached a terminal phase and
-// waits until its Jobs and their pods are gone.
+// expectRestoreCollectedItsJobs asserts that a restore which reached Completed
+// removed its own Jobs, and that nobody had to delete the restore for it.
 //
 // A pod that completed still counts as a user of its volume under the
-// kubernetes.io/pvc-protection finalizer. The Job pods of a finished restore
-// mount the broker volumes, so those volumes never terminate while the pods
-// exist, and whatever deletes one next waits without end: another restore of
-// the cluster, or the garbage collection of the cluster itself. A restore
-// carries no finalizer, and its Jobs carry a controller reference to it, so
-// deleting the restore takes the Jobs and their pods with it.
-func removeFinishedRestore(namespace, resource, name string, owner labels.Owner) {
-	By("deleting the finished restore")
-	_, err := utils.Kubectl("delete", resource, name, "-n", namespace, "--wait=false")
+// kubernetes.io/pvc-protection finalizer. The Job pods of a restore mount the
+// broker volumes, so a volume never terminates while such a pod exists.
+// Whatever deletes the volume next then waits without end: another restore of
+// the cluster, or the garbage collection of the cluster itself.
+func expectRestoreCollectedItsJobs(namespace, resource, name string, owner labels.Owner) {
+	By("keeping the finished restore in place")
+	exists, err := utils.Exists(resource, name, namespace)
 	Expect(err).NotTo(HaveOccurred())
+	Expect(exists).To(
+		BeTrue(), "%s %q is gone, so this spec proves nothing about its Jobs", resource, name,
+	)
 
 	By("waiting for its Jobs and their pods to be gone")
 	Eventually(func(g Gomega) {
-		expectGone(g, resource, name, namespace)
-
 		jobs, err := restoreJobs(namespace, owner)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(jobs).To(BeEmpty())

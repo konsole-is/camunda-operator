@@ -23,12 +23,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 const testManager = FieldManagerPointInTimeRestore
@@ -300,4 +303,162 @@ func TestRecreateClaimsReportsADeleteErrorAsAnError(t *testing.T) {
 
 	_, err := RecreateClaims(context.Background(), c, c, claimInput("10Gi"))
 	require.ErrorIs(t, err, boom)
+}
+
+// terminatingClaim is the broker volume of one ordinal, as the API server
+// leaves it while a pod still holds it under the protection finalizer.
+func terminatingClaim(name string) *corev1.PersistentVolumeClaim {
+	claim := existingClaim(name)
+	claim.DeletionTimestamp = new(metav1.Now())
+	claim.Finalizers = []string{"kubernetes.io/pvc-protection"}
+
+	return claim
+}
+
+// holdingPod is a pod that mounts the named claim, under the given
+// controller.
+func holdingPod(name, claim string, controller *metav1.OwnerReference) *corev1.Pod {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
+		Spec: corev1.PodSpec{
+			Volumes: []corev1.Volume{{
+				Name: "data",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim},
+				},
+			}},
+		},
+	}
+	if controller != nil {
+		pod.OwnerReferences = []metav1.OwnerReference{*controller}
+	}
+
+	return pod
+}
+
+// controllerRef is the controller reference that a pod or a Job carries.
+func controllerRef(apiVersion, kind, name string) *metav1.OwnerReference {
+	return &metav1.OwnerReference{
+		APIVersion: apiVersion, Kind: kind, Name: name, Controller: new(true),
+	}
+}
+
+// terminatingHold runs one pass over a world whose second broker volume still
+// terminates, and returns the message that the restore reports.
+func terminatingHold(t *testing.T, objects ...client.Object) string {
+	t.Helper()
+
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(append(
+			[]client.Object{
+				existingClaim("data-my-cluster-zeebe-0"),
+				terminatingClaim("data-my-cluster-zeebe-1"),
+				existingClaim("data-my-cluster-zeebe-2"),
+			},
+			objects...,
+		)...).
+		Build()
+
+	in := claimInput("10Gi")
+	in.Recreated = targetFixture().ClaimNames()
+
+	progress, err := RecreateClaims(context.Background(), c, c, in)
+	require.NoError(t, err)
+	require.False(t, progress.Done)
+
+	return progress.Message
+}
+
+// A volume that a finished restore holds names a volume, and a user cannot
+// act on that. The message names the pod, the restore that runs it, and the
+// one action that frees the volume.
+func TestRecreateClaimsNamesTheRestoreThatHoldsATerminatingClaim(t *testing.T) {
+	t.Parallel()
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "camunda-es-restore-lres-1",
+			Namespace: "ns",
+			OwnerReferences: []metav1.OwnerReference{*controllerRef(
+				v1.GroupVersion.String(), "LogicalRestoreElasticsearch", "camunda-es-restore",
+			)},
+		},
+	}
+	pod := holdingPod(
+		"camunda-es-restore-lres-1-x8k2p",
+		"data-my-cluster-zeebe-1",
+		controllerRef("batch/v1", "Job", job.Name),
+	)
+
+	message := terminatingHold(t, job, pod)
+
+	assert.Contains(t, message, "data-my-cluster-zeebe-1 is still terminating")
+	assert.Contains(t, message, "camunda-es-restore-lres-1-x8k2p")
+	assert.Contains(t, message, "LogicalRestoreElasticsearch camunda-es-restore")
+	assert.Contains(t, message, "Delete that LogicalRestoreElasticsearch")
+}
+
+// The other holder of a broker volume is a cluster that nobody suspended. Its
+// broker pod belongs to the StatefulSet, and the remedy is the suspend flag.
+func TestRecreateClaimsNamesTheWorkloadThatHoldsATerminatingClaim(t *testing.T) {
+	t.Parallel()
+
+	pod := holdingPod(
+		"my-cluster-zeebe-1",
+		"data-my-cluster-zeebe-1",
+		controllerRef("apps/v1", "StatefulSet", "my-cluster-zeebe"),
+	)
+
+	message := terminatingHold(t, pod)
+
+	assert.Contains(t, message, "my-cluster-zeebe-1")
+	assert.Contains(t, message, "StatefulSet my-cluster-zeebe")
+	assert.Contains(t, message, "Suspend the cluster")
+}
+
+// A lookup that finds no pod cannot tell the two causes apart, so the message
+// names both of them with the remedy for each.
+func TestRecreateClaimsNamesBothCausesWhenNoPodHoldsTheClaim(t *testing.T) {
+	t.Parallel()
+
+	message := terminatingHold(t)
+
+	assert.Contains(t, message, "data-my-cluster-zeebe-1 is still terminating")
+	assert.Contains(t, message, "Suspend the cluster")
+	assert.Contains(t, message, "delete the restore that ran before this one")
+}
+
+// The message of a wait is never worth a failed restore. A pod lookup that
+// fails reports the two causes and the restore keeps waiting.
+func TestRecreateClaimsKeepsWaitingWhenThePodLookupFails(t *testing.T) {
+	t.Parallel()
+
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(
+			existingClaim("data-my-cluster-zeebe-0"),
+			terminatingClaim("data-my-cluster-zeebe-1"),
+			existingClaim("data-my-cluster-zeebe-2"),
+		).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(
+				_ context.Context, _ client.WithWatch, list client.ObjectList, _ ...client.ListOption,
+			) error {
+				if _, pods := list.(*corev1.PodList); pods {
+					return errors.New("boom")
+				}
+
+				return nil
+			},
+		}).
+		Build()
+
+	in := claimInput("10Gi")
+	in.Recreated = targetFixture().ClaimNames()
+
+	progress, err := RecreateClaims(context.Background(), c, c, in)
+	require.NoError(t, err)
+	assert.False(t, progress.Done)
+	assert.Contains(t, progress.Message, "delete the restore that ran before this one")
 }

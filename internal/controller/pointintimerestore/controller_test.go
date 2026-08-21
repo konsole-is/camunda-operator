@@ -416,6 +416,40 @@ func jobsOf(pitr *v1.PointInTimeRestore) []batchv1.Job {
 	return jobs.Items
 }
 
+// collectDeletedJobs plays the garbage collector of a real cluster: it clears
+// the foreground finalizer that the API server puts on a Job which was deleted
+// with foreground propagation, as the collector does once the pods of that Job
+// are gone. Nothing does that in envtest, so such a Job would stay in place for
+// ever.
+func collectDeletedJobs(namespace string) {
+	stop := make(chan struct{})
+	DeferCleanup(func() { close(stop) })
+
+	go func() {
+		defer GinkgoRecover()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+
+			var jobs batchv1.JobList
+			if err := k8sClient.List(ctx, &jobs, client.InNamespace(namespace)); err != nil {
+				continue
+			}
+			for i := range jobs.Items {
+				job := &jobs.Items[i]
+				if job.DeletionTimestamp == nil || len(job.Finalizers) == 0 {
+					continue
+				}
+				job.Finalizers = nil
+				_ = k8sClient.Update(ctx, job)
+			}
+		}
+	}()
+}
+
 // expectClaimsUntouched asserts that every broker volume is still the volume
 // the world created.
 func expectClaimsUntouched(w *world) {
@@ -1171,6 +1205,62 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 			g.Expect(condition.Reason).To(Equal(v1.ReasonCompleted))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// A Job that completed keeps its pod, and a pod that mounts a broker
+	// volume holds that volume under the pvc-protection finalizer. The next
+	// operation on the cluster then waits on that volume without end.
+	It("removes its restore Jobs when it completes", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		for ordinal := range int32(brokerCount) {
+			markJob(pitr, ordinal, batchv1.JobComplete)
+		}
+
+		By("asking for every recorded Job with foreground propagation")
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreCompleted))
+			jobs := jobsOf(pitr)
+			g.Expect(jobs).To(HaveLen(brokerCount))
+			for _, job := range jobs {
+				g.Expect(job.DeletionTimestamp).NotTo(BeNil(), "Job %q", job.Name)
+				g.Expect(job.Finalizers).To(
+					ContainElement(metav1.FinalizerDeleteDependents),
+					"Job %q goes without foreground propagation, so its pods outlive it", job.Name,
+				)
+			}
+		}, timeout, interval).Should(Succeed())
+
+		By("leaving no Job behind once the pods of the Jobs are gone")
+		collectDeletedJobs(pitr.Namespace)
+		Eventually(func(g Gomega) {
+			g.Expect(jobsOf(pitr)).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The logs of a failed Job are the diagnosis of the failure, and only the
+	// pod keeps them readable. A failed restore therefore holds the broker
+	// volumes until somebody deletes the restore.
+	It("keeps its restore Jobs when it fails", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		expectJobs(pitr)
+
+		markJob(pitr, 1, batchv1.JobFailed)
+
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			jobs := jobsOf(pitr)
+			g.Expect(jobs).To(HaveLen(brokerCount))
+			for _, job := range jobs {
+				g.Expect(job.DeletionTimestamp).To(BeNil(), "Job %q", job.Name)
+			}
+		}, time.Second, interval).Should(Succeed())
 	})
 
 	// The argument is the contract with the restore application, so the spec

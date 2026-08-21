@@ -113,9 +113,28 @@ The operator then runs the Camunda restore application once per broker, as a Job
 
 The Jobs copy their configuration from the live broker StatefulSet, so the restore application always runs with the configuration the brokers run with, and the two cannot drift. A cluster whose broker StatefulSet was deleted cannot restore until its own controller applies it again.
 
+## The restore Jobs
+
+The restore runs the Camunda restore application once per broker, as a Job. Each Job pod mounts the data volume of its broker. A pod that finished still counts as a user of that volume, so the volume cannot terminate while the pod exists.
+
+| Terminal phase | What happens to the Jobs |
+| --- | --- |
+| `Completed` | The operator deletes them, together with their pods. The broker data volumes are free for the next operation. |
+| `Failed` | The operator keeps them. The logs of a failed Job name the cause, and only the pod keeps them readable. |
+
+**A failed restore holds the broker data volumes.** You read the logs of its Jobs, and then you delete the restore. The delete takes the Jobs and their pods with it, and the volumes are free again. Until you do that, a second restore of the cluster and the deletion of the cluster both wait on a volume that never terminates. The waiting restore reports the pod that holds the volume and names the resource that runs it.
+
+```bash
+# The Jobs that the restore still holds. status.primaryJobNames lists the same names.
+kubectl get job -n my-cluster-ns -l camunda.io/logical-restore-rdbms=my-cluster-restore
+
+# The log of the Job of one broker.
+kubectl logs -n my-cluster-ns job/<job name>
+```
+
 ## Deletion
 
-When you delete the restore, the operator deletes the Jobs it created. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind. The recreated broker volumes stay.
+When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed its per-broker Jobs. A restore that failed still has them, and this is how you remove them. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind. The recreated broker volumes stay.
 
 ## Status
 
