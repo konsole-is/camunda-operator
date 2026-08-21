@@ -186,16 +186,25 @@ func unsuspend(cluster *v1.CamundaCluster) {
 	}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 }
 
-// letTheRestoreTakeOver clears spec.suspend without waiting for the cluster to
-// be healthy again. A spec that erased the state of the cluster by hand calls
-// it before it creates the restore, so the restore is what suspends the
+// letTheRestoreTakeOver removes spec.suspend and does not wait for the cluster
+// to be healthy again. A spec that erased the state of the cluster by hand
+// calls it before it creates the restore, so the restore is what suspends the
 // cluster and what unsuspends it afterwards. That is the flow a user gets: the
 // only thing they do is create the restore.
+//
+// The field is removed rather than set to false, so that nothing owns it when
+// the restore applies it. The restore withdraws its suspension by applying an
+// object without the field, and server-side apply keeps a field that another
+// manager still declares. A caller that set false would leave the value of
+// that caller behind the withdrawal, which is not the flow this proves.
+//
+// The patch fails when the field is absent, which is the state that says the
+// spec did not suspend the cluster first.
 func letTheRestoreTakeOver(cluster *v1.CamundaCluster) {
-	By("clearing spec.suspend so the restore suspends the cluster itself")
+	By("removing spec.suspend so the restore suspends the cluster itself")
 	_, err := utils.Kubectl(
 		"patch", ccResource, cluster.Name, "-n", cluster.Namespace,
-		"--type=merge", "-p", `{"spec":{"suspend":false}}`,
+		"--type=json", "-p", `[{"op":"remove","path":"/spec/suspend"}]`,
 	)
 	Expect(err).NotTo(HaveOccurred())
 }

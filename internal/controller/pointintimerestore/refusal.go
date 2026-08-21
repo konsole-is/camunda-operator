@@ -49,8 +49,12 @@ const markerExportedPosition = "required exported position"
 const maxRefusalLine = 400
 
 // maxLogLines and maxLogBytes bound one read of a restore Job log. The
-// refusal is one line of a short log, and the operator reads the log inside a
-// reconcile, so an unbounded read is not worth its memory.
+// operator reads the log inside a reconcile, so an unbounded read is not
+// worth its memory.
+//
+// The read takes the tail. The restore application prints the refusal while
+// it scans the checkpoints and then ends, so the line sits near the end of
+// the log of a Job that failed this way.
 const (
 	maxLogLines = int64(2000)
 	maxLogBytes = int64(256 * 1024)
