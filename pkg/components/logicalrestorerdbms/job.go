@@ -204,7 +204,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		labels.LogicalRestoreRDBMS(in.Restore.Name),
 		ComponentName,
 	)
-	managed[labels.ClusterKey] = in.ClusterName
+	managed[labels.ClusterKey] = labels.OwnerName(in.ClusterName)
 	managed[RestoreUIDLabel] = string(in.Restore.UID)
 
 	// The workload-identity pod label is operator-required. Without it, the

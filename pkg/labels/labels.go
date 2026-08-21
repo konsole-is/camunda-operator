@@ -83,61 +83,72 @@ type Owner struct {
 	Name string
 }
 
-// ownerName bounds the name of an owning custom resource to what a label
+// OwnerName bounds the name of an owning custom resource to what a label
 // value admits. A custom resource name is a DNS subdomain of up to 253
 // characters, but a label value stops at 63. The owner label is also part of
 // every selector, which the API server rejects whole when one value is too
 // long, so the resources of an owner with a long name never apply.
-func ownerName(name string) string {
+//
+// The Owner constructors below apply it, so a caller that builds its labels
+// through Managed or Discovery never calls it. Call it directly in the two
+// places that step outside those constructors:
+//
+//   - to add a second owner label to a map that Managed built, for example
+//     the cluster label on a backup Job.
+//   - to read an owner label back. The value is not the name of the custom
+//     resource once the name passes 63 characters, so a reader that maps a
+//     rendered resource to its owner compares OwnerName(candidate) against
+//     the value. It never reads the value as a name.
+func OwnerName(name string) string {
 	return BoundedName(name, validation.LabelValueMaxLength)
 }
 
 // Cluster returns the Owner of resources that a CamundaCluster with the given
 // name renders.
-func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: ownerName(name)} }
+func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: OwnerName(name)} }
 
 // ElasticsearchCluster returns the Owner of resources that an
 // ElasticsearchCluster with the given name renders.
 func ElasticsearchCluster(name string) Owner {
-	return Owner{Key: ElasticsearchClusterKey, Name: ownerName(name)}
+	return Owner{Key: ElasticsearchClusterKey, Name: OwnerName(name)}
 }
 
 // Database returns the Owner of resources that a Database with the given name
 // renders.
-func Database(name string) Owner { return Owner{Key: DatabaseKey, Name: ownerName(name)} }
+func Database(name string) Owner { return Owner{Key: DatabaseKey, Name: OwnerName(name)} }
 
 // LogicalBackupElasticsearch returns the Owner of resources that a
 // LogicalBackupElasticsearch with the given name renders.
 func LogicalBackupElasticsearch(name string) Owner {
-	return Owner{Key: LogicalBackupElasticsearchKey, Name: ownerName(name)}
+	return Owner{Key: LogicalBackupElasticsearchKey, Name: OwnerName(name)}
 }
 
 // LogicalBackupRDBMS returns the Owner of resources that a LogicalBackupRDBMS
 // with the given name renders.
 func LogicalBackupRDBMS(name string) Owner {
-	return Owner{Key: LogicalBackupRDBMSKey, Name: ownerName(name)}
+	return Owner{Key: LogicalBackupRDBMSKey, Name: OwnerName(name)}
 }
 
 // LogicalRestoreElasticsearch returns the Owner of resources that a
 // LogicalRestoreElasticsearch with the given name renders.
 func LogicalRestoreElasticsearch(name string) Owner {
-	return Owner{Key: LogicalRestoreElasticsearchKey, Name: ownerName(name)}
+	return Owner{Key: LogicalRestoreElasticsearchKey, Name: OwnerName(name)}
 }
 
 // BackupSchedule returns the Owner of resources that a BackupSchedule with
 // the given name renders.
-func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: ownerName(name)} }
+func BackupSchedule(name string) Owner { return Owner{Key: BackupScheduleKey, Name: OwnerName(name)} }
 
 // LogicalRestoreRDBMS returns the Owner of resources that a
 // LogicalRestoreRDBMS with the given name renders.
 func LogicalRestoreRDBMS(name string) Owner {
-	return Owner{Key: LogicalRestoreRDBMSKey, Name: ownerName(name)}
+	return Owner{Key: LogicalRestoreRDBMSKey, Name: OwnerName(name)}
 }
 
 // PointInTimeRestore returns the Owner of resources that a PointInTimeRestore
 // with the given name renders.
 func PointInTimeRestore(name string) Owner {
-	return Owner{Key: PointInTimeRestoreKey, Name: ownerName(name)}
+	return Owner{Key: PointInTimeRestoreKey, Name: OwnerName(name)}
 }
 
 // Managed returns the labels of a resource that the operator applies: the

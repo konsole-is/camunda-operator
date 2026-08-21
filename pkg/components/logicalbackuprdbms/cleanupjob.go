@@ -99,7 +99,7 @@ func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 		labels.LogicalBackupRDBMS(in.Backup.Name),
 		"cleanup",
 	)
-	managed[labels.ClusterKey] = in.ClusterName
+	managed[labels.ClusterKey] = labels.OwnerName(in.ClusterName)
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
 	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)

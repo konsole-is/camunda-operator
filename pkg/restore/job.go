@@ -128,12 +128,12 @@ func JobName(owner labels.Owner, ordinal int32) string {
 // the cluster the restore runs against.
 //
 // A consumer that selects these Jobs must build the labels here rather than
-// by hand. The owner label value is bounded to a DNS label, and a restore
-// name can be longer, so a hand-built selector misses every Job of a restore
-// whose name passes 63 characters.
+// by hand. Both owner label values are bounded to a DNS label, and a restore
+// name and a cluster name can both be longer, so a hand-built selector misses
+// every Job of a restore or a cluster whose name passes 63 characters.
 func JobLabels(owner labels.Owner, cluster string) map[string]string {
 	managed := labels.Managed(owner, ComponentRestore)
-	managed[labels.ClusterKey] = cluster
+	managed[labels.ClusterKey] = labels.OwnerName(cluster)
 
 	return managed
 }

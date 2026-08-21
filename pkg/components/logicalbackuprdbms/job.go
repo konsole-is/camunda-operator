@@ -309,7 +309,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 		labels.LogicalBackupRDBMS(in.Backup.Name),
 		componentName,
 	)
-	managed[labels.ClusterKey] = in.ClusterName
+	managed[labels.ClusterKey] = labels.OwnerName(in.ClusterName)
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
 	// The workload-identity pod label is operator-required. Without it, the
