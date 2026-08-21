@@ -162,10 +162,12 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=pointintimerestores/finalizers,verbs=update
-// The restore prepares its own cluster: it suspends the cluster, sets the
-// Camunda version of the backup, and withdraws the suspension when it
-// completes. Each write is a server-side apply of one field under a field
-// manager of its own, so patch is the only verb it needs on a CamundaCluster.
+// The restore prepares its own cluster: it suspends the cluster and withdraws
+// that suspension when it completes. This kind writes no version, because it
+// restores the primary storage of a cluster from the continuous backups of
+// that same cluster. The write is a server-side apply of one field under a
+// field manager of its own, so patch is the only verb it needs on a
+// CamundaCluster.
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;databaseconfigs;databaseserverconfigs;databases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch

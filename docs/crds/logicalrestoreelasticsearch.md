@@ -43,7 +43,7 @@ graph LR
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. A reference does not resolve, the backup is not completed, another operation holds the cluster, or the operator is still preparing the target. Nothing of the target is erased here. Preparation does write `spec.suspend` and `spec.version` on the target, which the section above describes. |
+| `Pending` | The restore waits. A reference does not resolve, the backup is not completed, another operation holds the cluster, or the operator is still preparing the target. Nothing of the target is erased here. Preparation does write `spec.suspend` and `spec.version` on the target, which [The restore prepares the target](#the-restore-prepares-the-target) describes. |
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
 | `RestoringSecondaryStorage` | The operator deletes the Camunda indices of the target and restores every snapshot of the backup. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker. |
@@ -88,7 +88,19 @@ Each write is a server-side apply of one field, under a field manager of its own
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
 | `spec.version` | `camunda-operator/restore-version` | The restore keeps it. |
 
-The restore keeps `spec.version` on purpose. The cluster runs the version of the backup from then on, which is the point of writing it. Your next `kubectl apply` or GitOps sync of the `CamundaCluster` takes the field back, and that is correct: it is your declaration of the version again.
+The restore keeps `spec.version` on purpose. The cluster runs the version of the backup from then on, which is the point of writing it.
+
+To move the cluster off that version, declare the version you want:
+
+- A client-side `kubectl apply` that sets `spec.version` takes the field back. It writes the field, and the API server gives ownership to the manager that wrote it.
+- A server-side apply, which is what Argo CD and Flux use, reports a conflict on the field. Force the conflict, and the tool owns `spec.version` again.
+
+CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a preset: an explicit `spec.version` always wins over the preset, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the preset control again:
+
+```bash
+kubectl patch camundacluster my-cluster -n my-cluster-ns \
+  --type=json -p '[{"op":"remove","path":"/spec/version"}]'
+```
 
 ### Why the downgrade is safe here
 
@@ -191,7 +203,7 @@ A target that the restore suspended stays suspended. That is deliberate. Unsuspe
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A phase of the restore runs. | Wait. The message names the work. |
-| `Ready` | `Completed` | The restore finished, and it withdrew the suspension it applied. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
+| `Ready` | `Completed` | The restore finished. It withdraws the suspension it applied on the look that follows, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
 | `Ready` | `Failed` | The restore ended. | Read `status.failureMessage`. Correct the cause and create a new restore. |
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails 10 minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. | Wait. The restore starts when the holder reaches a terminal phase. |

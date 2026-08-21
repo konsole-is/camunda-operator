@@ -27,9 +27,10 @@ import (
 )
 
 // completedMessage is the Ready message of every restore that finished. It
-// says nothing about the suspension of the cluster: a restore that suspended
-// the cluster has already withdrawn that suspension by the time a reader sees
-// this, and a cluster that its owner suspended is theirs to unsuspend.
+// says nothing about the suspension of the cluster, and it must not: the
+// controller persists the terminal phase first, and the look that follows is
+// the one that collects the Jobs and withdraws the suspension. A reader of
+// this message can therefore still find the cluster suspended.
 const completedMessage = "The restore finished"
 
 // HoldRunning holds a started restore on a dependency that stopped resolving.
