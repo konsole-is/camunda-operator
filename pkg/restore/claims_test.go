@@ -315,16 +315,19 @@ func terminatingClaim(name string) *corev1.PersistentVolumeClaim {
 	return claim
 }
 
-// holdingPod is a pod that mounts the named claim, under the given
-// controller.
-func holdingPod(name, claim string, controller *metav1.OwnerReference) *corev1.Pod {
+// heldClaim is the broker volume that every terminating-hold case leaves in
+// Terminating. terminatingHold builds the world around it.
+const heldClaim = "data-my-cluster-zeebe-1"
+
+// holdingPod is a pod that mounts heldClaim, under the given controller.
+func holdingPod(name string, controller *metav1.OwnerReference) *corev1.Pod {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
 		Spec: corev1.PodSpec{
 			Volumes: []corev1.Volume{{
 				Name: "data",
 				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim},
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: heldClaim},
 				},
 			}},
 		},
@@ -353,7 +356,7 @@ func terminatingHold(t *testing.T, objects ...client.Object) string {
 		WithObjects(append(
 			[]client.Object{
 				existingClaim("data-my-cluster-zeebe-0"),
-				terminatingClaim("data-my-cluster-zeebe-1"),
+				terminatingClaim(heldClaim),
 				existingClaim("data-my-cluster-zeebe-2"),
 			},
 			objects...,
@@ -387,7 +390,6 @@ func TestRecreateClaimsNamesTheRestoreThatHoldsATerminatingClaim(t *testing.T) {
 	}
 	pod := holdingPod(
 		"camunda-es-restore-lres-1-x8k2p",
-		"data-my-cluster-zeebe-1",
 		controllerRef("batch/v1", "Job", job.Name),
 	)
 
@@ -406,7 +408,6 @@ func TestRecreateClaimsNamesTheWorkloadThatHoldsATerminatingClaim(t *testing.T) 
 
 	pod := holdingPod(
 		"my-cluster-zeebe-1",
-		"data-my-cluster-zeebe-1",
 		controllerRef("apps/v1", "StatefulSet", "my-cluster-zeebe"),
 	)
 
@@ -471,7 +472,6 @@ func TestRecreateClaimsAsksForAPodOfAForeignWorkload(t *testing.T) {
 
 	pod := holdingPod(
 		"debug-shell-7f9c",
-		"data-my-cluster-zeebe-1",
 		controllerRef("apps/v1", "Deployment", "debug-shell"),
 	)
 
@@ -519,4 +519,20 @@ func TestRecreateClaimsListsThePodsOnceWhileEveryClaimTerminates(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, progress.Done)
 	assert.Equal(t, 1, lists)
+}
+
+// The order of a pod list is not part of the contract. The reported reason
+// must not change with every look, so the lowest name wins.
+func TestRecreateClaimsNamesTheSameHolderOnEveryLook(t *testing.T) {
+	t.Parallel()
+
+	second := holdingPod(
+		"zzz-debug", controllerRef("apps/v1", "Deployment", "debug"),
+	)
+	first := holdingPod(
+		"aaa-debug", controllerRef("apps/v1", "Deployment", "debug"),
+	)
+
+	assert.Contains(t, terminatingHold(t, second, first), "aaa-debug")
+	assert.Contains(t, terminatingHold(t, first, second), "aaa-debug")
 }

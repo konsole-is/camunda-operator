@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -75,6 +76,9 @@ func terminatingMessage(
 // The pod alone does not name a cause that a user can act on. A restore Job
 // pod belongs to a Job, and that Job belongs to a restore, so the lookup
 // follows the controller reference one step further when it finds a Job.
+//
+// The lowest name wins when more than one pod references the claim, so the
+// reported reason is stable and does not change with every look.
 func claimHolder(
 	ctx context.Context,
 	reader client.Reader,
@@ -87,6 +91,13 @@ func claimHolder(
 	if err := reader.List(ctx, &pods, client.InNamespace(namespace)); err != nil {
 		return "", fmt.Errorf("listing the pods of namespace %s: %w", namespace, err)
 	}
+
+	// The order of a list is not part of the contract, and a cached reader
+	// answers from a map. Two pods that reference one claim would otherwise
+	// take turns in the reported message on every look.
+	slices.SortFunc(pods.Items, func(a, b corev1.Pod) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	for i := range pods.Items {
 		pod := &pods.Items[i]
