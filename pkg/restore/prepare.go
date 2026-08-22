@@ -112,8 +112,10 @@ type PrepareInput struct {
 //
 // The suspension is withdrawn by Resume, and only when this restore is what
 // applied it. The version is not withdrawn: the cluster keeps running the
-// version of the backup, which is the point of writing it. The next apply or
-// GitOps sync of the cluster takes the field back, which is correct.
+// version of the backup, which is the point of writing it. The cluster runs
+// that version until another manager takes spec.version over or removes it. A
+// manifest that leaves the field out takes nothing back, because server-side
+// apply removes a field only from the manager that declared it.
 //
 // The step is idempotent, so a caller that re-enters it repeats no write.
 func Prepare(

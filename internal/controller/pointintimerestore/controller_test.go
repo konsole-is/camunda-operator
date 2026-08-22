@@ -1582,18 +1582,37 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		// Only the restore application compares the exporter position of the
 		// database against the log ranges of the backups. Its refusal reaches
 		// the user through the status of the restore, not through a pod log.
-		jobLogs.set(jobs[0].Name, refusalLast)
+		jobLogs.set(jobs[0].Name, skippedLast+"\n"+noUsableRange)
 		markJob(pitr, 0, batchv1.JobFailed)
 
 		Eventually(func(g Gomega) {
 			current := readRestore(pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonExporterPositionNotCovered))
-			g.Expect(current.Status.FailureMessage).To(ContainSubstring("required exported position 451"))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("No usable range found for partition 1"))
 			g.Expect(current.Status.FailureMessage).To(ContainSubstring("Roll the database back"))
 			condition := ready(current)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Reason).To(Equal(v1.ReasonExporterPositionNotCovered))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The resolver logs a skipped range for every candidate it rejects, and it
+	// then takes the first range that passes. A restore that printed those
+	// lines and failed for another cause reports that other cause.
+	It("reports the plain cause when a range was only skipped", func() {
+		w := createWorld()
+		pitr := createRestore(w)
+		jobs := expectJobs(pitr)
+
+		jobLogs.set(jobs[0].Name, skippedFirst+"\n"+skippedLast+"\n"+unrelatedLog)
+		markJob(pitr, 0, batchv1.JobFailed)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.TerminalReason).To(Equal(v1.ReasonFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring("broker 0"))
 		}, timeout, interval).Should(Succeed())
 	})
 
