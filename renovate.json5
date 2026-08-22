@@ -1,29 +1,25 @@
-// Renovate keeps the image pins of the e2e suite on the newest patch of the
-// minor the operator supports. The pins are the env files under
-// test/e2e/matrix/ (one per supported Camunda minor), three Go constants, a
-// YAML image field, and a Makefile variable, which no standard manager reads,
-// so a marker comment above each one names what to track:
+// Renovate keeps the dependencies of this repository current in batches, the
+// way operator-component-framework does: minor and patch updates arrive on
+// the 1st and the 15th, grouped so that one pull request carries what has to
+// land together, and a major update arrives when it is published. Go modules,
+// .tool-versions, GitHub Actions, the Dockerfiles, and requirements-docs.txt
+// go through the standard managers.
+//
+// The image pins of the e2e suite are the env files under test/e2e/matrix/
+// (one per supported Camunda minor), three Go constants, a YAML image field,
+// and two Makefile variables, which no standard manager reads, so a marker
+// comment above each one names what to track:
 //
 //   # renovate: datasource=docker depName=camunda/camunda
 //   CAMUNDA_VERSION=8.9.17
-//
-// Only the regex managers below run. Go modules and GitHub Actions stay out
-// on purpose. Tracking them is a separate decision.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
-  enabledManagers: ["custom.regex"],
   // config:recommended skips every **/test/** path, and that is where the
-  // pins live.
+  // e2e pins live.
   ignorePaths: [],
   // An alpha or snapshot tag of the next Camunda minor never lands.
   ignoreUnstable: true,
-  // A pin still gets its patch when a newer minor exists. Without this the
-  // minor and the patch share one update, and the rule below drops it whole.
-  separateMinorPatch: true,
-  semanticCommits: "enabled",
-  semanticCommitType: "chore",
-  semanticCommitScope: "e2e",
   customManagers: [
     {
       // A variable of an env file or of the Makefile: the marker, then
@@ -55,18 +51,85 @@
   ],
   packageRules: [
     {
-      // Every pin stays on its minor. A new Camunda minor is a
-      // supported-version decision the operator makes on purpose, and a new
-      // ECK minor has to move together with the cloud-on-k8s module in go.mod.
+      // Minor and patch updates arrive twice a month. A major update arrives
+      // when it is published.
+      matchUpdateTypes: ["minor", "patch"],
+      schedule: ["* * 1,15 * *"],
+    },
+    {
+      matchFileNames: [".tool-versions"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "tool-versions",
+    },
+    {
+      matchPackageNames: [
+        "github.com/onsi/ginkgo/v2",
+        "github.com/onsi/gomega",
+        "github.com/stretchr/testify",
+      ],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "test-dependencies",
+    },
+    {
+      description: "controller-runtime is built against a specific k8s.io minor. Upgrading either alone produces a combination that is not in the compatibility matrix, so they must land together.",
+      matchPackageNames: [
+        "sigs.k8s.io/controller-runtime",
+        "k8s.io/api",
+        "k8s.io/apiextensions-apiserver",
+        "k8s.io/apimachinery",
+        "k8s.io/client-go",
+      ],
+      groupName: "kubernetes-and-controller-runtime",
+    },
+    {
+      // Every e2e image pin stays on its minor. A new Camunda minor is a
+      // supported-version decision the operator makes on purpose.
       matchManagers: ["custom.regex"],
       matchUpdateTypes: ["major", "minor"],
       enabled: false,
+    },
+    {
+      // One pull request carries every e2e image patch of the schedule: each
+      // pull request costs a full e2e run, and the pins are independent of
+      // each other. separateMinorPatch keeps the patch alive when a newer
+      // minor exists; without it the minor and the patch share one update,
+      // and the rule above drops it whole.
+      matchManagers: ["custom.regex"],
+      separateMinorPatch: true,
+      groupName: "e2e-image-pins",
     },
     {
       // curl and Keycloak are test fixtures with no minor to hold. Camunda 8.9
       // supports every Keycloak 26.x, and the major stays off above.
       matchDepNames: ["curlimages/curl", "quay.io/keycloak/keycloak"],
       matchUpdateTypes: ["minor"],
+      enabled: true,
+    },
+    {
+      // The ECK operator the suite installs has to stay on the minor of the
+      // cloud-on-k8s module the operator renders with, so the module, the
+      // Makefile pin, and the Go pin move in one pull request. This is the
+      // one place a pin of the suite takes a minor. One update per pin, so
+      // the pull request carries one ECK release, not a patch and a minor.
+      matchPackageNames: ["github.com/elastic/cloud-on-k8s/v3", "elastic/cloud-on-k8s"],
+      separateMinorPatch: false,
+      groupName: "eck",
+    },
+    {
+      matchPackageNames: ["github.com/elastic/cloud-on-k8s/v3", "elastic/cloud-on-k8s"],
+      matchUpdateTypes: ["minor", "patch"],
+      enabled: true,
+    },
+    {
+      // The Renovate release behind `make lint-renovate` is a tool, not an
+      // image: it moves with the tools, and it takes a major, because a new
+      // major is when the schema it checks against can change.
+      matchDepNames: ["renovate"],
+      groupName: "tool-versions",
+    },
+    {
+      matchDepNames: ["renovate"],
+      matchUpdateTypes: ["major", "minor"],
       enabled: true,
     },
     {

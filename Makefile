@@ -171,6 +171,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify --schema "$(GOLANGCI_LINT_SCHEMA)"
 
+.PHONY: lint-renovate
+lint-renovate: ## Verify renovate.json5 with the validator of RENOVATE_VERSION. Needs npx.
+	npx --yes --package renovate@$(RENOVATE_VERSION) renovate-config-validator --strict renovate.json5
+
 ##@ Build
 
 .PHONY: build
@@ -298,6 +302,10 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.8.0
+# RENOVATE_VERSION is the Renovate release whose validator lint-renovate runs
+# against renovate.json5.
+# renovate: datasource=npm depName=renovate
+RENOVATE_VERSION ?= 44.39.2
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
