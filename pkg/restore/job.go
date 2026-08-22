@@ -300,7 +300,7 @@ func spreadOverRestorePods(
 // StatefulSet pod. The restore application is a one-shot process, so it also
 // carries no probe.
 func restoreContainer(in JobInput) corev1.Container {
-	// Target.Broker points into the StatefulSet that ReadTarget holds. One
+	// Target.Broker points into the StatefulSet that readTarget holds. One
 	// deep copy keeps every Job of a target independent of the target and of
 	// its siblings, down to the pointers inside a mount or an environment
 	// source. A shallow clone of those slices copies the elements and leaves

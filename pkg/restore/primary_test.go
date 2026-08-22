@@ -504,7 +504,7 @@ func TestPrimaryHoldsOnAPodThatCannotStart(t *testing.T) {
 }
 
 // A Target that is missing any of its parts reaches Primary only through
-// misuse, because ReadTarget fills all of them. Such a target is a render
+// misuse, because readTarget fills all of them. Such a target is a render
 // failure, not a wait: nothing changes on its own.
 //
 // The check runs before the phase pins the broker count, because the count is

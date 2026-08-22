@@ -119,7 +119,7 @@ func (r *Reconciler) admit(
 	// writes anything on the cluster spec. Two restores of one cluster
 	// therefore never both pass validation.
 	claimed, err := restore.Take(
-		ctx, r.Client, r.APIReader, lres.Namespace, lres.Spec.TargetClusterRef.Name, claimant(lres),
+		ctx, r.Client, r.APIReader, lres, lres.Spec.TargetClusterRef.Name,
 	)
 	if err != nil {
 		return restore.Outcome{}, err
@@ -192,33 +192,6 @@ func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
 			"so it is another backup",
 		source.Namespace, source.Name, source.ID, pinned,
 	)
-}
-
-// movedVersion reports the target whose brokers no longer carry the Camunda
-// version of the backup. Admission carried the cluster to that version and the
-// restore owns spec.version, but another manager can take the field back while
-// the restore runs, and the restore Jobs copy the broker image, so a version
-// that moves under a running restore would run the wrong binary against the
-// backup.
-//
-// It answers nil for a backup whose version the restore never wrote. The
-// version rule of the ValidatingCompatibility phase reports such a backup and
-// ends the restore, and holding for a version that nothing writes would wait
-// without end.
-func movedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailure {
-	if !restore.WritesVersion(backupVersion) || targetVersion == backupVersion {
-		return nil
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonIncompatibleTarget,
-		Message: fmt.Sprintf(
-			"the brokers of the target carry Camunda %s and the backup was taken with %s. The "+
-				"restore set the version of the backup on the cluster before it started, so "+
-				"another manager moved it while the restore ran",
-			targetVersion, backupVersion,
-		),
-	}
 }
 
 // notSuspended reports the target that started running again. A restore
@@ -356,7 +329,7 @@ func (r *Reconciler) resolve(
 	// The version of the target is a standing condition too, for the same
 	// reason its suspension is. The restore Jobs copy the broker image, so a
 	// version that moves mid-run reaches the restore application itself.
-	if failure := movedVersion(source.Version, target.Version); failure != nil {
+	if failure := restore.MovedVersion(source.Version, target.Version); failure != nil {
 		return nil, failure, nil
 	}
 

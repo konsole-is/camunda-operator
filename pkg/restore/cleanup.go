@@ -52,12 +52,12 @@ import (
 // still exist, whatever its deletion timestamp says. Outcome.Done reports that
 // no recorded Job is left, and only then are the volumes free.
 //
-// The caller runs this from the terminal branch of its reconcile, and it runs
-// nothing that follows while Done is false. On this operator that is the
-// release of the cluster claim, which is what tells the next operation that
-// the cluster is free. A caller that also starts the cluster again must wait
-// here too: a broker that the scheduler places on another node cannot attach a
-// ReadWriteOnce volume that a completed pod still counts as a user of.
+// Finish runs this first of the three releases of a terminal restore, and it
+// runs nothing that follows while Done is false. The two that follow are the
+// unsuspend of the cluster and the release of the claim. A broker that the
+// scheduler places on another node cannot attach a ReadWriteOnce volume that
+// a completed pod still counts as a user of, and the claim is what tells the
+// next operation that the cluster is free.
 //
 // Outcome.Wait paces the look that follows. The Jobs belong to the restore, so
 // the delete wakes the controller through its own watch, and the wait is the

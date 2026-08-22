@@ -101,7 +101,7 @@ func brokerStatefulSet() *appsv1.StatefulSet {
 	}
 }
 
-// incompleteTargets are the Target shapes that ReadTarget never produces.
+// incompleteTargets are the Target shapes that readTarget never produces.
 // Every entry point that renders from a Target rejects each of them, instead
 // of dereferencing it and taking the manager down.
 func incompleteTargets() map[string]struct {
@@ -149,7 +149,7 @@ func TestReadTargetReadsTheFactsOffTheLiveBroker(t *testing.T) {
 	sts := brokerStatefulSet()
 	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
 
-	target, err := ReadTarget(context.Background(), c, testCluster())
+	target, err := readTarget(context.Background(), c, testCluster())
 	require.NoError(t, err)
 	assert.Equal(t, int32(3), target.Brokers)
 	assert.Equal(t, int32(6), target.Partitions)
@@ -168,7 +168,7 @@ func TestReadTargetTakesTheBrokerCountFromTheContainerNotTheReplicas(t *testing.
 
 	c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(brokerStatefulSet()).Build()
 
-	target, err := ReadTarget(context.Background(), c, testCluster())
+	target, err := readTarget(context.Background(), c, testCluster())
 	require.NoError(t, err)
 	assert.Equal(t, int32(0), *target.StatefulSet.Spec.Replicas)
 	assert.Equal(t, int32(3), target.Brokers)
@@ -179,7 +179,7 @@ func TestReadTargetReportsAMissingStatefulSetAsAnInvalidReference(t *testing.T) 
 
 	c := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
 
-	_, err := ReadTarget(context.Background(), c, testCluster())
+	_, err := readTarget(context.Background(), c, testCluster())
 	var failure *conditions.PreCheckFailure
 	require.ErrorAs(t, err, &failure)
 	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
@@ -272,7 +272,7 @@ func TestReadTargetReportsEveryUnreadableFact(t *testing.T) {
 			tc.mutate(sts)
 			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
 
-			_, err := ReadTarget(context.Background(), c, testCluster())
+			_, err := readTarget(context.Background(), c, testCluster())
 			var failure *conditions.PreCheckFailure
 			require.ErrorAs(t, err, &failure)
 			assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
@@ -317,7 +317,7 @@ func TestReadTargetTakesTheVersionFromTheImageTag(t *testing.T) {
 			sts.Spec.Template.Spec.Containers[0].Image = tc.image
 			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
 
-			target, err := ReadTarget(context.Background(), c, testCluster())
+			target, err := readTarget(context.Background(), c, testCluster())
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, target.Version)
 		})
@@ -340,7 +340,7 @@ func TestReadTargetRejectsADigestWithoutATag(t *testing.T) {
 			sts.Spec.Template.Spec.Containers[0].Image = image
 			c := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sts).Build()
 
-			_, err := ReadTarget(context.Background(), c, testCluster())
+			_, err := readTarget(context.Background(), c, testCluster())
 			var failure *conditions.PreCheckFailure
 			require.ErrorAs(t, err, &failure)
 			assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)

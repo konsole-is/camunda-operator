@@ -465,6 +465,50 @@ func TestWritesVersionAnswersForTheValuesARestoreCanWrite(t *testing.T) {
 	}
 }
 
+// The restore owns spec.version of its cluster while it runs, and the restore
+// Jobs copy the broker image. A version that another manager moves under a
+// running restore therefore runs the wrong binary against the backup.
+func TestMovedVersionHoldsTheTargetToTheVersionOfItsBackup(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		backup string
+		target string
+		moved  bool
+	}{
+		"the brokers carry the version of the backup": {
+			backup: "8.9.9", target: "8.9.9",
+		},
+		"the brokers carry another version": {
+			backup: "8.9.9", target: "8.9.8", moved: true,
+		},
+		"the backup recorded no version": {
+			backup: "", target: "8.9.9",
+		},
+		"the backup recorded a value the restore cannot write": {
+			backup: "latest", target: "8.9.9",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			failure := MovedVersion(tt.backup, tt.target)
+			if !tt.moved {
+				assert.Nil(t, failure)
+
+				return
+			}
+
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonIncompatibleTarget, failure.Reason)
+			assert.Contains(t, failure.Message, tt.target)
+			assert.Contains(t, failure.Message, tt.backup)
+		})
+	}
+}
+
 // suspendedBy stamps a managed-fields entry that declares spec.suspend under
 // manager, the way the API server records an apply that set the field.
 func suspendedBy(cluster *v1.CamundaCluster, manager string) {

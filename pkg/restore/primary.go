@@ -43,8 +43,9 @@ import (
 
 // The lifecycle events that every restore kind publishes on its own resource.
 const (
-	// EventReasonStarted marks the restore application starting for one
-	// broker.
+	// EventReasonStarted marks a restore starting work: the restore
+	// application of one broker, and, on the relational path, the admission of
+	// the restore itself.
 	EventReasonStarted = "RestoreStarted"
 	// EventReasonCompleted marks the restore reaching Completed.
 	EventReasonCompleted = "RestoreCompleted"
@@ -523,28 +524,12 @@ func ownedBy(job *batchv1.Job, owner client.Object) bool {
 	return controller != nil && controller.UID == owner.GetUID()
 }
 
-// failure ends the restore with message. Every failure of the primary-storage
-// phase reports the reason Failed: the phase runs behind every rule that
-// carries a reason of its own.
-func failure(message string) Outcome {
-	return Outcome{Failure: &conditions.PreCheckFailure{
-		Reason: v1.ReasonFailed, Message: message,
-	}}
-}
-
 // foreignJob ends the restore because a Job under the name of one of its Jobs
 // belongs to somebody else.
 func foreignJob(key types.NamespacedName) Outcome {
 	return failure(fmt.Sprintf(
 		"Job %s exists, but no controller reference of this restore owns it. Remove the Job of the "+
 			"earlier restore, then create a new restore", key,
-	))
-}
-
-// progressing stages that the primary-storage phase runs.
-func progressing(owner conditions.Owner, message string) {
-	conditions.Stage(owner, conditions.Ready(
-		metav1.ConditionFalse, v1.ReasonProgressing, message, owner.GetGeneration(),
 	))
 }
 

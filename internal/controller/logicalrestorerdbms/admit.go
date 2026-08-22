@@ -46,11 +46,10 @@ type backup struct {
 	// Version is the Camunda version that the cluster ran when the backup was
 	// taken. It is empty for a backup that recorded none.
 	Version string
-	// SourceCluster is the name of the CamundaCluster the backup was taken
-	// from. The target must carry the same name, because the restore
-	// application reads the primary-storage backup under the prefix of the
-	// cluster it runs as.
-	SourceCluster string
+	// Cluster is the CamundaCluster that the backup was taken from. The target
+	// must carry the same name, because the restore application reads the
+	// primary-storage backup under the prefix of the cluster it runs as.
+	Cluster string
 	// Bucket is the ObjectStorageConfig that the backup wrote its dump to.
 	// The target must back up through the same one.
 	Bucket string
@@ -118,7 +117,7 @@ func (r *Reconciler) admit(
 	// writes anything on the cluster spec. Two restores of one cluster
 	// therefore never both pass validation.
 	claimed, err := restore.Take(
-		ctx, r.Client, r.APIReader, lrr.Namespace, lrr.Spec.TargetClusterRef.Name, claimant(lrr),
+		ctx, r.Client, r.APIReader, lrr, lrr.Spec.TargetClusterRef.Name,
 	)
 	if err != nil {
 		return restore.Outcome{}, err
@@ -208,35 +207,8 @@ func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
 	)
 }
 
-// movedVersion reports the target whose brokers no longer carry the Camunda
-// version of the backup. Admission carried the cluster to that version and the
-// restore owns spec.version, but another manager can take the field back while
-// the restore runs, and the restore Jobs copy the broker image, so a version
-// that moves under a running restore would run the wrong binary against the
-// backup.
-//
-// It answers nil for a backup whose version the restore never wrote. The
-// version rule of the ValidatingCompatibility phase reports such a backup and
-// ends the restore, and holding for a version that nothing writes would wait
-// without end.
-func movedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailure {
-	if !restore.WritesVersion(backupVersion) || targetVersion == backupVersion {
-		return nil
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonIncompatibleTarget,
-		Message: fmt.Sprintf(
-			"the brokers of the target carry Camunda %s and the backup was taken with %s. The "+
-				"restore set the version of the backup on the cluster before it started, so "+
-				"another manager moved it while the restore ran",
-			targetVersion, backupVersion,
-		),
-	}
-}
-
 // notSuspended reports the target that started running again. A restore
-// rewrites the storage of its target, so it may only touch a cluster whose
+// rewrites the storage of its target, so it only touches a cluster whose
 // workloads are scaled down.
 //
 // Only a phase after admission reports it. Admission suspends the cluster
@@ -289,14 +261,14 @@ func (r *Reconciler) readBackup(
 	}
 
 	return &backup{
-		Namespace:     source.Namespace,
-		Name:          source.Name,
-		ID:            source.Status.BackupID,
-		Version:       source.Status.Version,
-		SourceCluster: source.Spec.ClusterRef.Name,
-		Bucket:        source.Status.BucketRef,
-		ObjectKey:     source.Status.ObjectKey,
-		ZeebeSize:     source.Status.StorageSizes.Zeebe,
+		Namespace: source.Namespace,
+		Name:      source.Name,
+		ID:        source.Status.BackupID,
+		Version:   source.Status.Version,
+		Cluster:   source.Spec.ClusterRef.Name,
+		Bucket:    source.Status.BucketRef,
+		ObjectKey: source.Status.ObjectKey,
+		ZeebeSize: source.Status.StorageSizes.Zeebe,
 	}, nil, nil
 }
 
@@ -345,14 +317,14 @@ func (r *Reconciler) resolve(
 		return nil, failure, nil
 	}
 
-	resolved, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
+	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
 	// The version of the target is a standing condition too, for the same
 	// reason its suspension is. The restore Jobs copy the broker image, so a
 	// version that moves mid-run reaches the restore application itself.
-	if failure := movedVersion(source.Version, resolved.Version); failure != nil {
+	if failure := restore.MovedVersion(source.Version, target.Version); failure != nil {
 		return nil, failure, nil
 	}
 
@@ -361,5 +333,5 @@ func (r *Reconciler) resolve(
 		return nil, failure, err
 	}
 
-	return &resolution{cluster: cluster, backup: source, target: resolved, storage: storage}, nil, nil
+	return &resolution{cluster: cluster, backup: source, target: target, storage: storage}, nil, nil
 }

@@ -19,6 +19,9 @@ package restore
 import (
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -41,4 +44,22 @@ type Outcome struct {
 	// controller's to decide: a failure of the primary-storage phase ends the
 	// restore, and a cluster that another operation holds keeps it waiting.
 	Failure *conditions.PreCheckFailure
+}
+
+// progressing stages that a step of the driver runs. Both steps a controller
+// hands the driver report through it: the preparation of the cluster and the
+// primary-storage phase.
+func progressing(owner conditions.Owner, message string) {
+	conditions.Stage(owner, conditions.Ready(
+		metav1.ConditionFalse, v1.ReasonProgressing, message, owner.GetGeneration(),
+	))
+}
+
+// failure ends the restore with message. Every failure that the driver raises
+// itself reports the reason Failed. It runs behind every rule of a kind that
+// carries a reason of its own, so no such rule reaches it.
+func failure(message string) Outcome {
+	return Outcome{Failure: &conditions.PreCheckFailure{
+		Reason: v1.ReasonFailed, Message: message,
+	}}
 }

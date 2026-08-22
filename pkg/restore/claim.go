@@ -27,10 +27,13 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// Take claims the cluster for self. A cluster that no live holder claims is
+// Take claims the cluster for owner. A cluster that no live holder claims is
 // claimed, and Take reports Done. A cluster that another live holder claims
 // is not, and Take reports a failure with v1.ReasonClusterClaimed that names
 // the holder.
+//
+// The cluster lives in the namespace of the restore: a cluster reference of a
+// restore never crosses a namespace.
 //
 // Nothing bounds the hold. The restore starts on its own when the holder
 // reaches a terminal phase, because the next look takes the claim over. The
@@ -43,10 +46,12 @@ func Take(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
-	namespace, cluster string,
-	self clusterclaim.Claimant,
+	owner conditions.Owner,
+	cluster string,
 ) (Outcome, error) {
-	holder, err := clusterclaim.Claim(ctx, c, reader, namespace, cluster, self)
+	namespace := owner.GetNamespace()
+
+	holder, err := clusterclaim.Claim(ctx, c, reader, namespace, cluster, claimantOf(owner))
 	if err != nil {
 		return Outcome{}, fmt.Errorf("claiming CamundaCluster %s/%s: %w", namespace, cluster, err)
 	}
@@ -71,19 +76,31 @@ func Take(
 	}}, nil
 }
 
-// Give returns the claim on the cluster. It is safe on every look of a
-// terminal restore and inside a finalizer: a Lease that another claimant
+// Give returns the claim that owner holds on the cluster. Finish calls it
+// last of the three releases of a terminal restore, on every look, so a
+// release that failed heals on the next one. A Lease that another claimant
 // holds is left alone.
 func Give(
 	ctx context.Context,
 	c client.Client,
 	reader client.Reader,
-	namespace, cluster string,
-	self clusterclaim.Claimant,
+	owner conditions.Owner,
+	cluster string,
 ) error {
-	if err := clusterclaim.Release(ctx, c, reader, namespace, cluster, self); err != nil {
+	namespace := owner.GetNamespace()
+
+	if err := clusterclaim.Release(ctx, c, reader, namespace, cluster, claimantOf(owner)); err != nil {
 		return fmt.Errorf("releasing CamundaCluster %s/%s: %w", namespace, cluster, err)
 	}
 
 	return nil
+}
+
+// claimantOf returns the identity under which a restore holds the claim on
+// its cluster. Every restore kind derives it from the same three fields, so
+// no controller writes the identity of its own resource by hand.
+func claimantOf(owner conditions.Owner) clusterclaim.Claimant {
+	return clusterclaim.Claimant{
+		Kind: owner.GetKind(), Name: owner.GetName(), UID: owner.GetUID(),
+	}
 }

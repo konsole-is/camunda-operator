@@ -56,18 +56,6 @@ const (
 // write, and the version rule of the restore kind reports what that means.
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
-// WritesVersion reports whether a restore writes version on the cluster it
-// prepares. A backup that recorded no version, and one whose recorded value is
-// not of the form x.y.z, name nothing that the restore can write, and the
-// version rule of the restore kind reports what such a backup means.
-//
-// A phase that holds the cluster to the version of its backup asks this
-// first. Holding a cluster to a version that the restore never wrote would
-// wait for something nothing brings about.
-func WritesVersion(version string) bool {
-	return versionPattern.MatchString(version)
-}
-
 // PrepareInput is what the preparation step of a restore reads. Every value
 // is live, read in this look: the step decides from the state of the cluster
 // now, and it writes to that cluster.
@@ -283,7 +271,7 @@ func versionTarget(
 	in PrepareInput,
 	key types.NamespacedName,
 ) (Outcome, error) {
-	if !versionPattern.MatchString(in.Version) {
+	if !WritesVersion(in.Version) {
 		return Outcome{Done: true}, nil
 	}
 
@@ -311,6 +299,41 @@ func versionTarget(
 	return Outcome{Done: true}, nil
 }
 
+// MovedVersion reports the target whose brokers no longer carry the Camunda
+// version of the backup, or nil when they do. A phase after admission asks it
+// on every look, because another manager can take spec.version back while the
+// restore runs and the restore Jobs copy the broker image.
+//
+// It answers nil for a backup whose version the restore never wrote, which
+// WritesVersion decides.
+func MovedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailure {
+	if !WritesVersion(backupVersion) || targetVersion == backupVersion {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonIncompatibleTarget,
+		Message: fmt.Sprintf(
+			"the brokers of the target carry Camunda %s and the backup was taken with %s. The "+
+				"restore set the version of the backup on the cluster before it started, so "+
+				"another manager moved it while the restore ran",
+			targetVersion, backupVersion,
+		),
+	}
+}
+
+// WritesVersion reports whether a restore writes version on the cluster it
+// prepares. A backup that recorded no version, and one whose recorded value is
+// not of the form x.y.z, name nothing that the restore can write, and the
+// version rule of the restore kind reports what such a backup means.
+//
+// A phase that holds the cluster to the version of its backup asks this
+// first. Holding a cluster to a version that the restore never wrote would
+// wait for something nothing brings about.
+func WritesVersion(version string) bool {
+	return versionPattern.MatchString(version)
+}
+
 // Resume withdraws the suspension that this restore applied to its cluster.
 // It writes nothing unless the restore recorded that it suspended the
 // cluster, so a cluster that its owner suspended for reasons of their own
@@ -321,8 +344,8 @@ func versionTarget(
 // restore keeps it: its broker volumes can be empty or half written, and
 // brokers that start over them are worse than a cluster that is down.
 //
-// The caller runs this from the terminal branch of its reconcile, after it
-// collected the Jobs and before it gives the cluster claim back. The pods of
+// Finish runs this after it collected the Jobs and before it gives the
+// cluster claim back, and it carries the reason for that order. The pods of
 // those Jobs hold the broker volumes, and this call is what lets a broker ask
 // for one.
 //
