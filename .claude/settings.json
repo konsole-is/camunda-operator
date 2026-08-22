@@ -12,11 +12,18 @@
         "source": "github",
         "repo": "AminBlg/SimpleEnglish"
       }
+    },
+    "feature-dev-workflow": {
+      "source": {
+        "source": "github",
+        "repo": "sourcehawk/feature-dev-workflow"
+      }
     }
   },
   "enabledPlugins": {
     "ocf@operator-component-framework": true,
-    "simple-english@simple-english": true
+    "simple-english@simple-english": true,
+    "feature-dev-workflow@feature-dev-workflow": true
   },
   "hooks": {
     "SessionStart": [
