@@ -372,20 +372,26 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 			)
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 
-		out, err := utils.Kubectl(
-			"get", "events", "-n", ccNamespace,
-			"--field-selector", "reason="+v1.ReasonVersionDowngradeRefused,
-			"-o", "name",
-		)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(out).NotTo(BeEmpty(), "no VersionDowngradeRefused event was recorded")
+		By("reading the Warning event of the refusal")
+		Eventually(func(g Gomega) {
+			out, err := utils.Kubectl(
+				"get", "events", "-n", ccNamespace,
+				"--field-selector", "reason="+v1.ReasonVersionDowngradeRefused+
+					",involvedObject.name="+ccName+",type=Warning",
+				"-o", "name",
+			)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).NotTo(BeEmpty(), "no VersionDowngradeRefused event was recorded")
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 
 		By("setting the version back")
 		Expect(apply(cluster)).To(Succeed())
 		Eventually(func(g Gomega) {
 			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)
+			var latest v1.CamundaCluster
+			g.Expect(utils.Get(ccResource, ccName, ccNamespace, &latest)).To(Succeed())
+			g.Expect(latest.Spec.Version).To(Equal(running))
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
-		Expect(cluster.Spec.Version).To(Equal(running))
 	})
 
 	It("suspends every workload to zero replicas and keeps the broker volume", func() {

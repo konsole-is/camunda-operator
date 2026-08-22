@@ -417,11 +417,11 @@ func applySuspend(
 }
 
 // applyVersion applies spec.version of the cluster under the version manager,
-// together with the annotation that sanctions the downgrade it can be. The
-// cluster controller refuses a version below the one the brokers run without
-// that annotation, and it removes the annotation once the brokers carry the
-// version. One apply carries both, so no crash leaves the version without its
-// sanction.
+// together with the annotation that sanctions the move, because that move can
+// be a downgrade. The cluster controller refuses a version below the one the
+// brokers run without that annotation, and it removes the annotation once the
+// brokers carry the version. One apply carries both, so no crash leaves the
+// version without its sanction.
 func applyVersion(
 	ctx context.Context,
 	c client.Client,

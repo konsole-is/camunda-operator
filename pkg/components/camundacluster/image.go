@@ -16,27 +16,21 @@ limitations under the License.
 
 package camundacluster
 
-// VersionDowngrade reports whether effective is below running, segment by
-// segment. It reports false when either value is not of the form x.y.z. A
-// cluster without a running version has nothing to move back from.
-func VersionDowngrade(effective, running string) bool {
-	want, err := parseVersion(effective)
-	if err != nil {
-		return false
-	}
-	have, err := parseVersion(running)
-	if err != nil {
-		return false
+import "strings"
+
+// ImageTag returns the tag of an image reference, or the empty string when
+// it carries none. A digest follows the tag after an "@", and a registry
+// host can carry a port, so only a colon after the last slash and before the
+// digest starts a tag.
+func ImageTag(image string) string {
+	if at := strings.Index(image, "@"); at >= 0 {
+		image = image[:at]
 	}
 
-	for i := range 3 {
-		switch {
-		case want[i] < have[i]:
-			return true
-		case want[i] > have[i]:
-			return false
-		}
+	colon := strings.LastIndex(image, ":")
+	if colon < 0 || colon < strings.LastIndex(image, "/") {
+		return ""
 	}
 
-	return false
+	return image[colon+1:]
 }

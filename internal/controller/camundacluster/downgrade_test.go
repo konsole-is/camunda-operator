@@ -17,15 +17,83 @@ limitations under the License.
 package camundacluster
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
+
+func TestConsumeDowngradeSanction(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// sanctioned is the version that the annotation names. Empty means
+		// that the cluster carries no annotation.
+		sanctioned string
+		// want is the annotation value on the live object after the call.
+		// Empty means that the cluster carries no annotation.
+		want string
+		// patched is true when the call must write the live object.
+		patched bool
+	}{
+		{
+			name: "no annotation",
+		},
+		{
+			name:       "the annotation names another version",
+			sanctioned: "8.9.7",
+			want:       "8.9.7",
+		},
+		{
+			name:       "the annotation names the running version",
+			sanctioned: "8.9.9",
+			patched:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			scheme, err := v1.SchemeBuilder.Build()
+			require.NoError(t, err)
+
+			cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns"}}
+			if tt.sanctioned != "" {
+				cluster.Annotations = map[string]string{
+					components.AllowVersionDowngradeAnnotation: tt.sanctioned,
+				}
+			}
+			r := &CamundaClusterReconciler{
+				Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).Build(),
+			}
+			key := client.ObjectKeyFromObject(cluster)
+
+			var live v1.CamundaCluster
+			require.NoError(t, r.Get(context.Background(), key, &live))
+			applied := live.ResourceVersion
+
+			storage := brokerStorageRunning("camunda/camunda:8.9.9")
+			require.NoError(t, r.consumeDowngradeSanction(context.Background(), cluster, storage))
+
+			require.NoError(t, r.Get(context.Background(), key, &live))
+			assert.Equal(t, tt.want, live.Annotations[components.AllowVersionDowngradeAnnotation])
+			if tt.patched {
+				assert.NotEqual(t, applied, live.ResourceVersion, "a spent sanction is removed with a patch")
+			} else {
+				assert.Equal(t, applied, live.ResourceVersion, "there is no sanction to spend, so nothing is written")
+			}
+		})
+	}
+}
 
 func TestRefuseDowngrade(t *testing.T) {
 	t.Parallel()
