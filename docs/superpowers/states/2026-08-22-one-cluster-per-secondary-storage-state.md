@@ -3,7 +3,8 @@ feature: one-cluster-per-secondary-storage
 spec: docs/superpowers/specs/2026-08-22-one-cluster-per-secondary-storage-design.md
 plan: docs/superpowers/plans/2026-08-22-one-cluster-per-secondary-storage-plan.md
 tracking_issue: #166
-status: foundational-wave
+integration_pr: #183
+status: review
 ---
 
 # One CamundaCluster per secondary storage backend — orchestration state
@@ -16,7 +17,7 @@ status: foundational-wave
 
 | Issue | Branch                                  | Worktree path                                          | PR (→ base)   | Status      |
 | ----- | --------------------------------------- | ------------------------------------------------------ | ------------- | ----------- |
-| #166  | fix/one-cluster-per-secondary-storage   | .claude/worktrees/one-cluster-per-secondary-storage    | (none) → main | in-progress |
+| #166  | fix/one-cluster-per-secondary-storage   | .claude/worktrees/one-cluster-per-secondary-storage    | #183 → main  | ready       |
 
 ## Contracts
 
