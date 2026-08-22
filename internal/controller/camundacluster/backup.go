@@ -114,39 +114,25 @@ func (res *resolver) rejectSharedAzureContainer(ctx context.Context, bucket *v1.
 		return nil
 	}
 
-	var clusters v1.CamundaClusterList
-	if err := res.reader.List(ctx, &clusters); err != nil {
-		return fmt.Errorf("listing clusters that share ObjectStorageConfig %q: %w", bucket.Name, err)
+	other, err := res.olderSibling(ctx, func(_ context.Context, other *v1.CamundaCluster) (bool, error) {
+		return other.Spec.BackupStorageRef == bucket.Name, nil
+	})
+	if err != nil {
+		return err
+	}
+	if other == nil {
+		return nil
 	}
 
-	for i := range clusters.Items {
-		other := &clusters.Items[i]
-		if other.UID == res.cluster.UID || other.Spec.BackupStorageRef != bucket.Name {
-			continue
-		}
-		if olderThan(other, res.cluster) {
-			return &conditions.PreCheckFailure{
-				Reason: v1.ReasonInvalidReference,
-				Message: fmt.Sprintf(
-					"ObjectStorageConfig %q is an Azure container that CamundaCluster %q already backs up "+
-						"to; the azure store writes into one container per contract, so every cluster needs "+
-						"a contract with its own container",
-					bucket.Name, objectPath(client.ObjectKeyFromObject(other)),
-				),
-			}
-		}
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonInvalidReference,
+		Message: fmt.Sprintf(
+			"ObjectStorageConfig %q is an Azure container that CamundaCluster %q already backs up "+
+				"to; the azure store writes into one container per contract, so every cluster needs "+
+				"a contract with its own container",
+			bucket.Name, objectPath(client.ObjectKeyFromObject(other)),
+		),
 	}
-
-	return nil
-}
-
-// olderThan reports whether a was created before b, with the name as the
-// tie-break, so exactly one of two clusters ever yields.
-func olderThan(a, b *v1.CamundaCluster) bool {
-	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
-		return a.CreationTimestamp.Before(&b.CreationTimestamp)
-	}
-	return a.Name < b.Name
 }
 
 // objectStorage reads the ObjectStorageConfig that ref names, or returns nil

@@ -122,7 +122,9 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // Reconcile converges a CamundaCluster. A paused cluster records one Paused
 // event and returns before anything is read or written, status included.
 // Otherwise the pre-checks resolve every reference into the render input; a
-// failed pre-check reports its Ready reason and stops. The broker storage
+// failed pre-check reports its Ready reason and stops. A cluster whose
+// backend an older cluster holds renders suspended and reports
+// StorageAlreadyAttached instead of the aggregate. The broker storage
 // lifecycle then grows the bound broker claims in place and records an
 // ignored shrink; the claim template keeps its applied size, so the
 // StatefulSet is never recreated. The admin credential resolves next, and a
@@ -191,6 +193,14 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// A cluster whose backend another cluster holds renders suspended: every
+	// workload at zero and the volumes kept, until the holder releases it.
+	// The suspension also idles the admin rotation and clears the management
+	// binding, as a user suspension does.
+	if in.Storage.Holder != nil {
+		in.Effective.Suspend = true
+	}
+
 	in.ServiceMonitorSupported = r.serviceMonitorSupported()
 
 	storage, err := r.readBrokerStorage(ctx, &cluster)
@@ -225,7 +235,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 
 	cred.stageFailure(&cluster, priorAdminSecret)
-	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
+	if in.Storage.Holder != nil {
+		conditions.Stage(&cluster, storageHeld(&cluster, in.Storage.Holder))
+	} else {
+		conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
+	}
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)

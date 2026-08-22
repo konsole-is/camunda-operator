@@ -61,17 +61,20 @@ type resolver struct {
 	recorder events.EventRecorder
 	inputs   []string
 	mirrors  mirroredSecrets
+	// storage is the SecondaryStorageConfig that spec.storageRef names, set
+	// by resolveStorage for the steps after it.
+	storage *v1.SecondaryStorageConfig
 }
 
 // preCheck resolves every reference of cluster into the render input, in the
 // documented order: the preset and the merged spec, the platform config and
-// its Secrets, the storage binding and its chain, the object storage
-// references. Every Secret is checked for its keys through the uncached
-// reader. A Secret outside the cluster namespace is copied into the returned
-// mirrors, and the input references the copy, so the renderer only ever
-// names Secrets of the cluster namespace. HashInputs carry the resource
-// version of every Secret and the generation of every CR read, sorted, so a
-// change to any of them rolls the pods. A failed check returns a
+// its Secrets, the storage binding and its chain, the holder of its backend,
+// the object storage references. Every Secret is checked for its keys through
+// the uncached reader. A Secret outside the cluster namespace is copied into
+// the returned mirrors, and the input references the copy, so the renderer
+// only ever names Secrets of the cluster namespace. HashInputs carry the
+// resource version of every Secret and the generation of every CR read,
+// sorted, so a change to any of them rolls the pods. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
 // an invalid effective spec, MissingSecret for a missing Secret or key. Any
 // other error is a transient API failure.
@@ -93,6 +96,7 @@ func (r *CamundaClusterReconciler) preCheck(
 		res.resolvePlatform,
 		res.resolveAuth,
 		res.resolveStorage,
+		res.resolveStorageHolder,
 		res.warnReferencedJavaToolOptions,
 		res.resolveObjectStorage,
 	}
@@ -196,6 +200,7 @@ func (res *resolver) resolveStorage(ctx context.Context, in *components.Input) e
 		return err
 	}
 	in.Storage.Type = binding.Spec.Type
+	res.storage = &binding
 
 	switch binding.Spec.Type {
 	case v1.SecondaryStorageTypeElasticsearch:
@@ -477,4 +482,49 @@ func (res *resolver) objectKind(obj client.Object) string {
 		return fmt.Sprintf("%T", obj)
 	}
 	return gvk.Kind
+}
+
+// olderSibling returns the oldest CamundaCluster other than res.cluster that
+// was created before it (ties break by name) and that matches, or nil. The
+// two guards that let the oldest cluster keep a resource only one cluster
+// can use call it. The list is read live: a cached list can miss a sibling
+// created a moment ago, and the rule exists to protect that sibling.
+func (res *resolver) olderSibling(
+	ctx context.Context,
+	matches func(context.Context, *v1.CamundaCluster) (bool, error),
+) (*v1.CamundaCluster, error) {
+	var clusters v1.CamundaClusterList
+	if err := res.reader.List(ctx, &clusters); err != nil {
+		return nil, fmt.Errorf("listing the clusters: %w", err)
+	}
+
+	var oldest *v1.CamundaCluster
+	for i := range clusters.Items {
+		other := &clusters.Items[i]
+		if other.UID == res.cluster.UID || !olderThan(other, res.cluster) {
+			continue
+		}
+		if oldest != nil && !olderThan(other, oldest) {
+			continue
+		}
+
+		ok, err := matches(ctx, other)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			oldest = other
+		}
+	}
+
+	return oldest, nil
+}
+
+// olderThan reports whether a was created before b, with the name as the
+// tie-break, so exactly one of two clusters ever yields.
+func olderThan(a, b *v1.CamundaCluster) bool {
+	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	}
+	return a.Name < b.Name
 }

@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -33,6 +34,19 @@ type Storage struct {
 	Elasticsearch *v1.ElasticsearchStorage
 	// RDBMS is set when Type is rdbms.
 	RDBMS *RDBMSStorage
+	// Holder is set when another CamundaCluster, created earlier, uses the
+	// backend of this binding. One CamundaCluster uses one backend, so the
+	// controller renders a cluster with a Holder suspended and reports the
+	// holder on Ready. Nil when this cluster holds its backend.
+	Holder *StorageHolder
+}
+
+// StorageHolder is the CamundaCluster that holds a secondary storage backend
+// and the backend it holds, as Backend.String of the contract wrapper names
+// it.
+type StorageHolder struct {
+	Cluster types.NamespacedName
+	Backend string
 }
 
 // RDBMSStorage is the DatabaseConfig and DatabaseServerConfig chain of an
