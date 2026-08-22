@@ -67,6 +67,15 @@ const ReasonInvalidCredentials = "InvalidCredentials"
 // change of the password recovers it.
 const ReasonRejected = "Rejected"
 
+// ReasonVersionDowngradeRefused on Ready means that the effective version
+// of the cluster is below the version that its brokers run, and nothing
+// sanctions the move. Camunda does not support a downgrade of a running
+// cluster. The operator applies nothing while this stands. The message names
+// the two versions and the remedies. The annotation
+// camunda.io/allow-version-downgrade, with the target version as its value,
+// sanctions one such move.
+const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
+
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
 type ComponentMode string
@@ -365,7 +374,9 @@ type CamundaClusterSpec struct {
 	// Version is the Camunda version to deploy, as a full semantic version.
 	// The floor of 8.9.0 is enforced by the controller on the preset-merged
 	// result, the schema pins only the three-segment shape. Required unless
-	// the resolved preset provides it.
+	// the resolved preset provides it. A value below the version that the
+	// brokers run is refused with Ready VersionDowngradeRefused unless the
+	// annotation camunda.io/allow-version-downgrade names it.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
