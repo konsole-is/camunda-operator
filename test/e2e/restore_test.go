@@ -112,7 +112,11 @@ const rolledBackPosition = 1
 // it reads here and inserts again what it finds in the log. A row that stayed
 // collides with that insert on its key, and the exporter then flushes nothing
 // ever again.
-const rollBackSQL = `DO $$
+//
+// The block is quoted with a named tag. The SQL travels as a container
+// command, and Kubernetes reduces "$$" in a command to one "$" as its escape
+// for variable expansion, which leaves "DO $" behind.
+const rollBackSQL = `DO $rollback$
 DECLARE t text;
 BEGIN
   FOR t IN
@@ -124,7 +128,7 @@ BEGIN
     EXECUTE format('TRUNCATE TABLE %%I CASCADE', t);
   END LOOP;
   UPDATE exporter_position SET last_exported_position = %d, last_updated = '%s';
-END $$`
+END $rollback$`
 
 // itRestoresTheElasticsearchCluster registers the restore specs of the
 // Elasticsearch flow. The CamundaCluster flow calls it while its cluster is
