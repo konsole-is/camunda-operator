@@ -32,7 +32,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -49,6 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -140,18 +140,6 @@ func (r *BackupScheduleReconciler) Reconcile(
 		}
 	}()
 
-	if failure := nameProblem(&schedule); failure != nil {
-		// Every backup carries the schedule and the cluster in a label, and
-		// the pruning and the watches select backups by those labels. A name
-		// that cannot be a label value fails the creation at admission and
-		// the selector of the pruning alike, so nothing below can run and
-		// the condition is all the schedule can offer. Only a new object
-		// under a shorter name heals it.
-		conditions.Stage(&schedule, conditions.Failed(&schedule, failure))
-
-		return ctrl.Result{}, nil
-	}
-
 	now := r.opts.Now()
 
 	sched, parseErr := parseCron(schedule.Spec.Schedule, now)
@@ -198,30 +186,6 @@ func (r *BackupScheduleReconciler) Reconcile(
 	}
 
 	return ctrl.Result{RequeueAfter: next.Sub(now)}, nil
-}
-
-// nameProblem reports why the schedule cannot label the backups it creates,
-// or nil when it can. A Kubernetes object name may be a 253-character DNS
-// subdomain, while a label value is bounded at 63 characters, so a legal
-// schedule name or cluster name can still be unusable as the label that ties
-// a backup to its schedule.
-func nameProblem(schedule *v1.BackupSchedule) *conditions.PreCheckFailure {
-	for _, named := range []struct{ field, value string }{
-		{"metadata.name", schedule.Name},
-		{"spec.clusterRef.name", schedule.Spec.ClusterRef.Name},
-	} {
-		problems := validation.IsValidLabelValue(named.value)
-		if len(problems) == 0 {
-			continue
-		}
-
-		return logicalbackup.InvalidReference(
-			"%s %q cannot be a label value, and every backup this schedule creates carries it in one: %s",
-			named.field, named.value, strings.Join(problems, "; "),
-		)
-	}
-
-	return nil
 }
 
 // resolved is what one look at the references answers: the cluster to back up
@@ -402,6 +366,9 @@ func (r *BackupScheduleReconciler) trigger(
 // kind, carrying this schedule's label, and backing up the same cluster. It
 // reads live, because the decision admits or refuses a trigger.
 //
+// The label carries the name of the schedule under the bound of a label
+// value, so the comparison bounds the name of the schedule as well.
+//
 // An object that vanished between the failed create and this read is not
 // ours to adopt either. The next reconcile creates the backup if the trigger
 // is still due.
@@ -422,7 +389,7 @@ func (r *BackupScheduleReconciler) backupBelongsTo(
 		return false, fmt.Errorf("reading the existing %q: %w", want.GetName(), err)
 	}
 
-	if found.GetLabels()[labels.BackupScheduleKey] != schedule.Name {
+	if found.GetLabels()[labels.BackupScheduleKey] != labels.OwnerName(schedule.Name) {
 		return false, nil
 	}
 
@@ -440,17 +407,27 @@ func (r *BackupScheduleReconciler) backupBelongsTo(
 // storage type, named <schedule>-<unix-timestamp> of the trigger, labeled
 // with the cluster and the schedule, and without an owner reference, so
 // deleting the schedule never deletes it.
+//
+// A custom resource name may be a 253-character DNS subdomain, while a label
+// value stops at 63. The name of the backup and the two label values
+// therefore carry the bound of where each one goes. Each bound ends in a hash
+// of the whole name, so two long schedules stay apart, and every trigger of
+// one schedule derives the same values.
 func newBackup(
 	schedule *v1.BackupSchedule,
 	storageType v1.SecondaryStorageType,
 	due time.Time,
 ) (client.Object, string) {
+	owner := labels.BackupSchedule(schedule.Name)
+	cluster := labels.Cluster(schedule.Spec.ClusterRef.Name)
+	suffix := "-" + strconv.FormatInt(due.Unix(), 10)
+
 	objectMeta := metav1.ObjectMeta{
-		Name:      schedule.Name + "-" + strconv.FormatInt(due.Unix(), 10),
+		Name:      labels.BoundedName(schedule.Name, validation.DNS1123SubdomainMaxLength-len(suffix)) + suffix,
 		Namespace: schedule.Namespace,
 		Labels: map[string]string{
-			labels.ClusterKey:        schedule.Spec.ClusterRef.Name,
-			labels.BackupScheduleKey: schedule.Name,
+			cluster.Key: cluster.Name,
+			owner.Key:   owner.Name,
 		},
 	}
 
@@ -524,30 +501,51 @@ func (r *BackupScheduleReconciler) SetupWithManager(mgr ctrl.Manager, opts Optio
 		For(&v1.BackupSchedule{}).
 		Watches(
 			&v1.LogicalBackupElasticsearch{},
-			enqueueSchedule(),
+			enqueueSchedule(r.Client),
 			builder.WithPredicates(phaseChanged()),
 		).
 		Watches(
 			&v1.LogicalBackupRDBMS{},
-			enqueueSchedule(),
+			enqueueSchedule(r.Client),
 			builder.WithPredicates(phaseChanged()),
 		).
 		Named("backupschedule").
 		Complete(r)
 }
 
-// enqueueSchedule maps a backup event to the schedule its label names. A
+// enqueueSchedule maps a backup event to the schedule that created it. A
 // backup without the label is manual and wakes nothing.
-func enqueueSchedule() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []ctrl.Request {
-		name := obj.GetLabels()[labels.BackupScheduleKey]
-		if name == "" {
+//
+// The label carries the name of the schedule under the bound of a label
+// value, which is not the name once the name passes 63 characters. The
+// schedules of the namespace resolve it forward, and a value that matches no
+// schedule of the namespace wakes nothing either.
+func enqueueSchedule(c client.Client) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+		value := obj.GetLabels()[labels.BackupScheduleKey]
+		if value == "" {
 			return nil
 		}
 
-		return []ctrl.Request{{
-			NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: name},
-		}}
+		var schedules v1.BackupScheduleList
+		if err := c.List(ctx, &schedules, client.InNamespace(obj.GetNamespace())); err != nil {
+			logf.FromContext(ctx).Error(err, "Resolving the schedule of a backup", "label", value)
+
+			return nil
+		}
+
+		for i := range schedules.Items {
+			if labels.OwnerName(schedules.Items[i].Name) != value {
+				continue
+			}
+
+			return []ctrl.Request{{NamespacedName: types.NamespacedName{
+				Namespace: obj.GetNamespace(),
+				Name:      schedules.Items[i].Name,
+			}}}
+		}
+
+		return nil
 	})
 }
 

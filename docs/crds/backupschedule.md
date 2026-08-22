@@ -78,6 +78,8 @@ To list the backups of one schedule, select on the label:
 kubectl get lbrdbms -n my-cluster-ns -l camunda.io/backup-schedule=my-cluster-schedule
 ```
 
+A backup name stops at 253 characters and a label value at 63. A schedule name that is too long for one of the two is cut there, and a hash of the full name is added. Two such schedules stay apart. The selector above matches while the schedule name is 63 characters or less. For a longer name the label carries the cut form. `kubectl get lbrdbms --show-labels` shows the value to select on.
+
 Each creation records the Normal event `BackupCreated` on the schedule. The event names the kind and the backup.
 
 ## Skipped triggers

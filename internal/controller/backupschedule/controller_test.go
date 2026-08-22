@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -166,9 +167,11 @@ func touch(schedule *v1.BackupSchedule) {
 }
 
 // scheduledOf lists the backups of both kinds that carry the schedule label.
+// The value is the name of the schedule under the bound of a label value, the
+// way the controller writes it.
 func scheduledOf(schedule *v1.BackupSchedule) []client.Object {
 	GinkgoHelper()
-	selector := client.MatchingLabels{labels.BackupScheduleKey: schedule.Name}
+	selector := client.MatchingLabels{labels.BackupScheduleKey: labels.OwnerName(schedule.Name)}
 
 	var es v1.LogicalBackupElasticsearchList
 	Expect(k8sClient.List(ctx, &es, client.InNamespace(schedule.Namespace), selector)).To(Succeed())
@@ -218,8 +221,8 @@ func scheduledRDBMS(
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "seeded-" + utilrand.String(6), Namespace: schedule.Namespace,
 			Labels: map[string]string{
-				labels.ClusterKey:        schedule.Spec.ClusterRef.Name,
-				labels.BackupScheduleKey: schedule.Name,
+				labels.ClusterKey:        labels.OwnerName(schedule.Spec.ClusterRef.Name),
+				labels.BackupScheduleKey: labels.OwnerName(schedule.Name),
 			},
 		},
 		Spec: v1.LogicalBackupRDBMSSpec{ClusterRef: schedule.Spec.ClusterRef},
@@ -507,8 +510,8 @@ var _ = Describe("BackupSchedule controller", func() {
 				Name:      schedule.Name + "-" + strconv.FormatInt(trigger.Unix(), 10),
 				Namespace: schedule.Namespace,
 				Labels: map[string]string{
-					labels.ClusterKey:        schedule.Spec.ClusterRef.Name,
-					labels.BackupScheduleKey: schedule.Name,
+					labels.ClusterKey:        labels.OwnerName(schedule.Spec.ClusterRef.Name),
+					labels.BackupScheduleKey: labels.OwnerName(schedule.Name),
 				},
 			},
 			Spec: v1.LogicalBackupRDBMSSpec{ClusterRef: schedule.Spec.ClusterRef},
@@ -564,13 +567,51 @@ var _ = Describe("BackupSchedule controller", func() {
 		Expect(found.Labels).NotTo(HaveKey(labels.BackupScheduleKey))
 	})
 
-	It("reports InvalidReference for a name that cannot be a label value", func() {
+	It("creates the backup of a schedule whose name is longer than a label value", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		// A DNS subdomain may be 253 characters, a label value only 63. The
-		// operator copies the schedule name into a label on every backup it
-		// creates, so a longer name makes every creation fail admission.
-		long := "nightly-" + strings.Repeat("x", 60)
+		// schedule writes its name into a label on every backup it creates,
+		// so a longer name only reaches the API server under the bound.
+		long := "nightly-" + strings.Repeat("x", 92)
 		schedule, trigger := createSchedule(w, func(s *v1.BackupSchedule) { s.Name = long })
+
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		var created []client.Object
+		Eventually(func(g Gomega) {
+			created = scheduledOf(schedule)
+			g.Expect(created).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		backup := created[0]
+		Expect(backup.GetLabels()).To(HaveKeyWithValue(labels.BackupScheduleKey, labels.OwnerName(long)))
+		Expect(backup.GetLabels()).To(
+			HaveKeyWithValue(labels.ClusterKey, labels.OwnerName(schedule.Spec.ClusterRef.Name)),
+		)
+		Expect(backup.GetName()).To(HavePrefix("nightly-"))
+		Expect(len(backup.GetName())).To(BeNumerically("<=", validation.DNS1123SubdomainMaxLength))
+
+		var current v1.BackupSchedule
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+		Expect(current.Status.LastBackupName).To(Equal(backup.GetName()))
+		ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(Equal(v1.ReasonHealthy))
+	})
+
+	It("adopts the backup of a crashed trigger for a schedule with a long name", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		long := "crashed-" + strings.Repeat("z", 92)
+		schedule, trigger := createSchedule(w, func(s *v1.BackupSchedule) { s.Name = long })
+
+		// The backup of the trigger already exists, exactly as a crash
+		// between the create and the status flush leaves it. The controller
+		// builds the seed, so it carries the bounded name and the bounded
+		// labels of this schedule. Adoption compares the label against the
+		// bounded name: the raw name matches nothing here.
+		existing, _ := newBackup(schedule, v1.SecondaryStorageTypeRDBMS, trigger)
+		Expect(k8sClient.Create(ctx, existing)).To(Succeed())
 
 		clock.Set(trigger.Add(30 * time.Second))
 		touch(schedule)
@@ -578,18 +619,35 @@ var _ = Describe("BackupSchedule controller", func() {
 		Eventually(func(g Gomega) {
 			var current v1.BackupSchedule
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
-			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
-			g.Expect(ready).NotTo(BeNil())
-			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
-			g.Expect(ready.Message).To(ContainSubstring("63"))
+			g.Expect(current.Status.LastBackupName).To(Equal(existing.GetName()))
 		}, timeout, interval).Should(Succeed())
+		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("BackupNameTaken")))
+		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("BackupCreated")))
+		Expect(scheduledOf(schedule)).To(HaveLen(1))
+	})
 
-		// scheduledOf cannot help here: its selector carries the same
-		// oversized value and the API server rejects it, which is the reason
-		// the reconcile stops at the condition.
-		var backups v1.LogicalBackupRDBMSList
-		Expect(k8sClient.List(ctx, &backups, client.InNamespace(schedule.Namespace))).To(Succeed())
-		Expect(backups.Items).To(BeEmpty())
+	It("prunes the backups of a schedule whose name is longer than a label value", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		long := "pruning-" + strings.Repeat("y", 92)
+		schedule, _ := createSchedule(w, func(s *v1.BackupSchedule) {
+			s.Name = long
+			s.Spec.Retained = &v1.RetainedBackups{Completed: new(int32(1))}
+		})
+
+		// The phase change of a backup wakes the schedule through the watch,
+		// which resolves the bounded label back to this name.
+		base := time.Now().UTC().Add(-time.Hour)
+		oldest := scheduledRDBMS(schedule, v1.LogicalBackupCompleted, base)
+		kept := scheduledRDBMS(schedule, v1.LogicalBackupCompleted, base.Add(time.Minute))
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKeyFromObject(oldest), &v1.LogicalBackupRDBMS{},
+			)).NotTo(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKeyFromObject(kept), &v1.LogicalBackupRDBMS{},
+			)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("leaves the backups behind when the schedule is deleted", func() {
