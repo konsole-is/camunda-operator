@@ -197,4 +197,64 @@ var _ = Describe("CamundaCluster secondary storage backend", func() {
 
 		expectHolds(parked)
 	})
+
+	// An older cluster whose chain does not resolve uses nothing yet. When
+	// its chain resolves it holds the backend, and the newer cluster that held
+	// it so far must yield. Only a watch on the chain tells the newer cluster.
+	It("parks the holder when an older cluster's chain resolves onto its backend", func() {
+		server := fixtures.DatabaseServerConfig()
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
+
+		olderNS := newNamespace()
+		missing := "dbc-" + utilrand.String(8)
+		olderBinding := &v1.SecondaryStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "rdbms-" + utilrand.String(8), Namespace: olderNS},
+			Spec: v1.SecondaryStorageConfigSpec{
+				Type:  v1.SecondaryStorageTypeRDBMS,
+				RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: missing},
+			},
+		}
+		Expect(k8sClient.Create(ctx, olderBinding)).To(Succeed())
+		older := newNamedCluster("cc-a-", olderNS, createPlatformConfig(), olderBinding)
+		createCluster(older)
+		expectReady(older, metav1.ConditionFalse, Equal(v1.ReasonInvalidReference), ContainSubstring(missing))
+
+		newerNS := newNamespace()
+		newer := newNamedCluster("cc-b-", newerNS, createPlatformConfig(), createRDBMSBinding(newerNS, server))
+		createCluster(newer)
+		expectHolds(newer)
+
+		By("creating the DatabaseConfig of the older cluster on the same database")
+		dbConfig := fixtures.DatabaseConfig()
+		dbConfig.Name = missing
+		dbConfig.Namespace = olderNS
+		dbConfig.Spec.ServerRef = server.Name
+		dbConfig.Spec.CredentialsSecretRef.Namespace = olderNS
+		Expect(k8sClient.Create(ctx, dbConfig)).To(Succeed())
+		createSecret(olderNS, dbConfig.Spec.CredentialsSecretRef.Name, map[string]string{
+			"username": "camunda", "password": "db-password",
+		})
+
+		expectHolds(older)
+		expectParked(newer, older)
+	})
+
+	// An older cluster that repoints its storageRef onto a backend a newer
+	// cluster uses takes it; the newer cluster yields on the spec change.
+	It("parks the holder when an older cluster repoints its storageRef onto its backend", func() {
+		ns := newNamespace()
+		older := newNamedCluster("cc-a-", ns, createPlatformConfig(), createBinding(ns, true))
+		createCluster(older)
+		newerBinding := createBinding(ns, true)
+		newer := newNamedCluster("cc-b-", ns, createPlatformConfig(), newerBinding)
+		createCluster(newer)
+		expectHolds(older)
+		expectHolds(newer)
+
+		updateCluster(older, func(c *v1.CamundaCluster) { c.Spec.StorageRef = newerBinding.Name })
+
+		expectHolds(older)
+		expectParked(newer, older)
+	})
 })

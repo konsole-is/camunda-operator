@@ -22,7 +22,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -30,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -174,48 +174,30 @@ func listByIndex[L any, PL interface {
 	return list
 }
 
-// enqueueInNamespace maps a DatabaseConfig event to every cluster of its
-// namespace, and to every parked cluster: a DatabaseConfig that names another
-// server or database can release the backend a parked cluster waits for.
-func (r *CamundaClusterReconciler) enqueueInNamespace() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		set := requestSet{}
-		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
-		set.addParked(ctx, r.Client)
-		return set.requests()
-	})
-}
-
-// enqueueForBinding maps a SecondaryStorageConfig event to every cluster
-// bound to it, and to every parked cluster: a contract that names another
-// endpoint can release the backend a parked cluster waits for.
-func (r *CamundaClusterReconciler) enqueueForBinding() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		set := requestSet{}
-		set.addList(ctx, r.Client, client.MatchingFields{StorageRefField: refindex.ObjectNamespacedName(o)})
-		set.addParked(ctx, r.Client)
-		return set.requests()
-	})
-}
-
-// enqueueParked maps an event on one cluster to every parked cluster. A
-// parked cluster resumes when its holder goes or names another backend, and
-// its own watch reports events on itself only.
-func (r *CamundaClusterReconciler) enqueueParked() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		set := requestSet{}
-		set.addParked(ctx, r.Client)
-		delete(set, client.ObjectKeyFromObject(o))
-		return set.requests()
-	})
-}
-
-// enqueueAll maps an event to every cluster. DatabaseServerConfigs are few
-// and rarely change, and any cluster on an rdbms binding can depend on one.
+// enqueueAll maps an event to every cluster. The references that decide who
+// holds a secondary storage backend enqueue every cluster, because the holder
+// can change when the contract chain of any cluster changes, and a backend
+// cannot be indexed without resolving that chain. DatabaseServerConfigs are
+// few and rarely change, and any cluster on an rdbms binding can depend on
+// one.
 func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
 		set := requestSet{}
 		set.addList(ctx, r.Client)
+		return set.requests()
+	})
+}
+
+// enqueueOthers maps an event on one cluster to every other cluster. The
+// holder of a secondary storage backend can change on any cluster event: a
+// cluster created in the same second with a name that sorts first, an older
+// cluster that repoints its storageRef, or a holder that goes. A cluster's own
+// watch reports events on itself only.
+func (r *CamundaClusterReconciler) enqueueOthers() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		set := requestSet{}
+		set.addList(ctx, r.Client)
+		delete(set, client.ObjectKeyFromObject(o))
 		return set.requests()
 	})
 }
@@ -289,23 +271,6 @@ func (s requestSet) addList(ctx context.Context, c client.Client, opts ...client
 	}
 }
 
-// addParked adds every cluster that waits for the holder of its backend to
-// release it: the clusters whose Ready reason is StorageAlreadyAttached. A
-// list failure is logged and drops those requests.
-func (s requestSet) addParked(ctx context.Context, c client.Client) {
-	var clusters v1.CamundaClusterList
-	if err := c.List(ctx, &clusters); err != nil {
-		logf.FromContext(ctx).Error(err, "listing parked clusters for enqueue")
-		return
-	}
-	for i := range clusters.Items {
-		ready := meta.FindStatusCondition(clusters.Items[i].Status.Conditions, v1.ConditionReady)
-		if ready != nil && ready.Reason == v1.ReasonStorageAlreadyAttached {
-			s[client.ObjectKeyFromObject(&clusters.Items[i])] = struct{}{}
-		}
-	}
-}
-
 func (s requestSet) requests() []reconcile.Request {
 	reqs := make([]reconcile.Request, 0, len(s))
 	for key := range s {
@@ -318,17 +283,19 @@ func (s requestSet) requests() []reconcile.Request {
 // clusters, the Secret index of the presets, and the watches. It owns the
 // workloads, Services, ServiceAccounts, and Secrets (metadata only) it
 // applies, and watches the broker claims by the camunda.io/cluster label.
-// Every reference is watched: platform configs, presets, bindings, and object
-// storage configs through the indexes, DatabaseConfigs by namespace,
-// DatabaseServerConfigs for every cluster, the clusters themselves for the
-// parked clusters that wait for a holder (enqueueParked, which
-// enqueueForBinding and enqueueInNamespace also serve), and Secrets (metadata
+// Every reference is watched: platform configs and presets through the
+// indexes, DatabaseServerConfigs for every cluster, and Secrets (metadata
 // only) through enqueueForSecret, which also follows the Secret indexes of the
-// platform configs, the bindings, and the DatabaseConfigs. The pre-checks put the
-// resource versions of the Secrets and the generations of the CRs they read
-// into the config hash, so any of these events rolls the pods whose rendered
-// configuration changed. It also sets EventRecorder to the recorder of the
-// manager and builds the uncached component client when they are nil.
+// platform configs, the bindings, and the DatabaseConfigs. The clusters
+// themselves are watched for the others: who holds a secondary storage
+// backend can change on any cluster's creation, deletion, or spec change, so
+// every such event enqueues every other cluster. Bindings and DatabaseConfigs
+// enqueue every cluster for the same reason, filtered to spec changes. The
+// pre-checks put the resource versions of the Secrets and the generations of
+// the CRs they read into the config hash, so any of these events rolls the
+// pods whose rendered configuration changed. It also sets EventRecorder to
+// the recorder of the manager and builds the uncached component client when
+// they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder("camundacluster")
@@ -375,7 +342,11 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.Secret{}, builder.OnlyMetadata).
-		Watches(&v1.CamundaCluster{}, r.enqueueParked()).
+		Watches(
+			&v1.CamundaCluster{},
+			r.enqueueOthers(),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
 		Watches(&corev1.PersistentVolumeClaim{}, r.enqueueForBrokerClaim()).
 		Watches(
 			&v1.CamundaPlatformConfig{},
@@ -385,12 +356,20 @@ func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&v1.CamundaClusterPreset{},
 			refindex.Enqueue(cached, clusters, PresetRefField, refindex.ObjectName),
 		).
-		Watches(&v1.SecondaryStorageConfig{}, r.enqueueForBinding()).
+		Watches(
+			&v1.SecondaryStorageConfig{},
+			r.enqueueAll(),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
 		Watches(
 			&v1.ObjectStorageConfig{},
 			refindex.Enqueue(cached, clusters, objectStorageRefsField, refindex.ObjectName),
 		).
-		Watches(&v1.DatabaseConfig{}, r.enqueueInNamespace()).
+		Watches(
+			&v1.DatabaseConfig{},
+			r.enqueueAll(),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueAll()).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named("camundacluster").
