@@ -32,6 +32,13 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+// The log lines below come from the restore application of camunda/camunda
+// 8.9.9. Their format strings are in findRestorableRange of
+// zeebe/restore/src/main/java/io/camunda/zeebe/restore/RestorePointResolver.java
+// at that tag. After an image bump, read that file again at the new tag. The
+// e2e spec itFailsAPointInTimeRestoreAheadOfEveryBackup provokes the terminal
+// line against the new image.
+//
 // The two per-range lines that the restore point resolver logs while it
 // rejects a candidate range. Both were read off a real restore. The resolver
 // takes the first range that passes, so a run that prints either of these can
