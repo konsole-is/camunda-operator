@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -93,10 +94,12 @@ type PrepareInput struct {
 // Camunda does not support a running cluster that moves backwards: a broker
 // compares the version in its data directory against its own binary at
 // startup, reports a downgrade, and applies no migration. No broker performs
-// that comparison here. The cluster is suspended before the version changes,
-// so nothing runs while it changes, and the volumes are erased before a
-// broker of the older version starts. The first broker that starts again
-// finds the state of the backup at the version of the backup.
+// that comparison here. The cluster controller refuses a downgrade on its
+// own, and the version apply carries the annotation that sanctions this one.
+// The cluster is suspended before the version changes, so nothing runs while
+// it changes, and the volumes are erased before a broker of the older
+// version starts. The first broker that starts again finds the state of the
+// backup at the version of the backup.
 //
 // The suspension is withdrawn by Resume, and only when this restore is what
 // applied it. The version is not withdrawn: the cluster keeps running the
@@ -413,7 +416,12 @@ func applySuspend(
 	return nil
 }
 
-// applyVersion applies spec.version of the cluster under the version manager.
+// applyVersion applies spec.version of the cluster under the version manager,
+// together with the annotation that sanctions the downgrade it can be. The
+// cluster controller refuses a version below the one the brokers run without
+// that annotation, and it removes the annotation once the brokers carry the
+// version. One apply carries both, so no crash leaves the version without its
+// sanction.
 func applyVersion(
 	ctx context.Context,
 	c client.Client,
@@ -422,6 +430,7 @@ func applyVersion(
 	version string,
 ) error {
 	patch := targetPatch(cluster, uid, v1.CamundaClusterSpec{Version: version})
+	patch.Annotations = map[string]string{components.AllowVersionDowngradeAnnotation: version}
 	if err := Apply(ctx, c, patch, FieldManagerTargetVersion); err != nil {
 		return fmt.Errorf("setting spec.version of CamundaCluster %s to %s: %w", cluster, version, err)
 	}

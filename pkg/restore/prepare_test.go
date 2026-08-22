@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
 // testPrepPoll paces a preparation step that waits for the cluster.
@@ -237,6 +238,11 @@ func TestPrepareWritesTheVersionOfTheBackup(t *testing.T) {
 	assert.Equal(t, string(FieldManagerTargetVersion), (*w.applies)[0].manager)
 	assert.Equal(t, "8.9.8", (*w.applies)[0].cluster.Spec.Version)
 	assert.False(t, (*w.applies)[0].cluster.Spec.Suspend, "the version apply also claims spec.suspend")
+	assert.Equal(
+		t, "8.9.8", (*w.applies)[0].cluster.Annotations[components.AllowVersionDowngradeAnnotation],
+		"the version apply sanctions the downgrade it performs",
+	)
+	assert.Equal(t, "8.9.8", w.live(t).Annotations[components.AllowVersionDowngradeAnnotation])
 	assert.Equal(t, "8.9.8", w.live(t).Spec.Version)
 }
 
