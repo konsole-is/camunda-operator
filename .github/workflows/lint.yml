@@ -26,3 +26,13 @@ jobs:
         run: make lint-config
       - name: Run linter
         run: make lint
+
+      # Renovate's validator is an npm package. The runner's default Node is
+      # older than the one Renovate supports, which is a warning today and a
+      # refusal later.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check Renovate configuration
+        run: make lint-renovate
