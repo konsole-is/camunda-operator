@@ -122,7 +122,10 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // Reconcile converges a CamundaCluster. A paused cluster records one Paused
 // event and returns before anything is read or written, status included.
 // Otherwise the pre-checks resolve every reference into the render input; a
-// failed pre-check reports its Ready reason and stops. The broker storage
+// failed pre-check reports its Ready reason and stops. An effective version
+// below the one the brokers run is refused before anything is applied, unless
+// the annotation camunda.io/allow-version-downgrade names it. The annotation
+// is removed once the brokers carry that version. The broker storage
 // lifecycle then grows the bound broker claims in place and records an
 // ignored shrink; the claim template keeps its applied size, so the
 // StatefulSet is never recreated. The admin credential resolves next, and a
@@ -197,6 +200,21 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	if err := r.consumeDowngradeSanction(ctx, &cluster, storage); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// A refused downgrade re-enqueues through the watches on the cluster, the
+	// preset, and the owned StatefulSet, so no timer is needed.
+	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
+		refused := conditions.Failed(&cluster, failure)
+		r.recordRefusedDowngrade(&cluster, refused)
+		conditions.Stage(&cluster, refused)
+
+		return ctrl.Result{}, nil
+	}
+
 	in.VolumeClaimSize = storage.volumeClaimSize()
 
 	if err := r.growBrokerClaims(ctx, storage, in.Effective.StorageSize()); err != nil {

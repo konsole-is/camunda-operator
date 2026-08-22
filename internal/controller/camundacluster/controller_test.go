@@ -42,6 +42,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
+// lowerVersion is one patch below the version that newCluster sets, so a spec
+// can ask for a version that the brokers already run past.
+const lowerVersion = "8.9.8"
+
 // newNamespace creates a uniquely named Namespace and registers its deletion.
 func newNamespace() string {
 	GinkgoHelper()
@@ -690,6 +694,92 @@ var _ = Describe("CamundaCluster controller", func() {
 		stampStatefulSetReady(zeebeKey)
 		stampDeploymentReady(gatewayKey)
 		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+	})
+
+	It("refuses a version below the one the brokers run, and applies a sanctioned one", func() {
+		cluster := createDefaultCluster()
+		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
+		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"))
+
+		By("lowering spec.version")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = lowerVersion })
+		expectReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionDowngradeRefused),
+			And(
+				ContainSubstring("8.9.8 is below the running version 8.9.9"),
+				ContainSubstring(components.AllowVersionDowngradeAnnotation+"="),
+			),
+		)
+		expectEvent(cluster, v1.ReasonVersionDowngradeRefused, corev1.EventTypeWarning)
+		Consistently(func() string { return zeebeContainer(cluster).Image }, "2s", interval).
+			Should(HaveSuffix(":8.9.9"), "the refusal applied the lower image")
+
+		By("sanctioning the move with the annotation")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			if c.Annotations == nil {
+				c.Annotations = map[string]string{}
+			}
+			c.Annotations[components.AllowVersionDowngradeAnnotation] = lowerVersion
+		})
+		Eventually(func(g Gomega) {
+			g.Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.8"))
+		}, timeout, interval).Should(Succeed())
+
+		By("consuming the annotation once the brokers carry the version")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Annotations).NotTo(HaveKey(components.AllowVersionDowngradeAnnotation))
+		}, timeout, interval).Should(Succeed())
+		stampStatefulSetReady(zeebeKey)
+		stampDeploymentReady(gatewayKey)
+		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+	})
+
+	It("refuses a removed spec.version when the preset carries a lower one", func() {
+		ns := newNamespace()
+		preset := minimalPreset()
+		preset.Spec.Cluster.Version = lowerVersion
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.PresetRef = preset.Name
+		createCluster(cluster)
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"))
+
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "" })
+		expectReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionDowngradeRefused),
+			ContainSubstring("8.9.8 is below the running version 8.9.9"),
+		)
+	})
+
+	It("refuses a preset whose version is lowered under a running cluster", func() {
+		ns := newNamespace()
+		preset := minimalPreset()
+		preset.Spec.Cluster.Version = "8.9.9"
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.Version = ""
+		createCluster(cluster)
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"))
+
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaClusterPreset
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+			latest.Spec.Cluster.Version = lowerVersion
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		expectReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionDowngradeRefused),
+			ContainSubstring("8.9.8 is below the running version 8.9.9"),
+		)
 	})
 
 	It("rolls the workloads when the platform config, the preset, the binding, or a referenced Secret changes", func() {

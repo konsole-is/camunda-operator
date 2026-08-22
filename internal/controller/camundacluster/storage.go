@@ -155,6 +155,24 @@ func (s brokerStorage) volumes() []v1.VolumeStatus {
 	return volumes
 }
 
+// runningVersion returns the tag of the broker image on the applied
+// StatefulSet, or the empty string before the first apply or when the
+// container carries no tag. This is the version that the next broker start
+// runs, whatever spec.version says.
+func (s brokerStorage) runningVersion() string {
+	if s.statefulSet == nil {
+		return ""
+	}
+
+	for _, container := range s.statefulSet.Spec.Template.Spec.Containers {
+		if container.Name == components.ContainerCamunda {
+			return components.ImageTag(container.Image)
+		}
+	}
+
+	return ""
+}
+
 // growBrokerClaims patches every bound broker claim that requests less than
 // size up to it. A claim of a new replica is grown once it binds, because
 // the claim watch triggers a reconcile. The storage class must allow
