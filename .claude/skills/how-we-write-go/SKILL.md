@@ -35,6 +35,12 @@ func formatResourceName(base, suffix string) string { ... }
 
 **A godoc gives the contract, not the algorithm.** Preconditions, the meaning of the result, what the caller must not assume. When you start a sentence about how the function computes its answer, stop: the caller does not need it, and it goes stale the first time the body changes.
 
+**A godoc is sized by the caller's decision.** It holds what someone needs to call the function correctly and to use what it gives back: the preconditions, the meaning of the result, and the trap that will bite them. A fact that does not change what the caller writes is not part of the contract, however true it is and however hard it was to learn. That fact is design rationale, and it belongs in the pull request that made the decision, or in a short comment at the line it constrains, where the code that depends on it is in view.
+
+**When the godoc is longer than the function body, name the caller decision each paragraph serves.** Delete the paragraphs that serve none. Twenty lines of prose over a one-line body is the clearest case: nobody needed that much to call it.
+
+Rationale in a godoc costs more than the space it takes. It reads as contract, so the next reader treats it as a promise the code has to keep, and the next change argues with the paragraph instead of the code.
+
 **The test for a bad comment:** could a code generator produce it by prepending a verb to the identifier name? If yes, it carries no information beyond the name itself — delete or rewrite it.
 
 - `// ComponentName returns the component name` → generated noise; delete
@@ -82,6 +88,8 @@ If removing the comment would not confuse a reader six months from now, delete i
 - The comment describes the change you are making rather than the code that is there.
 - You are editing a comment to answer a review point instead of editing the code.
 - A godoc grew a paragraph about how the body works.
+- The godoc is longer than the function body.
+- A paragraph explains why the system is built this way, to a reader who only wants to call the function.
 
 ## A stated behavior is a claim, not evidence
 
@@ -775,6 +783,8 @@ When no order makes the file read straight through, the file holds more than one
 | `fmt.Sprintf("%s-%s", a, b)` | `a + "-" + b` |
 | Comment restates the line under it | Delete it; if the line needs prose, rename or split instead |
 | Godoc explains how the body computes the answer | Cut to the contract: preconditions, result, what the caller must not assume |
+| Godoc explains why the system is designed this way | Move it to the pull request body, or to a comment at the line it constrains |
+| Godoc is longer than the function body | Name the caller decision each paragraph serves; delete the rest |
 | Resolver or helper placed above the entry point of the file | Move it below its caller |
 | Shared type declared where the author first needed it | Move it to the top of the file with a doc comment |
 | New code appended to the bottom of the file | Place it by the file's order, under its caller |
