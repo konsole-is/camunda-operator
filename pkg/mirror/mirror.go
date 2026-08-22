@@ -24,7 +24,8 @@ limitations under the License.
 //
 // LogicalBackupRDBMS and LogicalRestoreRDBMS both mount these Secrets into a
 // Job, and both apply this rule. The writer side of the copies is
-// pkg/components/camundacluster.
+// pkg/components/camundacluster, and the CamundaCluster controller decides
+// what to copy through Needed, so writer and reader share one rule.
 package mirror
 
 import (
@@ -42,14 +43,23 @@ import (
 
 // LocalSecretName resolves where a referenced Secret is reachable from the
 // namespace of the cluster. A source in that namespace keeps its own name. A
-// source in any other namespace resolves to its purpose-named copy. purpose is
-// one of the camundacluster.MirrorPurpose constants.
-func LocalSecretName(cluster *v1.CamundaCluster, namespace, name, purpose string) string {
-	if namespace == cluster.Namespace {
+// source in any other namespace resolves to its purpose-named copy.
+func LocalSecretName(
+	cluster *v1.CamundaCluster,
+	namespace, name string,
+	purpose camundacluster.MirrorPurpose,
+) string {
+	if !Needed(cluster, namespace) {
 		return name
 	}
 
 	return camundacluster.MirroredSecretName(cluster, purpose)
+}
+
+// Needed reports whether a Secret in namespace is copied into the namespace
+// of the cluster before a pod of the cluster can mount it.
+func Needed(cluster *v1.CamundaCluster, namespace string) bool {
+	return namespace != cluster.Namespace
 }
 
 // CheckLocalSecret checks that the Secret at namespace/name carries keys. A

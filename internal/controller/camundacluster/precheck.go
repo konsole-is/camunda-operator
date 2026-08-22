@@ -33,6 +33,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -49,7 +50,7 @@ const eventReasonTrustStoreOptions = "TrustStoreOptionsNotApplied"
 
 // mirroredSecrets are the copies of the referenced Secrets that live outside
 // the cluster namespace: the copied keys and their data, by purpose.
-type mirroredSecrets map[string]map[string][]byte
+type mirroredSecrets map[components.MirrorPurpose]map[string][]byte
 
 // resolver accumulates what the pre-checks read: the hash inputs of every
 // referenced object and the data of every Secret to mirror. Each resolve
@@ -351,7 +352,7 @@ func (res *resolver) exists(ctx context.Context, key client.ObjectKey, obj clien
 
 // localize checks the Secret of ref through secret and rewrites ref to its
 // local key.
-func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose string) error {
+func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose components.MirrorPurpose) error {
 	local, err := res.secret(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose, ref.Key)
 	if err != nil {
 		return err
@@ -393,7 +394,7 @@ func (res *resolver) mirrorDumpCredentials(
 
 		return nil
 	}
-	if key.Namespace == res.cluster.Namespace {
+	if !mirror.Needed(res.cluster, key.Namespace) {
 		return nil
 	}
 
@@ -409,7 +410,7 @@ func (res *resolver) mirrorDumpCredentials(
 func (res *resolver) localizeCredentials(
 	ctx context.Context,
 	ref *v1.CredentialsSecretRef,
-	purpose string,
+	purpose components.MirrorPurpose,
 ) error {
 	local, err := res.secret(
 		ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose,
@@ -426,13 +427,13 @@ func (res *resolver) localizeCredentials(
 // secret checks that the Secret at key carries every one of keys and records
 // its resource version as a hash input. When purpose is set and the Secret
 // lives outside the cluster namespace, it copies the keys into the mirror of
-// that purpose and returns the key of the copy in the cluster namespace;
-// otherwise it returns key unchanged. A missing Secret or key maps to
-// MissingSecret.
+// that purpose and returns the key of the copy in the cluster namespace, the
+// key that pkg/mirror resolves for a reader; otherwise it returns key
+// unchanged. A missing Secret or key maps to MissingSecret.
 func (res *resolver) secret(
 	ctx context.Context,
 	key client.ObjectKey,
-	purpose string,
+	purpose components.MirrorPurpose,
 	keys ...string,
 ) (client.ObjectKey, error) {
 	secret, msg, err := secretref.Get(ctx, res.reader, key, keys...)
@@ -444,7 +445,7 @@ func (res *resolver) secret(
 	}
 	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+secret.ResourceVersion)
 
-	if purpose == "" || key.Namespace == res.cluster.Namespace {
+	if purpose == "" || !mirror.Needed(res.cluster, key.Namespace) {
 		return key, nil
 	}
 
@@ -456,7 +457,7 @@ func (res *resolver) secret(
 
 	return client.ObjectKey{
 		Namespace: res.cluster.Namespace,
-		Name:      components.MirroredSecretName(res.cluster, purpose),
+		Name:      mirror.LocalSecretName(res.cluster, key.Namespace, key.Name, purpose),
 	}, nil
 }
 

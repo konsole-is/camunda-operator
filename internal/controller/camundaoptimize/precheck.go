@@ -33,12 +33,13 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
 // mirroredSecrets are the copies of the referenced Secrets that live outside
 // the CamundaOptimize namespace: the copied keys and their data, by purpose.
-type mirroredSecrets map[string]map[string][]byte
+type mirroredSecrets map[components.MirrorPurpose]map[string][]byte
 
 // resolved is what the pre-checks produce: the render input, the Secrets to
 // copy into the CamundaOptimize namespace, and what the exporter patch needs.
@@ -351,12 +352,10 @@ func (res *resolver) resolveElasticsearch(
 	// the cluster's controller has already put a copy in the cluster namespace
 	// under its own name when the contract names another namespace.
 	exporter := *binding.Spec.Elasticsearch.DeepCopy()
-	if creds.Namespace != cluster.Namespace {
-		exporter.CredentialsSecretRef.Name = clustercomponents.MirroredSecretName(
-			cluster, clustercomponents.MirrorPurposeESCredentials,
-		)
-		exporter.CredentialsSecretRef.Namespace = cluster.Namespace
-	}
+	exporter.CredentialsSecretRef.Name = mirror.LocalSecretName(
+		cluster, creds.Namespace, creds.Name, clustercomponents.MirrorPurposeESCredentials,
+	)
+	exporter.CredentialsSecretRef.Namespace = cluster.Namespace
 	out.ExporterStorage = exporter
 
 	return nil
@@ -435,7 +434,7 @@ func (res *resolver) exists(ctx context.Context, key client.ObjectKey, obj clien
 
 // localize checks the Secret of ref through secret and rewrites ref to its
 // local key.
-func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose string) error {
+func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose components.MirrorPurpose) error {
 	local, err := res.secret(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose, ref.Key)
 	if err != nil {
 		return err
@@ -449,7 +448,7 @@ func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose
 func (res *resolver) localizeCredentials(
 	ctx context.Context,
 	ref *v1.CredentialsSecretRef,
-	purpose string,
+	purpose components.MirrorPurpose,
 ) error {
 	local, err := res.secret(
 		ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose,
@@ -471,7 +470,7 @@ func (res *resolver) localizeCredentials(
 func (res *resolver) secret(
 	ctx context.Context,
 	key client.ObjectKey,
-	purpose string,
+	purpose components.MirrorPurpose,
 	keys ...string,
 ) (client.ObjectKey, error) {
 	found, msg, err := secretref.Get(ctx, res.reader, key, keys...)

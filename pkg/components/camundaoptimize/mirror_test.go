@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package camundacluster
+package camundaoptimize
 
 import (
 	"go/ast"
@@ -23,12 +23,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
-
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // Every MirrorPurpose constant of mirror.go is in MirrorPurposes, once. A
@@ -89,53 +85,12 @@ func TestMirrorPurposeValid(t *testing.T) {
 	assert.False(t, MirrorPurpose("licence").Valid())
 }
 
-func TestMirroredSecretName(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, "my-cluster-camunda-license", MirroredSecretName(fixtureMinimal(t).Cluster, MirrorPurposeLicense))
-}
-
 func TestMirroredSecretComponentRejectsUnknownPurpose(t *testing.T) {
 	t.Parallel()
 
-	_, err := MirroredSecretComponent(fixtureMinimal(t).Cluster, map[MirrorPurpose]map[string][]byte{
-		"licence": {"key": []byte("license")},
+	_, err := MirroredSecretComponent(fixtureMinimal(t).Optimize, map[MirrorPurpose]map[string][]byte{
+		"licence": {"license": []byte("license")},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `purpose "licence" is not in MirrorPurposes`)
-}
-
-// One component carries the Secret of every purpose, in MirrorPurposes
-// order, each with only the copied keys, in the cluster namespace, under the
-// managed labels. The Secret of an absent purpose is gated off, so Preview
-// leaves it out (a gated-off resource is a delete marker).
-func TestMirroredSecretComponentCarriesEveryMirror(t *testing.T) {
-	t.Parallel()
-
-	in := fixtureMinimal(t)
-	comp, err := MirroredSecretComponent(in.Cluster, map[MirrorPurpose]map[string][]byte{
-		MirrorPurposeOIDCClient: {"client-secret": []byte("oidc")},
-		MirrorPurposeLicense:    {"key": []byte("license")},
-	})
-	require.NoError(t, err)
-	assert.Equal(
-		t,
-		component.ConditionType(v1.ConditionMirroredSecretsReady),
-		comp.GetCondition(in.Cluster).ConditionType(),
-	)
-
-	objects := previewObjects(t, comp)
-	require.Len(t, objects, 2)
-
-	license, ok := objects[0].(*corev1.Secret)
-	require.True(t, ok)
-	assert.Equal(t, "my-cluster-camunda-license", license.Name)
-	assert.Equal(t, "my-cluster-ns", license.Namespace)
-	assert.Equal(t, map[string][]byte{"key": []byte("license")}, license.Data)
-	assert.Equal(t, "my-cluster", license.Labels["camunda.io/cluster"])
-
-	oidc, ok := objects[1].(*corev1.Secret)
-	require.True(t, ok)
-	assert.Equal(t, "my-cluster-camunda-oidc-client", oidc.Name)
-	assert.Equal(t, map[string][]byte{"client-secret": []byte("oidc")}, oidc.Data)
 }

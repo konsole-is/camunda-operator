@@ -116,12 +116,12 @@ func TestCamundaOptimizeGoldens(t *testing.T) {
 
 // goldenMirrors returns the copied Secret data of a fixture: none for the
 // minimal one, one copy per purpose for the realistic one.
-func goldenMirrors(fixture string) map[string]map[string][]byte {
+func goldenMirrors(fixture string) map[MirrorPurpose]map[string][]byte {
 	if fixture != "realistic" {
 		return nil
 	}
 
-	return map[string]map[string][]byte{
+	return map[MirrorPurpose]map[string][]byte{
 		MirrorPurposeLicense:       {"license": []byte("golden-license")},
 		MirrorPurposeAuthClient:    {"client-secret": []byte("golden-client-secret")},
 		MirrorPurposeESCredentials: {"username": []byte("elastic"), "password": []byte("golden-password")},
@@ -405,7 +405,7 @@ func TestMirroredSecretComponent(t *testing.T) {
 		empty.GetCondition(in.Optimize).ConditionType(),
 	)
 
-	mirrored, err := MirroredSecretComponent(in.Optimize, map[string]map[string][]byte{
+	mirrored, err := MirroredSecretComponent(in.Optimize, map[MirrorPurpose]map[string][]byte{
 		MirrorPurposeAuthClient: {"client-secret": []byte("s3cret")},
 	})
 	require.NoError(t, err)
