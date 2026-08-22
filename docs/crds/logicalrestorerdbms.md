@@ -67,18 +67,20 @@ To move the cluster off that version, declare the version you want:
 - A client-side `kubectl apply` that sets `spec.version` takes the field back. It writes the field, and the API server gives ownership to the manager that wrote it.
 - A server-side apply, which is what Argo CD and Flux use, reports a conflict on the field. Force the conflict, and the tool owns `spec.version` again.
 
-CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a preset: an explicit `spec.version` always wins over the preset, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the preset control again:
-
-```bash
-kubectl patch camundacluster my-cluster -n my-cluster-ns \
-  --type=json -p '[{"op":"remove","path":"/spec/version"}]'
-```
+CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a preset: an explicit `spec.version` always wins over the preset, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the preset control again.
 
 If the version of the preset is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the preset first:
 
 ```bash
-kubectl annotate camundacluster my-cluster -n my-cluster-ns \
+kubectl annotate camundacluster my-cluster -n my-cluster-ns --overwrite \
   camunda.io/allow-version-downgrade=8.9.0
+```
+
+Then remove the field:
+
+```bash
+kubectl patch camundacluster my-cluster -n my-cluster-ns \
+  --type=json -p '[{"op":"remove","path":"/spec/version"}]'
 ```
 
 ### Why the downgrade is safe here

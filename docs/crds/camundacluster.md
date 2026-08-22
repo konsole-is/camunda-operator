@@ -58,7 +58,7 @@ The operator generates the admin password once and keeps it stable. To rotate it
 
 The effective version is `spec.version`, or the version of the preset when the field is absent. It is the version the operator deploys, and a new version rolls every workload.
 
-The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster: a broker that starts over data of a newer version marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records a Warning event of the same reason, and applies nothing. The brokers keep the version they have.
+The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster: a broker that starts over data of a newer version marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records the Warning event `VersionDowngradeRefused`, and applies nothing. The brokers keep the version they have.
 
 ```yaml
 status:
@@ -85,7 +85,7 @@ A restore sanctions its own move to the version of its backup. The [LogicalResto
 
 ### Downgrade on purpose
 
-CAUTION: Do not downgrade a cluster over data that a newer version wrote. Every broker then reports itself unhealthy. To recover, set the version to the running one or later. You can also restore a backup taken with the lower version.
+CAUTION: Do not downgrade a cluster over data that a newer version wrote. Every broker then reports itself unhealthy. To recover, set the version back to the one that wrote the data. You can also restore a backup taken with the lower version.
 
 To downgrade on purpose, set the annotation `camunda.io/allow-version-downgrade` to the target version. Set `spec.version` to the same value in the same edit.
 
