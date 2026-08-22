@@ -140,7 +140,9 @@ The restore application does the alignment itself. It reads the exporter positio
 
 You choose one point in time. You restore the database to that point yourself, and you put the same point in `spec.timestamp`. The operator never restores the database.
 
-The point has to sit inside the window that the primary-storage backups of Zeebe cover. Two bounds define that window, and both come from the `CamundaCluster`:
+The `CamundaCluster` controller enables the continuous primary-storage backups of Zeebe for every relational cluster that names a `backupStorageRef`. A cluster that backs up already takes them.
+
+The point has to sit inside the window that those backups cover. Two bounds define that window, and both come from the `CamundaCluster`:
 
 | Bound | Field on the cluster | Default |
 | --- | --- | --- |
@@ -171,10 +173,6 @@ The operator cannot catch this before it erases the broker volumes. It compares 
 The cost is bounded. The restore replaces those volumes from the backup in any case, and the backup itself stays whole. The outcome is "restore again" rather than lost data. Choose an earlier point, restore the database to it, and create a new restore.
 
 You do not read a pod log to find out. The operator reads the log of the failed restore Job for you, and the restore reaches `Failed` with reason `ExporterPositionNotCovered`. `status.failureMessage` names the cause and the remedy. A restore that fails for another reason keeps that reason.
-
-## What the cluster must provide
-
-Point-in-time restore is possible only when primary-storage restore points exist for the requested timestamp. The `CamundaCluster` controller enables the continuous primary-storage backups of Zeebe for every relational cluster with a `backupStorageRef`. The checkpoint interval bounds how precise the restore can be: Zeebe restores to the nearest checkpoint at or before the requested point, while the database holds the exact point.
 
 ## The restore Jobs
 
