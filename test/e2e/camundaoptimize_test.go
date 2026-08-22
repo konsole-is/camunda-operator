@@ -116,10 +116,10 @@ func optimizeIssuerURL() string {
 // Management Identity in this flow.
 //
 // baseUrl is the root of a service, not an issuer, so it keeps that shape here.
-// Optimize reads it only to fetch tenant authorizations, and only when
-// multi-tenancy is on, which the operator never turns on, so nothing in this
-// flow calls it. Keycloak is what runs in the namespace, so it is what the
-// contract names.
+// Optimize sends the Identity SDK calls /api/tenants/for-token and /api/users
+// to this URL, and Keycloak serves neither. No assertion of this suite reaches
+// those calls, so the value is harmless here. Do not read it as a correct
+// baseUrl: the real one is the root of Management Identity (#133).
 func optimizeIdentityBaseURL() string {
 	return fmt.Sprintf("http://keycloak.%s.svc:8080", optimizeNamespace)
 }
