@@ -175,11 +175,10 @@ func listByIndex[L any, PL interface {
 }
 
 // enqueueAll maps an event to every cluster. The references that decide who
-// holds a secondary storage backend enqueue every cluster, because the holder
-// can change when the contract chain of any cluster changes, and a backend
-// cannot be indexed without resolving that chain. DatabaseServerConfigs are
-// few and rarely change, and any cluster on an rdbms binding can depend on
-// one.
+// holds a secondary storage backend enqueue every cluster. The holder can
+// change when the contract chain of any cluster changes. A backend cannot be
+// indexed without resolving that chain. DatabaseServerConfigs are few and
+// rarely change, and any cluster on an rdbms binding can depend on one.
 func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
 		set := requestSet{}
@@ -189,10 +188,10 @@ func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
 }
 
 // enqueueOthers maps an event on one cluster to every other cluster. The
-// holder of a secondary storage backend can change on any cluster event: a
-// cluster created in the same second with a name that sorts first, an older
-// cluster that repoints its storageRef, or a holder that goes. A cluster's own
-// watch reports events on itself only.
+// holder of a secondary storage backend can change on any cluster event. A
+// cluster can be created in the same second with a name that sorts first. An
+// older cluster can repoint its storageRef. A holder can be deleted. A
+// cluster's own watch reports events on itself only.
 func (r *CamundaClusterReconciler) enqueueOthers() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		set := requestSet{}
@@ -283,10 +282,11 @@ func (s requestSet) requests() []reconcile.Request {
 // clusters, the Secret index of the presets, and the watches. It owns the
 // workloads, Services, ServiceAccounts, and Secrets (metadata only) it
 // applies, and watches the broker claims by the camunda.io/cluster label.
-// Every reference is watched: platform configs and presets through the
-// indexes, DatabaseServerConfigs for every cluster, and Secrets (metadata
-// only) through enqueueForSecret, which also follows the Secret indexes of the
-// platform configs, the bindings, and the DatabaseConfigs. The clusters
+// Every reference is watched: platform configs, presets, and object storage
+// configs through the indexes, DatabaseServerConfigs for every cluster, and
+// Secrets (metadata only) through enqueueForSecret, which also follows the
+// Secret indexes of the platform configs, the bindings, and the
+// DatabaseConfigs. The clusters
 // themselves are watched for the others: who holds a secondary storage
 // backend can change on any cluster's creation, deletion, or spec change, so
 // every such event enqueues every other cluster. Bindings and DatabaseConfigs

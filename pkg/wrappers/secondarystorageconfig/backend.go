@@ -53,9 +53,6 @@ func (b Backend) String() string {
 	return fmt.Sprintf("Elasticsearch %q", b.Identity)
 }
 
-// defaultPorts are the ports an endpoint URL implies when it names none.
-var defaultPorts = map[string]string{"http": "80", "https": "443"}
-
 // ResolveBackend resolves contract to its Backend. An rdbms contract is
 // followed through its DatabaseConfig, in the namespace of the contract, to
 // the DatabaseServerConfig. A contract without the block of its type, a
@@ -74,6 +71,7 @@ func ResolveBackend(
 		if contract.Spec.Elasticsearch == nil {
 			return Backend{}, invalidReference("SecondaryStorageConfig %s has no elasticsearch block", key), nil
 		}
+
 		identity, err := ElasticsearchIdentity(contract.Spec.Elasticsearch.Endpoint)
 		if err != nil {
 			return Backend{}, invalidReference("SecondaryStorageConfig %s: %v", key, err), nil
@@ -120,6 +118,13 @@ func ResolveBackend(
 	}
 }
 
+func invalidReference(format string, args ...any) *conditions.PreCheckFailure {
+	return &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: fmt.Sprintf(format, args...)}
+}
+
+// defaultPorts are the ports an endpoint URL implies when it names none.
+var defaultPorts = map[string]string{"http": "80", "https": "443"}
+
 // ElasticsearchIdentity normalizes an Elasticsearch endpoint URL so that two
 // spellings of one server compare equal: the scheme and the host in lower
 // case, the port explicit (the default port of the scheme when the URL names
@@ -155,8 +160,4 @@ func ElasticsearchIdentity(endpoint string) (string, error) {
 // PostgreSQL distinguishes it.
 func RDBMSIdentity(host string, port int32, database string) string {
 	return net.JoinHostPort(strings.ToLower(host), strconv.Itoa(int(port))) + "/" + database
-}
-
-func invalidReference(format string, args ...any) *conditions.PreCheckFailure {
-	return &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: fmt.Sprintf(format, args...)}
 }

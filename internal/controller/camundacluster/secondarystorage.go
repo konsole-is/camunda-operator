@@ -31,13 +31,11 @@ import (
 )
 
 // resolveStorageHolder finds the CamundaCluster that holds the backend of
-// the storage binding when it is not this cluster, and records it on
-// in.Storage.Holder. One CamundaCluster uses one backend: the index names of
-// Elasticsearch and the tables of a database are fixed, so two clusters on
-// one backend write each other's data. The oldest cluster holds the backend
-// (ties break by name), so creating a second cluster never breaks the first.
-// It needs res.storage from resolveStorage. A contract whose backend does
-// not resolve fails the pre-check with InvalidReference.
+// the storage binding, when it is not this cluster, and records it on
+// in.Storage.Holder. The oldest cluster holds the backend, with the name
+// breaking a tie. It needs res.storage from resolveStorage. An own backend
+// that does not resolve fails the pre-check with InvalidReference. One
+// CamundaCluster uses one backend, see components.StorageHolder.
 func (res *resolver) resolveStorageHolder(ctx context.Context, in *components.Input) error {
 	backend, failure, err := secondarystorageconfig.ResolveBackend(ctx, res.reader, res.storage)
 	if err != nil {

@@ -44,6 +44,11 @@ func newNamedCluster(
 
 // createRDBMSBinding creates a DatabaseConfig on server in namespace, with its
 // credentials Secret, and an rdbms binding that names it.
+//
+// Every SecondaryStorageConfig this returns resolves to the same backend
+// identity, because fixtures.DatabaseConfig fixes the host and the database
+// name. Two specs that call it stay independent only because each spec
+// deletes its own server with DeferCleanup.
 func createRDBMSBinding(namespace string, server *v1.DatabaseServerConfig) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
 	dbConfig := fixtures.DatabaseConfig()
@@ -100,10 +105,8 @@ func expectHolds(cluster *v1.CamundaCluster) {
 }
 
 var _ = Describe("CamundaCluster secondary storage backend", func() {
-	// One CamundaCluster uses one backend: the index names and the tables are
-	// fixed, so two clusters on one backend write each other's data. The
-	// oldest cluster holds the backend; the other is suspended, with its
-	// volumes, until the holder releases it.
+	// One CamundaCluster uses one backend, so the oldest cluster holds it and
+	// the other is suspended, with its volumes, until the holder releases it.
 	It("suspends the newer of two clusters on one Elasticsearch contract and names the holder", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, true)

@@ -5830,9 +5830,9 @@ spec:
                   StorageRef names the SecondaryStorageConfig, in the namespace of this
                   cluster, that describes the secondary storage backend. Required on a
                   CamundaCluster, forbidden in a preset. One CamundaCluster uses one
-                  backend: a cluster whose backend an older cluster already uses is
-                  suspended with Ready reason StorageAlreadyAttached until that cluster
-                  releases it.
+                  backend. If an older cluster already uses the backend, the operator
+                  suspends this cluster and reports Ready reason StorageAlreadyAttached
+                  until that cluster releases it.
                 type: string
               suspend:
                 description: |-
