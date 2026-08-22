@@ -69,8 +69,9 @@ func (res *resolver) resolveStorageHolder(ctx context.Context, in *components.In
 }
 
 // usesBackend reports whether other resolves to backend. A cluster whose
-// contract or chain does not resolve uses nothing: it cannot run either, and
-// it checks this cluster again when its contract resolves.
+// contract or chain does not resolve uses nothing yet. When its chain
+// resolves it holds the backend, because it is older, and this cluster yields
+// on its next reconcile.
 func (res *resolver) usesBackend(
 	ctx context.Context,
 	other *v1.CamundaCluster,
@@ -88,7 +89,7 @@ func (res *resolver) usesBackend(
 
 	theirs, failure, err := secondarystorageconfig.ResolveBackend(ctx, res.reader, &binding)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("resolving the backend of SecondaryStorageConfig %s: %w", key, err)
 	}
 
 	return failure == nil && theirs == backend, nil
