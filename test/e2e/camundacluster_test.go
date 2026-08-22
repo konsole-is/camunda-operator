@@ -358,6 +358,36 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 	})
 
+	It("refuses a version below the one the brokers run and names the remedy", func() {
+		running := cluster.Spec.Version
+
+		By("lowering spec.version")
+		lowered := cluster.DeepCopy()
+		lowered.Spec.Version = "8.9.0"
+		Expect(apply(lowered)).To(Succeed())
+		Eventually(func(g Gomega) {
+			expectConditionFalse(
+				g, ccResource, ccName, ccNamespace,
+				v1.ConditionReady, v1.ReasonVersionDowngradeRefused,
+			)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+
+		out, err := utils.Kubectl(
+			"get", "events", "-n", ccNamespace,
+			"--field-selector", "reason="+v1.ReasonVersionDowngradeRefused,
+			"-o", "name",
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).NotTo(BeEmpty(), "no VersionDowngradeRefused event was recorded")
+
+		By("setting the version back")
+		Expect(apply(cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			expectReady(g, ccResource, ccName, ccNamespace, v1.ReasonHealthy)
+		}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+		Expect(cluster.Spec.Version).To(Equal(running))
+	})
+
 	It("suspends every workload to zero replicas and keeps the broker volume", func() {
 		By("recording the bound broker volume")
 		var claims corev1.PersistentVolumeClaimList
