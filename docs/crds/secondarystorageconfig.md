@@ -9,7 +9,7 @@ The contract lives in the namespace of the consuming cluster. A `CamundaCluster`
 | Role | Who |
 | --- | --- |
 | Producers | [ElasticsearchCluster](elasticsearchcluster.md) (always, named by its `secondaryStorageConfig` field), [Database](database.md) (when its `secondaryStorageConfig` field is set, as a `rdbms` contract), or you, by hand |
-| Consumers | [CamundaCluster](camundacluster.md) (through `storageRef`), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `storageRef` of the cluster they back up) |
+| Consumers | [CamundaCluster](camundacluster.md) (through `storageRef`, one cluster per backend, see [Secondary storage](camundacluster.md#secondary-storage)), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `storageRef` of the cluster they back up) |
 
 This contract models the two backends the operator integrates with: `elasticsearch` and `rdbms`.
 

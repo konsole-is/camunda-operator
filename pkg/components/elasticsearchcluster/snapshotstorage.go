@@ -306,10 +306,12 @@ func KeystoreComponent(
 }
 
 // RepositoryConfig returns the settings of the snapshot repository that the
-// operator registers for the cluster in Elasticsearch. Every cluster writes
-// under its own prefix of the shared bucket, so two clusters that reference
-// the same contract never share a repository. The credentials are not part of
-// it: they reach the nodes through the keystore.
+// operator registers for the cluster in Elasticsearch. Every
+// ElasticsearchCluster writes under its own prefix of the shared bucket, so
+// two ElasticsearchClusters that reference the same bucket contract never
+// share a repository. One CamundaCluster uses one Elasticsearch, so the
+// repository is that cluster's alone. The credentials are not part of it:
+// they reach the nodes through the keystore.
 //
 // An s3 repository carries the region of the contract, so the nodes sign
 // their requests for the region the other consumers of the bucket sign for

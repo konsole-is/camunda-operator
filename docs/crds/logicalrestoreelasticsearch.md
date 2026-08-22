@@ -132,7 +132,7 @@ If the repository is already registered, the operator uses it as it is. It never
 
 ## Secondary storage
 
-The operator deletes the Camunda indices of the target first, then asks Elasticsearch to restore every snapshot of the backup. It names the Optimize indices only when the backup holds an Optimize snapshot. A backup without one cannot put those indices back, so the operator keeps them.
+The operator deletes the Camunda indices of the target first, then asks Elasticsearch to restore every snapshot of the backup. One `CamundaCluster` uses one Elasticsearch, see [Secondary storage](camundacluster.md#secondary-storage), so every Camunda index on that Elasticsearch belongs to the target. It names the Optimize indices only when the backup holds an Optimize snapshot. A backup without one cannot put those indices back, so the operator keeps them.
 
 The restore of a snapshot is asynchronous. The operator waits until the restored indices exist and no shard recovers any more, then it moves on.
 

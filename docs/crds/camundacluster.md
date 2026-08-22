@@ -60,6 +60,14 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster: `Delete` (the default) removes them, `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
 
+## Secondary storage
+
+`spec.storageRef` names the `SecondaryStorageConfig` in the namespace of the cluster. The contract tells the cluster where its backend is. The backend is the Elasticsearch endpoint, or the database on the server, that the workloads connect to.
+
+One `CamundaCluster` uses one backend. Camunda fixes the index names and the tables, so two clusters on one backend write each other's data, and a restore of one deletes the data of the other. The API server accepts a second cluster whose contract resolves to a backend that an older cluster uses. The operator keeps the oldest cluster on the backend, with the name breaking a tie. Every other cluster is suspended: every workload at zero, the volumes kept, `Ready` `False` with reason `StorageAlreadyAttached`, and a message that names the holder and the backend. When the holder is deleted, changes its `storageRef`, or its contract names another endpoint, the suspended cluster resumes on its own. The rule holds in the other direction too. If an older cluster later resolves to the backend of a running cluster, the older cluster holds the backend and the running cluster is suspended.
+
+Two contracts count as one backend when they resolve to the same endpoint, in one namespace or in two, whoever wrote them. The comparison ignores the credentials.
+
 ## Secondary storage over TLS
 
 When the [SecondaryStorageConfig](secondarystorageconfig.md) names a certificate authority under `elasticsearch.caSecretRef`, the brokers, the gateway, and the web applications trust that authority. A cluster on an [ElasticsearchCluster](elasticsearchcluster.md) gets this without a step from you, because that kind fills `caSecretRef` itself. For an Elasticsearch of your own behind a private authority, set `caSecretRef` on the contract.
@@ -106,6 +114,8 @@ The operator checks every reference at reconcile time, not at admission, so you 
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
+The operator also suspends a cluster whose backend another cluster holds, see [Secondary storage](#secondary-storage). `spec.suspend` stays yours. That suspension shows in the `Ready` reason `StorageAlreadyAttached` and ends when the holder releases the backend.
+
 `suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down.
 
 `spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
@@ -134,6 +144,7 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
+| `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster`, created earlier, uses the backend that `storageRef` resolves to. This cluster is suspended. | Give this cluster a backend of its own, or delete the holder. The message names both. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
 
