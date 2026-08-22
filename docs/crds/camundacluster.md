@@ -62,17 +62,11 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 ## Secondary storage over TLS
 
-An Elasticsearch endpoint on HTTPS can carry a certificate from a private certificate authority. An [ElasticsearchCluster](elasticsearchcluster.md) always does, because ECK signs its endpoint with a certificate authority of its own. When the storage contract names that authority under `elasticsearch.caSecretRef`, the operator gives every process a JVM trust store:
+When the [SecondaryStorageConfig](secondarystorageconfig.md) names a certificate authority under `elasticsearch.caSecretRef`, the brokers, the gateway, and the web applications trust that authority. A cluster on an [ElasticsearchCluster](elasticsearchcluster.md) gets this without a step from you, because that kind fills `caSecretRef` itself. For an Elasticsearch of your own behind a private authority, set `caSecretRef` on the contract.
 
-- An init container named `es-truststore` copies the `cacerts` file of the JDK in the process image. It then imports every certificate of the referenced bundle into the copy. The copy keeps the trust in every public authority, and a bundle with more than one certificate keeps all of them.
-- The store lands on an `emptyDir` volume at `/etc/camunda/es-truststore/cacerts`. The process container mounts it read only.
-- The operator appends `-Djavax.net.ssl.trustStore` and `-Djavax.net.ssl.trustStorePassword` to `JAVA_TOOL_OPTIONS`, so the JVM of the process trusts the authority. A `JAVA_TOOL_OPTIONS` entry of your own that names a trust store keeps that store, see [Environment and JVM](#environment-and-jvm).
+The Zeebe Elasticsearch exporter needs this trust. It has no TLS setting of its own ([camunda/camunda#9839](https://github.com/camunda/camunda/issues/9839)), so without `caSecretRef` it writes no records and [CamundaOptimize](camundaoptimize.md) stays empty. Every TLS client in those processes then trusts the authority, not only the exporter.
 
-The Zeebe Elasticsearch exporter is what needs this. That exporter writes the `zeebe-record` indices that [CamundaOptimize](camundaoptimize.md) reads. It carries no TLS setting of its own and trusts what the JVM trusts ([camunda/camunda#9839](https://github.com/camunda/camunda/issues/9839)). Without the trust store the export fails and Optimize reads nothing.
-
-A contract without `caSecretRef` costs nothing. The pods then carry no init container, no extra volume, and the JVM options of the base. The connectors runtime never reads the secondary storage, so it never gets a trust store.
-
-The password of the store is `changeit`, the password of the JDK file that the init container copies. The store holds public certificates only, and the process container mounts it read only.
+The trust arrives through `JAVA_TOOL_OPTIONS`. If you set that variable yourself, read [Environment and JVM](#environment-and-jvm).
 
 ## Backups
 
@@ -92,13 +86,11 @@ The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by nam
 
 Two field managers that apply the same name do not collide. The merge is per field inside the entry, so one manager can own `value` while the other owns `valueFrom`. The result would be one entry that carries both, which a container rejects. The API server refuses to store that combination, so the second apply fails with a clear message instead of stalling a rollout. Give your entry a name that no operator writes, or let the operator own the name.
 
-Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process. The trust store options follow a rule of their own. When the storage contract names a certificate authority, the operator appends them to `JAVA_TOOL_OPTIONS` after your entry. Your tuning stands, and the process still reads the store.
+Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process. When the storage contract names a certificate authority, the trust store options go on the same variable after your value. Heap tuning and the trust store work together.
 
-Your entry wins when it names a trust store itself. If your value carries `-Djavax.net.ssl.trustStore`, the operator appends nothing and the JVM reads your store. Put the Elasticsearch certificate authority in that store yourself. Without it the exporter cannot reach Elasticsearch, and Optimize reads no records. This is also how one broker trusts a second private authority, for example an OIDC provider or a backup store: build one store that holds every authority, and name it. A value that carries the password alone is not a trust store, so the operator still appends its options to it.
+To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in your value. The JVM then reads your store and no other. That store must hold the certificate authority of the Elasticsearch endpoint, or the exporter fails and Optimize reads no records. This is also the way to trust a second private authority, for example an OIDC provider or a backup store. Put every authority in one store and name it. The spec has no volume field, so the store must already be in the process image. Build the Camunda image with the file in it and set `imageRegistry` on the [CamundaPlatformConfig](camundaplatformconfig.md).
 
-The spec carries no volume field, so the operator cannot put your store on the pod. That file must already be in the process image, or another controller must mount it. For the image route, build the Camunda image with your store in it and set `imageRegistry` on the [CamundaPlatformConfig](camundaplatformconfig.md).
-
-A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap keeps that reference. One variable holds a value or a reference, never both, so the operator appends nothing. The pods still build the trust store at `/etc/camunda/es-truststore/cacerts`. Point the referenced value at that file, or at a store of your own that holds the certificate authority. The cluster records a `TrustStoreOptionsNotApplied` warning event and names every process in this state.
+A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap cannot take the trust store options. The cluster records the Warning event `TrustStoreOptionsNotApplied` and names the processes. The store still exists at `/etc/camunda/es-truststore/cacerts` with the password `changeit`. Name it in the referenced value, or name a store of your own that holds the authority.
 
 ## Monitoring
 
