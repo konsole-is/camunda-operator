@@ -102,6 +102,30 @@ const sqlTimestampLayout = "2006-01-02 15:04:05"
 // 1, and the earliest checkpoint of a cluster covers it.
 const rolledBackPosition = 1
 
+// rollBackSQL rolls the logical database back to one exporter position, the
+// way a point-in-time recovery of the server would: it erases every row that
+// the exporter wrote, and it sets the position row to the position and the
+// time given. The schema and its migration log stay, as they do after a
+// recovery to a point that lies after the exporter created them.
+//
+// The rows must go with the position. The exporter resumes from the position
+// it reads here and inserts again what it finds in the log. A row that stayed
+// collides with that insert on its key, and the exporter then flushes nothing
+// ever again.
+const rollBackSQL = `DO $$
+DECLARE t text;
+BEGIN
+  FOR t IN
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      AND lower(table_name) NOT LIKE '%%exporter_position'
+      AND lower(table_name) NOT LIKE '%%databasechangelog%%'
+  LOOP
+    EXECUTE format('TRUNCATE TABLE %%I CASCADE', t);
+  END LOOP;
+  UPDATE exporter_position SET last_exported_position = %d, last_updated = '%s';
+END $$`
+
 // itRestoresTheElasticsearchCluster registers the restore specs of the
 // Elasticsearch flow. The CamundaCluster flow calls it while its cluster is
 // healthy and has exported a process instance, so the specs prove the round
@@ -410,10 +434,9 @@ func itRestoresTheRelationalCluster(cluster *v1.CamundaCluster) {
 //
 // The cluster is suspended by hand here, and it stays that way for the
 // point-in-time specs that follow. That is the one flow where the spec keeps
-// the suspension: it rewinds the exporter position of the database by hand,
-// and brokers that run would export past that position again at once. The
-// restore therefore records no suspension of its own, and it unsuspends
-// nothing at the end.
+// the suspension: it rolls the database back by hand, and brokers that run
+// would export past that point again at once. The restore therefore records
+// no suspension of its own, and it unsuspends nothing at the end.
 func itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster *v1.CamundaCluster) {
 	// claims are the broker volumes as the restore found them.
 	var claims map[string]corev1.PersistentVolumeClaim
@@ -556,9 +579,9 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 	// The operator never rolls a database back. It reads the exporter position
 	// of a database that somebody else already restored, and it aligns the
 	// broker volumes with that position. Nothing archives a write-ahead log in
-	// kind, so this spec plays that other party and rewinds the position.
+	// kind, so this spec plays that other party and rolls the database back.
 	//
-	// The rewind is what makes the point restorable, not a convenience. The
+	// The rollback is what makes the point restorable, not a convenience. The
 	// restore application takes a primary-storage checkpoint whose log covers
 	// the exporter position of the database, first position and last position
 	// both. The brokers of a running cluster export past the last position of
@@ -568,13 +591,10 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 	It("presents a database that somebody rolled back to the requested point", func() {
 		at = time.Now().UTC().Truncate(time.Second)
 
-		By("rewinding the exporter position of the logical database")
+		By("rolling the logical database back to the start of the log")
 		_, err := psql(
 			cluster.Namespace, "rollback", applicationCredentials(cluster),
-			fmt.Sprintf(
-				"UPDATE exporter_position SET last_exported_position = %d, last_updated = '%s'",
-				rolledBackPosition, at.Format(sqlTimestampLayout),
-			),
+			fmt.Sprintf(rollBackSQL, rolledBackPosition, at.Format(sqlTimestampLayout)),
 		)
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -623,10 +643,15 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 
 	// The spec suspended this cluster by hand, so the restore recorded no
 	// suspension of its own and withdrew none. The spec gives it back.
+	//
+	// The rollback erased the instance from the database. The exporter
+	// resumes from the rolled-back position and writes it again, so the
+	// search proves the export after the restore, and not a row that
+	// survived.
 	It("converges when the cluster runs again", func() {
 		unsuspend(cluster)
 
-		By("searching the instance that the database still holds")
+		By("searching the instance that the exporter writes again")
 		expectInstanceSearchable(cluster)
 	})
 }
@@ -641,7 +666,7 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 // The refusal needs a database whose exporter position lies past the last
 // position of every primary-storage backup. That is the state of a cluster
 // that exported after its last backup. The specs therefore export once more,
-// and they skip the rewind that the restore before them did.
+// and they skip the rollback that the restore before them did.
 //
 // The refusal arrives after the broker volumes are erased, so the specs leave
 // the cluster suspended and without primary storage. They run last in their
