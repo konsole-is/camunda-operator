@@ -100,7 +100,7 @@ After the components reconcile, `Ready` is overwritten with `False`, reason `Sto
 and a message that names the holder and the backend:
 
 ```text
-CamundaCluster "team-a/orchestration" already uses Elasticsearch "https://es.example.com:9200".
+CamundaCluster "my-other-ns/my-other-cluster" already uses Elasticsearch "https://es.example.com:9200".
 One CamundaCluster uses one backend, so this cluster stays suspended until that one releases it
 ```
 
@@ -181,6 +181,11 @@ of either side.
   Azure test does.
 - **A sibling under deletion.** It still counts until it is gone, as in the Optimize attachment.
   The cluster that yields takes over when the delete event arrives.
+- **A holder whose own contract chain breaks keeps its pods.** A failed pre-check returns before the
+  components are built, so a running holder whose contract or DatabaseConfig is deleted keeps
+  writing, while a parked cluster on another contract sees no holder and resumes. The same-contract
+  case is safe, because the parked cluster fails the same resolve. The fix is a broader rule, a
+  failed pre-check of a running cluster suspends it, and has its own issue.
 
 ## Testing
 

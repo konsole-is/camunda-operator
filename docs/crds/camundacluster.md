@@ -75,7 +75,7 @@ status:
       status: "False"
       reason: StorageAlreadyAttached
       message: >-
-        CamundaCluster "team-a/orchestration" already uses Elasticsearch
+        CamundaCluster "my-other-ns/my-other-cluster" already uses Elasticsearch
         "https://es.example.com:9200". One CamundaCluster uses one backend, so
         this cluster stays suspended until that one releases it
 ```
