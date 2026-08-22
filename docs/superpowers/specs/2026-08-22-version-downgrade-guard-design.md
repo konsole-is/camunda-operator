@@ -138,7 +138,7 @@ a volume size that cannot shrink.
 The cluster reports:
 
 - `Ready: False`, reason `VersionDowngradeRefused`. `ReasonVersionDowngradeRefused` is a new
-  constant in `api/v1/conditions.go`. The message names the effective version, the running version,
+  constant in `api/v1/camundacluster_types.go`, because one CRD reports it. The message names the effective version, the running version,
   the fact that Camunda does not support a downgrade of a running cluster, and the three remedies:
   set the version to the running one or later, restore a backup taken with the lower version, or
   set the annotation to downgrade on purpose.
@@ -160,7 +160,7 @@ version, sanctions nothing, and the refusal message names the value that the ann
 
 The controller consumes the annotation. At the end of a reconcile in which the broker StatefulSet
 carries the version that the annotation names, the controller removes the annotation from the
-cluster with a JSON patch. It does not use server-side apply for that, because the annotation was
+cluster with a merge patch. It does not use server-side apply for that, because the annotation was
 written by another manager and the controller wants it gone, not co-owned. This is the first write
 that the `CamundaCluster` controller makes to the metadata of its own resource. It is small, and it
 is what lets the sanction be safe without a lifecycle that somebody else has to remember.
