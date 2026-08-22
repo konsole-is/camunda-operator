@@ -16,8 +16,9 @@ jobs:
     strategy:
       fail-fast: false
       # One job per supported Camunda minor. Each entry names a file
-      # test/e2e/versions/<minor>.env that holds the image versions of that
-      # minor. Adopting a new minor adds the file and the entry.
+      # test/e2e/matrix/<minor>.env that holds the image versions of that
+      # minor and the spec flows that run for it. Adopting a new minor adds
+      # the file and the entry.
       matrix:
         minor: ["8.9"]
     steps:

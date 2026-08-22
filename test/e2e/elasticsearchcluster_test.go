@@ -63,13 +63,13 @@ var dataVolumeSelector = k8slabels.SelectorFromSet(
 	labels.Discovery(labels.ElasticsearchCluster(esName), "elasticsearch"),
 ).String()
 
-var _ = Describe("ElasticsearchCluster", Ordered, func() {
+var _ = Describe("ElasticsearchCluster", Ordered, Label(labelElasticsearchCluster), func() {
 	var (
 		cluster = &v1.ElasticsearchCluster{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: esNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:     os.Getenv(utils.EnvElasticsearchVersion),
+				Version:     os.Getenv(envElasticsearchVersion),
 				Replicas:    new(int32(1)),
 				StorageSize: new(resource.MustParse(esStorageSize)),
 				Resources: &corev1.ResourceRequirements{

@@ -93,7 +93,7 @@ func optimizeElasticsearch() *v1.ElasticsearchCluster {
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 		ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: optimizeNamespace},
 		Spec: v1.ElasticsearchClusterSpec{
-			Version:                os.Getenv(utils.EnvElasticsearchVersion),
+			Version:                os.Getenv(envElasticsearchVersion),
 			Replicas:               new(int32(1)),
 			StorageSize:            new(resource.MustParse(esStorageSize)),
 			Resources:              requests("500m", "1Gi"),
@@ -164,7 +164,7 @@ func newOptimize() *v1.CamundaOptimize {
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaOptimize"},
 		ObjectMeta: metav1.ObjectMeta{Name: optimizeName, Namespace: optimizeNamespace},
 		Spec: v1.CamundaOptimizeSpec{
-			Version:           os.Getenv(utils.EnvOptimizeVersion),
+			Version:           os.Getenv(envOptimizeVersion),
 			ManagementAuthRef: optimizeAuthConfig,
 			ClusterRef:        v1.ClusterRef{Name: ccName},
 			Webapp:            &v1.WorkloadSpec{Resources: requests("250m", "1Gi")},
@@ -173,7 +173,7 @@ func newOptimize() *v1.CamundaOptimize {
 	}
 }
 
-var _ = Describe("CamundaOptimize", Ordered, func() {
+var _ = Describe("CamundaOptimize", Ordered, Label(labelCamundaOptimize), func() {
 	var (
 		cluster  = newCluster(optimizeNamespace, optimizePlatform, optimizeStorage, "", false)
 		optimize = newOptimize()
