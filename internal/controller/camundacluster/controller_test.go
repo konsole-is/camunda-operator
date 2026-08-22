@@ -713,6 +713,9 @@ var _ = Describe("CamundaCluster controller", func() {
 			),
 		)
 		expectEvent(cluster, v1.ReasonVersionDowngradeRefused, corev1.EventTypeWarning)
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, cluster, v1.ReasonVersionDowngradeRefused)).To(Equal(int32(1)))
+		}, "2s", interval).Should(Succeed(), "the refusal is recorded once, not once per reconcile")
 		Consistently(func() string { return zeebeContainer(cluster).Image }, "2s", interval).
 			Should(HaveSuffix(":8.9.9"), "the refusal applied the lower image")
 
