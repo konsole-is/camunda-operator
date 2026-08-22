@@ -178,8 +178,19 @@ var _ = Describe("LogicalRestoreRDBMS admission", func() {
 		}
 		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
 
-		reached := expectReason(lrr, v1.LogicalRestorePending, v1.ReasonInvalidReference)
-		Expect(readyMessage(reached)).To(ContainSubstring("another cluster"))
+		// The delete and the create are two acts, and a look between them reads
+		// no cluster at all. That hold is legitimate and carries the same
+		// reason, so the spec waits for the state that settles rather than the
+		// first one it sees. A restore that never reaches the settled state
+		// fails here, which is what a missing pin does.
+		Eventually(func(g Gomega) {
+			current := latest(g, lrr)
+			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestorePending))
+			condition := readyCondition(current)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(condition.Message).To(ContainSubstring("another cluster"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// The controller watches CamundaCluster and enqueues the restores that
