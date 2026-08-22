@@ -24,7 +24,7 @@ None. Single PR, sequential tasks.
 
 ## Bubble-up log
 
-- _No concerns yet._
+- 2026-08-23 — Task 3 review: the parked-only enqueue of Task 4 could not reach a running holder that must yield (older sibling's chain resolves, same-second tie, older sibling repoints storageRef), so two holders could coexist. Ruling: every event that can move the holder enqueues every cluster (CamundaCluster self-watch → all others; SecondaryStorageConfig and DatabaseConfig watches → all), filtered by `predicate.GenerationChangedPredicate`. Propagated: Task 4 fix round (commit cb34b1d, two extra specs), spec amended (Handover), docs state the other-direction rule. Issue #166 body stays true (its criteria still hold).
 
 ## Pending snapshot
 

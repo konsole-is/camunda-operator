@@ -75,12 +75,14 @@ The guard is a pre-check step in `internal/controller/camundacluster/precheck.go
 after `resolveStorage`, in its own file beside `backup.go`. It lists every `CamundaCluster` through
 the live `APIReader`, as the Azure guard and the `SharedServer` guard do, because a cached list can
 miss a sibling that was created a moment ago. For each sibling it resolves the identity of the
-sibling's backend and compares it with its own. A sibling whose contract does not resolve is
-skipped: that sibling cannot run either, and it will see this cluster when its contract returns.
+sibling's backend and compares it with its own. A sibling whose contract does not resolve uses
+nothing yet and is skipped. When its chain resolves it holds the backend if it is older, and this
+cluster yields on its next reconcile.
 
 When two clusters name one backend, the older one holds it. `olderThan` decides: creation
 timestamp, then name. This is the rule of the Azure guard, the Optimize attachment, and the
-Database collision. The holder never re-checks. It holds by construction.
+Database collision. The guard runs on every reconcile, so a running holder yields when an older
+cluster appears on its backend (amendment of 2026-08-23, see Handover).
 
 The Azure guard and the new guard share one loop: list the siblings, find the oldest one that
 matches a predicate. The loop moves into one helper that both call, so the two guards read as one
@@ -107,16 +109,25 @@ The reason mirrors `ClusterAlreadyAttached` on `CamundaOptimize`, which exists f
 
 ### Handover
 
-A cluster that yields must reconcile again when the holder goes, when the holder's `storageRef`
-changes, or when the holder's contract names a different endpoint. Two watches cover this:
+A cluster that yields must reconcile again when the holder is deleted, when the holder's
+`storageRef` changes, or when the holder's contract names a different endpoint. A running holder
+must reconcile again when an older cluster appears on its backend: a cluster created in the same
+second with a name that sorts first, an older cluster whose contract chain becomes resolvable, or
+an older cluster that repoints its `storageRef`. Only the first set can be keyed to the parked
+clusters. The second set needs the holder, and a backend cannot be indexed without resolving a
+contract chain.
 
-- A new watch on `CamundaCluster` whose handler enqueues every cluster parked on
-  `StorageAlreadyAttached`. The handler lists from the cache and filters on the reason.
-- The existing watch on `SecondaryStorageConfig`, extended so that its handler also enqueues the
-  parked clusters.
+*Amendment of 2026-08-23.* The first design enqueued only the parked clusters and missed the
+second set: two holders could coexist. The watches now fan out to every cluster:
 
-No timer is needed. A holder that changes triggers a `CamundaCluster` event. A contract that changes
-triggers a `SecondaryStorageConfig` event.
+- A watch on `CamundaCluster` enqueues every other cluster.
+- The watches on `SecondaryStorageConfig` and `DatabaseConfig` enqueue every cluster, as the
+  `DatabaseServerConfig` watch already did.
+- All three carry `predicate.GenerationChangedPredicate`, so a status write does not fan out. Create
+  and delete events pass it.
+
+No timer is needed. The cost is one reconcile of every cluster per spec change of any cluster or
+contract, which is rare and human-driven.
 
 ### What the rule closes without code
 
