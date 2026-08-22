@@ -153,15 +153,6 @@ resources:
   controller: true
   domain: camunda.io
   group: core
-  kind: PVCAutoResize
-  path: github.com/konsole-is/camunda-operator/api/v1
-  version: v1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: camunda.io
-  group: core
   kind: LogicalBackupRDBMS
   path: github.com/konsole-is/camunda-operator/api/v1
   version: v1

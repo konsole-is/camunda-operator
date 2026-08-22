@@ -359,13 +359,6 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "ManagementAuthConfig")
 		os.Exit(1)
 	}
-	if err := (&controller.PVCAutoResizeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "PVCAutoResize")
-		os.Exit(1)
-	}
 	if err := logicalrestoreelasticsearch.New(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
