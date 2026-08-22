@@ -600,6 +600,32 @@ var _ = Describe("BackupSchedule controller", func() {
 		Expect(ready.Reason).To(Equal(v1.ReasonHealthy))
 	})
 
+	It("adopts the backup of a crashed trigger for a schedule with a long name", func() {
+		w := createWorld(v1.SecondaryStorageTypeRDBMS)
+		long := "crashed-" + strings.Repeat("z", 92)
+		schedule, trigger := createSchedule(w, func(s *v1.BackupSchedule) { s.Name = long })
+
+		// The backup of the trigger already exists, exactly as a crash
+		// between the create and the status flush leaves it. The controller
+		// builds the seed, so it carries the bounded name and the bounded
+		// labels of this schedule. Adoption compares the label against the
+		// bounded name: the raw name matches nothing here.
+		existing, _ := newBackup(schedule, v1.SecondaryStorageTypeRDBMS, trigger)
+		Expect(k8sClient.Create(ctx, existing)).To(Succeed())
+
+		clock.Set(trigger.Add(30 * time.Second))
+		touch(schedule)
+
+		Eventually(func(g Gomega) {
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastBackupName).To(Equal(existing.GetName()))
+		}, timeout, interval).Should(Succeed())
+		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("BackupNameTaken")))
+		Expect(eventReasons(schedule)).NotTo(ContainElement(ContainSubstring("BackupCreated")))
+		Expect(scheduledOf(schedule)).To(HaveLen(1))
+	})
+
 	It("prunes the backups of a schedule whose name is longer than a label value", func() {
 		w := createWorld(v1.SecondaryStorageTypeRDBMS)
 		long := "pruning-" + strings.Repeat("y", 92)
