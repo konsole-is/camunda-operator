@@ -81,7 +81,8 @@ A paraphrase of a Camunda page is wrong twice: it is longer than a link, and it 
 
 These conventions bind every page. Mirror the nearest existing block before you write a new one.
 
-- Never say "set `spec.x.y`" in prose alone. Put a CR fragment next to it, with `# ... the rest of your cluster` for elided fields.
+- Never say "set `spec.x.y`" in prose alone. Put a CR fragment next to it.
+- A CR fragment is a manifest the reader can paste. It starts with `apiVersion`, `kind`, and `metadata` with the example names, then the fields the section is about, then `# ... the rest of your <cluster|schedule|...>` for what is elided. Never a bare `spec:` block. `status:` blocks are output, not input, and stay as they are.
 - Never describe a status field in prose alone. Show the `status:` block as `kubectl get -o yaml` prints it, with the real condition messages from the code.
 - Status tables keep the "What to do" column.
 - Diagrams are Mermaid. Resource maps are `graph LR`.
