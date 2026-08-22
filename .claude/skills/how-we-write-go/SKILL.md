@@ -33,6 +33,8 @@ type Owner interface { ... }
 func formatResourceName(base, suffix string) string { ... }
 ```
 
+**A godoc gives the contract, not the algorithm.** Preconditions, the meaning of the result, what the caller must not assume. When you start a sentence about how the function computes its answer, stop: the caller does not need it, and it goes stale the first time the body changes.
+
 **The test for a bad comment:** could a code generator produce it by prepending a verb to the identifier name? If yes, it carries no information beyond the name itself — delete or rewrite it.
 
 - `// ComponentName returns the component name` → generated noise; delete
@@ -46,13 +48,19 @@ func formatResourceName(base, suffix string) string { ... }
 
 ## Inline comments
 
-Write a comment only when the **why** is non-obvious: a hidden constraint, a counter-intuitive invariant, a workaround for a specific upstream bug.
+**What a comment holds.** A comment carries what the code cannot: a constraint from outside this file, an invariant a reader cannot see from here, the reason a plainer version does not work. Write that fact first, then why it forces this code.
 
 ```go
 // logr.Logger is nil-safe, but controller-runtime's FromContext returns a discard logger
 // when no logger is in context — so this is always safe to call without a nil guard.
 logger := log.FromContext(ctx)
 ```
+
+If you cannot write that first fact without paraphrasing the lines below it, there is no comment to write.
+
+**A comment that restates the code becomes a second spec, and it drifts.** The next reader has two accounts of one behavior and no way to tell which is current. Nothing marks the prose as the weaker source: to a reader skimming, and to a model that reads comment and code as one stream, a stale sentence looks exactly like a statement of intent. What follows is the argument moving off the code and onto the prose — the review debates the sentence, the fix edits the sentence, and the behavior stays wrong. Every comment is a claim you have to keep true for as long as the code lives. Write only the claims worth maintaining.
+
+**Density is a signal.** When most blocks carry a comment, the comments say nothing and the one that matters is buried among them. If a block needs prose to be followed, a better name or a smaller function comes first. The comment is the fallback, not the fix.
 
 **Never narrate what the code does:**
 
@@ -66,6 +74,32 @@ labels := map[string]string{ ... }
 ```
 
 If removing the comment would not confuse a reader six months from now, delete it.
+
+**Red flags in your own diff:**
+
+- A comment and the line under it say the same thing in two languages.
+- You wrote a comment to explain a name you could have fixed.
+- The comment describes the change you are making rather than the code that is there.
+- You are editing a comment to answer a review point instead of editing the code.
+- A godoc grew a paragraph about how the body works.
+
+## A stated behavior is a claim, not evidence
+
+A godoc, an inline comment, a CRD field description and a page under `docs/` are claims someone made about the code at the time they wrote it. A failing test, a stuck reconcile or a bug report is a measurement. When the two disagree, the measurement settles what the code does — and the design question is still open: which behavior should the system have? A statement can be an accurate description of a wrong decision.
+
+1. Read the code to find what it does now. Do not take the statement as the answer.
+2. Ask whether the stated behavior is the one the user wants. The observed problem is evidence about that, and a documented contract is not a reason to keep a behavior that produces it.
+3. Change whichever is wrong — the code, the statement, or both.
+
+**A statement your change falsified is part of your change.** When your fix makes a godoc, a comment, a field description or a docs page wrong, correct it in the same change and name the change in the pull request body. A contradiction between code and prose is never shipped and never deferred.
+
+| Rationalization | Reality |
+|---|---|
+| "The doc update is out of scope, this task was the code fix" | The doc became wrong when your code changed. Correcting it is the same task. |
+| "I will note it as a follow-up" | A follow-up leaves a false statement in `main` for everyone who reads it first. File follow-ups for work you did not do, not for damage you did. |
+| "The godoc states the contract, so the fix must preserve it" | A contract is a decision, and a decision is revisable. If the reported problem shows it is the wrong one, change it and reconcile the prose. |
+| "I only touched one package" | Find the statement wherever it lives: godoc, `docs/`, the CRD field description, the CRD design doc. |
+| "The doc is still true for the common case" | Partly true reads as fully true. State the behavior the code now has. |
 
 ## Whitespace rhythm
 
@@ -690,6 +724,44 @@ Most `pkg/` code stays API-free: use it for construction, transformation, and ev
 
 **Webhook logic stays in the webhook package.** Defaulting and validation logic belongs in `internal/webhook/`, not in the controller. The controller should not replicate webhook defaults, and the webhook should not perform reconcile-style API calls.
 
+## Order within a file
+
+A file is read top to bottom, once, by someone who has never seen it. Order it so every line is answerable by what came above it. A reader who meets a helper before the code that needs it carries it with no reason to; a reader who meets the caller first already knows what the helper is for by the time it arrives.
+
+**A file has this order:**
+
+1. Shared declarations: the `const`, `type` and `var` that another file reads, each with its doc comment. Declarations only — a function never belongs in this group, however many files call it.
+2. The entry point: the exported function the file exists for. It is the first function in the file.
+3. Every other function, in the order the entry point reaches them — its own calls first, then theirs. An exported function that other packages call is placed by this rule too. Being exported does not lift a function above the entry point.
+4. A helper with one caller sits directly under that caller, never at the end of the file.
+
+```go
+const ComponentName = "optimize"              // 1. shared surface
+type TrustStore struct{ ... }                 // 1. read by secrets.go and the controller
+
+func BuildDeployment(...) *appsv1.Deployment  // 2. what the file is for
+func ResolveTrustStore(...) *TrustStore       // 3. BuildDeployment calls it; exported, and still not lifted above it
+func podSpec(...) corev1.PodSpec              // 3. called by BuildDeployment
+func trustStoreVolume(...) corev1.Volume      // 4. podSpec is its only caller
+func container(...) corev1.Container          // 3. called by podSpec
+func containerEnv(...) []corev1.EnvVar        // 3. called by container
+func readinessProbe() *corev1.Probe           // 3. called by container
+```
+
+**A type that another file reads is not a local helper.** Declare it at the top with the other shared declarations and give it a doc comment, whatever its visibility — an unexported type is still shared surface for the rest of the package. A type declared at line 300 because that is where the author needed it costs every later reader a search. A type used by one function in one file belongs next to that function.
+
+**Place new code by the file's order, not where you were working and not at the end.** Appending to the bottom is how a file loses its order one change at a time.
+
+**Reordering is part of the change.** If your new function belongs between two existing ones, move it there. Moving a function you already touched is free; a whole-file reshuffle is not, so leave that to its own commit.
+
+When no order makes the file read straight through, the file holds more than one concern. Split it by concern, as above.
+
+**Red flags in your own diff:**
+
+- The first function in the file is not the one the file exists for.
+- You added a function at the end of the file and its caller is somewhere above it.
+- A constructor or a resolver sits above the code that consumes it because it is exported.
+
 ## Common mistakes
 
 | Mistake | Fix |
@@ -701,3 +773,9 @@ Most `pkg/` code stays API-free: use it for construction, transformation, and ev
 | Inline `const reason = "..."` in a function | Promote to package-level typed constant |
 | `logger.Info` for every reconcile step | Trim to the one line that matters; use events for state changes |
 | `fmt.Sprintf("%s-%s", a, b)` | `a + "-" + b` |
+| Comment restates the line under it | Delete it; if the line needs prose, rename or split instead |
+| Godoc explains how the body computes the answer | Cut to the contract: preconditions, result, what the caller must not assume |
+| Resolver or helper placed above the entry point of the file | Move it below its caller |
+| Shared type declared where the author first needed it | Move it to the top of the file with a doc comment |
+| New code appended to the bottom of the file | Place it by the file's order, under its caller |
+| Fix ships with a godoc or doc page it just made wrong | Correct the statement in the same change |

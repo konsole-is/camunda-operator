@@ -27,15 +27,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// claimantOf returns the identity under which a restore holds the claim on
-// its cluster. Every restore kind derives it from the same three fields, so
-// no controller writes the identity of its own resource by hand.
-func claimantOf(owner conditions.Owner) clusterclaim.Claimant {
-	return clusterclaim.Claimant{
-		Kind: owner.GetKind(), Name: owner.GetName(), UID: owner.GetUID(),
-	}
-}
-
 // Take claims the cluster for owner. A cluster that no live holder claims is
 // claimed, and Take reports Done. A cluster that another live holder claims
 // is not, and Take reports a failure with v1.ReasonClusterClaimed that names
@@ -103,4 +94,13 @@ func Give(
 	}
 
 	return nil
+}
+
+// claimantOf returns the identity under which a restore holds the claim on
+// its cluster. Every restore kind derives it from the same three fields, so
+// no controller writes the identity of its own resource by hand.
+func claimantOf(owner conditions.Owner) clusterclaim.Claimant {
+	return clusterclaim.Claimant{
+		Kind: owner.GetKind(), Name: owner.GetName(), UID: owner.GetUID(),
+	}
 }
