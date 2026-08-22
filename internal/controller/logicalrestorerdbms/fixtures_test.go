@@ -278,6 +278,41 @@ func (w *world) claimNames() []string {
 	return names
 }
 
+// brokerStatefulSet reads the live broker StatefulSet of the world.
+func (w *world) brokerStatefulSet(g Gomega) *appsv1.StatefulSet {
+	name := camundacluster.WorkloadName(w.cluster, camundacluster.ComponentZeebe)
+
+	var brokers appsv1.StatefulSet
+	key := types.NamespacedName{Namespace: w.namespace, Name: name}
+	g.Expect(k8sClient.Get(ctx, key, &brokers)).To(Succeed())
+
+	return &brokers
+}
+
+// setRunningBrokers stands in for the StatefulSet controller, which envtest
+// does not run. A restore reads status.replicas of the broker StatefulSet to
+// learn whether the brokers of a suspended cluster really stopped.
+func (w *world) setRunningBrokers(running int32) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		brokers := w.brokerStatefulSet(g)
+		brokers.Status.Replicas = running
+		g.Expect(k8sClient.Status().Update(ctx, brokers)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// rollBrokerImage stands in for the CamundaCluster controller rolling a new
+// spec.version into the broker StatefulSet. The tag of that image is where a
+// restore reads the Camunda version that the cluster really runs.
+func (w *world) rollBrokerImage(version string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		brokers := w.brokerStatefulSet(g)
+		brokers.Spec.Template.Spec.Containers[0].Image = "camunda/camunda:" + version
+		g.Expect(k8sClient.Update(ctx, brokers)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // suspend flips spec.suspend of the target.
 func (w *world) suspend(suspended bool) {
 	GinkgoHelper()
@@ -367,6 +402,24 @@ func latest(g Gomega, lrr *v1.LogicalRestoreRDBMS) *v1.LogicalRestoreRDBMS {
 	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(lrr), &current)).To(Succeed())
 
 	return &current
+}
+
+// latestOf reads the restore as it is now, outside an Eventually.
+func latestOf(lrr *v1.LogicalRestoreRDBMS) *v1.LogicalRestoreRDBMS {
+	GinkgoHelper()
+
+	var current *v1.LogicalRestoreRDBMS
+	Eventually(func(g Gomega) { current = latest(g, lrr) }, timeout, interval).Should(Succeed())
+
+	return current
+}
+
+// clusterSuspended reports spec.suspend of the target as it is now.
+func clusterSuspended(g Gomega, w *world) bool {
+	var cluster v1.CamundaCluster
+	g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+
+	return cluster.Spec.Suspend
 }
 
 func readyCondition(lrr *v1.LogicalRestoreRDBMS) *metav1.Condition {

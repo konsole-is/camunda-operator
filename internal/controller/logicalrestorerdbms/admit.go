@@ -62,11 +62,12 @@ type backup struct {
 }
 
 // admit resolves the references of the restore and holds it in Pending until
-// every one of them answers, the target is suspended, and no other operation
-// holds the target. It ends by pinning what the restore reads: the backup id
-// and the identity of the target. From then on the restore never returns
-// here, and a reference that breaks runs through the mid-run grace of its
-// phase instead.
+// every one of them answers and no other operation holds the target. It pins
+// what the restore reads, the backup id and the identity of the target, then
+// claims the cluster and carries it to the state the restore needs:
+// suspended, its brokers stopped, and running the Camunda version of the
+// backup. From then on the restore never returns here, and a reference that
+// breaks runs through the mid-run grace of its phase instead.
 func (r *Reconciler) admit(
 	ctx context.Context,
 	lrr *v1.LogicalRestoreRDBMS,
@@ -91,18 +92,31 @@ func (r *Reconciler) admit(
 	if failure != nil {
 		return r.waiting(lrr, failure), nil
 	}
-
-	// The controller reads spec.suspend and never writes it. Suspending the
-	// target and unsuspending it afterwards belongs to whoever owns the
-	// cluster.
-	if failure := notSuspended(cluster); failure != nil {
+	if failure := pinnedBackup(lrr.Status.BackupID, source); failure != nil {
 		return r.waiting(lrr, failure), nil
+	}
+
+	// The identities are pinned before the restore writes anything, and this
+	// look returns here so the record is durable before that write.
+	//
+	// Preparation holds for as many looks as the brokers and the version
+	// rollout need, and admission re-enters from the top on every one of
+	// them. A cluster or a backup that somebody deletes and creates again
+	// under one name during that hold would otherwise read as the original,
+	// because both guards compare against a pin that is not there yet.
+	if lrr.Status.TargetClusterUID == "" || lrr.Status.BackupID == 0 {
+		lrr.Status.TargetClusterUID = cluster.UID
+		lrr.Status.BackupID = source.ID
+		r.progressing(lrr, "the restore pinned the backup and the target it prepares")
+
+		return restore.Outcome{Wait: restore.Shortly}, nil
 	}
 
 	// Every rule of this restore holds, so the cluster becomes this restore's
 	// alone. The claim point is the same for all three restore kinds, and it
-	// comes before every phase that touches storage. Two restores of one
-	// cluster therefore never both pass validation.
+	// comes before every phase that touches storage, and before the restore
+	// writes anything on the cluster spec. Two restores of one cluster
+	// therefore never both pass validation.
 	claimed, err := restore.Take(
 		ctx, r.Client, r.APIReader, lrr.Namespace, lrr.Spec.TargetClusterRef.Name, claimant(lrr),
 	)
@@ -113,22 +127,56 @@ func (r *Reconciler) admit(
 		return r.waiting(lrr, claimed.Failure), nil
 	}
 
+	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if failure != nil {
+		return r.waiting(lrr, failure), nil
+	}
+
+	// The restore carries the cluster to the state it needs: suspended, its
+	// brokers stopped, and running the Camunda version of the backup. It
+	// holds here until the cluster is there, and it has destroyed nothing
+	// yet, so the hold costs nothing.
+	prepared, err := restore.Prepare(
+		ctx, r.Client, &lrr.Status.RestoreProgress, restore.PrepareInput{
+			Owner:   lrr,
+			Cluster: cluster,
+			Target:  target,
+			Version: source.Version,
+			Poll:    r.opts.PollInterval,
+		},
+	)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if prepared.Failure != nil {
+		return r.waiting(lrr, prepared.Failure), nil
+	}
+	if !prepared.Done {
+		// The restore stays in Pending while it prepares its cluster. It has
+		// erased nothing, and it recovers on its own once the cluster
+		// converges.
+		lrr.Status.Phase = v1.LogicalRestorePending
+
+		return prepared, nil
+	}
+
 	r.start(lrr, cluster, source)
 
 	return restore.Outcome{Wait: restore.Shortly}, nil
 }
 
-// start pins what the restore reads and moves it into the validation phase.
-// The pins are written before the first side effect, so a backup that is
-// deleted afterwards cannot move the restore to another set of artifacts.
+// start moves the restore into the validation phase. It pins nothing:
+// admission pinned the backup id and the identity of the target earlier, on
+// the look before it first wrote to the cluster.
 func (r *Reconciler) start(
 	lrr *v1.LogicalRestoreRDBMS,
 	cluster *v1.CamundaCluster,
 	source *backup,
 ) {
 	lrr.Status.Phase = v1.LogicalRestoreValidatingCompatibility
-	lrr.Status.BackupID = source.ID
-	lrr.Status.TargetClusterUID = cluster.UID
 	r.progressing(lrr, "the restore compares the backup against the target")
 	r.EventRecorder.Eventf(
 		lrr,
@@ -143,9 +191,57 @@ func (r *Reconciler) start(
 	)
 }
 
-// notSuspended reports the target that still runs. A restore rewrites the
-// storage of its target, so it may only touch a cluster whose workloads are
-// scaled down. The controller reads spec.suspend and never writes it.
+// pinnedBackup reports the backup that is not the backup the restore pinned.
+// The pinned id is the identity of the backup, and the name alone is not: a
+// backup that somebody deleted and created again under one name is another set
+// of artifacts, and its dump lies under another key. A restore that has pinned
+// nothing yet passes.
+func pinnedBackup(pinned int64, source *backup) *conditions.PreCheckFailure {
+	if pinned == 0 || source.ID == pinned {
+		return nil
+	}
+
+	return logicalbackup.InvalidReference(
+		"LogicalBackupRDBMS %s/%s holds backup %d and the restore started against %d, so it is "+
+			"another backup",
+		source.Namespace, source.Name, source.ID, pinned,
+	)
+}
+
+// movedVersion reports the target whose brokers no longer carry the Camunda
+// version of the backup. Admission carried the cluster to that version and the
+// restore owns spec.version, but another manager can take the field back while
+// the restore runs, and the restore Jobs copy the broker image, so a version
+// that moves under a running restore would run the wrong binary against the
+// backup.
+//
+// It answers nil for a backup whose version the restore never wrote. The
+// version rule of the ValidatingCompatibility phase reports such a backup and
+// ends the restore, and holding for a version that nothing writes would wait
+// without end.
+func movedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailure {
+	if !restore.WritesVersion(backupVersion) || targetVersion == backupVersion {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonIncompatibleTarget,
+		Message: fmt.Sprintf(
+			"the brokers of the target carry Camunda %s and the backup was taken with %s. The "+
+				"restore set the version of the backup on the cluster before it started, so "+
+				"another manager moved it while the restore ran",
+			targetVersion, backupVersion,
+		),
+	}
+}
+
+// notSuspended reports the target that started running again. A restore
+// rewrites the storage of its target, so it may only touch a cluster whose
+// workloads are scaled down.
+//
+// Only a phase after admission reports it. Admission suspends the cluster
+// itself, so a cluster that is not suspended there is one that the restore
+// is about to suspend.
 func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
 	if cluster.Spec.Suspend {
 		return nil
@@ -245,20 +341,19 @@ func (r *Reconciler) resolve(
 	if err != nil || failure != nil {
 		return nil, failure, err
 	}
-	// The pinned id is the identity of the backup, and the name alone is not.
-	// A backup that somebody deleted and created again under the same name is
-	// another set of artifacts, and its dump lies under another key.
-	if lrr.Status.BackupID != 0 && source.ID != lrr.Status.BackupID {
-		return nil, logicalbackup.InvalidReference(
-			"LogicalBackupRDBMS %s/%s holds backup %d and the restore started against %d, so it is "+
-				"another backup",
-			source.Namespace, source.Name, source.ID, lrr.Status.BackupID,
-		), nil
+	if failure := pinnedBackup(lrr.Status.BackupID, source); failure != nil {
+		return nil, failure, nil
 	}
 
 	resolved, failure, err := restore.ResolveTarget(ctx, r.APIReader, cluster)
 	if err != nil || failure != nil {
 		return nil, failure, err
+	}
+	// The version of the target is a standing condition too, for the same
+	// reason its suspension is. The restore Jobs copy the broker image, so a
+	// version that moves mid-run reaches the restore application itself.
+	if failure := movedVersion(source.Version, resolved.Version); failure != nil {
+		return nil, failure, nil
 	}
 
 	storage, failure, err := restore.ResolveStorage(ctx, r.APIReader, cluster)

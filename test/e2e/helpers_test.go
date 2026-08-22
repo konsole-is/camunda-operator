@@ -206,6 +206,45 @@ func unsuspend(cluster *v1.CamundaCluster) {
 	}, ccReadyTimeout, 5*time.Second).Should(Succeed())
 }
 
+// letTheRestoreTakeOver removes spec.suspend and does not wait for the cluster
+// to be healthy again. A spec that erased the state of the cluster by hand
+// calls it before it creates the restore, so the restore is what suspends the
+// cluster and what unsuspends it afterwards. That is the flow a user gets: the
+// only thing they do is create the restore.
+//
+// The field is removed rather than set to false, so that nothing owns it when
+// the restore applies it. The restore withdraws its suspension by applying an
+// object without the field, and server-side apply keeps a field that another
+// manager still declares. A caller that set false would leave the value of
+// that caller behind the withdrawal, which is not the flow this proves.
+//
+// The patch fails when the field is absent, which is the state that says the
+// spec did not suspend the cluster first.
+func letTheRestoreTakeOver(cluster *v1.CamundaCluster) {
+	By("removing spec.suspend so the restore suspends the cluster itself")
+	_, err := utils.Kubectl(
+		"patch", ccResource, cluster.Name, "-n", cluster.Namespace,
+		"--type=json", "-p", `[{"op":"remove","path":"/spec/suspend"}]`,
+	)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// expectUnsuspended waits until the restore withdrew its suspension and the
+// cluster reports Ready Healthy again. Nobody clears spec.suspend by hand.
+func expectUnsuspended(cluster *v1.CamundaCluster) {
+	By("waiting for the restore to unsuspend the cluster")
+	Eventually(func(g Gomega) {
+		var current v1.CamundaCluster
+		g.Expect(utils.Get(ccResource, cluster.Name, cluster.Namespace, &current)).To(Succeed())
+		g.Expect(current.Spec.Suspend).To(BeFalse(), "the restore left the cluster suspended")
+	}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+	By("waiting for Ready Healthy")
+	Eventually(func(g Gomega) {
+		expectReady(g, ccResource, cluster.Name, cluster.Namespace, v1.ReasonHealthy)
+	}, ccReadyTimeout, 5*time.Second).Should(Succeed())
+}
+
 // brokerClaims returns the data volume claims of the brokers of the cluster,
 // by name. The identity of a claim is its UID and its creation time, so a
 // caller that holds the answer can tell a claim that survived from one that

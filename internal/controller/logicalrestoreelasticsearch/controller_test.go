@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,23 +33,51 @@ import (
 )
 
 var _ = Describe("LogicalRestoreElasticsearch admission", func() {
-	It("holds a restore whose target still runs", func() {
+	It("suspends a target that still runs, and waits for its brokers to stop", func() {
 		w := newWorld(func(cluster *v1.CamundaCluster) { cluster.Spec.Suspend = false })
+		w.setRunningBrokers(worldBrokers)
 		backup := createBackup(w)
 
 		restore := createRestore(w, backup.Name)
 
-		reached := expectReason(restore, v1.LogicalRestorePending, v1.ReasonClusterNotSuspended)
-		Expect(reached.Status.BackupID).To(BeZero())
+		By("suspending the target and recording that it did")
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Suspend).To(BeTrue())
+			g.Expect(latest(g, restore).Status.ClusterSuspended).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
 
-		By("touching nothing while it waits")
+		By("touching nothing while the brokers still run")
 		Consistently(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.Phase).To(Equal(v1.LogicalRestorePending))
 			g.Expect(w.search.RepositoryPuts(w.repository)).To(BeZero())
 			g.Expect(w.search.IndexDeleteCalls()).To(BeZero())
 			var jobs batchv1.JobList
 			g.Expect(k8sClient.List(ctx, &jobs, client.InNamespace(w.namespace))).To(Succeed())
 			g.Expect(jobs.Items).To(BeEmpty())
 		}, "2s", interval).Should(Succeed())
+
+		By("continuing once the brokers stopped")
+		w.setRunningBrokers(0)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.BackupID).To(Equal(backupID))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A cluster that its owner suspended carries no record of this restore.
+	// The restore leaves it suspended when it finishes.
+	It("records nothing when the target was already suspended", func() {
+		w := newWorld()
+		backup := createBackup(w)
+
+		restore := createRestore(w, backup.Name)
+
+		Eventually(func(g Gomega) {
+			current := latest(g, restore)
+			g.Expect(current.Status.BackupID).To(Equal(backupID))
+			g.Expect(current.Status.ClusterSuspended).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("holds a restore whose backup does not exist", func() {
@@ -100,18 +129,96 @@ var _ = Describe("LogicalRestoreElasticsearch admission", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("wakes a waiting restore through the cluster watch when the target is suspended", func() {
-		w := newWorld(func(cluster *v1.CamundaCluster) { cluster.Spec.Suspend = false })
+	It("holds a target whose brokers never stop, and touches nothing", func() {
+		w := newWorld()
+		w.setRunningBrokers(worldBrokers)
 		backup := createBackup(w)
 
 		restore := createRestore(w, backup.Name)
-		expectReason(restore, v1.LogicalRestorePending, v1.ReasonClusterNotSuspended)
 
-		By("suspending the target")
-		w.suspend(true)
+		reached := expectReason(restore, v1.LogicalRestorePending, v1.ReasonProgressing)
+		Expect(readyMessage(reached)).To(ContainSubstring("brokers still run"))
 
-		// The window is shorter than the retry interval of the suite, so only
-		// the watch can move the restore in time.
+		// Nothing bounds this hold. The restore erased nothing, so it waits
+		// for the cluster instead of ending itself. It pinned what it reads
+		// before it wrote to the target, so the pins are set while it waits
+		// and the phase is what says it has not started.
+		Consistently(func(g Gomega) {
+			current := latest(g, restore)
+			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestorePending))
+			g.Expect(current.Status.BackupID).To(Equal(backupID))
+			g.Expect(current.Status.TargetClusterUID).To(Equal(w.cluster.UID))
+			g.Expect(current.Status.RestoredSnapshots).To(BeEmpty())
+			g.Expect(w.search.IndexDeleteCalls()).To(BeZero())
+		}, "2s", interval).Should(Succeed())
+	})
+
+	// Preparation holds for as many looks as the brokers and the version
+	// rollout need, and admission re-enters from the top on every one of them.
+	// The pins are what keep a replacement out during that hold.
+	It("refuses a target that is replaced while it prepares it", func() {
+		w := newWorld()
+		w.setRunningBrokers(worldBrokers)
+		backup := createBackup(w)
+
+		restore := createRestore(w, backup.Name)
+		expectReason(restore, v1.LogicalRestorePending, v1.ReasonProgressing)
+
+		By("replacing the target under its name while the brokers still run")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
+		// The delete and the create are two acts, and a look between them reads
+		// no cluster at all. That hold is legitimate and carries the same
+		// reason, so the spec waits for the state that settles rather than the
+		// first one it sees. A restore that never reaches the settled state
+		// fails here, which is what a missing pin does.
+		Eventually(func(g Gomega) {
+			current := latest(g, restore)
+			g.Expect(current.Status.Phase).To(Equal(v1.LogicalRestorePending))
+			condition := readyCondition(current)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(condition.Message).To(ContainSubstring("another cluster"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The controller watches CamundaCluster and enqueues the restores that
+	// name it. Without that watch, a restore whose target appears later waits
+	// for the retry timer instead. watchWindow is shorter than the retry
+	// interval of the suite, so a restore that moves inside it was woken by
+	// the watch and by nothing else.
+	It("wakes a waiting restore through the cluster watch when its target appears", func() {
+		w := newWorld()
+		backup := createBackup(w)
+
+		By("removing the target of the restore")
+		Expect(k8sClient.Delete(ctx, w.cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var gone v1.CamundaCluster
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &gone)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		restore := createRestore(w, backup.Name)
+		expectReason(restore, v1.LogicalRestorePending, v1.ReasonInvalidReference)
+
+		By("creating the target again")
+		replacement := &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: w.cluster.Name, Namespace: w.namespace},
+			Spec:       *w.cluster.Spec.DeepCopy(),
+		}
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, restore).Status.BackupID).To(Equal(backupID))
 		}, watchWindow, interval).Should(Succeed())
@@ -178,7 +285,10 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("did not record"))
 	})
 
-	It("fails a backup that was taken with another patch version", func() {
+	// An Elasticsearch backup restores only with the exact version it was
+	// taken with. The restore therefore carries the target to that version
+	// rather than refusing it.
+	It("moves a target of another patch version to the version of the backup", func() {
 		w := newWorld()
 		backup := createBackup(w, func(b *v1.LogicalBackupElasticsearch) {
 			b.Status.Version = "8.9.10"
@@ -186,8 +296,37 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 
 		restore := createRestore(w, backup.Name)
 
+		By("writing the version of the backup on the target")
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Version).To(Equal("8.9.10"))
+		}, timeout, interval).Should(Succeed())
+
+		By("holding until the brokers carry that version")
+		Consistently(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.Phase).To(Equal(v1.LogicalRestorePending))
+		}, "1s", interval).Should(Succeed())
+
+		By("continuing once the CamundaCluster controller rolled it out")
+		w.rollBrokerImage("8.9.10")
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.BackupID).To(Equal(backupID))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A version that the restore cannot write is not a wait. Such a backup
+	// breaks the version rule, and the rule still ends the restore.
+	It("fails a backup whose recorded version is not a version", func() {
+		w := newWorld()
+		backup := createBackup(w, func(b *v1.LogicalBackupElasticsearch) {
+			b.Status.Version = "latest"
+		})
+
+		restore := createRestore(w, backup.Name)
+
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonIncompatibleTarget)
-		Expect(reached.Status.FailureMessage).To(ContainSubstring("exact version"))
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("not a version"))
 	})
 
 	It("fails a target that backs up through another bucket", func() {
@@ -201,6 +340,26 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonIncompatibleTarget)
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("another-bucket"))
 	})
+})
+
+var _ = Describe("LogicalRestoreElasticsearch standing version", func() {
+	// The restore owns spec.version, and another manager can still take it
+	// back. The restore Jobs copy the broker image, so a version that moves
+	// mid-run would reach the restore application itself.
+	It("holds when the version of the target moves while the restore runs", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := createRestore(w, backup.Name)
+		expectPhase(restore, v1.LogicalRestoreRestoringSecondaryStorage)
+
+		By("rolling another broker image under the running restore")
+		w.rollBrokerImage("8.10.0")
+
+		reached := expectReason(restore, v1.LogicalRestoreRestoringSecondaryStorage, v1.ReasonIncompatibleTarget)
+		Expect(readyMessage(reached)).To(ContainSubstring("8.10.0"))
+		Expect(readyMessage(reached)).To(ContainSubstring("another manager moved it"))
+	})
+
 })
 
 var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
@@ -451,6 +610,81 @@ var _ = Describe("LogicalRestoreElasticsearch of primary storage", func() {
 
 		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("broker 1"))
+	})
+})
+
+var _ = Describe("LogicalRestoreElasticsearch suspension of its target", func() {
+	// The restore owns the suspension it applied. It gives it back when the
+	// target holds the backup again.
+	It("unsuspends the target it suspended when it completes", func() {
+		w := newWorld(func(cluster *v1.CamundaCluster) { cluster.Spec.Suspend = false })
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+		Expect(latestOf(restore).Status.ClusterSuspended).To(BeTrue())
+
+		owner := labels.LogicalRestoreElasticsearch(restore.Name)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
+		}, timeout, interval).Should(Succeed())
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
+		for ordinal := range worldBrokers {
+			markJob(w.namespace, restorepkg.JobName(owner, ordinal), batchv1.JobComplete)
+		}
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.Phase).To(Equal(v1.LogicalRestoreCompleted))
+			g.Expect(clusterSuspended(g, w)).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The broker volumes of a failed restore can be empty or half written.
+	// Brokers that start over them are worse than a cluster that is down.
+	It("leaves the target suspended when it fails", func() {
+		w := newWorld(func(cluster *v1.CamundaCluster) { cluster.Spec.Suspend = false })
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+
+		owner := labels.LogicalRestoreElasticsearch(restore.Name)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
+		}, timeout, interval).Should(Succeed())
+		markJob(w.namespace, restorepkg.JobName(owner, 0), batchv1.JobFailed)
+
+		expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonFailed)
+		Consistently(func(g Gomega) {
+			g.Expect(clusterSuspended(g, w)).To(BeTrue())
+		}, "1s", interval).Should(Succeed())
+	})
+
+	// A target that its owner suspended stays suspended. The restore recorded
+	// no suspension of its own, so it withdraws none.
+	It("leaves a target that its owner suspended suspended", func() {
+		w := newWorld()
+		backup := createBackup(w)
+		restore := startedRestore(w, backup)
+		Expect(latestOf(restore).Status.ClusterSuspended).To(BeFalse())
+
+		owner := labels.LogicalRestoreElasticsearch(restore.Name)
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, restore).Status.PrimaryJobNames).To(HaveLen(int(worldBrokers)))
+		}, timeout, interval).Should(Succeed())
+		// envtest runs no garbage collector, so a Job that the collector
+		// deleted with foreground propagation keeps its finalizer for ever and
+		// the restore would never report its volumes free.
+		collectDeletedJobs(w.namespace)
+
+		for ordinal := range worldBrokers {
+			markJob(w.namespace, restorepkg.JobName(owner, ordinal), batchv1.JobComplete)
+		}
+
+		expectReason(restore, v1.LogicalRestoreCompleted, v1.ReasonCompleted)
+		Consistently(func(g Gomega) {
+			g.Expect(clusterSuspended(g, w)).To(BeTrue())
+		}, "1s", interval).Should(Succeed())
 	})
 })
 

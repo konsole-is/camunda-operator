@@ -323,6 +323,26 @@ These are the effects that you notice while a backup runs.
 - The operator runs one backup of a cluster at a time, across both kinds. A second backup waits as `Pending` with reason `BackupInProgress` and starts when the first one ends.
 - If the cluster is suspended, the backup waits with reason `ClusterSuspended`. The management API of a suspended cluster is not reachable.
 
+## What an upgrade does to the backups you hold
+
+A backup records the Camunda version it was taken with, in `status.version`. Every restore compares that version against the version the cluster runs.
+
+The two storage paths differ:
+
+- **Elasticsearch.** A `LogicalRestoreElasticsearch` needs the exact version. Elasticsearch carries that version in the name of every snapshot, so a cluster one patch release newer cannot read a snapshot of the older one.
+- **PostgreSQL.** A `LogicalRestoreRDBMS` accepts the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time.
+
+**The restore carries the cluster back to the version of the backup.** You do not lower `spec.version` by hand, and you do not suspend the cluster by hand. Create the restore against the cluster as it is.
+
+CAUTION: A downgrade that you do by hand on a running cluster, outside a restore, is still unsupported. The brokers then report themselves unhealthy.
+
+Two things follow that are worth knowing:
+
+- On the PostgreSQL path, a cluster that the version rule would already accept is still moved back to the version of the backup. The cluster comes back one minor behind where it was, and you upgrade it forward again after the restore.
+- The restore keeps `spec.version`. Declare the version you want the cluster to run once the restore is `Completed`. A manifest that omits the field does not take it back, because server-side apply removes a field only from the manager that declared it. A cluster that took its version from a preset needs the field removed by hand. The CRD page of each restore kind shows both.
+
+**Take a backup before every upgrade.** The most common reason to restore is an upgrade that went wrong, and the backup you want is the one from just before it.
+
 ## Delete a backup
 
 Deleting a backup resource removes what the backup wrote. A finalizer holds the resource until the artifacts are gone.

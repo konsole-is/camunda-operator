@@ -60,6 +60,10 @@ var errClusterReplaced = errors.New("the CamundaCluster was replaced")
 // restore in Pending, where it touches nothing and recovers on its own once
 // the cause is gone.
 //
+// It ends by claiming the cluster and suspending it. The claim comes first,
+// because it is what serialises the operations on a cluster, and admission is
+// about to write to that cluster's spec.
+//
 // Admission ends by reading the database in the same reconcile. The read is
 // the first call that leaves the cluster, but it changes nothing, and a
 // restore that the database holds back must report Pending. The phase is
@@ -104,8 +108,9 @@ func (r *Reconciler) admit(
 
 	// Every rule of this restore holds, so the cluster becomes this restore's
 	// alone. The claim point is the same for all three restore kinds, and it
-	// comes before every phase that touches storage. Two restores of one
-	// cluster therefore never both pass validation.
+	// comes before every phase that touches storage, and before the restore
+	// writes anything on the cluster spec. Two restores of one cluster
+	// therefore never both pass validation.
 	claimed, err := restore.Take(
 		ctx, r.Client, r.APIReader, pitr.Namespace, pitr.Spec.ClusterRef.Name, claimant(pitr),
 	)
@@ -114,6 +119,33 @@ func (r *Reconciler) admit(
 	}
 	if claimed.Failure != nil {
 		return r.waiting(pitr, claimed.Failure), nil
+	}
+
+	// The restore suspends the cluster and waits until its brokers stopped.
+	// It writes no version: this kind restores the primary storage of the
+	// cluster from the backups of that same cluster, so no backup records a
+	// version that the cluster is not already running.
+	prepared, err := restore.Prepare(
+		ctx, r.Client, &pitr.Status.RestoreProgress, restore.PrepareInput{
+			Owner:   pitr,
+			Cluster: resolved.cluster,
+			Target:  resolved.target,
+			Poll:    r.opts.PollInterval,
+		},
+	)
+	if err != nil {
+		return restore.Outcome{}, err
+	}
+	if prepared.Failure != nil {
+		return r.waiting(pitr, prepared.Failure), nil
+	}
+	if !prepared.Done {
+		// The restore stays in Pending while it prepares its cluster. It has
+		// erased nothing, and it recovers on its own once the cluster
+		// converges.
+		pitr.Status.Phase = v1.PointInTimeRestorePending
+
+		return prepared, nil
 	}
 
 	// Everything that this restore is allowed to act on is now known: the
@@ -133,7 +165,9 @@ func (r *Reconciler) admit(
 // decides how long such a failure holds the restore.
 //
 // The reads are live. A stale suspend flag or a stale storage reference lets
-// the restore delete the volumes of a cluster that moved on.
+// the restore delete the volumes of a cluster that moved on. The suspension
+// itself is not a rule of this function: admission writes it, and the phases
+// after admission read it through notSuspended.
 func (r *Reconciler) resolve(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
@@ -163,19 +197,6 @@ func (r *Reconciler) resolve(
 				"UID %s, so its primary storage is not the storage this restore validated",
 			errClusterReplaced, key, pitr.Status.TargetClusterUID, cluster.UID,
 		)
-	}
-
-	// The operator only reads the suspend state. Whoever owns the cluster
-	// suspends it before the restore and unsuspends it after. Never write
-	// spec.suspend here: this operator does not own the cluster spec.
-	if !cluster.Spec.Suspend {
-		return nil, &conditions.PreCheckFailure{
-			Reason: v1.ReasonClusterNotSuspended,
-			Message: fmt.Sprintf(
-				"CamundaCluster %s is not suspended. Set spec.suspend to true, so that no workload "+
-					"writes while the restore runs", key,
-			),
-		}, nil
 	}
 
 	if cluster.Spec.BackupStorageRef == "" {
@@ -250,6 +271,30 @@ func (r *Reconciler) resolve(
 		server:   &server,
 		target:   target,
 	}, nil, nil
+}
+
+// notSuspended reports the cluster that started running again. Suspension is
+// a standing condition of a restore, not a gate that admission passes once.
+// The primary-storage phase erases the data volumes of the brokers, and a
+// cluster that is unsuspended mid-run starts its brokers again, so the
+// restore would erase under them.
+//
+// Only a phase after admission reports it. Admission suspends the cluster
+// itself, so a cluster that is not suspended there is one that the restore is
+// about to suspend.
+func notSuspended(cluster *v1.CamundaCluster) *conditions.PreCheckFailure {
+	if cluster.Spec.Suspend {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonClusterNotSuspended,
+		Message: fmt.Sprintf(
+			"CamundaCluster %s/%s started running again while the restore ran. A restore rewrites "+
+				"its primary storage, so it runs only while spec.suspend is true",
+			cluster.Namespace, cluster.Name,
+		),
+	}
 }
 
 // errChainChanged reports that the storage chain of the cluster is no longer

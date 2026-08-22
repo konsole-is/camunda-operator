@@ -45,6 +45,12 @@ func (r *Reconciler) restorePrimaryStorage(
 	if failure != nil {
 		return r.holdStarted(pitr, failure), nil
 	}
+	// Suspension is a standing condition of this phase, and admission proved
+	// it once. A cluster that is unsuspended mid-run starts its brokers over
+	// the volumes that the restore is erasing.
+	if failure := notSuspended(resolved.cluster); failure != nil {
+		return r.holdStarted(pitr, failure), nil
+	}
 
 	outcome, err := restore.Primary(
 		ctx,
@@ -68,6 +74,11 @@ func (r *Reconciler) restorePrimaryStorage(
 			Args:  []string{"--to=" + pitr.Spec.Timestamp.UTC().Format(time.RFC3339)},
 			Poll:  r.opts.PollInterval,
 			Grace: r.opts.MidRunGrace,
+			// The operator compares timestamps and the restore application
+			// compares log positions, so a restore that passes every rule of
+			// this kind can still be refused. Only the application knows, and
+			// only its log says so.
+			JobFailure: r.jobRefusal,
 		},
 	)
 	if err != nil {

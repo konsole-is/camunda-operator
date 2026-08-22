@@ -72,9 +72,23 @@ type LogicalRestoreElasticsearchStatus struct {
 // LogicalBackupElasticsearch into one suspended CamundaCluster. It deletes
 // the Camunda indices of the target, restores every snapshot of the backup
 // into its Elasticsearch, gives the brokers empty data volumes, and runs the
-// Camunda restore application once per broker. The operator only reads
-// spec.suspend of the target. Whoever owns the cluster suspends it before the
-// restore and unsuspends it after.
+// Camunda restore application once per broker.
+//
+// The restore prepares the target itself. It suspends the target, waits for
+// its brokers to stop, and sets spec.version to the Camunda version that the
+// backup was taken with. It withdraws the suspension when it completes, and
+// only when it applied that suspension itself. A failed restore leaves the
+// target suspended, and so does a restore that somebody deletes while it
+// runs: broker volumes that are empty or half written are worse under running
+// brokers than under none.
+//
+// The restore keeps spec.version, and it owns the field under the manager
+// camunda-operator/restore-version. The target runs the version of the backup
+// until another manager takes that field over or removes it. A manifest that
+// leaves spec.version out takes nothing back, because server-side apply
+// removes a field only from the manager that declared it. Watch for that on a
+// target whose version came from a preset: the value the restore wrote wins
+// over the preset until somebody removes the field.
 type LogicalRestoreElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 

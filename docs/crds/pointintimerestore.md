@@ -8,9 +8,8 @@ The operator never restores the database server. PostgreSQL point-in-time recove
 
 One resource is one restore. The spec is immutable, and the restore runs once. `kubectl get pitr` lists the restores with their phase, cluster, and timestamp.
 
-Two things must be true before you create the resource:
+One thing must be true before you create the resource:
 
-- The cluster has `spec.suspend: true`, so no workload writes to primary or secondary storage.
 - The database already holds the state of the requested timestamp. On a self-hosted server the database administrator runs standard PostgreSQL point-in-time recovery. On a managed service you use the point-in-time restore of the provider. Some providers, for example Amazon RDS, create a **new** instance for the restore. Then you update `host` on the `DatabaseServerConfig` before you create this resource.
 
 The smallest restore names the cluster and the point:
@@ -38,13 +37,48 @@ graph LR
     PITR -->|restore Job per broker| PVC[Broker data volumes]
 ```
 
-## Suspend
+## The restore prepares the cluster
 
-The operator only reads `spec.suspend` of the cluster. It never writes it. You suspend the cluster before you create the restore, and you unsuspend it after the restore is `Completed`. A running cluster holds the restore in `Pending` with reason `ClusterNotSuspended`, and the operator touches no data.
+The operator brings the cluster to the state that the restore needs. You do not suspend the cluster by hand.
+
+The restore suspends the cluster. It stays in `Pending` while it does this, and nothing bounds the wait. It erases nothing before it leaves that phase. `Ready` reports `Progressing`, and its message names what the operator waits for.
+
+The operator writes nothing else on the cluster. It writes no credential, and no reference to one.
+
+### What the operator writes, and what it keeps
+
+Each write is a server-side apply of one field, under a field manager of its own:
+
+| Field | Field manager | What happens at the end |
+| --- | --- | --- |
+| `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
+
+These names are published. A GitOps tool reads them, and so does a layer above this operator, for example a `CloudCamundaCluster` of `camunda-cloud-operator`. The names tell a write of a restore from a write of a user.
+
+This kind writes no version. It restores the primary storage of the cluster from the continuous backups of that same cluster. No backup therefore names a version that the cluster is not already running.
+
+### When the restore unsuspends the cluster
+
+The restore withdraws its suspension when it reaches `Completed`, and only when `status.clusterSuspended` is `true`.
+
+- **A cluster that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
+- **A failed restore leaves the cluster suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore.
+- **A restore that you delete while it runs leaves the cluster suspended.** The restore needs no finalizer, and it gets none for this. A finalizer that unsuspends the cluster on delete starts brokers over volumes that the restore already erased. Suspended is the safe state to be left in. Unsuspend the cluster yourself once you know what its volumes hold.
+
+### A GitOps tool that owns the CamundaCluster
+
+The operator uses its own field managers, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares. The operator keeps the fields that it declares.
+
+A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore writes it again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
+
+- Remove `spec.suspend` from the manifest for the time of the restore, or mark the field as an ignored difference.
+- Let the tool declare `spec.suspend: false` again after the restore, if it declared the field before.
+
+Suspension is a standing condition, not a gate that admission passes once. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase and fails it after ten minutes, with reason `ClusterNotSuspended`.
 
 ## One operation at a time
 
-A cluster holds one backup or one restore at a time. The operator records the holder in a Lease next to the cluster. A restore takes that Lease when every rule of its admission holds, and it gives the Lease back when it reaches `Completed` or `Failed`.
+A cluster holds one backup or one restore at a time. The operator records the holder in a Lease next to the cluster. A restore takes that Lease before it suspends the cluster and before every phase that erases something, and it gives the Lease back when it reaches `Completed` or `Failed`. It therefore holds the cluster while it prepares it, which it reports as `Pending`.
 
 A cluster that another backup or another restore holds keeps this restore in `Pending` with reason `ClusterClaimed`. The message names the holder. Nothing bounds this wait, and you change nothing: the restore starts on its own when the holder reaches a terminal phase. No watch wakes this hold. The controller wakes it on its retry timer alone, so the restore can start up to one retry interval after the holder finished.
 
@@ -54,10 +88,10 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 
 | Phase | What happens |
 | --- | --- |
-| `Pending` | The restore waits. The cluster runs, another backup or restore holds the cluster, the storage chain does not resolve, a rule of the server does not hold, or the database is ahead of the requested point. The operator touches nothing here. |
+| `Pending` | The restore waits. Another backup or restore holds the cluster, the storage chain does not resolve, a rule of the server does not hold, the database is ahead of the requested point, or the operator is still preparing the cluster. Nothing of the cluster is erased here. Preparation does write `spec.suspend` on the cluster, which [The restore prepares the cluster](#the-restore-prepares-the-cluster) describes. |
 | `ValidatingDatabaseState` | The operator reads the exporter position of every partition from the restored database. You see this phase only while the operator cannot reach the database. A check that passes moves on within the same step, and a database that is ahead sends the restore back to `Pending`. |
 | `RestoringPrimaryStorage` | The operator recreates the broker data volumes and runs the restore application on them. |
-| `Completed` | The restore finished. You can unsuspend the cluster. |
+| `Completed` | The restore finished. The restore unsuspended the cluster, unless you suspended it yourself. |
 | `Failed` | A phase failed. `status.failureMessage` names it. |
 
 ## The storage chain
@@ -102,9 +136,43 @@ The operator then runs the Camunda restore application once per broker, as a Job
 
 The restore application does the alignment itself. It reads the exporter position of each partition from the restored database with the same credentials the brokers use, and it restores the newest checkpoint at or before that position from the continuous primary-storage backups. The restored Zeebe state is therefore never behind the database.
 
-## What the cluster must provide
+## Choosing the point to restore to
 
-Point-in-time restore is possible only when primary-storage restore points exist for the requested timestamp. The `CamundaCluster` controller enables the continuous primary-storage backups of Zeebe for every relational cluster with a `backupStorageRef`. The checkpoint interval bounds how precise the restore can be: Zeebe restores to the nearest checkpoint at or before the requested point, while the database holds the exact point.
+You choose one point in time. You restore the database to that point yourself, and you put the same point in `spec.timestamp`. The operator never restores the database.
+
+The `CamundaCluster` controller enables the continuous primary-storage backups of Zeebe for every relational cluster that names a `backupStorageRef`. A cluster that backs up already takes them.
+
+The point has to sit inside the window that those backups cover. Two bounds define that window, and both come from the `CamundaCluster`:
+
+| Bound | Field on the cluster | Default |
+| --- | --- | --- |
+| Zeebe took a backup after the point | `spec.backup.primaryStorage.schedule` | `PT1H` |
+| Zeebe still keeps that backup | `spec.backup.primaryStorage.retention.window` | `P7D` |
+
+**Choose a point at least one backup interval before the cluster stopped writing, and inside the retention window.** Read both values off your own cluster before you choose. With the defaults, a point between one hour and seven days before the brokers stopped is safe.
+
+"Now" is always outside the window, and so is the moment just before you suspended the cluster. The brokers write until they stop, and the newest backup is always behind them.
+
+To read the real window rather than infer it, ask the cluster while it still runs:
+
+```bash
+kubectl exec -n my-cluster-ns my-cluster-zeebe-0 -- \
+  curl -s localhost:9600/actuator/backupRuntime/state
+```
+
+### What goes in spec.timestamp
+
+`spec.timestamp` is the point you restored the database to. The operator holds the restore in `Pending` with reason `DatabaseNotRestored` while the database still holds state after that point. It allows one minute of slack for the two clocks.
+
+The operator passes the value to the restore application as `--to`. Zeebe then aligns the brokers to the marker checkpoint nearest that point. It writes one every `spec.backup.primaryStorage.checkpointInterval`, which defaults to `PT15M`, so the brokers come back near the point rather than exactly on it. The database holds the exact point, and Zeebe exports the difference again after the restore.
+
+### If the point is outside the window
+
+The operator cannot catch this before it erases the broker volumes. It compares timestamps, and the restore application compares log positions. Those positions live in the backup store, which this controller never opens.
+
+The cost is bounded. The restore replaces those volumes from the backup in any case, and the backup itself stays whole. The outcome is "restore again" rather than lost data. Choose an earlier point, restore the database to it, and create a new restore.
+
+You do not read a pod log to find out. The operator reads the log of the failed restore Job for you, and the restore reaches `Failed` with reason `ExporterPositionNotCovered`. `status.failureMessage` names the cause and the remedy. A restore that fails for another reason keeps that reason.
 
 ## The restore Jobs
 
@@ -131,18 +199,21 @@ kubectl logs -n my-cluster-ns job/my-cluster-pitr-pitr-0
 
 When you delete the restore, the operator deletes the Jobs it created. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. It writes nothing to an external store, so it needs no finalizer and leaves no artifact behind.
 
+A cluster that the restore suspended stays suspended. That is deliberate. Unsuspending it here would start brokers over volumes that the restore already erased. Unsuspend the cluster yourself once you know what its volumes hold.
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
-| `Ready` | `Completed` | The restore finished. `Ready` is `True`. | Unsuspend the cluster. |
-| `Ready` | `ClusterNotSuspended` | The cluster runs. | Set `spec.suspend: true` on the cluster. |
+| `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the cluster starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the cluster yourself only when you suspended it yourself. |
+| `Ready` | `ClusterNotSuspended` | The cluster started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, no `Database` names the server, or the broker StatefulSet is gone. | Correct the reference that the message names. |
 | `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, `spec.timestamp` lies in the future, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, restore to a point within retention, or run the brokers in UTC. |
 | `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
+| `Ready` | `ExporterPositionNotCovered` | The point you chose lies outside the window that the primary-storage backups cover. The broker volumes are already erased. | Choose an earlier point, restore the database to it, and create a new restore. See "Choosing the point to restore to". |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
 | `Ready` | `ConnectionFailed` | The database rejects the operator. | Correct the endpoint or the credentials. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
@@ -153,6 +224,7 @@ The status also records what the restore pinned and what it did:
 
 - `status.targetClusterUID` pins the identity of the cluster, from the first look onwards. A cluster that is deleted and created again under one name fails the restore.
 - `status.storage` pins the storage chain that the restore validated.
+- `status.clusterSuspended` records that this restore suspended the cluster. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.
 - `status.observedPositions` holds the `LAST_UPDATED` value that the check read for each partition.
 - `status.primaryJobNames` names the per-broker restore Jobs, in broker order.
@@ -186,8 +258,9 @@ spec:
 - `spec` is immutable. A restore runs once, and you retry it with a new resource.
 - `spec.timestamp` is an RFC 3339 timestamp. The rule that it must not lie in the future needs a clock, which a CEL rule does not have, so the operator checks it at reconcile time and reports `PitrUnavailable`.
 - `clusterRef` names a cluster in the namespace of the restore. It never crosses a namespace. The operator reads the Secrets of the cluster and runs Jobs in that namespace, so the reference stays inside the RBAC boundary of the restore.
-- The suspend state, the storage chain, the dedicated-server rule, and the state of the database depend on live cluster state. The operator checks them at reconcile time.
+- The storage chain, the dedicated-server rule, and the state of the database depend on live cluster state. The operator checks them at reconcile time.
 - Whether the database really holds `spec.timestamp` is not provable by the operator. See "Limits of this check" above.
+- Whether the primary-storage backups cover the point is not provable by the operator either. See [Choosing the point to restore to](#choosing-the-point-to-restore-to).
 
 ### Roll back to just before a bad deployment
 
@@ -211,7 +284,7 @@ spec:
 ## Related
 
 - [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md) and [LogicalRestoreRDBMS](logicalrestorerdbms.md): the backup-based alternative. One kind serves each secondary storage type, and both restore a cluster from its own backup.
-- [CamundaCluster](camundacluster.md): referenced through `clusterRef`. You suspend it for the whole restore, and its controller enables the continuous primary-storage backups.
+- [CamundaCluster](camundacluster.md): referenced through `clusterRef`. The restore suspends it for its whole run, and the cluster's controller enables the continuous primary-storage backups.
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the cluster. It must be `type: rdbms`.
 - [DatabaseConfig](databaseconfig.md): resolved for the logical database and its `serverRef`. Its `credentialsSecretRef` holds the credentials that read `EXPORTER_POSITION`.
 - [DatabaseServerConfig](databaseserverconfig.md): declares the `pitr` capability and the retention period, and carries the dedicated-server rule. This operator never uses its admin credentials.

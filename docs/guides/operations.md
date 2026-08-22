@@ -102,7 +102,7 @@ Every condition carries one of these reasons:
 | `Failing` | A replica does not become ready. | Read the pods of the workload. Look for restarts, failed probes, and resource limits. |
 | `Degraded` | Some replicas are not ready after the grace period. | Read the pods of the workload. Look for restarts, failed probes, and resource limits. |
 | `Down` | No replica is ready after the grace period. | Read the pods and their events. Make sure that secondary storage is reachable. |
-| `Suspended` | `spec.suspend` is `true` and the workload is at zero replicas. | Nothing. Set `spec.suspend: false` to start the cluster again. |
+| `Suspended` | `spec.suspend` is `true` and the workload is at zero replicas. | Find out what suspended the cluster before you start it again. See "Suspend and resume". |
 | `Disabled` | The cluster does not need this component. | Nothing. This reason is not an error, and the condition stays out of `Ready`. |
 | `InvalidReference` | A referenced resource does not exist, or the merged spec is not valid. The message names it. | Create the resource, or fix the field that the message names. |
 | `MissingSecret` | A referenced Secret or one of its keys does not exist. The message names it. | Create the Secret with the keys that the reference names. |
@@ -194,6 +194,32 @@ status:
 ```
 
 Set `suspend: false` to start the cluster again. `Ready` reads `Updating` while the pods start, then `Healthy`. The brokers attach to the same volumes, and the process instances from before the suspension are still there.
+
+### A restore suspends the cluster too
+
+A restore of the cluster suspends it and gives that suspension back when it reaches `Completed`. You do not suspend the cluster for a restore, and you do not start it again afterwards.
+
+**Find out what suspended the cluster before you set `suspend: false`.** A restore that failed leaves the cluster suspended on purpose, and so does a restore that somebody deleted while it ran. Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down.
+
+Two reads answer it. The restores say whether one of them suspended the cluster, and in which phase it stopped:
+
+```bash
+kubectl get pitr,lres,lrrdbms -n my-cluster-ns \
+  -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,SUSPENDED:.status.clusterSuspended'
+```
+
+The cluster says which manager owns the field:
+
+```bash
+kubectl get camundacluster my-cluster -n my-cluster-ns \
+  -o jsonpath='{.metadata.managedFields[*].manager}'
+```
+
+`camunda-operator/restore-suspend` among those managers means that a restore applied the suspension. A restore that reaches `Completed` gives it back on its own, so wait for that. A restore that failed keeps it, and the cluster is yours to start again once you know what its volumes hold.
+
+CAUTION: A merge patch of `spec.suspend` takes the field from the restore that owns it. A restore that is still running suspends the cluster again at once, and the patch achieves nothing. A restore that already failed leaves the cluster to you, and the volumes hold what the restore wrote before it stopped.
+
+The restore pages hold the rules: [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md), [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md), and [PointInTimeRestore](../crds/pointintimerestore.md).
 
 An `ElasticsearchCluster` suspends the same way. The operator deletes the ECK `Elasticsearch` resource and keeps the data volumes. `Ready` is `True` with reason `Suspended`, and `MetricsReady` reports `Suspended` too. On resume the operator recreates the resource, and ECK attaches the same volumes with the data intact.
 

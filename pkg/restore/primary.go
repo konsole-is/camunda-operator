@@ -81,7 +81,21 @@ type PrimaryInput struct {
 	// Grace bounds how long the phase waits on a dependency that stopped
 	// resolving before the restore fails.
 	Grace time.Duration
+	// JobFailure reads a cause of its own out of a restore Job that already
+	// failed. It runs on the failure path alone, so it can never hold back or
+	// break a restore that works. A hook that answers nil leaves the generic
+	// failure of the phase in place, and so does a nil hook.
+	//
+	// Only a kind whose restore application refuses for a reason the operator
+	// can name supplies one. The two logical kinds pass nothing.
+	JobFailure JobFailure
 }
+
+// JobFailure translates a failed restore Job into the failure that the
+// calling kind reports. It answers nil when it recognises nothing, and it
+// never reports an error: a cause that the operator cannot read must leave
+// the failure the phase already found.
+type JobFailure func(ctx context.Context, job *batchv1.Job, ordinal int32) *conditions.PreCheckFailure
 
 // Primary drives the whole primary-storage phase: it records the broker
 // count, deletes and creates the broker data volumes, and runs the restore
@@ -459,6 +473,12 @@ func trackJobs(
 		case concepts.CompletionStatusCompleted:
 			done++
 		case concepts.CompletionStatusFailing:
+			if in.JobFailure != nil {
+				if named := in.JobFailure(ctx, job, int32(ordinal)); named != nil {
+					return Outcome{Failure: named}, nil
+				}
+			}
+
 			return failure(fmt.Sprintf(
 				"the restore of broker %d failed: %s", ordinal, status.Reason,
 			)), nil

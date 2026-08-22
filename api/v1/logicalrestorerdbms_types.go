@@ -71,8 +71,21 @@ type LogicalRestoreRDBMSStatus struct {
 // data volumes, and runs the Camunda restore application on them once per
 // broker.
 //
-// The operator only reads spec.suspend of the target. Whoever owns the
-// cluster suspends it before the restore and unsuspends it after.
+// The restore prepares the target itself. It suspends the target, waits for
+// its brokers to stop, and sets spec.version to the Camunda version that the
+// backup was taken with. It withdraws the suspension when it completes, and
+// only when it applied that suspension itself. A failed restore leaves the
+// target suspended, and so does a restore that somebody deletes while it
+// runs: broker volumes that are empty or half written are worse under running
+// brokers than under none.
+//
+// The restore keeps spec.version, and it owns the field under the manager
+// camunda-operator/restore-version. The target runs the version of the backup
+// until another manager takes that field over or removes it. A manifest that
+// leaves spec.version out takes nothing back, because server-side apply
+// removes a field only from the manager that declared it. A target of a newer
+// minor is therefore left on the minor of the backup, and the owner upgrades
+// it forward again.
 type LogicalRestoreRDBMS struct {
 	metav1.TypeMeta `json:",inline"`
 

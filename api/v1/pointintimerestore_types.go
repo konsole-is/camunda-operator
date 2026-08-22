@@ -35,6 +35,13 @@ const (
 	// spec.timestamp, or that it reports no exporter position for a
 	// partition. The restore holds in Pending and touches no volume.
 	ReasonDatabaseNotRestored = "DatabaseNotRestored"
+	// ReasonExporterPositionNotCovered means that the restore application
+	// found no primary-storage checkpoint that covers the exporter position
+	// of the restored database, so it restored no partition. The restore
+	// fails, and the remedy is to roll the database back further and create
+	// a new restore. The operator reads this cause from the log of the failed
+	// restore Job, because only the restore application compares the two.
+	ReasonExporterPositionNotCovered = "ExporterPositionNotCovered"
 )
 
 // PointInTimeRestorePhase tracks the one-shot restore. Completed and Failed
@@ -57,8 +64,9 @@ const (
 	// them.
 	PointInTimeRestoreRestoringPrimaryStorage PointInTimeRestorePhase = "RestoringPrimaryStorage"
 	// PointInTimeRestoreCompleted means that the restore finished. The
-	// cluster can be unsuspended. The operator removes the per-broker Jobs
-	// here, so their pods release the broker data volumes.
+	// operator removes the per-broker Jobs here, so their pods release the
+	// broker data volumes, and it withdraws the suspension it applied, so the
+	// cluster runs again unless its owner suspended it.
 	PointInTimeRestoreCompleted PointInTimeRestorePhase = "Completed"
 	// PointInTimeRestoreFailed means that the restore failed. The Ready
 	// condition names the failing phase. The operator keeps the per-broker
@@ -76,10 +84,19 @@ type PointInTimeRestoreSpec struct {
 	// this restore. Its secondary storage must be a relational database.
 	// +required
 	ClusterRef ClusterRef `json:"clusterRef"`
-	// Timestamp is the point the database was already restored to. It must
-	// lie within the retention period the database server declares. It must
-	// not lie in the future either, and the operator checks that at reconcile
-	// time, because a CEL rule has no clock.
+	// Timestamp is the point that the database was already restored to. Set
+	// it to the same point you restored the database to.
+	//
+	// Choose that point at least one backup interval before the cluster
+	// stopped writing, and inside the window that Zeebe keeps its
+	// primary-storage backups for. Those are spec.backup.primaryStorage
+	// schedule and retention.window of the CamundaCluster, which default to
+	// one hour and seven days. A point that no backup covers fails the
+	// restore after it erased the broker volumes.
+	//
+	// It must also lie within the retention period that the database server
+	// declares, and it must not lie in the future. The operator checks both
+	// at reconcile time, because a CEL rule has no clock.
 	// +required
 	Timestamp metav1.Time `json:"timestamp"`
 }
@@ -163,9 +180,18 @@ type PointInTimeRestoreStatus struct {
 // to a point in time. The operator never restores the database server. It
 // reads the exporter position of every partition from the restored database,
 // deletes and creates the broker data volumes again, and runs the Camunda
-// restore application with the requested point once per broker. The operator
-// only reads spec.suspend of the cluster. Whoever owns the cluster suspends
-// it before the restore and unsuspends it after.
+// restore application with the requested point once per broker.
+//
+// The restore prepares the cluster itself. It suspends the cluster and waits
+// for its brokers to stop. It withdraws the suspension when it completes, and
+// only when it applied that suspension itself. A failed restore leaves the
+// cluster suspended, and so does a restore that somebody deletes while it
+// runs: broker volumes that are empty or half written are worse under running
+// brokers than under none.
+//
+// It writes no version. This kind restores the primary storage of the cluster
+// from the continuous backups of that same cluster, so no backup names a
+// version that the cluster is not already running.
 type PointInTimeRestore struct {
 	metav1.TypeMeta `json:",inline"`
 

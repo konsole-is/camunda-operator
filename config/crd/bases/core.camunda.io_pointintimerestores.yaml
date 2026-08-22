@@ -38,9 +38,18 @@ spec:
           to a point in time. The operator never restores the database server. It
           reads the exporter position of every partition from the restored database,
           deletes and creates the broker data volumes again, and runs the Camunda
-          restore application with the requested point once per broker. The operator
-          only reads spec.suspend of the cluster. Whoever owns the cluster suspends
-          it before the restore and unsuspends it after.
+          restore application with the requested point once per broker.
+
+          The restore prepares the cluster itself. It suspends the cluster and waits
+          for its brokers to stop. It withdraws the suspension when it completes, and
+          only when it applied that suspension itself. A failed restore leaves the
+          cluster suspended, and so does a restore that somebody deletes while it
+          runs: broker volumes that are empty or half written are worse under running
+          brokers than under none.
+
+          It writes no version. This kind restores the primary storage of the cluster
+          from the continuous backups of that same cluster, so no backup names a
+          version that the cluster is not already running.
         properties:
           apiVersion:
             description: |-
@@ -79,10 +88,19 @@ spec:
                 type: object
               timestamp:
                 description: |-
-                  Timestamp is the point the database was already restored to. It must
-                  lie within the retention period the database server declares. It must
-                  not lie in the future either, and the operator checks that at reconcile
-                  time, because a CEL rule has no clock.
+                  Timestamp is the point that the database was already restored to. Set
+                  it to the same point you restored the database to.
+
+                  Choose that point at least one backup interval before the cluster
+                  stopped writing, and inside the window that Zeebe keeps its
+                  primary-storage backups for. Those are spec.backup.primaryStorage
+                  schedule and retention.window of the CamundaCluster, which default to
+                  one hour and seven days. A point that no backup covers fails the
+                  restore after it erased the broker volumes.
+
+                  It must also lie within the retention period that the database server
+                  declares, and it must not lie in the future. The operator checks both
+                  at reconcile time, because a CEL rule has no clock.
                 format: date-time
                 type: string
             required:
@@ -103,6 +121,13 @@ spec:
                   are recreated and how many Jobs run.
                 format: int32
                 type: integer
+              clusterSuspended:
+                description: |-
+                  ClusterSuspended records that this restore suspended its target
+                  cluster. The restore withdraws that suspension when it reaches
+                  Completed. A cluster that its owner suspended carries no such record,
+                  so it stays suspended, and so does the cluster of a failed restore.
+                type: boolean
               completionTime:
                 description: CompletionTime is when the restore reached a terminal
                   phase.
