@@ -139,6 +139,10 @@ func usesTrustStore(in Input, p Process) bool {
 // carries it, the init container that builds it from the mounted CA, and the
 // read-only mount of it on the process container.
 //
+// Every step replaces what it finds, because the framework replays a mutation
+// onto the object of the previous pass. EnsureVolume and EnsureInitContainer
+// replace by name on their own. The mount needs ensureTrustStoreMount.
+//
 // The JVM options that point at the store come from render, so they travel
 // with the rest of the environment and the config hash rolls the pods when
 // the trust store appears or goes away.
@@ -158,7 +162,7 @@ func trustStoreMutation(in Input, p Process) workloadMutation {
 			m.EnsureInitContainer(trustStoreInitContainer(in, p))
 
 			m.EditContainers(selectors.ContainerNamed(containerName(p)), func(c *editors.ContainerEditor) error {
-				c.Raw().VolumeMounts = append(c.Raw().VolumeMounts, trustStoreMount(true))
+				ensureTrustStoreMount(c.Raw())
 				return nil
 			})
 
@@ -198,6 +202,29 @@ func trustStoreMount(readOnly bool) corev1.VolumeMount {
 		MountPath: TrustStoreMountPath,
 		ReadOnly:  readOnly,
 	}
+}
+
+// ensureTrustStoreMount puts the read-only trust store mount on the process
+// container. It replaces the mount of the trust store volume when the
+// container carries one already, and appends the mount when the container
+// carries none. The volume name is the identity, so a mount of that volume at
+// another path becomes the mount the operator owns.
+//
+// The framework replays a mutation onto the object of the previous pass, so a
+// plain append doubles the entry. Server-side apply keys volumeMounts by
+// mountPath, and a duplicate key fails the typed patch, so the whole apply
+// never lands and the workload stops converging. editors.ContainerEditor
+// carries no EnsureVolumeMount, so this rule lives here.
+func ensureTrustStoreMount(container *corev1.Container) {
+	mount := trustStoreMount(true)
+	for i, existing := range container.VolumeMounts {
+		if existing.Name == mount.Name {
+			container.VolumeMounts[i] = mount
+			return
+		}
+	}
+
+	container.VolumeMounts = append(container.VolumeMounts, mount)
 }
 
 // appendTrustStoreOptions appends the trust store options to the

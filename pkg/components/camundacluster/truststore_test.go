@@ -22,8 +22,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/primitives/statefulset"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -257,6 +259,108 @@ func TestTrustStoreOptionsAreAbsentOnConnectors(t *testing.T) {
 	r := render(in, process(t, in, ComponentConnectors))
 
 	assertNoEnv(t, r.env, "JAVA_TOOL_OPTIONS")
+}
+
+// The framework replays a mutation onto the object of the previous pass,
+// which is what a suspension does. A step that appends without a guard then
+// doubles its entry. Server-side apply keys volumeMounts by mountPath, so a
+// duplicate key fails the typed patch and the workload stops converging.
+//
+// The golden tests cannot see this. Each one renders once from a clean
+// baseline, so nothing is there to duplicate.
+func TestTrustStoreMutationIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureDefault(t)
+	p := Resolve(in.Effective)[0]
+	require.Equal(t, ComponentZeebe, p.Component)
+
+	resource, err := statefulset.NewBuilder(zeebeStatefulSet(in, p)).
+		WithMutation(statefulSetMutations(in, p)...).
+		Build()
+	require.NoError(t, err)
+
+	// Object returns the object of the resource, and Mutate writes into it.
+	// Three passes stand for the reconcile, the suspension, and the one after
+	// it.
+	for pass := 1; pass <= 3; pass++ {
+		object, err := resource.Object()
+		require.NoError(t, err)
+		require.NoError(t, resource.Mutate(object))
+
+		pod := object.(*appsv1.StatefulSet).Spec.Template.Spec
+		require.Len(t, pod.InitContainers, 1, "pass %d: init containers", pass)
+		assert.Equal(t, InitContainerTrustStore, pod.InitContainers[0].Name, "pass %d", pass)
+		assert.Equal(t, 1, countVolumes(pod, trustStoreVolumeName), "pass %d: volumes", pass)
+		assert.Equal(
+			t, 1, countMounts(pod.Containers[0], trustStoreVolumeName), "pass %d: process mounts", pass,
+		)
+		assert.Equal(
+			t, 1, countMounts(pod.InitContainers[0], trustStoreVolumeName), "pass %d: init mounts", pass,
+		)
+		assert.Contains(t, pod.Containers[0].VolumeMounts, trustStoreMount(true), "pass %d", pass)
+	}
+}
+
+// The volume name is the identity of the mount, so a mount of the trust store
+// volume at another path becomes the mount the operator owns. A container that
+// carries none gets one.
+func TestEnsureTrustStoreMountReplacesAStaleMount(t *testing.T) {
+	t.Parallel()
+
+	stale := corev1.Container{VolumeMounts: []corev1.VolumeMount{
+		{Name: caVolumeName, MountPath: CAMountPath, ReadOnly: true},
+		{Name: trustStoreVolumeName, MountPath: "/old/path"},
+	}}
+	ensureTrustStoreMount(&stale)
+	assert.Equal(
+		t,
+		[]corev1.VolumeMount{
+			{Name: caVolumeName, MountPath: CAMountPath, ReadOnly: true},
+			trustStoreMount(true),
+		},
+		stale.VolumeMounts,
+	)
+
+	var empty corev1.Container
+	ensureTrustStoreMount(&empty)
+	assert.Equal(t, []corev1.VolumeMount{trustStoreMount(true)}, empty.VolumeMounts)
+}
+
+// appendTrustStoreOptions is idempotent, because the options it writes name a
+// trust store and namesATrustStore then holds the second run back.
+func TestTrustStoreOptionsAreIdempotent(t *testing.T) {
+	t.Parallel()
+
+	env := []corev1.EnvVar{{Name: "JAVA_TOOL_OPTIONS", Value: javaToolOptions}}
+	appendTrustStoreOptions(env)
+	once := env[0].Value
+	appendTrustStoreOptions(env)
+
+	assert.Equal(t, javaToolOptions+" "+trustStoreOptions, once)
+	assert.Equal(t, once, env[0].Value)
+}
+
+// countVolumes returns how many volumes of pod carry name.
+func countVolumes(pod corev1.PodSpec, name string) int {
+	count := 0
+	for _, volume := range pod.Volumes {
+		if volume.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+// countMounts returns how many mounts of container carry the volume name.
+func countMounts(container corev1.Container, name string) int {
+	count := 0
+	for _, mount := range container.VolumeMounts {
+		if mount.Name == name {
+			count++
+		}
+	}
+	return count
 }
 
 // The script copies the cacerts file of the JDK, so the process keeps its
