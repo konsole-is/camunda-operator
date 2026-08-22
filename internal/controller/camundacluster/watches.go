@@ -284,9 +284,10 @@ func (s requestSet) requests() []reconcile.Request {
 // configs through the indexes, DatabaseServerConfigs for every cluster, and
 // Secrets (metadata only) through enqueueForSecret, which also follows the
 // Secret indexes of the platform configs, the bindings, and the
-// DatabaseConfigs. The cluster, SecondaryStorageConfig, and DatabaseConfig
-// watches fan out to every other cluster, filtered to spec changes; see
-// enqueueOthers for why. The pre-checks put the resource versions of the
+// DatabaseConfigs. The cluster watch fans out to every other cluster, and the
+// SecondaryStorageConfig and DatabaseConfig watches to every cluster, all
+// three filtered to spec changes. enqueueOthers says why. The pre-checks put
+// the resource versions of the
 // Secrets and the generations of the CRs they read into the config hash, so
 // any of these events rolls the pods whose rendered configuration changed.
 // It also sets EventRecorder to the recorder of the manager and builds the

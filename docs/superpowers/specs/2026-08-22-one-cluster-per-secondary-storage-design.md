@@ -182,8 +182,8 @@ of either side.
 - **A sibling under deletion.** It still counts until it is gone, as in the Optimize attachment.
   The cluster that yields takes over when the delete event arrives.
 - **A holder whose own contract chain breaks keeps its pods.** A failed pre-check returns before the
-  components are built, so a running holder whose contract or DatabaseConfig is deleted keeps
-  writing, while a parked cluster on another contract sees no holder and resumes. The same-contract
+  components are built. A running holder whose contract or DatabaseConfig is deleted therefore keeps
+  writing, and a parked cluster on another contract sees no holder and resumes. The same-contract
   case is safe, because the parked cluster fails the same resolve. The fix is a broader rule, a
   failed pre-check of a running cluster suspends it, and has its own issue.
 
