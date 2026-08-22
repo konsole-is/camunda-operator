@@ -35,11 +35,11 @@ func formatResourceName(base, suffix string) string { ... }
 
 **A godoc gives the contract, not the algorithm.** Preconditions, the meaning of the result, what the caller must not assume. When you start a sentence about how the function computes its answer, stop: the caller does not need it, and it goes stale the first time the body changes.
 
-**A godoc is sized by the caller's decision.** It holds what someone needs to call the function correctly and to use what it gives back: the preconditions, the meaning of the result, and the trap that will bite them. A fact that does not change what the caller writes is not part of the contract, however true it is and however hard it was to learn. That fact is design rationale, and it belongs in the pull request that made the decision, or in a short comment at the line it constrains, where the code that depends on it is in view.
+**A godoc is sized by the caller's decision.** It holds what someone needs to call the function correctly and to use what it gives back: the preconditions, the meaning of the result, and the trap that will bite them. A fact that does not change what the caller writes is not part of the contract, however true it is and however hard it was to learn.
 
-**When the godoc is longer than the function body, name the caller decision each paragraph serves.** Delete the paragraphs that serve none. Twenty lines of prose over a one-line body is the clearest case: nobody needed that much to call it.
+**Moving a fact out of a godoc is not deleting it.** Why a piece of code exists — the case it handles, what breaks without it — earns a short comment beside that code, where a reader meets it with the code in view, and it earns one even when a caller never needs to know. A constraint that bites at one call site goes at that call site for the same reason. The godoc keeps what a caller cannot see from outside at all; the pull request keeps the comparison, the options weighed and why this one won. The same fact in the godoc and again at the line it constrains is one copy too many, and the godoc copy is the one that rots, because it sits furthest from the code that would contradict it.
 
-**Write the fact where the surprise is.** A constraint that bites at one call site goes in a comment at that call site, with the code it governs in view. The godoc gets only what a caller cannot see from outside at all. The same fact in both places is one too many, and the copy in the godoc is the one that rots, because it sits furthest from the code that would contradict it.
+**When the godoc is longer than the function body, name the caller decision each paragraph serves.** Move the paragraphs that serve none to the code they explain, and delete the ones that explain nothing. Twenty lines of prose over a one-line body is the clearest case: nobody needed that much to call it.
 
 Rationale in a godoc costs more than the space it takes. It reads as contract, so the next reader treats it as a promise the code has to keep, and the next change argues with the paragraph instead of the code.
 
@@ -94,6 +94,7 @@ If removing the comment would not confuse a reader six months from now, delete i
 - A godoc grew a paragraph about how the body works.
 - The godoc is longer than the function body.
 - The same fact appears twice: once in the godoc, once at the line it constrains.
+- You deleted a hard-won fact instead of moving it beside the code it explains.
 - The comment exists because a review asked for the change, not because the next reader will need it.
 
 ## A stated behavior is a claim, not evidence
