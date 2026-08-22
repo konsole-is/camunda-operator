@@ -325,16 +325,16 @@ These are the effects that you notice while a backup runs.
 
 ## What an upgrade does to the backups you hold
 
-A backup records the Camunda version it was taken with, in `status.version`. Every restore compares that version against the version the target really runs, which is the tag of the broker image.
+A backup records the Camunda version it was taken with, in `status.version`. Every restore compares that version against the version the cluster runs.
 
 The two storage paths differ:
 
 - **Elasticsearch.** A `LogicalRestoreElasticsearch` needs the exact version. Elasticsearch carries that version in the name of every snapshot, so a cluster one patch release newer cannot read a snapshot of the older one.
 - **PostgreSQL.** A `LogicalRestoreRDBMS` accepts the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time.
 
-**The restore carries the cluster back to the version of the backup.** You do not lower `spec.version` by hand, and you do not suspend the cluster by hand. The restore suspends the cluster, waits for the brokers to stop, sets `spec.version` to the version of the backup, and erases the broker volumes before a broker of that version starts again. That order is what makes the change safe. A downgrade that you do by hand on a *running* cluster is still unsupported, and the brokers then report themselves unhealthy.
+**The restore carries the cluster back to the version of the backup.** You do not lower `spec.version` by hand, and you do not suspend the cluster by hand. Create the restore against the cluster as it is.
 
-Before this behaviour existed, a patch upgrade of an Elasticsearch-backed cluster made every backup taken before it unrestorable into that cluster. That is no longer true.
+CAUTION: A downgrade that you do by hand on a running cluster, outside a restore, is still unsupported. The brokers then report themselves unhealthy.
 
 Two things follow that are worth knowing:
 

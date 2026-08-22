@@ -84,10 +84,19 @@ type PointInTimeRestoreSpec struct {
 	// this restore. Its secondary storage must be a relational database.
 	// +required
 	ClusterRef ClusterRef `json:"clusterRef"`
-	// Timestamp is the point the database was already restored to. It must
-	// lie within the retention period the database server declares. It must
-	// not lie in the future either, and the operator checks that at reconcile
-	// time, because a CEL rule has no clock.
+	// Timestamp is the point that the database was already restored to. Set
+	// it to the same point you restored the database to.
+	//
+	// Choose that point at least one backup interval before the cluster
+	// stopped writing, and inside the window that Zeebe keeps its
+	// primary-storage backups for. Those are spec.backup.primaryStorage
+	// schedule and retention.window of the CamundaCluster, which default to
+	// one hour and seven days. A point that no backup covers fails the
+	// restore after it erased the broker volumes.
+	//
+	// It must also lie within the retention period that the database server
+	// declares, and it must not lie in the future. The operator checks both
+	// at reconcile time, because a CEL rule has no clock.
 	// +required
 	Timestamp metav1.Time `json:"timestamp"`
 }
