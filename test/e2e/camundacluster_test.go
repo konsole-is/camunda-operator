@@ -529,6 +529,9 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 			"delete", pitrResource, pitrCurrent, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
+			"delete", pitrResource, pitrUncovered, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
+		)
+		_, _ = utils.Kubectl(
 			"delete", lrrdbmsResource, rdbmsRestore, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl(
@@ -552,8 +555,11 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, func() {
 	itRestoresTheRelationalCluster(cluster)
 	// The point-in-time specs come last. They declare point-in-time recovery
 	// on the database server, which the other specs of this flow run without.
+	// The restore that fails comes last of all: it leaves the cluster without
+	// primary storage.
 	itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster)
 	itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster)
+	itFailsAPointInTimeRestoreAheadOfEveryBackup(cluster)
 })
 
 // itRunsTheOrchestrationCluster registers the specs that both flows share:
@@ -622,17 +628,30 @@ func itRunsTheOrchestrationCluster(cluster *v1.CamundaCluster) {
 		Expect(resp.Body).To(ContainSubstring(`"processDefinitionId":"` + processID + `"`))
 
 		By("starting an instance")
-		resp, err = camundaREST(
-			cluster, "start", http.MethodPost, pathProcessInstances, nil,
-			"-H", "Content-Type: application/json", "-d", `{"processDefinitionId":"`+processID+`"}`,
-		)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
-		Expect(resp.Body).To(ContainSubstring(`"processInstanceKey"`))
+		startInstance(cluster)
 
 		By("searching the instance in secondary storage")
 		expectInstanceSearchable(cluster)
 	})
+}
+
+// startInstance starts one instance of the e2e process through the gateway
+// and returns its process instance key.
+func startInstance(cluster *v1.CamundaCluster) string {
+	resp, err := camundaREST(
+		cluster, "start", http.MethodPost, pathProcessInstances, nil,
+		"-H", "Content-Type: application/json", "-d", `{"processDefinitionId":"`+processID+`"}`,
+	)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+
+	var started struct {
+		ProcessInstanceKey string `json:"processInstanceKey"`
+	}
+	Expect(json.Unmarshal([]byte(resp.Body), &started)).To(Succeed(), resp.Body)
+	Expect(started.ProcessInstanceKey).NotTo(BeEmpty(), resp.Body)
+
+	return started.ProcessInstanceKey
 }
 
 // expectInstanceSearchable waits until the process instance search returns
@@ -655,6 +674,30 @@ func expectInstanceSearchable(cluster *v1.CamundaCluster) {
 		g.Expect(json.Unmarshal([]byte(resp.Body), &result)).To(Succeed(), resp.Body)
 		g.Expect(result.Items).NotTo(BeEmpty(), resp.Body)
 		g.Expect(result.Items).To(HaveEach(HaveField("ProcessDefinitionID", processID)), resp.Body)
+	}, ccAPITimeout).Should(Succeed())
+}
+
+// expectInstanceExported waits until the process instance search returns the
+// instance with key. The search reads secondary storage, so it proves that the
+// exporter wrote this instance, and not only an earlier one of the same
+// process.
+func expectInstanceExported(cluster *v1.CamundaCluster, key string) {
+	var result struct {
+		Items []struct {
+			ProcessInstanceKey string `json:"processInstanceKey"`
+		} `json:"items"`
+	}
+
+	Eventually(func(g Gomega) {
+		resp, err := camundaREST(
+			cluster, "search-key", http.MethodPost, pathInstanceSearch, nil,
+			"-H", "Content-Type: application/json", "-d", `{"filter":{"processInstanceKey":"`+key+`"}}`,
+		)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+		g.Expect(json.Unmarshal([]byte(resp.Body), &result)).To(Succeed(), resp.Body)
+		g.Expect(result.Items).To(HaveLen(1), resp.Body)
+		g.Expect(result.Items[0].ProcessInstanceKey).To(Equal(key), resp.Body)
 	}, ccAPITimeout).Should(Succeed())
 }
 

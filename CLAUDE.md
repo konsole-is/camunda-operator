@@ -17,7 +17,8 @@ the detail. Do not work from memory when a skill covers the task.
 | Before you ... | Load this skill |
 | --- | --- |
 | Write, change, or review any Go code | `how-we-write-go` |
-| Write or edit prose: GoDoc, comments, `docs/`, `README.md`, CRD field descriptions, error and condition messages | `simple-english:simple-english` |
+| Write or edit the user docs: `docs/`, `README.md`, `dist/chart/README.md`, CRD field descriptions | `writing-operator-docs` |
+| Write or edit other prose: GoDoc, comments, error and condition messages | `simple-english:simple-english` |
 | Write or change Camunda application config (env vars, Spring properties) | `verifying-camunda-app-config` |
 | Design or review how a controller or component is structured | `ocf:structuring-operators` |
 | Create or change an ocf component: builder, lifecycle, conditions, status, `FlushStatus` | `ocf:building-components` |
@@ -30,7 +31,8 @@ the detail. Do not work from memory when a skill covers the task.
 
 The operator uses the operator component framework (ocf):
 https://github.com/sourcehawk/operator-component-framework. The `ocf:*` skills come from that
-repository through the plugin in `.claude/settings.json`.
+repository through the plugin in `.claude/settings.json`. The `feature-dev-workflow:*` and
+`simple-english` skills come from their plugins the same way. `writing-operator-docs` loads both.
 
 Use the `camunda-docs` MCP server for every question about Camunda behavior. Do not answer from memory.
 
@@ -58,8 +60,8 @@ change the doc in the same change.
 
 ## Architecture
 
-This operator is the bottom layer of a three-operator stack. It has no knowledge of
-`camunda-cloud-operator` or `camunda-saas-operator`.
+This operator is the bottom layer of the operator stack. It has no knowledge of
+`camunda-cloud-operator`.
 
 ```
 CloudCamundaCluster (camunda-cloud-operator)
