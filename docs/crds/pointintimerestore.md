@@ -136,19 +136,41 @@ The operator then runs the Camunda restore application once per broker, as a Job
 
 The restore application does the alignment itself. It reads the exporter position of each partition from the restored database with the same credentials the brokers use, and it restores the newest checkpoint at or before that position from the continuous primary-storage backups. The restored Zeebe state is therefore never behind the database.
 
-## The exporter position must lie inside a checkpoint
+## Choosing the point to restore to
 
-The restore application needs a primary-storage checkpoint whose log range covers the exporter position that the database records. It refuses when no checkpoint does.
+You choose one point in time. You restore the database to that point yourself, and you put the same point in `spec.timestamp`. The operator never restores the database.
 
-**Roll the database back far enough.** A database restored to "now" never qualifies. The brokers export past the newest checkpoint continuously, so the recorded position lies after the last log position of every checkpoint. The same is true for a backup that you take immediately before the restore: the brokers export a few more records between that backup and the suspension.
+The point has to sit inside the window that the primary-storage backups of Zeebe cover. Two bounds define that window, and both come from the `CamundaCluster`:
 
-The operator cannot catch this before the restore. It compares timestamps, and the restore application compares log positions. Nothing in the configuration of the cluster says which log range a checkpoint covers. That answer lives in the object store, which this controller never opens.
+| Bound | Field on the cluster | Default |
+| --- | --- | --- |
+| Zeebe took a backup after the point | `spec.backup.primaryStorage.schedule` | `PT1H` |
+| Zeebe still keeps that backup | `spec.backup.primaryStorage.retention.window` | `P7D` |
 
-**The cost, stated plainly.** The refusal arrives after the broker volumes are erased. Those volumes were replaced from the backup in any case. The backup itself is untouched. The remedy is to roll the database back further and create a new restore. The outcome is "restore again", not lost data.
+**Choose a point at least one backup interval before the cluster stopped writing, and inside the retention window.** Read both values off your own cluster before you choose. With the defaults, a point between one hour and seven days before the brokers stopped is safe.
 
-The operator reads the refusal for you. It reads the log of the failed restore Job, and the restore reaches `Failed` with reason `ExporterPositionNotCovered`. `status.failureMessage` names the cause, quotes what the application reported, and names the remedy. You do not open a pod log.
+"Now" is always outside the window, and so is the moment just before you suspended the cluster. The brokers write until they stop, and the newest backup is always behind them.
 
-A restore that fails for an unrelated reason keeps that reason and reports `Failed`. A log that the operator cannot read does the same.
+To read the real window rather than infer it, ask the cluster while it still runs:
+
+```bash
+kubectl exec -n my-cluster-ns my-cluster-zeebe-0 -- \
+  curl -s localhost:9600/actuator/backupRuntime/state
+```
+
+### What goes in spec.timestamp
+
+`spec.timestamp` is the point you restored the database to. The operator holds the restore in `Pending` with reason `DatabaseNotRestored` while the database still holds state after that point. It allows one minute of slack for the two clocks.
+
+The operator passes the value to the restore application as `--to`. Zeebe then aligns the brokers to the marker checkpoint nearest that point. It writes one every `spec.backup.primaryStorage.checkpointInterval`, which defaults to `PT15M`, so the brokers come back near the point rather than exactly on it. The database holds the exact point, and Zeebe exports the difference again after the restore.
+
+### If the point is outside the window
+
+The operator cannot catch this before it erases the broker volumes. It compares timestamps, and the restore application compares log positions. Those positions live in the backup store, which this controller never opens.
+
+The cost is bounded. The restore replaces those volumes from the backup in any case, and the backup itself stays whole. The outcome is "restore again" rather than lost data. Choose an earlier point, restore the database to it, and create a new restore.
+
+You do not read a pod log to find out. The operator reads the log of the failed restore Job for you, and the restore reaches `Failed` with reason `ExporterPositionNotCovered`. `status.failureMessage` names the cause and the remedy. A restore that fails for another reason keeps that reason.
 
 ## What the cluster must provide
 
@@ -193,7 +215,7 @@ A cluster that the restore suspended stays suspended. That is deliberate. Unsusp
 | `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, `spec.timestamp` lies in the future, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, restore to a point within retention, or run the brokers in UTC. |
 | `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
-| `Ready` | `ExporterPositionNotCovered` | No primary-storage checkpoint covers the exporter position of the database, so the restore application restored no partition. The broker volumes are already erased. | Roll the database back further and create a new restore. |
+| `Ready` | `ExporterPositionNotCovered` | The point you chose lies outside the window that the primary-storage backups cover. The broker volumes are already erased. | Choose an earlier point, restore the database to it, and create a new restore. See "Choosing the point to restore to". |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
 | `Ready` | `ConnectionFailed` | The database rejects the operator. | Correct the endpoint or the credentials. |
 | `Ready` | `Failed` | A phase failed. | Read `status.failureMessage`. Correct the cause and create a new restore. |
@@ -240,7 +262,7 @@ spec:
 - `clusterRef` names a cluster in the namespace of the restore. It never crosses a namespace. The operator reads the Secrets of the cluster and runs Jobs in that namespace, so the reference stays inside the RBAC boundary of the restore.
 - The storage chain, the dedicated-server rule, and the state of the database depend on live cluster state. The operator checks them at reconcile time.
 - Whether the database really holds `spec.timestamp` is not provable by the operator. See "Limits of this check" above.
-- Whether a primary-storage checkpoint covers the exporter position of the database is not provable by the operator either. See "The exporter position must lie inside a checkpoint" above.
+- Whether the primary-storage backups cover the point is not provable by the operator either. See [Choosing the point to restore to](#choosing-the-point-to-restore-to).
 
 ### Roll back to just before a bad deployment
 
