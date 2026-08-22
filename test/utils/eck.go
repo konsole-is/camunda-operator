@@ -27,6 +27,7 @@ const (
 	// defaultECKVersion is the ECK operator release that the e2e suite
 	// installs when ECK_VERSION is unset. The Makefile pins the same value
 	// and passes it through the environment.
+	// renovate: datasource=github-releases depName=elastic/cloud-on-k8s extractVersion=^v(?<version>.*)$
 	defaultECKVersion  = "3.5.0"
 	eckCRDsURLTmpl     = "https://download.elastic.co/downloads/eck/%s/crds.yaml"
 	eckOperatorURLTmpl = "https://download.elastic.co/downloads/eck/%s/operator.yaml"
