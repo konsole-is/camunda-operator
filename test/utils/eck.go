@@ -18,6 +18,7 @@ package utils
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -36,7 +37,10 @@ const (
 // ECKVersion returns the ECK operator release that the suite installs: the
 // value of ECK_VERSION, or the pinned default.
 func ECKVersion() string {
-	return envOr("ECK_VERSION", defaultECKVersion)
+	if v, ok := os.LookupEnv("ECK_VERSION"); ok && v != "" {
+		return v
+	}
+	return defaultECKVersion
 }
 
 // IsECKInstalled reports whether the cluster serves the ECK Elasticsearch

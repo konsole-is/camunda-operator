@@ -54,8 +54,9 @@ var (
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
 // To skip ECK installation, set: ECK_INSTALL_SKIP=true
 // To install a different ECK release, set: ECK_VERSION=<version>
-// To test another Camunda, connectors, Optimize, or Elasticsearch release,
-// set the variable that test/utils/versions.go reads for it.
+// To run against another Camunda minor: make test-e2e E2E_CAMUNDA_MINOR=<minor>
+// That picks the file of test/e2e/versions/ that the suite reads its image
+// versions from.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting camunda-operator e2e test suite\n")
@@ -66,6 +67,15 @@ func TestE2E(t *testing.T) {
 // before the manager starts, because the ElasticsearchCluster controller
 // watches the ECK Elasticsearch kind.
 var _ = BeforeSuite(func() {
+	By("checking the image versions of the run")
+	for _, name := range utils.VersionEnv {
+		Expect(os.Getenv(name)).NotTo(
+			BeEmpty(),
+			"%s is not set. Run the suite through make test-e2e, which exports it from test/e2e/versions/<minor>.env",
+			name,
+		)
+	}
+
 	By("building the manager image")
 	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", managerImage))
 	_, err := utils.Run(cmd)

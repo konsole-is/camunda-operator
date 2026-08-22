@@ -16,57 +16,21 @@ limitations under the License.
 
 package utils
 
-import "os"
-
-// The image versions that the e2e suite runs against. Each default is the
-// newest patch of the minor the operator supports. The marker comment above
-// a pin is for Renovate: renovate.json5 reads it and opens a pull request when
-// a newer patch lands, and holds the bound that keeps a pin on its minor.
-//
-// An environment variable overrides each pin, so a workflow can run the suite
-// against another release without a code change.
+// The environment variables that name the image versions the suite runs
+// against. make test-e2e exports them from test/e2e/versions/<minor>.env,
+// one file per supported Camunda minor, and the e2e workflow runs one job
+// per file. The suite fails at start when one of them is unset.
 const (
-	// renovate: datasource=docker depName=camunda/camunda
-	defaultCamundaVersion = "8.9.17"
-	// renovate: datasource=docker depName=camunda/connectors-bundle
-	defaultConnectorsVersion = "8.9.8"
-	// renovate: datasource=docker depName=camunda/optimize
-	defaultOptimizeVersion = "8.9.17"
-	// renovate: datasource=docker depName=docker.elastic.co/elasticsearch/elasticsearch
-	defaultElasticsearchVersion = "9.2.8"
+	EnvCamundaVersion       = "CAMUNDA_VERSION"
+	EnvConnectorsVersion    = "CAMUNDA_CONNECTORS_VERSION"
+	EnvOptimizeVersion      = "CAMUNDA_OPTIMIZE_VERSION"
+	EnvElasticsearchVersion = "ELASTICSEARCH_VERSION"
 )
 
-// CamundaVersion returns the camunda/camunda release under test:
-// CAMUNDA_VERSION, or the pinned default.
-func CamundaVersion() string {
-	return envOr("CAMUNDA_VERSION", defaultCamundaVersion)
-}
-
-// ConnectorsVersion returns the camunda/connectors-bundle release under test:
-// CAMUNDA_CONNECTORS_VERSION, or the pinned default. The bundle has its own
-// patch line. Only its minor has to match CamundaVersion.
-func ConnectorsVersion() string {
-	return envOr("CAMUNDA_CONNECTORS_VERSION", defaultConnectorsVersion)
-}
-
-// OptimizeVersion returns the camunda/optimize release under test:
-// CAMUNDA_OPTIMIZE_VERSION, or the pinned default. Optimize has its own patch
-// line. Only its minor has to match CamundaVersion.
-func OptimizeVersion() string {
-	return envOr("CAMUNDA_OPTIMIZE_VERSION", defaultOptimizeVersion)
-}
-
-// ElasticsearchVersion returns the Elasticsearch release that ECK runs for
-// the suite: ELASTICSEARCH_VERSION, or the pinned default.
-func ElasticsearchVersion() string {
-	return envOr("ELASTICSEARCH_VERSION", defaultElasticsearchVersion)
-}
-
-// envOr returns the value of the environment variable name, or def when the
-// variable is unset or empty.
-func envOr(name, def string) string {
-	if v, ok := os.LookupEnv(name); ok && v != "" {
-		return v
-	}
-	return def
+// VersionEnv is every variable of the set, for the check at suite start.
+var VersionEnv = []string{
+	EnvCamundaVersion,
+	EnvConnectorsVersion,
+	EnvOptimizeVersion,
+	EnvElasticsearchVersion,
 }

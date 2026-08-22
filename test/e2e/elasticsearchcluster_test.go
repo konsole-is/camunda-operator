@@ -21,6 +21,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -68,7 +69,7 @@ var _ = Describe("ElasticsearchCluster", Ordered, func() {
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: esNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:     utils.ElasticsearchVersion(),
+				Version:     os.Getenv(utils.EnvElasticsearchVersion),
 				Replicas:    new(int32(1)),
 				StorageSize: new(resource.MustParse(esStorageSize)),
 				Resources: &corev1.ResourceRequirements{

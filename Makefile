@@ -110,10 +110,11 @@ KIND_CLUSTER ?= camunda-operator-test-e2e
 # renovate: datasource=github-releases depName=elastic/cloud-on-k8s extractVersion=^v(?<version>.*)$
 ECK_VERSION ?= 3.5.0
 
-# The Camunda, connectors, Optimize, and Elasticsearch releases of the suite
-# are pinned in test/utils/versions.go. Export CAMUNDA_VERSION,
-# CAMUNDA_CONNECTORS_VERSION, CAMUNDA_OPTIMIZE_VERSION, or
-# ELASTICSEARCH_VERSION to run the suite against another release.
+# E2E_CAMUNDA_MINOR selects the Camunda minor the suite runs against. Each
+# supported minor has a file test/e2e/versions/<minor>.env with the image
+# versions of that minor. The recipe exports the file to the suite, and the
+# e2e workflow runs one job per file.
+E2E_CAMUNDA_MINOR ?= 8.9
 
 # E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the
 # Elasticsearch image and bootstraps a node, which takes longer than the
@@ -146,6 +147,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+	set -a && . ./test/e2e/versions/$(E2E_CAMUNDA_MINOR).env && set +a && \
 	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) ECK_VERSION=$(ECK_VERSION) \
 		go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT)
 	$(MAKE) cleanup-test-e2e

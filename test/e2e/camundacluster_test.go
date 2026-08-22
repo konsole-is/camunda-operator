@@ -109,7 +109,7 @@ func newCluster(namespace, platform, storageRef, backupRef string, connectors bo
 		ObjectMeta: metav1.ObjectMeta{Name: ccName, Namespace: namespace},
 		Spec: v1.CamundaClusterSpec{
 			PlatformConfigRef: platform,
-			Version:           utils.CamundaVersion(),
+			Version:           os.Getenv(utils.EnvCamundaVersion),
 			StorageRef:        storageRef,
 			BackupStorageRef:  backupRef,
 			Zeebe: &v1.ZeebeSpec{
@@ -129,7 +129,7 @@ func newCluster(namespace, platform, storageRef, backupRef string, connectors bo
 		// not from starving the pod that has to boot.
 		cluster.Spec.Connectors = &v1.ConnectorsSpec{
 			Enabled:      new(true),
-			Version:      utils.ConnectorsVersion(),
+			Version:      os.Getenv(utils.EnvConnectorsVersion),
 			WorkloadSpec: v1.WorkloadSpec{Resources: requests("250m", "512Mi")},
 		}
 	}
@@ -164,7 +164,7 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: ccNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:                utils.ElasticsearchVersion(),
+				Version:                os.Getenv(utils.EnvElasticsearchVersion),
 				Replicas:               new(int32(1)),
 				StorageSize:            new(resource.MustParse(esStorageSize)),
 				Resources:              requests("500m", "1Gi"),
