@@ -67,6 +67,16 @@ const ReasonInvalidCredentials = "InvalidCredentials"
 // change of the password recovers it.
 const ReasonRejected = "Rejected"
 
+// ReasonStorageAlreadyAttached on Ready means that another CamundaCluster,
+// created earlier, already uses the secondary storage backend that
+// spec.storageRef resolves to: the same Elasticsearch endpoint, or the same
+// database on the same server. One CamundaCluster uses one backend, because
+// the index names and the tables are fixed, so two clusters on one backend
+// write each other's data. The operator keeps this cluster suspended, with
+// its volumes, until that cluster releases the backend, and then resumes it
+// on its own. The message names the holder and the backend.
+const ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
+
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
 type ComponentMode string
@@ -437,7 +447,10 @@ type CamundaClusterSpec struct {
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// StorageRef names the SecondaryStorageConfig, in the namespace of this
 	// cluster, that describes the secondary storage backend. Required on a
-	// CamundaCluster, forbidden in a preset.
+	// CamundaCluster, forbidden in a preset. One CamundaCluster uses one
+	// backend: a cluster whose backend an older cluster already uses is
+	// suspended with Ready reason StorageAlreadyAttached until that cluster
+	// releases it.
 	// +optional
 	StorageRef string `json:"storageRef,omitempty"`
 	// BackupStorageRef names a cluster-scoped ObjectStorageConfig for
