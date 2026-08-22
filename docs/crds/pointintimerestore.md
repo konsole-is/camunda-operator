@@ -55,7 +55,7 @@ Each write is a server-side apply of one field, under a field manager of its own
 
 These names are published. A GitOps tool reads them, and so does a layer above this operator, for example a `CloudCamundaCluster` of `camunda-cloud-operator`. The names tell a write of a restore from a write of a user.
 
-This kind writes no version. It restores the primary storage of the cluster from the continuous backups of that same cluster. No backup therefore names a version that the cluster is not already running.
+This kind writes no version. It restores the primary storage of the cluster from the continuous backups of that same cluster. No backup therefore names a version that the cluster is not already running. It needs no sanction for a downgrade, and it sets no `camunda.io/allow-version-downgrade` annotation. [Version](camundacluster.md#version) states the rule that the annotation sanctions.
 
 ### When the restore unsuspends the cluster
 

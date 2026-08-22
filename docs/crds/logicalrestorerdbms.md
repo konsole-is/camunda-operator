@@ -54,9 +54,11 @@ Each write is a server-side apply of one field, under a field manager of its own
 | Field | Field manager | What happens at the end |
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
-| `spec.version` | `camunda-operator/restore-version` | The restore keeps it. |
+| `spec.version` and the annotation `camunda.io/allow-version-downgrade` | `camunda-operator/restore-version` | The restore keeps `spec.version`. The operator removes the annotation once the brokers carry the version. |
 
 These names are published. A GitOps tool reads them, and so does a layer above this operator, for example a `CloudCamundaCluster` of `camunda-cloud-operator`. The names tell a write of a restore from a write of a user.
+
+The annotation sanctions the move. A [CamundaCluster](camundacluster.md#version) refuses a version below the one its brokers run, unless the annotation names it. The restore writes the version and the annotation together.
 
 The restore keeps `spec.version` on purpose. The cluster runs the version of the backup from then on, which is the point of writing it.
 
@@ -72,11 +74,18 @@ kubectl patch camundacluster my-cluster -n my-cluster-ns \
   --type=json -p '[{"op":"remove","path":"/spec/version"}]'
 ```
 
+If the version of the preset is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the preset first:
+
+```bash
+kubectl annotate camundacluster my-cluster -n my-cluster-ns \
+  camunda.io/allow-version-downgrade=8.9.0
+```
+
 ### Why the downgrade is safe here
 
 Camunda does not support a downgrade of a running cluster. A restore is not that. Nothing runs while the version changes, and the broker volumes are erased before any broker of the older version starts.
 
-CAUTION: A downgrade that you do by hand on a running cluster, outside a restore, is still unsupported. The operator accepts the change to `spec.version`, and the brokers then report themselves unhealthy.
+The operator refuses a downgrade that you do by hand on a running cluster, outside a restore. The cluster reports `VersionDowngradeRefused`. The [CamundaCluster page](camundacluster.md#downgrade-on-purpose) explains how to downgrade on purpose, and what it costs.
 
 ### When the restore unsuspends the target
 
@@ -94,6 +103,7 @@ A tool that also declares one of these fields fights the operator for it. Argo C
 
 - Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore, or mark both fields as an ignored difference.
 - Put `spec.version` back after the restore, with the version that you want the cluster to run.
+- A tool that prunes annotations it does not declare removes the sanction, and the cluster then refuses the version write. Exclude `camunda.io/allow-version-downgrade` from pruning for the time of the restore.
 
 Suspension is a standing condition, not a gate that admission passes once. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase and fails it after ten minutes, with reason `ClusterNotSuspended`. Every phase after admission erases something of the target.
 

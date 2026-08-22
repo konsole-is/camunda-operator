@@ -54,6 +54,58 @@ Under basic authentication the operator creates the admin user `admin` and store
 
 The operator generates the admin password once and keeps it stable. To rotate it, set `spec.auth.basic.passwordRotation` to a new value. The operator generates a new password, sets it on the `admin` user through the user API of the running cluster, publishes it in the Secret, and restarts the connectors Deployment. `status.adminPassword.rotation` records the applied value. The [authentication guide](../guides/authentication.md#rotate-the-password) has the details and the failure modes.
 
+## Version
+
+The effective version is `spec.version`, or the version of the preset when the field is absent. It is the version the operator deploys, and a new version rolls every workload.
+
+The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster: a broker that starts over data of a newer version marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records a Warning event of the same reason, and applies nothing. The brokers keep the version they have.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: VersionDowngradeRefused
+      message: 'the effective version 8.9.0 is below the running version 8.9.5. Camunda
+        does not support a downgrade of a running cluster: a broker that starts over
+        data of a newer version marks itself unhealthy. Set the version to 8.9.5 or
+        later, restore a backup taken with 8.9.0, or set the annotation camunda.io/allow-version-downgrade="8.9.0"
+        on the cluster to downgrade on purpose'
+```
+
+The rule reads the effective version. Three edits therefore meet it the same way:
+
+- A lower `spec.version`.
+- A removed `spec.version`, when the preset carries a lower version.
+- A preset whose version is lowered.
+
+The running version is the version the broker pods run, and the message names it. A new cluster has no running version, so this rule does not apply to it.
+
+A restore sanctions its own move to the version of its backup. The [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#why-the-downgrade-is-safe-here) and [LogicalRestoreRDBMS](logicalrestorerdbms.md#why-the-downgrade-is-safe-here) pages explain why that move is safe.
+
+### Downgrade on purpose
+
+CAUTION: Do not downgrade a cluster over data that a newer version wrote. Every broker then reports itself unhealthy. To recover, set the version to the running one or later. You can also restore a backup taken with the lower version.
+
+To downgrade on purpose, set the annotation `camunda.io/allow-version-downgrade` to the target version. Set `spec.version` to the same value in the same edit.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+  annotations:
+    camunda.io/allow-version-downgrade: "8.9.0"
+spec:
+  version: "8.9.0"
+  # ... the rest of your cluster
+```
+
+The annotation sanctions a move to that version and to no other. The operator removes the annotation once the brokers carry the version. An annotation that names a version the cluster never moves to stays until you remove it.
+
+After a restore, you can give the preset control of the version again. Set the annotation to the version of the preset, and remove `spec.version` in the same edit.
+
 ## Storage
 
 The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.storageClassName` is fixed at creation. When `spec.zeebe.storageSize` grows, the operator expands every bound broker volume in place, without a restart. The storage class must allow volume expansion. The operator never shrinks a volume: a smaller size from a preset is ignored with the Warning event `StorageShrinkIgnored`.
@@ -136,6 +188,7 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
+| `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |
 
 `status.management` publishes the address of the management API, so a backup kind calls it without knowing which process hosts it. It is empty while the cluster is suspended.
 
@@ -419,6 +472,8 @@ The operator checks these rules on the merged spec after the preset is applied, 
 - The effective `replicationFactor` does not exceed the effective `replicas`, and the effective `partitions` is at least 1.
 - `connectors.version` is present when connectors are enabled.
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
+
+A separate rule refuses an effective version below the one the brokers run, with reason `VersionDowngradeRefused`. [Version](#version) states it.
 
 ### A production-shaped example
 
