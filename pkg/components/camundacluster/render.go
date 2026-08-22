@@ -77,10 +77,10 @@ type rendered struct {
 // then the extraEnv of the process's own component). Connectors get only the client
 // layer, the license, and the user overrides.
 //
-// The trust store options of the JVM are the one value that no layer can
-// take away. They are appended to JAVA_TOOL_OPTIONS after the layering, so
-// the tuning of a user stands and the process still reads the store that its
-// init container builds. See appendTrustStoreOptions.
+// The trust store options of the JVM come after the layering. They are
+// appended to JAVA_TOOL_OPTIONS, so the tuning of a user stands and the
+// process still reads the store that its init container builds. A value that
+// already names a trust store keeps it. See appendTrustStoreOptions.
 func render(in Input, p Process) rendered {
 	if p.Component == ComponentConnectors {
 		return rendered{
@@ -452,24 +452,6 @@ func userEnvFrom(in Input, p Process) []corev1.EnvFromSource {
 		envFrom = append(envFrom, in.Effective.Workload(component).ExtraEnvFrom...)
 	}
 	return envFrom
-}
-
-// appendTrustStoreOptions appends the trust store options to the
-// JAVA_TOOL_OPTIONS entry of env, in place.
-//
-// It runs after the user layer, because JAVA_TOOL_OPTIONS is the one variable
-// the JVM reads for its options. A user who sets it replaces the value of the
-// operator. The pods then carry the trust store and never read it, and the
-// export fails again without a sign. That is the failure this removes. An
-// entry that reads its value from a reference is left alone: a variable
-// cannot hold a value and a reference at the same time.
-func appendTrustStoreOptions(env []corev1.EnvVar) {
-	for i, e := range env {
-		if e.Name != camundaconfig.EnvJavaToolOptions || e.ValueFrom != nil {
-			continue
-		}
-		env[i].Value = strings.TrimSpace(e.Value + " " + trustStoreOptions)
-	}
 }
 
 // dedupeEnv keeps the last occurrence of every name and preserves the order

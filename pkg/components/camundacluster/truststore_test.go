@@ -124,6 +124,50 @@ func TestTrustStoreOptionsSurviveAUserOverride(t *testing.T) {
 	assertEnv(t, r.env, "JAVA_TOOL_OPTIONS", "-Xmx6g "+trustStoreOptions)
 }
 
+// A user who names a trust store of their own keeps it, and the operator adds
+// nothing. That user states an intent, not an accident. It is also the only
+// way to trust a second private authority, for example an OIDC provider,
+// because the spec carries no CA bundle field. The Elasticsearch CA must then
+// be in that store.
+func TestTrustStoreOptionsYieldToAUserTrustStore(t *testing.T) {
+	t.Parallel()
+
+	own := "-Djavax.net.ssl.trustStore=/my/own.jks -Djavax.net.ssl.trustStorePassword=hunter2"
+	in := newInput(t, func(in *Input) {
+		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		}
+		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{Name: "JAVA_TOOL_OPTIONS", Value: own}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+
+	r := render(in, process(t, in, ComponentZeebe))
+	assertEnv(t, r.env, "JAVA_TOOL_OPTIONS", own)
+
+	// The store is still built. The user owns which store the JVM reads, not
+	// whether the CA is on disk.
+	assert.True(t, usesTrustStore(in, process(t, in, ComponentZeebe)))
+}
+
+// A password without a file is not a trust store, so a user who sets the
+// password alone still gets the options of the operator.
+func TestTrustStoreOptionsIgnoreAPasswordOnItsOwn(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		}
+		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{
+			{Name: "JAVA_TOOL_OPTIONS", Value: "-Djavax.net.ssl.trustStorePassword=hunter2"},
+		}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+
+	r := render(in, process(t, in, ComponentZeebe))
+	assertEnv(t, r.env, "JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStorePassword=hunter2 "+trustStoreOptions)
+}
+
 // Connectors never read the secondary storage, so their environment carries
 // no trust store options.
 func TestTrustStoreOptionsAreAbsentOnConnectors(t *testing.T) {

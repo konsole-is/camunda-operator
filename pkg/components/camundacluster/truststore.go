@@ -17,6 +17,8 @@ limitations under the License.
 package camundacluster
 
 import (
+	"strings"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/mutation/editors"
 	"github.com/sourcehawk/operator-component-framework/pkg/mutation/selectors"
@@ -24,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 )
 
 // The names and paths of the JVM trust store that the processes run with when
@@ -59,10 +62,18 @@ const (
 	envTrustStorePassword = "TRUST_STORE_PASSWORD"
 )
 
+// The JVM properties that name the trust store and its password. The equals
+// sign is part of each name, so trustStoreFlag never matches
+// trustStorePasswordFlag.
+const (
+	trustStoreFlag         = "-Djavax.net.ssl.trustStore="
+	trustStorePasswordFlag = "-Djavax.net.ssl.trustStorePassword="
+)
+
 // trustStoreOptions are the JVM options that point the process at the trust
-// store. render appends them to JAVA_TOOL_OPTIONS.
-const trustStoreOptions = "-Djavax.net.ssl.trustStore=" + TrustStorePath +
-	" -Djavax.net.ssl.trustStorePassword=" + TrustStorePassword
+// store. appendTrustStoreOptions puts them on JAVA_TOOL_OPTIONS.
+const trustStoreOptions = trustStoreFlag + TrustStorePath +
+	" " + trustStorePasswordFlag + TrustStorePassword
 
 // trustStoreScript copies the cacerts file of the JDK and imports every
 // certificate of the mounted PEM bundle into the copy.
@@ -186,4 +197,44 @@ func trustStoreMount(readOnly bool) corev1.VolumeMount {
 		MountPath: TrustStoreMountPath,
 		ReadOnly:  readOnly,
 	}
+}
+
+// appendTrustStoreOptions appends the trust store options to the
+// JAVA_TOOL_OPTIONS entry of env, in place.
+//
+// It runs after the user layer, because JAVA_TOOL_OPTIONS is the one variable
+// the JVM reads for its options. A user who tunes the heap replaces the value
+// of the operator. The pods then carry the trust store and never read it, and
+// the export fails again without a sign. That is the failure this removes.
+//
+// A value that already names a trust store file is left alone. That user
+// states an intent, not an accident, and the operator honors it. The user
+// then owns the trust of the JVM, and the Elasticsearch CA must be in that
+// store. It is also the only way to trust a second private authority, for
+// example an OIDC provider or a backup store, because the spec carries no CA
+// bundle field.
+//
+// An entry that reads its value from a reference is left alone too. A
+// variable cannot hold a value and a reference at the same time.
+func appendTrustStoreOptions(env []corev1.EnvVar) {
+	for i, e := range env {
+		if e.Name != camundaconfig.EnvJavaToolOptions || e.ValueFrom != nil || namesATrustStore(e.Value) {
+			continue
+		}
+		env[i].Value = strings.TrimSpace(e.Value + " " + trustStoreOptions)
+	}
+}
+
+// namesATrustStore reports whether a JAVA_TOOL_OPTIONS value already names a
+// trust store file. The match is the whole property name with its equals
+// sign, so a value that carries the password alone does not count: a password
+// without a file is not a trust store.
+func namesATrustStore(options string) bool {
+	for option := range strings.FieldsSeq(options) {
+		if strings.HasPrefix(option, trustStoreFlag) {
+			return true
+		}
+	}
+
+	return false
 }
