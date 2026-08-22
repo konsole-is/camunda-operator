@@ -39,10 +39,10 @@ A kind the operator does not act on yet gets no new page. `docs/crds/index.md` l
 Write one section per behavior a user relies on, named after the topic the reader searches for: Endpoints, Authentication, Storage, Deletion, Suspend, Rotation. Never "How it works". Inside a section, write one paragraph per reader question, in this order:
 
 1. What the reader sets, with the CR fragment next to it.
-2. What the cluster then does, named by what the reader can observe: a Service, a Secret, a label, an event, a condition, a phase, a field in `status`.
+2. What the reader gets, named by the one handle they use for it: the Service they connect to, the Secret they read the password from, the condition they wait on. Most outcomes need one name or none. "The cluster trusts the authority" is complete without the init container, the volume, and the mount that make it so.
 3. What happens without the setting, on failure, and on deletion, and the step the reader takes.
 
-Keep a name on the page when the reader types it, selects on it, or reads it back in `kubectl get`, an event, or a condition message. A path or a password stays only where the reader has to type it.
+Do not inventory what the operator created. A resource is named only when the reader connects to it, reads it, selects on it, or waits on it. Keep a name on the page when the reader types it, selects on it, or reads it back in `kubectl get`, an event, or a condition message. A path or a password stays only where the reader has to type it.
 
 ## What stays off the page
 
@@ -106,6 +106,7 @@ Check every field, default, condition, reason, event, and derived name against `
 | --- | --- |
 | "The reader asked how it works" | They asked what happens to their cluster. Write the outcomes in the order the reader sees them, not the steps the operator takes. |
 | "This detail shows the operator is careful" | The reader cannot act on it. The code review is where carefulness is judged. |
+| "The reader should know what was created" | They should know what they can use. The Service they connect to, yes. The ConfigMap the process reads, no. |
 | "I just built it, so I know what to write" | You know the mechanism. Start from the reader's questions, and verify each fact against the code like a stranger would. |
 | "Camunda's page explains it well, I will paraphrase" | Link it. Keep the one sentence that says what it means here. |
 | "A How it works section makes the page complete" | Name sections after the reader's topics. A step list of the controller is not a topic. |
