@@ -82,9 +82,13 @@ type LogicalRestoreElasticsearchStatus struct {
 // runs: broker volumes that are empty or half written are worse under running
 // brokers than under none.
 //
-// The restore keeps spec.version. The target runs the version of the backup
-// from then on, and the next apply or GitOps sync of the target takes the
-// field back.
+// The restore keeps spec.version, and it owns the field under the manager
+// camunda-operator/restore-version. The target runs the version of the backup
+// until another manager takes that field over or removes it. A manifest that
+// leaves spec.version out takes nothing back, because server-side apply
+// removes a field only from the manager that declared it. Watch for that on a
+// target whose version came from a preset: the value the restore wrote wins
+// over the preset until somebody removes the field.
 type LogicalRestoreElasticsearch struct {
 	metav1.TypeMeta `json:",inline"`
 

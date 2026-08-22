@@ -33,15 +33,24 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// markerExportedPosition is the phrase that the Camunda restore application
-// prints when no primary-storage checkpoint covers the exporter position that
-// the restored database records. The application refuses in two forms, and
-// both carry this phrase: a checkpoint whose last log position is before the
-// exported position, and a checkpoint whose first log position is after it.
+// markerNoUsableRange is the terminal failure of the restore point resolver of
+// the Camunda restore application. It says that no backup range of a partition
+// covers the exporter position that the restored database records.
 //
-// The operator matches the phrase and nothing else. The rest of the line
-// carries the positions of one run, and it reaches the user as a quotation.
-const markerExportedPosition = "required exported position"
+// The per-range lines that carry the phrase "required exported position" are
+// not this failure, and the operator must not match them. The resolver logs
+// one such line for every range that it rejects, and it then takes the first
+// range that passes. A run that prints them can therefore select a later range
+// and succeed, or fail afterwards for another cause. Only this message proves
+// that no range was selected at all: findRestorableRange of
+// RestorePointResolver throws it from the orElseThrow of its range stream
+// (zeebe/restore/src/main/java/io/camunda/zeebe/restore of camunda/camunda).
+const markerNoUsableRange = "No usable range found for partition"
+
+// markerNoPosition is what that terminal message reports when the resolver got
+// no exporter position. The failure then has another cause, and the remedy
+// this operator names does not answer it.
+const markerNoPosition = "exportedPosition=null"
 
 // maxRefusalLine bounds the log line that the failure message quotes. The
 // whole message is bounded again before it reaches the status, and a bound
@@ -52,9 +61,8 @@ const maxRefusalLine = 400
 // operator reads the log inside a reconcile, so an unbounded read is not
 // worth its memory.
 //
-// The read takes the tail. The restore application prints the refusal while
-// it scans the checkpoints and then ends, so the line sits near the end of
-// the log of a Job that failed this way.
+// The read takes the tail. The terminal message ends the restore application,
+// so it sits at the end of the log of a Job that failed this way.
 const (
 	maxLogLines = int64(2000)
 	maxLogBytes = int64(256 * 1024)
@@ -96,23 +104,31 @@ func (r *Reconciler) jobRefusal(
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonExporterPositionNotCovered,
 		Message: fmt.Sprintf(
-			"the restore application of broker %d found no primary-storage checkpoint that covers "+
-				"the exporter position of the restored database, so it restored no partition. It "+
-				"reported: %q. Roll the database back to an earlier point, whose exporter position "+
-				"lies inside a checkpoint, then create a new restore",
+			"the restore application of broker %d found no primary-storage backup range that "+
+				"covers the exporter position of the restored database, so it restored no "+
+				"partition. It reported: %q. Roll the database back to an earlier point, whose "+
+				"exporter position lies inside a checkpoint, then create a new restore",
 			ordinal, line,
 		),
 	}
 }
 
-// refusalLine returns the first line of a restore application log that
-// reports a refused exporter position, or the empty string when the log
+// refusalLine returns the first line of a restore application log that reports
+// the terminal refusal of the resolver, or the empty string when the log
 // carries none. The line reaches a status field that a user reads, so it is
 // trimmed, bounded, and always valid UTF-8.
+//
+// A log that this misses falls back to the failure that the phase already
+// found, which costs a reader one more step. A log that this matched wrongly
+// would send them to roll a database back that was never the problem, so the
+// match asks for the terminal message and for an exporter position in it.
 func refusalLine(output string) string {
 	for line := range strings.SplitSeq(output, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if !strings.Contains(trimmed, markerExportedPosition) {
+		if !strings.Contains(trimmed, markerNoUsableRange) {
+			continue
+		}
+		if strings.Contains(trimmed, markerNoPosition) {
 			continue
 		}
 		if len(trimmed) > maxRefusalLine {

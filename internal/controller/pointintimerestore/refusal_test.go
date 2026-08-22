@@ -32,41 +32,71 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// The two forms that the Camunda restore application prints when no
-// primary-storage backup covers the exporter position of the database. Both
-// were read off a real restore, and both are what the operator must
-// recognise.
+// The two per-range lines that the restore point resolver logs while it
+// rejects a candidate range. Both were read off a real restore. The resolver
+// takes the first range that passes, so a run that prints either of these can
+// still select a later range and succeed, and the operator must not read them
+// as a refusal.
 const (
-	refusalLast = "2026-08-20 11:02:33.114 [] [main] WARN  io.camunda.zeebe.restore - " +
-		"Skipping range [1, 448] of backup 17 because the last log position 448 is before the " +
-		"required exported position 451"
-	refusalFirst = "2026-08-20 11:02:33.117 [] [main] WARN  io.camunda.zeebe.restore - " +
-		"Skipping range [1, 96] of backup 18 because the first log position OptionalLong[1] is " +
-		"after required exported position 0"
+	skippedLast = "2026-08-20 11:02:33.114 [] [main] WARN  io.camunda.zeebe.restore - " +
+		"Skipping range [1, 448] because the last log position 448 is before the required " +
+		"exported position 451"
+	skippedFirst = "2026-08-20 11:02:33.117 [] [main] WARN  io.camunda.zeebe.restore - " +
+		"Skipping range [1, 96] because the first log position OptionalLong[1] is after " +
+		"required exported position 0"
 )
+
+// noUsableRange is the terminal failure of the resolver. It is thrown only
+// when every range of a partition was rejected, so it is the one line that
+// proves no range was selected.
+const noUsableRange = "java.lang.IllegalStateException: No usable range found for partition 1 " +
+	"with from=null, exportedPosition=451. Available ranges: [Range[start=1, end=17]]"
+
+// noUsableRangeWithoutPosition is the same terminal failure on a run that got
+// no exporter position. Its cause is another one, and the remedy this operator
+// names does not answer it.
+const noUsableRangeWithoutPosition = "java.lang.IllegalStateException: No usable range found " +
+	"for partition 1 with from=2026-08-20T10:00:00Z, exportedPosition=null. Available ranges: []"
 
 // unrelatedLog is a restore that failed for a cause of its own. Nothing in it
 // names an exported position.
 const unrelatedLog = "Exception in thread \"main\" java.io.IOException: No space left on device\n" +
 	"\tat java.base/java.io.FileOutputStream.write(FileOutputStream.java:349)"
 
-func TestRefusalLineFindsBothFormsOfTheRefusal(t *testing.T) {
+func TestRefusalLineFindsTheTerminalFailure(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]string{
-		"a backup that ends before the exported position": refusalLast,
-		"a backup that starts after it":                   refusalFirst,
-	}
+	output := "starting the restore application\n" + skippedLast + "\n" + noUsableRange + "\n"
 
-	for name, line := range cases {
+	assert.Equal(t, noUsableRange, refusalLine(output))
+}
+
+// The resolver logs one line for every range it rejects and then takes the
+// first range that passes. A run that prints those lines and then succeeds, or
+// fails for another cause, is not this refusal.
+func TestRefusalLineIgnoresARangeThatWasOnlySkipped(t *testing.T) {
+	t.Parallel()
+
+	for name, output := range map[string]string{
+		"a range skipped for its last position":  skippedLast,
+		"a range skipped for its first position": skippedFirst,
+		"both, and then another failure": skippedFirst + "\n" + skippedLast + "\n" +
+			"java.lang.IllegalStateException: Unexpected data gaps between backup 4 and backup 7",
+	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			output := "starting the restore application\n" + line + "\nrestore failed\n"
-
-			assert.Equal(t, line, refusalLine(output))
+			assert.Empty(t, refusalLine(output))
 		})
 	}
+}
+
+// The terminal message reports the exporter position it was given. A run that
+// got none failed for another cause.
+func TestRefusalLineIgnoresATerminalFailureWithoutAPosition(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, refusalLine(noUsableRangeWithoutPosition))
 }
 
 // A restore that failed for another cause carries no marker. Reporting the
@@ -82,10 +112,10 @@ func TestRefusalLineIgnoresAnUnrelatedFailure(t *testing.T) {
 func TestRefusalLineBoundsAVeryLongLine(t *testing.T) {
 	t.Parallel()
 
-	line := refusalLine(refusalLast + strings.Repeat("x", 4000))
+	line := refusalLine(noUsableRange + strings.Repeat("x", 4000))
 
 	assert.Len(t, line, maxRefusalLine)
-	assert.True(t, strings.HasPrefix(line, "2026-08-20"))
+	assert.True(t, strings.HasPrefix(line, "java.lang.IllegalStateException"))
 }
 
 // failedJob is the Job of one broker that already reported failed.
@@ -110,14 +140,14 @@ func readerOf(output string) ReadJobLog {
 func TestJobRefusalNamesTheCauseAndTheRemedy(t *testing.T) {
 	t.Parallel()
 
-	r := &Reconciler{opts: Options{ReadJobLog: readerOf(refusalLast)}.withDefaults()}
+	r := &Reconciler{opts: Options{ReadJobLog: readerOf(noUsableRange)}.withDefaults()}
 
 	failure := r.jobRefusal(t.Context(), failedJob(), 1)
 
 	require.NotNil(t, failure)
 	assert.Equal(t, v1.ReasonExporterPositionNotCovered, failure.Reason)
 	assert.Contains(t, failure.Message, "broker 1")
-	assert.Contains(t, failure.Message, "required exported position 451")
+	assert.Contains(t, failure.Message, "No usable range found for partition 1")
 	assert.Contains(t, failure.Message, "Roll the database back")
 }
 
@@ -163,7 +193,7 @@ func TestJobRefusalReadsTheLogOfTheFailedJob(t *testing.T) {
 	reader := func(_ context.Context, job types.NamespacedName) (string, error) {
 		asked = job
 
-		return refusalFirst, nil
+		return noUsableRange, nil
 	}
 	r := &Reconciler{opts: Options{ReadJobLog: reader}.withDefaults()}
 
