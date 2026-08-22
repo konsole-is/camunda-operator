@@ -17,6 +17,10 @@ limitations under the License.
 package camundacluster
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -25,7 +29,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/components/internal/declared"
 )
 
 // Every MirrorPurpose constant of mirror.go is in MirrorPurposes, once. A
@@ -34,13 +37,46 @@ import (
 func TestMirrorPurposesCoverEveryConstant(t *testing.T) {
 	t.Parallel()
 
-	values := declared.Constants(t, "mirror.go", "MirrorPurpose")
-	want := make([]MirrorPurpose, 0, len(values))
-	for _, value := range values {
-		want = append(want, MirrorPurpose(value))
-	}
+	want := declaredPurposes(t)
 	assert.NotEmpty(t, want)
 	assert.ElementsMatch(t, want, MirrorPurposes)
+}
+
+// declaredPurposes returns the value of every MirrorPurpose constant of
+// mirror.go, read from the source, so the test sees a constant that no slice
+// names. A constant declared without the type on its own spec is not found.
+func declaredPurposes(t *testing.T) []MirrorPurpose {
+	t.Helper()
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "mirror.go", nil, 0)
+	require.NoError(t, err)
+
+	var purposes []MirrorPurpose
+	for _, decl := range parsed.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			ident, ok := value.Type.(*ast.Ident)
+			if !ok || ident.Name != "MirrorPurpose" {
+				continue
+			}
+			for _, expr := range value.Values {
+				lit, ok := expr.(*ast.BasicLit)
+				require.True(t, ok, "constant %s is not a literal", value.Names[0].Name)
+				unquoted, err := strconv.Unquote(lit.Value)
+				require.NoError(t, err)
+				purposes = append(purposes, MirrorPurpose(unquoted))
+			}
+		}
+	}
+
+	return purposes
 }
 
 func TestMirrorPurposeValid(t *testing.T) {
