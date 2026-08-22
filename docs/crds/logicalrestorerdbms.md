@@ -39,18 +39,11 @@ graph LR
 
 ## The restore prepares the target
 
-The operator carries the target to the state that the restore needs. You do not suspend the cluster by hand, and you do not change its Camunda version by hand.
+The operator brings the target to the state that the restore needs. You do not suspend the cluster by hand, and you do not set its Camunda version by hand.
 
-When the restore is admitted, the operator does this, in this order:
+The restore suspends the target. It also sets `spec.version` to the Camunda version that the backup recorded in `status.version`. It sets that version every time, even when the compatibility rule of this kind accepts the target as it is.
 
-1. It takes the cluster claim, so that no other backup or restore of that cluster runs.
-2. It records in `status.clusterSuspended` that it is about to suspend the target.
-3. It applies `spec.suspend: true` on the target.
-4. It waits until the broker `StatefulSet` reports zero replicas. `spec.suspend` says what was asked for. The `StatefulSet` says what happened.
-5. It applies `spec.version` with the Camunda version that the backup recorded in `status.version`. It does this every time, even when the version rule of this kind would already accept the target.
-6. It waits until the tag of the broker image is that version.
-
-The restore stays in `Pending` for all of it. It erased nothing yet, so nothing bounds this wait. `Ready` reports `Progressing`, and the message says what the operator waits for.
+The restore stays in `Pending` while it does this, and nothing bounds the wait. It erases nothing before it leaves that phase. `Ready` reports `Progressing`, and its message names what the operator waits for.
 
 The operator writes nothing else on the target. It writes no credential, and no reference to one.
 
@@ -62,6 +55,8 @@ Each write is a server-side apply of one field, under a field manager of its own
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
 | `spec.version` | `camunda-operator/restore-version` | The restore keeps it. |
+
+These names are published. A GitOps tool reads them, and so does a layer above this operator, for example a `CloudCamundaCluster` of `camunda-cloud-operator`. The names tell a write of a restore from a write of a user.
 
 The restore keeps `spec.version` on purpose. The cluster runs the version of the backup from then on, which is the point of writing it.
 
@@ -79,9 +74,7 @@ kubectl patch camundacluster my-cluster -n my-cluster-ns \
 
 ### Why the downgrade is safe here
 
-Camunda does not support a running cluster that moves to an older version. A broker compares the version in its data directory against its own binary at startup, reports a downgrade, and applies no migration.
-
-No broker does that comparison here. The order above is what makes it safe: nothing runs while the version changes, and the broker volumes are erased before a broker of the older version starts. The first broker that starts again finds the state of the backup at the version of the backup.
+Camunda does not support a downgrade of a running cluster. A restore is not that. Nothing runs while the version changes, and the broker volumes are erased before any broker of the older version starts.
 
 CAUTION: A downgrade that you do by hand on a running cluster, outside a restore, is still unsupported. The operator accepts the change to `spec.version`, and the brokers then report themselves unhealthy.
 
@@ -91,22 +84,16 @@ The restore withdraws its suspension when it reaches `Completed`, and only when 
 
 - **A target that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
 - **A failed restore leaves the target suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore.
-- **A restore that you delete while it runs leaves the target suspended.** The restore writes nothing outside the cluster, so it needs no finalizer, and it gets none for this either. A finalizer that unsuspended the target on delete would start brokers over volumes that the restore already erased. Suspended is the safe state to be left in. Unsuspend the cluster yourself once you know what its volumes hold.
-
-The withdrawal is a server-side apply of an object without `spec.suspend`. Kubernetes removes the field that `camunda-operator/restore-suspend` owns, and it leaves the value of every other field manager in place.
+- **A restore that you delete while it runs leaves the target suspended.** The restore needs no finalizer, and it gets none for this. A finalizer that unsuspends the target on delete starts brokers over volumes that the restore already erased. Suspended is the safe state to be left in. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ### A GitOps tool that owns the CamundaCluster
 
-The operator uses its own field managers, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares, and the operator keeps the fields that it declares.
+The operator uses its own field managers, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares. The operator keeps the fields that it declares.
 
-A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore reads the old value on its next look and writes again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
+A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore writes it again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
 
-- Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore, or mark `spec.suspend` and `spec.version` as an ignored difference.
+- Remove `spec.suspend` and `spec.version` from the manifest for the time of the restore, or mark both fields as an ignored difference.
 - Put `spec.version` back after the restore, with the version that you want the cluster to run.
-
-### The layer above
-
-This operator is the bottom layer of a stack. A layer above it, for example a `CloudCamundaCluster` of `camunda-cloud-operator`, can consider itself the author of the fields above. While a restore runs, it is not. That layer keys on the field manager names above to tell a write of a restore from a write of a user.
 
 Suspension is a standing condition, not a gate that admission passes once. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase and fails it after ten minutes, with reason `ClusterNotSuspended`. Every phase after admission erases something of the target.
 
@@ -213,7 +200,7 @@ A target that the restore suspended stays suspended. That is deliberate. Unsuspe
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
-| `Ready` | `Completed` | The restore finished. It withdraws the suspension it applied on the look that follows, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
+| `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the target starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the target yourself only when you suspended it yourself. |
 | `Ready` | `ClusterNotSuspended` | The target started running again while the restore ran. | Suspend the target again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the target. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `IncompatibleTarget` | The target cannot hold the backup. See "Compatibility". | Create a new restore against a target that fits. |

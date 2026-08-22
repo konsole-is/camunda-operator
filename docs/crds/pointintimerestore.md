@@ -39,16 +39,9 @@ graph LR
 
 ## The restore prepares the cluster
 
-The operator carries the cluster to the state that the restore needs. You do not suspend the cluster by hand, and you do not change its Camunda version by hand.
+The operator brings the cluster to the state that the restore needs. You do not suspend the cluster by hand.
 
-When the restore is admitted, the operator does this, in this order:
-
-1. It takes the cluster claim, so that no other backup or restore of that cluster runs.
-2. It records in `status.clusterSuspended` that it is about to suspend the cluster.
-3. It applies `spec.suspend: true` on the cluster.
-4. It waits until the broker `StatefulSet` reports zero replicas. `spec.suspend` says what was asked for. The `StatefulSet` says what happened.
-
-The restore stays in `Pending` for all of it. It erased nothing yet, so nothing bounds this wait. `Ready` reports `Progressing`, and the message says what the operator waits for.
+The restore suspends the cluster. It stays in `Pending` while it does this, and nothing bounds the wait. It erases nothing before it leaves that phase. `Ready` reports `Progressing`, and its message names what the operator waits for.
 
 The operator writes nothing else on the cluster. It writes no credential, and no reference to one.
 
@@ -60,30 +53,26 @@ Each write is a server-side apply of one field, under a field manager of its own
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
 
-This kind writes no version. It restores the primary storage of the cluster from the continuous backups of that same cluster, so no backup names a version that the cluster is not already running.
+These names are published. A GitOps tool reads them, and so does a layer above this operator, for example a `CloudCamundaCluster` of `camunda-cloud-operator`. The names tell a write of a restore from a write of a user.
+
+This kind writes no version. It restores the primary storage of the cluster from the continuous backups of that same cluster. No backup therefore names a version that the cluster is not already running.
 
 ### When the restore unsuspends the cluster
 
 The restore withdraws its suspension when it reaches `Completed`, and only when `status.clusterSuspended` is `true`.
 
-- **A target that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
+- **A cluster that you suspended yourself stays suspended.** The restore recorded no suspension of its own, so it withdraws none.
 - **A failed restore leaves the cluster suspended.** Its broker volumes can be empty or half written. Brokers that start over such volumes are worse than a cluster that is down. Read `status.failureMessage`, correct the cause, and create a new restore.
-- **A restore that you delete while it runs leaves the cluster suspended.** The restore writes nothing outside the cluster, so it needs no finalizer, and it gets none for this either. A finalizer that unsuspended the cluster on delete would start brokers over volumes that the restore already erased. Suspended is the safe state to be left in. Unsuspend the cluster yourself once you know what its volumes hold.
-
-The withdrawal is a server-side apply of an object without `spec.suspend`. Kubernetes removes the field that `camunda-operator/restore-suspend` owns, and it leaves the value of every other field manager in place.
+- **A restore that you delete while it runs leaves the cluster suspended.** The restore needs no finalizer, and it gets none for this. A finalizer that unsuspends the cluster on delete starts brokers over volumes that the restore already erased. Suspended is the safe state to be left in. Unsuspend the cluster yourself once you know what its volumes hold.
 
 ### A GitOps tool that owns the CamundaCluster
 
-The operator uses its own field managers, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares, and the operator keeps the fields that it declares.
+The operator uses its own field managers, the same way [CamundaOptimize](camundaoptimize.md) does for `spec.zeebe.extraEnv`. A tool that manages the `CamundaCluster` with server-side apply keeps every field that it declares. The operator keeps the fields that it declares.
 
-A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore reads the old value on its next look and writes again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
+A tool that also declares one of these fields fights the operator for it. Argo CD or Flux reverts the write of the restore, the restore writes it again, and the restore stalls in `Pending`. If you drive the `CamundaCluster` from Git:
 
-- Remove `spec.suspend` from the manifest for the time of the restore, or mark `spec.suspend` as an ignored difference.
+- Remove `spec.suspend` from the manifest for the time of the restore, or mark the field as an ignored difference.
 - Let the tool declare `spec.suspend: false` again after the restore, if it declared the field before.
-
-### The layer above
-
-This operator is the bottom layer of a stack. A layer above it, for example a `CloudCamundaCluster` of `camunda-cloud-operator`, can consider itself the author of the fields above. While a restore runs, it is not. That layer keys on the field manager names above to tell a write of a restore from a write of a user.
 
 Suspension is a standing condition, not a gate that admission passes once. A cluster that somebody unsuspends while the restore runs holds the restore in its current phase and fails it after ten minutes, with reason `ClusterNotSuspended`.
 
@@ -197,7 +186,7 @@ A cluster that the restore suspended stays suspended. That is deliberate. Unsusp
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Progressing` | A restore phase runs. | Wait. The message names the phase. |
-| `Ready` | `Completed` | The restore finished. It withdraws the suspension it applied on the look that follows, so the cluster starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the cluster yourself only when you suspended it yourself. |
+| `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the cluster starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the cluster yourself only when you suspended it yourself. |
 | `Ready` | `ClusterNotSuspended` | The cluster started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. The message names it. | Wait. The restore starts when that operation finishes. |
 | `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, no `Database` names the server, or the broker StatefulSet is gone. | Correct the reference that the message names. |
