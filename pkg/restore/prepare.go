@@ -300,19 +300,12 @@ func versionTarget(
 }
 
 // MovedVersion reports the target whose brokers no longer carry the Camunda
-// version of the backup. Prepare carried the cluster to that version and the
-// restore owns spec.version, but another manager can take the field back while
-// the restore runs, and the restore Jobs copy the broker image, so a version
-// that moves under a running restore would run the wrong binary against the
-// backup.
+// version of the backup, or nil when they do. A phase after admission asks it
+// on every look, because another manager can take spec.version back while the
+// restore runs and the restore Jobs copy the broker image.
 //
-// Every restore kind that writes a version holds its target to it, and each
-// reports the same reason and the same message, so the rule lives here rather
-// than once per kind.
-//
-// It answers nil for a backup whose version the restore never wrote. The
-// version rule of the restore kind reports such a backup and ends the restore,
-// and holding for a version that nothing writes would wait without end.
+// It answers nil for a backup whose version the restore never wrote, which
+// WritesVersion decides.
 func MovedVersion(backupVersion, targetVersion string) *conditions.PreCheckFailure {
 	if !WritesVersion(backupVersion) || targetVersion == backupVersion {
 		return nil

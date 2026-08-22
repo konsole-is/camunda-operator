@@ -33,31 +33,12 @@ import (
 // the claim on the cluster. cluster is the name of the target, which lives in
 // the namespace of the restore.
 //
-// It stages the recorded terminal condition first. A conflict on the terminal
-// flush can restore a stale Ready from the server, and staging it again on
-// every look heals that.
+// It reports Done only when all three are given back. Until then it reports
+// Outcome.Wait, which is a wait and not a failure, and the controller looks
+// again after it.
 //
-// It reports Done only when all three are given back, and it converges over
-// more than one look. Collecting the Jobs deletes them with foreground
-// propagation, which outlives the call: a Job that still exists means its pods
-// can still exist. Outcome.Wait then paces the look that finds them gone, and
-// the two steps behind the Jobs do not run until that look.
-//
-// The order of the three releases is the correctness of this branch, and a
-// tidy-up must not change it:
-//
-//   - The Jobs go before the unsuspend. A completed Job keeps its pod, and a
-//     pod that mounts a broker data volume counts as a user of it. The
-//     unsuspend starts the brokers again. A broker that the scheduler places
-//     on another node cannot attach a ReadWriteOnce volume that a completed
-//     pod still holds. An unsuspend that ran first would stall the cluster on
-//     the very volumes this branch is freeing.
-//   - Both go before the claim. The claim is what tells the next operation
-//     that the cluster is free, so the volumes are asked for first.
-//
-// Every step is safe on every look, and an error keeps the claim for one more
-// look. The branch runs again on the next one, and the step that failed heals
-// there.
+// Every step is safe on every look, so a call that failed is safe to repeat.
+// An error keeps the claim, and the step that failed heals on the next look.
 func Finish(
 	ctx context.Context,
 	c client.Client,
@@ -66,19 +47,32 @@ func Finish(
 	p *v1.RestoreProgress,
 	cluster string,
 ) (Outcome, error) {
+	// A conflict on the terminal flush can restore a stale Ready from the
+	// server. Staging it again on every look heals that.
 	StageTerminal(owner, p)
 
+	// The Jobs go first, and the two steps below wait for them. A completed
+	// Job keeps its pod, and a pod that mounts a broker data volume counts as
+	// a user of it under the pvc-protection finalizer. Done says that no such
+	// pod is left.
 	collected, err := CollectJobs(ctx, c, reader, owner, p)
 	if err != nil || !collected.Done {
 		return collected, err
 	}
 
+	// The unsuspend sits behind that gate, and a tidy-up must not lift it out.
+	// It starts the brokers again, and a broker that the scheduler places on
+	// another node cannot attach a ReadWriteOnce volume that a completed pod
+	// still holds, so the cluster would stall on the very volumes this branch
+	// is freeing.
 	if err := Resume(ctx, c, reader, p, types.NamespacedName{
 		Namespace: owner.GetNamespace(), Name: cluster,
 	}); err != nil {
 		return Outcome{}, err
 	}
 
+	// The claim goes last. It is what tells the next operation that the
+	// cluster is free, so the volumes are asked for before it.
 	if err := Give(ctx, c, reader, owner, cluster); err != nil {
 		return Outcome{}, err
 	}
