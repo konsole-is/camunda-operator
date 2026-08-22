@@ -34,6 +34,7 @@ import (
 	gomegatypes "github.com/onsi/gomega/types"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
 
@@ -55,9 +56,11 @@ const (
 	rdbmsRestore = "camunda-rdbms-restore"
 	// pitrRefused asks for a point that the live database is ahead of.
 	// pitrCurrent asks for the point that the suspended database already
-	// holds.
-	pitrRefused = "camunda-pitr-unrestored"
-	pitrCurrent = "camunda-pitr-current"
+	// holds. pitrUncovered asks for the point the database holds too, but
+	// that point lies past every primary-storage backup.
+	pitrRefused   = "camunda-pitr-unrestored"
+	pitrCurrent   = "camunda-pitr-current"
+	pitrUncovered = "camunda-pitr-uncovered"
 
 	lresResource    = "logicalrestoreelasticsearches.core.camunda.io"
 	lrrdbmsResource = "logicalrestorerdbmses.core.camunda.io"
@@ -625,6 +628,74 @@ func itRunsAPointInTimeRestoreAtTheCurrentDatabaseState(cluster *v1.CamundaClust
 
 		By("searching the instance that the database still holds")
 		expectInstanceSearchable(cluster)
+	})
+}
+
+// itFailsAPointInTimeRestoreAheadOfEveryBackup registers the specs that
+// provoke the one refusal of the restore application that the operator names,
+// against the real Camunda image. The operator recognizes that refusal by a
+// line in the log of the failed Job. Only a real run can tell whether the line
+// still reads the way the operator expects: the unit tests of the match feed
+// it their own copy of the line.
+//
+// The refusal needs a database whose exporter position lies past the last
+// position of every primary-storage backup. That is the state of a cluster
+// that exported after its last backup. The specs therefore export once more,
+// and they skip the rewind that the restore before them did.
+//
+// The refusal arrives after the broker volumes are erased, so the specs leave
+// the cluster suspended and without primary storage. They run last in their
+// flow.
+func itFailsAPointInTimeRestoreAheadOfEveryBackup(cluster *v1.CamundaCluster) {
+	It("exports a record past every primary-storage backup", func() {
+		key := startInstance(cluster)
+		expectInstanceExported(cluster, key)
+	})
+
+	It("reaches Failed with reason ExporterPositionNotCovered", func() {
+		suspend(cluster)
+
+		By("creating a PointInTimeRestore for the point the live database holds")
+		Expect(apply(&v1.PointInTimeRestore{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "PointInTimeRestore",
+			},
+			ObjectMeta: metav1.ObjectMeta{Name: pitrUncovered, Namespace: cluster.Namespace},
+			Spec: v1.PointInTimeRestoreSpec{
+				ClusterRef: v1.ClusterRef{Name: cluster.Name},
+				Timestamp:  metav1.Now(),
+			},
+		})).To(Succeed())
+
+		// Both terminal phases end the wait. A restore that completes proves
+		// that the database was not ahead of every backup, and a restore that
+		// fails for another reason is the generic fallback. Waiting longer
+		// changes neither.
+		By("waiting for a terminal phase")
+		var terminal v1.PointInTimeRestore
+		Eventually(func(g Gomega) {
+			g.Expect(utils.Get(pitrResource, pitrUncovered, cluster.Namespace, &terminal)).To(Succeed())
+			g.Expect(terminal.Status.Phase).To(BeElementOf(
+				v1.PointInTimeRestoreFailed,
+				v1.PointInTimeRestoreCompleted,
+			), terminal.Status.FailureMessage)
+		}, restoreTimeout, 5*time.Second).Should(Succeed())
+
+		Expect(terminal.Status.Phase).To(
+			Equal(v1.PointInTimeRestoreFailed),
+			"the restore completed, so the database was not ahead of every backup and the restore "+
+				"application refused nothing",
+		)
+
+		ready := meta.FindStatusCondition(terminal.Status.Conditions, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(
+			Equal(v1.ReasonExporterPositionNotCovered),
+			"the operator did not recognize the refusal in the Job log and reported the generic "+
+				"failure instead: %s",
+			terminal.Status.FailureMessage,
+		)
 	})
 }
 
