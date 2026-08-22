@@ -162,8 +162,8 @@ func managedLabels(cluster *v1.ElasticsearchCluster) map[string]string {
 
 // discoveryLabels returns the labels of the pods and data volumes that ECK
 // runs from the template of cluster. They carry the owner and component, so
-// extensions such as PVCAutoResize can discover them, but not the manager
-// label: ECK manages those objects.
+// an extension can discover them, but not the manager label: ECK manages
+// those objects.
 func discoveryLabels(cluster *v1.ElasticsearchCluster) map[string]string {
 	return labels.Discovery(labels.ElasticsearchCluster(cluster.Name), componentLabel)
 }

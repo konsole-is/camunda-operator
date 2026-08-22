@@ -31,9 +31,6 @@ resources:
 - logicalbackuprdbms_admin_role.yaml
 - logicalbackuprdbms_editor_role.yaml
 - logicalbackuprdbms_viewer_role.yaml
-- pvcautoresize_admin_role.yaml
-- pvcautoresize_editor_role.yaml
-- pvcautoresize_viewer_role.yaml
 - managementauthconfig_admin_role.yaml
 - managementauthconfig_editor_role.yaml
 - managementauthconfig_viewer_role.yaml

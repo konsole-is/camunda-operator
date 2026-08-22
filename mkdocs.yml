@@ -113,4 +113,3 @@ nav:
           - BackupSchedule: crds/backupschedule.md
           - CamundaOptimize: crds/camundaoptimize.md
           - CamundaManagementCluster: crds/camundamanagementcluster.md
-          - PVCAutoResize: crds/pvcautoresize.md

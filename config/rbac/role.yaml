@@ -118,7 +118,6 @@ rules:
   - managementauthconfigs/status
   - objectstorageconfigs/status
   - pointintimerestores/status
-  - pvcautoresizes/status
   - secondarystorageconfigs/status
   verbs:
   - get
@@ -138,7 +137,6 @@ rules:
   - logicalrestoreelasticsearches
   - logicalrestorerdbmses
   - pointintimerestores
-  - pvcautoresizes
   - secondarystorageconfigs
   verbs:
   - create
@@ -161,7 +159,6 @@ rules:
   - logicalrestoreelasticsearches/finalizers
   - logicalrestorerdbmses/finalizers
   - pointintimerestores/finalizers
-  - pvcautoresizes/finalizers
   verbs:
   - update
 - apiGroups:
