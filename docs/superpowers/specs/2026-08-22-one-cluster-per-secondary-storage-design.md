@@ -98,9 +98,8 @@ After the components reconcile, `Ready` is overwritten with `False`, reason `Sto
 and a message that names the holder and the backend:
 
 ```text
-CamundaCluster "team-a/orchestration" already holds Elasticsearch "https://es.example.com:9200";
-one CamundaCluster per secondary storage backend, so this cluster is suspended until that one
-releases it
+CamundaCluster "team-a/orchestration" already uses Elasticsearch "https://es.example.com:9200".
+One CamundaCluster uses one backend, so this cluster stays suspended until that one releases it
 ```
 
 The reason mirrors `ClusterAlreadyAttached` on `CamundaOptimize`, which exists for the same cause.

@@ -64,7 +64,21 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 `spec.storageRef` names the `SecondaryStorageConfig` in the namespace of the cluster. The contract tells the cluster where its backend is. The backend is the Elasticsearch endpoint, or the database on the server, that the workloads connect to.
 
-One `CamundaCluster` uses one backend. Camunda fixes the index names and the tables, so two clusters on one backend write each other's data, and a restore of one deletes the data of the other. The API server accepts a second cluster whose contract resolves to a backend that an older cluster uses. The operator keeps the oldest cluster on the backend, with the name breaking a tie. Every other cluster is suspended: every workload at zero, the volumes kept, `Ready` `False` with reason `StorageAlreadyAttached`, and a message that names the holder and the backend. When the holder is deleted, changes its `storageRef`, or its contract names another endpoint, the suspended cluster resumes on its own. The rule holds in the other direction too. If an older cluster later resolves to the backend of a running cluster, the older cluster holds the backend and the running cluster is suspended.
+One `CamundaCluster` uses one backend. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other. The API server accepts a second cluster whose contract resolves to a backend that an older cluster uses. The operator keeps the oldest cluster on the backend, with the name breaking a tie. Every other cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the backend.
+
+When the holder is deleted, changes its `storageRef`, or its contract names another endpoint, the suspended cluster resumes on its own. The rule holds in the other direction too. If an older cluster later resolves to the backend of a running cluster, the older cluster holds the backend and the running cluster is suspended.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: StorageAlreadyAttached
+      message: >-
+        CamundaCluster "team-a/orchestration" already uses Elasticsearch
+        "https://es.example.com:9200". One CamundaCluster uses one backend, so
+        this cluster stays suspended until that one releases it
+```
 
 Two contracts count as one backend when they resolve to the same endpoint, in one namespace or in two, whoever wrote them. The comparison ignores the credentials.
 

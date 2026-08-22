@@ -286,16 +286,15 @@ func (s requestSet) requests() []reconcile.Request {
 // configs through the indexes, DatabaseServerConfigs for every cluster, and
 // Secrets (metadata only) through enqueueForSecret, which also follows the
 // Secret indexes of the platform configs, the bindings, and the
-// DatabaseConfigs. The clusters
-// themselves are watched for the others: who holds a secondary storage
-// backend can change on any cluster's creation, deletion, or spec change, so
-// every such event enqueues every other cluster. Bindings and DatabaseConfigs
-// enqueue every cluster for the same reason, filtered to spec changes. The
-// pre-checks put the resource versions of the Secrets and the generations of
-// the CRs they read into the config hash, so any of these events rolls the
-// pods whose rendered configuration changed. It also sets EventRecorder to
-// the recorder of the manager and builds the uncached component client when
-// they are nil.
+// DatabaseConfigs. The clusters themselves are watched for the others: who
+// holds a secondary storage backend can change on any cluster's creation,
+// deletion, or spec change, so every such event enqueues every other
+// cluster. Bindings and DatabaseConfigs enqueue every cluster for the same
+// reason, filtered to spec changes. The pre-checks put the resource versions
+// of the Secrets and the generations of the CRs they read into the config
+// hash, so any of these events rolls the pods whose rendered configuration
+// changed. It also sets EventRecorder to the recorder of the manager and
+// builds the uncached component client when they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder("camundacluster")

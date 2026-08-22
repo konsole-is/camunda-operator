@@ -35,7 +35,7 @@ import (
 // in.Storage.Holder. The oldest cluster holds the backend, with the name
 // breaking a tie. It needs res.storage from resolveStorage. An own backend
 // that does not resolve fails the pre-check with InvalidReference. One
-// CamundaCluster uses one backend, see components.StorageHolder.
+// CamundaCluster uses one backend, see components.Storage.Holder.
 func (res *resolver) resolveStorageHolder(ctx context.Context, in *components.Input) error {
 	backend, failure, err := secondarystorageconfig.ResolveBackend(ctx, res.reader, res.storage)
 	if err != nil {
@@ -100,7 +100,7 @@ func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder) m
 		metav1.ConditionFalse,
 		v1.ReasonStorageAlreadyAttached,
 		fmt.Sprintf(
-			"CamundaCluster %q already uses %s; one CamundaCluster per secondary storage backend, "+
+			"CamundaCluster %q already uses %s. One CamundaCluster uses one backend, "+
 				"so this cluster stays suspended until that one releases it",
 			objectPath(holder.Cluster), holder.Backend,
 		),

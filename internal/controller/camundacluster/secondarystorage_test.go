@@ -46,9 +46,10 @@ func newNamedCluster(
 // credentials Secret, and an rdbms binding that names it.
 //
 // Every SecondaryStorageConfig this returns resolves to the same backend
-// identity, because fixtures.DatabaseConfig fixes the host and the database
-// name. Two specs that call it stay independent only because each spec
-// deletes its own server with DeferCleanup.
+// identity, because fixtures.DatabaseServerConfig fixes the host and the
+// port, and fixtures.DatabaseConfig fixes the database name. Two specs that
+// call it stay independent only because each spec deletes its own server
+// with DeferCleanup.
 func createRDBMSBinding(namespace string, server *v1.DatabaseServerConfig) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
 	dbConfig := fixtures.DatabaseConfig()
