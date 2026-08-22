@@ -46,6 +46,11 @@ const (
 	// size is visible, and the controller records an ignored shrink only when
 	// it changes.
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
+	// AllowVersionDowngradeAnnotation is the annotation of a CamundaCluster
+	// that sanctions one move of its effective version below the version its
+	// brokers run. The value is the exact target version, x.y.z. The
+	// controller removes the annotation once the brokers carry that version.
+	AllowVersionDowngradeAnnotation = "camunda.io/allow-version-downgrade"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
 	// DefaultAdminEmail is the email of the seeded admin user when

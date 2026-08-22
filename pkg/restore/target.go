@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -121,7 +120,7 @@ func readTarget(
 		return nil, err
 	}
 
-	version := imageTag(broker.Image)
+	version := components.ImageTag(broker.Image)
 	if version == "" {
 		return nil, invalidTarget(
 			name, "the broker image %q carries no version tag", broker.Image,
@@ -231,21 +230,4 @@ func envCount(sts string, broker *corev1.Container, key camundaconfig.Key) (int3
 	}
 
 	return 0, invalidTarget(sts, "its container carries no %s", name)
-}
-
-// imageTag returns the tag of an image reference, or the empty string when it
-// carries none. Two other parts of a reference hold a colon of their own. A
-// digest follows the tag after an "@", and a registry host can carry a port,
-// so only a colon after the last slash and before the digest starts a tag.
-func imageTag(image string) string {
-	if at := strings.Index(image, "@"); at >= 0 {
-		image = image[:at]
-	}
-
-	colon := strings.LastIndex(image, ":")
-	if colon < 0 || colon < strings.LastIndex(image, "/") {
-		return ""
-	}
-
-	return image[colon+1:]
 }
