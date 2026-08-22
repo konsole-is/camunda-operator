@@ -35,6 +35,16 @@ func formatResourceName(base, suffix string) string { ... }
 
 **A godoc gives the contract, not the algorithm.** Preconditions, the meaning of the result, what the caller must not assume. When you start a sentence about how the function computes its answer, stop: the caller does not need it, and it goes stale the first time the body changes.
 
+**A godoc is sized by the caller's decision.** It holds what someone needs to call the function correctly and to use what it gives back: the preconditions, the meaning of the result, and the trap that will bite them. A fact that does not change what the caller writes is not part of the contract, however true it is and however hard it was to learn.
+
+**Moving a fact out of a godoc is not deleting it.** Why a piece of code exists — the case it handles, what breaks without it — earns a short comment beside that code, where a reader meets it with the code in view, and it earns one even when a caller never needs to know. A constraint that bites at one call site goes at that call site for the same reason. The godoc keeps what a caller cannot see from outside at all; the pull request keeps the comparison, the options weighed and why this one won. The same fact in the godoc and again at the line it constrains is one copy too many, and the godoc copy is the one that rots, because it sits furthest from the code that would contradict it.
+
+**When the godoc is longer than the function body, name the caller decision each paragraph serves.** Move the paragraphs that serve none to the code they explain, and delete the ones that explain nothing. Twenty lines of prose over a one-line body is the clearest case: nobody needed that much to call it.
+
+Rationale in a godoc costs more than the space it takes. It reads as contract, so the next reader treats it as a promise the code has to keep, and the next change argues with the paragraph instead of the code.
+
+**A review finding is not a reason to write a paragraph.** When a review turns up a case the code missed, the fix is the code. Write the comment only if the next reader would be caught by the same thing and could not deduce it from what is in front of them — not to show the case was considered, and not to record that the round happened.
+
 **The test for a bad comment:** could a code generator produce it by prepending a verb to the identifier name? If yes, it carries no information beyond the name itself — delete or rewrite it.
 
 - `// ComponentName returns the component name` → generated noise; delete
@@ -82,6 +92,10 @@ If removing the comment would not confuse a reader six months from now, delete i
 - The comment describes the change you are making rather than the code that is there.
 - You are editing a comment to answer a review point instead of editing the code.
 - A godoc grew a paragraph about how the body works.
+- The godoc is longer than the function body.
+- The same fact appears twice: once in the godoc, once at the line it constrains.
+- You deleted a hard-won fact instead of moving it beside the code it explains.
+- The comment exists because a review asked for the change, not because the next reader will need it.
 
 ## A stated behavior is a claim, not evidence
 
@@ -775,6 +789,9 @@ When no order makes the file read straight through, the file holds more than one
 | `fmt.Sprintf("%s-%s", a, b)` | `a + "-" + b` |
 | Comment restates the line under it | Delete it; if the line needs prose, rename or split instead |
 | Godoc explains how the body computes the answer | Cut to the contract: preconditions, result, what the caller must not assume |
+| Godoc repeats a fact already commented at the line it constrains | Delete the copy in the godoc; the one next to the code is the one that stays true |
+| Paragraph added because a review found a missing case | Ship the fix; write the comment only if the next reader would be caught the same way |
+| Godoc is longer than the function body | Name the caller decision each paragraph serves; delete the rest |
 | Resolver or helper placed above the entry point of the file | Move it below its caller |
 | Shared type declared where the author first needed it | Move it to the top of the file with a doc comment |
 | New code appended to the bottom of the file | Place it by the file's order, under its caller |
