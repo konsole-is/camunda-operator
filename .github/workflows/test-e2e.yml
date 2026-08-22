@@ -11,8 +11,16 @@ concurrency:
 
 jobs:
   test-e2e:
-    name: Run on Ubuntu
+    name: Camunda ${{ matrix.minor }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # One job per supported Camunda minor. Each entry names a file
+      # test/e2e/matrix/<minor>.env that holds the image versions of that
+      # minor and the spec flows that run for it. Adopting a new minor adds
+      # the file and the entry.
+      matrix:
+        minor: ["8.9"]
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -39,4 +47,4 @@ jobs:
       - name: Running Test e2e
         run: |
           make tidy
-          make test-e2e
+          make test-e2e E2E_CAMUNDA_MINOR=${{ matrix.minor }}

@@ -45,7 +45,7 @@ const metricsServiceName = "camunda-operator-controller-manager-metrics-service"
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
 const metricsRoleBindingName = "camunda-operator-metrics-binding"
 
-var _ = Describe("Manager", Ordered, func() {
+var _ = Describe("Manager", Ordered, Label(labelManager), func() {
 	var controllerPodName string
 
 	// The suite deploys the controller-manager. This container only cleans
