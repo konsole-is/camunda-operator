@@ -76,6 +76,11 @@ type rendered struct {
 // extraEnv of the embedded gateway and web applications the process hosts,
 // then the extraEnv of the process's own component). Connectors get only the client
 // layer, the license, and the user overrides.
+//
+// The trust store options of the JVM come after the layering. They are
+// appended to JAVA_TOOL_OPTIONS, so the tuning of a user stands and the
+// process still reads the store that its init container builds. A value that
+// already names a trust store keeps it. See appendTrustStoreOptions.
 func render(in Input, p Process) rendered {
 	if p.Component == ComponentConnectors {
 		return rendered{
@@ -96,6 +101,9 @@ func render(in Input, p Process) rendered {
 	env = append(env, roleEnv(p)...)
 	env = append(env, userEnv(in, p)...)
 	r.env = dedupeEnv(env)
+	if usesTrustStore(in, p) {
+		appendTrustStoreOptions(r.env)
+	}
 	r.envFrom = userEnvFrom(in, p)
 
 	if p.Component == ComponentZeebe {

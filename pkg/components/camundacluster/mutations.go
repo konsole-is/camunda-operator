@@ -49,16 +49,21 @@ const (
 	// MutationVolumeRetention keeps the broker volumes on deletion when
 	// spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted is Retain.
 	MutationVolumeRetention = "VolumeRetention"
+	// MutationTrustStore builds the JVM trust store of the process when the
+	// secondary storage names a certificate authority, see
+	// trustStoreMutation.
+	MutationTrustStore = "TrustStore"
 )
 
 // workloadMutation is a mutation that applies to a StatefulSet and to a
 // Deployment alike; the builders lift it into their own mutation type.
 type workloadMutation = feature.Mutation[primitives.WorkloadMutator]
 
-// workloadMutations returns the override mutations of a process, each gated
-// on its field: Resources, SchedulingConstraints, PodMetadata,
-// ServiceAccount. Every builder registers them, so a process with no
-// overrides renders the base workload only.
+// workloadMutations returns the mutations of a process that a StatefulSet and
+// a Deployment share: the override mutations, each gated on its field
+// (Resources, SchedulingConstraints, PodMetadata, ServiceAccount), and
+// TrustStore. Every builder registers them, so a process with no overrides
+// and no private certificate authority renders the base workload only.
 func workloadMutations(in Input, p Process) []workloadMutation {
 	e := in.Effective
 	workload := e.Workload(p.Component)
@@ -125,6 +130,7 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 				return nil
 			},
 		},
+		trustStoreMutation(in, p),
 	}
 }
 

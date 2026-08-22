@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,6 +40,12 @@ import (
 // database do not resolve. Only dump Jobs consume them, so the cluster warns
 // and does not park.
 const eventReasonDumpCredentials = "DumpCredentialsUnresolved"
+
+// eventReasonTrustStoreOptions is recorded when a process needs the JVM trust
+// store but reads JAVA_TOOL_OPTIONS from a reference. The operator cannot add
+// its options to such an entry, and the referenced value can already name a
+// trust store, so the cluster warns and does not park.
+const eventReasonTrustStoreOptions = "TrustStoreOptionsNotApplied"
 
 // mirroredSecrets are the copies of the referenced Secrets that live outside
 // the cluster namespace: the copied keys and their data, by purpose.
@@ -86,6 +93,7 @@ func (r *CamundaClusterReconciler) preCheck(
 		res.resolvePlatform,
 		res.resolveAuth,
 		res.resolveStorage,
+		res.warnReferencedJavaToolOptions,
 		res.resolveObjectStorage,
 	}
 	for _, step := range steps {
@@ -276,6 +284,34 @@ func (res *resolver) resolveRDBMSStorage(
 		Database:    dbConfig.Spec.DatabaseName,
 		Credentials: creds,
 	}
+
+	return nil
+}
+
+// warnReferencedJavaToolOptions warns about every process that needs the JVM
+// trust store but reads JAVA_TOOL_OPTIONS from a reference. It needs
+// in.Effective and in.Storage, and it never fails: the referenced value can
+// already name a trust store that holds the certificate authority, so the
+// combination is legal and only the operator options are lost.
+func (res *resolver) warnReferencedJavaToolOptions(_ context.Context, in *components.Input) error {
+	referenced := components.ReferencedJavaToolOptions(*in)
+	if len(referenced) == 0 {
+		return nil
+	}
+
+	res.recorder.Eventf(
+		res.cluster,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonTrustStoreOptions,
+		eventActionReconcile,
+		"Processes %s read JAVA_TOOL_OPTIONS from a reference, "+
+			"so the operator cannot add the trust store options. "+
+			"The operator builds the trust store at %s. "+
+			"If the referenced value does not name it, the Elasticsearch export fails",
+		strings.Join(referenced, ", "),
+		components.TrustStorePath,
+	)
 
 	return nil
 }

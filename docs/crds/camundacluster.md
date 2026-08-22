@@ -60,6 +60,14 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster: `Delete` (the default) removes them, `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
 
+## Secondary storage over TLS
+
+When the [SecondaryStorageConfig](secondarystorageconfig.md) names a certificate authority under `elasticsearch.caSecretRef`, the brokers, the gateway, and the web applications trust that authority. A cluster on an [ElasticsearchCluster](elasticsearchcluster.md) gets this without a step from you, because that kind fills `caSecretRef` itself. For an Elasticsearch of your own behind a private authority, set `caSecretRef` on the contract.
+
+The Zeebe Elasticsearch exporter needs this trust. It has no TLS setting of its own ([camunda/camunda#9839](https://github.com/camunda/camunda/issues/9839)), so without `caSecretRef` it writes no records and [CamundaOptimize](camundaoptimize.md) stays empty. Every TLS client in those processes then trusts the authority, not only the exporter.
+
+The trust arrives through `JAVA_TOOL_OPTIONS`. If you set that variable yourself, read [Environment and JVM](#environment-and-jvm).
+
 ## Backups
 
 Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket, under the prefix `<basePath>/<namespace>/<name>` on S3 and GCS, so two clusters never share a prefix. Azure Blob has no prefix: every cluster needs an `ObjectStorageConfig` with its own container, and a second cluster on the same Azure contract reports `InvalidReference`.
@@ -78,7 +86,11 @@ The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by nam
 
 Two field managers that apply the same name do not collide. The merge is per field inside the entry, so one manager can own `value` while the other owns `valueFrom`. The result would be one entry that carries both, which a container rejects. The API server refuses to store that combination, so the second apply fails with a clear message instead of stalling a rollout. Give your entry a name that no operator writes, or let the operator own the name.
 
-Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process.
+Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so the kubelet restarts a pod after an OutOfMemoryError. Heap size comes from the container-aware defaults of the JVM. To change the JVM options, set `JAVA_TOOL_OPTIONS` in `extraEnv` of the process. When the storage contract names a certificate authority, the trust store options go on the same variable after your value. Heap tuning and the trust store work together.
+
+To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in your value. The JVM then reads your store and no other. That store must hold the certificate authority of the Elasticsearch endpoint, or the exporter fails and Optimize reads no records. This is also the way to trust a second private authority, for example an OIDC provider or a backup store. Put every authority in one store and name it. The spec has no volume field, so the store must already be in the process image. Build the Camunda image with the file in it and set `imageRegistry` on the [CamundaPlatformConfig](camundaplatformconfig.md).
+
+A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap cannot take the trust store options. The cluster records the Warning event `TrustStoreOptionsNotApplied` and names the processes. The store still exists at `/etc/camunda/es-truststore/cacerts` with the password `changeit`. Name it in the referenced value, or name a store of your own that holds the authority.
 
 ## Monitoring
 

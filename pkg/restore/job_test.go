@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -295,6 +296,26 @@ func TestBuildJobDropsTheBrokerInitContainers(t *testing.T) {
 	assert.Empty(t, job.Spec.Template.Spec.InitContainers)
 	require.Len(t, job.Spec.Template.Spec.Containers, 1)
 	assert.Equal(t, ComponentRestore, job.Spec.Template.Spec.Containers[0].Name)
+}
+
+// The trust store container is the exception. The restore container mounts
+// the volume it fills, and the restore JVM runs with the trust store options
+// of the broker. Without it that JVM reads a store that no container wrote,
+// and the restore cannot reach the backup store over TLS.
+func TestBuildJobKeepsTheTrustStoreInitContainer(t *testing.T) {
+	t.Parallel()
+
+	trustStore := corev1.Container{Name: components.InitContainerTrustStore, Image: "camunda/camunda:8.9.9"}
+	in := restoreInput()
+	in.Target.StatefulSet.Spec.Template.Spec.InitContainers = []corev1.Container{
+		{Name: "wait-for-gateway", Image: "busybox"},
+		trustStore,
+	}
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.Equal(t, []corev1.Container{trustStore}, job.Spec.Template.Spec.InitContainers)
 }
 
 // One Target renders one Job per broker. Nothing the builder returns may

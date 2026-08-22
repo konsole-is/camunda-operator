@@ -223,8 +223,12 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 	pod.Containers = []corev1.Container{restoreContainer(in)}
 	// A broker init container prepares a broker, and the platform injects its
 	// own again when this pod is created. The broker's copy therefore runs
-	// twice if it stays.
-	pod.InitContainers = nil
+	// twice if it stays. The trust store container is the exception: it fills
+	// a volume that the restore container mounts, and the restore JVM runs
+	// with the trust store options of the broker. Without it that JVM reads a
+	// store that no container wrote, and the restore cannot reach the backup
+	// store over TLS.
+	pod.InitContainers = keepTrustStore(pod.InitContainers)
 	pod.TopologySpreadConstraints = spreadOverRestorePods(pod.TopologySpreadConstraints, in.OwnerLabel)
 	pod.Volumes = append(
 		slices.Clone(pod.Volumes),
@@ -347,4 +351,16 @@ func overrideEnv(broker []corev1.EnvVar, overrides ...corev1.EnvVar) []corev1.En
 	}
 
 	return env
+}
+
+// keepTrustStore returns the init containers of a broker pod that a restore
+// pod must run: the trust store container alone.
+func keepTrustStore(containers []corev1.Container) []corev1.Container {
+	for _, c := range containers {
+		if c.Name == components.InitContainerTrustStore {
+			return []corev1.Container{*c.DeepCopy()}
+		}
+	}
+
+	return nil
 }

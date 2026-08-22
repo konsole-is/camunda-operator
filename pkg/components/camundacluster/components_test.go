@@ -19,6 +19,7 @@ package camundacluster
 import (
 	"flag"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -524,4 +525,106 @@ func TestAdminSecretComponentCarriesTheRotationBookkeeping(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The legacy Zeebe Elasticsearch exporter writes the zeebe-record indices
+// that Optimize reads. It carries no TLS setting of its own and trusts what
+// the JVM trusts, so a broker reaches an HTTPS Elasticsearch only when the
+// JVM already trusts its certificate authority. A cluster whose secondary
+// storage names one therefore builds a JVM trust store and runs every
+// process against it (camunda/camunda#9839).
+//
+// This test names no constant of the package on purpose. It reads the
+// rendered pod template the way a user reads it with kubectl.
+func TestElasticsearchCAReachesTheJVMTrustStore(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(fixtureDefault(t))
+	require.NoError(t, err)
+
+	seen := 0
+	for _, pc := range comps {
+		if !pc.Process.Enabled || pc.Process.Component == "connectors" {
+			continue
+		}
+		seen++
+
+		process := pc.Process.Component
+		template := previewedPodTemplate(t, previewObjects(t, pc.Component))
+
+		require.Len(t, template.Spec.InitContainers, 1, process)
+		init := template.Spec.InitContainers[0]
+		assert.Contains(t, strings.Join(init.Command, " "), "keytool", process)
+		assert.Equal(t, template.Spec.Containers[0].Image, init.Image, process)
+
+		options := containerEnvValue(template.Spec.Containers[0], "JAVA_TOOL_OPTIONS")
+		assert.Contains(t, options, "-XX:+ExitOnOutOfMemoryError", process)
+		assert.Contains(t, options, "-Djavax.net.ssl.trustStorePassword=changeit", process)
+
+		store := trustStoreOptionValue(t, options)
+		assert.True(
+			t, mountsFile(template.Spec.Containers[0], store),
+			"%s: the process container does not mount %q", process, store,
+		)
+		assert.True(
+			t, mountsFile(init, store), "%s: the init container does not mount %q", process, store,
+		)
+	}
+	assert.Equal(t, 2, seen)
+}
+
+// The connectors runtime never reads the secondary storage, so it gets no
+// trust store.
+func TestConnectorsGetNoTrustStore(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(fixtureDefault(t))
+	require.NoError(t, err)
+
+	for _, pc := range comps {
+		if pc.Process.Component != ComponentConnectors {
+			continue
+		}
+
+		template := previewedPodTemplate(t, previewObjects(t, pc.Component))
+		assert.Empty(t, template.Spec.InitContainers)
+		assert.Empty(t, template.Spec.Volumes)
+	}
+}
+
+// containerEnvValue returns the value of the named environment entry of a
+// container, or "" when it carries none.
+func containerEnvValue(c corev1.Container, name string) string {
+	for _, e := range c.Env {
+		if e.Name == name {
+			return e.Value
+		}
+	}
+	return ""
+}
+
+// trustStoreOptionValue returns the path that -Djavax.net.ssl.trustStore
+// names in a JAVA_TOOL_OPTIONS value.
+func trustStoreOptionValue(t *testing.T, options string) string {
+	t.Helper()
+
+	const prefix = "-Djavax.net.ssl.trustStore="
+	for option := range strings.FieldsSeq(options) {
+		if path, found := strings.CutPrefix(option, prefix); found {
+			return path
+		}
+	}
+
+	require.Fail(t, "no trust store option", options)
+	return ""
+}
+
+// mountsFile reports whether a container mounts the volume that holds file.
+func mountsFile(c corev1.Container, file string) bool {
+	for _, mount := range c.VolumeMounts {
+		if strings.HasPrefix(file, mount.MountPath+"/") {
+			return true
+		}
+	}
+	return false
 }
