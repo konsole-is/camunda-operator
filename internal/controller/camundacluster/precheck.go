@@ -146,34 +146,6 @@ func (res *resolver) resolveEffective(ctx context.Context, in *components.Input)
 	return nil
 }
 
-// warnReferencedJavaToolOptions warns about every process that needs the JVM
-// trust store but reads JAVA_TOOL_OPTIONS from a reference. It needs
-// in.Effective and in.Storage, and it never fails: the referenced value can
-// already name a trust store that holds the certificate authority, so the
-// combination is legal and only the operator options are lost.
-func (res *resolver) warnReferencedJavaToolOptions(_ context.Context, in *components.Input) error {
-	referenced := components.ReferencedJavaToolOptions(*in)
-	if len(referenced) == 0 {
-		return nil
-	}
-
-	res.recorder.Eventf(
-		res.cluster,
-		nil,
-		corev1.EventTypeWarning,
-		eventReasonTrustStoreOptions,
-		eventActionReconcile,
-		"Processes %s read JAVA_TOOL_OPTIONS from a reference, "+
-			"so the operator cannot add the trust store options. "+
-			"The operator builds the trust store at %s. "+
-			"If the referenced value does not name it, the Elasticsearch export fails",
-		strings.Join(referenced, ", "),
-		components.TrustStorePath,
-	)
-
-	return nil
-}
-
 // resolvePlatform reads the CamundaPlatformConfig that spec.platformConfigRef
 // names into in.Platform and points the license reference at its local copy.
 func (res *resolver) resolvePlatform(ctx context.Context, in *components.Input) error {
@@ -312,6 +284,34 @@ func (res *resolver) resolveRDBMSStorage(
 		Database:    dbConfig.Spec.DatabaseName,
 		Credentials: creds,
 	}
+
+	return nil
+}
+
+// warnReferencedJavaToolOptions warns about every process that needs the JVM
+// trust store but reads JAVA_TOOL_OPTIONS from a reference. It needs
+// in.Effective and in.Storage, and it never fails: the referenced value can
+// already name a trust store that holds the certificate authority, so the
+// combination is legal and only the operator options are lost.
+func (res *resolver) warnReferencedJavaToolOptions(_ context.Context, in *components.Input) error {
+	referenced := components.ReferencedJavaToolOptions(*in)
+	if len(referenced) == 0 {
+		return nil
+	}
+
+	res.recorder.Eventf(
+		res.cluster,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonTrustStoreOptions,
+		eventActionReconcile,
+		"Processes %s read JAVA_TOOL_OPTIONS from a reference, "+
+			"so the operator cannot add the trust store options. "+
+			"The operator builds the trust store at %s. "+
+			"If the referenced value does not name it, the Elasticsearch export fails",
+		strings.Join(referenced, ", "),
+		components.TrustStorePath,
+	)
 
 	return nil
 }
