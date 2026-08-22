@@ -19,6 +19,7 @@ package camundacluster
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -175,5 +176,25 @@ var _ = Describe("CamundaCluster secondary storage backend", func() {
 
 		expectHolds(first)
 		expectHolds(second)
+	})
+
+	// Nothing but a watch on the clusters tells a parked cluster that its
+	// holder went: its own watch reports events on itself only.
+	It("resumes the parked cluster when the holder is deleted", func() {
+		ns := newNamespace()
+		binding := createBinding(ns, true)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		Expect(k8sClient.Create(ctx, holder)).To(Succeed())
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(parked)
+		expectParked(parked, holder)
+
+		Expect(k8sClient.Delete(ctx, holder)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(holder), &v1.CamundaCluster{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		expectHolds(parked)
 	})
 })
