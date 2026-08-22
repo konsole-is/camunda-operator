@@ -53,10 +53,6 @@ const (
 	ccName          = "camunda"
 	ccPlatform      = "camunda-e2e"
 	ccRDBMSPlatform = "camunda-rdbms-e2e"
-	// ccVersion is the Camunda release under test; ccConnectorsVersion the
-	// connectors bundle, which has its own patch line.
-	ccVersion           = "8.9.9"
-	ccConnectorsVersion = "8.9.7"
 	// ccStorageConfig is the SecondaryStorageConfig of the Elasticsearch
 	// flow, published by its ElasticsearchCluster.
 	ccStorageConfig = "camunda-storage"
@@ -113,7 +109,7 @@ func newCluster(namespace, platform, storageRef, backupRef string, connectors bo
 		ObjectMeta: metav1.ObjectMeta{Name: ccName, Namespace: namespace},
 		Spec: v1.CamundaClusterSpec{
 			PlatformConfigRef: platform,
-			Version:           ccVersion,
+			Version:           utils.CamundaVersion(),
 			StorageRef:        storageRef,
 			BackupStorageRef:  backupRef,
 			Zeebe: &v1.ZeebeSpec{
@@ -133,7 +129,7 @@ func newCluster(namespace, platform, storageRef, backupRef string, connectors bo
 		// not from starving the pod that has to boot.
 		cluster.Spec.Connectors = &v1.ConnectorsSpec{
 			Enabled:      new(true),
-			Version:      ccConnectorsVersion,
+			Version:      utils.ConnectorsVersion(),
 			WorkloadSpec: v1.WorkloadSpec{Resources: requests("250m", "512Mi")},
 		}
 	}
@@ -168,7 +164,7 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: ccNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:                esVersion,
+				Version:                utils.ElasticsearchVersion(),
 				Replicas:               new(int32(1)),
 				StorageSize:            new(resource.MustParse(esStorageSize)),
 				Resources:              requests("500m", "1Gi"),
@@ -412,8 +408,8 @@ var _ = Describe("CamundaCluster", Ordered, func() {
 		// so this wait is where connectors races the gateway. When it times
 		// out on "connectors: Waiting for replicas: 0/1 ready", read the
 		// "actuator health of ..." block that dumpDiagnostics writes for the
-		// connectors pod. Read it first, because the connectors container
-		// writes no log of its own (issue #144).
+		// connectors pod. Read it first: it names the indicator that is down,
+		// which no log line does (issue #144).
 		//
 		// The readiness group of the runtime holds two indicators and the
 		// document reports both. zeebeClient down means the gateway does not

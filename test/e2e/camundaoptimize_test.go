@@ -52,10 +52,6 @@ const (
 	optimizeName       = "camunda-optimize"
 	optimizePlatform   = "camunda-optimize-e2e"
 	optimizeAuthConfig = "camunda-optimize-e2e-auth"
-	// optimizeVersion is the Optimize release under test. Optimize has its own
-	// patch line, so it is not ccVersion. Only the minor has to match, and
-	// this is the newest 8.9 tag of camunda/optimize.
-	optimizeVersion = "8.9.16"
 	// optimizeStorage is the SecondaryStorageConfig of the flow.
 	optimizeStorage = "camunda-optimize-storage"
 	// optimizeSecretName is the Secret of the namespace that holds the client
@@ -97,7 +93,7 @@ func optimizeElasticsearch() *v1.ElasticsearchCluster {
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 		ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: optimizeNamespace},
 		Spec: v1.ElasticsearchClusterSpec{
-			Version:                esVersion,
+			Version:                utils.ElasticsearchVersion(),
 			Replicas:               new(int32(1)),
 			StorageSize:            new(resource.MustParse(esStorageSize)),
 			Resources:              requests("500m", "1Gi"),
@@ -168,7 +164,7 @@ func newOptimize() *v1.CamundaOptimize {
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaOptimize"},
 		ObjectMeta: metav1.ObjectMeta{Name: optimizeName, Namespace: optimizeNamespace},
 		Spec: v1.CamundaOptimizeSpec{
-			Version:           optimizeVersion,
+			Version:           utils.OptimizeVersion(),
 			ManagementAuthRef: optimizeAuthConfig,
 			ClusterRef:        v1.ClusterRef{Name: ccName},
 			Webapp:            &v1.WorkloadSpec{Resources: requests("250m", "1Gi")},

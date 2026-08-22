@@ -18,7 +18,6 @@ package utils
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 )
@@ -27,6 +26,7 @@ const (
 	// defaultECKVersion is the ECK operator release that the e2e suite
 	// installs when ECK_VERSION is unset. The Makefile pins the same value
 	// and passes it through the environment.
+	// renovate: datasource=github-releases depName=elastic/cloud-on-k8s extractVersion=^v(?<version>.*)$
 	defaultECKVersion  = "3.5.0"
 	eckCRDsURLTmpl     = "https://download.elastic.co/downloads/eck/%s/crds.yaml"
 	eckOperatorURLTmpl = "https://download.elastic.co/downloads/eck/%s/operator.yaml"
@@ -36,10 +36,7 @@ const (
 // ECKVersion returns the ECK operator release that the suite installs: the
 // value of ECK_VERSION, or the pinned default.
 func ECKVersion() string {
-	if v, ok := os.LookupEnv("ECK_VERSION"); ok && v != "" {
-		return v
-	}
-	return defaultECKVersion
+	return envOr("ECK_VERSION", defaultECKVersion)
 }
 
 // IsECKInstalled reports whether the cluster serves the ECK Elasticsearch

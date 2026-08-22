@@ -1,0 +1,80 @@
+// Renovate keeps the image pins of the e2e suite on the newest patch of the
+// minor the operator supports. The pins are Go constants, a YAML image field,
+// and a Makefile variable, which no standard manager reads, so a marker
+// comment above each one names what to track:
+//
+//   // renovate: datasource=docker depName=camunda/camunda
+//   defaultCamundaVersion = "8.9.17"
+//
+// Only the regex managers below run. Go modules and GitHub Actions stay out
+// on purpose. Tracking them is a separate decision.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  enabledManagers: ["custom.regex"],
+  // config:recommended skips every **/test/** path, and that is where the
+  // pins live.
+  ignorePaths: [],
+  // An alpha or snapshot tag of the next Camunda minor never lands.
+  ignoreUnstable: true,
+  // A pin still gets its patch when a newer minor exists. Without this the
+  // minor and the patch share one update, and the rule below drops it whole.
+  separateMinorPatch: true,
+  semanticCommits: "enabled",
+  semanticCommitType: "chore",
+  semanticCommitScope: "e2e",
+  customManagers: [
+    {
+      // A Go constant: the marker, then `name = "<version>"` or
+      // `name = "<image>:<version>"` on the next line, inside a const block
+      // or after a const keyword of its own.
+      customType: "regex",
+      managerFilePatterns: ["/\\.go$/"],
+      matchStrings: [
+        "// renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*(?:const\\s+)?\\w+\\s*=\\s*\"(?:[^\"]*:)?(?<currentValue>[^\"]+)\"",
+      ],
+    },
+    {
+      // A YAML image field: the marker, then `image: <image>:<version>`.
+      customType: "regex",
+      managerFilePatterns: ["/^test/e2e/testdata/.*\\.yaml$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s*\\n\\s*image:\\s*\\S+:(?<currentValue>\\S+)",
+      ],
+    },
+    {
+      // A Makefile variable: the marker, then `NAME ?= <version>`.
+      customType: "regex",
+      managerFilePatterns: ["/^Makefile$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\w+\\s*\\?=\\s*(?<currentValue>\\S+)",
+      ],
+    },
+  ],
+  packageRules: [
+    {
+      // Every pin stays on its minor. A new Camunda minor is a
+      // supported-version decision the operator makes on purpose, and a new
+      // ECK minor has to move together with the cloud-on-k8s module in go.mod.
+      matchManagers: ["custom.regex"],
+      matchUpdateTypes: ["major", "minor"],
+      enabled: false,
+    },
+    {
+      // curl and Keycloak are test fixtures with no minor to hold. Camunda 8.9
+      // supports every Keycloak 26.x, and the major stays off above.
+      matchDepNames: ["curlimages/curl", "quay.io/keycloak/keycloak"],
+      matchUpdateTypes: ["minor"],
+      enabled: true,
+    },
+    {
+      // The supported Camunda minor. Adopting 8.10 means raising this bound
+      // to "<8.11.0" and the pins in test/utils/versions.go with it. Semver
+      // reads 8.10.0-alpha1 and 8.9.9992-SNAPSHOT as prereleases, which
+      // ignoreUnstable drops. The Docker versioning would not.
+      matchDepNames: ["camunda/camunda", "camunda/connectors-bundle", "camunda/optimize"],
+      versioning: "semver",
+      allowedVersions: "<8.10.0",
+    },
+  ],
+}

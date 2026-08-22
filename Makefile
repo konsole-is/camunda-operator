@@ -107,7 +107,13 @@ KIND_CLUSTER ?= camunda-operator-test-e2e
 # ECK_VERSION pins the ECK operator release that the e2e suite installs. Keep
 # it on the same minor as the cloud-on-k8s module in go.mod: the operator
 # under test renders Elasticsearch resources with the types of that module.
+# renovate: datasource=github-releases depName=elastic/cloud-on-k8s extractVersion=^v(?<version>.*)$
 ECK_VERSION ?= 3.5.0
+
+# The Camunda, connectors, Optimize, and Elasticsearch releases of the suite
+# are pinned in test/utils/versions.go. Export CAMUNDA_VERSION,
+# CAMUNDA_CONNECTORS_VERSION, CAMUNDA_OPTIMIZE_VERSION, or
+# ELASTICSEARCH_VERSION to run the suite against another release.
 
 # E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the
 # Elasticsearch image and bootstraps a node, which takes longer than the

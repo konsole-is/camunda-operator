@@ -54,6 +54,8 @@ var (
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
 // To skip ECK installation, set: ECK_INSTALL_SKIP=true
 // To install a different ECK release, set: ECK_VERSION=<version>
+// To test another Camunda, connectors, Optimize, or Elasticsearch release,
+// set the variable that test/utils/versions.go reads for it.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting camunda-operator e2e test suite\n")
