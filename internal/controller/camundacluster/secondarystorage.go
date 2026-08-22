@@ -52,7 +52,7 @@ func (res *resolver) resolveStorageHolder(ctx context.Context, in *components.In
 		return res.usesBackend(ctx, other, backend)
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("finding the holder of %s: %w", backend, err)
 	}
 	if holder == nil {
 		return nil

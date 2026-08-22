@@ -127,11 +127,11 @@ var defaultPorts = map[string]string{"http": "80", "https": "443"}
 
 // ElasticsearchIdentity normalizes an Elasticsearch endpoint URL so that two
 // spellings of one server compare equal: the scheme and the host in lower
-// case, the port explicit (the default port of the scheme when the URL names
-// none), the path without its trailing slash, and no query or fragment. The
-// path stays, because an Elasticsearch behind a path prefix is another
-// server. An endpoint without a scheme, a host, or a resolvable port is an
-// error.
+// case and without a trailing dot, the port explicit (the default port of
+// the scheme when the URL names none), the path without its trailing slash,
+// and no query or fragment. The path stays, because an Elasticsearch behind
+// a path prefix is another server. An endpoint without a scheme, a host, or
+// a resolvable port is an error.
 func ElasticsearchIdentity(endpoint string) (string, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
@@ -140,6 +140,7 @@ func ElasticsearchIdentity(endpoint string) (string, error) {
 
 	scheme := strings.ToLower(parsed.Scheme)
 	host := strings.ToLower(parsed.Hostname())
+	host = strings.TrimSuffix(host, ".")
 	if scheme == "" || host == "" {
 		return "", fmt.Errorf("endpoint %q has no scheme or no host", endpoint)
 	}

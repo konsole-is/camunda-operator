@@ -174,11 +174,9 @@ func listByIndex[L any, PL interface {
 	return list
 }
 
-// enqueueAll maps an event to every cluster. The references that decide who
-// holds a secondary storage backend enqueue every cluster. The holder can
-// change when the contract chain of any cluster changes. A backend cannot be
-// indexed without resolving that chain. DatabaseServerConfigs are few and
-// rarely change, and any cluster on an rdbms binding can depend on one.
+// enqueueAll maps an event to every cluster. DatabaseServerConfigs are few
+// and rarely change, and any cluster on an rdbms binding can depend on one.
+// Bindings and DatabaseConfigs take it for the reason enqueueOthers gives.
 func (r *CamundaClusterReconciler) enqueueAll() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
 		set := requestSet{}
@@ -286,15 +284,13 @@ func (s requestSet) requests() []reconcile.Request {
 // configs through the indexes, DatabaseServerConfigs for every cluster, and
 // Secrets (metadata only) through enqueueForSecret, which also follows the
 // Secret indexes of the platform configs, the bindings, and the
-// DatabaseConfigs. The clusters themselves are watched for the others: who
-// holds a secondary storage backend can change on any cluster's creation,
-// deletion, or spec change, so every such event enqueues every other
-// cluster. Bindings and DatabaseConfigs enqueue every cluster for the same
-// reason, filtered to spec changes. The pre-checks put the resource versions
-// of the Secrets and the generations of the CRs they read into the config
-// hash, so any of these events rolls the pods whose rendered configuration
-// changed. It also sets EventRecorder to the recorder of the manager and
-// builds the uncached component client when they are nil.
+// DatabaseConfigs. The cluster, SecondaryStorageConfig, and DatabaseConfig
+// watches fan out to every other cluster, filtered to spec changes; see
+// enqueueOthers for why. The pre-checks put the resource versions of the
+// Secrets and the generations of the CRs they read into the config hash, so
+// any of these events rolls the pods whose rendered configuration changed.
+// It also sets EventRecorder to the recorder of the manager and builds the
+// uncached component client when they are nil.
 func (r *CamundaClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
 		r.EventRecorder = mgr.GetEventRecorder("camundacluster")

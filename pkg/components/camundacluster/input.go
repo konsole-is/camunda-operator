@@ -42,10 +42,12 @@ type Storage struct {
 }
 
 // StorageHolder is the CamundaCluster that holds a secondary storage backend
-// and the backend it holds, as Backend.String of the contract wrapper names
-// it.
+// that this cluster also names.
 type StorageHolder struct {
+	// Cluster is the namespace and name of the holder.
 	Cluster types.NamespacedName
+	// Backend names the backend for the condition message, for example
+	// `Elasticsearch "https://es.example.com:9200"`.
 	Backend string
 }
 

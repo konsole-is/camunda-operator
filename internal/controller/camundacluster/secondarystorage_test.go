@@ -47,9 +47,9 @@ func newNamedCluster(
 //
 // Every SecondaryStorageConfig this returns resolves to the same backend
 // identity, because fixtures.DatabaseServerConfig fixes the host and the
-// port, and fixtures.DatabaseConfig fixes the database name. Two specs that
-// call it stay independent only because each spec deletes its own server
-// with DeferCleanup.
+// port, and fixtures.DatabaseConfig fixes the database name. Two specs stay
+// independent because createCluster deletes each cluster and waits for it to
+// be gone before the next spec runs.
 func createRDBMSBinding(namespace string, server *v1.DatabaseServerConfig) *v1.SecondaryStorageConfig {
 	GinkgoHelper()
 	dbConfig := fixtures.DatabaseConfig()
@@ -199,6 +199,35 @@ var _ = Describe("CamundaCluster secondary storage backend", func() {
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 
+		expectHolds(parked)
+	})
+
+	// A contract that names another endpoint releases the backend: the
+	// parked cluster on it holds the backend on the next reconcile.
+	It("resumes the parked cluster when the holder's contract names another endpoint", func() {
+		ns := newNamespace()
+		holderBinding := createBinding(ns, true)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), holderBinding)
+		createCluster(holder)
+		parkedBinding := fixtures.SecondaryStorageConfigElasticsearch(ns)
+		parkedBinding.Spec.Elasticsearch.Endpoint = holderBinding.Spec.Elasticsearch.Endpoint
+		Expect(k8sClient.Create(ctx, parkedBinding)).To(Succeed())
+		createSecret(ns, parkedBinding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+			"username": "camunda", "password": "es-password",
+		})
+		parked := newNamedCluster("cc-b-", ns, createPlatformConfig(), parkedBinding)
+		createCluster(parked)
+		expectHolds(holder)
+		expectParked(parked, holder)
+
+		Eventually(func(g Gomega) {
+			var latest v1.SecondaryStorageConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(holderBinding), &latest)).To(Succeed())
+			latest.Spec.Elasticsearch.Endpoint = "https://" + holderBinding.Name + "-other." + ns + ".svc:9200"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectHolds(holder)
 		expectHolds(parked)
 	})
 

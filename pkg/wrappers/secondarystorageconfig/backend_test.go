@@ -56,6 +56,9 @@ func TestElasticsearchIdentity(t *testing.T) {
 		"keeps an IPv6 host bracketed": {
 			endpoint: "https://[::1]:9200", want: "https://[::1]:9200",
 		},
+		"drops a trailing dot of the host": {
+			endpoint: "https://es.example.com.:9200", want: "https://es.example.com:9200",
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

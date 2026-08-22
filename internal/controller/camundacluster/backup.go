@@ -118,7 +118,7 @@ func (res *resolver) rejectSharedAzureContainer(ctx context.Context, bucket *v1.
 		return other.Spec.BackupStorageRef == bucket.Name, nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("finding the clusters that share ObjectStorageConfig %q: %w", bucket.Name, err)
 	}
 	if other == nil {
 		return nil
