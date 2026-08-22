@@ -155,7 +155,7 @@ Most fields merge like this, value by value. A few blocks replace as a whole, be
 
 When you edit a preset, every cluster that references it reads the new baseline on its next reconcile. A new version rolls the pods of every cluster. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a running cluster, which keeps its volumes and records the event `StorageShrinkIgnored`.
 
-Every cluster whose brokers run a higher version refuses the new one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. The [CamundaCluster page](../crds/camundacluster.md#version) states the rule.
+Every cluster whose brokers run a higher version refuses the new one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. To lower a fleet on purpose, set the annotation `camunda.io/allow-version-downgrade` to the target version on each cluster first. The [CamundaCluster page](../crds/camundacluster.md#version) states the rule.
 
 To roll out a change in steps, create a second preset, for example `medium-v2`, and move clusters to it one at a time. When every cluster is on the new preset, delete the old one. A cluster that references a preset that does not exist reports `Ready: False` with reason `InvalidReference` and keeps running as it is.
 

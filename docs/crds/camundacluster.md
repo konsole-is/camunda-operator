@@ -58,19 +58,22 @@ The operator generates the admin password once and keeps it stable. To rotate it
 
 The effective version is `spec.version`, or the version of the preset when the field is absent. It is the version the operator deploys, and a new version rolls every workload.
 
-The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster: a broker that starts over data of a newer version marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records the Warning event `VersionDowngradeRefused`, and applies nothing. The brokers keep the version they have.
+The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster: a broker that starts on data that a newer version wrote marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records the Warning event `VersionDowngradeRefused`, and applies nothing. The brokers keep the version they have.
 
 ```yaml
 status:
+  observedGeneration: 4
   conditions:
     - type: Ready
       status: "False"
       reason: VersionDowngradeRefused
       message: 'the effective version 8.9.0 is below the running version 8.9.5. Camunda
-        does not support a downgrade of a running cluster: a broker that starts over
-        data of a newer version marks itself unhealthy. Set the version to 8.9.5 or
-        later, restore a backup taken with 8.9.0, or set the annotation camunda.io/allow-version-downgrade="8.9.0"
+        does not support a downgrade of a running cluster: a broker that starts on
+        data that a newer version wrote marks itself unhealthy. Set the version to
+        8.9.5 or later, restore a backup taken with 8.9.0, or set the annotation camunda.io/allow-version-downgrade="8.9.0"
         on the cluster to downgrade on purpose'
+      observedGeneration: 4
+      lastTransitionTime: "2026-08-20T09:14:00Z"
 ```
 
 The rule reads the effective version. Three edits therefore meet it the same way:
@@ -79,7 +82,7 @@ The rule reads the effective version. Three edits therefore meet it the same way
 - A removed `spec.version`, when the preset carries a lower version.
 - A preset whose version is lowered.
 
-The running version is the version the broker pods run, and the message names it. A new cluster has no running version, so this rule does not apply to it.
+The running version is the version on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. A new cluster has no running version, so this rule does not apply to it.
 
 A restore sanctions its own move to the version of its backup. The [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#why-the-downgrade-is-safe-here) and [LogicalRestoreRDBMS](logicalrestorerdbms.md#why-the-downgrade-is-safe-here) pages explain why that move is safe.
 

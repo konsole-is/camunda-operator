@@ -1,7 +1,7 @@
 # Version downgrade guard for CamundaCluster
 
 - Date: 2026-08-22
-- Status: draft
+- Status: accepted
 - Issue: #168
 - Design record after merge: `docs/crds/camundacluster.md`, the three restore pages under
   `docs/crds/`, and `docs/guides/backup.md`
