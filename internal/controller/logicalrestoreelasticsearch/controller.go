@@ -192,6 +192,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		// terminal transition. A release that failed heals here too.
 		restore.StageTerminal(&lres, &lres.Status.RestoreProgress)
 
+		// The Jobs go before the claim. A completed Job keeps its pod, the pod
+		// keeps the broker volume it mounts, and the claim is what tells the
+		// next operation that the cluster is free. Foreground propagation
+		// finishes after this look, so the claim waits for the look that finds
+		// the Jobs gone.
+		collected, err := restore.CollectJobs(
+			ctx, r.Client, r.APIReader, &lres, &lres.Status.RestoreProgress,
+		)
+		if err != nil || !collected.Done {
+			return ctrl.Result{RequeueAfter: collected.Wait}, err
+		}
+
 		return ctrl.Result{}, r.releaseClaim(ctx, &lres)
 	}
 

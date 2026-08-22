@@ -77,10 +77,15 @@ const (
 	// the broker data volumes and runs the restore application on them.
 	LogicalRestoreRestoringPrimaryStorage LogicalRestorePhase = "RestoringPrimaryStorage"
 	// LogicalRestoreCompleted means that the restore finished. The target can
-	// be unsuspended.
+	// be unsuspended. The operator removes the per-broker Jobs here, so their
+	// pods release the broker data volumes.
 	LogicalRestoreCompleted LogicalRestorePhase = "Completed"
 	// LogicalRestoreFailed means that the restore failed. The Ready condition
-	// names the failing phase.
+	// names the failing phase. The operator keeps the per-broker Jobs, because
+	// their logs are the diagnosis, so a restore that reached
+	// RestoringPrimaryStorage holds the broker data volumes until somebody
+	// deletes it. A restore that failed in an earlier phase records no Job in
+	// PrimaryJobNames and holds nothing.
 	LogicalRestoreFailed LogicalRestorePhase = "Failed"
 )
 
@@ -110,7 +115,9 @@ type RestoreProgress struct {
 	Brokers int32 `json:"brokers,omitempty"`
 	// PrimaryJobNames are the per-broker restore-application Jobs, in broker
 	// order. The operator records them before it applies the Jobs, so the
-	// record covers every Job that the next look finds.
+	// record covers every Job that the next look finds. It is also the list
+	// that a restore which completed removes, and the list whose logs explain
+	// a restore that failed.
 	// +optional
 	PrimaryJobNames []string `json:"primaryJobNames,omitempty"`
 	// RecreatedClaims names the broker data claims that the restore deleted

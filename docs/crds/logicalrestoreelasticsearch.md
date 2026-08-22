@@ -109,9 +109,30 @@ A restore in `Pending` waits without a bound, because it deleted nothing yet.
 
 The restore pins the backup ID and the identity of the target when it starts. A backup that somebody deletes and creates again under the same name holds other artifacts, and a cluster that somebody deletes and creates again under the same name is another cluster. Both end the restore. Create a new restore for the resources as they are now.
 
+## The restore Jobs
+
+The restore runs the Camunda restore application once per broker, as a Job. Each Job pod mounts the data volume of its broker. A pod that finished still counts as a user of that volume, so the volume cannot terminate while the pod exists.
+
+| Terminal phase | What happens to the Jobs |
+| --- | --- |
+| `Completed` | The operator deletes them, together with their pods. Kubernetes removes the pods first and the Job last, so the delete takes a moment. The broker data volumes are free once the last pod is gone. |
+| `Failed` | The operator keeps them. The logs of a failed Job name the cause, and only the pod keeps them readable. |
+
+**A restore that failed after it started the restore application holds the broker data volumes.** `status.primaryJobNames` tells you which case you are in. A restore that failed in an earlier phase names no Job there and holds nothing.
+
+When it does name Jobs, you read their logs, and then you delete the restore. The delete takes the Jobs and their pods with it, and the volumes are free once the last pod is gone. Until you do that, a second restore of the cluster and the deletion of the cluster both wait on a volume that never terminates. The waiting restore reports the pod that holds the volume and names the resource that runs it.
+
+```bash
+# The Jobs that the restore still holds. status.primaryJobNames lists the same names.
+kubectl get job -n my-cluster-ns -l camunda.io/logical-restore-elasticsearch=my-cluster-restore
+
+# The log of the Job of broker 0, named the way the command above lists it.
+kubectl logs -n my-cluster-ns job/my-cluster-restore-lres-0
+```
+
 ## Deletion
 
-Deleting the restore removes its Jobs. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch. The operator writes nothing outside the cluster, so the restore needs no finalizer.
+Deleting the restore removes its Jobs. A restore that completed already removed them. A restore that failed still has them, and this is how you remove them. The recreated broker volumes stay, and so does everything the restore wrote into Elasticsearch. The operator writes nothing outside the cluster, so the restore needs no finalizer.
 
 ## Status
 

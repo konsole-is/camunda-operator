@@ -659,3 +659,74 @@ func releaseTerminatingClaims(w *world) {
 		<-done
 	})
 }
+
+// expectJobsCollected asserts that the operator asked for every named Job with
+// foreground propagation.
+//
+// envtest runs no garbage collector, so a Job that was deleted that way keeps
+// the foreground finalizer and stays in place. The finalizer and the deletion
+// timestamp are therefore what proves the delete. Background propagation
+// returns before the pods are gone, and the pods are what hold the broker
+// volumes.
+func expectJobsCollected(namespace string, names []string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		for _, name := range names {
+			var job batchv1.Job
+			key := types.NamespacedName{Namespace: namespace, Name: name}
+			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+			g.Expect(job.DeletionTimestamp).NotTo(BeNil(), "Job %q", name)
+			g.Expect(job.Finalizers).To(
+				ContainElement(metav1.FinalizerDeleteDependents),
+				"Job %q goes without foreground propagation, so its pods outlive it", name,
+			)
+		}
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectJobsKept asserts that every named Job stays as it is.
+func expectJobsKept(namespace string, names []string) {
+	GinkgoHelper()
+	Consistently(func(g Gomega) {
+		for _, name := range names {
+			var job batchv1.Job
+			key := types.NamespacedName{Namespace: namespace, Name: name}
+			g.Expect(k8sClient.Get(ctx, key, &job)).To(Succeed())
+			g.Expect(job.DeletionTimestamp).To(BeNil(), "Job %q", name)
+		}
+	}, "1s", interval).Should(Succeed())
+}
+
+// collectDeletedJobs plays the garbage collector of a real cluster, for as long
+// as the spec runs. Foreground propagation makes the API server stamp the
+// foregroundDeletion finalizer on a deleted Job and keep the Job until its pods
+// are gone. envtest runs no collector that removes it again, so a spec that
+// waits for the Jobs of a completed restore to go needs this loop.
+func collectDeletedJobs(namespace string) {
+	stop := make(chan struct{})
+	DeferCleanup(func() { close(stop) })
+
+	go func() {
+		defer GinkgoRecover()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+
+			var jobs batchv1.JobList
+			if err := k8sClient.List(ctx, &jobs, client.InNamespace(namespace)); err != nil {
+				continue
+			}
+			for i := range jobs.Items {
+				job := &jobs.Items[i]
+				if job.DeletionTimestamp == nil || len(job.Finalizers) == 0 {
+					continue
+				}
+				job.Finalizers = nil
+				_ = k8sClient.Update(ctx, job)
+			}
+		}
+	}()
+}
