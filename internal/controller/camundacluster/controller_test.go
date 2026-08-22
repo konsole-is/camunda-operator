@@ -27,6 +27,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -1066,6 +1067,57 @@ var _ = Describe("CamundaCluster controller", func() {
 
 		gateway := fetchDeployment(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"})
 		Expect(gateway.Spec.Template.Spec.InitContainers).To(HaveLen(1))
+	})
+
+	// One variable holds a value or a reference, never both, so the operator
+	// cannot add the trust store options to a referenced JAVA_TOOL_OPTIONS.
+	// The pods still build the store, and the cluster warns instead of
+	// exporting nothing without a sign. It does not park: the referenced
+	// value can already name a trust store of the user.
+	It("warns when a process reads JAVA_TOOL_OPTIONS from a reference", func() {
+		ns := newNamespace()
+		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
+		binding.Spec.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "es-ca", Namespace: ns, Key: "ca.crt",
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		createSecret(ns, binding.Spec.Elasticsearch.CredentialsSecretRef.Name, map[string]string{
+			"username": "camunda", "password": "es-password",
+		})
+		createSecret(ns, "es-ca", map[string]string{"ca.crt": "-----BEGIN CERTIFICATE-----"})
+		createSecret(ns, "jvm", map[string]string{"options": "-Xmx6g"})
+
+		cluster := newCluster(ns, createPlatformConfig(), binding)
+		cluster.Spec.ExtraEnv = []corev1.EnvVar{{
+			Name: "JAVA_TOOL_OPTIONS",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "jvm"},
+					Key:                  "options",
+				},
+			},
+		}}
+		createCluster(cluster)
+
+		By("building the trust store and keeping the referenced entry")
+		sts := fetchStatefulSet(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"})
+		pod := sts.Spec.Template.Spec
+		Expect(pod.InitContainers).To(HaveLen(1))
+		Expect(pod.Containers[0].Env).To(ContainElement(SatisfyAll(
+			HaveField("Name", "JAVA_TOOL_OPTIONS"),
+			HaveField("ValueFrom", Not(BeNil())),
+		)))
+
+		By("warning that the trust store options were not applied")
+		Eventually(func(g Gomega) {
+			var events eventsv1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+			reasons := make([]string, 0, len(events.Items))
+			for _, event := range events.Items {
+				reasons = append(reasons, event.Reason)
+			}
+			g.Expect(reasons).To(ContainElement("TrustStoreOptionsNotApplied"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// A binding without a certificate authority costs nothing: no init

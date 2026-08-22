@@ -168,6 +168,86 @@ func TestTrustStoreOptionsIgnoreAPasswordOnItsOwn(t *testing.T) {
 	assertEnv(t, r.env, "JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStorePassword=hunter2 "+trustStoreOptions)
 }
 
+// A JAVA_TOOL_OPTIONS entry that reads its value from a reference gets no
+// trust store options: one variable holds a value or a reference, never both.
+// The operator names every process in that state, so the controller can warn.
+// A silent skip here is the failure that this trust store removes.
+func TestReferencedJavaToolOptionsNamesEveryProcess(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		}
+		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{
+			Name: "JAVA_TOOL_OPTIONS",
+			ValueFrom: &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "jvm"},
+					Key:                  "options",
+				},
+			},
+		}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+
+	referenced := ReferencedJavaToolOptions(in)
+	assert.Contains(t, referenced, ComponentZeebe)
+	assert.NotContains(t, referenced, ComponentConnectors)
+
+	r := render(in, process(t, in, ComponentZeebe))
+	entry, ok := envByName(r.env, "JAVA_TOOL_OPTIONS")
+	require.True(t, ok)
+	assert.NotNil(t, entry.ValueFrom)
+	assert.Empty(t, entry.Value)
+}
+
+// A process that reads JAVA_TOOL_OPTIONS from a value, and a cluster whose
+// storage names no certificate authority, are both silent: the operator has
+// nothing to warn about.
+func TestReferencedJavaToolOptionsIsEmptyWhenTheOptionsLand(t *testing.T) {
+	t.Parallel()
+
+	withCA := newInput(t, func(in *Input) {
+		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		}
+		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx6g"}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+	assert.Empty(t, ReferencedJavaToolOptions(withCA))
+
+	assert.Empty(t, ReferencedJavaToolOptions(fixtureMinimal(t)))
+}
+
+// A later entry replaces an earlier one, because dedupeEnv keeps the last
+// entry of a name. A reference that a value replaces therefore gets the
+// options and raises no warning.
+func TestReferencedJavaToolOptionsFollowsTheLastEntry(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Storage.Elasticsearch.CASecretRef = &v1.SecretKeyRef{
+			Name: "es-ca", Namespace: "my-cluster-ns", Key: "ca.crt",
+		}
+		in.Cluster.Spec.ExtraEnv = []corev1.EnvVar{{
+			Name: "JAVA_TOOL_OPTIONS",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		}}
+		in.Cluster.Spec.Zeebe = &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{
+			ExtraEnv: []corev1.EnvVar{{Name: "JAVA_TOOL_OPTIONS", Value: "-Xmx6g"}},
+		}}
+		in.Effective = NewEffective(in.Cluster.Spec)
+	})
+
+	assert.NotContains(t, ReferencedJavaToolOptions(in), ComponentZeebe)
+
+	r := render(in, process(t, in, ComponentZeebe))
+	assertEnv(t, r.env, "JAVA_TOOL_OPTIONS", "-Xmx6g "+trustStoreOptions)
+}
+
 // Connectors never read the secondary storage, so their environment carries
 // no trust store options.
 func TestTrustStoreOptionsAreAbsentOnConnectors(t *testing.T) {

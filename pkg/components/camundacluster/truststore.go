@@ -17,6 +17,7 @@ limitations under the License.
 package camundacluster
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -214,8 +215,9 @@ func trustStoreMount(readOnly bool) corev1.VolumeMount {
 // example an OIDC provider or a backup store, because the spec carries no CA
 // bundle field.
 //
-// An entry that reads its value from a reference is left alone too. A
-// variable cannot hold a value and a reference at the same time.
+// An entry that reads its value from a reference is left alone too, because a
+// variable holds a value or a reference, never both. The controller warns
+// about every process in that state, see ReferencedJavaToolOptions.
 func appendTrustStoreOptions(env []corev1.EnvVar) {
 	for i, e := range env {
 		if e.Name != camundaconfig.EnvJavaToolOptions || e.ValueFrom != nil || namesATrustStore(e.Value) {
@@ -237,4 +239,43 @@ func namesATrustStore(options string) bool {
 	}
 
 	return false
+}
+
+// ReferencedJavaToolOptions returns the components of the processes that need
+// the trust store but read JAVA_TOOL_OPTIONS from a reference, sorted. It
+// returns nil when every process that needs the trust store gets its options.
+//
+// One variable holds a value or a reference, never both, so the operator
+// cannot add its options to such an entry. The pods still build the store,
+// and the JVM reads it only when the referenced value names it. The caller
+// reports every component in this list, because a silent skip is the failure
+// that this trust store removes.
+func ReferencedJavaToolOptions(in Input) []string {
+	var referenced []string
+	for _, p := range Resolve(in.Effective) {
+		if !p.Enabled || !usesTrustStore(in, p) {
+			continue
+		}
+
+		if readsJavaToolOptionsFromReference(userEnv(in, p)) {
+			referenced = append(referenced, p.Component)
+		}
+	}
+
+	slices.Sort(referenced)
+	return referenced
+}
+
+// readsJavaToolOptionsFromReference reports whether the last JAVA_TOOL_OPTIONS
+// entry of env reads its value from a reference. The last entry decides,
+// because dedupeEnv keeps the last entry of a name.
+func readsJavaToolOptionsFromReference(env []corev1.EnvVar) bool {
+	referenced := false
+	for _, e := range env {
+		if e.Name == camundaconfig.EnvJavaToolOptions {
+			referenced = e.ValueFrom != nil
+		}
+	}
+
+	return referenced
 }
