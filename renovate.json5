@@ -1,6 +1,6 @@
 // Renovate keeps the image pins of the e2e suite on the newest patch of the
 // minor the operator supports. The pins are the env files under
-// test/e2e/matrix/ (one per supported Camunda minor), two Go constants, a
+// test/e2e/matrix/ (one per supported Camunda minor), three Go constants, a
 // YAML image field, and a Makefile variable, which no standard manager reads,
 // so a marker comment above each one names what to track:
 //
