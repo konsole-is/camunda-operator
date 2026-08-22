@@ -55,7 +55,7 @@ The mechanism you read in the code tells you the outcome to write. The mechanism
 - A Lease, a lock, an "admission" phase, what a Job copies from a pod. Say what the reader sees: "a cluster holds one backup or one restore at a time", "the restore waits in `Pending`".
 - A finalizer. Say what is removed and what is kept on deletion instead.
 - Why the code is built the way it is. A reason the reader acts on stays: "a failed restore leaves the cluster suspended, because its volumes can be half written". A reason about the code goes to the commit message and the design spec.
-- The operators above this one. `camunda-cloud-operator`, `camunda-saas-operator`, and `CloudCamundaCluster` never appear in these docs.
+- The operators above this one. `camunda-cloud-operator` and `CloudCamundaCluster` never appear in these docs.
 
 One fact about mechanism stays when the reader meets it: a field manager name that appears in a conflict message for a GitOps tool, a label the reader selects on, an event name.
 
