@@ -25,12 +25,48 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/components/internal/declared"
 )
+
+// Every MirrorPurpose constant of mirror.go is in MirrorPurposes, once. A
+// constant outside the set gets a name from MirroredSecretName and no Secret
+// from the component.
+func TestMirrorPurposesCoverEveryConstant(t *testing.T) {
+	t.Parallel()
+
+	values := declared.Constants(t, "mirror.go", "MirrorPurpose")
+	want := make([]MirrorPurpose, 0, len(values))
+	for _, value := range values {
+		want = append(want, MirrorPurpose(value))
+	}
+	assert.NotEmpty(t, want)
+	assert.ElementsMatch(t, want, MirrorPurposes)
+}
+
+func TestMirrorPurposeValid(t *testing.T) {
+	t.Parallel()
+
+	for _, purpose := range MirrorPurposes {
+		assert.True(t, purpose.Valid(), purpose)
+	}
+	assert.False(t, MirrorPurpose("").Valid())
+	assert.False(t, MirrorPurpose("licence").Valid())
+}
 
 func TestMirroredSecretName(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, "my-cluster-camunda-license", MirroredSecretName(fixtureMinimal(t).Cluster, MirrorPurposeLicense))
+}
+
+func TestMirroredSecretComponentRejectsUnknownPurpose(t *testing.T) {
+	t.Parallel()
+
+	_, err := MirroredSecretComponent(fixtureMinimal(t).Cluster, map[MirrorPurpose]map[string][]byte{
+		"licence": {"key": []byte("license")},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `purpose "licence" is not in MirrorPurposes`)
 }
 
 // One component carries the Secret of every purpose, in MirrorPurposes
@@ -41,7 +77,7 @@ func TestMirroredSecretComponentCarriesEveryMirror(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureMinimal(t)
-	comp, err := MirroredSecretComponent(in.Cluster, map[string]map[string][]byte{
+	comp, err := MirroredSecretComponent(in.Cluster, map[MirrorPurpose]map[string][]byte{
 		MirrorPurposeOIDCClient: {"client-secret": []byte("oidc")},
 		MirrorPurposeLicense:    {"key": []byte("license")},
 	})

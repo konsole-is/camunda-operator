@@ -300,7 +300,7 @@ func stageWorkload(named, owner *v1.CamundaOptimize, comp string) client.ObjectK
 
 // stageMirroredSecret creates the copy of a referenced Secret that optimize
 // makes for a purpose, under its control, and returns its key.
-func stageMirroredSecret(optimize *v1.CamundaOptimize, purpose string) client.ObjectKey {
+func stageMirroredSecret(optimize *v1.CamundaOptimize, purpose components.MirrorPurpose) client.ObjectKey {
 	GinkgoHelper()
 	mirrored := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
