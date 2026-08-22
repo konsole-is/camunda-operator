@@ -60,8 +60,8 @@ change the doc in the same change.
 
 ## Architecture
 
-This operator is the bottom layer of a three-operator stack. It has no knowledge of
-`camunda-cloud-operator` or `camunda-saas-operator`.
+This operator is the bottom layer of the operator stack. It has no knowledge of
+`camunda-cloud-operator`.
 
 ```
 CloudCamundaCluster (camunda-cloud-operator)
