@@ -15,7 +15,7 @@ set -u
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 registry="$config_dir/plugins/installed_plugins.json"
 
-for plugin in ocf@operator-component-framework simple-english@simple-english; do
+for plugin in ocf@operator-component-framework simple-english@simple-english feature-dev-workflow@feature-dev-workflow; do
 	if ! grep -q "\"$plugin\"" "$registry" 2>/dev/null; then
 		echo "The plugin $plugin is not installed, so its skills will not load."
 		echo "To install it, run: claude plugin install $plugin --scope user"
