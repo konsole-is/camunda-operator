@@ -96,6 +96,8 @@ Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so t
 
 Your entry wins when it names a trust store itself. If your value carries `-Djavax.net.ssl.trustStore`, the operator appends nothing and the JVM reads your store. Put the Elasticsearch certificate authority in that store yourself. Without it the exporter cannot reach Elasticsearch, and Optimize reads no records. This is also how one broker trusts a second private authority, for example an OIDC provider or a backup store: build one store that holds every authority, and name it. A value that carries the password alone is not a trust store, so the operator still appends its options to it.
 
+The spec carries no volume field, so the operator cannot put your store on the pod. That file must already be in the process image, or another controller must mount it. For the image route, build the Camunda image with your store in it and set `imageRegistry` on the [CamundaPlatformConfig](camundaplatformconfig.md).
+
 A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap keeps that reference. One variable holds a value or a reference, never both, so the operator appends nothing. The pods still build the trust store at `/etc/camunda/es-truststore/cacerts`. Point the referenced value at that file, or at a store of your own that holds the certificate authority. The cluster records a `TrustStoreOptionsNotApplied` warning event and names every process in this state.
 
 ## Monitoring
