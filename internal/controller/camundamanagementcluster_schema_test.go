@@ -432,4 +432,24 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 		Entry("rejects an empty claimValue", validManagementCluster, "claimValue"),
 		Entry("rejects an empty username", realisticManagementCluster, "username"),
 	)
+
+	// The realm rule is a CEL expression, not a pattern, so that an explicit
+	// empty string keeps the default realm. Only an unstructured object
+	// carries the empty string to the API server.
+	It("accepts an explicitly empty realm", func() {
+		obj := externalKeycloakManagementCluster()
+		obj.Namespace = fixtures.SchemaTestNamespace
+		raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+		Expect(err).NotTo(HaveOccurred())
+
+		u := &unstructured.Unstructured{Object: raw}
+		u.SetAPIVersion(v1.GroupVersion.String())
+		u.SetKind("CamundaManagementCluster")
+		Expect(unstructured.SetNestedField(
+			u.Object, "", "spec", "identityProvider", "externalKeycloak", "realm",
+		)).To(Succeed())
+
+		Expect(k8sClient.Create(ctx, u)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, u) })
+	})
 })
