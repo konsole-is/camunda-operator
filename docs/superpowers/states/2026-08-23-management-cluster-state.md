@@ -27,8 +27,8 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #186 | feat/management-cluster--api-types | .claude/worktrees/management-cluster/.claude/worktrees/api-types | #193 → feat/management-cluster | ready |
-| #187 | feat/management-cluster--identity-oidc-contract | .claude/worktrees/management-cluster/.claude/worktrees/identity-oidc-contract | | not-started |
+| #186 | feat/management-cluster--api-types | .claude/worktrees/management-cluster/.claude/worktrees/api-types | #193 → feat/management-cluster | self-merged (64ccf29) |
+| #187 | feat/management-cluster--identity-oidc-contract | .claude/worktrees/management-cluster/.claude/worktrees/identity-oidc-contract | | in-progress |
 | #188 | feat/management-cluster--keycloak-modes | .claude/worktrees/management-cluster/.claude/worktrees/keycloak-modes | | not-started |
 | #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster/.claude/worktrees/console-ping | | not-started |
 | #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster/.claude/worktrees/web-modeler | | not-started |
@@ -39,11 +39,11 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| `management-api-types` | pre-merge stub PR | #186 | pending |
-| `platform-oidc-management` | pre-merge stub PR | #186 | pending |
-| `platform-images` | pre-merge stub PR | #186 | pending |
-| `cluster-gateway-status` | pre-merge stub PR | #186 | pending |
-| `keycloak-cr-types` | pre-merge stub PR | #186 | pending |
+| `management-api-types` | pre-merge stub PR | #193 (64ccf29) | locked |
+| `platform-oidc-management` | pre-merge stub PR | #193 (64ccf29) | locked |
+| `platform-images` | pre-merge stub PR | #193 (64ccf29) | locked |
+| `cluster-gateway-status` | pre-merge stub PR | #193 (64ccf29) | locked |
+| `keycloak-cr-types` | pre-merge stub PR | #193 (64ccf29) | locked |
 | `management-render-core` | pre-merge stub PR | #187 | pending |
 | `management-controller-core` | pre-merge stub PR | #187 | pending |
 | `ping-and-list-env` | data-only | plan table | locked |
@@ -59,12 +59,11 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 ## Pending snapshot
 
-1. Dispatch wave 1: create worktree `.claude/worktrees/management-cluster--api-types` on `feat/management-cluster--api-types` off `feat/management-cluster`; dispatch a worktree subagent with plan Tasks 1.1–1.6, the Conventions block, the contract rows #186 produces (`feature-dev-workflow:fanning-out-with-worktrees` Step 2).
-2. On PR open: copilot-review-loop → two-stage review → self-merge → close #186 → flip contract rows to locked.
-3. Dispatch wave 2 (#187) off the updated feature branch; same ripening.
-4. Dispatch wave 3 (#188, #189, #190) in parallel; resolve the one-line conflicts in `components.go`/`controller.go` at merge.
-5. Dispatch wave 4 (#191, #192) in parallel.
-6. `reviewing-feature-progress`, integration PR with `Closes #185`, review loop, teardown after CI green, report ready-to-merge.
+1. Wave 2 (#187) is dispatched in the nested worktree `identity-oidc-contract` with plan Tasks 2.1–2.4, the Conventions block, the locked #186 contracts, and the selector-semantics decision. On its PR: copilot-review-loop (3-round cap, fan-out mode) → spec-compliance pass → quality pass → squash-merge into `feat/management-cluster` → `gh issue close 187` → lock `management-render-core` and `management-controller-core`.
+2. `reviewing-feature-progress` at the wave-2 boundary (re-check the api types from #193 too).
+3. Dispatch wave 3 (#188, #189, #190) in parallel from nested worktrees off the updated feature branch; resolve the one-line conflicts in `components.go`/`controller.go` at merge; same ripening per PR.
+4. Dispatch wave 4 (#191, #192) in parallel.
+5. `reviewing-feature-progress`, integration PR with `Closes #185`, review loop, teardown after CI green, report ready-to-merge.
 
 ## Resume checklist
 
