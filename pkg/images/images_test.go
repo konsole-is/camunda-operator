@@ -64,6 +64,25 @@ func TestResolveWebModelerRestapiByVersion(t *testing.T) {
 	}
 }
 
+func TestResolveWebModelerWebsocketsByVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{name: "below the boundary", version: "8.9.9", want: "camunda/web-modeler-websockets:8.9.9"},
+		{name: "at the boundary", version: "8.10.0", want: "camunda/hub-websockets:8.10.0"},
+		{name: "above the boundary", version: "9.0.0", want: "camunda/hub-websockets:9.0.0"},
+		{name: "one segment", version: "8", want: "camunda/web-modeler-websockets:8"},
+		{name: "not a version", version: "latest", want: "camunda/web-modeler-websockets:latest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, Resolve(nil, WebModelerWebsockets, tt.version))
+		})
+	}
+}
+
 func TestResolveWebModelerRestapiOverrideWinsFromHub(t *testing.T) {
 	spec := &v1.CamundaPlatformConfigSpec{
 		Images: &v1.ImagesSpec{WebModelerRestapi: "mirror.example.com/team/restapi"},

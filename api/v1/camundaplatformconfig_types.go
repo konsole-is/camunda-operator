@@ -246,7 +246,8 @@ type ImagesSpec struct {
 	// +optional
 	WebModelerRestapi string `json:"webModelerRestapi,omitempty"`
 	// WebModelerWebsockets is the image of the Web Modeler websockets
-	// process. Defaults to camunda/web-modeler-websockets.
+	// process. Defaults to camunda/web-modeler-websockets below 8.10, and to
+	// camunda/hub-websockets from 8.10 on.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$`
 	// +optional
 	WebModelerWebsockets string `json:"webModelerWebsockets,omitempty"`

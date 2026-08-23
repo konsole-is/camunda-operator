@@ -163,7 +163,7 @@ spec:
     console: "mirror.example.com/camunda/console"
     # string. Optional, default: camunda/web-modeler-restapi below 8.10, camunda/hub from 8.10. The Web Modeler restapi process.
     webModelerRestapi: "mirror.example.com/camunda/web-modeler-restapi"
-    # string. Optional, default: camunda/web-modeler-websockets. The Web Modeler websockets process.
+    # string. Optional, default: camunda/web-modeler-websockets below 8.10, camunda/hub-websockets from 8.10. The Web Modeler websockets process.
     webModelerWebsockets: "mirror.example.com/camunda/web-modeler-websockets"
     # string. Optional, default: camunda/keycloak. The Keycloak that the operator runs.
     keycloak: "mirror.example.com/camunda/keycloak"

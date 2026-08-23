@@ -55,10 +55,6 @@ const (
 // (https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/).
 const keycloakTagPrefix = "quay-optimized-"
 
-// webModelerRestapiHub is the repository of the Web Modeler restapi process
-// from 8.10 on. Camunda folds the process into the Hub image in that release.
-const webModelerRestapiHub = "camunda/hub"
-
 // repositories holds the default repository of each image. The sources are
 // camunda.Dockerfile for the unified image and the values.yaml of the 8.9
 // Helm chart for the rest.
@@ -71,6 +67,15 @@ var repositories = map[Image]string{
 	WebModelerRestapi:    "camunda/web-modeler-restapi",
 	WebModelerWebsockets: "camunda/web-modeler-websockets",
 	Keycloak:             "camunda/keycloak",
+}
+
+// hubRepositories holds the repository that replaces the default from 8.10
+// on. Camunda renames the two Web Modeler images to the Hub product in that
+// release
+// (https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md).
+var hubRepositories = map[Image]string{
+	WebModelerRestapi:    "camunda/hub",
+	WebModelerWebsockets: "camunda/hub-websockets",
 }
 
 // Resolve returns the reference of img at version: the repository that
@@ -133,8 +138,8 @@ func override(p *v1.CamundaPlatformConfigSpec, img Image) string {
 // defaultRepository returns the repository that Camunda publishes img under at
 // version.
 func defaultRepository(img Image, version string) string {
-	if img == WebModelerRestapi && atLeastMinor(version, 8, 10) {
-		return webModelerRestapiHub
+	if repo, ok := hubRepositories[img]; ok && atLeastMinor(version, 8, 10) {
+		return repo
 	}
 
 	return repositories[img]
