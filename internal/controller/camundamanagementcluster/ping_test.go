@@ -68,6 +68,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 				"CAMUNDA_CONSOLE_PING_CLUSTERNAME": cluster.Name,
 				"CAMUNDA_CONSOLE_PING_PINGPERIOD":  "1h",
 			}))
+			expectUserEnvKept(g, cluster)
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -94,6 +95,8 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 	It("gives a cluster on 8.10 the hub settings", func() {
 		s := newScenario(withSelector(map[string]string{}), withConsole)
 		cluster := createOrchestrationCluster(s, nil, true)
+
+		expectPingApplied(cluster, s.mc)
 		publishVersion(cluster, "8.10.0")
 
 		Eventually(func(g Gomega) {
@@ -251,6 +254,7 @@ func expectPingApplied(cluster *v1.CamundaCluster, mc *v1.CamundaManagementClust
 	Eventually(func(g Gomega) {
 		latest := readOrchestrationCluster(g, cluster)
 		g.Expect(components.PingsConsole(latest.Spec.ExtraEnv, components.ConsoleServiceURL(mc))).To(BeTrue())
+		expectUserEnvKept(g, cluster)
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -263,5 +267,12 @@ func expectPingWithdrawn(cluster *v1.CamundaCluster, mc *v1.CamundaManagementClu
 		g.Expect(pingOf(g, cluster)).To(BeEmpty())
 		latest := readOrchestrationCluster(g, cluster)
 		g.Expect(components.PingsConsole(latest.Spec.ExtraEnv, components.ConsoleServiceURL(mc))).To(BeFalse())
+		expectUserEnvKept(g, cluster)
 	}, timeout, interval).Should(Succeed())
+}
+
+// expectUserEnvKept asserts that the entry the user set on the orchestration
+// cluster is still in spec.extraEnv.
+func expectUserEnvKept(g Gomega, cluster *v1.CamundaCluster) {
+	g.Expect(readOrchestrationCluster(g, cluster).Spec.ExtraEnv).To(ContainElement(userEnv))
 }

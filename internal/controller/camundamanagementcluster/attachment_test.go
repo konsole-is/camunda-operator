@@ -22,6 +22,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -174,6 +175,11 @@ func withSelector(matchLabels map[string]string) func(f *fixture) {
 	}
 }
 
+// userEnv is an entry that the user of an orchestration cluster set. Every
+// cluster of a scenario carries it, so a spec can pin that the management
+// plane owns the ping entries and leaves the rest of spec.extraEnv alone.
+var userEnv = corev1.EnvVar{Name: "USER_SETTING", Value: "1"}
+
 // createOrchestrationCluster creates a CamundaCluster in the namespace of the
 // scenario with the given labels. A ready cluster publishes its gateway
 // endpoints, the way its own controller does once it is up.
@@ -194,6 +200,7 @@ func createOrchestrationCluster(
 			Version:           "8.9.4",
 			StorageRef:        "storage",
 			PlatformConfigRef: s.mc.Spec.PlatformConfigRef,
+			ExtraEnv:          []corev1.EnvVar{userEnv},
 		},
 	}
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
