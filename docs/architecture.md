@@ -48,7 +48,7 @@ Controllers pass connection details to each other through contract kinds, never 
 | `ManagementAuthConfig` | the OIDC configuration of Management Identity |
 
 The resource that provides a backend writes the contract. The resource that uses the backend reads it by name.
-An `ElasticsearchCluster` writes a `SecondaryStorageConfig`. A `Database` writes a `DatabaseConfig`. A `CamundaCluster` reads the `SecondaryStorageConfig` in `storageRef` and does not know who wrote it.
+An `ElasticsearchCluster` writes a `SecondaryStorageConfig`. A `Database` writes a `DatabaseConfig`. A `CamundaManagementCluster` writes a `ManagementAuthConfig`. A `CamundaCluster` reads the `SecondaryStorageConfig` in `storageRef` and does not know who wrote it.
 
 Because the consumer reads only the contract, you can also write a contract by hand, or let another tool write it. An Elasticsearch cluster that the operator does not manage, or a bucket that Crossplane provisions, looks the same to the consumer.
 
@@ -74,6 +74,7 @@ graph LR
     SSC[SecondaryStorageConfig]
     OSC[ObjectStorageConfig]
     MAC[ManagementAuthConfig]
+    MC[CamundaManagementCluster]
     CC[CamundaCluster]
     WL["Workloads"]
     LBE[LogicalBackupElasticsearch]
@@ -102,10 +103,17 @@ graph LR
 
     LBE -.->|clusterRef| CC
     LBR -.->|clusterRef| CC
+
+    MC -.->|platformConfigRef| PFC
+    MC -.->|databaseConfigRef| DBC
+    MC -.->|clusterSelector| CC
+    MC -->|creates| MAC
 ```
 
 Solid arrows mean "creates". Dotted arrows mean "references".
 `CamundaOptimize` consumes `ManagementAuthConfig`. The [CRD reference](crds/index.md) lists every kind.
+
+The management plane is the one place where a resource reaches across namespaces. A `CamundaManagementCluster` selects `CamundaClusters` in every namespace and annotates the ones it serves. The rule still holds in the direction that matters: a `CamundaCluster` never references a management plane, and it reconciles the same whether one serves it or not.
 
 ## Status conventions
 

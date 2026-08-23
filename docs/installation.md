@@ -10,6 +10,7 @@ The manager never runs the CLI itself. The Jobs that the operator creates run it
 - Helm 3.8 or later, for the OCI registry.
 - The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), version 3.5 or later, if you use `ElasticsearchCluster`. The manager looks for the ECK CRDs when it starts and watches ECK `Elasticsearch` resources only when it finds them. If you install ECK after the manager, restart the manager. Until then, every `ElasticsearchCluster` reports `Ready=False` with reason `ECKNotInstalled`.
 - A PostgreSQL server that a `DatabaseServerConfig` describes, if you use `Database`. The operator does not run PostgreSQL.
+- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you use `CamundaManagementCluster` with `spec.identityProvider.keycloak`. The manager looks for the Keycloak CRDs when it starts. If it does not find them, every management cluster in that mode reports `Ready=False` with reason `KeycloakOperatorNotInstalled`. If you install the Keycloak Operator after the manager, restart the manager. The other two identity provider modes do not need it. Camunda documents the same prerequisite in [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment).
 
 ## Install with Helm
 

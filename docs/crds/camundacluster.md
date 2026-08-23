@@ -92,6 +92,41 @@ To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in y
 
 A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap cannot take the trust store options. The cluster records the Warning event `TrustStoreOptionsNotApplied` and names the processes. The store still exists at `/etc/camunda/es-truststore/cacerts` with the password `changeit`. Name it in the referenced value, or name a store of your own that holds the authority.
 
+## Management plane
+
+A [CamundaManagementCluster](camundamanagementcluster.md) can serve this cluster. It reaches clusters in every namespace through a label selector, so nothing on this resource points at it. A cluster it serves shows two changes.
+
+The first is an annotation that says which management plane serves this cluster:
+
+```yaml
+metadata:
+  annotations:
+    camunda.io/management-cluster: my-management-ns/my-management
+```
+
+The second is four entries in `spec.extraEnv` that make the cluster report to Console:
+
+```yaml
+spec:
+  extraEnv:
+    - name: CAMUNDA_CONSOLE_PING_ENABLED
+      value: "true"
+    - name: CAMUNDA_CONSOLE_PING_ENDPOINT
+      value: http://my-management-console.my-management-ns.svc:80
+    - name: CAMUNDA_CONSOLE_PING_CLUSTERNAME
+      value: my-cluster
+    - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
+      value: 1h
+```
+
+On Camunda 8.10 and later the four names are `CAMUNDA_HUB_PING_*` instead. The management plane owns these names and replaces a value you set under them.
+
+The entries change `spec`, so the pods roll once when they arrive and once when they go. After that they stay as they are.
+
+To remove both changes, take the cluster out of `spec.clusterSelector` of the management cluster, by changing the selector or by removing the label it matches on. The management plane then withdraws the annotation and the four entries by itself. Deleting them by hand does not work: the management plane still selects the cluster and writes them again.
+
+`kubectl get camundamanagementcluster -A` shows the management planes on the Kubernetes cluster. `status.clusters` of each one says which clusters it serves.
+
 ## Monitoring
 
 When `spec.monitoring.serviceMonitor.enabled` is true, the operator creates one ServiceMonitor per process. On a Kubernetes cluster without the `ServiceMonitor` kind it creates none and reports no error.
@@ -471,6 +506,7 @@ spec:
 - [SecondaryStorageConfig](secondarystorageconfig.md): `storageRef` names the secondary storage, Elasticsearch or RDBMS, in the namespace of the cluster.
 - [ObjectStorageConfig](objectstorageconfig.md): `backupStorageRef` and `documentStorageRef` name the buckets.
 - [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): they reference this cluster through `clusterRef` and back it up.
+- [CamundaManagementCluster](camundamanagementcluster.md): selects this cluster through `clusterSelector`, so that Console lists it and Web Modeler deploys to it.
 - [Getting started](../getting-started.md): the order in which you create the resources.
 - [Secondary storage guide](../guides/secondary-storage.md): how to set up Elasticsearch or a database.
 - [Authentication guide](../guides/authentication.md): basic and OIDC authentication, and the admin role.
