@@ -204,7 +204,15 @@ const (
 	pusherSuffix                = "web-modeler-pusher"
 	keycloakServiceSuffix       = "-service"
 	keycloakInitialAdminSuffix  = "-initial-admin"
+	keycloakDiscoverySuffix     = "-discovery"
 	webModelerClusterUserPrefix = "web-modeler-cluster-"
+)
+
+// keycloakDerivedSuffixMax is the longest suffix that the Keycloak Operator
+// appends to the name of a Keycloak: -service, -initial-admin, and
+// -discovery.
+var keycloakDerivedSuffixMax = max(
+	len(keycloakServiceSuffix), len(keycloakInitialAdminSuffix), len(keycloakDiscoverySuffix),
 )
 
 // clusterUIDPrefixLength is how much of a CamundaCluster UID goes into the
@@ -224,9 +232,15 @@ func IdentityServiceURL(mc *v1.CamundaManagementCluster) string {
 	return serviceURL(IdentityName(mc), mc.Namespace, IdentityServicePortHTTP)
 }
 
-// KeycloakName returns the name of the Keycloak custom resource. The Keycloak
-// Operator names the Service it creates for it "<this>-service".
-func KeycloakName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, keycloakSuffix) }
+// KeycloakName returns the name of the Keycloak custom resource. It is
+// shorter than the other names of the management plane: the Keycloak Operator
+// names what it creates after the Keycloak, with a suffix of its own, and
+// those names are DNS labels too.
+func KeycloakName(mc *v1.CamundaManagementCluster) string {
+	limit := validation.DNS1123LabelMaxLength - len(keycloakSuffix) - 1 - keycloakDerivedSuffixMax
+
+	return labels.BoundedName(mc.Name, limit) + "-" + keycloakSuffix
+}
 
 // ConsoleName returns the name of the Console Deployment and Service.
 func ConsoleName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, consoleSuffix) }
