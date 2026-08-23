@@ -45,7 +45,7 @@ func ConfigHash(in Input, comp string) string {
 		b.WriteString(e.Name + "=" + envValue(e) + "\n")
 	}
 
-	inputs := slices.Clone(in.HashInputs)
+	inputs := append(slices.Clone(in.HashInputs), componentInputs(in, comp)...)
 	slices.Sort(inputs)
 	for _, input := range inputs {
 		b.WriteString("input=" + input + "\n")
@@ -59,11 +59,34 @@ func ConfigHash(in Input, comp string) string {
 // componentEnv returns the rendered environment of a component. A component
 // this package does not render yet has none.
 func componentEnv(in Input, comp string) []corev1.EnvVar {
-	if comp == ComponentIdentity {
+	switch comp {
+	case ComponentIdentity:
 		return baseEnv(in)
+	case ComponentWebModelerRestapi:
+		return webModelerRestapiEnv(in)
+	case ComponentWebModelerWebsockets:
+		return webModelerWebsocketsEnv(in)
 	}
 
 	return nil
+}
+
+// componentInputs returns the hash inputs of one component alone. A credential
+// that only one component reads belongs here rather than in in.HashInputs, so
+// that rotating it rolls the pods that read it and no others.
+//
+// The two Web Modeler processes read the pusher Secret. The operator writes
+// that Secret itself, so the source of a reused credential is what a
+// regeneration changes: the Secret is deleted, the next reconcile finds none,
+// and the new one has a UID of its own. The very first reconcile renders no
+// source, because the Secret does not exist yet, so the pods roll once more
+// when the reconcile after it reads the created Secret back.
+func componentInputs(in Input, comp string) []string {
+	if comp != ComponentWebModelerRestapi && comp != ComponentWebModelerWebsockets {
+		return nil
+	}
+
+	return []string{"pusher=" + string(in.Pusher.Key.SourceUID)}
 }
 
 // envValue renders the value of an environment entry as a reference, never as

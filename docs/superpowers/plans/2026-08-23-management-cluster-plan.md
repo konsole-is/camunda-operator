@@ -673,7 +673,7 @@ All three branch from `feat/management-cluster` after #187 is self-merged. Each 
 
 **Files:** `pkg/components/camundamanagementcluster/webmodeler.go`, `clusters.go`, `secrets.go` (pusher Secret), tests, goldens updated.
 
-**Produces:** `webModelerComponents(in) []*component.Component`; `ClustersEnv(clusters []AttachedCluster) []corev1.EnvVar` (the `CAMUNDA_MODELER_CLUSTERS_<n>_*` block per attached cluster, `BEARER_TOKEN` for oidc, `BASIC` with `_BASIC_USERNAME=web-modeler` and `_BASIC_PASSWORD` from the user Secret for basic; verify the exact basic-auth key names against the Web Modeler docs page before writing them).
+**Produces:** `webModelerComponents(in) []*component.Component`; `ClustersEnv(clusters []AttachedCluster) []corev1.EnvVar` (the `CAMUNDA_MODELER_CLUSTERS_<n>_*` block per attached cluster, `BEARER_TOKEN` for oidc, `BASIC` for basic). Verified for #190: the configuration page documents no basic-auth credential settings — Web Modeler asks the person for them in the deploy dialog — so the block names the method alone and the `web-modeler` user of Task 3.7 is what they type.
 
 - [ ] Unit tests: restapi env table (datasource, mail, server URL, OAuth, audiences, pusher pairing, `CLIENT_PUSHER_*` from `websocketsExternalUrl`, license); websockets env; `ClustersEnv` for one oidc and one basic cluster; a cluster without endpoints omitted.
 - [ ] Implement; goldens; PASS; commit `feat(management): render Web Modeler with the attached clusters (#190)`.

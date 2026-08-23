@@ -47,6 +47,8 @@ const (
 	MirrorPurposeLicense        MirrorPurpose = "license"
 	MirrorPurposeIdentityClient MirrorPurpose = "identity-client"
 	MirrorPurposeIdentityDB     MirrorPurpose = "identity-db"
+	MirrorPurposeWebModelerDB   MirrorPurpose = "web-modeler-db"
+	MirrorPurposeWebModelerMail MirrorPurpose = "web-modeler-mail"
 )
 
 // MirrorPurposes is the closed set of purposes that the component renders, in
@@ -55,6 +57,8 @@ var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeLicense,
 	MirrorPurposeIdentityClient,
 	MirrorPurposeIdentityDB,
+	MirrorPurposeWebModelerDB,
+	MirrorPurposeWebModelerMail,
 }
 
 // mirroredComponentName is the ocf name of the mirrored Secrets component.

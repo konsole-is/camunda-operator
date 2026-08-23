@@ -34,6 +34,11 @@ const (
 	ComponentIdentity = "management-identity"
 	// ComponentConsole is Console.
 	ComponentConsole = "console"
+	// ComponentWebModeler is the ocf component that holds everything Web
+	// Modeler needs: both workloads and the Secret that pairs them. The
+	// workloads carry ComponentWebModelerRestapi and
+	// ComponentWebModelerWebsockets in their component label.
+	ComponentWebModeler = "web-modeler"
 	// ComponentWebModelerRestapi is the Web Modeler restapi process.
 	ComponentWebModelerRestapi = "web-modeler-restapi"
 	// ComponentWebModelerWebsockets is the Web Modeler websockets process.
@@ -88,6 +93,59 @@ const (
 	IdentityServicePortHTTP       int32 = 80
 	IdentityServicePortManagement int32 = 82
 )
+
+// The ports of the Web Modeler containers. The restapi process serves the
+// application on 8081 and its actuator endpoints on a management port of its
+// own; the websockets process serves everything on 8060
+// (https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/monitoring/,
+// https://docs.camunda.io/docs/self-managed/reference-architecture/kubernetes/#networking).
+const (
+	WebModelerRestapiPortHTTP       int32 = 8081
+	WebModelerRestapiPortManagement int32 = 8091
+	WebModelerWebsocketsPortHTTP    int32 = 8060
+)
+
+// The Service ports of Web Modeler. Both processes publish HTTP under 80, the
+// shape the 8.9 Helm chart uses, and the restapi management port keeps the
+// number it answers on. The port forwards of the Helm guides show the two
+// Services:
+// https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/microsoft-entra/
+const (
+	WebModelerRestapiServicePortHTTP       int32 = 80
+	WebModelerRestapiServicePortManagement int32 = 8091
+	WebModelerWebsocketsServicePortHTTP    int32 = 80
+)
+
+// The keys of the generated Web Modeler Secrets.
+const (
+	// PusherAppIDKey, PusherAppKeyKey, and PusherAppSecretKey are the keys of
+	// the Secret that pairs the two Web Modeler processes. Both containers
+	// read all three, and the two sides must carry the same values.
+	PusherAppIDKey     = "app-id"
+	PusherAppKeyKey    = "app-key"
+	PusherAppSecretKey = "app-secret"
+	// WebModelerClusterUserPasswordKey holds the password of the Web Modeler
+	// user on one basic-auth orchestration cluster.
+	WebModelerClusterUserPasswordKey = "password"
+	// WebModelerClusterUserAppliedKey records that the cluster holds the user
+	// under the password beside it, with its authorizations. The controller
+	// writes it only after both calls succeed, so a Secret without it is a
+	// password that never reached the cluster.
+	WebModelerClusterUserAppliedKey = "applied"
+)
+
+// WebModelerClusterUsername is the user that the operator creates on every
+// attached basic-auth orchestration cluster. A person deploying from Web
+// Modeler authenticates the cluster with it, instead of with the cluster
+// administrator.
+const WebModelerClusterUsername = "web-modeler"
+
+// PusherAppID identifies the single Web Modeler application at its WebSocket
+// server. Web Modeler serves one tenant, so the value is fixed; it must only
+// match on both sides, per "Configuration of the websocket component" on the
+// configuration page:
+// https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/configuration/
+const PusherAppID = "web-modeler"
 
 // The workload name suffixes, one per component.
 const (

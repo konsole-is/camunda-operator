@@ -124,7 +124,17 @@ first.
   websockets, `CLIENT_PUSHER_HOST|PORT|PATH|FORCE_TLS` for the browser.
 - Clusters: `CAMUNDA_MODELER_CLUSTERS_<n>_{ID,NAME,VERSION,AUTHENTICATION,URL_GRPC,URL_REST,URL_WEBAPP,AUTHORIZATIONS_ENABLED}`.
   Authentication `BEARER_TOKEN`, `BASIC`, or `NONE`. Without clusters, no deploy.
+  `URL_GRPC` is a URL with a `grpc://` or `grpcs://` scheme, not a host and a port.
   https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/configuration/#clusters
+- **`BASIC` carries no credentials.** No setting of Web Modeler holds the user name and the
+  password of a basic-auth cluster: "The credentials have to be provided by the user in the UI",
+  in the deploy dialog. Verified for #190 on 2026-08-23; the configuration page documents no
+  `CAMUNDA_MODELER_CLUSTERS_<n>_BASIC_*` family.
+  https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/configuration/#available-authentication-methods
+- Ports: `restapi` serves the application on 8081 and its actuator endpoints on the management
+  port 8091; `websockets` serves everything on 8060. Both Services publish HTTP under 80.
+  https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/monitoring/
+  https://docs.camunda.io/docs/self-managed/reference-architecture/kubernetes/#networking
 - Without a license, Web Modeler allows five users. Health: `/health/readiness` on 8091
   (restapi), `/up` on 8060 (websockets).
 
@@ -424,20 +434,25 @@ the cluster list. `websockets` env: `PUSHER_APP_ID|KEY|SECRET`.
 Cluster list: one `CAMUNDA_MODELER_CLUSTERS_<n>_*` block per attached cluster: `ID` = the
 cluster UID, `NAME` = `<namespace>/<name>`, `VERSION` = `status.management.version`, `URL_GRPC`
 and `URL_REST` from `status.gateway`, `URL_WEBAPP` = `spec.externalUrl`,
-`AUTHORIZATIONS_ENABLED=true`, `AUTHENTICATION=BEARER_TOKEN` for an OIDC cluster and `BASIC`
-with the dedicated user for a basic-auth cluster. A cluster without `status.gateway` (suspended,
-not ready) is listed in `status.clusters` with `reason: NotReady` and left out of the env.
+`AUTHORIZATIONS_ENABLED=true`, `AUTHENTICATION=BEARER_TOKEN` for an OIDC cluster and `BASIC` for a
+basic-auth cluster. A cluster without `status.gateway` (suspended, not ready) is listed in
+`status.clusters` with `reason: NotReady` and left out of the env, and the numbering closes over
+it, because Web Modeler stops reading at the first index it does not find.
 
-**The Web Modeler user.** For a basic-auth attached cluster the controller creates the user
-`web-modeler` through `pkg/camundaadmin` with the cluster's admin credential
-(`status.adminPassword`), stores the generated password in the Secret
-`<name>-web-modeler-cluster-<cluster uid prefix>` in the management namespace, and assigns a
-role. `pkg/camundaadmin` gains assign-role and create-authorization calls
-(`/v2/roles/{id}/users/{username}`, `/v2/authorizations`). The plan verifies against the Camunda
-docs which authorizations Web Modeler needs to deploy resources and start instances; if the docs
-do not pin a set, the user gets the `admin` role and the CRD doc says so. The password rotates
-when the Secret is deleted, the admin-password shape. On deletion of the management cluster the
-user is removed, best effort, with an event when it fails.
+**The Web Modeler user.** Web Modeler asks a person for the credentials of a basic-auth cluster
+in its deploy dialog; no setting carries them (Verified facts above). So for a basic-auth attached
+cluster the controller creates the user `web-modeler` through `pkg/camundaadmin` with the
+cluster's admin credential (the Secret `<cluster>-camunda-admin` that the cluster's own controller
+publishes), stores the generated password in the Secret
+`<name>-web-modeler-cluster-<cluster uid prefix>` in the management namespace, and grants it the
+authorizations the Camunda docs name for deploying a resource and starting an instance: `CREATE`
+on `RESOURCE` `*`, and `CREATE_PROCESS_INSTANCE`, `READ_PROCESS_DEFINITION`,
+`READ_PROCESS_INSTANCE` on `PROCESS_DEFINITION` `*`. That is what a person types into the deploy
+dialog, so deploying from Web Modeler never needs the cluster administrator. `pkg/camundaadmin`
+gains create-user, delete-user, assign-role, and create-authorization calls (`/v2/users`,
+`/v2/roles/{id}/users/{username}`, `/v2/authorizations`). The password rotates when the Secret is
+deleted, the admin-password shape. On deletion of the management cluster the user is removed, best
+effort, with an event when it fails.
 
 ### `CamundaPlatformConfig` additions
 
