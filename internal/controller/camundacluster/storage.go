@@ -70,8 +70,17 @@ func (r *CamundaClusterReconciler) readBrokerStorage(
 		return brokerStorage{}, fmt.Errorf("reading StatefulSet %q: %w", key, err)
 	}
 
+	// The cache serves the claims while the StatefulSet exists: there they
+	// only grow and report status. Without one they are the downgrade
+	// baseline of a cluster recreated on retained volumes, and a stale
+	// cache can miss the newest stamp, so they are read live.
+	reader := client.Reader(r.Client)
+	if storage.statefulSet == nil {
+		reader = r.APIReader
+	}
+
 	var list corev1.PersistentVolumeClaimList
-	if err := r.List(
+	if err := reader.List(
 		ctx, &list,
 		client.InNamespace(cluster.Namespace),
 		client.MatchingLabels(components.BrokerClaimSelector(cluster)),
