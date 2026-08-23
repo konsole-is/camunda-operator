@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -35,10 +36,10 @@ import (
 // the management plane cannot serve, and every cluster of a management plane
 // that deploys no Console.
 //
-// A ping the API server refuses is reported in the status.clusters row of that
-// cluster, never as a failed reconcile: what one cluster answers must not hold
-// back the rest of the management plane. A refused withdrawal is an error, the
-// way a refused claim withdrawal is.
+// The API server refuses a ping when the cluster changed or went. That is a
+// row in status.clusters of the cluster, not a failed reconcile. What one
+// cluster answers must not hold back the rest of the management plane. Every
+// other failure is returned, so the reconcile retries it with backoff.
 func (r *Reconciler) syncPing(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -57,6 +58,7 @@ func (r *Reconciler) syncPing(
 		}
 	}
 
+	var errs []error
 	for i := range clusters {
 		cluster := &clusters[i]
 		key := client.ObjectKeyFromObject(cluster)
@@ -75,12 +77,17 @@ func (r *Reconciler) syncPing(
 		}
 
 		env := components.PingEnv(consoleURL, cluster.Name, version)
-		if err := r.applyPing(ctx, cluster, env); err != nil {
+		err := r.applyPing(ctx, cluster, env)
+		if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
 			reportPingFailure(mc, key, err)
+			continue
+		}
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // withdrawPing removes the ping settings of mc from every orchestration
@@ -152,5 +159,7 @@ func reportPingFailure(mc *v1.CamundaManagementCluster, cluster client.ObjectKey
 		row.Attached = false
 		row.Reason = v1.ReasonWriteFailed
 		row.Message = conditions.BoundMessage(err.Error())
+
+		return
 	}
 }

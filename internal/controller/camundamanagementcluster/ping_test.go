@@ -17,13 +17,18 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"context"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
@@ -99,6 +104,32 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 				"CAMUNDA_HUB_PING_PINGPERIOD":  "1h",
 			}))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// Only a returned error retries a ping that failed for a reason other
+	// than the cluster changing. The row of the cluster is stable, so it
+	// brings no watch event and nothing else would reach the cluster again.
+	It("returns a ping that failed for any other reason", func() {
+		mc := newManagementCluster("camunda", "identity-db")
+		mc.Spec.ClusterSelector = &metav1.LabelSelector{}
+		mc.Spec.Console = &v1.ConsoleSpec{Version: "8.9.4", ExternalURL: consoleExternalURL}
+		cluster := readyCluster("cc-unreachable", mc.Namespace, "platform")
+
+		r := &Reconciler{
+			Client:    unavailableClient(),
+			APIReader: readerWith(cluster),
+			Scheme:    k8sClient.Scheme(),
+		}
+		attached := []components.AttachedCluster{{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+			UID:       cluster.UID,
+			Version:   cluster.Spec.Version,
+		}}
+
+		err := r.syncPing(ctx, mc, attached)
+
+		Expect(err).To(MatchError(ContainSubstring("applying the Console ping settings")))
 	})
 
 	It("withdraws the ping when Console is disabled, and keeps the claim", func() {
@@ -190,6 +221,26 @@ func pingOf(g Gomega, cluster *v1.CamundaCluster) map[string]string {
 	}
 
 	return ping
+}
+
+// unavailableClient returns a client that answers every apply with a service
+// that is unavailable, the way the API server answers while it cannot reach
+// its backing store.
+func unavailableClient() client.Client {
+	return fake.NewClientBuilder().
+		WithScheme(k8sClient.Scheme()).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				_ context.Context,
+				_ client.WithWatch,
+				_ client.Object,
+				_ client.Patch,
+				_ ...client.PatchOption,
+			) error {
+				return apierrors.NewServiceUnavailable("the API server is not reachable")
+			},
+		}).
+		Build()
 }
 
 // expectPingApplied polls until the orchestration cluster reports to the
