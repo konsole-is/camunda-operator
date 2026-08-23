@@ -332,11 +332,14 @@ func newKeycloakInput(t *testing.T, managed bool, mutate func(in *Input)) Input 
 
 // fixtureKeycloakRealistic exercises the override surfaces of a Keycloak
 // mode: a platform registry and license, an administrator with an address and
-// a password of their own, more Keycloak instances, and Keycloak resources.
+// a password of their own, more Keycloak instances, Keycloak resources, and
+// the two components that Management Identity has to create a Keycloak client
+// for.
 func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 	t.Helper()
 
 	return newKeycloakInput(t, managed, func(in *Input) {
+		withKeycloakApps(in)
 		in.Cluster.Spec.Identity.Admin.Email = "admin@example.com"
 		in.Cluster.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
 			Name: "admin-password", Namespace: fixtureNamespace, Key: "password",
@@ -359,6 +362,24 @@ func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 			}
 		}
 	})
+}
+
+// withKeycloakApps deploys Console and Web Modeler on a Keycloak-mode
+// management cluster. Neither reads a client from the platform config there:
+// Management Identity creates both in the realm, from the root URLs that
+// KEYCLOAK_INIT_CONSOLE_ROOT_URL and KEYCLOAK_INIT_WEBMODELER_ROOT_URL carry.
+func withKeycloakApps(in *Input) {
+	in.Cluster.Spec.Console = &v1.ConsoleSpec{
+		Version: fixtureVersion, ExternalURL: fixtureConsoleURL,
+	}
+
+	withWebModeler(in.Cluster)
+	in.Databases.WebModeler = webModelerDatabase()
+	in.Pusher = PusherCredentials{
+		Key:    credentials.Password{Value: fixturePusherKey},
+		Secret: credentials.Password{Value: fixturePusherSecret},
+	}
+	in.Clusters = fixtureAttachedClusters()
 }
 
 // goldenFixtures are the fixtures that the golden test renders, by directory
