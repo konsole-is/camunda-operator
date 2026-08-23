@@ -139,6 +139,7 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueForDatabaseServer()).
 		Watches(&v1.CamundaCluster{}, r.enqueueForCluster()).
+		Watches(&corev1.Namespace{}, r.enqueueForNamespace(), builder.OnlyMetadata).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named("camundamanagementcluster").
 		Complete(r)
@@ -196,6 +197,24 @@ func (r *Reconciler) enqueueForCluster() handler.EventHandler {
 			if selector.Matches(k8slabels.Set(o.GetLabels())) || holdsClaim(o, &mc) {
 				set[client.ObjectKeyFromObject(&mc)] = struct{}{}
 			}
+		}
+
+		return set.requests()
+	})
+}
+
+// enqueueForNamespace reconciles every management cluster whose
+// namespaceSelector puts a bound on the namespace: a changed namespace label
+// can move clusters into or out of that bound.
+func (r *Reconciler) enqueueForNamespace() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
+		set := requestSet{}
+		for _, mc := range managementClusters(ctx, r.Client) {
+			spec := mc.Spec.NamespaceSelector
+			if spec == nil || (len(spec.MatchLabels) == 0 && len(spec.MatchExpressions) == 0) {
+				continue
+			}
+			set[client.ObjectKeyFromObject(&mc)] = struct{}{}
 		}
 
 		return set.requests()

@@ -160,6 +160,40 @@ var _ = Describe("Orchestration cluster attachment", func() {
 		Expect(latest.Annotations).To(HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(second)))
 	})
 
+	It("serves only the namespaces that the namespaceSelector matches", func() {
+		s := newScenario(withSelector(map[string]string{}), withNamespaceSelector(map[string]string{"team": "a"}))
+
+		setNamespaceLabels(s.namespace, map[string]string{"team": "a"})
+		inside := createOrchestrationCluster(s, nil, true)
+
+		outside := inside.DeepCopy()
+		outside.ObjectMeta = metav1.ObjectMeta{
+			Name:      "cc-" + utilrand.String(8),
+			Namespace: newTestNamespace(),
+		}
+		outside.ResourceVersion = ""
+		outside.Status = v1.CamundaClusterStatus{}
+		Expect(k8sClient.Create(ctx, outside)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, outside) })
+
+		Eventually(func(g Gomega) {
+			g.Expect(readOrchestrationCluster(g, inside).Annotations).To(
+				HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(s.mc)),
+			)
+			g.Expect(readOrchestrationCluster(g, outside).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+			latest := readManagementCluster(g, s.mc)
+			g.Expect(latest.Status.Clusters).To(HaveLen(1))
+			g.Expect(latest.Status.Clusters[0].Name).To(Equal(inside.Name))
+		}, timeout, interval).Should(Succeed())
+
+		// The namespace leaves the bound, and the claim goes with it.
+		setNamespaceLabels(s.namespace, nil)
+		Eventually(func(g Gomega) {
+			g.Expect(readOrchestrationCluster(g, inside).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+			g.Expect(readManagementCluster(g, s.mc).Status.Clusters).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("goes on when the API server refuses one claim", func() {
 		mc := newManagementCluster("camunda", "identity-db")
 		mc.Spec.ClusterSelector = &metav1.LabelSelector{}
@@ -178,7 +212,7 @@ var _ = Describe("Orchestration cluster attachment", func() {
 		clusters, err := r.listClusters(ctx)
 		Expect(err).NotTo(HaveOccurred())
 
-		attached, rows, err := r.attachedClusters(ctx, mc, clusters)
+		attached, rows, err := r.attachedClusters(ctx, mc, clusters, nil)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(attached).To(HaveLen(1))
@@ -208,6 +242,12 @@ func withSelector(matchLabels map[string]string) func(f *fixture) {
 	}
 }
 
+func withNamespaceSelector(matchLabels map[string]string) func(f *fixture) {
+	return func(f *fixture) {
+		f.mc.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: matchLabels}
+	}
+}
+
 // userEnv is an entry that the user of an orchestration cluster set. Every
 // cluster of a scenario carries it, so a spec can pin that the management
 // plane owns the ping entries and leaves the rest of spec.extraEnv alone.
@@ -216,6 +256,29 @@ var userEnv = corev1.EnvVar{Name: "USER_SETTING", Value: "1"}
 // createOrchestrationCluster creates a CamundaCluster in the namespace of the
 // scenario with the given labels. A ready cluster publishes its gateway
 // endpoints, the way its own controller does once it is up.
+// setNamespaceLabels replaces the labels of a namespace.
+func setNamespaceLabels(name string, set map[string]string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var namespace corev1.Namespace
+		g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &namespace)).To(Succeed())
+		namespace.Labels = set
+		g.Expect(k8sClient.Update(ctx, &namespace)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// newTestNamespace creates a namespace of its own and returns its name.
+func newTestNamespace() string {
+	GinkgoHelper()
+
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-" + utilrand.String(8)}}
+	Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, namespace) })
+
+	return namespace.Name
+}
+
 func createOrchestrationCluster(
 	s scenario,
 	clusterLabels map[string]string,

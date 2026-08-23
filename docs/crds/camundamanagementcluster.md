@@ -2,7 +2,7 @@
 
 A `CamundaManagementCluster` is one Camunda management plane: Management Identity, the identity provider behind it, and optionally Console and Web Modeler. Management Identity controls who signs in to Console, Web Modeler, and Optimize. It is a separate identity system from the one inside an orchestration cluster, which Camunda describes in [Management Identity](https://docs.camunda.io/docs/self-managed/components/management-identity/overview/).
 
-You create one management plane per platform. It serves the orchestration clusters that `spec.clusterSelector` matches, in every namespace of the Kubernetes cluster. Creating this resource is a platform-administrator action, because the selector reaches [CamundaClusters](camundacluster.md) outside its own namespace and the operator annotates the ones it matches.
+You create one management plane per platform. It serves the orchestration clusters that `spec.clusterSelector` matches, in every namespace that `spec.namespaceSelector` admits (every namespace, unless you set one). Creating this resource is a platform-administrator action, because the selector reaches [CamundaClusters](camundacluster.md) outside its own namespace and the operator annotates the ones it matches.
 
 The smallest management plane names a platform configuration, an identity provider, and Management Identity:
 
@@ -356,6 +356,8 @@ A cluster that refuses the call keeps its row in `status.clusters` with the reas
 - `{}` selects every `CamundaCluster` of the Kubernetes cluster, in every namespace.
 - A selector with terms selects the clusters whose labels match.
 
+`spec.namespaceSelector` narrows the search to the namespaces whose labels match, the way the `namespaceSelector` of an admission webhook does. Unset or `{}` puts no bound on the namespace. It selects on the labels of the `Namespace` objects, so label the namespaces, not the clusters:
+
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: CamundaManagementCluster
@@ -366,8 +368,13 @@ spec:
   clusterSelector:
     matchLabels:
       environment: production
+  namespaceSelector:
+    matchLabels:
+      team: payments
   # ... the rest of your management cluster
 ```
+
+A cluster whose namespace leaves the bound is deselected like one that leaves `clusterSelector`: the claim, the Console settings, and the Web Modeler user go by themselves.
 
 `status.clusters` lists one row per selected cluster and says whether the management plane serves it:
 
@@ -526,10 +533,15 @@ spec:
   platformConfigRef: "my-platform-config"
   # boolean. Optional, default: false. Scale every workload of this management plane to zero.
   suspend: false
-  # object. Optional, default: no cluster. Label selector for the CamundaClusters that Console and Web Modeler serve, in every namespace. {} selects every cluster.
+  # object. Optional, default: no cluster. Label selector for the CamundaClusters that Console and Web Modeler serve. {} selects every cluster.
   clusterSelector:
     matchLabels:
       environment: "production"
+  # object. Optional, default: every namespace. Label selector over the Namespace objects that
+  # clusterSelector searches. {} puts no bound on the namespace.
+  namespaceSelector:
+    matchLabels:
+      team: "payments"
   # string. Optional, default: the name of this resource. Name of the cluster-scoped ManagementAuthConfig that this management plane writes.
   managementAuthConfigName: "my-management"
   # object. Required. Where people authenticate. Set exactly one of keycloak, externalKeycloak, or oidc.

@@ -113,7 +113,7 @@ graph LR
 Solid arrows mean "creates". Dotted arrows mean "references".
 `CamundaOptimize` consumes `ManagementAuthConfig`. The [CRD reference](crds/index.md) lists every kind.
 
-The management plane is the one place where a resource reaches across namespaces. A `CamundaManagementCluster` selects `CamundaClusters` in every namespace and annotates the ones it serves. The rule still holds in the direction that matters: a `CamundaCluster` never references a management plane, and it behaves the same whether one serves it or not.
+The management plane is the one place where a resource reaches across namespaces. A `CamundaManagementCluster` selects `CamundaClusters` across namespaces, bounded by its `namespaceSelector`, and annotates the ones it serves. The rule still holds in the direction that matters: a `CamundaCluster` never references a management plane, and it behaves the same whether one serves it or not.
 
 ## Status conventions
 

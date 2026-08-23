@@ -104,12 +104,19 @@ type CamundaManagementClusterSpec struct {
 	// management plane is down.
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
-	// ClusterSelector selects the CamundaClusters, in every namespace, that
-	// Console and Web Modeler serve. It follows the Kubernetes label selector
-	// convention: an unset selector selects no cluster, and an empty selector
-	// ({}) selects every cluster.
+	// ClusterSelector selects the CamundaClusters, in every namespace that
+	// namespaceSelector admits, that Console and Web Modeler serve. It
+	// follows the Kubernetes label selector convention: an unset selector
+	// selects no cluster, and an empty selector ({}) selects every cluster.
 	// +optional
 	ClusterSelector *metav1.LabelSelector `json:"clusterSelector,omitempty"`
+	// NamespaceSelector narrows clusterSelector to the namespaces whose
+	// labels match. It selects on the labels of the Namespace objects, the
+	// way the namespaceSelector of an admission webhook does. An unset or
+	// empty ({}) selector puts no bound on the namespace, so clusterSelector
+	// alone decides.
+	// +optional
+	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
 	// ManagementAuthConfigName is the name of the cluster-scoped
 	// ManagementAuthConfig that this management cluster writes. A
 	// CamundaOptimize reads it through its managementAuthRef. Empty means the

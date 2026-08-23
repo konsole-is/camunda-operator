@@ -653,6 +653,11 @@ func (in *CamundaManagementClusterSpec) DeepCopyInto(out *CamundaManagementClust
 		*out = new(metav1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.NamespaceSelector != nil {
+		in, out := &in.NamespaceSelector, &out.NamespaceSelector
+		*out = new(metav1.LabelSelector)
+		(*in).DeepCopyInto(*out)
+	}
 	in.IdentityProvider.DeepCopyInto(&out.IdentityProvider)
 	in.Identity.DeepCopyInto(&out.Identity)
 	if in.Console != nil {

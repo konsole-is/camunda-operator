@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
@@ -66,6 +67,7 @@ func (r *Reconciler) attachedClusters(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
+	namespaces map[string]bool,
 ) ([]components.AttachedCluster, []v1.AttachedClusterStatus, error) {
 	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
 	if err != nil {
@@ -76,7 +78,7 @@ func (r *Reconciler) attachedClusters(
 	var rows []v1.AttachedClusterStatus
 	for i := range clusters {
 		cluster := &clusters[i]
-		if !selector.Matches(k8slabels.Set(cluster.Labels)) {
+		if !inNamespaces(cluster, namespaces) || !selector.Matches(k8slabels.Set(cluster.Labels)) {
 			continue
 		}
 
@@ -99,6 +101,7 @@ func (r *Reconciler) releaseClaims(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
+	namespaces map[string]bool,
 ) error {
 	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
 	if err != nil {
@@ -108,13 +111,51 @@ func (r *Reconciler) releaseClaims(
 	var errs []error
 	for i := range clusters {
 		cluster := &clusters[i]
-		if selector.Matches(k8slabels.Set(cluster.Labels)) {
+		if inNamespaces(cluster, namespaces) && selector.Matches(k8slabels.Set(cluster.Labels)) {
 			continue
 		}
 		errs = append(errs, r.withdrawClaim(ctx, mc, cluster))
 	}
 
 	return errors.Join(errs...)
+}
+
+// selectedNamespaces returns the names of the namespaces that
+// spec.namespaceSelector matches. Nil puts no bound on the namespace: the
+// selector is unset or empty. An empty set is a bound that admits none.
+func (r *Reconciler) selectedNamespaces(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (map[string]bool, error) {
+	spec := mc.Spec.NamespaceSelector
+	if spec == nil || (len(spec.MatchLabels) == 0 && len(spec.MatchExpressions) == 0) {
+		return nil, nil
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(spec)
+	if err != nil {
+		return nil, fmt.Errorf("reading spec.namespaceSelector: %w", err)
+	}
+
+	// Only the names and the labels are needed, so the list stays metadata.
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("NamespaceList"))
+	if err := r.APIReader.List(ctx, list, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return nil, fmt.Errorf("listing the namespaces of spec.namespaceSelector: %w", err)
+	}
+
+	selected := make(map[string]bool, len(list.Items))
+	for i := range list.Items {
+		selected[list.Items[i].Name] = true
+	}
+
+	return selected, nil
+}
+
+// inNamespaces reports whether the cluster sits inside the namespace bound.
+// A nil bound admits every namespace.
+func inNamespaces(cluster *v1.CamundaCluster, namespaces map[string]bool) bool {
+	return namespaces == nil || namespaces[cluster.Namespace]
 }
 
 // listClusters reads every CamundaCluster of the Kubernetes cluster, ordered

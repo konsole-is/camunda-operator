@@ -201,7 +201,11 @@ first.
    plane, the `ClusterAuthSpec.admin` analog, and it is immutable after first start.
 6. **Cluster discovery by label selector.** `spec.clusterSelector` over `CamundaCluster` in all
    namespaces, with the Kubernetes LabelSelector convention: an unset selector selects no
-   cluster, `{}` selects every cluster. The management controller claims each selected cluster
+   cluster, `{}` selects every cluster. `spec.namespaceSelector` narrows the search to the
+   namespaces whose labels match (the admission-webhook convention: unset or `{}` puts no bound
+   on the namespace; a bound that matches no namespace admits none). Added after the integration
+   review at the user's request; the controller lists the matching namespaces metadata-only per
+   reconcile and watches Namespace labels. The management controller claims each selected cluster
    with an annotation, pushes the Console ping entries through SSA under its own field manager,
    and reads each cluster's endpoints for Web Modeler. `CamundaCluster` does not know the
    management cluster exists. Because the kind reaches clusters in other namespaces, creating a

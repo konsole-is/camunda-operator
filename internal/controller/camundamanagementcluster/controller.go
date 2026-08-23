@@ -121,6 +121,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/status,verbs=get
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
@@ -201,7 +202,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	attached, rows, err := r.attachedClusters(ctx, &mc, clusters)
+	namespaces, err := r.selectedNamespaces(ctx, &mc)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	attached, rows, err := r.attachedClusters(ctx, &mc, clusters, namespaces)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -230,7 +236,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// this one still has to remove.
 	var releaseErr error
 	if userErr == nil && pingErr == nil {
-		releaseErr = r.releaseClaims(ctx, &mc, clusters)
+		releaseErr = r.releaseClaims(ctx, &mc, clusters, namespaces)
 	}
 	contractErr := r.writeContract(ctx, &mc, res)
 	if contractErr == nil && previousContract != "" && previousContract != res.ContractName {
