@@ -30,12 +30,14 @@ import (
 // The fixture identities. Every value is fixed, so the golden manifests stay
 // deterministic.
 const (
-	fixtureName      = "my-management"
-	fixtureNamespace = "camunda"
-	fixturePlatform  = "my-platform"
-	fixtureVersion   = "8.9.4"
-	fixtureIssuer    = "https://login.example.com"
-	fixtureExternal  = "https://identity.example.com"
+	fixtureName           = "my-management"
+	fixtureNamespace      = "camunda"
+	fixturePlatform       = "my-platform"
+	fixtureVersion        = "8.9.4"
+	fixtureIssuer         = "https://login.example.com"
+	fixtureExternal       = "https://identity.example.com"
+	fixtureConsoleURL     = "https://console.example.com"
+	fixtureConsolePathURL = "https://camunda.example.com/console"
 )
 
 // newCluster returns the minimal CamundaManagementCluster in the oidc mode,
@@ -153,56 +155,97 @@ func fixtureMinimal(t *testing.T) Input {
 func fixtureRealistic(t *testing.T) Input {
 	t.Helper()
 
-	return newInput(t, func(in *Input) {
-		in.Platform = newPlatform(func(p *v1.CamundaPlatformConfigSpec) {
-			p.ImageRegistry = "registry.example.com/mirror"
-			p.LicenseSecretRef = &v1.SecretKeyRef{
-				Name:      MirroredSecretName(in.Cluster, MirrorPurposeLicense),
-				Namespace: fixtureNamespace,
-				Key:       "license",
-			}
-			p.Auth.OIDC.ProviderType = v1.OIDCProviderMicrosoft
-			p.Auth.OIDC.UsernameClaim = "unique_name"
-			p.Auth.OIDC.Management.Clients.Identity.ClientSecretRef = v1.SecretKeyRef{
-				Name:      MirroredSecretName(in.Cluster, MirrorPurposeIdentityClient),
-				Namespace: fixtureNamespace,
-				Key:       "identity-client-secret",
-			}
-		})
-		in.Databases.Identity.Credentials.Name = MirroredSecretName(in.Cluster, MirrorPurposeIdentityDB)
-		in.Mirrors = map[MirrorPurpose]map[string][]byte{
-			MirrorPurposeLicense:        {"license": []byte("golden-license")},
-			MirrorPurposeIdentityClient: {"identity-client-secret": []byte("golden-client-secret")},
-			MirrorPurposeIdentityDB:     {"username": []byte("identity"), "password": []byte("golden-password")},
+	return newInput(t, withEveryOverride)
+}
+
+// withEveryOverride is the mutator of fixtureRealistic. The Console fixtures
+// layer their own settings on top of it.
+func withEveryOverride(in *Input) {
+	in.Platform = newPlatform(func(p *v1.CamundaPlatformConfigSpec) {
+		p.ImageRegistry = "registry.example.com/mirror"
+		p.LicenseSecretRef = &v1.SecretKeyRef{
+			Name:      MirroredSecretName(in.Cluster, MirrorPurposeLicense),
+			Namespace: fixtureNamespace,
+			Key:       "license",
 		}
-		in.HashInputs = []string{"Secret/platform/oidc-credentials=42"}
-		in.Cluster.Spec.Identity.WorkloadSpec = v1.WorkloadSpec{
-			Replicas: new(int32(2)),
-			Resources: &corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
-			},
-			ExtraEnv: []corev1.EnvVar{{Name: "IDENTITY_LOG_LEVEL", Value: "DEBUG"}},
-			ExtraEnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "identity-extra"},
-			}}},
-			PodLabels:      map[string]string{"team": "platform"},
-			PodAnnotations: map[string]string{"prometheus.io/scrape": "true"},
-			Scheduling: &v1.SchedulingSpec{
-				NodeAffinity: &corev1.NodeAffinity{
-					RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-						NodeSelectorTerms: []corev1.NodeSelectorTerm{{
-							MatchExpressions: []corev1.NodeSelectorRequirement{{
-								Key:      "topology.kubernetes.io/zone",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"eu-west-1a"},
-							}},
-						}},
-					},
-				},
-				Tolerations: []corev1.Toleration{{Key: "camunda", Operator: corev1.TolerationOpExists}},
-			},
+		p.Auth.OIDC.ProviderType = v1.OIDCProviderMicrosoft
+		p.Auth.OIDC.UsernameClaim = "unique_name"
+		p.Auth.OIDC.Management.Clients.Identity.ClientSecretRef = v1.SecretKeyRef{
+			Name:      MirroredSecretName(in.Cluster, MirrorPurposeIdentityClient),
+			Namespace: fixtureNamespace,
+			Key:       "identity-client-secret",
 		}
 	})
+	in.Databases.Identity.Credentials.Name = MirroredSecretName(in.Cluster, MirrorPurposeIdentityDB)
+	in.Mirrors = map[MirrorPurpose]map[string][]byte{
+		MirrorPurposeLicense:        {"license": []byte("golden-license")},
+		MirrorPurposeIdentityClient: {"identity-client-secret": []byte("golden-client-secret")},
+		MirrorPurposeIdentityDB:     {"username": []byte("identity"), "password": []byte("golden-password")},
+	}
+	in.HashInputs = []string{"Secret/platform/oidc-credentials=42"}
+	in.Cluster.Spec.Identity.WorkloadSpec = v1.WorkloadSpec{
+		Replicas: new(int32(2)),
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		},
+		ExtraEnv: []corev1.EnvVar{{Name: "IDENTITY_LOG_LEVEL", Value: "DEBUG"}},
+		ExtraEnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "identity-extra"},
+		}}},
+		PodLabels:      map[string]string{"team": "platform"},
+		PodAnnotations: map[string]string{"prometheus.io/scrape": "true"},
+		Scheduling: &v1.SchedulingSpec{
+			NodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+						MatchExpressions: []corev1.NodeSelectorRequirement{{
+							Key:      "topology.kubernetes.io/zone",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"eu-west-1a"},
+						}},
+					}},
+				},
+			},
+			Tolerations: []corev1.Toleration{{Key: "camunda", Operator: corev1.TolerationOpExists}},
+		},
+	}
+}
+
+// fixtureConsoleMinimal is a management cluster that deploys Console with
+// nothing but the required fields.
+func fixtureConsoleMinimal(t *testing.T) Input {
+	t.Helper()
+
+	return newInput(t, func(in *Input) { withConsole(in, fixtureConsoleURL) })
+}
+
+// fixtureConsoleRealistic deploys Console on the realistic management cluster:
+// under a path of its own, with the workload overrides of spec.console.
+func fixtureConsoleRealistic(t *testing.T) Input {
+	t.Helper()
+
+	return newInput(t, func(in *Input) {
+		withEveryOverride(in)
+		withConsole(in, fixtureConsolePathURL)
+		in.Cluster.Spec.Console.WorkloadSpec = v1.WorkloadSpec{
+			Replicas: new(int32(2)),
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("512Mi")},
+			},
+			ExtraEnv:       []corev1.EnvVar{{Name: "CAMUNDA_CONSOLE_TELEMETRY", Value: "online"}},
+			PodAnnotations: map[string]string{"prometheus.io/scrape": "true"},
+		}
+	})
+}
+
+// withConsole deploys Console at externalURL and declares its public client on
+// the platform config, the way the pre-checks find them.
+func withConsole(in *Input, externalURL string) {
+	in.Cluster.Spec.Console = &v1.ConsoleSpec{Version: fixtureVersion, ExternalURL: externalURL}
+	in.Platform.Auth.OIDC.Management.Clients.Console = &v1.PublicClientSpec{
+		ClientID: "console",
+		Audience: "console-api",
+	}
 }
 
 // goldenFixtures are the fixtures that the golden test renders, by directory
@@ -211,16 +254,18 @@ func goldenFixtures(t *testing.T) map[string]Input {
 	t.Helper()
 
 	return map[string]Input{
-		"oidc/minimal":   fixtureMinimal(t),
-		"oidc/realistic": fixtureRealistic(t),
+		"oidc/minimal":      fixtureMinimal(t),
+		"oidc/realistic":    fixtureRealistic(t),
+		"console/minimal":   fixtureConsoleMinimal(t),
+		"console/realistic": fixtureConsoleRealistic(t),
 	}
 }
 
-// renderedEnv returns the rendered environment of Management Identity as a map
-// from the variable name to its value or its reference.
-func renderedEnv(in Input) map[string]string {
+// renderedEnv returns the rendered environment of one component as a map from
+// the variable name to its value or its reference.
+func renderedEnv(in Input, comp string) map[string]string {
 	env := map[string]string{}
-	for _, e := range componentEnv(in, ComponentIdentity) {
+	for _, e := range componentEnv(in, comp) {
 		env[e.Name] = envValue(e)
 	}
 

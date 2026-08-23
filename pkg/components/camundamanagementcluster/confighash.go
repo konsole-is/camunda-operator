@@ -59,8 +59,11 @@ func ConfigHash(in Input, comp string) string {
 // componentEnv returns the rendered environment of a component. A component
 // this package does not render yet has none.
 func componentEnv(in Input, comp string) []corev1.EnvVar {
-	if comp == ComponentIdentity {
+	switch {
+	case comp == ComponentIdentity:
 		return baseEnv(in)
+	case comp == ComponentConsole && in.Cluster.Spec.Console != nil:
+		return consoleEnv(in)
 	}
 
 	return nil
