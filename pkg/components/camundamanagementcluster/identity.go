@@ -203,7 +203,7 @@ func identityContainerSpec(in Input) corev1.Container {
 	return corev1.Container{
 		Name:  identityContainer,
 		Image: images.Resolve(in.Platform, images.Identity, in.Cluster.Spec.Identity.Version),
-		Env:   baseEnv(in),
+		Env:   identityEnv(in),
 		Ports: []corev1.ContainerPort{
 			{Name: portNameHTTP, ContainerPort: IdentityPortHTTP, Protocol: corev1.ProtocolTCP},
 			{Name: portNameManagement, ContainerPort: IdentityPortManagement, Protocol: corev1.ProtocolTCP},
@@ -226,13 +226,13 @@ func identityProbe(periodSeconds, failureThreshold int32) *corev1.Probe {
 	}
 }
 
-// baseEnv renders the environment of the Management Identity container: the
-// identity provider, the URL of Identity itself, its database, and the
+// identityEnv renders the environment of the Management Identity container:
+// the identity provider, the URL of Identity itself, its database, and the
 // license.
-func baseEnv(in Input) []corev1.EnvVar {
-	env := providerEnv(in)
+func identityEnv(in Input) []corev1.EnvVar {
+	env := identityProviderEnv(in)
 	env = append(env, corev1.EnvVar{Name: identityEnvURL, Value: in.Cluster.Spec.Identity.ExternalURL})
-	env = append(env, databaseEnv(in.Databases.Identity)...)
+	env = append(env, identityDatabaseEnv(in.Databases.Identity)...)
 
 	if ref := in.Platform.LicenseSecretRef; ref != nil {
 		env = append(env, corev1.EnvVar{
@@ -244,11 +244,11 @@ func baseEnv(in Input) []corev1.EnvVar {
 	return env
 }
 
-// providerEnv renders the connection to the identity provider. The two modes
-// carry two settings: an external provider is bound by the oidc profile of
-// Management Identity, and a Keycloak by the keycloak profile, which also
-// bootstraps the realm.
-func providerEnv(in Input) []corev1.EnvVar {
+// identityProviderEnv renders the connection to the identity provider. The
+// two modes carry two settings: an external provider is bound by the oidc
+// profile of Management Identity, and a Keycloak by the keycloak profile,
+// which also bootstraps the realm.
+func identityProviderEnv(in Input) []corev1.EnvVar {
 	if in.Provider.Mode != ModeOIDC {
 		return keycloakProviderEnv(in)
 	}
@@ -330,8 +330,8 @@ func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
 	return mc.Annotations[InitialClaimAnnotation]
 }
 
-// databaseEnv renders the connection to the Identity database.
-func databaseEnv(db Database) []corev1.EnvVar {
+// identityDatabaseEnv renders the connection to the Identity database.
+func identityDatabaseEnv(db Database) []corev1.EnvVar {
 	return []corev1.EnvVar{
 		{Name: identityEnvDatabaseHost, Value: db.Host},
 		{Name: identityEnvDatabasePort, Value: strconv.Itoa(int(db.Port))},
