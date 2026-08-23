@@ -32,7 +32,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: de9e2ea1d8ac3815
+        camunda.io/config-hash: 1e1a07fc666ff4e1
       labels:
         camunda.io/component: web-modeler-restapi
         camunda.io/management-cluster: my-management
@@ -169,7 +169,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 3aa24ce200edec89
+        camunda.io/config-hash: 1ee0a7625c480942
       labels:
         camunda.io/component: web-modeler-websockets
         camunda.io/management-cluster: my-management

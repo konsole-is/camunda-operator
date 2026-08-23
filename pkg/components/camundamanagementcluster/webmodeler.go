@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/deployment"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/service"
@@ -137,21 +138,31 @@ const (
 	defaultPusherPath = "/"
 )
 
+// The scheme and the default ports that an external URL is read against. The
+// CRD accepts http and https only.
+const (
+	schemeHTTPS = "https"
+	portHTTPS   = 443
+	portHTTP    = 80
+)
+
 // webModelerComponents renders Web Modeler as one component under
 // WebModelerReady: the Secret that pairs the two processes, then the restapi
 // and the websockets Deployment with their Services. Both processes have to
 // answer for the product to work, so one condition covers them, and the Secret
 // is generated for them alone, so it goes when they go.
 //
-// It renders nothing while spec.webModeler is unset.
-func webModelerComponents(in Input) ([]*component.Component, error) {
-	if in.Cluster.Spec.WebModeler == nil {
-		return nil, nil
-	}
+// The component is built while spec.webModeler is unset too, gated off. A
+// management cluster that drops Web Modeler then has its workloads deleted
+// instead of left running, and the gate keeps the Disabled condition out of
+// Ready.
+func webModelerComponents(in Input) (Built, error) {
+	deployed := in.Cluster.Spec.WebModeler != nil
+	gate := component.GatedBy(feature.NewBooleanGate(deployed))
 
 	pusher, err := pusherSecret(in)
 	if err != nil {
-		return nil, err
+		return Built{}, err
 	}
 
 	restapi, err := webModelerDeploymentResource(
@@ -159,7 +170,7 @@ func webModelerComponents(in Input) ([]*component.Component, error) {
 		WebModelerRestapiName(in.Cluster), webModelerRestapiContainerSpec(in),
 	)
 	if err != nil {
-		return nil, err
+		return Built{}, err
 	}
 
 	websockets, err := webModelerDeploymentResource(
@@ -167,34 +178,40 @@ func webModelerComponents(in Input) ([]*component.Component, error) {
 		WebModelerWebsocketsName(in.Cluster), webModelerWebsocketsContainerSpec(in),
 	)
 	if err != nil {
-		return nil, err
+		return Built{}, err
 	}
 
 	restapiService, err := service.NewBuilder(webModelerRestapiService(in)).Build()
 	if err != nil {
-		return nil, fmt.Errorf("building the %s component: %w", ComponentWebModelerRestapi, err)
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentWebModelerRestapi, err)
 	}
 
 	websocketsService, err := service.NewBuilder(webModelerWebsocketsService(in)).Build()
 	if err != nil {
-		return nil, fmt.Errorf("building the %s component: %w", ComponentWebModelerWebsockets, err)
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentWebModelerWebsockets, err)
 	}
 
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentWebModeler).
 		WithConditionType(component.ConditionType(v1.ConditionWebModelerReady)).
-		WithResource(pusher).
-		WithResource(restapi).
-		WithResource(restapiService).
-		WithResource(websockets).
-		WithResource(websocketsService).
+		WithFeatureGate(feature.NewBooleanGate(deployed)).
+		WithResource(pusher, gate).
+		WithResource(restapi, gate).
+		WithResource(restapiService, gate).
+		WithResource(websockets, gate).
+		WithResource(websocketsService, gate).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
-		return nil, fmt.Errorf("building the %s component: %w", ComponentWebModeler, err)
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentWebModeler, err)
 	}
 
-	return []*component.Component{comp}, nil
+	built := Built{Components: []*component.Component{comp}}
+	if deployed {
+		built.Ready = built.Components
+	}
+
+	return built, nil
 }
 
 // pusherSecret renders the generated credentials that both Web Modeler
@@ -270,7 +287,7 @@ func webModelerRestapiContainerSpec(in Input) corev1.Container {
 	return corev1.Container{
 		Name: webModelerRestapiContainer,
 		Image: images.Resolve(
-			in.Platform, images.WebModelerRestapi, in.Cluster.Spec.WebModeler.Version,
+			in.Platform, images.WebModelerRestapi, in.webModeler().Version,
 		),
 		Env: webModelerRestapiEnv(in),
 		Ports: []corev1.ContainerPort{
@@ -299,7 +316,7 @@ func webModelerRestapiContainerSpec(in Input) corev1.Container {
 // database, the SMTP server, where a browser reaches it, the identity
 // provider, the WebSocket pairing, the license, and the attached clusters.
 func webModelerRestapiEnv(in Input) []corev1.EnvVar {
-	spec := in.Cluster.Spec.WebModeler
+	spec := in.webModeler()
 
 	env := webModelerDatabaseEnv(in.Databases.WebModeler)
 	env = append(env, webModelerMailEnv(spec.Mail, in.WebModelerMail)...)
@@ -375,7 +392,7 @@ func webModelerMailEnv(mail v1.WebModelerMailSpec, ref *v1.CredentialsSecretRef)
 // webModelerServerEnv renders where a browser reaches Web Modeler. A URL under
 // a path needs the context path, and an http URL needs the redirect to https
 // turned off, which is on by default.
-func webModelerServerEnv(spec *v1.WebModelerSpec) []corev1.EnvVar {
+func webModelerServerEnv(spec v1.WebModelerSpec) []corev1.EnvVar {
 	external := parseURL(spec.ExternalURL)
 
 	env := []corev1.EnvVar{
@@ -387,6 +404,19 @@ func webModelerServerEnv(spec *v1.WebModelerSpec) []corev1.EnvVar {
 	}
 
 	return env
+}
+
+// parseURL reads an external URL of the spec. The CRD validates every one of
+// them as an http or https URL with a host, so a URL that does not parse
+// cannot reach the renderer. It yields the empty URL rather than an error the
+// caller could not act on.
+func parseURL(raw string) *url.URL {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return &url.URL{}
+	}
+
+	return parsed
 }
 
 // webModelerProviderEnv renders the identity provider and Management Identity.
@@ -428,7 +458,7 @@ func identityInternalURL(in Input) string {
 // restapi process needs them: where the WebSocket server is inside the
 // Kubernetes cluster, and where a browser reaches it.
 func webModelerPusherEnv(in Input) []corev1.EnvVar {
-	external := parseURL(in.Cluster.Spec.WebModeler.WebsocketsExternalURL)
+	external := parseURL(in.webModeler().WebsocketsExternalURL)
 
 	return []corev1.EnvVar{
 		{
@@ -466,7 +496,7 @@ func webModelerWebsocketsContainerSpec(in Input) corev1.Container {
 	return corev1.Container{
 		Name: webModelerWebsocketsContainer,
 		Image: images.Resolve(
-			in.Platform, images.WebModelerWebsockets, in.Cluster.Spec.WebModeler.Version,
+			in.Platform, images.WebModelerWebsockets, in.webModeler().Version,
 		),
 		Env: webModelerWebsocketsEnv(in),
 		Ports: []corev1.ContainerPort{{
@@ -488,7 +518,7 @@ func webModelerWebsocketsContainerSpec(in Input) corev1.Container {
 // container. The base path travels with the credentials, because the browser
 // is told the same one through CLIENT_PUSHER_PATH.
 func webModelerWebsocketsEnv(in Input) []corev1.EnvVar {
-	external := parseURL(in.Cluster.Spec.WebModeler.WebsocketsExternalURL)
+	external := parseURL(in.webModeler().WebsocketsExternalURL)
 
 	return []corev1.EnvVar{
 		{Name: webModelerEnvAppID, Value: PusherAppID},
@@ -589,25 +619,4 @@ func externalPort(external *url.URL) string {
 	}
 
 	return strconv.Itoa(portHTTP)
-}
-
-// The scheme and the default ports that an external URL is read against. The
-// CRD accepts http and https only.
-const (
-	schemeHTTPS = "https"
-	portHTTPS   = 443
-	portHTTP    = 80
-)
-
-// parseURL reads an external URL of the spec. The CRD validates every one of
-// them as an http or https URL with a host, so a URL that does not parse
-// cannot reach the renderer; it yields the empty URL rather than an error the
-// caller could not act on.
-func parseURL(raw string) *url.URL {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return &url.URL{}
-	}
-
-	return parsed
 }

@@ -69,6 +69,11 @@ type Input struct {
 	// "kind/namespace/name=version" strings. ConfigHash sorts them, so the
 	// order does not matter.
 	HashInputs []string
+	// ComponentHashInputs are the same strings for what one component alone
+	// reads, by component name. ConfigHash adds them to that component and to
+	// no other, so a credential that only Web Modeler reads never rolls
+	// Management Identity.
+	ComponentHashInputs map[string][]string
 	// KeycloakCRDServed reports whether the Kubernetes cluster serves the
 	// Keycloak kind of the Keycloak Operator.
 	KeycloakCRDServed bool
@@ -422,22 +427,34 @@ func identityType(providerType v1.OIDCProviderType) string {
 	return identityTypeGeneric
 }
 
+// webModeler returns spec.webModeler, or the zero value while the spec deploys
+// no Web Modeler. The renderer runs either way: a Web Modeler that the spec
+// dropped is rendered gated off, so that its component deletes what it left
+// behind.
+func (in Input) webModeler() v1.WebModelerSpec {
+	if in.Cluster.Spec.WebModeler == nil {
+		return v1.WebModelerSpec{}
+	}
+
+	return *in.Cluster.Spec.WebModeler
+}
+
 // workload returns the WorkloadSpec of a component, or the zero value when the
 // spec sets no block for it.
 func (in Input) workload(comp string) v1.WorkloadSpec {
-	if comp == ComponentIdentity {
-		return in.Cluster.Spec.Identity.WorkloadSpec
-	}
-
 	webModeler := in.Cluster.Spec.WebModeler
-	if webModeler == nil {
-		return v1.WorkloadSpec{}
-	}
-	if comp == ComponentWebModelerRestapi && webModeler.Restapi != nil {
-		return *webModeler.Restapi
-	}
-	if comp == ComponentWebModelerWebsockets && webModeler.Websockets != nil {
-		return *webModeler.Websockets
+
+	switch comp {
+	case ComponentIdentity:
+		return in.Cluster.Spec.Identity.WorkloadSpec
+	case ComponentWebModelerRestapi:
+		if webModeler != nil && webModeler.Restapi != nil {
+			return *webModeler.Restapi
+		}
+	case ComponentWebModelerWebsockets:
+		if webModeler != nil && webModeler.Websockets != nil {
+			return *webModeler.Websockets
+		}
 	}
 
 	return v1.WorkloadSpec{}

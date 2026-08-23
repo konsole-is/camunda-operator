@@ -202,14 +202,21 @@ func componentEnvOf(in Input, comp string) map[string]string {
 }
 
 // A management cluster that does not deploy Web Modeler renders neither
-// workload nor the credential that pairs them.
+// workload nor the credential that pairs them. The component is built either
+// way, gated off, so that a management cluster that drops Web Modeler has its
+// workloads deleted rather than left running.
 func TestWebModelerRendersNothingWhileTheSpecDoesNotDeployIt(t *testing.T) {
 	t.Parallel()
 
-	comps, err := webModelerComponents(fixtureMinimal(t))
+	built, err := webModelerComponents(fixtureMinimal(t))
+	require.NoError(t, err)
+	require.Len(t, built.Components, 1)
+	assert.Empty(t, built.Ready)
+
+	objects, err := built.Components[0].Preview()
 
 	require.NoError(t, err)
-	assert.Empty(t, comps)
+	assert.Empty(t, objects)
 }
 
 // One component covers both processes and the Secret that pairs them: Web
@@ -217,11 +224,12 @@ func TestWebModelerRendersNothingWhileTheSpecDoesNotDeployIt(t *testing.T) {
 func TestWebModelerRendersOneComponentOverBothProcesses(t *testing.T) {
 	t.Parallel()
 
-	comps, err := webModelerComponents(fixtureWebModelerMinimal(t))
+	built, err := webModelerComponents(fixtureWebModelerMinimal(t))
 	require.NoError(t, err)
-	require.Len(t, comps, 1)
+	require.Len(t, built.Components, 1)
+	require.Len(t, built.Ready, 1)
 
-	objects, err := comps[0].Preview()
+	objects, err := built.Components[0].Preview()
 	require.NoError(t, err)
 
 	names := make([]string, 0, len(objects))
@@ -358,24 +366,58 @@ func TestWebModelerWebsocketsEnvIsThePairing(t *testing.T) {
 }
 
 // Both processes read the same pusher Secret, so a rotation must roll both.
-// The source of the credential changes when the Secret is deleted, and the
-// components of the management plane that do not read it are unaffected.
+// The key and the secret are looked up one by one, so a new source of either
+// one is a rotation. The components of the management plane that do not read
+// the Secret are unaffected.
 func TestWebModelerConfigHashFollowsThePusherCredential(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		rotate func(in *Input)
+	}{
+		{"the app key", func(in *Input) { in.Pusher.Key.SourceUID = "a-new-secret" }},
+		{"the app secret", func(in *Input) { in.Pusher.Secret.SourceUID = "a-new-secret" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			before := fixtureWebModelerRealistic(t)
+			after := fixtureWebModelerRealistic(t)
+			tc.rotate(&after)
+
+			assert.NotEqual(
+				t,
+				ConfigHash(before, ComponentWebModelerRestapi),
+				ConfigHash(after, ComponentWebModelerRestapi),
+			)
+			assert.NotEqual(
+				t,
+				ConfigHash(before, ComponentWebModelerWebsockets),
+				ConfigHash(after, ComponentWebModelerWebsockets),
+			)
+			assert.Equal(
+				t, ConfigHash(before, ComponentIdentity), ConfigHash(after, ComponentIdentity),
+			)
+		})
+	}
+}
+
+// A credential that only Web Modeler reads is resolved under its component, so
+// rotating it rolls Web Modeler and leaves Management Identity where it is.
+func TestWebModelerComponentInputsRollWebModelerAlone(t *testing.T) {
 	t.Parallel()
 
 	before := fixtureWebModelerRealistic(t)
 	after := fixtureWebModelerRealistic(t)
-	after.Pusher.Key.SourceUID = "a-new-secret"
+	after.ComponentHashInputs = map[string][]string{
+		ComponentWebModelerRestapi: {"Secret/management/modeler-db-credentials=1234"},
+	}
 
 	assert.NotEqual(
 		t,
 		ConfigHash(before, ComponentWebModelerRestapi),
 		ConfigHash(after, ComponentWebModelerRestapi),
-	)
-	assert.NotEqual(
-		t,
-		ConfigHash(before, ComponentWebModelerWebsockets),
-		ConfigHash(after, ComponentWebModelerWebsockets),
 	)
 	assert.Equal(
 		t, ConfigHash(before, ComponentIdentity), ConfigHash(after, ComponentIdentity),

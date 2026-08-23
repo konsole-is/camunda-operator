@@ -30,9 +30,10 @@ import (
 const configHashLength = 16
 
 // ConfigHash hashes the rendered environment of one component (names, values,
-// and Secret references, never Secret data) together with in.HashInputs. It is
-// stable across reconciles for the same input, so the pods roll only when a
-// value rendered for that component or a referenced object changes.
+// and Secret references, never Secret data) together with in.HashInputs and
+// the hash inputs of that component alone. It is stable across reconciles for
+// the same input, so the pods roll only when a value rendered for that
+// component or a referenced object changes.
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
@@ -71,22 +72,30 @@ func componentEnv(in Input, comp string) []corev1.EnvVar {
 	return nil
 }
 
-// componentInputs returns the hash inputs of one component alone. A credential
-// that only one component reads belongs here rather than in in.HashInputs, so
-// that rotating it rolls the pods that read it and no others.
+// componentInputs returns the hash inputs of one component alone: what the
+// controller resolved under that component, and the pusher Secret for the two
+// Web Modeler processes. A credential that only one component reads belongs
+// here rather than in in.HashInputs, so that rotating it rolls the pods that
+// read it and no others.
 //
-// The two Web Modeler processes read the pusher Secret. The operator writes
-// that Secret itself, so the source of a reused credential is what a
-// regeneration changes: the Secret is deleted, the next reconcile finds none,
-// and the new one has a UID of its own. The very first reconcile renders no
-// source, because the Secret does not exist yet, so the pods roll once more
-// when the reconcile after it reads the created Secret back.
+// The operator writes the pusher Secret itself, so the source of a reused
+// credential is what a regeneration changes: the Secret is deleted, the next
+// reconcile finds none, and the new one has a UID of its own. The very first
+// reconcile renders no source, because the Secret does not exist yet, so the
+// pods roll once more when the reconcile after it reads the created Secret
+// back. The key and the secret are looked up one by one, so both sources
+// count: a Secret that holds one of the two keeps that UID for it.
 func componentInputs(in Input, comp string) []string {
+	inputs := slices.Clone(in.ComponentHashInputs[comp])
 	if comp != ComponentWebModelerRestapi && comp != ComponentWebModelerWebsockets {
-		return nil
+		return inputs
 	}
 
-	return []string{"pusher=" + string(in.Pusher.Key.SourceUID)}
+	return append(
+		inputs,
+		"pusherKey="+string(in.Pusher.Key.SourceUID),
+		"pusherSecret="+string(in.Pusher.Secret.SourceUID),
+	)
 }
 
 // envValue renders the value of an environment entry as a reference, never as

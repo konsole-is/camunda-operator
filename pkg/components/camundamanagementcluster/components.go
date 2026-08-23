@@ -33,13 +33,15 @@ type Built struct {
 
 // builders render the components of the management plane, in reconcile order:
 // the generated Secrets first, because the workloads mount them, then one
-// entry per workload. Each entry renders nothing while the spec does not
-// deploy its component. This list is the extension point of the package.
-var builders = []func(Input) ([]*component.Component, error){
-	secretsComponents,
-	identityComponents,
-	keycloakComponents,
-	consoleComponents,
+// entry per workload. A builder reports which of its components take part in
+// Ready, so that a component the spec turned off still reconciles and deletes
+// what it left behind without its Disabled reason becoming the reason of the
+// whole management plane. This list is the extension point of the package.
+var builders = []func(Input) (Built, error){
+	alwaysReady(secretsComponents),
+	alwaysReady(identityComponents),
+	alwaysReady(keycloakComponents),
+	alwaysReady(consoleComponents),
 	webModelerComponents,
 }
 
@@ -63,15 +65,29 @@ func Build(in Input) (Built, error) {
 	}
 
 	for _, build := range builders {
+		rendered, err := build(in)
+		if err != nil {
+			return Built{}, err
+		}
+		built.Components = append(built.Components, rendered.Components...)
+		built.Ready = append(built.Ready, rendered.Ready...)
+	}
+
+	return built, nil
+}
+
+// alwaysReady adapts a builder whose components all take part in Ready.
+func alwaysReady(
+	build func(Input) ([]*component.Component, error),
+) func(Input) (Built, error) {
+	return func(in Input) (Built, error) {
 		comps, err := build(in)
 		if err != nil {
 			return Built{}, err
 		}
-		built.Components = append(built.Components, comps...)
-		built.Ready = append(built.Ready, comps...)
-	}
 
-	return built, nil
+		return Built{Components: comps, Ready: comps}, nil
+	}
 }
 
 // managedLabels returns the labels of an object that the operator applies for
