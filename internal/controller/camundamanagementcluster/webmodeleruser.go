@@ -72,7 +72,7 @@ const (
 // (https://docs.camunda.io/docs/components/modeler/web-modeler/idp/idp-configuration/#cluster-requirements).
 // The two read permissions let the person see the definition they deployed
 // and the instance they started
-// (https://docs.camunda.io/docs/components/concepts/access-control/authorizations/#common-authorization-use-cases).
+// (https://docs.camunda.io/docs/components/modeler/web-modeler/run-or-publish-your-process/#run-manually-from-modeler).
 //
 // The owner id is empty here and filled with the username of each cluster.
 var webModelerAuthorizations = []camundaadmin.Authorization{
@@ -133,6 +133,24 @@ func (r *Reconciler) webModelerUsers(
 	return firstErr
 }
 
+// markCluster records a reason and a message on the row of one cluster. It
+// leaves Attached alone. The management plane still serves the cluster and
+// Web Modeler still lists it. Only the user of Web Modeler is missing.
+func markCluster(
+	rows []v1.AttachedClusterStatus,
+	cluster components.AttachedCluster,
+	reason, message string,
+) {
+	for i := range rows {
+		if rows[i].Name == cluster.Name && rows[i].Namespace == cluster.Namespace {
+			rows[i].Reason = reason
+			rows[i].Message = message
+
+			return
+		}
+	}
+}
+
 // webModelerUser converges the user on one cluster. It returns the message of
 // the row of that cluster when the cluster refused the work, and an error when
 // the Kubernetes API did.
@@ -164,7 +182,7 @@ func (r *Reconciler) webModelerUser(
 		if password, err = credentials.LookupOrNew(
 			ctx, r.APIReader, key, components.WebModelerClusterUserPasswordKey,
 		); err != nil {
-			return "", fmt.Errorf("reading Secret %q: %w", key, err)
+			return "", err
 		}
 	}
 
@@ -254,10 +272,12 @@ func (r *Reconciler) clusterUserClient(
 }
 
 // ensureClusterUser creates the Web Modeler user with password and grants it
-// the authorizations it needs. A user the cluster already holds keeps its
-// authorizations and takes the new password, so a rotation replaces the
-// credential and grants nothing twice: the authorization endpoint creates
-// rather than converges.
+// the authorizations it needs. A user that the cluster already holds takes the
+// new password and the same grants again. The caller reaches this function
+// only while the published Secret carries no applied marker, so a user that a
+// failed pass left without permissions, and one that was there before the
+// operator, both end up with them. A repeated grant adds an authorization row
+// and no access, because the endpoint creates rather than converges.
 //
 // It returns the message of the row of the cluster, or an empty string when
 // the cluster holds the user.
@@ -268,15 +288,12 @@ func ensureClusterUser(ctx context.Context, users *camundaadmin.UserClient, pass
 		Email:    webModelerUserEmail,
 	}
 
-	err := users.CreateUser(ctx, user, password)
-	if errors.Is(err, camundaadmin.ErrAlreadyExists) {
+	switch err := users.CreateUser(ctx, user, password); {
+	case errors.Is(err, camundaadmin.ErrAlreadyExists):
 		if err := users.UpdateUserPassword(ctx, user, password); err != nil {
 			return fmt.Sprintf("Setting the password of the user %q: %v", user.Username, err)
 		}
-
-		return ""
-	}
-	if err != nil {
+	case err != nil:
 		return fmt.Sprintf("Creating the user %q: %v", user.Username, err)
 	}
 
@@ -406,21 +423,4 @@ func (r *Reconciler) removeWebModelerUser(
 		"Could not remove the user %q from CamundaCluster %q: %s",
 		components.WebModelerClusterUsername, cluster.Namespace+"/"+cluster.Name, failure,
 	)
-}
-
-// markCluster records a reason and a message on the row of one cluster.
-func markCluster(
-	rows []v1.AttachedClusterStatus,
-	cluster components.AttachedCluster,
-	reason, message string,
-) {
-	for i := range rows {
-		if rows[i].Name == cluster.Name && rows[i].Namespace == cluster.Namespace {
-			rows[i].Attached = false
-			rows[i].Reason = reason
-			rows[i].Message = message
-
-			return
-		}
-	}
 }

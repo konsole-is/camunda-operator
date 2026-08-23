@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,6 +74,22 @@ var _ = Describe("Web Modeler", func() {
 		Expect(k8sClient.Get(ctx, key, &deployment)).NotTo(Succeed())
 	})
 
+	It("removes both Deployments when the spec stops asking for Web Modeler", func() {
+		s := newScenario(withWebModeler)
+
+		Eventually(func(g Gomega) {
+			readDeployment(g, s.namespace, components.WebModelerRestapiName(s.mc))
+			readDeployment(g, s.namespace, components.WebModelerWebsocketsName(s.mc))
+		}, timeout, interval).Should(Succeed())
+
+		disableWebModeler(s.mc)
+
+		Eventually(func(g Gomega) {
+			expectDeploymentGone(g, s.namespace, components.WebModelerRestapiName(s.mc))
+			expectDeploymentGone(g, s.namespace, components.WebModelerWebsocketsName(s.mc))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("lists an attached oidc cluster with its own token", func() {
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))
 		cluster := createOrchestrationCluster(s, nil, true)
@@ -109,26 +126,71 @@ var _ = Describe("Web Modeler", func() {
 			g.Expect(string(published.Data[components.WebModelerClusterUserAppliedKey])).To(
 				Equal("true"),
 			)
+
+			env := envOf(readDeployment(g, s.namespace, components.WebModelerRestapiName(s.mc)))
+			g.Expect(env).To(HaveKeyWithValue(
+				"CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION", "BASIC",
+			))
 		}, timeout, interval).Should(Succeed())
 
-		Expect(api.Authorizations()).To(ConsistOf(
-			camundaadmintest.Authorization{
-				OwnerID:         components.WebModelerClusterUsername,
-				OwnerType:       "USER",
-				ResourceType:    "RESOURCE",
-				ResourceID:      "*",
-				PermissionTypes: []string{"CREATE"},
-			},
-			camundaadmintest.Authorization{
-				OwnerID:      components.WebModelerClusterUsername,
-				OwnerType:    "USER",
-				ResourceType: "PROCESS_DEFINITION",
-				ResourceID:   "*",
-				PermissionTypes: []string{
-					"CREATE_PROCESS_INSTANCE", "READ_PROCESS_DEFINITION", "READ_PROCESS_INSTANCE",
-				},
-			},
-		))
+		Expect(api.Authorizations()).To(ConsistOf(webModelerGrants()))
+	})
+
+	It("grants the authorizations on a cluster that already holds the user", func() {
+		api := newClusterUserAPI()
+		api.SetUser(
+			components.WebModelerClusterUsername,
+			components.WebModelerClusterUsername,
+			"web-modeler@example.com",
+			"a-password-the-operator-never-set",
+		)
+
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+
+		Eventually(func(g Gomega) {
+			published := readSecret(
+				g, s.namespace, components.WebModelerClusterUserSecretName(s.mc, cluster.UID),
+			)
+			g.Expect(string(published.Data[components.WebModelerClusterUserAppliedKey])).To(
+				Equal("true"),
+			)
+			g.Expect(api.Password(components.WebModelerClusterUsername)).To(
+				Equal(string(published.Data[components.WebModelerClusterUserPasswordKey])),
+			)
+			g.Expect(api.Authorizations()).To(ContainElements(webModelerGrants()))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("sets a new password on the cluster when the user Secret is deleted", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		var first string
+		Eventually(func(g Gomega) {
+			published := readSecret(g, s.namespace, name)
+			g.Expect(string(published.Data[components.WebModelerClusterUserAppliedKey])).To(
+				Equal("true"),
+			)
+			first = string(published.Data[components.WebModelerClusterUserPasswordKey])
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: s.namespace, Name: name},
+		})).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			published := readSecret(g, s.namespace, name)
+			rotated := string(published.Data[components.WebModelerClusterUserPasswordKey])
+			g.Expect(rotated).NotTo(Equal(first))
+			g.Expect(api.Password(components.WebModelerClusterUsername)).To(Equal(rotated))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("reports a cluster that refused the user and serves the rest", func() {
@@ -142,6 +204,9 @@ var _ = Describe("Web Modeler", func() {
 			row := rowOf(g, s.mc, cluster)
 			g.Expect(row.Reason).To(Equal(v1.ReasonBasicAuthUserFailed))
 			g.Expect(row.Message).To(ContainSubstring("manages its users elsewhere"))
+			// The management plane still serves the cluster. Only the user of
+			// Web Modeler on it is missing.
+			g.Expect(row.Attached).To(BeTrue())
 		}, timeout, interval).Should(Succeed())
 
 		expectIdentityDeployed(s)
@@ -162,6 +227,53 @@ var _ = Describe("Web Modeler", func() {
 		Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
 	})
 })
+
+// webModelerGrants are the authorizations that the operator must have granted
+// the Web Modeler user on a basic-auth cluster.
+func webModelerGrants() []camundaadmintest.Authorization {
+	return []camundaadmintest.Authorization{
+		{
+			OwnerID:         components.WebModelerClusterUsername,
+			OwnerType:       "USER",
+			ResourceType:    "RESOURCE",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE"},
+		},
+		{
+			OwnerID:      components.WebModelerClusterUsername,
+			OwnerType:    "USER",
+			ResourceType: "PROCESS_DEFINITION",
+			ResourceID:   "*",
+			PermissionTypes: []string{
+				"CREATE_PROCESS_INSTANCE", "READ_PROCESS_DEFINITION", "READ_PROCESS_INSTANCE",
+			},
+		},
+	}
+}
+
+// disableWebModeler removes spec.webModeler from the management cluster under
+// test, retrying the write until no other writer holds the object.
+func disableWebModeler(mc *v1.CamundaManagementCluster) {
+	GinkgoHelper()
+
+	Eventually(func() error {
+		var latest v1.CamundaManagementCluster
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), &latest); err != nil {
+			return err
+		}
+		latest.Spec.WebModeler = nil
+
+		return k8sClient.Update(ctx, &latest)
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectDeploymentGone asserts that the API server holds no Deployment of that
+// name.
+func expectDeploymentGone(g Gomega, namespace, name string) {
+	var deployment appsv1.Deployment
+	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &deployment)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Deployment %s/%s is still there", namespace, name)
+}
 
 // withWebModeler adds Web Modeler to the management cluster under test, with a
 // database of its own and the two clients that the oidc mode needs.
