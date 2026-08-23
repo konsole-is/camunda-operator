@@ -187,10 +187,14 @@ first.
 5. **The initial admin stays on the management CR.** It names who administers the management
    plane, the `ClusterAuthSpec.admin` analog, and it is immutable after first start.
 6. **Cluster discovery by label selector.** `spec.clusterSelector` over `CamundaCluster` in all
-   namespaces; empty selects all. The management controller claims each selected cluster with an
-   annotation, pushes the Console ping entries through SSA under its own field manager, and
-   reads each cluster's endpoints for Web Modeler. `CamundaCluster` does not know the management
-   cluster exists.
+   namespaces, with the Kubernetes LabelSelector convention: an unset selector selects no
+   cluster, `{}` selects every cluster. The management controller claims each selected cluster
+   with an annotation, pushes the Console ping entries through SSA under its own field manager,
+   and reads each cluster's endpoints for Web Modeler. `CamundaCluster` does not know the
+   management cluster exists. Because the kind reaches clusters in other namespaces, creating a
+   `CamundaManagementCluster` is a platform-administrator action; the CRD doc and the kind GoDoc
+   say so, and the generated editor ClusterRole is not for tenants. (Revised 2026-08-23 after a
+   review comment on #193; the first draft said "empty selects all".)
 7. **A dedicated Web Modeler user on basic-auth clusters.** Web Modeler deploys to an OIDC
    cluster with `BEARER_TOKEN`. For a basic-auth cluster the management controller creates a
    `web-modeler` user on the cluster through the cluster's admin credential, with a generated
@@ -218,7 +222,7 @@ spec:
   platformConfigRef: my-platform        # required
   suspend: false
   clusterSelector:                      # CamundaClusters served by Console and Web Modeler
-    matchLabels: {camunda.io/platform: prod}   # empty selector = every cluster
+    matchLabels: {camunda.io/platform: prod}   # unset = no cluster, {} = every cluster
   managementAuthConfigName: my-management      # cluster-scoped output; default = metadata.name
   identityProvider:                     # exactly one of keycloak, externalKeycloak, oidc
     keycloak:
