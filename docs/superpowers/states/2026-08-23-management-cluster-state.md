@@ -31,7 +31,7 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 | #187 | feat/management-cluster--identity-oidc-contract | .claude/worktrees/management-cluster/.claude/worktrees/identity-oidc-contract | #200 → feat/management-cluster | self-merged (b80fd1a) |
 | #188 | feat/management-cluster--keycloak-modes | .claude/worktrees/management-cluster/.claude/worktrees/keycloak-modes | #205 → feat/management-cluster | ready |
 | #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster/.claude/worktrees/console-ping | #203 → feat/management-cluster | self-merged (84ef8b8) |
-| #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster/.claude/worktrees/web-modeler | #204 → feat/management-cluster | ready |
+| #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster/.claude/worktrees/web-modeler | #204 → feat/management-cluster | self-merged (f50c39e) |
 | #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | | not-started |
 | #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | | not-started |
 
