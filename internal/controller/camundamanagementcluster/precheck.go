@@ -164,8 +164,10 @@ func (res *resolver) resolvePlatform(ctx context.Context, out *resolved) error {
 // Secret that the Keycloak Operator writes next to the Keycloak; that one is
 // absent until the Keycloak Operator has acted, and refusing the reconcile
 // over it would stop the very apply that creates the Keycloak, so it only
-// contributes a hash input while it exists. Management Identity is the one
-// component that reads it, so the input is its own.
+// contributes a hash input while it exists.
+//
+// Management Identity is the one component that signs in with the
+// administrator, in either mode, so the input is its own.
 func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 	switch components.Mode(res.mc) {
 	case components.ModeExternalKeycloak:
@@ -173,7 +175,10 @@ func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 		// same local name from LocalSecretName, so this call is here for the
 		// check, the copy, and the hash input.
 		ref := res.mc.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef.DeepCopy()
-		return res.localizeCredentials(ctx, ref, components.MirrorPurposeKeycloakAdmin)
+
+		return res.forComponent(components.ComponentIdentity, func() error {
+			return res.localizeCredentials(ctx, ref, components.MirrorPurposeKeycloakAdmin)
+		})
 	case components.ModeKeycloak:
 		key := client.ObjectKey{
 			Namespace: res.mc.Namespace,
@@ -207,7 +212,8 @@ func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 //
 // An administrator password of your own replaces the generated one. It is
 // checked here, and copied into the management namespace when it lives
-// outside it, because the Identity pods mount it.
+// outside it, because the Identity pods mount it. Management Identity is the
+// one component that reads it, so the input is its own.
 func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved) error {
 	if components.Mode(res.mc) == components.ModeOIDC {
 		return nil
@@ -241,7 +247,11 @@ func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved)
 		// The rewritten reference is dropped: the render package derives the
 		// same local name from LocalSecretName, so this call is here for the
 		// check, the copy, and the hash input.
-		return res.localize(ctx, ref.DeepCopy(), components.MirrorPurposeIdentityAdmin)
+		local := ref.DeepCopy()
+
+		return res.forComponent(components.ComponentIdentity, func() error {
+			return res.localize(ctx, local, components.MirrorPurposeIdentityAdmin)
+		})
 	}
 
 	return nil
