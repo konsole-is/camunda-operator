@@ -149,7 +149,7 @@ spec:
     key: "license-key"
   # string. Optional, default: the upstream Camunda registry. Registry prefix of every Camunda image, for example registry.example.com/camunda/camunda:8.9.9.
   imageRegistry: "registry.example.com"
-  # object. Optional. Renames one image. The value is a full repository and replaces both the default repository and the imageRegistry prefix for that image. The tag always comes from the version field of the resource that runs the image.
+  # object. Optional. Renames one image. The value is a repository without a tag or a digest, and it replaces both the default repository and the imageRegistry prefix for that image. The tag always comes from the version field of the resource that runs the image.
   images:
     # string. Optional, default: camunda/camunda. The orchestration cluster processes.
     camunda: "mirror.example.com/camunda/camunda"
