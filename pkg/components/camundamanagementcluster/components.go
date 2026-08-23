@@ -41,7 +41,7 @@ var builders = []func(Input) (Built, error){
 	alwaysReady(secretsComponents),
 	alwaysReady(identityComponents),
 	alwaysReady(keycloakComponents),
-	alwaysReady(consoleComponents),
+	consoleComponents,
 	webModelerComponents,
 }
 

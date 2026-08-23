@@ -512,6 +512,8 @@ it, and so is every Job image the backup and restore controllers render.
   (only when the controller generated something). New reasons live in
   `api/v1/camundamanagementcluster_types.go`; shared ones in `api/v1/conditions.go`.
 - `status.clusters[]` lists every selected cluster with `attached`, `reason`, `message`.
+- An optional block the spec drops (`console`, `webModeler`) keeps its component, gated off. The
+  workloads are deleted instead of left running, and the `Disabled` reason stays out of `Ready`.
 - `spec.suspend` scales Identity, Console, and Web Modeler to zero and sets the Keycloak CR to
   `instances: 0` through the wrapper's suspend handler. The contract, the claim, and the ping
   entries stay. `Ready=True/Suspended`.

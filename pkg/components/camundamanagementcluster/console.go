@@ -17,10 +17,12 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/deployment"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/service"
 	appsv1 "k8s.io/api/apps/v1"
@@ -76,37 +78,45 @@ const (
 )
 
 // consoleComponents renders Console: its Deployment and its Service, in one
-// component under the ConsoleReady condition. It renders nothing while
-// spec.console is unset.
-func consoleComponents(in Input) ([]*component.Component, error) {
-	if in.Cluster.Spec.Console == nil {
-		return nil, nil
-	}
+// component under the ConsoleReady condition.
+//
+// The component is built while spec.console is unset too, gated off. A
+// management cluster that drops Console then has its workload deleted instead
+// of left running, and the gate keeps the Disabled condition out of Ready.
+func consoleComponents(in Input) (Built, error) {
+	deployed := in.Cluster.Spec.Console != nil
+	gate := component.GatedBy(feature.NewBooleanGate(deployed))
 
 	workload, err := deployment.NewBuilder(consoleDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentConsole), consoleContainer)...).
 		Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentConsole, err)
 	}
 
 	svc, err := service.NewBuilder(consoleService(in)).Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentConsole, err)
 	}
 
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentConsole).
 		WithConditionType(component.ConditionType(v1.ConditionConsoleReady)).
-		WithResource(workload).
-		WithResource(svc).
+		WithFeatureGate(feature.NewBooleanGate(deployed)).
+		WithResource(workload, gate).
+		WithResource(svc, gate).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentConsole, err)
 	}
 
-	return []*component.Component{comp}, nil
+	built := Built{Components: []*component.Component{comp}}
+	if deployed {
+		built.Ready = built.Components
+	}
+
+	return built, nil
 }
 
 // consoleDeployment renders the base Deployment. workloadmutations.Mutations
@@ -138,7 +148,7 @@ func consoleDeployment(in Input) *appsv1.Deployment {
 func consoleContainerSpec(in Input) corev1.Container {
 	return corev1.Container{
 		Name:  consoleContainer,
-		Image: images.Resolve(in.Platform, images.Console, in.Cluster.Spec.Console.Version),
+		Image: images.Resolve(in.Platform, images.Console, in.console().Version),
 		Env:   consoleEnv(in),
 		Ports: []corev1.ContainerPort{
 			{Name: portNameHTTP, ContainerPort: ConsolePortHTTP, Protocol: corev1.ProtocolTCP},
@@ -186,7 +196,7 @@ func consoleEnv(in Input) []corev1.EnvVar {
 			corev1.EnvVar{Name: consoleEnvKeycloakRealm, Value: provider.Realm},
 		)
 	}
-	if path := consoleContextPath(in.Cluster.Spec.Console.ExternalURL); path != "" {
+	if path := consoleContextPath(in.console().ExternalURL); path != "" {
 		env = append(env, corev1.EnvVar{Name: consoleEnvContextPath, Value: path})
 	}
 

@@ -275,6 +275,13 @@ func expectDeploymentGone(g Gomega, namespace, name string) {
 	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Deployment %s/%s is still there", namespace, name)
 }
 
+// expectServiceGone asserts that the API server holds no Service of that name.
+func expectServiceGone(g Gomega, namespace, name string) {
+	var svc corev1.Service
+	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &svc)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Service %s/%s is still there", namespace, name)
+}
+
 // withWebModeler adds Web Modeler to the management cluster under test, with a
 // database of its own and the two clients that the oidc mode needs.
 func withWebModeler(f *fixture) {

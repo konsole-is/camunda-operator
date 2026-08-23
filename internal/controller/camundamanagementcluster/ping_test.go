@@ -135,7 +135,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 		Expect(err).To(MatchError(ContainSubstring("applying the Console ping settings")))
 	})
 
-	It("withdraws the ping when Console is disabled, and keeps the claim", func() {
+	It("removes Console and withdraws the ping when the spec drops it, and keeps the claim", func() {
 		s := newScenario(withSelector(map[string]string{}), withConsole)
 		cluster := createOrchestrationCluster(s, nil, true)
 
@@ -146,6 +146,11 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 			latest := readManagementCluster(g, s.mc)
 			latest.Spec.Console = nil
 			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			expectDeploymentGone(g, s.namespace, components.ConsoleName(s.mc))
+			expectServiceGone(g, s.namespace, components.ConsoleName(s.mc))
 		}, timeout, interval).Should(Succeed())
 
 		expectPingWithdrawn(cluster, s.mc)

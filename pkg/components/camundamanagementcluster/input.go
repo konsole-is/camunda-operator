@@ -427,6 +427,17 @@ func identityType(providerType v1.OIDCProviderType) string {
 	return identityTypeGeneric
 }
 
+// console returns spec.console, or the zero value while the spec deploys no
+// Console. The renderer runs either way: a Console that the spec dropped is
+// rendered gated off, so that its component deletes what it left behind.
+func (in Input) console() v1.ConsoleSpec {
+	if in.Cluster.Spec.Console == nil {
+		return v1.ConsoleSpec{}
+	}
+
+	return *in.Cluster.Spec.Console
+}
+
 // webModeler returns spec.webModeler, or the zero value while the spec deploys
 // no Web Modeler. The renderer runs either way: a Web Modeler that the spec
 // dropped is rendered gated off, so that its component deletes what it left
