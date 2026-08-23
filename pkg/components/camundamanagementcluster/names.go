@@ -24,8 +24,8 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// The component values of the camunda.io/component label, one per workload of
-// the management plane.
+// The component values of the camunda.io/component label: one per workload of
+// the management plane, and one for the contract it writes.
 const (
 	// ComponentKeycloak is the Keycloak that the operator runs through the
 	// Keycloak Operator.
@@ -40,6 +40,10 @@ const (
 	ComponentWebModelerWebsockets = "web-modeler-websockets"
 	// ComponentSecrets is the Secrets that the operator generates.
 	ComponentSecrets = "management-secrets"
+	// ComponentManagementAuth is the ManagementAuthConfig that the management
+	// cluster writes. The contract is no workload, so a selector on the owner
+	// and this value reaches the contract alone.
+	ComponentManagementAuth = "management-auth"
 )
 
 // The keys and identities that a user or another controller can observe on

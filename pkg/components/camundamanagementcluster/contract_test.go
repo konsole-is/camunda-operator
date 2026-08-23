@@ -62,6 +62,18 @@ func TestContractLabelsCarryTheOwnerAndItsNamespace(t *testing.T) {
 	assert.Equal(t, labels.ManagedBy, got[labels.ManagedByKey])
 }
 
+// The contract carries a component value of its own, so a selector on the
+// owner and a component reaches either the contract or the Identity workloads,
+// never both.
+func TestContractLabelsCarryTheirOwnComponent(t *testing.T) {
+	t.Parallel()
+
+	got := ContractLabels(newCluster(nil))
+
+	assert.Equal(t, ComponentManagementAuth, got[labels.ComponentKey])
+	assert.NotEqual(t, ComponentIdentity, got[labels.ComponentKey])
+}
+
 // The contract takes the name of the resource unless the spec names another
 // one.
 func TestContractName(t *testing.T) {

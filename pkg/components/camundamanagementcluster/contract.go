@@ -21,15 +21,16 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// ContractLabels returns the owner labels of the ManagementAuthConfig that a
-// management cluster writes. The contract is cluster-scoped and its owner is
-// namespaced, so a namespaced owner cannot hold it through an owner reference:
-// these two labels are what tells a reader, and the controller itself, which
-// management cluster wrote it.
+// ContractLabels returns the labels of the ManagementAuthConfig that a
+// management cluster writes: the two owner labels and its own component value.
+// The contract is cluster-scoped and its owner is namespaced, so a namespaced
+// owner cannot hold it through an owner reference: the owner labels are what
+// tells a reader, and the controller itself, which management cluster wrote
+// it.
 func ContractLabels(mc *v1.CamundaManagementCluster) map[string]string {
 	return labels.Merge(
 		map[string]string{labels.ManagementClusterNamespaceKey: mc.Namespace},
-		labels.Managed(labels.ManagementCluster(mc.Name), ComponentIdentity),
+		labels.Managed(labels.ManagementCluster(mc.Name), ComponentManagementAuth),
 	)
 }
 
