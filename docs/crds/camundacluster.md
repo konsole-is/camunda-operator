@@ -99,14 +99,23 @@ A [CamundaManagementCluster](camundamanagementcluster.md) can serve this cluster
 The first is an annotation that says which management plane serves this cluster:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
 metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
   annotations:
     camunda.io/management-cluster: my-management-ns/my-management
 ```
 
-The second is four entries in `spec.extraEnv` that make the cluster report to Console:
+The second appears while the management plane sets `spec.console`. Four entries in `spec.extraEnv` make the cluster report to Console:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
   extraEnv:
     - name: CAMUNDA_CONSOLE_PING_ENABLED
@@ -117,13 +126,14 @@ spec:
       value: my-cluster
     - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
       value: 1h
+  # ... the rest of your cluster
 ```
 
 On Camunda 8.10 and later the four names are `CAMUNDA_HUB_PING_*` instead. The management plane owns these names and replaces a value you set under them.
 
 The entries change `spec`, so the pods roll once when they arrive and once when they go. After that they stay as they are.
 
-To remove both changes, take the cluster out of `spec.clusterSelector` of the management cluster, by changing the selector or by removing the label it matches on. The management plane then withdraws the annotation and the four entries by itself. Deleting them by hand does not work: the management plane still selects the cluster and writes them again.
+To remove both changes, take the cluster out of `spec.clusterSelector` of the [CamundaManagementCluster](camundamanagementcluster.md), by changing the selector or by removing the label it matches on. The management plane then withdraws the annotation and the four entries by itself. Removing `spec.console` from the management plane withdraws the four entries alone, and the annotation stays. Deleting either by hand does not work: the management plane still selects the cluster and writes them again.
 
 `kubectl get camundamanagementcluster -A` shows the management planes on the Kubernetes cluster. `status.clusters` of each one says which clusters it serves.
 

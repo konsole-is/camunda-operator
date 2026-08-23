@@ -74,6 +74,11 @@ spec:
       authUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/auth"
       tokenUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/token"
       jwksUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/certs"
+      clientId: "camunda-orchestration"
+      clientSecretRef:
+        name: "my-oidc-credentials"
+        namespace: "camunda-system"
+        key: "client-secret"
       management:
         clients:
           identity:
@@ -131,6 +136,8 @@ Three rules govern both fields:
 - A value is a repository only. It carries no tag and no digest. The tag always comes from the `version` field of the resource that runs the image.
 - A rename replaces both the default repository and the `imageRegistry` prefix for that image. The two never stack.
 - An image that `spec.images` does not name keeps its default repository, with the `imageRegistry` prefix in front of it.
+
+The tag of the Keycloak image is `quay-optimized-<version>`, not the bare version. Camunda publishes its Keycloak build under that tag, as [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment) states.
 
 The default repository of an image can change with the version. From Camunda 8.10 the two Web Modeler images become `camunda/hub` and `camunda/hub-websockets`. A rename of your own always wins, so a mirror stays a mirror across that change.
 

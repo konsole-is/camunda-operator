@@ -114,7 +114,7 @@ Three things about this manifest are easy to miss:
 2. `clusterSelector: {}` selects every `CamundaCluster` of the Kubernetes cluster. An unset selector selects none. See [Step 4](#step-4-the-orchestration-clusters).
 3. `optimize.externalUrl` is required here even though this resource deploys no Optimize. Management Identity registers the login callback under it as the redirect URI of the Optimize client.
 
-Route the four URLs to the Services the operator creates: `my-management-keycloak-service` for `/auth`, `my-management-identity`, `my-management-console`, and later the Optimize webapp.
+Route the four URLs to the Service in front of each component: `my-management-keycloak-service` for `/auth`, `my-management-identity`, `my-management-console`, and later the Optimize webapp. The Keycloak Operator creates the first of those Services, and this operator creates the rest.
 
 Wait for the resource:
 
@@ -273,7 +273,20 @@ status:
       message: 'Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
 ```
 
-If it happens anyway, you have two ways out. Put the recorded value back, sign in as that person, and grant the rest in the Management Identity user interface. If nobody holds the recorded claim, point `spec.identity.databaseConfigRef` at an empty database. Management Identity starts over and reads `spec.identity.admin` again. It loses the roles and the tenants it held, and your provider keeps every user.
+If it happens anyway, the operator cannot correct it for you. Two ways out are open.
+
+The first works while the recorded claim belongs to a real person. Put the recorded value back on `spec.identity.admin`, sign in as that person, and grant the rest in the Management Identity user interface.
+
+The second is for a claim that nobody holds. The operator records the claim that Management Identity started with, and renders that recorded value from then on. Remove the annotation that carries it:
+
+```bash
+kubectl annotate camundamanagementcluster my-management -n my-management-ns \
+  camunda.io/identity-initial-claim-
+```
+
+The claim of the spec then reaches Management Identity again. Management Identity itself reads that claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
+
+An empty database does the same. Point `spec.identity.databaseConfigRef` at one, and Management Identity starts over. It then loses the roles and the tenants it held, and your provider keeps every user.
 
 ## Step 4: The orchestration clusters
 
@@ -315,11 +328,11 @@ status:
       message: The cluster publishes no gateway endpoints yet
 ```
 
-A cluster is attached once it publishes `status.gateway`, which happens when its workloads are up.
+A cluster is attached once it publishes `status.gateway`. Every cluster publishes that block unless `spec.suspend` is true, so a suspended cluster stays `NotReady`.
 
 One cluster answers to one management plane. A cluster that another one already serves stays `ClaimedElsewhere`, and the message names the holder. To move it, take it out of the selector of the plane that holds it. The claim is withdrawn, and the next plane that selects the cluster takes it.
 
-A cluster the operator attached carries the annotation `camunda.io/management-cluster` and four `CAMUNDA_CONSOLE_PING_*` entries in `spec.extraEnv`. The entries are what makes it appear in Console. See [Management plane](../crds/camundacluster.md#management-plane) on the cluster page.
+A cluster the operator attached carries the annotation `camunda.io/management-cluster`. While the management plane sets `spec.console`, it also carries four `CAMUNDA_CONSOLE_PING_*` entries in `spec.extraEnv`. The entries are what makes it appear in Console. See [Management plane](../crds/camundacluster.md#management-plane) on the cluster page.
 
 ## Step 5: Web Modeler
 
@@ -351,6 +364,8 @@ spec:
 Route both URLs. `externalUrl` goes to `my-management-web-modeler-restapi` and `websocketsExternalUrl` to `my-management-web-modeler-websockets`. A browser opens both.
 
 The Step 3 examples set `identity.admin.email` already. Web Modeler is the reason: in the two Keycloak modes it needs an address for every person who signs in. If you left it out, add it before you deploy Web Modeler.
+
+In the `oidc` mode, Web Modeler needs two clients on the platform config: `webModeler` for the user interface, and `webModelerApi` for the API behind it. Declare both before you deploy it. See [The clients of the management plane](../crds/camundaplatformconfig.md#the-clients-of-the-management-plane).
 
 The deploy dialog of Web Modeler lists every attached cluster. How it authenticates follows the cluster:
 
@@ -404,7 +419,7 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
   -o jsonpath='{.status.managementAuthConfig}'
 ```
 
-Route `optimize.externalUrl` of the management cluster to the `my-cluster-optimize-webapp` Service. That is the URL a browser signs in at. In the two Keycloak modes it is also the URL the Optimize client accepts a callback on.
+Route the Optimize URL to the `my-cluster-optimize-webapp` Service. That is the URL a browser signs in at. In the two Keycloak modes it is `spec.optimize.externalUrl` of the `CamundaManagementCluster`, and Management Identity registers the login callback under it. The `oidc` mode has no such field, so register the callback at your provider yourself.
 
 ## Check the result
 

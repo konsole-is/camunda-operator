@@ -56,7 +56,7 @@ In the `keycloak` mode the operator also creates a `Keycloak` resource named `my
 
 There is no block that turns a component on. Console runs while `spec.console` is set. Web Modeler runs while `spec.webModeler` is set. Remove the block to remove the workloads.
 
-A Service name stops at 63 characters, which is the tightest bound of the derived names. A resource name that is too long to carry the suffix is cut, and a hash of the full name is added. Two such resources stay apart.
+A long resource name is shortened in the derived names and in the owner label, so read both back instead of assuming them.
 
 The operator creates no Ingress. You route traffic to each Service yourself, and the `externalUrl` fields tell each component the address a browser reaches it at.
 
@@ -220,10 +220,20 @@ status:
       message: 'Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
 ```
 
-There are two ways out, and the operator cannot do either for you:
+There are two ways out, and the operator cannot do either for you.
 
-- The recorded administrator is a real person. Put the recorded value back on `spec.identity.admin`, sign in as that person, and grant the rest in the Management Identity user interface.
-- Nobody holds the recorded claim, so nobody can sign in. Point `spec.identity.databaseConfigRef` at an empty database. Management Identity starts over and reads `spec.identity.admin` again. It loses the roles and the tenants it held. Your identity provider keeps every user and client, because they never lived in that database.
+The recorded administrator is a real person. Put the recorded value back on `spec.identity.admin`, sign in as that person, and grant the rest in the Management Identity user interface.
+
+Nobody holds the recorded claim, so nobody can sign in. The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim` on this resource, and renders that recorded value from then on. Remove the annotation:
+
+```bash
+kubectl annotate camundamanagementcluster my-management -n my-management-ns \
+  camunda.io/identity-initial-claim-
+```
+
+The claim of the spec then reaches Management Identity again. Management Identity itself reads that claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
+
+An empty database does the same. Point `spec.identity.databaseConfigRef` at one, and Management Identity starts over. It then loses the roles and the tenants it held. Your identity provider keeps every user and client, because they never lived in that database.
 
 Get the pair right before the first start, and the question does not arise.
 
@@ -397,7 +407,7 @@ The contract is cluster-scoped, so two management planes in two namespaces can a
 
 ## Images
 
-Every image of the management plane comes from `spec.images` of the referenced [CamundaPlatformConfig](camundaplatformconfig.md), or from the default repository of Camunda. The tag always comes from the `version` field of the component that runs the image. See [Images](camundaplatformconfig.md#images).
+Every image of the management plane has three sources, in this order: a rename under `spec.images` of the referenced [CamundaPlatformConfig](camundaplatformconfig.md), the `spec.imageRegistry` prefix of that resource in front of the default repository, and the default repository of Camunda. The tag comes from the `version` field of the component that runs the image. Keycloak is the exception: its tag is `quay-optimized-<version>`, which is what Camunda publishes its Keycloak build under. See [Images](camundaplatformconfig.md#images).
 
 ## Suspension
 
@@ -442,16 +452,18 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, and `Suspended
 | `KeycloakReady` | `Disabled` | The mode is `externalKeycloak` or `oidc`, so the operator runs no Keycloak. | Nothing. |
 | `IdentityReady` | `Healthy` | Every Management Identity replica is ready. | Nothing. |
 | `IdentityReady` | `PrerequisiteNotMet` | The mode is `keycloak` and `KeycloakReady` is not `True` yet. Management Identity waits for Keycloak, so this is normal while Keycloak starts. | Read the `KeycloakReady` row. It clears when Keycloak is ready. |
-| `IdentityReady` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Put the recorded value back, or start Management Identity on an empty database. See [The first administrator](#the-first-administrator). |
+| `IdentityReady` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Put the recorded value back, or remove the recorded claim and change the administrator in the database. See [The first administrator](#the-first-administrator). |
 | `ConsoleReady`, `WebModelerReady` | `Healthy` / `Disabled` | Every replica is ready, or the block is unset. | Nothing. |
-| `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. |
-| `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Failing` | The workload has replicas that do not become ready. | Read the pods of the named Deployment. |
-| `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Degraded` / `Down` | Some or no replicas are ready. | Read the pods and events of the named Deployment. |
+| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. |
+| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Failing` | The workload has replicas that do not become ready. | Read the pods of the named Deployment. |
+| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Degraded` / `Down` | Some or no replicas are ready. | Read the pods and events of the named Deployment. |
 | `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspended` | `spec.suspend` is `true`, so the workload is at zero. | Nothing. |
+| `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspending` | `spec.suspend` is `true` and the workload still runs pods. | Wait. |
+| `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
 | `ManagementAuthReady` | `WriteFailed` | The operator could not write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy and the contract is written. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend` back to `false`. |
 | `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator, or select the `externalKeycloak` or the `oidc` mode. See [Installation](../installation.md#requirements). |
 | `Ready` | `UnsupportedVersion` | A version field is outside the range the operator supports. The message names the field and the bound. | Set a supported version. |
@@ -628,6 +640,7 @@ The API server enforces these at admission:
 - `spec.optimize` is required in the two Keycloak modes and forbidden in the `oidc` mode.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
+- An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
 
 The operator checks these at reconcile time and reports them on `Ready`:
 
