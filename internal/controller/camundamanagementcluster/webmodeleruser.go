@@ -114,32 +114,34 @@ func (r *Reconciler) syncWebModelerUsers(
 	attached []components.AttachedCluster,
 	rows []v1.AttachedClusterStatus,
 ) error {
-	served := map[client.ObjectKey]components.AttachedCluster{}
+	basic := map[client.ObjectKey]components.AttachedCluster{}
 	if mc.Spec.WebModeler != nil {
 		for _, cluster := range attached {
 			if cluster.AuthMethod != v1.AuthenticationMethodBasic {
 				continue
 			}
-			served[client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name}] = cluster
+			basic[client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name}] = cluster
 		}
 	}
 
 	var firstErr error
 	for i := range clusters {
-		cluster, serve := served[client.ObjectKeyFromObject(&clusters[i])]
+		cluster := &clusters[i]
+
+		served, serve := basic[client.ObjectKeyFromObject(cluster)]
 		if !serve {
-			if err := r.withdrawWebModelerUser(ctx, mc, &clusters[i]); err != nil && firstErr == nil {
+			if err := r.withdrawWebModelerUser(ctx, mc, cluster); err != nil && firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
 
-		failure, err := r.webModelerUser(ctx, mc, cluster)
+		failure, err := r.webModelerUser(ctx, mc, served)
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
 		if failure != "" {
-			markCluster(rows, cluster, v1.ReasonBasicAuthUserFailed, failure)
+			markCluster(rows, served, v1.ReasonBasicAuthUserFailed, failure)
 		}
 	}
 
