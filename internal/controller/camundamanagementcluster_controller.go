@@ -22,12 +22,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// CamundaManagementClusterReconciler reconciles a CamundaManagementCluster object
+// CamundaManagementClusterReconciler reconciles a CamundaManagementCluster.
 type CamundaManagementClusterReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -50,20 +49,9 @@ type CamundaManagementClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the CamundaManagementCluster object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
+// Reconcile does nothing: the reconciler is a placeholder, and sub-issue #187
+// lands the reconcile logic in internal/controller/camundamanagementcluster/.
 func (r *CamundaManagementClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
-
-	// TODO(user): your logic here
-
 	return ctrl.Result{}, nil
 }
 
