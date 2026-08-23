@@ -371,7 +371,7 @@ One cluster is read at most once every 10 minutes, so a repair takes up to that 
 
 A cluster that leaves the management plane loses the user, and the Secret that published its password goes with it. The cluster leaves when it leaves `spec.clusterSelector` or the namespace bound, when you remove `spec.webModeler`, or when you delete the cluster.
 
-A cluster that stopped accepting basic credentials keeps the user. Nothing signs in with it there, and the cluster no longer publishes the administrator credential that a removal needs. The operator deletes the Secret, records the event `WebModelerUserLeftBehind` on the `CamundaManagementCluster`, and lets the cluster go. Remove that user yourself if you do not want it there.
+A cluster that stopped accepting basic credentials keeps the user. Nothing signs in with it there, and the cluster no longer publishes the administrator credential that a removal needs. A cluster whose `spec.platformConfigRef` names no `CamundaPlatformConfig` counts the same: the operator cannot read how it authenticates, and a removal that fails there would hold the cluster forever. In both cases the operator deletes the Secret, records the event `WebModelerUserLeftBehind` on the `CamundaManagementCluster` with the reason, and lets the cluster go. Remove that user yourself if you do not want it there.
 
 ## Clusters
 

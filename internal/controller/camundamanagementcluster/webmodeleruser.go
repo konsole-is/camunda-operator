@@ -317,8 +317,7 @@ func (r *Reconciler) removeWebModelerUser(
 			corev1.EventTypeNormal,
 			eventReasonUserLeftBehind,
 			eventActionRemoveUser,
-			"The user %q stays on CamundaCluster %q, where %s and nobody authenticates with it. "+
-				"The removal reported: %s",
+			"The user %q stays on CamundaCluster %q, because %s. The removal reported: %s",
 			components.WebModelerClusterUsername, name, why, failure,
 		)
 
@@ -358,7 +357,7 @@ func (r *Reconciler) basicAuthGone(
 	case failure != "":
 		return true, failure, nil
 	case method != v1.AuthenticationMethodBasic:
-		return true, fmt.Sprintf("the cluster authenticates with %q", method), nil
+		return true, fmt.Sprintf("the cluster authenticates with %q and nobody signs in with the user", method), nil
 	default:
 		return false, "", nil
 	}
