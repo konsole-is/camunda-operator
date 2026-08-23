@@ -250,11 +250,13 @@ type IdentitySpec struct {
 
 // IdentityAdminSpec names the first administrator of the management plane.
 // Management Identity reads it on the first start only and stores the result
-// in its database. A later change reports ImmutableAfterStart.
+// in its database.
 //
 // In the oidc mode the administrator is a claim of the tokens that the
-// provider issues, so set claimName and claimValue. In the two Keycloak modes
-// the administrator is the first Keycloak user, so set username.
+// provider issues, so set claimName and claimValue; a later change of the
+// claim reports ImmutableAfterStart. In the two Keycloak modes the
+// administrator is the first Keycloak user, so set username; a later change
+// creates a second user and the first one keeps its access.
 // +kubebuilder:validation:XValidation:rule="(has(self.claimName) && has(self.claimValue)) != has(self.username)",message="set claimName and claimValue (oidc mode) or username (keycloak modes)"
 // +kubebuilder:validation:XValidation:rule="has(self.claimName) == has(self.claimValue)",message="set claimName and claimValue together"
 type IdentityAdminSpec struct {
