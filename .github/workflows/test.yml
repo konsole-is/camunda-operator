@@ -29,3 +29,9 @@ jobs:
 
       - name: Running Tests
         run: make test
+        env:
+          # The runner VM is discarded after the job, so the Ryuk reaper of
+          # testcontainers adds nothing here, and waiting for it is the one
+          # part of a container start that times out on a slow Docker daemon
+          # ("wait for reaper: context deadline exceeded").
+          TESTCONTAINERS_RYUK_DISABLED: "true"
