@@ -37,12 +37,10 @@ const eventReasonStorageClaimed = "StorageClaimed"
 
 // claimStorage gives this cluster the storage contract, or records the
 // cluster that holds it. The first CamundaCluster that claims a contract
-// holds it, through an annotation that the API server writes atomically, so
-// two clusters that claim one unclaimed contract at once cannot both win. A
-// claim whose holder is gone, or names another contract, is stale and is
-// taken over. Otherwise the holder lands on in.Storage.Holder and the
-// controller renders this cluster suspended. It needs res.storage from
-// resolveStorage. A conflict on the claim is a transient error.
+// holds it. A claim whose holder is gone, or names another contract, is
+// stale and is taken over. Otherwise the holder lands on in.Storage.Holder
+// and the controller renders this cluster suspended. It needs res.storage
+// from resolveStorage. A conflict on the claim is a transient error.
 func (res *resolver) claimStorage(ctx context.Context, in *components.Input) error {
 	self := secondarystorageconfig.Holder{
 		Cluster: client.ObjectKeyFromObject(res.cluster),
@@ -53,6 +51,7 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	if held && holder == self {
 		return nil
 	}
+
 	if held {
 		stale, err := res.staleHolder(ctx, holder)
 		if err != nil {
@@ -71,6 +70,7 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 	if err := secondarystorageconfig.Claim(ctx, res.writer, res.storage, self); err != nil {
 		return err
 	}
+
 	res.recorder.Eventf(
 		res.cluster,
 		nil,
@@ -101,7 +101,8 @@ func (res *resolver) staleHolder(ctx context.Context, holder secondarystoragecon
 		)
 	}
 
-	return owner.UID != holder.UID || owner.Spec.StorageRef != res.storage.Name, nil
+	held := client.ObjectKey{Namespace: holder.Cluster.Namespace, Name: owner.Spec.StorageRef}
+	return owner.UID != holder.UID || held != client.ObjectKeyFromObject(res.storage), nil
 }
 
 // storageHeld builds the Ready condition of a cluster whose storage contract

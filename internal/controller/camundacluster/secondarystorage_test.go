@@ -17,20 +17,111 @@ limitations under the License.
 package camundacluster
 
 import (
-	"time"
+	"context"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
+
+// TestStaleHolder covers staleHolder against a fake client, table-driven over
+// why a holder is stale or live. A holder in another namespace whose
+// storageRef happens to equal the contract's name must not read as live: the
+// contract it names is a different object.
+func TestStaleHolder(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+
+	contract := &v1.SecondaryStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "storage-contract", Namespace: "team-a"},
+	}
+
+	cases := map[string]struct {
+		objects []client.Object
+		holder  secondarystorageconfig.Holder
+		stale   bool
+	}{
+		"holder does not exist": {
+			holder: secondarystorageconfig.Holder{
+				Cluster: types.NamespacedName{Namespace: "team-a", Name: "ghost"},
+				UID:     "uid-1",
+			},
+			stale: true,
+		},
+		"holder exists with another UID": {
+			objects: []client.Object{&v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-2"},
+				Spec:       v1.CamundaClusterSpec{StorageRef: "storage-contract"},
+			}},
+			holder: secondarystorageconfig.Holder{
+				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
+				UID:     "uid-1",
+			},
+			stale: true,
+		},
+		"holder's storageRef names another contract": {
+			objects: []client.Object{&v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-1"},
+				Spec:       v1.CamundaClusterSpec{StorageRef: "another-contract"},
+			}},
+			holder: secondarystorageconfig.Holder{
+				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
+				UID:     "uid-1",
+			},
+			stale: true,
+		},
+		"holder in another namespace whose storageRef equals the contract's name": {
+			objects: []client.Object{&v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "other-ns", UID: "uid-1"},
+				Spec:       v1.CamundaClusterSpec{StorageRef: "storage-contract"},
+			}},
+			holder: secondarystorageconfig.Holder{
+				Cluster: types.NamespacedName{Namespace: "other-ns", Name: "holder"},
+				UID:     "uid-1",
+			},
+			stale: true,
+		},
+		"holder with the same UID and storageRef": {
+			objects: []client.Object{&v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-1"},
+				Spec:       v1.CamundaClusterSpec{StorageRef: "storage-contract"},
+			}},
+			holder: secondarystorageconfig.Holder{
+				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
+				UID:     "uid-1",
+			},
+			stale: false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			res := &resolver{
+				reader:  fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objects...).Build(),
+				storage: contract,
+			}
+			stale, err := res.staleHolder(context.Background(), tc.holder)
+			require.NoError(t, err)
+			assert.Equal(t, tc.stale, stale)
+		})
+	}
+}
 
 // newNamedCluster is newCluster with a name prefix, so a spec that creates
 // two clusters on one contract can tell them apart in the output.
@@ -195,12 +286,14 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 	// The producer of a contract applies it with server-side apply and never
 	// names the claim annotations, so its field manager must not take them
 	// away.
-	It("keeps the claim through an apply of the contract by its producer", func() {
+	It("keeps a claim through an apply of the contract by its producer", func() {
 		ns := newNamespace()
-		binding := createBinding(ns, true)
-		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
-		createCluster(holder)
-		expectClaimedBy(binding, holder)
+		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
+		binding.Annotations = map[string]string{
+			secondarystorageconfig.ClaimHolderAnnotation:    ns + "/someone",
+			secondarystorageconfig.ClaimHolderUIDAnnotation: "some-uid",
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 
 		desired := &v1.SecondaryStorageConfig{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "SecondaryStorageConfig"},
@@ -215,12 +308,9 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 			client.ForceOwnership,
 		)).To(Succeed())
 
-		Consistently(func(g Gomega) {
-			var latest v1.SecondaryStorageConfig
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
-			_, held := secondarystorageconfig.HolderOf(&latest)
-			g.Expect(held).To(BeTrue())
-		}, 3*time.Second, interval).Should(Succeed())
-		expectHolds(holder)
+		var latest v1.SecondaryStorageConfig
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
+		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderAnnotation]).To(Equal(ns + "/someone"))
+		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderUIDAnnotation]).To(Equal("some-uid"))
 	})
 })

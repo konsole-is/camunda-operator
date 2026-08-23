@@ -55,7 +55,10 @@ type mirroredSecrets map[string]map[string][]byte
 // referenced object and the data of every Secret to mirror. Each resolve
 // method fills exactly one part of the render input.
 type resolver struct {
-	reader   client.Reader
+	reader client.Reader
+	// writer writes the claim on the storage contract. Every read stays on
+	// reader.
+	writer   client.Writer
 	scheme   *runtime.Scheme
 	cluster  *v1.CamundaCluster
 	recorder events.EventRecorder
@@ -64,9 +67,6 @@ type resolver struct {
 	// storage is the SecondaryStorageConfig that spec.storageRef names, set
 	// by resolveStorage for the steps after it.
 	storage *v1.SecondaryStorageConfig
-	// writer writes the claim on the storage contract. Every read stays on
-	// reader.
-	writer client.Client
 }
 
 // preCheck resolves every reference of cluster into the render input, in the

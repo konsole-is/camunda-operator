@@ -125,20 +125,20 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // failed pre-check reports its Ready reason and stops. A cluster whose
 // storage contract another cluster holds renders suspended, reports
 // StorageAlreadyAttached instead of the aggregate, and looks again on a
-// timer. The broker storage
-// lifecycle then grows the bound broker claims in place and records an
-// ignored shrink; the claim template keeps its applied size, so the
-// StatefulSet is never recreated. The admin credential resolves next, and a
-// requested password rotation runs there; a failed user API call surfaces on
-// AdminSecretReady and retries on a timer. Then the components are reconciled
-// in order: the admin Secret, the mirrored Secrets, then every process, each
-// gated on whether the cluster needs it. The management binding is published
-// with the status, and cleared while the cluster is suspended. The
-// ServiceAccount the pods run under is published with it and is never
-// cleared: the account outlives a suspension. Ready is True only when every
-// component the cluster needs is True. Its reason and message come from the
-// governing component, which is the highest-priority component that is not
-// True, or the highest-priority of all of them when they all are.
+// timer. The broker storage lifecycle then grows the bound broker claims in
+// place and records an ignored shrink; the claim template keeps its applied
+// size, so the StatefulSet is never recreated. The admin credential resolves
+// next, and a requested password rotation runs there; a failed user API call
+// surfaces on AdminSecretReady and retries on a timer. Then the components
+// are reconciled in order: the admin Secret, the mirrored Secrets, then
+// every process, each gated on whether the cluster needs it. The management
+// binding is published with the status, and cleared while the cluster is
+// suspended. The ServiceAccount the pods run under is published with it and
+// is never cleared: the account outlives a suspension. Ready is True only
+// when every component the cluster needs is True. Its reason and message
+// come from the governing component, which is the highest-priority
+// component that is not True, or the highest-priority of all of them when
+// they all are.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus

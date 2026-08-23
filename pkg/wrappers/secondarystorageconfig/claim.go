@@ -65,7 +65,7 @@ func HolderOf(contract *v1.SecondaryStorageConfig) (Holder, bool) {
 // reconcile. The error of a failed patch is the API error, wrapped.
 func Claim(
 	ctx context.Context,
-	writer client.Client,
+	writer client.Writer,
 	contract *v1.SecondaryStorageConfig,
 	holder Holder,
 ) error {
