@@ -228,7 +228,8 @@ type ImagesSpec struct {
 	// +optional
 	Console string `json:"console,omitempty"`
 	// WebModelerRestapi is the image of the Web Modeler restapi process.
-	// Defaults to camunda/web-modeler-restapi.
+	// Defaults to camunda/web-modeler-restapi below 8.10, and to camunda/hub
+	// from 8.10 on.
 	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	WebModelerRestapi string `json:"webModelerRestapi,omitempty"`

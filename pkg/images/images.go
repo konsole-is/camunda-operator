@@ -20,6 +20,7 @@ limitations under the License.
 package images
 
 import (
+	"strconv"
 	"strings"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -54,6 +55,10 @@ const (
 // (https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/).
 const keycloakTagPrefix = "quay-optimized-"
 
+// webModelerRestapiHub is the repository of the Web Modeler restapi process
+// from 8.10 on. Camunda folds the process into the Hub image in that release.
+const webModelerRestapiHub = "camunda/hub"
+
 // repositories holds the default repository of each image. The sources are
 // camunda.Dockerfile for the unified image and the values.yaml of the 8.9
 // Helm chart for the rest.
@@ -71,7 +76,9 @@ var repositories = map[Image]string{
 // Resolve returns the reference of img at version: the repository that
 // spec.images renames it to, or the spec.imageRegistry prefix in front of the
 // default repository, or the default repository. A rename wins over the
-// registry prefix. p can be nil, which resolves the default repository.
+// registry prefix. p can be nil, which resolves the default repository. A
+// default repository can change with the version, so a caller that resolves
+// one image for two versions can get two repositories.
 func Resolve(p *v1.CamundaPlatformConfigSpec, img Image, version string) string {
 	tag := version
 	if img == Keycloak {
@@ -84,7 +91,7 @@ func Resolve(p *v1.CamundaPlatformConfigSpec, img Image, version string) string 
 		return repo + ":" + tag
 	}
 
-	repo := repositories[img]
+	repo := defaultRepository(img, version)
 	if p != nil {
 		if registry := strings.TrimRight(p.ImageRegistry, "/"); registry != "" {
 			return registry + "/" + repo + ":" + tag
@@ -121,4 +128,36 @@ func override(p *v1.CamundaPlatformConfigSpec, img Image) string {
 	}
 
 	return ""
+}
+
+// defaultRepository returns the repository that Camunda publishes img under at
+// version.
+func defaultRepository(img Image, version string) string {
+	if img == WebModelerRestapi && atLeastMinor(version, 8, 10) {
+		return webModelerRestapiHub
+	}
+
+	return repositories[img]
+}
+
+// atLeastMinor reports whether version is major.minor or later. A version that
+// does not start with two numbers reports false, so a malformed version keeps
+// the oldest repository.
+func atLeastMinor(version string, major, minor int) bool {
+	segments := strings.Split(version, ".")
+	if len(segments) < 2 {
+		return false
+	}
+
+	gotMajor, err := strconv.Atoi(segments[0])
+	if err != nil {
+		return false
+	}
+
+	gotMinor, err := strconv.Atoi(segments[1])
+	if err != nil {
+		return false
+	}
+
+	return gotMajor > major || (gotMajor == major && gotMinor >= minor)
 }

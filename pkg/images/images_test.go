@@ -45,6 +45,33 @@ func TestResolveDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveWebModelerRestapiByVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{name: "below the boundary", version: "8.9.9", want: "camunda/web-modeler-restapi:8.9.9"},
+		{name: "at the boundary", version: "8.10.0", want: "camunda/hub:8.10.0"},
+		{name: "above the boundary", version: "9.0.0", want: "camunda/hub:9.0.0"},
+		{name: "one segment", version: "8", want: "camunda/web-modeler-restapi:8"},
+		{name: "not a version", version: "latest", want: "camunda/web-modeler-restapi:latest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, Resolve(nil, WebModelerRestapi, tt.version))
+		})
+	}
+}
+
+func TestResolveWebModelerRestapiOverrideWinsFromHub(t *testing.T) {
+	spec := &v1.CamundaPlatformConfigSpec{
+		Images: &v1.ImagesSpec{WebModelerRestapi: "mirror.example.com/team/restapi"},
+	}
+
+	assert.Equal(t, "mirror.example.com/team/restapi:8.10.0", Resolve(spec, WebModelerRestapi, "8.10.0"))
+}
+
 func TestResolveKeycloakTag(t *testing.T) {
 	assert.Equal(t, "camunda/keycloak:quay-optimized-26.0.7", Resolve(nil, Keycloak, "26.0.7"))
 }

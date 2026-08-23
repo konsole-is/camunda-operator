@@ -161,7 +161,7 @@ spec:
     identity: "mirror.example.com/camunda/identity"
     # string. Optional, default: camunda/console. Console.
     console: "mirror.example.com/camunda/console"
-    # string. Optional, default: camunda/web-modeler-restapi. The Web Modeler restapi process.
+    # string. Optional, default: camunda/web-modeler-restapi below 8.10, camunda/hub from 8.10. The Web Modeler restapi process.
     webModelerRestapi: "mirror.example.com/camunda/web-modeler-restapi"
     # string. Optional, default: camunda/web-modeler-websockets. The Web Modeler websockets process.
     webModelerWebsockets: "mirror.example.com/camunda/web-modeler-websockets"
