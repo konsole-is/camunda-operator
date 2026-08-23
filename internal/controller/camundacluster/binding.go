@@ -52,3 +52,18 @@ func managementBinding(cluster *v1.CamundaCluster, in components.Input) *v1.Mana
 
 	return binding
 }
+
+// gatewayBinding returns the binding that the cluster publishes in
+// status.gateway, or nil while the cluster is suspended: every workload is
+// then scaled to zero, so a consumer that deployed against the endpoints
+// would report a connection failure instead of a suspended cluster.
+func gatewayBinding(cluster *v1.CamundaCluster, in components.Input) *v1.GatewayBinding {
+	if in.Effective.Suspend {
+		return nil
+	}
+
+	return &v1.GatewayBinding{
+		GRPCEndpoint: components.GRPCEndpoint(cluster, in.Effective),
+		RESTEndpoint: components.RESTEndpoint(cluster, in.Effective),
+	}
+}

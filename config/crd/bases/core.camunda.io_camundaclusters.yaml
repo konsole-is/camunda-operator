@@ -7837,6 +7837,28 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              gateway:
+                description: |-
+                  Gateway is the published address of the client APIs of this cluster.
+                  Extensions read it instead of rebuilding the Service name and the ports
+                  from the internals of this controller. It is unset while the cluster is
+                  suspended, so a consumer sees an unreachable cluster instead of a stale
+                  endpoint.
+                properties:
+                  grpcEndpoint:
+                    description: |-
+                      GRPCEndpoint is the host and the port of the gRPC API, for example
+                      my-cluster-gateway.my-cluster-ns.svc:26500.
+                    type: string
+                  restEndpoint:
+                    description: |-
+                      RESTEndpoint is the base URL of the orchestration cluster REST API, for
+                      example http://my-cluster-gateway.my-cluster-ns.svc:8080.
+                    type: string
+                required:
+                - grpcEndpoint
+                - restEndpoint
+                type: object
               management:
                 description: |-
                   Management is the published address of the management API of this

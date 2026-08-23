@@ -188,6 +188,13 @@ func RESTEndpoint(cluster *v1.CamundaCluster, e Effective) string {
 	return "http://" + gatewayServiceHost(cluster, e) + ":" + strconv.Itoa(int(PortHTTP))
 }
 
+// GRPCEndpoint returns the host and the port of the gRPC API of a cluster: the
+// Service of the process that runs the gateway, on the gRPC port. It carries
+// no scheme, because a Zeebe client takes the address in that form.
+func GRPCEndpoint(cluster *v1.CamundaCluster, e Effective) string {
+	return gatewayServiceHost(cluster, e) + ":" + strconv.Itoa(int(PortGRPC))
+}
+
 // gatewayServiceHost returns the cluster-internal DNS name of the Service
 // that hosts the gateway ports.
 func gatewayServiceHost(cluster *v1.CamundaCluster, e Effective) string {
