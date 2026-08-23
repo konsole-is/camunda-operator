@@ -30,19 +30,29 @@ package keycloak
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
-// GroupVersion is the group and version of the Keycloak custom resource.
-var GroupVersion = schema.GroupVersion{Group: "k8s.keycloak.org", Version: "v2alpha1"}
+var (
+	// GroupVersion is the group and version of the Keycloak custom resource.
+	GroupVersion = schema.GroupVersion{Group: "k8s.keycloak.org", Version: "v2alpha1"}
 
-// SchemeBuilder registers the Keycloak types. A manager and a test suite that
-// read or write the kind add it to their scheme through AddToScheme.
-var SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
+	// SchemeBuilder registers the Keycloak types. A manager and a test suite
+	// that read or write the kind add them to their scheme through
+	// AddToScheme.
+	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 
-// AddToScheme adds the Keycloak types to a scheme.
-var AddToScheme = SchemeBuilder.AddToScheme
+	// AddToScheme adds the Keycloak types to a scheme.
+	AddToScheme = SchemeBuilder.AddToScheme
+)
+
+func addKnownTypes(s *runtime.Scheme) error {
+	s.AddKnownTypes(GroupVersion, &Keycloak{}, &KeycloakList{})
+	metav1.AddToGroupVersion(s, GroupVersion)
+
+	return nil
+}
 
 // ConditionReady is the condition type that the Keycloak Operator reports when
 // the Keycloak instances serve requests.
@@ -220,8 +230,4 @@ type KeycloakList struct {
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Keycloak `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&Keycloak{}, &KeycloakList{})
 }

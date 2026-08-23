@@ -203,7 +203,7 @@ type IdentitySpec struct {
 	// +kubebuilder:validation:MinLength=1
 	DatabaseConfigRef string `json:"databaseConfigRef"`
 	// Admin names the first administrator of the management plane.
-	Admin IdentityAdminSpec `json:"admin"`
+	Admin        IdentityAdminSpec `json:"admin"`
 	WorkloadSpec `json:",inline"`
 }
 
@@ -244,7 +244,7 @@ type ConsoleSpec struct {
 	// ExternalURL is the URL that browsers reach Console at. Every selected
 	// CamundaCluster reports to it.
 	// +kubebuilder:validation:XValidation:rule="self.startsWith('http://') || self.startsWith('https://')",message="externalUrl must be an http or https URL"
-	ExternalURL string `json:"externalUrl"`
+	ExternalURL  string `json:"externalUrl"`
 	WorkloadSpec `json:",inline"`
 }
 

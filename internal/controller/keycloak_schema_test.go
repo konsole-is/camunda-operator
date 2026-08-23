@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -44,12 +43,12 @@ var _ = Describe("Keycloak types", func() {
 				Namespace: fixtures.SchemaTestNamespace,
 			},
 			Spec: keycloak.KeycloakSpec{
-				Instances: ptr.To(int32(2)),
+				Instances: new(int32(2)),
 				Image:     "camunda/keycloak:quay-optimized-26.0.7",
 				DB: &keycloak.KeycloakDBSpec{
 					Vendor:   "postgres",
 					Host:     "postgres.my-cluster-ns.svc",
-					Port:     ptr.To(int32(5432)),
+					Port:     new(int32(5432)),
 					Database: "keycloak",
 					UsernameSecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{Name: "keycloak-db"},
@@ -61,14 +60,14 @@ var _ = Describe("Keycloak types", func() {
 					},
 				},
 				HTTP: &keycloak.KeycloakHTTPSpec{
-					HTTPEnabled: ptr.To(true),
-					HTTPPort:    ptr.To(int32(8080)),
+					HTTPEnabled: new(true),
+					HTTPPort:    new(int32(8080)),
 				},
 				Hostname: &keycloak.KeycloakHostnameSpec{
 					Hostname: "https://keycloak.example.com/auth",
-					Strict:   ptr.To(false),
+					Strict:   new(false),
 				},
-				Ingress: &keycloak.KeycloakIngressSpec{Enabled: ptr.To(false)},
+				Ingress: &keycloak.KeycloakIngressSpec{Enabled: new(false)},
 				AdditionalOptions: []keycloak.KeycloakValueOrSecret{
 					{Name: "http-relative-path", Value: "/auth"},
 					{Name: "proxy-headers", Value: "xforwarded"},
@@ -109,7 +108,7 @@ var _ = Describe("Keycloak types", func() {
 				Name:      "kc-" + utilrand.String(8),
 				Namespace: fixtures.SchemaTestNamespace,
 			},
-			Spec: keycloak.KeycloakSpec{Instances: ptr.To(int32(1))},
+			Spec: keycloak.KeycloakSpec{Instances: new(int32(1))},
 		}
 		Expect(k8sClient.Create(ctx, kc)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, kc) })

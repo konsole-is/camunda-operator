@@ -114,7 +114,12 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 		cfg.Spec.LicenseSecretRef = &ref
 		createPlatformConfig(cfg)
 
-		expectReady(cfg, metav1.ConditionFalse, v1.ReasonMissingSecret, Equal(notFoundMessage("spec.licenseSecretRef", ref)))
+		expectReady(
+			cfg,
+			metav1.ConditionFalse,
+			v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.licenseSecretRef", ref)),
+		)
 
 		createSecret(ref.Name, map[string]string{ref.Key: "x"})
 
@@ -150,7 +155,12 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 		createSecret(clientRef.Name, map[string]string{clientRef.Key: "s"})
 		createPlatformConfig(cfg)
 
-		expectReady(cfg, metav1.ConditionFalse, v1.ReasonMissingSecret, Equal(notFoundMessage("spec.licenseSecretRef", licenseRef)))
+		expectReady(
+			cfg,
+			metav1.ConditionFalse,
+			v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.licenseSecretRef", licenseRef)),
+		)
 	})
 
 	It("flips back to MissingSecret when a referenced Secret is deleted", func() {
@@ -163,7 +173,12 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 
 		Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
 
-		expectReady(cfg, metav1.ConditionFalse, v1.ReasonMissingSecret, Equal(notFoundMessage("spec.licenseSecretRef", ref)))
+		expectReady(
+			cfg,
+			metav1.ConditionFalse,
+			v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.licenseSecretRef", ref)),
+		)
 	})
 
 	It("reports MissingSecret naming the management identity client, then Healthy once the Secret exists", func() {
