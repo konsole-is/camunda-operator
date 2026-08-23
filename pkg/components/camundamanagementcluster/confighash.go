@@ -63,6 +63,8 @@ func componentEnv(in Input, comp string) []corev1.EnvVar {
 	switch comp {
 	case ComponentIdentity:
 		return baseEnv(in)
+	case ComponentConsole:
+		return consoleEnv(in)
 	case ComponentWebModelerRestapi:
 		return webModelerRestapiEnv(in)
 	case ComponentWebModelerWebsockets:

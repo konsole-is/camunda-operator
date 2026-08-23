@@ -407,11 +407,16 @@ on deselect and on deletion.
 under a ping field manager of its own (distinct from the claim's, because two applies under one
 manager strip each other's fields) with the cluster UID as precondition, the `patchExporter`
 shape:
-`CAMUNDA_CONSOLE_PING_ENABLED=true`, `_ENDPOINT=<console.externalUrl>`,
-`_CLUSTERNAME=<cluster name>`, `_PINGPERIOD=1h`. The key set is selected from the cluster's
+`CAMUNDA_CONSOLE_PING_ENABLED=true`, `_ENDPOINT=<Console Service URL>`,
+`_CLUSTERNAME=<cluster name>`, `_PINGPERIOD=1h`. The endpoint is the in-cluster Service URL of
+Console, `http://<name>-console.<namespace>.svc:80`, not `console.externalUrl`: the ping runs
+from the cluster pods, which reach the Service from every namespace and an external URL only
+through an Ingress (#189). The key set is selected from the cluster's
 `status.management.version`: `CAMUNDA_CONSOLE_PING_*` for 8.9, `CAMUNDA_HUB_PING_*` for 8.10 and
 later. Only when Console is enabled; withdrawn when Console is disabled, the cluster is
-deselected, or the management cluster is deleted.
+deselected, or the management cluster is deleted. Camunda 8.10 also expects M2M credentials
+under the ping, which the management plane does not issue yet, so an 8.10 cluster logs a
+validation error and reports to nobody.
 
 **Endpoints.** `CamundaCluster.status.gateway {grpcEndpoint, restEndpoint}` is added: the
 in-cluster URLs of the gateway, unset while suspended, the `status.management` rule. Web Modeler

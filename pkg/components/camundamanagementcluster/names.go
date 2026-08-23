@@ -17,6 +17,8 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"strconv"
+
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 
@@ -70,11 +72,16 @@ const (
 	// FieldManager owns every resource of the management cluster itself, the
 	// ManagementAuthConfig included.
 	FieldManager = "camunda-operator/camundamanagementcluster"
-	// AttachmentFieldManager owns what the management cluster writes on an
-	// orchestration cluster: the claim annotation and the Console ping
-	// settings. It is separate from FieldManager so that a withdrawal removes
-	// those fields and nothing else.
+	// AttachmentFieldManager owns the claim annotation that the management
+	// cluster writes on an orchestration cluster. It is separate from
+	// FieldManager so that a withdrawal removes that annotation and nothing
+	// else.
 	AttachmentFieldManager = "camunda-operator/camundamanagementcluster-attachment"
+	// PingFieldManager owns the Console ping settings that the management
+	// cluster writes into spec.extraEnv of an orchestration cluster. Two
+	// server-side applies under one manager strip each other's fields, so the
+	// ping never shares AttachmentFieldManager with the claim.
+	PingFieldManager = "camunda-operator/camundamanagementcluster-ping"
 )
 
 // The ports of the Management Identity container. The HTTP port is the
@@ -92,6 +99,19 @@ const (
 const (
 	IdentityServicePortHTTP       int32 = 80
 	IdentityServicePortManagement int32 = 82
+)
+
+// The ports of the Console container, and the ports of its Service. Both
+// follow the 8.9 Helm chart, which serves the web application on 8080 and the
+// health endpoints on 9100, and publishes them on 80 and 9100.
+//
+// Console templates of the 8.9 Helm chart:
+// https://github.com/camunda/camunda-platform-helm/tree/main/charts/camunda-platform-8.9/templates/console
+const (
+	ConsolePortHTTP              int32 = 8080
+	ConsolePortManagement        int32 = 9100
+	ConsoleServicePortHTTP       int32 = 80
+	ConsoleServicePortManagement int32 = 9100
 )
 
 // The ports of the Web Modeler containers. The restapi process serves the
@@ -170,12 +190,29 @@ const clusterUIDPrefixLength = 8
 // Service.
 func IdentityName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, identitySuffix) }
 
+// IdentityServiceURL returns the URL of Management Identity inside the
+// Kubernetes cluster. A component of the management plane calls the Identity
+// API over it, so it stays reachable while no browser can reach the external
+// URL.
+func IdentityServiceURL(mc *v1.CamundaManagementCluster) string {
+	return serviceURL(IdentityName(mc), mc.Namespace, IdentityServicePortHTTP)
+}
+
 // KeycloakName returns the name of the Keycloak custom resource. The Keycloak
 // Operator names the Service it creates for it "<this>-service".
 func KeycloakName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, keycloakSuffix) }
 
 // ConsoleName returns the name of the Console Deployment and Service.
 func ConsoleName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, consoleSuffix) }
+
+// ConsoleServiceURL returns the URL of Console inside the Kubernetes cluster.
+// An orchestration cluster of any namespace reports to it, so it must not
+// depend on an Ingress. It is derived from the name of the management cluster
+// alone, which lets a caller name the Console of a management plane that
+// deploys none, and tell the ping entries of two management planes apart.
+func ConsoleServiceURL(mc *v1.CamundaManagementCluster) string {
+	return serviceURL(ConsoleName(mc), mc.Namespace, ConsoleServicePortHTTP)
+}
 
 // WebModelerRestapiName returns the name of the Web Modeler restapi
 // Deployment and Service.
@@ -242,6 +279,12 @@ func ContractName(mc *v1.CamundaManagementCluster) string {
 // in a hash.
 func suffixed(name, suffix string) string {
 	return labels.BoundedName(name, validation.DNS1123LabelMaxLength-len(suffix)-1) + "-" + suffix
+}
+
+// serviceURL returns the HTTP URL of one Service of the management plane, as a
+// pod of any namespace reaches it.
+func serviceURL(name, namespace string, port int32) string {
+	return "http://" + name + "." + namespace + ".svc:" + strconv.Itoa(int(port))
 }
 
 // shortUID returns the head of a UID, or the whole UID when it is shorter.

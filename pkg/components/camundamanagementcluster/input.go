@@ -447,6 +447,10 @@ func (in Input) workload(comp string) v1.WorkloadSpec {
 	switch comp {
 	case ComponentIdentity:
 		return in.Cluster.Spec.Identity.WorkloadSpec
+	case ComponentConsole:
+		if in.Cluster.Spec.Console != nil {
+			return in.Cluster.Spec.Console.WorkloadSpec
+		}
 	case ComponentWebModelerRestapi:
 		if webModeler != nil && webModeler.Restapi != nil {
 			return *webModeler.Restapi

@@ -425,7 +425,7 @@ func webModelerProviderEnv(in Input) []corev1.EnvVar {
 
 	env := []corev1.EnvVar{
 		{Name: webModelerEnvClientID, Value: provider.Clients.WebModeler.ID},
-		{Name: webModelerEnvIdentityBaseURL, Value: identityInternalURL(in)},
+		{Name: webModelerEnvIdentityBaseURL, Value: IdentityServiceURL(in.Cluster)},
 		{Name: webModelerEnvIdentityType, Value: provider.Type},
 		{Name: webModelerEnvAudienceInternalAPI, Value: provider.Clients.WebModelerAPI.Audience},
 		{Name: webModelerEnvAudiencePublicAPI, Value: provider.Clients.WebModelerPublicAPIAudience},
@@ -442,16 +442,6 @@ func webModelerProviderEnv(in Input) []corev1.EnvVar {
 	}
 
 	return env
-}
-
-// identityInternalURL is the address of Management Identity inside the
-// Kubernetes cluster. Web Modeler reads the users of the management plane from
-// it, so the URL must not leave the cluster.
-func identityInternalURL(in Input) string {
-	return fmt.Sprintf(
-		"http://%s.%s.svc:%d",
-		IdentityName(in.Cluster), in.Cluster.Namespace, IdentityServicePortHTTP,
-	)
 }
 
 // webModelerPusherEnv renders both sides of the WebSocket pairing as the
