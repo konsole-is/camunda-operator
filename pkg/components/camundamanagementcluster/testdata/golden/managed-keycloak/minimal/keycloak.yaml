@@ -17,6 +17,7 @@ spec:
     passwordSecret:
       key: password
       name: keycloak-db-credentials
+    schema: public
     url: jdbc:aws-wrapper:postgresql://postgres.camunda.svc:5432/keycloak
     usernameSecret:
       key: username

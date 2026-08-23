@@ -46,9 +46,17 @@ const (
 	keycloakProxyHeadersValue = "xforwarded"
 )
 
-// keycloakDBVendor is the database that the operator runs Keycloak on.
-// Keycloak needs a PostgreSQL database of its own.
-const keycloakDBVendor = "postgres"
+// keycloakDBVendor is the database that the operator runs Keycloak on, and
+// keycloakDBSchema is the schema it opens there. Keycloak needs a PostgreSQL
+// database of its own, and the reference deployment of Camunda names the
+// schema rather than leaving it to the search path of the database user
+// (the keycloak-instance manifests of
+// https://github.com/camunda/camunda-deployment-references, under
+// generic/kubernetes/operator-based/keycloak).
+const (
+	keycloakDBVendor = "postgres"
+	keycloakDBSchema = "public"
+)
 
 // keycloakJDBCPrefix builds the JDBC URL of the Keycloak database. The
 // Camunda build of Keycloak bundles the AWS JDBC wrapper, and the reference
@@ -155,6 +163,7 @@ func keycloakDB(in Input) *keycloak.KeycloakDBSpec {
 	return &keycloak.KeycloakDBSpec{
 		Vendor: keycloakDBVendor,
 		URL:    fmt.Sprintf("%s%s:%d/%s", keycloakJDBCPrefix, db.Host, db.Port, db.Name),
+		Schema: keycloakDBSchema,
 		UsernameSecret: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: db.Credentials.Name},
 			Key:                  db.Credentials.UsernameKey,
