@@ -40,9 +40,8 @@ func ClaimValue(mc *v1.CamundaManagementCluster) string {
 	return mc.Namespace + "/" + mc.Name
 }
 
-// attachedClusters selects the orchestration clusters of clusters that mc
-// serves, claims each of them, and reports what the management plane can do
-// with each one.
+// attachedClusters selects the orchestration clusters that mc serves, claims
+// each of them, and reports what the management plane can do with each one.
 //
 // The selector follows the Kubernetes convention: an unset selector selects no
 // cluster, and an empty one selects every cluster. A selected cluster that no
