@@ -34,14 +34,16 @@ const (
 	// records while it deletes a CamundaManagementCluster.
 	eventActionFinalize = "Finalize"
 	// eventReasonAttachmentRemoved is recorded when the finalizer withdraws
-	// the claims and deletes the ManagementAuthConfig.
+	// what the management plane wrote on the orchestration clusters and
+	// deletes the ManagementAuthConfig.
 	eventReasonAttachmentRemoved = "AttachmentRemoved"
 )
 
-// finalize withdraws every claim, deletes the ManagementAuthConfig, and
-// releases the finalizer. The Deployments, the Services, and the copies of
-// referenced Secrets carry an owner reference, so Kubernetes collects them;
-// the claims and the contract are outside that chain.
+// finalize withdraws the Console ping settings and every claim, deletes the
+// ManagementAuthConfig, and releases the finalizer. The Deployments, the
+// Services, and the copies of referenced Secrets carry an owner reference, so
+// Kubernetes collects them; what the management plane wrote on an
+// orchestration cluster, and the contract, are outside that chain.
 //
 // The withdrawal goes first. Once the finalizer is gone the object is gone for
 // good, and no retry can free the orchestration clusters or remove a contract
@@ -51,6 +53,9 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		return nil
 	}
 
+	if err := r.withdrawPing(ctx, mc); err != nil {
+		return err
+	}
 	if err := r.withdrawClaims(ctx, mc); err != nil {
 		return err
 	}
@@ -63,7 +68,8 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		corev1.EventTypeNormal,
 		eventReasonAttachmentRemoved,
 		eventActionFinalize,
-		"Withdrew the claims on the orchestration clusters and removed ManagementAuthConfig %q",
+		"Withdrew the claims and the Console ping settings on the orchestration clusters "+
+			"and removed ManagementAuthConfig %q",
 		components.ContractName(mc),
 	)
 
