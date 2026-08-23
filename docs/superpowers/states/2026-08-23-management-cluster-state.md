@@ -33,7 +33,7 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 | #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster/.claude/worktrees/console-ping | #203 → feat/management-cluster | self-merged (84ef8b8) |
 | #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster/.claude/worktrees/web-modeler | #204 → feat/management-cluster | self-merged (f50c39e) |
 | #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | (pushed, PR after merge-forward) | flows green, gates running |
-| #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | #209 → feat/management-cluster | ready |
+| #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | #209 → feat/management-cluster | self-merged (2fdeb6e) |
 | #208 | refactor/management-cluster--coherence-sweep | .claude/worktrees/management-cluster/.claude/worktrees/coherence-sweep | #210 → feat/management-cluster | ready |
 
 ## Contracts
