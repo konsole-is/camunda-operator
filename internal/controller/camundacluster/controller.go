@@ -125,20 +125,26 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // failed pre-check reports its Ready reason and stops. A cluster whose
 // storage contract another cluster holds renders suspended, reports
 // StorageAlreadyAttached instead of the aggregate, and looks again on a
-// timer. The broker storage lifecycle then grows the bound broker claims in
-// place and records an ignored shrink; the claim template keeps its applied
-// size, so the StatefulSet is never recreated. The admin credential resolves
-// next, and a requested password rotation runs there; a failed user API call
-// surfaces on AdminSecretReady and retries on a timer. Then the components
-// are reconciled in order: the admin Secret, the mirrored Secrets, then
-// every process, each gated on whether the cluster needs it. The management
-// binding is published with the status, and cleared while the cluster is
-// suspended. The ServiceAccount the pods run under is published with it and
-// is never cleared: the account outlives a suspension. Ready is True only
-// when every component the cluster needs is True. Its reason and message
-// come from the governing component, which is the highest-priority
-// component that is not True, or the highest-priority of all of them when
-// they all are.
+// timer. An effective version below the one the brokers run is refused
+// before anything is applied, unless the annotation
+// camunda.io/allow-version-downgrade names it. The annotation is removed once
+// the brokers carry that version, and as soon as it names a version the
+// cluster is not asked to run. The running version is stamped on the bound
+// broker claims, so it survives a delete with retained volumes and the rule
+// holds for a cluster recreated on them. The broker storage lifecycle then grows the
+// bound broker claims in place and records an ignored shrink; the claim
+// template keeps its applied size, so the StatefulSet is never recreated.
+// The admin credential resolves next, and a requested password rotation runs
+// there; a failed user API call surfaces on AdminSecretReady and retries on
+// a timer. Then the components are reconciled in order: the admin Secret,
+// the mirrored Secrets, then every process, each gated on whether the
+// cluster needs it. The management binding is published with the status, and
+// cleared while the cluster is suspended. The ServiceAccount the pods run
+// under is published with it and is never cleared: the account outlives a
+// suspension. Ready is True only when every component the cluster needs is
+// True. Its reason and message come from the governing component, which is
+// the highest-priority component that is not True, or the highest-priority
+// of all of them when they all are.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
@@ -209,6 +215,25 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	if err := r.stampBrokerVersion(ctx, storage); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.consumeDowngradeSanction(ctx, &cluster, in, storage); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// A refused downgrade re-enqueues through the watches on the cluster, the
+	// preset, and the owned StatefulSet, so no timer is needed.
+	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
+		refused := conditions.Failed(&cluster, failure)
+		r.recordRefusedDowngrade(&cluster, refused)
+		conditions.Stage(&cluster, refused)
+
+		return ctrl.Result{}, nil
+	}
+
 	in.VolumeClaimSize = storage.volumeClaimSize()
 
 	if err := r.growBrokerClaims(ctx, storage, in.Effective.StorageSize()); err != nil {

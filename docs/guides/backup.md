@@ -334,12 +334,12 @@ The two storage paths differ:
 
 **The restore carries the cluster back to the version of the backup.** You do not lower `spec.version` by hand, and you do not suspend the cluster by hand. Create the restore against the cluster as it is.
 
-CAUTION: A downgrade that you do by hand on a running cluster, outside a restore, is still unsupported. The brokers then report themselves unhealthy.
+The operator refuses a downgrade that you do by hand on a running cluster, outside a restore. The cluster reports `VersionDowngradeRefused`. The [CamundaCluster page](../crds/camundacluster.md#version) states the rule.
 
 Two things follow that are worth knowing:
 
 - On the PostgreSQL path, a cluster that the version rule would already accept is still moved back to the version of the backup. The cluster comes back one minor behind where it was, and you upgrade it forward again after the restore.
-- The restore keeps `spec.version`. Declare the version you want the cluster to run once the restore is `Completed`. A manifest that omits the field does not take it back, because server-side apply removes a field only from the manager that declared it. A cluster that took its version from a preset needs the field removed by hand. The CRD page of each restore kind shows both.
+- The restore keeps `spec.version`. Declare the version you want the cluster to run once the restore is `Completed`. A manifest that omits the field does not take it back, because server-side apply removes a field only from the manager that declared it. A cluster that took its version from a preset needs the field removed by hand. If the preset is below the version the brokers run, remove the field and set `camunda.io/allow-version-downgrade` in one command. The CRD page of each restore kind shows that command.
 
 **Take a backup before every upgrade.** The most common reason to restore is an upgrade that went wrong, and the backup you want is the one from just before it.
 

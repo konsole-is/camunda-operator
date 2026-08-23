@@ -6770,7 +6770,10 @@ spec:
                   Version is the Camunda version to deploy, as a full semantic version.
                   The floor of 8.9.0 is enforced by the controller on the preset-merged
                   result, the schema pins only the three-segment shape. Required unless
-                  the resolved preset provides it.
+                  the resolved preset provides it. A value below the version that the
+                  brokers run is refused with Ready VersionDowngradeRefused unless the
+                  annotation camunda.io/allow-version-downgrade on the CamundaCluster
+                  names it.
                 pattern: ^\d+\.\d+\.\d+$
                 type: string
               zeebe:

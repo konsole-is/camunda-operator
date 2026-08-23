@@ -46,6 +46,20 @@ const (
 	// size is visible, and the controller records an ignored shrink only when
 	// it changes.
 	RequestedStorageSizeAnnotation = "camunda.io/requested-storage-size"
+	// AllowVersionDowngradeAnnotation is the annotation of a CamundaCluster
+	// that sanctions one move of its effective version below the version its
+	// brokers run. The value is the exact target version, x.y.z. The
+	// controller removes the annotation once the brokers carry that version,
+	// and as soon as it names a version other than the effective one. Set it
+	// in the same edit as the version, or after the refusal.
+	AllowVersionDowngradeAnnotation = "camunda.io/allow-version-downgrade"
+	// BrokerVersionAnnotation is the annotation that the controller stamps
+	// on every bound broker claim with the highest version an applied broker
+	// StatefulSet has asked the claim's data to run, which can lead the pods
+	// during a roll. The stamp never goes down on a live claim. It outlives
+	// the cluster when the claims are retained, so the version rule holds
+	// for a cluster recreated on them.
+	BrokerVersionAnnotation = "camunda.io/broker-version"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
 	// DefaultAdminEmail is the email of the seeded admin user when

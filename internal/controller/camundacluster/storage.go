@@ -70,8 +70,17 @@ func (r *CamundaClusterReconciler) readBrokerStorage(
 		return brokerStorage{}, fmt.Errorf("reading StatefulSet %q: %w", key, err)
 	}
 
+	// The cache serves the claims while the StatefulSet exists: there they
+	// only grow and report status. Without one they are the downgrade
+	// baseline of a cluster recreated on retained volumes, and a stale
+	// cache can miss the newest stamp, so they are read live.
+	reader := client.Reader(r.Client)
+	if storage.statefulSet == nil {
+		reader = r.APIReader
+	}
+
 	var list corev1.PersistentVolumeClaimList
-	if err := r.List(
+	if err := reader.List(
 		ctx, &list,
 		client.InNamespace(cluster.Namespace),
 		client.MatchingLabels(components.BrokerClaimSelector(cluster)),
@@ -153,6 +162,70 @@ func (s brokerStorage) volumes() []v1.VolumeStatus {
 	}
 	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 	return volumes
+}
+
+// runningVersion returns the version that the next broker start runs,
+// whatever spec.version says: the version on the applied StatefulSet, or,
+// without one, the version stamped on the bound claims, which a cluster
+// recreated on retained volumes carries. The empty string means that
+// nothing constrains the version.
+func (s brokerStorage) runningVersion() string {
+	if version := s.appliedVersion(); version != "" {
+		return version
+	}
+
+	return components.RetainedVersion(s.claims)
+}
+
+// appliedVersion returns the tag of the broker image on the applied
+// StatefulSet, or the empty string before the first apply or when the
+// container carries no tag.
+func (s brokerStorage) appliedVersion() string {
+	if s.statefulSet == nil {
+		return ""
+	}
+
+	for _, container := range s.statefulSet.Spec.Template.Spec.Containers {
+		if container.Name == components.ContainerCamunda {
+			return components.ImageTag(container.Image)
+		}
+	}
+
+	return ""
+}
+
+// stampBrokerVersion patches the broker version annotation onto every bound
+// broker claim whose stamp is absent, malformed, or below the version of the
+// applied StatefulSet. The stamp survives a delete of the cluster with
+// retained volumes, so the downgrade rule holds for the cluster that is
+// recreated on them. It is never lowered: a sanctioned restore lowers the
+// StatefulSet before it erases the claims, and an abandoned restore must not
+// leave newer data under a lower stamp. The erased claim comes back
+// unstamped and takes the lower version then.
+func (r *CamundaClusterReconciler) stampBrokerVersion(ctx context.Context, storage brokerStorage) error {
+	version := storage.appliedVersion()
+	if version == "" {
+		return nil
+	}
+
+	for i := range storage.claims {
+		claim := &storage.claims[i]
+		stamped := claim.Annotations[components.BrokerVersionAnnotation]
+		if stamped == version || components.VersionDowngrade(version, stamped) {
+			continue
+		}
+
+		patch := client.MergeFrom(claim.DeepCopy())
+		if claim.Annotations == nil {
+			claim.Annotations = map[string]string{}
+		}
+		claim.Annotations[components.BrokerVersionAnnotation] = version
+		if err := r.Patch(ctx, claim, patch); err != nil {
+			return fmt.Errorf("stamping the broker version on claim %q: %w", claim.Name, err)
+		}
+	}
+
+	return nil
 }
 
 // growBrokerClaims patches every bound broker claim that requests less than
