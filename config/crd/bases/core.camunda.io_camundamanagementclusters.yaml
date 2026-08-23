@@ -4166,6 +4166,11 @@ spec:
             - identityProvider
             - platformConfigRef
             type: object
+            x-kubernetes-validations:
+            - message: 'identity.admin: set claimName and claimValue in oidc mode,
+                username in the keycloak modes'
+              rule: 'has(self.identityProvider.oidc) ? has(self.identity.admin.claimName)
+                : has(self.identity.admin.username)'
           status:
             description: status defines the observed state of CamundaManagementCluster
             properties:

@@ -176,6 +176,21 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "set claimName and claimValue",
 		),
 		Entry(
+			"rejects a username admin in the oidc mode",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: "admin"}
+			}, "identity.admin: set claimName and claimValue in oidc mode",
+		),
+		Entry(
+			"rejects a claim admin in the keycloak mode",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin = v1.IdentityAdminSpec{
+					ClaimName:  "oid",
+					ClaimValue: "1f8c0e2a-2b1a-4a5f-9f0d-2b0a1c3d4e5f",
+				}
+			}, "identity.admin: set claimName and claimValue in oidc mode",
+		),
+		Entry(
 			"rejects an admin with a claimName and no claimValue",
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Identity.Admin = v1.IdentityAdminSpec{ClaimName: "oid", Username: "admin"}
