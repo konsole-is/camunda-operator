@@ -12,15 +12,15 @@ You need:
 
 - The operator installed. See [Installation](../installation.md).
 - A PostgreSQL server, described by a [DatabaseServerConfig](../crds/databaseserverconfig.md). The management plane needs one logical database per component.
-- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you want the operator to run Keycloak for you. Install the release of the Keycloak version you set in [step 3a](#step-3a-the-operator-runs-keycloak), below 26.7.0. If you run your own Keycloak, or your own OIDC provider, skip it.
+- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you want the operator to run Keycloak for you. Install the Keycloak Operator release that matches the Keycloak `version` you set in [step 3a](#step-3a-the-operator-runs-keycloak), which stays below 26.7.0. If you run your own Keycloak, or your own OIDC provider, skip it.
 - A way to route traffic from outside the Kubernetes cluster to a Service. The operator creates no Ingress.
 
 ## The order of creation
 
 ```mermaid
 graph LR
-    DB["Database or DatabaseConfig"] --> PFC[CamundaPlatformConfig]
-    PFC --> MC[CamundaManagementCluster]
+    DB["Database or DatabaseConfig"] --> MC[CamundaManagementCluster]
+    PFC[CamundaPlatformConfig] --> MC
     MC --> CC[CamundaCluster]
     CC --> OPT[CamundaOptimize]
 ```
