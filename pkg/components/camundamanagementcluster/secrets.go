@@ -61,7 +61,7 @@ type generatedSecret struct {
 // publishes, so a delete of the Secret always rotates it. The controller must
 // reconcile through credentials.NewApplyClient for that precondition to hold.
 func secretsComponents(in Input) (Built, error) {
-	keycloakMode := Mode(in.Cluster) != ModeOIDC
+	keycloakMode := in.Provider.Mode != ModeOIDC
 
 	builder := component.NewComponentBuilder().
 		WithName(ComponentSecrets).
@@ -111,7 +111,7 @@ func secretsComponents(in Input) (Built, error) {
 // does not rotate.
 func generatedSecrets(in Input) []generatedSecret {
 	mc := in.Cluster
-	keycloakMode := Mode(mc) != ModeOIDC
+	keycloakMode := in.Provider.Mode != ModeOIDC
 
 	return []generatedSecret{
 		{

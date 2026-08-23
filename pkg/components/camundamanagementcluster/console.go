@@ -83,7 +83,7 @@ const (
 // of left running, and the gate keeps the Disabled condition out of Ready.
 func consoleComponents(in Input) (Built, error) {
 	deployed := in.Cluster.Spec.Console != nil
-	gate := component.GatedBy(feature.NewBooleanGate(deployed))
+	gate := feature.NewBooleanGate(deployed)
 
 	workload, err := deployment.NewBuilder(consoleDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentConsole), consoleContainer)...).
@@ -100,9 +100,9 @@ func consoleComponents(in Input) (Built, error) {
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentConsole).
 		WithConditionType(component.ConditionType(v1.ConditionConsoleReady)).
-		WithFeatureGate(feature.NewBooleanGate(deployed)).
-		WithResource(workload, gate).
-		WithResource(svc, gate).
+		WithFeatureGate(gate).
+		WithResource(workload, component.GatedBy(gate)).
+		WithResource(svc, component.GatedBy(gate)).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {

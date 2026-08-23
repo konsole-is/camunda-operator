@@ -158,7 +158,7 @@ const (
 // Ready.
 func webModelerComponents(in Input) (Built, error) {
 	deployed := in.Cluster.Spec.WebModeler != nil
-	gate := component.GatedBy(feature.NewBooleanGate(deployed))
+	gate := feature.NewBooleanGate(deployed)
 
 	pusher, err := pusherSecret(in)
 	if err != nil {
@@ -194,12 +194,12 @@ func webModelerComponents(in Input) (Built, error) {
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentWebModeler).
 		WithConditionType(component.ConditionType(v1.ConditionWebModelerReady)).
-		WithFeatureGate(feature.NewBooleanGate(deployed)).
-		WithResource(pusher, gate).
-		WithResource(restapi, gate).
-		WithResource(restapiService, gate).
-		WithResource(websockets, gate).
-		WithResource(websocketsService, gate).
+		WithFeatureGate(gate).
+		WithResource(pusher, component.GatedBy(gate)).
+		WithResource(restapi, component.GatedBy(gate)).
+		WithResource(restapiService, component.GatedBy(gate)).
+		WithResource(websockets, component.GatedBy(gate)).
+		WithResource(websocketsService, component.GatedBy(gate)).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
