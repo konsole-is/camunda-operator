@@ -204,6 +204,10 @@ func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 //
 // A credential that a Secret already holds is read back, so it stays stable
 // after creation. Deleting the Secret is what rotates it.
+//
+// An administrator password of your own replaces the generated one. It is
+// checked here, and copied into the management namespace when it lives
+// outside it, because the Identity pods mount it.
 func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved) error {
 	if components.Mode(res.mc) == components.ModeOIDC {
 		return nil
@@ -234,10 +238,10 @@ func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved)
 	out.Input.Secrets = secrets
 
 	if ref := res.mc.Spec.Identity.Admin.PasswordSecretRef; ref != nil {
-		key := client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}
-		if _, err := res.secret(ctx, key, ref.Key); err != nil {
-			return err
-		}
+		// The rewritten reference is dropped: the render package derives the
+		// same local name from LocalSecretName, so this call is here for the
+		// check, the copy, and the hash input.
+		return res.localize(ctx, ref.DeepCopy(), components.MirrorPurposeIdentityAdmin)
 	}
 
 	return nil

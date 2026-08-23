@@ -50,6 +50,8 @@ const (
 	MirrorPurposeIdentityClient MirrorPurpose = "identity-client"
 	// MirrorPurposeIdentityDB names the copy of the Management Identity database credentials Secret.
 	MirrorPurposeIdentityDB MirrorPurpose = "identity-db"
+	// MirrorPurposeIdentityAdmin names the copy of the Secret with the password of the first administrator.
+	MirrorPurposeIdentityAdmin MirrorPurpose = "identity-admin"
 	// MirrorPurposeKeycloakAdmin names the copy of the administrator credentials of an external Keycloak.
 	MirrorPurposeKeycloakAdmin MirrorPurpose = "keycloak-admin"
 	// MirrorPurposeKeycloakDB names the copy of the Keycloak database credentials Secret.
@@ -66,6 +68,7 @@ var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeLicense,
 	MirrorPurposeIdentityClient,
 	MirrorPurposeIdentityDB,
+	MirrorPurposeIdentityAdmin,
 	MirrorPurposeKeycloakAdmin,
 	MirrorPurposeKeycloakDB,
 	MirrorPurposeWebModelerDB,

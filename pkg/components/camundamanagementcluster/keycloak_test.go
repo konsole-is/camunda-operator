@@ -226,6 +226,27 @@ func TestIdentityEnvReadsTheAdministratorPasswordOfTheSpec(t *testing.T) {
 	)
 }
 
+// A pod mounts a Secret of its own namespace alone, so an administrator
+// password from another namespace is read from the copy the operator makes.
+func TestIdentityEnvReadsTheAdministratorPasswordFromItsCopy(t *testing.T) {
+	t.Parallel()
+
+	in := newKeycloakInput(t, true, func(in *Input) {
+		in.Cluster.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
+			Name: "admin-password", Namespace: "elsewhere", Key: "password",
+		}
+		in.Secrets.IdentityAdmin = ""
+	})
+
+	env := renderedEnv(in, ComponentIdentity)
+
+	assert.Equal(
+		t,
+		"secretKeyRef:"+MirroredSecretName(in.Cluster, MirrorPurposeIdentityAdmin)+"/password",
+		env["KEYCLOAK_USERS_0_PASSWORD"],
+	)
+}
+
 // The ManagementAuthConfig is what a CamundaOptimize reads, and in the
 // Keycloak modes every field comes from the realm that Management Identity
 // bootstraps.

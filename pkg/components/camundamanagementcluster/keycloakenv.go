@@ -260,9 +260,10 @@ func keycloakFirstUserEnv(in Input) []corev1.EnvVar {
 			ValueFrom: secretSource(name, PasswordKey),
 		})
 	} else if ref := admin.PasswordSecretRef; ref != nil {
+		local := LocalSecretName(in.Cluster, ref.Namespace, ref.Name, MirrorPurposeIdentityAdmin)
 		env = append(env, corev1.EnvVar{
 			Name:      keycloakEnvUserPassword,
-			ValueFrom: secretSource(ref.Name, ref.Key),
+			ValueFrom: secretSource(local, ref.Key),
 		})
 	}
 	if admin.Email != "" {
