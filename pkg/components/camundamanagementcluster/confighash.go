@@ -63,7 +63,7 @@ func ConfigHash(in Input, comp string) string {
 func componentEnv(in Input, comp string) []corev1.EnvVar {
 	switch comp {
 	case ComponentIdentity:
-		return baseEnv(in)
+		return identityEnv(in)
 	case ComponentConsole:
 		return consoleEnv(in)
 	case ComponentWebModelerRestapi:

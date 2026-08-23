@@ -1,0 +1,266 @@
+apiVersion: v1
+data:
+  app-id: d2ViLW1vZGVsZXI=
+  app-key: Z29sZGVuLXB1c2hlci1rZXk=
+  app-secret: Z29sZGVuLXB1c2hlci1zZWNyZXQ=
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler
+    camunda.io/management-cluster: my-management
+  name: my-management-web-modeler-pusher
+  namespace: camunda
+type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: my-management
+  name: my-management-web-modeler-restapi
+  namespace: camunda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/component: web-modeler-restapi
+      camunda.io/management-cluster: my-management
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: d764af373eabb5d6
+      labels:
+        camunda.io/component: web-modeler-restapi
+        camunda.io/management-cluster: my-management
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://postgres.camunda.svc:5432/web-modeler
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: modeler-db-credentials
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: modeler-db-credentials
+        - name: RESTAPI_MAIL_HOST
+          value: smtp.example.com
+        - name: RESTAPI_MAIL_PORT
+          value: "587"
+        - name: RESTAPI_MAIL_ENABLE_TLS
+          value: "true"
+        - name: RESTAPI_MAIL_FROM_ADDRESS
+          value: noreply@example.com
+        - name: RESTAPI_SERVER_URL
+          value: https://modeler.example.com
+        - name: SERVER_HTTPS_ONLY
+          value: "true"
+        - name: OAUTH2_CLIENT_ID
+          value: web-modeler
+        - name: CAMUNDA_IDENTITY_BASEURL
+          value: http://my-management-identity.camunda.svc:80
+        - name: CAMUNDA_IDENTITY_TYPE
+          value: KEYCLOAK
+        - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API
+          value: web-modeler-api
+        - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API
+          value: web-modeler-public-api
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
+          value: https://keycloak.example.com/auth/realms/camunda-platform
+        - name: RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL
+          value: https://keycloak.example.com/auth/realms/camunda-platform
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+          value: https://keycloak.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs
+        - name: RESTAPI_PUSHER_HOST
+          value: my-management-web-modeler-websockets.camunda.svc
+        - name: RESTAPI_PUSHER_PORT
+          value: "80"
+        - name: RESTAPI_PUSHER_APP_ID
+          value: web-modeler
+        - name: RESTAPI_PUSHER_KEY
+          valueFrom:
+            secretKeyRef:
+              key: app-key
+              name: my-management-web-modeler-pusher
+        - name: RESTAPI_PUSHER_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: app-secret
+              name: my-management-web-modeler-pusher
+        - name: CLIENT_PUSHER_HOST
+          value: modeler.example.com
+        - name: CLIENT_PUSHER_PORT
+          value: "443"
+        - name: CLIENT_PUSHER_PATH
+          value: /modeler-ws
+        - name: CLIENT_PUSHER_FORCE_TLS
+          value: "true"
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license
+              name: my-management-management-license
+        - name: CAMUNDA_MODELER_CLUSTERS_0_ID
+          value: 11111111-2222-3333-4444-555555555555
+        - name: CAMUNDA_MODELER_CLUSTERS_0_NAME
+          value: prod-ns/prod
+        - name: CAMUNDA_MODELER_CLUSTERS_0_VERSION
+          value: 8.9.9
+        - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION
+          value: BEARER_TOKEN
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC
+          value: grpc://prod-gateway.prod-ns.svc:26500
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_REST
+          value: http://prod-gateway.prod-ns.svc:8080
+        - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED
+          value: "true"
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP
+          value: https://prod.example.com
+        - name: CAMUNDA_MODELER_CLUSTERS_1_ID
+          value: 66666666-7777-8888-9999-000000000000
+        - name: CAMUNDA_MODELER_CLUSTERS_1_NAME
+          value: staging-ns/staging
+        - name: CAMUNDA_MODELER_CLUSTERS_1_VERSION
+          value: 8.9.9
+        - name: CAMUNDA_MODELER_CLUSTERS_1_AUTHENTICATION
+          value: BASIC
+        - name: CAMUNDA_MODELER_CLUSTERS_1_URL_GRPC
+          value: grpc://staging-gateway.staging-ns.svc:26500
+        - name: CAMUNDA_MODELER_CLUSTERS_1_URL_REST
+          value: http://staging-gateway.staging-ns.svc:8080
+        - name: CAMUNDA_MODELER_CLUSTERS_1_AUTHORIZATIONS_ENABLED
+          value: "true"
+        image: registry.example.com/mirror/camunda/web-modeler-restapi:8.9.12
+        name: restapi
+        ports:
+        - containerPort: 8081
+          name: http
+          protocol: TCP
+        - containerPort: 8091
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health/readiness
+            port: management
+          periodSeconds: 10
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /health/readiness
+            port: management
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: my-management
+  name: my-management-web-modeler-restapi
+  namespace: camunda
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 8091
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: my-management
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: my-management
+  name: my-management-web-modeler-websockets
+  namespace: camunda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/component: web-modeler-websockets
+      camunda.io/management-cluster: my-management
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: d88074970c5cadc1
+      labels:
+        camunda.io/component: web-modeler-websockets
+        camunda.io/management-cluster: my-management
+    spec:
+      containers:
+      - env:
+        - name: PUSHER_APP_ID
+          value: web-modeler
+        - name: PUSHER_APP_KEY
+          valueFrom:
+            secretKeyRef:
+              key: app-key
+              name: my-management-web-modeler-pusher
+        - name: PUSHER_APP_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: app-secret
+              name: my-management-web-modeler-pusher
+        - name: PUSHER_APP_PATH
+          value: /modeler-ws
+        image: registry.example.com/mirror/camunda/web-modeler-websockets:8.9.12
+        name: websockets
+        ports:
+        - containerPort: 8060
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /up
+            port: http
+          periodSeconds: 10
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /up
+            port: http
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: my-management
+  name: my-management-web-modeler-websockets
+  namespace: camunda
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  selector:
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: my-management
+status:
+  loadBalancer: {}

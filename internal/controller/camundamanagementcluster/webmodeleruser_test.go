@@ -39,6 +39,11 @@ const (
 	clusterAdminPassword = "cluster-admin-password"
 )
 
+// failureBudget is how many calls a spec makes the fake cluster fail when it
+// wants every call of a run to fail. The reconcile retries, so the count only
+// has to outlast the spec.
+const failureBudget = 1000
+
 var _ = Describe("Web Modeler", func() {
 	It("deploys both processes with the pusher credentials paired", func() {
 		s := newScenario(withWebModeler)
@@ -212,6 +217,127 @@ var _ = Describe("Web Modeler", func() {
 		expectIdentityDeployed(s)
 	})
 
+	It("removes the user from a cluster that leaves the selector", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			expectSecretGone(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("removes the user when the spec stops asking for Web Modeler", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		disableWebModeler(s.mc)
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			expectSecretGone(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("removes the user when the cluster stops authenticating with basic credentials", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		// The management plane authenticates with oidc, so the platform config
+		// it reads moves the cluster off basic credentials.
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			latest.Spec.PlatformConfigRef = s.mc.Spec.PlatformConfigRef
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			expectSecretGone(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("deletes the password of a cluster that was deleted outright", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			expectSecretGone(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("completes the user from a Secret that a failed pass left unmarked", func() {
+		api := newClusterUserAPI()
+		api.FailNext("createUser", failureBudget)
+
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		var reserved string
+		Eventually(func(g Gomega) {
+			published := readSecret(g, s.namespace, name)
+			g.Expect(published.Data).NotTo(HaveKey(components.WebModelerClusterUserAppliedKey))
+			reserved = string(published.Data[components.WebModelerClusterUserPasswordKey])
+			g.Expect(reserved).NotTo(BeEmpty())
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
+
+		api.FailNext("createUser", 0)
+		touchCluster(cluster)
+
+		Eventually(func(g Gomega) {
+			published := readSecret(g, s.namespace, name)
+			g.Expect(string(published.Data[components.WebModelerClusterUserAppliedKey])).To(
+				Equal("true"),
+			)
+			g.Expect(string(published.Data[components.WebModelerClusterUserPasswordKey])).To(
+				Equal(reserved),
+			)
+			g.Expect(api.Password(components.WebModelerClusterUsername)).To(Equal(reserved))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("removes the user with the management cluster", func() {
 		api := newClusterUserAPI()
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))
@@ -267,6 +393,22 @@ func disableWebModeler(mc *v1.CamundaManagementCluster) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// touchCluster relabels an orchestration cluster, so that the management
+// cluster which selects it reconciles again.
+func touchCluster(cluster *v1.CamundaCluster) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.CamundaCluster
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		if latest.Labels == nil {
+			latest.Labels = map[string]string{}
+		}
+		latest.Labels["touched"] = utilrand.String(8)
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // expectDeploymentGone asserts that the API server holds no Deployment of that
 // name.
 func expectDeploymentGone(g Gomega, namespace, name string) {
@@ -280,6 +422,13 @@ func expectServiceGone(g Gomega, namespace, name string) {
 	var svc corev1.Service
 	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &svc)
 	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Service %s/%s is still there", namespace, name)
+}
+
+// expectSecretGone asserts that the API server holds no Secret of that name.
+func expectSecretGone(g Gomega, namespace, name string) {
+	var secret corev1.Secret
+	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Secret %s/%s is still there", namespace, name)
 }
 
 // withWebModeler adds Web Modeler to the management cluster under test, with a

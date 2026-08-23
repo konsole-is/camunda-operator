@@ -17,6 +17,7 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -114,36 +115,22 @@ const (
 	initialClaimSeparator = "="
 )
 
-// The port names of the container and the Service.
-const (
-	portNameHTTP       = "http"
-	portNameManagement = "management"
-)
-
-// The probe timings of Management Identity. The startup probe allows five
-// minutes, which covers the first start, where Identity migrates its database
-// schema, and readiness polls only after it passes.
-const (
-	startupFailureThreshold int32 = 60
-	startupPeriodSeconds    int32 = 5
-	readinessPeriodSeconds  int32 = 10
-)
-
 // identityComponents renders Management Identity: its Deployment and its
 // Service, in one component under the IdentityReady condition. Identity is
-// always deployed, so this renders on every management plane. In the keycloak
-// mode it waits for the Keycloak to become ready.
-func identityComponents(in Input) ([]*component.Component, error) {
+// always deployed, so this renders on every management plane and always takes
+// part in Ready. In the keycloak mode it waits for the Keycloak to become
+// ready.
+func identityComponents(in Input) (Built, error) {
 	workload, err := deployment.NewBuilder(identityDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentIdentity), identityContainer)...).
 		Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentIdentity, err)
 	}
 
 	svc, err := service.NewBuilder(identityService(in)).Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentIdentity, err)
 	}
 
 	builder := component.NewComponentBuilder().
@@ -163,10 +150,12 @@ func identityComponents(in Input) ([]*component.Component, error) {
 
 	comp, err := builder.Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentIdentity, err)
 	}
 
-	return []*component.Component{comp}, nil
+	comps := []*component.Component{comp}
+
+	return Built{Components: comps, Ready: comps}, nil
 }
 
 // identityDeployment renders the base Deployment. workloadmutations.Mutations
@@ -203,36 +192,27 @@ func identityContainerSpec(in Input) corev1.Container {
 	return corev1.Container{
 		Name:  identityContainer,
 		Image: images.Resolve(in.Platform, images.Identity, in.Cluster.Spec.Identity.Version),
-		Env:   baseEnv(in),
+		Env:   identityEnv(in),
 		Ports: []corev1.ContainerPort{
 			{Name: portNameHTTP, ContainerPort: IdentityPortHTTP, Protocol: corev1.ProtocolTCP},
 			{Name: portNameManagement, ContainerPort: IdentityPortManagement, Protocol: corev1.ProtocolTCP},
 		},
-		StartupProbe:   identityProbe(startupPeriodSeconds, startupFailureThreshold),
-		ReadinessProbe: identityProbe(readinessPeriodSeconds, 0),
+		StartupProbe: probe(
+			portNameManagement, identityHealthPath, startupPeriodSeconds, startupFailureThreshold,
+		),
+		ReadinessProbe: probe(
+			portNameManagement, identityHealthPath, readinessPeriodSeconds, 0,
+		),
 	}
 }
 
-// identityProbe builds an HTTP probe on the health endpoint of the management
-// port. A zero failureThreshold keeps the Kubernetes default.
-func identityProbe(periodSeconds, failureThreshold int32) *corev1.Probe {
-	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-			Path: identityHealthPath,
-			Port: intstr.FromString(portNameManagement),
-		}},
-		PeriodSeconds:    periodSeconds,
-		FailureThreshold: failureThreshold,
-	}
-}
-
-// baseEnv renders the environment of the Management Identity container: the
-// identity provider, the URL of Identity itself, its database, and the
+// identityEnv renders the environment of the Management Identity container:
+// the identity provider, the URL of Identity itself, its database, and the
 // license.
-func baseEnv(in Input) []corev1.EnvVar {
-	env := providerEnv(in)
+func identityEnv(in Input) []corev1.EnvVar {
+	env := identityProviderEnv(in)
 	env = append(env, corev1.EnvVar{Name: identityEnvURL, Value: in.Cluster.Spec.Identity.ExternalURL})
-	env = append(env, databaseEnv(in.Databases.Identity)...)
+	env = append(env, identityDatabaseEnv(in.Databases.Identity)...)
 
 	if ref := in.Platform.LicenseSecretRef; ref != nil {
 		env = append(env, corev1.EnvVar{
@@ -244,11 +224,11 @@ func baseEnv(in Input) []corev1.EnvVar {
 	return env
 }
 
-// providerEnv renders the connection to the identity provider. The two modes
-// carry two settings: an external provider is bound by the oidc profile of
-// Management Identity, and a Keycloak by the keycloak profile, which also
-// bootstraps the realm.
-func providerEnv(in Input) []corev1.EnvVar {
+// identityProviderEnv renders the connection to the identity provider. The
+// two modes carry two settings: an external provider is bound by the oidc
+// profile of Management Identity, and a Keycloak by the keycloak profile,
+// which also bootstraps the realm.
+func identityProviderEnv(in Input) []corev1.EnvVar {
 	if in.Provider.Mode != ModeOIDC {
 		return keycloakProviderEnv(in)
 	}
@@ -330,8 +310,8 @@ func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
 	return mc.Annotations[InitialClaimAnnotation]
 }
 
-// databaseEnv renders the connection to the Identity database.
-func databaseEnv(db Database) []corev1.EnvVar {
+// identityDatabaseEnv renders the connection to the Identity database.
+func identityDatabaseEnv(db Database) []corev1.EnvVar {
 	return []corev1.EnvVar{
 		{Name: identityEnvDatabaseHost, Value: db.Host},
 		{Name: identityEnvDatabasePort, Value: strconv.Itoa(int(db.Port))},
@@ -345,17 +325,6 @@ func databaseEnv(db Database) []corev1.EnvVar {
 			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.PasswordKey),
 		},
 	}
-}
-
-// secretSource builds the source of an environment variable that reads one key
-// of a Secret in the pod's namespace. Every reference in Input already points
-// at a Secret of that namespace, because the controller copies the ones that
-// live elsewhere.
-func secretSource(name, key string) *corev1.EnvVarSource {
-	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-		LocalObjectReference: corev1.LocalObjectReference{Name: name},
-		Key:                  key,
-	}}
 }
 
 // identityService renders the Service of Management Identity. Both ports are

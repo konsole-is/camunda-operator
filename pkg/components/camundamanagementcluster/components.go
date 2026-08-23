@@ -17,7 +17,12 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"net/url"
+	"strings"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
@@ -31,6 +36,16 @@ type Built struct {
 	Ready []*component.Component
 }
 
+// The probe timings of the management plane. The startup probe allows five
+// minutes, which covers the first start, where Management Identity and Web
+// Modeler migrate their database schema, and readiness polls only after it
+// passes.
+const (
+	startupFailureThreshold int32 = 60
+	startupPeriodSeconds    int32 = 5
+	readinessPeriodSeconds  int32 = 10
+)
+
 // builders render the components of the management plane, in reconcile order:
 // the copied and the generated Secrets first, because the workloads mount
 // them, then Keycloak, whose operator writes the Secret that Management
@@ -43,7 +58,7 @@ var builders = []func(Input) (Built, error){
 	mirroredSecretComponent,
 	secretsComponents,
 	keycloakComponents,
-	alwaysReady(identityComponents),
+	identityComponents,
 	consoleComponents,
 	webModelerComponents,
 }
@@ -64,20 +79,6 @@ func Build(in Input) (Built, error) {
 	return built, nil
 }
 
-// alwaysReady adapts a builder whose components all take part in Ready.
-func alwaysReady(
-	build func(Input) ([]*component.Component, error),
-) func(Input) (Built, error) {
-	return func(in Input) (Built, error) {
-		comps, err := build(in)
-		if err != nil {
-			return Built{}, err
-		}
-
-		return Built{Components: comps, Ready: comps}, nil
-	}
-}
-
 // managedLabels returns the labels of an object that the operator applies for
 // a component of the management plane.
 func managedLabels(in Input, comp string) map[string]string {
@@ -88,4 +89,48 @@ func managedLabels(in Input, comp string) map[string]string {
 // component.
 func discoveryLabels(in Input, comp string) map[string]string {
 	return labels.Discovery(labels.ManagementCluster(in.Cluster.Name), comp)
+}
+
+// probe builds an HTTP probe on a health endpoint of a named port. A zero
+// failureThreshold keeps the Kubernetes default.
+func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
+			Path: path,
+			Port: intstr.FromString(port),
+		}},
+		PeriodSeconds:    periodSeconds,
+		FailureThreshold: failureThreshold,
+	}
+}
+
+// secretSource builds the source of an environment variable that reads one key
+// of a Secret in the pod's namespace. Every reference in Input already points
+// at a Secret of that namespace, because the controller copies the ones that
+// live elsewhere.
+func secretSource(name, key string) *corev1.EnvVarSource {
+	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: name},
+		Key:                  key,
+	}}
+}
+
+// parseURL reads an external URL of the spec. The CRD validates every one of
+// them as an http or https URL with a host, so a URL that does not parse
+// cannot reach the renderer. It yields the empty URL rather than an error the
+// caller could not act on.
+func parseURL(raw string) *url.URL {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return &url.URL{}
+	}
+
+	return parsed
+}
+
+// externalPath returns the path of a parsed external URL, without a trailing
+// slash. It is empty for a URL that serves the root of its host. A component
+// that runs under a path of its own has to be told that path.
+func externalPath(external *url.URL) string {
+	return strings.TrimSuffix(external.Path, "/")
 }

@@ -71,15 +71,16 @@ const keycloakJDBCPrefix = "jdbc:aws-wrapper:postgresql://"
 // keycloakComponents renders the Keycloak that the operator runs through the
 // Keycloak Operator. The component is built in every mode and gated on the
 // keycloak mode, so a move to externalKeycloak or to oidc deletes the custom
-// resource. A Kubernetes cluster that does not serve the Keycloak kind gets no
-// component at all. There is no resource to delete there, and the delete would
-// fail against an API that serves no such kind.
+// resource.
 //
 // The Keycloak Operator owns everything below the custom resource: the
 // StatefulSet, the Service, and the Secret with the first administrator. This
 // operator only writes the resource and reads its Ready condition.
 func keycloakComponents(in Input) (Built, error) {
 	if !in.KeycloakCRDServed {
+		// The one builder that renders nothing rather than a gated-off
+		// component: there is no Keycloak to delete on a Kubernetes cluster
+		// that serves no such kind, and the delete itself would fail.
 		return Built{}, nil
 	}
 

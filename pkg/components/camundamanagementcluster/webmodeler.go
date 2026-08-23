@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -158,7 +157,7 @@ const (
 // Ready.
 func webModelerComponents(in Input) (Built, error) {
 	deployed := in.Cluster.Spec.WebModeler != nil
-	gate := component.GatedBy(feature.NewBooleanGate(deployed))
+	gate := feature.NewBooleanGate(deployed)
 
 	pusher, err := pusherSecret(in)
 	if err != nil {
@@ -194,12 +193,12 @@ func webModelerComponents(in Input) (Built, error) {
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentWebModeler).
 		WithConditionType(component.ConditionType(v1.ConditionWebModelerReady)).
-		WithFeatureGate(feature.NewBooleanGate(deployed)).
-		WithResource(pusher, gate).
-		WithResource(restapi, gate).
-		WithResource(restapiService, gate).
-		WithResource(websockets, gate).
-		WithResource(websocketsService, gate).
+		WithFeatureGate(gate).
+		WithResource(pusher, component.GatedBy(gate)).
+		WithResource(restapi, component.GatedBy(gate)).
+		WithResource(restapiService, component.GatedBy(gate)).
+		WithResource(websockets, component.GatedBy(gate)).
+		WithResource(websocketsService, component.GatedBy(gate)).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
@@ -302,12 +301,12 @@ func webModelerRestapiContainerSpec(in Input) corev1.Container {
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
-		StartupProbe: webModelerProbe(
-			webModelerRestapiHealthPath, portNameManagement,
+		StartupProbe: probe(
+			portNameManagement, webModelerRestapiHealthPath,
 			startupPeriodSeconds, startupFailureThreshold,
 		),
-		ReadinessProbe: webModelerProbe(
-			webModelerRestapiHealthPath, portNameManagement, readinessPeriodSeconds, 0,
+		ReadinessProbe: probe(
+			portNameManagement, webModelerRestapiHealthPath, readinessPeriodSeconds, 0,
 		),
 	}
 }
@@ -399,24 +398,11 @@ func webModelerServerEnv(spec v1.WebModelerSpec) []corev1.EnvVar {
 		{Name: webModelerEnvServerURL, Value: spec.ExternalURL},
 		{Name: webModelerEnvHTTPSOnly, Value: strconv.FormatBool(external.Scheme == schemeHTTPS)},
 	}
-	if path := strings.TrimSuffix(external.Path, "/"); path != "" {
+	if path := externalPath(external); path != "" {
 		env = append(env, corev1.EnvVar{Name: webModelerEnvContextPath, Value: path})
 	}
 
 	return env
-}
-
-// parseURL reads an external URL of the spec. The CRD validates every one of
-// them as an http or https URL with a host, so a URL that does not parse
-// cannot reach the renderer. It yields the empty URL rather than an error the
-// caller could not act on.
-func parseURL(raw string) *url.URL {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return &url.URL{}
-	}
-
-	return parsed
 }
 
 // webModelerProviderEnv renders the identity provider and Management Identity.
@@ -494,12 +480,12 @@ func webModelerWebsocketsContainerSpec(in Input) corev1.Container {
 			ContainerPort: WebModelerWebsocketsPortHTTP,
 			Protocol:      corev1.ProtocolTCP,
 		}},
-		StartupProbe: webModelerProbe(
-			webModelerWebsocketsHealthPath, portNameHTTP,
+		StartupProbe: probe(
+			portNameHTTP, webModelerWebsocketsHealthPath,
 			startupPeriodSeconds, startupFailureThreshold,
 		),
-		ReadinessProbe: webModelerProbe(
-			webModelerWebsocketsHealthPath, portNameHTTP, readinessPeriodSeconds, 0,
+		ReadinessProbe: probe(
+			portNameHTTP, webModelerWebsocketsHealthPath, readinessPeriodSeconds, 0,
 		),
 	}
 }
@@ -521,19 +507,6 @@ func webModelerWebsocketsEnv(in Input) []corev1.EnvVar {
 			ValueFrom: secretSource(PusherSecretName(in.Cluster), PusherAppSecretKey),
 		},
 		{Name: webModelerEnvAppPath, Value: pusherPath(external)},
-	}
-}
-
-// webModelerProbe builds an HTTP probe on the health endpoint of a named port.
-// A zero failureThreshold keeps the Kubernetes default.
-func webModelerProbe(path, port string, periodSeconds, failureThreshold int32) *corev1.Probe {
-	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-			Path: path,
-			Port: intstr.FromString(port),
-		}},
-		PeriodSeconds:    periodSeconds,
-		FailureThreshold: failureThreshold,
 	}
 }
 
@@ -591,7 +564,7 @@ func webModelerWebsocketsService(in Input) *corev1.Service {
 // pusherPath returns the base path of the WebSocket endpoint, which both sides
 // of the pairing must agree on. A URL that names no path uses the root.
 func pusherPath(external *url.URL) string {
-	if path := strings.TrimSuffix(external.Path, "/"); path != "" {
+	if path := externalPath(external); path != "" {
 		return path
 	}
 

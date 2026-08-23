@@ -218,7 +218,7 @@ first.
 9. **Keycloak only through the Keycloak Operator.** No Deployment of Keycloak by this operator.
    The wrapper follows the ECK shape, including the startup probe for the CRD.
 10. **Each app has its own version.** Identity, Console, Web Modeler, and Keycloak each carry a
-    full semantic version; floors `8.9.0` and `26.0.0`.
+    full semantic version; floors `8.9.0` and `26.0.0`, and a Keycloak ceiling below `27.0.0`.
 
 ## Design
 
@@ -261,13 +261,11 @@ spec:
   optimize:                             # required in the keycloak modes
     externalUrl: https://optimize.example.com
     # WorkloadSpec: replicas, resources, extraEnv, extraEnvFrom, podLabels, podAnnotations, scheduling
-  console:
-    enabled: true
+  console:                              # the block enables Console; drop it to remove Console
     version: 8.9.88
     externalUrl: https://console.example.com
     # WorkloadSpec
-  webModeler:
-    enabled: true
+  webModeler:                           # the block enables Web Modeler; drop it to remove it
     version: 8.9.12
     externalUrl: https://modeler.example.com
     websocketsExternalUrl: https://modeler.example.com/modeler-ws
@@ -298,17 +296,22 @@ status:
       ManagementAuthReady, SecretsReady
 ```
 
-Validation (CEL and controller):
+There is no `enabled` field. `console` and `webModeler` are optional blocks, and the presence of
+the block is what deploys the component. The operator always builds the component and gates it
+off when the block is absent, so dropping the block deletes the workloads.
+
+Validation (markers, CEL, and controller):
 
 - Exactly one of `identityProvider.keycloak`, `externalKeycloak`, `oidc` (CEL).
 - `identity.externalUrl`, `console.externalUrl`, `webModeler.externalUrl`,
-  `webModeler.websocketsExternalUrl` are `http(s)://` URLs; required when the component is
-  enabled (CEL).
-- `webModeler.mail.smtpHost` and `fromAddress` required when Web Modeler is enabled (CEL).
+  `webModeler.websocketsExternalUrl` are `http(s)://` URLs (CEL on the field). Every one of them
+  is a required field of its block, so the schema requires it as soon as the block is set.
+- `webModeler.mail.smtpHost` and `fromAddress` are required fields of the `webModeler` block.
 - `identity.admin` carries `claimName`+`claimValue` in `oidc` mode and `username` (+ optional
-  `passwordSecretRef`, generated when absent) in the Keycloak modes (CEL on the pair, controller
-  on the mode).
-- Versions match `^\d+\.\d+\.\d+$` (CEL); floors in the controller (`UnsupportedVersion`).
+  `passwordSecretRef`, generated when absent) in the Keycloak modes (CEL on the pair, and CEL on
+  the spec for the mode).
+- Versions match `^\d+\.\d+\.\d+$` (`+kubebuilder:validation:Pattern`); floors and the
+  Keycloak ceiling in the controller (`UnsupportedVersion`).
 - `keycloak.databaseConfigRef`, `identity.databaseConfigRef`, `webModeler.databaseConfigRef`
   name three distinct `DatabaseConfig`s (controller, `InvalidReference`).
 - In `oidc` mode the platform config has `method: oidc` and carries the management clients the
@@ -389,7 +392,7 @@ resolve, and keeps it converged:
 | `baseUrl` | `identity.externalUrl` | `identity.externalUrl` |
 | `issuerUrl` | `<keycloak external>/realms/<realm>` | platform `issuerUrl` |
 | `issuerBackendUrl` | in-cluster realm URL (`keycloak`), same as issuer (`externalKeycloak`) | platform `issuerUrl` |
-| `authUrl`, `tokenUrl`, `jwksUrl` | the realm's `protocol/openid-connect/{auth,token,certs}` | platform values or discovery defaults |
+| `authUrl`, `tokenUrl`, `jwksUrl` | the realm's `protocol/openid-connect/{auth,token,certs}` | platform `authUrl`, `tokenUrl`, `jwksUrl`, all three required |
 | `clientId`, `audience` | `optimize`, `optimize-api` | platform `management.clients.optimize` |
 | `clientSecretRef` | the generated Secret, explicit namespace | platform `clients.optimize.clientSecretRef` |
 
@@ -408,7 +411,9 @@ Identity Service URL), `CAMUNDA_IDENTITY_ISSUER`, `CAMUNDA_IDENTITY_ISSUER_BACKE
 `management.clients.console` in oidc mode), `KEYCLOAK_BASE_URL`, `KEYCLOAK_INTERNAL_BASE_URL`,
 `KEYCLOAK_REALM` (Keycloak modes), `SPRING_PROFILES_ACTIVE=oidc` (oidc mode),
 `CAMUNDA_CONSOLE_CONTEXT_PATH` from `externalUrl`'s path, `CAMUNDA_LICENSE_KEY`,
-`CAMUNDA_CONSOLE_EXPERIMENTAL_DISCOVERY_MODE=true`. The docs name the flag as experimental.
+`CAMUNDA_CONSOLE_EXPERIMENTAL_DISCOVERY_MODE=true`, and `NODE_ENV=prod`, which the 8.9 Helm
+chart sets and the configuration reference does not list. The docs name the discovery flag as
+experimental.
 
 ### The cluster attachment
 
@@ -463,7 +468,8 @@ namespace, and deleting it rotates them.
 
 Cluster list: one `CAMUNDA_MODELER_CLUSTERS_<n>_*` block per attached cluster: `ID` = the
 cluster UID, `NAME` = `<namespace>/<name>`, `VERSION` = `status.management.version`, `URL_GRPC`
-and `URL_REST` from `status.gateway`, `URL_WEBAPP` = `spec.externalUrl`,
+and `URL_REST` from `status.gateway`, `URL_WEBAPP` = `spec.externalUrl` and left out for a
+cluster that names none,
 `AUTHORIZATIONS_ENABLED=true`, `AUTHENTICATION=BEARER_TOKEN` for an OIDC cluster and `BASIC` for a
 basic-auth cluster. A cluster without `status.gateway` (suspended, not ready) is listed in
 `status.clusters` with `reason: NotReady` and left out of the env, and the numbering closes over
@@ -536,7 +542,8 @@ it, and so is every Job image the backup and restore controllers render.
   entries stay. `Ready=True/Suspended`.
 - Versions: `identity.version`, `console.version`, `webModeler.version`,
   `identityProvider.keycloak.version`, each a full semantic version with its own patch line.
-  Floors `8.9.0` and `26.0.0` in `pkg/components/camundamanagementcluster.ValidateSpec`.
+  Floors `8.9.0` and `26.0.0`, and a Keycloak ceiling below `27.0.0`, in
+  `pkg/components/camundamanagementcluster.ValidateSpec`.
 - Deletion: the finalizer deletes the contract, withdraws the ping entries and the claims, and
   removes the Web Modeler users it created. Deployments, Services, Secrets, and the Keycloak CR
   go by owner reference. Databases are never dropped.

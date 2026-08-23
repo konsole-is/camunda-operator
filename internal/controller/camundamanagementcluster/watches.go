@@ -116,6 +116,12 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 	// KeycloakOperatorNotInstalled and the keycloak mode renders nothing.
 	if r.keycloakServed {
 		controller = controller.Owns(&keycloak.Keycloak{})
+	} else {
+		mgr.GetLogger().Info(
+			"Keycloak CRD not found, every CamundaManagementCluster in the keycloak mode reports " +
+				"KeycloakOperatorNotInstalled until the Keycloak Operator is installed and the " +
+				"operator restarts",
+		)
 	}
 
 	return controller.

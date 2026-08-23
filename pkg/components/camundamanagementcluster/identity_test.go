@@ -117,11 +117,12 @@ func TestIdentityDeploymentCarriesTheOverridesAndTheConfigHash(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureRealistic(t)
-	comps, err := identityComponents(in)
+	built, err := identityComponents(in)
 	require.NoError(t, err)
-	require.Len(t, comps, 1)
+	require.Len(t, built.Components, 1)
+	require.Len(t, built.Ready, 1)
 
-	objects, err := comps[0].Preview()
+	objects, err := built.Components[0].Preview()
 	require.NoError(t, err)
 	workload := previewedDeployment(t, objects)
 

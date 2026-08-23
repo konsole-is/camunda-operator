@@ -101,6 +101,14 @@ const (
 	KeycloakAdminPasswordKey = "password"
 )
 
+// The port names that every container and Service of the management plane
+// uses. A probe and a Service port target a port by name, so the names are
+// the same across the components.
+const (
+	portNameHTTP       = "http"
+	portNameManagement = "management"
+)
+
 // KeycloakServicePort is the HTTP port of the Keycloak that the operator
 // renders. The rendered resource sets it as spec.http.httpPort, the port the
 // container listens on. It sets no spec.http.serviceHttpPort, so the Service
