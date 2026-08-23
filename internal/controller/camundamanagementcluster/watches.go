@@ -52,6 +52,10 @@ const (
 	// ContractNameField lists management clusters by the
 	// ManagementAuthConfig they write.
 	ContractNameField = "camundamanagementcluster.spec.managementAuthConfigName"
+	// SecretRefsField lists management clusters by every Secret they name
+	// themselves. The Secrets they reach through a platform config or a
+	// DatabaseConfig are indexed by those resources instead.
+	SecretRefsField = "camundamanagementcluster.spec.secretRefs"
 )
 
 // indexers are the index functions of the fields above.
@@ -74,6 +78,9 @@ var indexers = map[string]client.IndexerFunc{
 	},
 	ContractNameField: func(o client.Object) []string {
 		return []string{components.ContractName(o.(*v1.CamundaManagementCluster))}
+	},
+	SecretRefsField: func(o client.Object) []string {
+		return secretRefs(o.(*v1.CamundaManagementCluster))
 	},
 }
 
@@ -129,6 +136,28 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
 		Named("camundamanagementcluster").
 		Complete(r)
+}
+
+// secretRefs returns every Secret that a management cluster names itself, as
+// namespaced index keys. A Secret of another namespace is copied into the
+// management namespace, and the mounted copy follows the original, so an
+// event on any of them has to reach the management cluster that reads it.
+func secretRefs(mc *v1.CamundaManagementCluster) []string {
+	var keys []string
+	if external := mc.Spec.IdentityProvider.ExternalKeycloak; external != nil {
+		ref := external.AdminCredentialsSecretRef
+		keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+	}
+	if ref := mc.Spec.Identity.Admin.PasswordSecretRef; ref != nil {
+		keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+	}
+	if webModeler := mc.Spec.WebModeler; webModeler != nil {
+		if ref := webModeler.Mail.CredentialsSecretRef; ref != nil {
+			keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+		}
+	}
+
+	return keys
 }
 
 // databaseConfigRefs returns every DatabaseConfig that a management cluster
@@ -201,17 +230,18 @@ func (r *Reconciler) enqueueForDatabaseServer() handler.EventHandler {
 }
 
 // enqueueForSecret maps a Secret event to every management cluster that can
-// reference it: every one of the Secret namespace, and every one that reaches
-// it through a platform config or a DatabaseConfig. A Secret in another
-// namespace is copied into the management namespace, so an event on it must
-// refresh that copy. The reads go through the cached client; the Secret watch
-// is metadata-only.
+// reference it: every one of the Secret namespace, every one that names it in
+// its own spec, and every one that reaches it through a platform config or a
+// DatabaseConfig. A Secret in another namespace is copied into the management
+// namespace, so an event on it must refresh that copy. The reads go through
+// the cached client; the Secret watch is metadata-only.
 func (r *Reconciler) enqueueForSecret() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		key := refindex.ObjectNamespacedName(o)
 		set := requestSet{}
 
 		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
+		set.addList(ctx, r.Client, client.MatchingFields{SecretRefsField: key})
 
 		var configs v1.CamundaPlatformConfigList
 		if err := r.List(
