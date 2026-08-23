@@ -71,14 +71,15 @@ var repositories = map[Image]string{
 // Resolve returns the reference of img at version: the repository that
 // spec.images renames it to, or the spec.imageRegistry prefix in front of the
 // default repository, or the default repository. A rename wins over the
-// registry prefix, because a mirror that keeps its own path cannot be reached
-// by a prefix. p may be nil, which resolves the default repository.
+// registry prefix. p can be nil, which resolves the default repository.
 func Resolve(p *v1.CamundaPlatformConfigSpec, img Image, version string) string {
 	tag := version
 	if img == Keycloak {
 		tag = keycloakTagPrefix + version
 	}
 
+	// A mirror that keeps its own path cannot be reached by a prefix, so a
+	// rename replaces the registry prefix instead of stacking with it.
 	if repo := strings.TrimRight(override(p, img), "/"); repo != "" {
 		return repo + ":" + tag
 	}
