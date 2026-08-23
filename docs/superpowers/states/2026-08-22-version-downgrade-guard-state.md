@@ -3,6 +3,7 @@ feature: version-downgrade-guard
 spec: docs/superpowers/specs/2026-08-22-version-downgrade-guard-design.md
 plan: docs/superpowers/plans/2026-08-22-version-downgrade-guard-plan.md
 tracking_issue: #168
+integration_pr: #184
 status: review
 ---
 
@@ -16,7 +17,7 @@ status: review
 
 | Issue | Branch                         | Worktree path                                  | PR (→ base)   | Status      |
 | ----- | ------------------------------ | ---------------------------------------------- | ------------- | ----------- |
-| #168  | feat/version-downgrade-guard   | .claude/worktrees/version-downgrade-guard-168  | (not yet) → main | in-progress |
+| #168  | feat/version-downgrade-guard   | .claude/worktrees/version-downgrade-guard-168  | #184 → main | ready |
 
 ## Contracts
 
