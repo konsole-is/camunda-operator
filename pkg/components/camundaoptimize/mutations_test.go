@@ -84,7 +84,12 @@ func TestMutationsFireOnTheirOwnComponent(t *testing.T) {
 
 	assert.Equal(
 		t,
-		[]string{workloadmutations.MutationResources, workloadmutations.MutationPodMetadata, workloadmutations.MutationExtraEnv, workloadmutations.MutationExtraEnvFrom},
+		[]string{
+			workloadmutations.MutationResources,
+			workloadmutations.MutationPodMetadata,
+			workloadmutations.MutationExtraEnv,
+			workloadmutations.MutationExtraEnvFrom,
+		},
 		firing[ComponentWebapp],
 	)
 	assert.Equal(

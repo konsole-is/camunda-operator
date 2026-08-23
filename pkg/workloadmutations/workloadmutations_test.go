@@ -36,6 +36,16 @@ import (
 // pod carries a sidecar of another name.
 const theContainer = "app"
 
+// registeredMutations are the mutations that Mutations returns, in
+// registration order.
+var registeredMutations = []string{
+	workloadmutations.MutationResources,
+	workloadmutations.MutationSchedulingConstraints,
+	workloadmutations.MutationPodMetadata,
+	workloadmutations.MutationExtraEnv,
+	workloadmutations.MutationExtraEnvFrom,
+}
+
 // A component without overrides registers every mutation and fires none: the
 // workload keeps what it was rendered with.
 func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
@@ -70,6 +80,17 @@ func TestMutationsEditTheNamedContainerOnly(t *testing.T) {
 		PodLabels:      map[string]string{"camunda.io/component": "user", "team": "platform"},
 		PodAnnotations: map[string]string{"prometheus.io/scrape": "true"},
 		Scheduling: &v1.SchedulingSpec{
+			NodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+						MatchExpressions: []corev1.NodeSelectorRequirement{{
+							Key:      "topology.kubernetes.io/zone",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"eu-west-1a"},
+						}},
+					}},
+				},
+			},
 			Tolerations: []corev1.Toleration{{Key: "camunda", Operator: corev1.TolerationOpExists}},
 		},
 	})
@@ -84,6 +105,8 @@ func TestMutationsEditTheNamedContainerOnly(t *testing.T) {
 	assert.Empty(t, sidecar.Env, "extraEnv is not for the sidecar")
 	assert.Empty(t, sidecar.EnvFrom, "extraEnvFrom is not for the sidecar")
 
+	require.NotNil(t, workload.Spec.Template.Spec.Affinity)
+	assert.NotNil(t, workload.Spec.Template.Spec.Affinity.NodeAffinity)
 	require.Len(t, workload.Spec.Template.Spec.Tolerations, 1)
 	assert.Equal(t, "camunda", workload.Spec.Template.Spec.Tolerations[0].Key)
 	assert.Equal(t, "true", workload.Spec.Template.Annotations["prometheus.io/scrape"])
@@ -138,9 +161,10 @@ func baseWorkload() *appsv1.Deployment {
 func apply(t *testing.T, workload *appsv1.Deployment, spec v1.WorkloadSpec) {
 	t.Helper()
 
+	mutations := workloadmutations.Mutations(spec, theContainer)
 	mutator := deployment.NewMutator(workload)
-	registered := make([]string, 0, len(workloadmutations.Mutations(spec, theContainer)))
-	for _, mutation := range workloadmutations.Mutations(spec, theContainer) {
+	registered := make([]string, 0, len(mutations))
+	for _, mutation := range mutations {
 		gated := feature.Mutation[*deployment.Mutator](mutation)
 		require.NoError(t, gated.ApplyIntent(mutator), mutation.Name)
 		mutator.NextFeature()
@@ -148,11 +172,5 @@ func apply(t *testing.T, workload *appsv1.Deployment, spec v1.WorkloadSpec) {
 	}
 	require.NoError(t, mutator.Apply())
 
-	assert.Equal(t, []string{
-		workloadmutations.MutationResources,
-		workloadmutations.MutationSchedulingConstraints,
-		workloadmutations.MutationPodMetadata,
-		workloadmutations.MutationExtraEnv,
-		workloadmutations.MutationExtraEnvFrom,
-	}, registered)
+	assert.Equal(t, registeredMutations, registered)
 }
