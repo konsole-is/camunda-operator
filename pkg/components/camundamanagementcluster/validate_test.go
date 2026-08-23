@@ -73,3 +73,82 @@ func TestValidateSpecChecksEveryDeployedComponent(t *testing.T) {
 	assert.Contains(t, both.Message, "spec.console.version is 8.8.9")
 	assert.Contains(t, both.Message, "spec.webModeler.version is 8.7.0")
 }
+
+// Management Identity, Keycloak, and Web Modeler each own every table of the
+// database they open, so two of them in one database overwrite each other.
+func TestCheckDistinctDatabases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(mc *v1.CamundaManagementCluster)
+		want   []string
+	}{
+		{
+			name: "a database of its own for each component",
+			mutate: func(mc *v1.CamundaManagementCluster) {
+				mc.Spec.IdentityProvider = keycloakProvider("keycloak-db")
+				mc.Spec.WebModeler = webModeler("web-modeler-db")
+			},
+		},
+		{
+			name: "Management Identity and Web Modeler share one",
+			mutate: func(mc *v1.CamundaManagementCluster) {
+				mc.Spec.WebModeler = webModeler(mc.Spec.Identity.DatabaseConfigRef)
+			},
+			want: []string{
+				"spec.identity.databaseConfigRef",
+				"spec.webModeler.databaseConfigRef",
+				`DatabaseConfig "identity-db"`,
+			},
+		},
+		{
+			name: "Keycloak and Management Identity share one",
+			mutate: func(mc *v1.CamundaManagementCluster) {
+				mc.Spec.IdentityProvider = keycloakProvider(mc.Spec.Identity.DatabaseConfigRef)
+			},
+			want: []string{
+				"spec.identity.databaseConfigRef",
+				"spec.identityProvider.keycloak.databaseConfigRef",
+				`DatabaseConfig "identity-db"`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			failure := checkDistinctDatabases(newCluster(tt.mutate))
+
+			if tt.want == nil {
+				assert.Nil(t, failure)
+				return
+			}
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
+			for _, want := range tt.want {
+				assert.Contains(t, failure.Message, want)
+			}
+		})
+	}
+}
+
+// keycloakProvider returns an operator-run Keycloak that stores its data in
+// the given DatabaseConfig.
+func keycloakProvider(databaseConfigRef string) v1.IdentityProviderSpec {
+	return v1.IdentityProviderSpec{Keycloak: &v1.ManagedKeycloakSpec{
+		Version:           "26.1.0",
+		DatabaseConfigRef: databaseConfigRef,
+	}}
+}
+
+// webModeler returns a Web Modeler that stores its data in the given
+// DatabaseConfig.
+func webModeler(databaseConfigRef string) *v1.WebModelerSpec {
+	return &v1.WebModelerSpec{
+		Version:           fixtureVersion,
+		ExternalURL:       fixtureExternal,
+		DatabaseConfigRef: databaseConfigRef,
+	}
+}
