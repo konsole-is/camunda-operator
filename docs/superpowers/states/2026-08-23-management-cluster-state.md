@@ -33,10 +33,10 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 | #188 | feat/management-cluster--keycloak-modes | .claude/worktrees/management-cluster/.claude/worktrees/keycloak-modes | #205 → feat/management-cluster | self-merged (d10e55d) |
 | #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster/.claude/worktrees/console-ping | #203 → feat/management-cluster | self-merged (84ef8b8) |
 | #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster/.claude/worktrees/web-modeler | #204 → feat/management-cluster | self-merged (f50c39e) |
-| #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | #211 → feat/management-cluster | ready, review round 1 |
+| #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | #211 → feat/management-cluster | self-merged (c079ce5) |
 | #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | #209 → feat/management-cluster | self-merged (2fdeb6e) |
 | #208 | refactor/management-cluster--coherence-sweep | .claude/worktrees/management-cluster/.claude/worktrees/coherence-sweep | #210 → feat/management-cluster | self-merged (833f300) |
-| #213 | refactor/management-cluster--ready-and-seams | .claude/worktrees/management-cluster/.claude/worktrees/ready-and-seams | (pushed at 52f2dde, PR after #211 merges) | implemented, gates green |
+| #213 | refactor/management-cluster--ready-and-seams | .claude/worktrees/management-cluster/.claude/worktrees/ready-and-seams | #214 → feat/management-cluster | ready, review round 1 |
 
 ## Contracts
 
@@ -49,8 +49,8 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 | `keycloak-cr-types` | pre-merge stub PR | #193 (64ccf29) | locked |
 | `management-render-core` | pre-merge stub PR | #200 (b80fd1a) | locked |
 | `management-controller-core` | pre-merge stub PR | #200 (b80fd1a) | locked |
-| `ping-and-list-env` | data-only | plan table | locked |
-| `e2e-flow-names` | data-only | plan table | locked |
+| `ping-and-list-env` | data-only | plan table, proven by #211 (c079ce5) | locked |
+| `e2e-flow-names` | data-only | #211 (c079ce5) | locked |
 
 ## Bubble-up log
 
@@ -73,9 +73,8 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 ## Pending snapshot
 
-1. #211 (for #191, head b6df959): review loop ended at the three-round cap; the body's Testing section names the local runs at 026dc36, the renovate dry run, and the CI fit fix. Wait for the `Camunda 8.9` check on b6df959 (the whole suite, ~75 min); if it fails, read `gh run view <id> --log-failed` and fix the cause (no local e2e); squash-merge when green; `gh issue close 191`; state row.
-2. #213 (worktree `.claude/worktrees/management-cluster/.claude/worktrees/ready-and-seams`, branch `refactor/management-cluster--ready-and-seams`, based on the feature branch plus #211's head at 13a86a3): implemented in 8d3f405, a3f1daa, 52f2dde, gates green, pushed. The `Ready` defect was not one (the refusal is written before the aggregate reads the in-memory conditions); the spec asserts it and issue #213 carries the decision comment and the reconciled body. Then: merge the feature branch forward after #211 merges (identical hunks resolve clean; take the feature branch's side on conflict), gates, push, open the PR (`refactor(management): report ImmutableAfterStart on Ready and settle the last seams`, `Towards #213`), copilot-review-loop (3-round cap), squash-merge, `gh issue close 213`, state row.
-3. Verification on the feature worktree (the gates from CLAUDE.md at the post-#213 head), then the integration PR `feat/management-cluster` → `main` with `Closes #185` (ready shape per `opening-a-pull-request`, the bodies of #193-#211 and #213 as the changes list, the e2e evidence in Testing), copilot-review-loop on it, teardown of plan and state after CI is green (spec stays), remove the nested worktrees (`chmod -R u+w bin` first where envtest left read-only binaries), report ready-to-merge. #212 (Keycloak 26.7 ceiling) is filed. The merge to main is the user's.
+1. #214 (for #213, head 8709723, merged forward past #211, gates green): copilot-review-loop round 1 requested 2026-08-23 16:4xZ (3-round cap; remove/re-add to re-request, confirm by GraphQL; no auto-review on push); triage posted + suppressed, reply, resolve; squash-merge when the `Camunda 8.9` check is green; `gh issue close 213`; state row.
+2. Verification on the feature worktree (`.claude/worktrees/management-cluster`, `git pull`, then the gates of CLAUDE.md without any e2e; the `Camunda 8.9` check of #214 is the e2e evidence), then the integration PR `feat/management-cluster` → `main` with `Closes #185` (ready shape per `opening-a-pull-request`; draft in `scratchpad/pr-integration-body.md`), copilot-review-loop on it, teardown of plan and state after CI is green (spec stays), remove the nested worktrees (`chmod -R u+w bin` first where envtest left read-only binaries; `git worktree remove`), report ready-to-merge. #212 (Keycloak 26.7 ceiling) is filed. The merge to main is the user's.
 
 ## Resume checklist
 
