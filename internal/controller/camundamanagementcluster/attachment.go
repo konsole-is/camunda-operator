@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -49,7 +50,10 @@ func ClaimValue(mc *v1.CamundaManagementCluster) string {
 // another one holds is left untouched and reported ClaimedElsewhere. A cluster
 // that publishes no gateway endpoints yet, and one whose claim the API server
 // refused because the cluster changed, is reported NotReady. A cluster that
-// the selector no longer matches has its claim withdrawn.
+// the selector no longer matches keeps its claim until releaseClaims runs,
+// after the Web Modeler user and the Console ping are withdrawn: a claim that
+// went first would let another management plane adopt the web-modeler user
+// that this one is about to remove.
 //
 // Only an API failure that concerns every cluster stops the reconcile. What
 // one cluster answers is a row of that cluster, so a single broken cluster
@@ -73,9 +77,6 @@ func (r *Reconciler) attachedClusters(
 	for i := range clusters {
 		cluster := &clusters[i]
 		if !selector.Matches(k8slabels.Set(cluster.Labels)) {
-			if err := r.withdrawClaim(ctx, mc, cluster); err != nil {
-				return nil, nil, err
-			}
 			continue
 		}
 
@@ -87,6 +88,33 @@ func (r *Reconciler) attachedClusters(
 	}
 
 	return attached, rows, nil
+}
+
+// releaseClaims withdraws the claim of mc from every cluster that the selector
+// no longer matches. It runs after the Web Modeler user and the Console ping
+// of those clusters are withdrawn, and only when both succeeded, so that no
+// other management plane takes a cluster whose user this one still has to
+// remove.
+func (r *Reconciler) releaseClaims(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+) error {
+	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
+	if err != nil {
+		return fmt.Errorf("reading spec.clusterSelector: %w", err)
+	}
+
+	var errs []error
+	for i := range clusters {
+		cluster := &clusters[i]
+		if selector.Matches(k8slabels.Set(cluster.Labels)) {
+			continue
+		}
+		errs = append(errs, r.withdrawClaim(ctx, mc, cluster))
+	}
+
+	return errors.Join(errs...)
 }
 
 // listClusters reads every CamundaCluster of the Kubernetes cluster, ordered

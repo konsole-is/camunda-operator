@@ -58,13 +58,15 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		return err
 	}
 
+	// The users go before the claims, so that no other management plane
+	// adopts a web-modeler user that this one is about to remove.
+	if err := r.withdrawWebModelerUsers(ctx, mc, clusters); err != nil {
+		return err
+	}
 	if err := r.withdrawPing(ctx, mc, clusters); err != nil {
 		return err
 	}
 	if err := r.withdrawClaims(ctx, mc, clusters); err != nil {
-		return err
-	}
-	if err := r.withdrawWebModelerUsers(ctx, mc, clusters); err != nil {
 		return err
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {
@@ -76,8 +78,9 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		corev1.EventTypeNormal,
 		eventReasonAttachmentRemoved,
 		eventActionFinalize,
-		"Withdrew the claims, the Console ping settings, and the Web Modeler users on the "+
-			"orchestration clusters and removed ManagementAuthConfig %q",
+		"Withdrew the claims and the Console ping settings on the orchestration clusters, "+
+			"tried to remove the Web Modeler users (a failed removal has a warning event of its "+
+			"own), and removed ManagementAuthConfig %q",
 		components.ContractName(mc),
 	)
 

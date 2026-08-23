@@ -240,6 +240,40 @@ var _ = Describe("Web Modeler", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("keeps the claim on a cluster that leaves the selector until its user is removed", func() {
+		// A released claim lets another management plane adopt the
+		// web-modeler user that this one still has to remove, so the claim
+		// goes last.
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		api.FailNext("deleteUser", 1000)
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+			g.Expect(readOrchestrationCluster(g, cluster).Annotations).To(
+				HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(s.mc)),
+			)
+		}, 5*time.Second, interval).Should(Succeed())
+
+		api.FailNext("deleteUser", 0)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			g.Expect(readOrchestrationCluster(g, cluster).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("removes the user from a cluster that leaves the selector", func() {
 		api := newClusterUserAPI()
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))

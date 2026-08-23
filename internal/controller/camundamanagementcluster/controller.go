@@ -225,6 +225,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
 	userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	pingErr := r.syncPing(ctx, &mc, clusters, attached)
+	// The claim of a cluster that left the selector goes last, once its user
+	// and its ping are gone, so that no other management plane adopts a user
+	// this one still has to remove.
+	var releaseErr error
+	if userErr == nil && pingErr == nil {
+		releaseErr = r.releaseClaims(ctx, &mc, clusters)
+	}
 	contractErr := r.writeContract(ctx, &mc, res)
 	if contractErr == nil && previousContract != "" && previousContract != res.ContractName {
 		// The new contract is written, so the old one goes. A failed
@@ -244,7 +251,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		result.RequeueAfter = r.retryInterval()
 	}
 
-	return result, errors.Join(reconcileErr, claimErr, userErr, pingErr, contractErr)
+	return result, errors.Join(reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
