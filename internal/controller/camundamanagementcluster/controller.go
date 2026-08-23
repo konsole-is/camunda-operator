@@ -138,7 +138,8 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // claims, deletes its contract, and releases the finalizer. Otherwise the
 // finalizer is added before the first side effect, the pre-checks resolve every
 // reference into the render input, and a failed pre-check reports its Ready
-// reason and stops. Then the orchestration clusters are selected and claimed,
+// reason, lets go of the clusters that the selectors no longer match, and
+// stops. Then the orchestration clusters are selected and claimed,
 // the components converge, every attached cluster is pointed at Console, and
 // the ManagementAuthConfig is applied. Ready is
 // True only when every component that takes part in it is True and the
@@ -191,7 +192,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&mc, conditions.Failed(&mc, failure))
-		return ctrl.Result{}, nil
+
+		return ctrl.Result{}, r.withdrawFromDeselected(ctx, &mc)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
@@ -258,6 +260,53 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	return result, errors.Join(reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr)
+}
+
+// withdrawFromDeselected takes back what the management plane put on the
+// orchestration clusters that spec.clusterSelector and spec.namespaceSelector
+// no longer match: the Web Modeler user, the Console ping settings, and the
+// claim.
+//
+// It is the half of the reconcile that a failed pre-check does not stop.
+// Nothing here reads a resolved reference, and a claim that waits for a broken
+// one keeps another management plane from taking the cluster.
+//
+// The order is the order of the attached path: the user and the ping first,
+// the claim last and only once both are gone, so that no other management
+// plane adopts a cluster whose user this one still has to remove.
+func (r *Reconciler) withdrawFromDeselected(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) error {
+	clusters, err := r.listClusters(ctx)
+	if err != nil {
+		return err
+	}
+
+	namespaces, err := r.selectedNamespaces(ctx, mc)
+	if err != nil {
+		return err
+	}
+
+	selected, err := selectedClusters(mc, clusters, namespaces)
+	if err != nil {
+		return err
+	}
+
+	users := make(map[types.UID]bool, len(selected))
+	pings := make(map[client.ObjectKey]bool, len(selected))
+	for _, cluster := range selected {
+		users[cluster.UID] = true
+		pings[client.ObjectKeyFromObject(cluster)] = true
+	}
+
+	userErr := r.withdrawUnservedUsers(ctx, mc, clusters, users, false)
+	pingErr := r.withdrawPingUnserved(ctx, mc, clusters, pings)
+	if err := errors.Join(userErr, pingErr); err != nil {
+		return err
+	}
+
+	return r.releaseClaims(ctx, mc, clusters, namespaces)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
