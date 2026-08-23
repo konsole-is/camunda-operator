@@ -47,15 +47,22 @@ type Holder struct {
 }
 
 // HolderOf returns the holder that the annotations of contract name, and
-// false when the contract is unclaimed or the annotations are incomplete.
+// false when the contract is unclaimed or the annotations are not a
+// namespace, a name, and a UID.
 func HolderOf(contract *v1.SecondaryStorageConfig) (Holder, bool) {
+	// Cut splits at the first separator, so a third segment lands in name.
 	namespace, name, ok := strings.Cut(contract.Annotations[ClaimHolderAnnotation], "/")
 	uid := contract.Annotations[ClaimHolderUIDAnnotation]
-	if !ok || namespace == "" || name == "" || uid == "" {
+	if !ok || invalidSegment(namespace) || invalidSegment(name) || invalidSegment(uid) {
 		return Holder{}, false
 	}
 
 	return Holder{Cluster: types.NamespacedName{Namespace: namespace, Name: name}, UID: types.UID(uid)}, true
+}
+
+// no Kubernetes namespace, name, or UID holds a separator or whitespace
+func invalidSegment(value string) bool {
+	return value == "" || strings.ContainsAny(value, "/ \t\n\r")
 }
 
 // Claim writes holder onto contract as its claim. The patch is conditioned

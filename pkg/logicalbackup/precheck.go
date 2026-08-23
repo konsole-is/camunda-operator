@@ -98,7 +98,7 @@ func PreCheck(ctx context.Context, req PreCheckRequest) (*PreCheckResult, error)
 		)
 	}
 
-	if cluster.Spec.Suspend {
+	if cluster.Suspended() {
 		return nil, &conditions.PreCheckFailure{
 			Reason: v1.ReasonClusterSuspended,
 			Message: fmt.Sprintf(

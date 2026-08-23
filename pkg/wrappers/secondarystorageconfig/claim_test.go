@@ -34,15 +34,19 @@ import (
 )
 
 func TestHolderOf(t *testing.T) {
-	contract := &v1.SecondaryStorageConfig{ObjectMeta: metav1.ObjectMeta{Name: "storage", Namespace: "team-a"}}
-	_, held := HolderOf(contract)
+	contract := func(annotations map[string]string) *v1.SecondaryStorageConfig {
+		return &v1.SecondaryStorageConfig{ObjectMeta: metav1.ObjectMeta{
+			Name: "storage", Namespace: "team-a", Annotations: annotations,
+		}}
+	}
+
+	_, held := HolderOf(contract(nil))
 	assert.False(t, held, "an unannotated contract has no holder")
 
-	contract.Annotations = map[string]string{
+	holder, held := HolderOf(contract(map[string]string{
 		ClaimHolderAnnotation:    "team-a/orchestration",
 		ClaimHolderUIDAnnotation: "uid-1",
-	}
-	holder, held := HolderOf(contract)
+	}))
 	require.True(t, held)
 	assert.Equal(
 		t,
@@ -51,13 +55,14 @@ func TestHolderOf(t *testing.T) {
 	)
 
 	for name, annotations := range map[string]map[string]string{
-		"no uid":       {ClaimHolderAnnotation: "team-a/orchestration"},
-		"no namespace": {ClaimHolderAnnotation: "orchestration", ClaimHolderUIDAnnotation: "uid-1"},
-		"empty name":   {ClaimHolderAnnotation: "team-a/", ClaimHolderUIDAnnotation: "uid-1"},
+		"no uid":          {ClaimHolderAnnotation: "team-a/orchestration"},
+		"no namespace":    {ClaimHolderAnnotation: "orchestration", ClaimHolderUIDAnnotation: "uid-1"},
+		"empty name":      {ClaimHolderAnnotation: "team-a/", ClaimHolderUIDAnnotation: "uid-1"},
+		"a third segment": {ClaimHolderAnnotation: "a/b/c", ClaimHolderUIDAnnotation: "uid-1"},
+		"a leading space": {ClaimHolderAnnotation: " team-a/orchestration", ClaimHolderUIDAnnotation: "uid-1"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			contract.Annotations = annotations
-			_, held := HolderOf(contract)
+			_, held := HolderOf(contract(annotations))
 			assert.False(t, held)
 		})
 	}

@@ -288,12 +288,10 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 	// away.
 	It("keeps a claim through an apply of the contract by its producer", func() {
 		ns := newNamespace()
-		binding := fixtures.SecondaryStorageConfigElasticsearch(ns)
-		binding.Annotations = map[string]string{
-			secondarystorageconfig.ClaimHolderAnnotation:    ns + "/someone",
-			secondarystorageconfig.ClaimHolderUIDAnnotation: "some-uid",
-		}
-		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		binding := createBinding(ns, true)
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), binding)
+		createCluster(holder)
+		expectClaimedBy(binding, holder)
 
 		desired := &v1.SecondaryStorageConfig{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "SecondaryStorageConfig"},
@@ -303,14 +301,17 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		Expect(k8sClient.Patch(
 			ctx,
 			desired,
-			client.Apply, //nolint:staticcheck // ocf applies through the deprecated client.Apply patch
+			//nolint:staticcheck // the producer applies the contract with the deprecated client.Apply patch, as ocf does
+			client.Apply,
 			client.FieldOwner("elasticsearchcluster"),
 			client.ForceOwnership,
 		)).To(Succeed())
 
 		var latest v1.SecondaryStorageConfig
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
-		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderAnnotation]).To(Equal(ns + "/someone"))
-		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderUIDAnnotation]).To(Equal("some-uid"))
+		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderAnnotation]).
+			To(Equal(holder.Namespace + "/" + holder.Name))
+		Expect(latest.Annotations[secondarystorageconfig.ClaimHolderUIDAnnotation]).To(Equal(string(holder.UID)))
+		expectHolds(holder)
 	})
 })

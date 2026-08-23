@@ -169,6 +169,22 @@ func TestPreCheckFailures(t *testing.T) {
 			message: "suspended",
 		},
 		{
+			name: "another cluster holds the storage contract of the cluster",
+			objects: func() []client.Object {
+				c := cluster()
+				c.Status.Conditions = []metav1.Condition{{
+					Type:               v1.ConditionReady,
+					Status:             metav1.ConditionFalse,
+					Reason:             v1.ReasonStorageAlreadyAttached,
+					LastTransitionTime: metav1.Now(),
+				}}
+				return []client.Object{c, storage(v1.SecondaryStorageTypeElasticsearch), bucket()}
+			}(),
+			reason:  v1.ReasonClusterSuspended,
+			waiting: true,
+			message: "suspended",
+		},
+		{
 			name:    "the secondary storage does not exist",
 			objects: []client.Object{cluster(), bucket()},
 			reason:  v1.ReasonInvalidReference,

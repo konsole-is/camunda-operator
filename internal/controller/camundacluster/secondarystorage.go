@@ -102,6 +102,7 @@ func (res *resolver) staleHolder(ctx context.Context, holder secondarystoragecon
 	}
 
 	held := client.ObjectKey{Namespace: holder.Cluster.Namespace, Name: owner.Spec.StorageRef}
+
 	return owner.UID != holder.UID || held != client.ObjectKeyFromObject(res.storage), nil
 }
 
