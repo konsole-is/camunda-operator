@@ -56,23 +56,29 @@ type mirroredSecrets map[components.MirrorPurpose]map[string][]byte
 // referenced object and the data of every Secret to mirror. Each resolve
 // method fills exactly one part of the render input.
 type resolver struct {
-	reader   client.Reader
+	reader client.Reader
+	// writer writes the claim on the storage contract. Every read stays on
+	// reader.
+	writer   client.Writer
 	scheme   *runtime.Scheme
 	cluster  *v1.CamundaCluster
 	recorder events.EventRecorder
 	inputs   []string
 	mirrors  mirroredSecrets
+	// storage is the SecondaryStorageConfig that spec.storageRef names, set
+	// by resolveStorage for the steps after it.
+	storage *v1.SecondaryStorageConfig
 }
 
 // preCheck resolves every reference of cluster into the render input, in the
 // documented order: the preset and the merged spec, the platform config and
-// its Secrets, the storage binding and its chain, the object storage
-// references. Every Secret is checked for its keys through the uncached
-// reader. A Secret outside the cluster namespace is copied into the returned
-// mirrors, and the input references the copy, so the renderer only ever
-// names Secrets of the cluster namespace. HashInputs carry the resource
-// version of every Secret and the generation of every CR read, sorted, so a
-// change to any of them rolls the pods. A failed check returns a
+// its Secrets, the storage binding and its chain, the claim on the binding,
+// the object storage references. Every Secret is checked for its keys through
+// the uncached reader. A Secret outside the cluster namespace is copied into
+// the returned mirrors, and the input references the copy, so the renderer
+// only ever names Secrets of the cluster namespace. HashInputs carry the
+// resource version of every Secret and the generation of every CR read,
+// sorted, so a change to any of them rolls the pods. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
 // an invalid effective spec, MissingSecret for a missing Secret or key. Any
 // other error is a transient API failure.
@@ -82,6 +88,7 @@ func (r *CamundaClusterReconciler) preCheck(
 ) (components.Input, mirroredSecrets, error) {
 	res := &resolver{
 		reader:   r.APIReader,
+		writer:   r.Client,
 		scheme:   r.Scheme,
 		cluster:  cluster,
 		recorder: r.EventRecorder,
@@ -94,6 +101,7 @@ func (r *CamundaClusterReconciler) preCheck(
 		res.resolvePlatform,
 		res.resolveAuth,
 		res.resolveStorage,
+		res.claimStorage,
 		res.warnReferencedJavaToolOptions,
 		res.resolveObjectStorage,
 	}
@@ -197,6 +205,7 @@ func (res *resolver) resolveStorage(ctx context.Context, in *components.Input) e
 		return err
 	}
 	in.Storage.Type = binding.Spec.Type
+	res.storage = &binding
 
 	switch binding.Spec.Type {
 	case v1.SecondaryStorageTypeElasticsearch:

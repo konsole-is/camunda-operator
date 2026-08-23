@@ -38,6 +38,7 @@ import (
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
 // userManager is the field manager of the entry that a user owns on
@@ -667,6 +668,55 @@ var _ = Describe("CamundaOptimize controller", func() {
 			Expect(suspensionEvents(s.optimize)).To(Equal([]string{
 				eventReasonClusterSuspended, eventReasonClusterResumed,
 			}))
+		})
+
+		It("scales to zero when another cluster holds the storage contract of its cluster", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, ns)
+			auth := createAuth(ns, true)
+			holder := createCluster(ns, binding)
+
+			By("waiting until the holder holds the contract")
+			Eventually(func(g Gomega) {
+				var latest v1.SecondaryStorageConfig
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(binding), &latest)).To(Succeed())
+				claim, held := secondarystorageconfig.HolderOf(&latest)
+				g.Expect(held).To(BeTrue())
+				g.Expect(claim.Cluster).To(Equal(client.ObjectKeyFromObject(holder)))
+			}, timeout, interval).Should(Succeed())
+
+			By("parking the second cluster on the same contract")
+			parked := createCluster(ns, binding)
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(parked), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Reason).To(Equal(v1.ReasonStorageAlreadyAttached))
+			}, timeout, interval).Should(Succeed())
+
+			optimize := createOptimize(ns, parked, auth, "8.9.4")
+			webappKey := client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(optimize, components.ComponentWebapp),
+			}
+			importerKey := client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(optimize, components.ComponentImporter),
+			}
+
+			By("scaling both workloads to zero, because the parked cluster runs no workloads")
+			expectReplicas(0, webappKey, importerKey)
+			expectCondition(optimize, v1.ConditionWebappReady, Equal(string(component.Suspended)))
+			expectCondition(optimize, v1.ConditionImporterReady, Equal(string(component.Suspended)))
+			Eventually(func(g Gomega) {
+				var latest v1.CamundaOptimize
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), &latest)).To(Succeed())
+				ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(ready.Reason).To(Equal(string(component.Suspended)))
+			}, timeout, interval).Should(Succeed())
 		})
 
 		It("withdraws the exporter entries on deletion and keeps the entry of the user", func() {

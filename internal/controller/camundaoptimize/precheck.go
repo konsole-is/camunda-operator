@@ -147,9 +147,10 @@ func (r *Reconciler) preCheck(ctx context.Context, optimize *v1.CamundaOptimize)
 	}
 	out.ClusterUID = cluster.UID
 	// The Optimize workloads follow the suspension of the cluster they attach
-	// to. spec.suspend is the cluster's own field: MergePreset carries it
-	// through unchanged, so no preset can set it.
-	out.Input.Suspended = cluster.Spec.Suspend
+	// to, by spec.suspend or by the storage claim. spec.suspend is the
+	// cluster's own field: MergePreset carries it through unchanged, so no
+	// preset can set it.
+	out.Input.Suspended = cluster.Suspended()
 
 	binding, err := res.resolveStorage(ctx, &cluster)
 	if err != nil {

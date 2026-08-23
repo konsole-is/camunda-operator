@@ -74,7 +74,7 @@ When you delete the backup, the operator deletes a Job that still runs, waits un
 | `Ready` | `Progressing` | The backup runs, or it waits for the cluster to finish a rollout or to publish its management API in `status.management`. | Wait. The message names the step or the wait. |
 | `Ready` | `Completed` | The backup finished. `Ready` is `True`. | Nothing. Record `status.backupId` and `status.zeebeBackupId` for a restore. |
 | `Ready` | `Failed` | The backup failed. | Read `status.failureMessage`. Correct the cause and create a new backup. |
-| `Ready` | `ClusterSuspended` | The cluster is suspended. The backup waits. | Set `spec.suspend` of the cluster to `false`. |
+| `Ready` | `ClusterSuspended` | The cluster is suspended, by `spec.suspend` or because another cluster holds its storage contract. The backup waits. | Set `spec.suspend` of the cluster to `false`, or give the cluster a contract of its own. |
 | `Ready` | `BackupInProgress` | Another backup of the cluster runs. This one waits. | Wait for the named backup to end. |
 | `Ready` | `StorageTypeMismatch` | The cluster does not store its data in a relational database. | Use `LogicalBackupElasticsearch` for an Elasticsearch cluster. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, the server has no current `status.serverVersion`, or the dump pod cannot pull its image. | Read the message. Create the resource, or wait for the `DatabaseServerConfig` to become `Ready`. |
