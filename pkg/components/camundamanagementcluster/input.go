@@ -102,8 +102,8 @@ type IdentityProvider struct {
 	// MICROSOFT.
 	Type string
 	// SpringProfile is the SPRING_PROFILES_ACTIVE value that binds the
-	// settings of this mode on Management Identity and Console. It is empty
-	// in the Keycloak modes, which need no profile.
+	// settings of this mode on Management Identity and Console: "oidc" in the
+	// oidc mode and "keycloak" in the two Keycloak modes.
 	SpringProfile string
 	// IssuerURL is the issuer that a browser is redirected to.
 	IssuerURL string
@@ -285,10 +285,11 @@ func Mode(mc *v1.CamundaManagementCluster) ProviderMode {
 	}
 }
 
-// resolveManagedKeycloak reads the Keycloak that the operator runs. Browsers
-// reach it at spec.externalUrl and every container reaches it at the Service
-// that the Keycloak Operator creates. The two URLs are the front-channel and
-// the back-channel issuer of the realm.
+// resolveManagedKeycloak reads the Keycloak that the operator runs.
+// Management Identity administers Keycloak through the Service that the
+// Keycloak Operator creates, and that Service is the back-channel issuer of
+// the realm. Browsers use spec.externalUrl, and so does the front-channel
+// issuer that every token carries.
 //
 // The administrator is the one the Keycloak Operator writes into
 // <keycloak>-initial-admin next to the Keycloak custom resource.

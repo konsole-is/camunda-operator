@@ -74,6 +74,15 @@ const (
 // (charts/camunda-platform-8.9/templates/identity/configmap.yaml, the
 // keycloak.init block).
 const (
+	// keycloakEnvInitOptimizeSecret is the client secret of the optimize
+	// preset. The configuration-variables page above documents
+	// KEYCLOAK_INIT_<COMPONENT>_SECRET. The 8.9 chart binds the same property
+	// from VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET, in the application.yaml it
+	// mounts ("secret: ${VALUES_KEYCLOAK_INIT_OPTIMIZE_SECRET:}" under
+	// keycloak.init.optimize, in the configmap file below). The operator
+	// mounts no such file, and an environment variable outranks a
+	// configuration file in Spring, so the documented name is the one that
+	// reaches keycloak.init.optimize.secret.
 	keycloakEnvInitOptimizeSecret = "KEYCLOAK_INIT_OPTIMIZE_SECRET"
 	// keycloakEnvInitOptimizeRootURL is the URL that browsers reach Optimize
 	// at. Management Identity builds the redirect URI of the optimize client
