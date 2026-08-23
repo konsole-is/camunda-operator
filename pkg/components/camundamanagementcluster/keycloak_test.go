@@ -281,22 +281,44 @@ func TestBuildRendersTheGeneratedSecretsOfTheKeycloakModesOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		[]string{ComponentMirroredSecrets, ComponentSecrets, ComponentIdentity, ComponentKeycloak},
+		[]string{ComponentMirroredSecrets, ComponentSecrets, ComponentKeycloak, ComponentIdentity},
 		componentNames(keycloak.Components),
 	)
 	assert.Equal(
 		t,
-		[]string{ComponentSecrets, ComponentIdentity, ComponentKeycloak},
+		[]string{ComponentSecrets, ComponentKeycloak, ComponentIdentity},
 		componentNames(keycloak.Ready),
 	)
 }
 
-// A Keycloak that the user runs is not this operator's to reconcile, so the
-// externalKeycloak mode renders no Keycloak custom resource.
-func TestBuildRendersNoKeycloakForAnExistingOne(t *testing.T) {
+// A Keycloak that the user runs is not this operator's to reconcile. The
+// component is still built and gated off, so a move from the keycloak mode to
+// this one deletes the custom resource that the operator wrote, and the
+// gated-off component stays out of Ready.
+func TestBuildGatesTheKeycloakOffForAnExistingOne(t *testing.T) {
 	t.Parallel()
 
 	built, err := Build(newKeycloakInput(t, false, nil))
+	require.NoError(t, err)
+
+	assert.Contains(t, componentNames(built.Components), ComponentKeycloak)
+	assert.NotContains(t, componentNames(built.Ready), ComponentKeycloak)
+
+	comp := builtComponent(t, built, ComponentKeycloak)
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+	assert.Empty(t, objects)
+}
+
+// A Kubernetes cluster that serves no Keycloak kind has no Keycloak custom
+// resource to delete, and a delete against an API that serves no such kind
+// would fail every reconcile.
+func TestBuildRendersNoKeycloakWithoutTheKeycloakOperator(t *testing.T) {
+	t.Parallel()
+
+	built, err := Build(newKeycloakInput(t, false, func(in *Input) {
+		in.KeycloakCRDServed = false
+	}))
 
 	require.NoError(t, err)
 	assert.NotContains(t, componentNames(built.Components), ComponentKeycloak)

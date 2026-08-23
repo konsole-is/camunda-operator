@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -60,14 +61,17 @@ const keycloakDBVendor = "postgres"
 const keycloakJDBCPrefix = "jdbc:aws-wrapper:postgresql://"
 
 // keycloakComponents renders the Keycloak that the operator runs through the
-// Keycloak Operator. The externalKeycloak and the oidc mode run no Keycloak,
-// so they render nothing.
+// Keycloak Operator. The component is built in every mode and gated on the
+// keycloak mode, so a move to externalKeycloak or to oidc deletes the custom
+// resource. A Kubernetes cluster that does not serve the Keycloak kind gets
+// no component at all: there is no resource to delete, and a delete would
+// fail against an API that serves no such kind.
 //
 // The Keycloak Operator owns everything below the custom resource: the
 // StatefulSet, the Service, and the Secret with the first administrator. This
 // operator only writes the resource and reads its Ready condition.
 func keycloakComponents(in Input) ([]*component.Component, error) {
-	if in.Provider.Mode != ModeKeycloak {
+	if !in.KeycloakCRDServed {
 		return nil, nil
 	}
 
@@ -76,10 +80,12 @@ func keycloakComponents(in Input) ([]*component.Component, error) {
 		return nil, fmt.Errorf("building %s component: %w", ComponentKeycloak, err)
 	}
 
+	managed := feature.NewBooleanGate(in.Provider.Mode == ModeKeycloak)
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentKeycloak).
 		WithConditionType(component.ConditionType(v1.ConditionKeycloakReady)).
-		WithResource(resource).
+		WithFeatureGate(managed).
+		WithResource(resource, component.GatedBy(managed)).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
@@ -92,15 +98,23 @@ func keycloakComponents(in Input) ([]*component.Component, error) {
 // keycloakCR renders the Keycloak custom resource. The Ingress of the
 // Keycloak Operator stays off: the route to Keycloak is the one that
 // spec.identityProvider.keycloak.externalUrl names, and it is yours to run.
+//
+// Another mode carries no Keycloak block, and the component is then gated off
+// and deletes the resource, so the identity alone is rendered.
 func keycloakCR(in Input) *keycloak.Keycloak {
+	meta := metav1.ObjectMeta{
+		Name:      KeycloakName(in.Cluster),
+		Namespace: in.Cluster.Namespace,
+		Labels:    managedLabels(in, ComponentKeycloak),
+	}
+
 	spec := in.Cluster.Spec.IdentityProvider.Keycloak
+	if spec == nil {
+		return &keycloak.Keycloak{ObjectMeta: meta}
+	}
 
 	return &keycloak.Keycloak{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      KeycloakName(in.Cluster),
-			Namespace: in.Cluster.Namespace,
-			Labels:    managedLabels(in, ComponentKeycloak),
-		},
+		ObjectMeta: meta,
 		Spec: keycloak.KeycloakSpec{
 			Instances: new(in.replicas(ComponentKeycloak)),
 			Image:     images.Resolve(in.Platform, images.Keycloak, spec.Version),

@@ -120,6 +120,10 @@ func newInput(t *testing.T, mutate func(in *Input)) Input {
 	in := Input{
 		Cluster:  newCluster(nil),
 		Platform: newPlatform(nil),
+		// Every fixture runs on a Kubernetes cluster that serves the Keycloak
+		// kind, so the Keycloak component is built in every mode and the
+		// gate is what tells the modes apart.
+		KeycloakCRDServed: true,
 		Databases: Databases{Identity: Database{
 			Host: "postgres.camunda.svc",
 			Port: 5432,

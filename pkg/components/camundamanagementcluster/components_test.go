@@ -72,15 +72,20 @@ func TestCamundaManagementClusterGoldens(t *testing.T) {
 }
 
 // The oidc mode renders Management Identity alone. The copies of referenced
-// Secrets are always built, so a reference that moved into the management
-// namespace has its copy deleted, and they take part in Ready only when there
-// is a copy to make.
+// Secrets and the Keycloak are always built, so a reference that moved into
+// the management namespace has its copy deleted and a move off the keycloak
+// mode has its Keycloak deleted. Both take part in Ready only while they are
+// on.
 func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 	t.Parallel()
 
 	minimal, err := Build(fixtureMinimal(t))
 	require.NoError(t, err)
-	assert.Equal(t, []string{ComponentMirroredSecrets, ComponentIdentity}, componentNames(minimal.Components))
+	assert.Equal(
+		t,
+		[]string{ComponentMirroredSecrets, ComponentKeycloak, ComponentIdentity},
+		componentNames(minimal.Components),
+	)
 	assert.Equal(t, []string{ComponentIdentity}, componentNames(minimal.Ready))
 
 	realistic, err := Build(fixtureRealistic(t))
@@ -112,6 +117,21 @@ func componentNames(comps []*component.Component) []string {
 	}
 
 	return names
+}
+
+// builtComponent returns the component of the given name, and fails when the
+// build rendered none.
+func builtComponent(t *testing.T, built Built, name string) *component.Component {
+	t.Helper()
+
+	for _, comp := range built.Components {
+		if comp.GetName() == name {
+			return comp
+		}
+	}
+	require.FailNowf(t, "component not built", "no component named %q", name)
+
+	return nil
 }
 
 // goldenScheme registers every type for which the golden serializer must

@@ -32,14 +32,15 @@ type Built struct {
 }
 
 // builders render the components of the management plane, in reconcile order:
-// the Secrets first, because the workloads mount them, then one entry per
-// workload. Each entry renders nothing while the spec does not deploy its
-// component. This list is the extension point of the package.
+// the Secrets first, because the workloads mount them, then Keycloak, whose
+// operator writes the Secret that Management Identity signs in with, then one
+// entry per remaining workload. This list is the extension point of the
+// package.
 var builders = []func(Input) ([]*component.Component, error){
 	mirroredSecretComponent,
 	secretsComponents,
-	identityComponents,
 	keycloakComponents,
+	identityComponents,
 	consoleComponents,
 	webModelerComponents,
 }
@@ -69,11 +70,18 @@ func Build(in Input) (Built, error) {
 //
 // A gated-off component reports True with the reason Disabled, and Disabled
 // outranks Healthy in the aggregate, so a management cluster that copies no
-// Secret would read "Ready=True/Disabled". The copies component is built
-// either way, so a reference that moved into the management namespace has its
-// copy deleted; it only stays out of Ready while there is nothing to copy.
+// Secret would read "Ready=True/Disabled". Each component below is built in
+// every mode, so that turning it off deletes its resources; it only stays out
+// of Ready while it is off.
 func takesPartInReady(in Input, comp *component.Component) bool {
-	return comp.GetName() != ComponentMirroredSecrets || len(in.Mirrors) > 0
+	switch comp.GetName() {
+	case ComponentMirroredSecrets:
+		return len(in.Mirrors) > 0
+	case ComponentKeycloak:
+		return in.Provider.Mode == ModeKeycloak
+	default:
+		return true
+	}
 }
 
 // managedLabels returns the labels of an object that the operator applies for

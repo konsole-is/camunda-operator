@@ -131,7 +131,8 @@ const (
 
 // identityComponents renders Management Identity: its Deployment and its
 // Service, in one component under the IdentityReady condition. Identity is
-// always deployed, so this renders on every management plane.
+// always deployed, so this renders on every management plane. In the keycloak
+// mode it waits for the Keycloak to become ready.
 func identityComponents(in Input) ([]*component.Component, error) {
 	workload, err := deployment.NewBuilder(identityDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentIdentity), identityContainer)...).
@@ -145,13 +146,22 @@ func identityComponents(in Input) ([]*component.Component, error) {
 		return nil, err
 	}
 
-	comp, err := component.NewComponentBuilder().
+	builder := component.NewComponentBuilder().
 		WithName(ComponentIdentity).
 		WithConditionType(component.ConditionType(v1.ConditionIdentityReady)).
 		WithResource(workload).
 		WithResource(svc).
-		Suspend(in.Suspended).
-		Build()
+		Suspend(in.Suspended)
+	if in.Provider.Mode == ModeKeycloak {
+		// The Keycloak Operator writes the administrator Secret that
+		// KEYCLOAK_SETUP_USER and KEYCLOAK_SETUP_PASSWORD name, so an
+		// Identity pod cannot start before the Keycloak is ready.
+		builder = builder.WithPrerequisite(
+			component.DependsOn(component.ConditionType(v1.ConditionKeycloakReady)),
+		)
+	}
+
+	comp, err := builder.Build()
 	if err != nil {
 		return nil, err
 	}
