@@ -17,11 +17,18 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"context"
+	"errors"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
@@ -50,6 +57,21 @@ var _ = Describe("Orchestration cluster attachment", func() {
 				HaveKey(components.ClaimAnnotation),
 			)
 		}, timeout, interval).Should(Succeed())
+	})
+
+	It("withdraws the claim when the selector is unset again", func() {
+		s := newScenario(withSelector(map[string]string{}))
+		cluster := createOrchestrationCluster(s, nil, true)
+
+		expectAttached(s.mc, cluster)
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectClaimWithdrawn(cluster)
 	})
 
 	It("reports a cluster that another management plane serves", func() {
@@ -99,6 +121,35 @@ var _ = Describe("Orchestration cluster attachment", func() {
 		}, timeout, interval).Should(Succeed())
 
 		expectClaimWithdrawn(cluster)
+	})
+
+	// A refused claim concerns one cluster: the cluster changed while the
+	// reconcile ran, and its own event brings the next one. The API server is
+	// reachable, so every other cluster must still converge in this pass.
+	It("goes on when the API server refuses one claim", func() {
+		mc := newManagementCluster("camunda", "identity-db")
+		mc.Spec.ClusterSelector = &metav1.LabelSelector{}
+
+		platform := newPlatformConfig(mc.Namespace)
+		held := readyCluster("cc-held", mc.Namespace, platform.Name)
+		held.Annotations = map[string]string{components.ClaimAnnotation: ClaimValue(mc)}
+		refused := readyCluster("cc-refused", mc.Namespace, platform.Name)
+
+		r := &Reconciler{
+			Client:    refusingClient(),
+			APIReader: readerWith(platform, held, refused),
+			Scheme:    k8sClient.Scheme(),
+		}
+
+		attached, rows, err := r.attachedClusters(ctx, mc)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(attached).To(HaveLen(1))
+		Expect(attached[0].Name).To(Equal(held.Name))
+		Expect(rows).To(HaveLen(2))
+		Expect(rows[0].Attached).To(BeTrue())
+		Expect(rows[1].Attached).To(BeFalse())
+		Expect(rows[1].Reason).To(Equal(v1.ReasonNotReady))
 	})
 
 	It("withdraws every claim with the management cluster", func() {
@@ -154,6 +205,53 @@ func createOrchestrationCluster(
 	}
 
 	return cluster
+}
+
+// readyCluster returns a CamundaCluster that publishes its gateway endpoints.
+// It is never created: the specs that use it drive a Reconciler that reads
+// through a fake client.
+func readyCluster(name, namespace, platformRef string) *v1.CamundaCluster {
+	return &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, UID: types.UID(name)},
+		Spec: v1.CamundaClusterSpec{
+			Version:           "8.9.4",
+			StorageRef:        "storage",
+			PlatformConfigRef: platformRef,
+		},
+		Status: v1.CamundaClusterStatus{Gateway: &v1.GatewayBinding{
+			GRPCEndpoint: name + "-gateway." + namespace + ".svc:26500",
+			RESTEndpoint: "http://" + name + "-gateway." + namespace + ".svc:8080",
+		}},
+	}
+}
+
+// readerWith returns a reader that holds the given objects.
+func readerWith(objects ...client.Object) client.Reader {
+	return fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).WithObjects(objects...).Build()
+}
+
+// refusingClient returns a client that answers every apply with a conflict,
+// the way the API server answers an apply against a cluster that changed
+// under the UID precondition of the claim.
+func refusingClient() client.Client {
+	return fake.NewClientBuilder().
+		WithScheme(k8sClient.Scheme()).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(
+				_ context.Context,
+				_ client.WithWatch,
+				obj client.Object,
+				_ client.Patch,
+				_ ...client.PatchOption,
+			) error {
+				return apierrors.NewConflict(
+					v1.GroupVersion.WithResource("camundaclusters").GroupResource(),
+					obj.GetName(),
+					errors.New("uid mismatch"),
+				)
+			},
+		}).
+		Build()
 }
 
 // readOrchestrationCluster reads a CamundaCluster as the API server holds it

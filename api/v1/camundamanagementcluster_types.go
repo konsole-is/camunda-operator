@@ -67,9 +67,10 @@ const (
 	// management plane, so this operator leaves the cluster untouched. The
 	// message names the holder.
 	ReasonClaimedElsewhere = "ClaimedElsewhere"
-	// ReasonNotReady means that a selected CamundaCluster publishes no
-	// gateway endpoints yet, so Web Modeler cannot deploy to it. The state
-	// clears when the cluster becomes ready.
+	// ReasonNotReady means that a selected CamundaCluster is not attached
+	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to
+	// it, or it changed while the operator claimed it. The state clears when
+	// the cluster settles.
 	ReasonNotReady = "NotReady"
 	// ReasonImmutableAfterStart means that identity.admin changed after
 	// Management Identity started. Identity stores the initial administrator

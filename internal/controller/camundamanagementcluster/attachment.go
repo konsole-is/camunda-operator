@@ -47,8 +47,13 @@ func ClaimValue(mc *v1.CamundaManagementCluster) string {
 // cluster, and an empty one selects every cluster. A selected cluster that no
 // other management plane holds gets the claim annotation. A cluster that
 // another one holds is left untouched and reported ClaimedElsewhere. A cluster
-// that publishes no gateway endpoints yet is reported NotReady. A cluster that
+// that publishes no gateway endpoints yet, and one whose claim the API server
+// refused because the cluster changed, is reported NotReady. A cluster that
 // the selector no longer matches has its claim withdrawn.
+//
+// Only an API failure that concerns every cluster stops the reconcile. What
+// one cluster answers is a row of that cluster, so a single broken cluster
+// never holds back the management plane.
 //
 // The first return value carries the clusters that Console lists and Web
 // Modeler deploys to, ordered by namespace and name. The second is
@@ -129,7 +134,17 @@ func (r *Reconciler) attach(
 		return row, nil
 	}
 	if holder == "" {
-		if err := r.claim(ctx, mc, cluster); err != nil {
+		err := r.claim(ctx, mc, cluster)
+		// The cluster changed or went between the list and the apply. Its own
+		// event brings the next reconcile, and the other clusters converge
+		// meanwhile.
+		if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
+			row.Reason = v1.ReasonNotReady
+			row.Message = "The cluster changed while the management plane claimed it"
+
+			return row, nil
+		}
+		if err != nil {
 			return row, err
 		}
 	}
