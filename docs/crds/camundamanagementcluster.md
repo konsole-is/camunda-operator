@@ -410,7 +410,7 @@ An attached cluster carries the annotation `camunda.io/management-cluster`, whos
 
 The operator deploys no Optimize from this block. [CamundaOptimize](camundaoptimize.md) is its own resource. The field exists because Management Identity creates the Optimize client in Keycloak and registers the login callback under this URL as its redirect URI.
 
-One management plane bootstraps one Optimize client with one URL. To run a second Optimize against this management plane, add its callback URL to the `optimize` client in Keycloak yourself.
+One management plane bootstraps one Optimize client with one URL, so one Optimize logs in out of the box. A second Optimize against this management plane needs its callback URL on the `optimize` client in Keycloak, and a URL you add there by hand does not survive: Management Identity writes the client again on every start, with this one URL. Until the operator manages the list, run more than one Optimize behind the `oidc` mode, where your provider holds the callback URLs.
 
 ## The contract that Optimize reads
 
