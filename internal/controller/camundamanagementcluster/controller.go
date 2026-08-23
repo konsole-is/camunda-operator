@@ -198,7 +198,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	comps = built.Components
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
-	claimErr := r.recordInitialClaim(ctx, &mc)
+	claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
 	userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	pingErr := r.syncPing(ctx, &mc, clusters, attached)
 	contractErr := r.writeContract(ctx, &mc, res)
@@ -232,8 +232,12 @@ func reconcileComponents(ctx context.Context, rec component.ReconcileContext, co
 // Only the oidc mode has a claim. The two Keycloak modes name a user instead,
 // and Identity creates that user on its first start, so a later change to
 // spec.identity.admin.username creates a second one.
-func (r *Reconciler) recordInitialClaim(ctx context.Context, mc *v1.CamundaManagementCluster) error {
-	if components.Mode(mc) != components.ModeOIDC {
+func (r *Reconciler) recordInitialClaim(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	mode components.ProviderMode,
+) error {
+	if mode != components.ModeOIDC {
 		return nil
 	}
 

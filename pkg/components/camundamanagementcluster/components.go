@@ -36,10 +36,11 @@ type Built struct {
 	Ready []*component.Component
 }
 
-// The probe timings of every workload of the management plane. The startup
-// probe allows five minutes, which covers the first start, where Management
-// Identity and Web Modeler migrate their database schema, and readiness polls
-// only after it passes.
+// The probe timings of the management plane. The startup probe allows five
+// minutes, which covers the first start, where Management Identity and Web
+// Modeler migrate their database schema, and readiness polls only after it
+// passes. Console migrates nothing and carries no startup probe, so its
+// readiness probe polls from the start.
 const (
 	startupFailureThreshold int32 = 60
 	startupPeriodSeconds    int32 = 5

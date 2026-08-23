@@ -25,23 +25,25 @@ import (
 // shared vocabulary is in conditions.go.
 const (
 	// ConditionKeycloakReady is the condition of the Keycloak that the
-	// operator runs. It is absent in the externalKeycloak and the oidc mode.
+	// operator runs. It reads Disabled in the externalKeycloak and the oidc
+	// mode, which run none.
 	ConditionKeycloakReady = "KeycloakReady"
 	// ConditionIdentityReady is the condition of the Management Identity
 	// workload.
 	ConditionIdentityReady = "IdentityReady"
-	// ConditionConsoleReady is the condition of the Console workload. It is
-	// absent while console is unset.
+	// ConditionConsoleReady is the condition of the Console workload. It
+	// reads Disabled while console is unset.
 	ConditionConsoleReady = "ConsoleReady"
 	// ConditionWebModelerReady is the condition of the two Web Modeler
-	// workloads. It is absent while webModeler is unset.
+	// workloads. It reads Disabled while webModeler is unset.
 	ConditionWebModelerReady = "WebModelerReady"
 	// ConditionManagementAuthReady is the condition of the
 	// ManagementAuthConfig that this management cluster writes.
 	ConditionManagementAuthReady = "ManagementAuthReady"
 	// ConditionSecretsReady is the condition of the Secrets that the operator
 	// generates: the client secrets, the initial admin password, and the Web
-	// Modeler pusher credential.
+	// Modeler pusher credential. It reads Disabled in the oidc mode, where the
+	// platform config names every client secret.
 	ConditionSecretsReady = "SecretsReady"
 
 	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider

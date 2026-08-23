@@ -399,7 +399,7 @@ func webModelerServerEnv(spec v1.WebModelerSpec) []corev1.EnvVar {
 		{Name: webModelerEnvServerURL, Value: spec.ExternalURL},
 		{Name: webModelerEnvHTTPSOnly, Value: strconv.FormatBool(external.Scheme == schemeHTTPS)},
 	}
-	if path := externalPath(spec.ExternalURL); path != "" {
+	if path := strings.TrimSuffix(external.Path, "/"); path != "" {
 		env = append(env, corev1.EnvVar{Name: webModelerEnvContextPath, Value: path})
 	}
 

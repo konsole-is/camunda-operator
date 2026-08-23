@@ -207,9 +207,6 @@ type GeneratedSecrets struct {
 	OptimizeClient string
 	// IdentityAdmin holds the password of the first administrator.
 	IdentityAdmin string
-	// WebModelerPusher holds the credentials that the two Web Modeler
-	// processes push live updates over.
-	WebModelerPusher string
 	// Values are the generated credentials, by the name of the Secret that
 	// publishes them. The Secrets component writes them, and the config hash
 	// of a component folds in the digest of every value that component reads,
