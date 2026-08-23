@@ -17,6 +17,8 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -235,6 +237,40 @@ var _ = Describe("Web Modeler", func() {
 			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			expectSecretGone(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("keeps the password Secret until the cluster has removed the user", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		// The cluster refuses every removal for a while. The Secret is the
+		// record that makes the next reconcile try again, so it has to stay
+		// as long as the user does.
+		api.FailNext("deleteUser", 1000)
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+			readSecret(g, s.namespace, name)
+		}, 5*time.Second, interval).Should(Succeed())
+
+		api.FailNext("deleteUser", 0)
 		Eventually(func(g Gomega) {
 			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
 			expectSecretGone(g, s.namespace, name)
