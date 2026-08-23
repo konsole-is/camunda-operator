@@ -253,9 +253,6 @@ func withNamespaceSelector(matchLabels map[string]string) func(f *fixture) {
 // plane owns the ping entries and leaves the rest of spec.extraEnv alone.
 var userEnv = corev1.EnvVar{Name: "USER_SETTING", Value: "1"}
 
-// createOrchestrationCluster creates a CamundaCluster in the namespace of the
-// scenario with the given labels. A ready cluster publishes its gateway
-// endpoints, the way its own controller does once it is up.
 // setNamespaceLabels replaces the labels of a namespace.
 func setNamespaceLabels(name string, set map[string]string) {
 	GinkgoHelper()
@@ -279,10 +276,16 @@ func newTestNamespace() string {
 	return namespace.Name
 }
 
+// createOrchestrationCluster creates a CamundaCluster in the namespace of the
+// scenario with the given labels. A ready cluster publishes its gateway
+// endpoints, the way its own controller does once it is up. Every entry of
+// extraEnv joins userEnv in spec.extraEnv, under the field manager of the
+// test client.
 func createOrchestrationCluster(
 	s scenario,
 	clusterLabels map[string]string,
 	ready bool,
+	extraEnv ...corev1.EnvVar,
 ) *v1.CamundaCluster {
 	GinkgoHelper()
 
@@ -296,7 +299,7 @@ func createOrchestrationCluster(
 			Version:           "8.9.4",
 			StorageRef:        "storage",
 			PlatformConfigRef: s.mc.Spec.PlatformConfigRef,
-			ExtraEnv:          []corev1.EnvVar{userEnv},
+			ExtraEnv:          append([]corev1.EnvVar{userEnv}, extraEnv...),
 		},
 	}
 	Expect(k8sClient.Create(ctx, cluster)).To(Succeed())

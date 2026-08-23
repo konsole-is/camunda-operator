@@ -17,7 +17,12 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"encoding/json"
+
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // The settings that make one orchestration cluster report to Console. Camunda
@@ -53,6 +58,19 @@ const (
 // pingEnvNames is the name of each ping setting in one key set.
 type pingEnvNames struct {
 	enabled, endpoint, clusterName, pingPeriod string
+}
+
+// PingCollision is an entry of spec.extraEnv that holds a ping setting with
+// valueFrom.
+type PingCollision struct {
+	// Index is where the entry sits in spec.extraEnv of the cluster that
+	// PingCollisions read.
+	Index int
+	// Name is the ping setting that the entry holds.
+	Name string
+	// Manager is the field manager that set valueFrom, and is empty when no
+	// entry of metadata.managedFields claims that field.
+	Manager string
 }
 
 // PingEnv returns the environment entries that make the orchestration cluster
@@ -109,4 +127,71 @@ func PingsConsole(env []corev1.EnvVar, consoleURL string) bool {
 	}
 
 	return false
+}
+
+// PingCollisions returns the entries of spec.extraEnv that hold a ping setting
+// with valueFrom, from the last of the list to the first. A caller that
+// removes them in that order keeps the index of every entry it has not
+// reached yet.
+//
+// The management plane writes a value under those names, and server-side
+// apply merges per field inside one entry: its apply leaves the valueFrom of
+// another manager where it is, and the API server refuses an entry that
+// carries value and valueFrom together. Such an entry has to go before the
+// apply.
+func PingCollisions(cluster *v1.CamundaCluster) []PingCollision {
+	var collisions []PingCollision
+	for i := len(cluster.Spec.ExtraEnv) - 1; i >= 0; i-- {
+		entry := cluster.Spec.ExtraEnv[i]
+		if entry.ValueFrom == nil || !pingEnvName(entry.Name) {
+			continue
+		}
+		collisions = append(collisions, PingCollision{
+			Index:   i,
+			Name:    entry.Name,
+			Manager: valueFromManager(cluster.ManagedFields, entry.Name),
+		})
+	}
+
+	return collisions
+}
+
+// pingEnvName reports whether name is a ping setting of either key set.
+func pingEnvName(name string) bool {
+	switch name {
+	case consolePingEnvEnabled, consolePingEnvEndpoint, consolePingEnvClusterName, consolePingEnvPingPeriod,
+		hubPingEnvEnabled, hubPingEnvEndpoint, hubPingEnvClusterName, hubPingEnvPingPeriod:
+		return true
+	default:
+		return false
+	}
+}
+
+// valueFromManager returns the field manager that owns valueFrom of the
+// spec.extraEnv entry name.
+func valueFromManager(fields []metav1.ManagedFieldsEntry, name string) string {
+	encoded, err := json.Marshal(name)
+	if err != nil {
+		return ""
+	}
+	// The API server keys a merged list entry by its key fields, as JSON.
+	key := `k:{"name":` + string(encoded) + `}`
+
+	for _, entry := range fields {
+		if entry.Subresource != "" {
+			continue
+		}
+		var owned map[string]any
+		if err := json.Unmarshal(entry.FieldsV1.GetRawBytes(), &owned); err != nil {
+			continue
+		}
+		for _, step := range []string{"f:spec", "f:extraEnv", key} {
+			owned, _ = owned[step].(map[string]any)
+		}
+		if _, ok := owned["f:valueFrom"]; ok {
+			return entry.Manager
+		}
+	}
+
+	return ""
 }
