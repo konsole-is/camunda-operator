@@ -114,7 +114,8 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // reference into the render input, and a failed pre-check reports its Ready
 // reason and stops. Then the orchestration clusters are selected and claimed,
 // the components converge, and the ManagementAuthConfig is applied. Ready is
-// True only when every component that takes part in it is True.
+// True only when every component that takes part in it is True and the
+// contract is written; a failed write reports WriteFailed.
 //
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory CR, and the deferred FlushStatus persists
@@ -184,13 +185,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	comps = built.Components
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
-	if err := r.recordInitialClaim(ctx, &mc); err != nil {
-		return ctrl.Result{}, err
-	}
+	claimErr := r.recordInitialClaim(ctx, &mc)
 	contractErr := r.writeContract(ctx, &mc, res)
-	conditions.Stage(&mc, conditions.Aggregate(&mc, built.Ready...))
+	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 
-	return ctrl.Result{}, errors.Join(reconcileErr, contractErr)
+	return ctrl.Result{}, errors.Join(reconcileErr, claimErr, contractErr)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -300,6 +299,25 @@ func (r *Reconciler) writeContract(
 	meta.SetStatusCondition(mc.GetStatusConditions(), condition)
 
 	return err
+}
+
+// readyCondition derives Ready from the components and the contract write. A
+// failed write is never a ready management plane: the ManagementAuthConfig is
+// the only thing a CamundaOptimize reads from this resource, and the
+// components know nothing about it.
+func readyCondition(
+	mc *v1.CamundaManagementCluster,
+	comps []*component.Component,
+	contractErr error,
+) metav1.Condition {
+	if contractErr != nil {
+		return conditions.Failed(mc, &conditions.PreCheckFailure{
+			Reason:  v1.ReasonWriteFailed,
+			Message: contractErr.Error(),
+		})
+	}
+
+	return conditions.Aggregate(mc, comps...)
 }
 
 // SetupWithManager registers the controller, the reference indexes, and the

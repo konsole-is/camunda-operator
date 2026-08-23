@@ -118,24 +118,9 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 
 		It("leaves a contract that another owner holds alone", func() {
 			name := "mac-" + utilrand.String(8)
-			foreign := &v1.ManagementAuthConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   name,
-					Labels: map[string]string{labels.ManagementClusterKey: "another-management"},
-				},
-				Spec: v1.ManagementAuthConfigSpec{
-					BaseURL:         "https://elsewhere.example.com",
-					IssuerURL:       issuerURL,
-					AuthURL:         issuerURL + "/oauth/authorize",
-					TokenURL:        issuerURL + "/oauth/token",
-					JwksURL:         issuerURL + "/.well-known/jwks.json",
-					ClientID:        "elsewhere",
-					Audience:        "elsewhere",
-					ClientSecretRef: v1.SecretKeyRef{Name: "s", Namespace: "s", Key: "s"},
-				},
-			}
-			Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
-			DeferCleanup(func() { _ = k8sClient.Delete(ctx, foreign) })
+			createForeignContract(name, map[string]string{
+				labels.ManagementClusterKey: "another-management",
+			})
 
 			s := newScenario(func(f *fixture) { f.mc.Spec.ManagementAuthConfigName = name })
 
@@ -144,6 +129,36 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			var unchanged v1.ManagementAuthConfig
 			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &unchanged)).To(Succeed())
 			Expect(unchanged.Spec.ClientID).To(Equal("elsewhere"))
+		})
+
+		// Two management clusters of the same name in two namespaces ask for
+		// the same contract name, so the owner name alone does not tell them
+		// apart.
+		It("refuses a contract that a management cluster of another namespace holds", func() {
+			name := "cmc-" + utilrand.String(8)
+			createForeignContract(name, map[string]string{
+				labels.ManagementClusterKey:          name,
+				labels.ManagementClusterNamespaceKey: "another-namespace",
+			})
+
+			s := newScenario(func(f *fixture) { f.mc.Name = name })
+
+			Eventually(func(g Gomega) {
+				ready := conditionOf(g, s.mc, v1.ConditionReady)
+				g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(ready.Reason).To(Equal(v1.ReasonConflict))
+				g.Expect(ready.Message).To(ContainSubstring("another-namespace/" + name))
+			}, timeout, interval).Should(Succeed())
+
+			var unchanged v1.ManagementAuthConfig
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &unchanged)).To(Succeed())
+			Expect(unchanged.Spec.ClientID).To(Equal("elsewhere"))
+		})
+
+		It("reports WriteFailed when the API server refuses the contract", func() {
+			s := newScenario(func(f *fixture) { f.mc.Spec.ManagementAuthConfigName = "Not A Name" })
+
+			expectReadyReason(s.mc, v1.ReasonWriteFailed)
 		})
 
 		It("removes the contract with the management cluster", func() {
@@ -337,6 +352,29 @@ func createSecret(namespace, name string, data map[string]string) {
 	}
 	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+}
+
+// createForeignContract creates a ManagementAuthConfig that carries the given
+// owner labels and registers its deletion. Its client tells it apart from the
+// one a management cluster writes.
+func createForeignContract(name string, ownerLabels map[string]string) {
+	GinkgoHelper()
+
+	contract := &v1.ManagementAuthConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: ownerLabels},
+		Spec: v1.ManagementAuthConfigSpec{
+			BaseURL:         "https://elsewhere.example.com",
+			IssuerURL:       issuerURL,
+			AuthURL:         issuerURL + "/oauth/authorize",
+			TokenURL:        issuerURL + "/oauth/token",
+			JwksURL:         issuerURL + "/.well-known/jwks.json",
+			ClientID:        "elsewhere",
+			Audience:        "elsewhere",
+			ClientSecretRef: v1.SecretKeyRef{Name: "s", Namespace: "s", Key: "s"},
+		},
+	}
+	Expect(k8sClient.Create(ctx, contract)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, contract) })
 }
 
 // deleteManagementCluster deletes a management cluster and waits for its
