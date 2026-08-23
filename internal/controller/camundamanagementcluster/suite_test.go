@@ -82,7 +82,12 @@ var _ = BeforeSuite(func() {
 			return err
 		}
 
-		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme()).SetupWithManager(mgr)
+		r := New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme())
+		// A refused user API is called again soon, so that a spec can watch
+		// the retry.
+		r.RetryInterval = time.Second
+
+		return r.SetupWithManager(mgr)
 	})
 
 	ctx, k8sClient = env.Ctx, env.Client

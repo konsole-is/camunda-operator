@@ -79,17 +79,27 @@ const (
 	// FieldManager owns every resource of the management cluster itself, the
 	// ManagementAuthConfig included.
 	FieldManager = "camunda-operator/camundamanagementcluster"
-	// AttachmentFieldManager owns the claim annotation that the management
-	// cluster writes on an orchestration cluster. It is separate from
-	// FieldManager so that a withdrawal removes that annotation and nothing
-	// else.
-	AttachmentFieldManager = "camunda-operator/camundamanagementcluster-attachment"
+	// attachmentFieldManagerPrefix starts the field manager that owns the claim
+	// annotation on an orchestration cluster; AttachmentFieldManager completes
+	// it per management cluster.
+	attachmentFieldManagerPrefix = "camunda-operator/camundamanagementcluster-attachment/"
 	// PingFieldManager owns the Console ping settings that the management
 	// cluster writes into spec.extraEnv of an orchestration cluster. Two
 	// server-side applies under one manager strip each other's fields, so the
 	// ping never shares AttachmentFieldManager with the claim.
 	PingFieldManager = "camunda-operator/camundamanagementcluster-ping"
 )
+
+// AttachmentFieldManager returns the field manager that owns the claim
+// annotation that this management cluster writes on an orchestration cluster.
+// It is separate from FieldManager so that a withdrawal removes that
+// annotation and nothing else, and it carries the UID of the management
+// cluster so that no two management clusters share it: a claim is applied
+// without forced ownership, and the API server refuses the second claimant
+// with a conflict instead of letting it take the annotation over.
+func AttachmentFieldManager(mc *v1.CamundaManagementCluster) string {
+	return attachmentFieldManagerPrefix + string(mc.UID)
+}
 
 // The keys of the Secrets that the operator generates and of the one the
 // Keycloak Operator writes.

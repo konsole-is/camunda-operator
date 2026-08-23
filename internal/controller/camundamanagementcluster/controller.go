@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -62,6 +63,19 @@ const Finalizer = "core.camunda.io/camundamanagementcluster-attachment"
 // RESTMapper probe asks the Kubernetes cluster for.
 const keycloakKind = "Keycloak"
 
+// defaultRetryInterval is how long the controller waits before it calls a
+// cluster again whose user API refused the Web Modeler user.
+const defaultRetryInterval = 30 * time.Second
+
+// retryInterval returns RetryInterval, or defaultRetryInterval when unset.
+func (r *Reconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+
+	return defaultRetryInterval
+}
+
 // Reconciler turns a CamundaManagementCluster into one management plane: the
 // Management Identity Deployment and Service, the copies of referenced
 // Secrets, the ManagementAuthConfig, and the claims on the orchestration
@@ -77,6 +91,10 @@ type Reconciler struct {
 	// this controller. SetupWithManager sets it from the manager when it is
 	// nil.
 	EventRecorder events.EventRecorder
+	// RetryInterval overrides how long the controller waits before it calls a
+	// cluster again whose user API refused it. No watch reports the recovery
+	// of that API. Zero means defaultRetryInterval; tests shorten it.
+	RetryInterval time.Duration
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -219,7 +237,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 
-	return ctrl.Result{}, errors.Join(reconcileErr, claimErr, userErr, pingErr, contractErr)
+	// A cluster whose user API refused the call is called again after a
+	// while: no watch reports that the API is back.
+	var result ctrl.Result
+	if anyRow(rows, v1.ReasonBasicAuthUserFailed) {
+		result.RequeueAfter = r.retryInterval()
+	}
+
+	return result, errors.Join(reconcileErr, claimErr, userErr, pingErr, contractErr)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -341,6 +366,17 @@ func (r *Reconciler) writeContract(
 	meta.SetStatusCondition(mc.GetStatusConditions(), condition)
 
 	return err
+}
+
+// anyRow reports whether a row of status.clusters carries reason.
+func anyRow(rows []v1.AttachedClusterStatus, reason string) bool {
+	for _, row := range rows {
+		if row.Reason == reason {
+			return true
+		}
+	}
+
+	return false
 }
 
 // readyCondition derives Ready from the components and the contract write. A

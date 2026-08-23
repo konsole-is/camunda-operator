@@ -127,6 +127,39 @@ var _ = Describe("Orchestration cluster attachment", func() {
 	// A refused claim concerns one cluster: the cluster changed while the
 	// reconcile ran, and its own event brings the next one. The API server is
 	// reachable, so every other cluster must still converge in this pass.
+	It("refuses the second of two management clusters that claim one cluster at once", func() {
+		// Two management clusters that read an unclaimed cluster at the same
+		// time both try the claim. The annotation belongs to the manager of
+		// the first, and the API server refuses the second without forced
+		// ownership, so one holder remains and the other reads it on its next
+		// pass.
+		s := newScenario(withSelector(map[string]string{"unmatched": "none"}))
+		cluster := createOrchestrationCluster(s, nil, true)
+
+		first := newManagementCluster("first-plane", "identity-db")
+		first.UID = types.UID("11111111-1111-1111-1111-111111111111")
+		second := newManagementCluster("second-plane", "identity-db")
+		second.UID = types.UID("22222222-2222-2222-2222-222222222222")
+		r := &Reconciler{Client: k8sClient, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
+
+		var latest v1.CamundaCluster
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		Expect(r.claim(ctx, first, &latest)).To(Succeed())
+
+		err := r.claim(ctx, second, &latest)
+		Expect(apierrors.IsConflict(err)).To(BeTrue(), "the second claim must be refused, got: %v", err)
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		Expect(latest.Annotations).To(HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(first)))
+
+		// The holder withdraws, and the other takes the cluster on its next
+		// pass.
+		Expect(r.withdrawClaim(ctx, first, &latest)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		Expect(r.claim(ctx, second, &latest)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+		Expect(latest.Annotations).To(HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(second)))
+	})
+
 	It("goes on when the API server refuses one claim", func() {
 		mc := newManagementCluster("camunda", "identity-db")
 		mc.Spec.ClusterSelector = &metav1.LabelSelector{}

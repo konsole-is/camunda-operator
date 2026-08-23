@@ -61,9 +61,13 @@ func (r *Reconciler) checkContractOwner(
 	}
 }
 
-// applyContract writes the ManagementAuthConfig that Optimize reads. The apply
-// carries the owner labels and the whole spec under this controller's field
-// manager, so a hand edit of a field the operator owns converges back.
+// applyContract writes the ManagementAuthConfig that Optimize reads. A
+// contract that does not exist is created, which the API server does for one
+// writer only: two management clusters that ask for one free name at the same
+// time end with one holder, and the other reads AlreadyExists and reports
+// Conflict on its next pass. A contract this management cluster owns is
+// applied with the owner labels and the whole spec under this controller's
+// field manager, so a hand edit of a field the operator owns converges back.
 func (r *Reconciler) applyContract(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -76,6 +80,23 @@ func (r *Reconciler) applyContract(
 			Labels: components.ContractLabels(mc),
 		},
 		Spec: spec,
+	}
+
+	var existing v1.ManagementAuthConfig
+	err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(contract), &existing)
+	switch {
+	case apierrors.IsNotFound(err):
+		if err := r.Create(ctx, contract, client.FieldOwner(components.FieldManager)); err != nil {
+			return fmt.Errorf("creating ManagementAuthConfig %q: %w", contract.Name, err)
+		}
+
+		return nil
+	case err != nil:
+		return fmt.Errorf("reading ManagementAuthConfig %q: %w", contract.Name, err)
+	case !ownedBy(&existing, mc):
+		return fmt.Errorf(
+			"ManagementAuthConfig %q belongs to %s", contract.Name, contractHolder(&existing),
+		)
 	}
 
 	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch

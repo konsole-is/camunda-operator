@@ -257,7 +257,7 @@ func (r *Reconciler) withdrawClaim(
 		return nil
 	}
 
-	err := r.applyClaim(ctx, cluster, nil)
+	err := r.applyClaim(ctx, mc, cluster, nil)
 	// A cluster that went between the list and the apply needs no withdrawal.
 	if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
 		return nil
@@ -272,12 +272,17 @@ func (r *Reconciler) claim(
 	mc *v1.CamundaManagementCluster,
 	cluster *v1.CamundaCluster,
 ) error {
-	return r.applyClaim(ctx, cluster, map[string]string{components.ClaimAnnotation: ClaimValue(mc)})
+	return r.applyClaim(ctx, mc, cluster, map[string]string{components.ClaimAnnotation: ClaimValue(mc)})
 }
 
 // applyClaim applies the minimal CamundaCluster object that carries the claim
-// annotation under the attachment field manager. Nil annotations remove what
-// that manager owns and leave every other annotation alone.
+// annotation under the attachment field manager of mc. Nil annotations remove
+// what that manager owns and leave every other annotation alone.
+//
+// The apply forces no ownership: the annotation that another management
+// cluster wrote belongs to that one's manager, and the API server answers a
+// second claimant with a conflict. That is what makes two management clusters
+// that read an unclaimed cluster at the same time end with one holder.
 //
 // The apply carries the UID of the cluster as a precondition. Server-side
 // apply creates the object it does not find, so without it an apply against a
@@ -285,6 +290,7 @@ func (r *Reconciler) claim(
 // place.
 func (r *Reconciler) applyClaim(
 	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
 	cluster *v1.CamundaCluster,
 	annotations map[string]string,
 ) error {
@@ -300,8 +306,7 @@ func (r *Reconciler) applyClaim(
 
 	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
 	if err := r.Patch(
-		ctx, patch, client.Apply,
-		client.FieldOwner(components.AttachmentFieldManager), client.ForceOwnership,
+		ctx, patch, client.Apply, client.FieldOwner(components.AttachmentFieldManager(mc)),
 	); err != nil {
 		key := types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name}
 

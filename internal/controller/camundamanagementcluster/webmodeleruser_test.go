@@ -219,6 +219,27 @@ var _ = Describe("Web Modeler", func() {
 		expectIdentityDeployed(s)
 	})
 
+	It("calls a cluster again after its user API refused", func() {
+		// No watch reports that the user API of a cluster is back, so the
+		// controller comes back on its own after a while.
+		api := newClusterUserAPI()
+		api.RefuseNext(4, "not yet")
+
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		Eventually(func(g Gomega) {
+			row := rowOf(g, s.mc, cluster)
+			g.Expect(row.Reason).To(Equal(v1.ReasonBasicAuthUserFailed))
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+			row := rowOf(g, s.mc, cluster)
+			g.Expect(row.Reason).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("removes the user from a cluster that leaves the selector", func() {
 		api := newClusterUserAPI()
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))

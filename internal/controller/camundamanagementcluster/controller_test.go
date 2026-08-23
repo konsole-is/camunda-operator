@@ -165,6 +165,43 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			expectReadyReason(s.mc, v1.ReasonWriteFailed)
 		})
 
+		It("leaves a contract that another owner created in the meantime alone", func() {
+			// Two management clusters that ask for one free name at the same
+			// time both pass the pre-check. The API server creates the
+			// contract for one of them only; the other must not take it over.
+			s := newScenario()
+			name := s.mc.Name + "-raced"
+			var written v1.ManagementAuthConfig
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: s.mc.Name}, &written)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			other := &v1.ManagementAuthConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+					Labels: map[string]string{
+						labels.ManagementClusterKey:          "other-management",
+						labels.ManagementClusterNamespaceKey: "other-ns",
+					},
+				},
+				Spec: *written.Spec.DeepCopy(),
+			}
+			other.Spec.ClientID = "other"
+			Expect(k8sClient.Create(ctx, other)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, other) })
+
+			r := &Reconciler{Client: k8sClient, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
+			racer := s.mc.DeepCopy()
+			racer.Spec.ManagementAuthConfigName = name
+			err := r.applyContract(ctx, racer, written.Spec)
+			Expect(err).To(MatchError(ContainSubstring("belongs to")))
+
+			var kept v1.ManagementAuthConfig
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &kept)).To(Succeed())
+			Expect(kept.Spec.ClientID).To(Equal("other"))
+			Expect(kept.Labels).To(HaveKeyWithValue(labels.ManagementClusterKey, "other-management"))
+		})
+
 		It("withdraws the old contract when the spec renames it", func() {
 			s := newScenario()
 
