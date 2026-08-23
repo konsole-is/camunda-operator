@@ -132,7 +132,7 @@ kubectl get secret my-management-identity-admin -n my-management-ns \
 
 Sign in to Management Identity at `https://identity.camunda.example.com` with `admin` and that password.
 
-The operator generates two more Secrets in this mode, `my-management-identity-client` and `my-management-optimize-client`. They hold the client secrets that Management Identity gives to its own client and to the Optimize client. You read them only to rotate them. See [The generated Secrets](../crds/camundamanagementcluster.md#the-generated-secrets).
+The operator generates one more Secret in this mode, `my-management-optimize-client`. It holds the client secret that Management Identity gives to the Optimize client. You read it only to rotate it. See [The generated Secrets](../crds/camundamanagementcluster.md#the-generated-secrets).
 
 > **Caution:** Do not delete `my-management-identity-admin` to rotate that password. Management Identity sets it on the Keycloak user once, on its first start, and never reads it again. A deleted Secret comes back with a new password that the Keycloak user does not hold. To rotate the password, change it in Keycloak.
 
@@ -447,7 +447,7 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
 
 - **Add or remove Console or Web Modeler.** Add or remove `spec.console` or `spec.webModeler`. There is no field that turns a component on. Removing the block removes the workloads, and the condition of that component reads `Disabled`.
 - **Serve another cluster.** Change `spec.clusterSelector`, or label the cluster. A cluster that leaves the selector loses the annotation and the Console settings by itself.
-- **Rotate a client secret.** In the two Keycloak modes, delete `my-management-identity-client` or `my-management-optimize-client`. The operator generates a new value and rolls the pods that read it. In the `oidc` mode, rotate the secret at your provider and update the Secret the platform config names.
+- **Rotate the Optimize client secret.** In the two Keycloak modes, delete `my-management-optimize-client`. The operator generates a new value and rolls the pods that read it. In the `oidc` mode, rotate the secret at your provider and update the Secret the platform config names.
 - **Take the management plane down for maintenance.** Set `spec.suspend: true`. Every workload goes to zero, Keycloak included. The contract, the annotation on each served cluster, and the Console settings stay, so nothing else has to change. `Ready` reads `True` with reason `Suspended`. Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is down, because all three authenticate through Management Identity. The orchestration clusters run on.
 - **Upgrade a component.** Raise `identity.version`, `console.version`, `webModeler.version`, or `identityProvider.keycloak.version`. Each component carries its own version, so each one rolls on its own. The Keycloak Operator rolls Keycloak. In the two Keycloak modes, Management Identity applies the realm and the clients again on every start.
 - **Move to another identity provider.** Change `spec.identityProvider`. The workloads roll into the new mode. The first administrator does not move with them: Management Identity keeps the one it started with, in its database.

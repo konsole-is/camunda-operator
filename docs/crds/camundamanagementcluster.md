@@ -159,15 +159,14 @@ The redirect URI of each component is the one Camunda documents in [component-sp
 
 ### The generated Secrets
 
-In the two Keycloak modes the operator generates the credentials that Management Identity gives to the clients and to the first user:
+In the two Keycloak modes the operator generates the credentials that Management Identity gives to the Optimize client and to the first user:
 
 | Secret | Key | What it holds |
 | --- | --- | --- |
-| `my-management-identity-client` | `client-secret` | The client secret of Management Identity. |
 | `my-management-optimize-client` | `client-secret` | The client secret of Optimize. The `ManagementAuthConfig` points at this Secret. |
 | `my-management-identity-admin` | `password` | The password of the first Keycloak user. Absent while `spec.identity.admin.passwordSecretRef` names a Secret of your own. |
 
-Delete a client Secret to rotate that client secret. The operator generates a new value, writes it back, and rolls the pods that read it.
+Delete `my-management-optimize-client` to rotate that client secret. The operator generates a new value, writes it back, and rolls the pods that read it. Management Identity holds no client secret of its own in these modes. It creates its `camunda-identity` client and gives it a new secret on every start.
 
 > **Caution:** Do not delete `my-management-identity-admin`. Management Identity sets that password on the Keycloak user once, on its first start, and never reads it again. A deleted Secret comes back with a new password that the Keycloak user does not hold. Only a password reset in Keycloak recovers the account. To rotate the password, change it in Keycloak.
 
