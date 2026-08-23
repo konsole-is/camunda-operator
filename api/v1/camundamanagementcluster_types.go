@@ -54,6 +54,10 @@ const (
 	// The message names the object. Set managementAuthConfigName to a free
 	// name, or remove the object.
 	ReasonConflict = "Conflict"
+	// ReasonWriteFailed means that the operator could not write the
+	// ManagementAuthConfig. The message carries what the API server
+	// answered. The operator tries again.
+	ReasonWriteFailed = "WriteFailed"
 	// ReasonUnsupportedVersion means that a version in the spec is below the
 	// floor that the operator supports. The message names the field and the
 	// floor.
@@ -63,9 +67,10 @@ const (
 	// management plane, so this operator leaves the cluster untouched. The
 	// message names the holder.
 	ReasonClaimedElsewhere = "ClaimedElsewhere"
-	// ReasonNotReady means that a selected CamundaCluster publishes no
-	// gateway endpoints yet, so Web Modeler cannot deploy to it. The state
-	// clears when the cluster becomes ready.
+	// ReasonNotReady means that a selected CamundaCluster is not attached
+	// yet: it publishes no gateway endpoints, so Web Modeler cannot deploy to
+	// it, or it changed while the operator claimed it. The state clears when
+	// the cluster settles.
 	ReasonNotReady = "NotReady"
 	// ReasonImmutableAfterStart means that identity.admin changed after
 	// Management Identity started. Identity stores the initial administrator
@@ -96,7 +101,9 @@ type CamundaManagementClusterSpec struct {
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 	// ClusterSelector selects the CamundaClusters, in every namespace, that
-	// Console and Web Modeler serve. An unset selector selects every cluster.
+	// Console and Web Modeler serve. It follows the Kubernetes label selector
+	// convention: an unset selector selects no cluster, and an empty selector
+	// ({}) selects every cluster.
 	// +optional
 	ClusterSelector *metav1.LabelSelector `json:"clusterSelector,omitempty"`
 	// ManagementAuthConfigName is the name of the cluster-scoped
@@ -370,6 +377,10 @@ type AttachedClusterStatus struct {
 // operator turns it into Deployments and Services, writes the
 // ManagementAuthConfig that Optimize reads, and attaches the management plane
 // to the orchestration clusters that clusterSelector matches.
+//
+// Creating a CamundaManagementCluster is a platform-administrator action,
+// because the selector reaches CamundaClusters in every namespace and the
+// operator annotates the ones it matches.
 type CamundaManagementCluster struct {
 	metav1.TypeMeta `json:",inline"`
 

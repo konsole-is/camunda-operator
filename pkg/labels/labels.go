@@ -65,6 +65,12 @@ const (
 	// also the annotation key of the claim that a management cluster puts on
 	// an orchestration cluster it serves.
 	ManagementClusterKey = "camunda.io/management-cluster"
+	// ManagementClusterNamespaceKey names the namespace of the owning
+	// CamundaManagementCluster. A cluster-scoped object that a namespaced
+	// owner writes, the ManagementAuthConfig, carries it next to
+	// ManagementClusterKey: the name alone does not identify the owner,
+	// because two management clusters in two namespaces can share it.
+	ManagementClusterNamespaceKey = "camunda.io/management-cluster-namespace"
 	// ComponentKey names the role of a resource inside its owner, for example
 	// "elasticsearch" or "elasticsearch-exporter".
 	ComponentKey = "camunda.io/component"
