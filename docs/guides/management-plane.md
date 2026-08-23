@@ -25,7 +25,7 @@ graph LR
     CC --> OPT[CamundaOptimize]
 ```
 
-The operator checks every reference when it reconciles, not when you apply, so you can create the resources in any order. The order above is the one where nothing waits.
+The operator checks every reference after the resources exist, not when you apply them, so you can create the resources in any order. The order above is the one where nothing waits.
 
 ## Step 1: The databases
 

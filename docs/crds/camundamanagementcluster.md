@@ -60,7 +60,7 @@ A long resource name is shortened in the derived names and in the owner label, s
 
 The operator creates no Ingress. You route traffic to each Service yourself, and the `externalUrl` fields tell each component the address a browser reaches it at.
 
-Read the names back with `kubectl get deploy,svc -l camunda.io/management-cluster=my-management`.
+Read the names back with `kubectl get deploy,svc -n my-management-ns -l camunda.io/management-cluster=my-management`.
 
 ## Identity provider
 
@@ -492,7 +492,7 @@ A condition that reads `Disabled` stays out of `Ready`. This is not an error.
 
 The rows of `status.clusters` are their own report and never hold `Ready` back. One broken cluster does not stop the management plane. Those rows use some of the same reason names, and each one means something different there, about that one cluster. See [Clusters](#clusters).
 
-`status.observedGeneration` is the last generation the operator reconciled.
+`status.observedGeneration` is the generation of the spec that the status describes.
 
 Some messages of the identity provider name the field to correct:
 
@@ -667,7 +667,7 @@ The API server enforces these at admission:
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
 
-The operator checks these at reconcile time and reports them on `Ready`:
+The operator checks these after you apply the resource and reports them on `Ready`:
 
 - `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside a range reports `UnsupportedVersion`.
 - Management Identity, Keycloak, and Web Modeler name three different `DatabaseConfig` resources. Two that name one report `InvalidReference`.
