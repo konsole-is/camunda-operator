@@ -20,6 +20,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -162,6 +164,12 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "set claimName and claimValue",
 		),
 		Entry(
+			"rejects an admin with a claimName and no claimValue",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin = v1.IdentityAdminSpec{ClaimName: "oid", Username: "admin"}
+			}, "set claimName and claimValue together",
+		),
+		Entry(
 			"rejects a two-segment Keycloak version",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.IdentityProvider.Keycloak.Version = "26.0"
@@ -173,5 +181,32 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 				o.Spec.PlatformConfigRef = ""
 			}, "platformConfigRef",
 		),
+	)
+
+	// The typed client drops an empty string under omitempty, so only an
+	// unstructured object carries one to the API server.
+	DescribeTable(
+		"an explicitly empty admin field",
+		func(build func() *v1.CamundaManagementCluster, field string) {
+			obj := build()
+			obj.Namespace = fixtures.SchemaTestNamespace
+			raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+			Expect(err).NotTo(HaveOccurred())
+
+			u := &unstructured.Unstructured{Object: raw}
+			u.SetAPIVersion(v1.GroupVersion.String())
+			u.SetKind("CamundaManagementCluster")
+			Expect(
+				unstructured.SetNestedField(u.Object, "", "spec", "identity", "admin", field),
+			).To(Succeed())
+
+			Expect(k8sClient.Create(ctx, u)).To(MatchError(And(
+				ContainSubstring("spec.identity.admin."+field),
+				ContainSubstring("should be at least 1 chars long"),
+			)))
+		},
+		Entry("rejects an empty claimName", validManagementCluster, "claimName"),
+		Entry("rejects an empty claimValue", validManagementCluster, "claimValue"),
+		Entry("rejects an empty username", realisticManagementCluster, "username"),
 	)
 })

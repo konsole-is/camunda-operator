@@ -1044,11 +1044,13 @@ spec:
                         description: |-
                           ClaimName is the token claim that identifies the administrator, for
                           example oid or sub. Set it in the oidc mode.
+                        minLength: 1
                         type: string
                       claimValue:
                         description: |-
                           ClaimValue is the value that the claim carries for the administrator.
                           Set it in the oidc mode.
+                        minLength: 1
                         type: string
                       passwordSecretRef:
                         description: |-
@@ -1077,12 +1079,15 @@ spec:
                         description: |-
                           Username is the name of the first Keycloak user. Set it in the keycloak
                           and the externalKeycloak mode.
+                        minLength: 1
                         type: string
                     type: object
                     x-kubernetes-validations:
                     - message: set claimName and claimValue (oidc mode) or username
                         (keycloak modes)
                       rule: (has(self.claimName) && has(self.claimValue)) != has(self.username)
+                    - message: set claimName and claimValue together
+                      rule: has(self.claimName) == has(self.claimValue)
                   databaseConfigRef:
                     description: |-
                       DatabaseConfigRef names the DatabaseConfig of the Management Identity

@@ -215,17 +215,21 @@ type IdentitySpec struct {
 // provider issues, so set claimName and claimValue. In the two Keycloak modes
 // the administrator is the first Keycloak user, so set username.
 // +kubebuilder:validation:XValidation:rule="(has(self.claimName) && has(self.claimValue)) != has(self.username)",message="set claimName and claimValue (oidc mode) or username (keycloak modes)"
+// +kubebuilder:validation:XValidation:rule="has(self.claimName) == has(self.claimValue)",message="set claimName and claimValue together"
 type IdentityAdminSpec struct {
 	// ClaimName is the token claim that identifies the administrator, for
 	// example oid or sub. Set it in the oidc mode.
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	ClaimName string `json:"claimName,omitempty"`
 	// ClaimValue is the value that the claim carries for the administrator.
 	// Set it in the oidc mode.
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	ClaimValue string `json:"claimValue,omitempty"`
 	// Username is the name of the first Keycloak user. Set it in the keycloak
 	// and the externalKeycloak mode.
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Username string `json:"username,omitempty"`
 	// PasswordSecretRef names the Secret key that holds the password of the
