@@ -259,19 +259,17 @@ func (res *resolver) secretFor(
 	if err != nil {
 		return client.ObjectKey{}, err
 	}
-	if key.Namespace == res.mc.Namespace {
-		return key, nil
+	if key.Namespace != res.mc.Namespace {
+		data := make(map[string][]byte, len(keys))
+		for _, k := range keys {
+			data[k] = found[k]
+		}
+		res.mirrors[purpose] = data
 	}
-
-	data := make(map[string][]byte, len(keys))
-	for _, k := range keys {
-		data[k] = found[k]
-	}
-	res.mirrors[purpose] = data
 
 	return client.ObjectKey{
 		Namespace: res.mc.Namespace,
-		Name:      components.MirroredSecretName(res.mc, purpose),
+		Name:      components.LocalSecretName(res.mc, key.Namespace, key.Name, purpose),
 	}, nil
 }
 
