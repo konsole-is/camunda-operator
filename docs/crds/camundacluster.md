@@ -68,6 +68,8 @@ One `CamundaCluster` uses one contract. Camunda fixes the index names and the ta
 
 The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. To release a claim by hand, delete the two annotations from the contract.
 
+A recreated contract is a new claim. If the producer deletes the contract and creates it again, the holder and a suspended cluster race for the new claim. The holder can lose that race. Do not recreate a contract while two clusters name it.
+
 ```yaml
 status:
   conditions:

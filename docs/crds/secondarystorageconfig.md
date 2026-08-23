@@ -19,6 +19,8 @@ One `CamundaCluster` holds one contract. The first cluster to name the contract 
 
 To move the contract to another cluster by hand, remove both annotations. The next cluster that names the contract claims it.
 
+A recreated contract is a new claim, and the holder can lose the race for it to another cluster.
+
 The contract is the unit of the claim, not the endpoint or the database it names. Give one contract to one backend, so two contracts never point the operator at data that one cluster already owns.
 
 The smallest contract for an Elasticsearch backend names the endpoint and the credentials:
