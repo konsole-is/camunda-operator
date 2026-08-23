@@ -127,7 +127,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 			Version:   cluster.Spec.Version,
 		}}
 
-		err := r.syncPing(ctx, mc, attached)
+		err := r.syncPing(ctx, mc, []v1.CamundaCluster{*cluster}, attached)
 
 		Expect(err).To(MatchError(ContainSubstring("applying the Console ping settings")))
 	})

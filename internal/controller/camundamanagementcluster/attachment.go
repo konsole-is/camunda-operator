@@ -40,8 +40,9 @@ func ClaimValue(mc *v1.CamundaManagementCluster) string {
 	return mc.Namespace + "/" + mc.Name
 }
 
-// attachedClusters selects the orchestration clusters that mc serves, claims
-// each of them, and reports what the management plane can do with each one.
+// attachedClusters selects the orchestration clusters of clusters that mc
+// serves, claims each of them, and reports what the management plane can do
+// with each one.
 //
 // The selector follows the Kubernetes convention: an unset selector selects no
 // cluster, and an empty one selects every cluster. A selected cluster that no
@@ -61,15 +62,11 @@ func ClaimValue(mc *v1.CamundaManagementCluster) string {
 func (r *Reconciler) attachedClusters(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
 ) ([]components.AttachedCluster, []v1.AttachedClusterStatus, error) {
 	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading spec.clusterSelector: %w", err)
-	}
-
-	clusters, err := r.listClusters(ctx)
-	if err != nil {
-		return nil, nil, err
 	}
 
 	var attached []components.AttachedCluster
@@ -217,12 +214,11 @@ func clusterVersion(cluster *v1.CamundaCluster) string {
 // withdrawClaims removes the claim of mc from every cluster that carries it.
 // The finalizer calls it, so a deleted management cluster leaves no cluster
 // claimed by an owner that is gone.
-func (r *Reconciler) withdrawClaims(ctx context.Context, mc *v1.CamundaManagementCluster) error {
-	clusters, err := r.listClusters(ctx)
-	if err != nil {
-		return err
-	}
-
+func (r *Reconciler) withdrawClaims(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+) error {
 	for i := range clusters {
 		if err := r.withdrawClaim(ctx, mc, &clusters[i]); err != nil {
 			return err

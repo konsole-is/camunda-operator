@@ -141,7 +141,10 @@ var _ = Describe("Orchestration cluster attachment", func() {
 			Scheme:    k8sClient.Scheme(),
 		}
 
-		attached, rows, err := r.attachedClusters(ctx, mc)
+		clusters, err := r.listClusters(ctx)
+		Expect(err).NotTo(HaveOccurred())
+
+		attached, rows, err := r.attachedClusters(ctx, mc, clusters)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(attached).To(HaveLen(1))

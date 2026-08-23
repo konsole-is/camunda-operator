@@ -53,10 +53,15 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		return nil
 	}
 
-	if err := r.withdrawPing(ctx, mc); err != nil {
+	clusters, err := r.listClusters(ctx)
+	if err != nil {
 		return err
 	}
-	if err := r.withdrawClaims(ctx, mc); err != nil {
+
+	if err := r.withdrawPing(ctx, mc, clusters); err != nil {
+		return err
+	}
+	if err := r.withdrawClaims(ctx, mc, clusters); err != nil {
 		return err
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {

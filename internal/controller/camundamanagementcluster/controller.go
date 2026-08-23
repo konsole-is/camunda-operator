@@ -171,7 +171,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	attached, rows, err := r.attachedClusters(ctx, &mc)
+	clusters, err := r.listClusters(ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	attached, rows, err := r.attachedClusters(ctx, &mc, clusters)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -187,7 +192,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
 	claimErr := r.recordInitialClaim(ctx, &mc)
-	pingErr := r.syncPing(ctx, &mc, attached)
+	pingErr := r.syncPing(ctx, &mc, clusters, attached)
 	contractErr := r.writeContract(ctx, &mc, res)
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 

@@ -43,13 +43,9 @@ import (
 func (r *Reconciler) syncPing(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
 	attached []components.AttachedCluster,
 ) error {
-	clusters, err := r.listClusters(ctx)
-	if err != nil {
-		return err
-	}
-
 	consoleURL := components.ConsoleServiceURL(mc)
 	served := map[client.ObjectKey]string{}
 	if mc.Spec.Console != nil {
@@ -93,8 +89,12 @@ func (r *Reconciler) syncPing(
 // withdrawPing removes the ping settings of mc from every orchestration
 // cluster. The finalizer calls it, so a deleted management cluster leaves no
 // cluster reporting to a Console that is gone.
-func (r *Reconciler) withdrawPing(ctx context.Context, mc *v1.CamundaManagementCluster) error {
-	return r.syncPing(ctx, mc, nil)
+func (r *Reconciler) withdrawPing(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+) error {
+	return r.syncPing(ctx, mc, clusters, nil)
 }
 
 // withdrawPingFrom removes the ping settings from one cluster. A cluster that
