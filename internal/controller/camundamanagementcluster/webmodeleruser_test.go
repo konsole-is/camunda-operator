@@ -401,7 +401,10 @@ func touchCluster(cluster *v1.CamundaCluster) {
 	Eventually(func(g Gomega) {
 		var latest v1.CamundaCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-		latest.Labels = map[string]string{"touched": utilrand.String(8)}
+		if latest.Labels == nil {
+			latest.Labels = map[string]string{}
+		}
+		latest.Labels["touched"] = utilrand.String(8)
 		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
