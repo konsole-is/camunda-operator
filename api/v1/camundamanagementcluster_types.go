@@ -266,7 +266,9 @@ type IdentityAdminSpec struct {
 	// +optional
 	ClaimValue string `json:"claimValue,omitempty"`
 	// Username is the name of the first Keycloak user. Set it in the keycloak
-	// and the externalKeycloak mode.
+	// and the externalKeycloak mode. Management Identity creates the user on
+	// its first start, so a later change to this field creates a second user
+	// rather than renaming the first one.
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Username string `json:"username,omitempty"`

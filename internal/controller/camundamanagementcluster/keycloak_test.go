@@ -97,6 +97,29 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			}, timeout, interval).Should(Succeed())
 		})
 
+		// The claim annotation belongs to the oidc mode. A Keycloak mode
+		// carries no claim, so recording one would stamp "=" and read as a
+		// claim that Management Identity started with.
+		It("records no initial administrator claim", func() {
+			s := newScenario(withManagedKeycloak)
+
+			identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+			Eventually(func(g Gomega) {
+				stampKeycloakReady(g, keycloakKey(s))
+				stampDeploymentReady(g, identity)
+
+				g.Expect(conditionOf(g, s.mc, v1.ConditionIdentityReady).Status).To(
+					Equal(metav1.ConditionTrue),
+				)
+			}, timeout, interval).Should(Succeed())
+
+			Consistently(func(g Gomega) {
+				var current v1.CamundaManagementCluster
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(s.mc), &current)).To(Succeed())
+				g.Expect(current.Annotations).NotTo(HaveKey(components.InitialClaimAnnotation))
+			}, "2s", interval).Should(Succeed())
+		})
+
 		It("scales the Keycloak to zero when the management cluster is suspended", func() {
 			s := newScenario(withManagedKeycloak)
 

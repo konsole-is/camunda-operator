@@ -1094,7 +1094,9 @@ spec:
                       username:
                         description: |-
                           Username is the name of the first Keycloak user. Set it in the keycloak
-                          and the externalKeycloak mode.
+                          and the externalKeycloak mode. Management Identity creates the user on
+                          its first start, so a later change to this field creates a second user
+                          rather than renaming the first one.
                         minLength: 1
                         type: string
                     type: object

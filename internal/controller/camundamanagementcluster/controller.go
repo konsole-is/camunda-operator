@@ -229,7 +229,15 @@ func reconcileComponents(ctx context.Context, rec component.ReconcileContext, co
 // its database. The annotation is what keeps the rendered environment on the
 // value that Identity actually holds; without it a later edit of
 // spec.identity.admin would roll the pods into a claim that changes nothing.
+//
+// Only the oidc mode has a claim. The two Keycloak modes name a user instead,
+// and Identity creates that user on its first start, so a later change to
+// spec.identity.admin.username creates a second one.
 func (r *Reconciler) recordInitialClaim(ctx context.Context, mc *v1.CamundaManagementCluster) error {
+	if components.Mode(mc) != components.ModeOIDC {
+		return nil
+	}
+
 	ready := meta.FindStatusCondition(mc.Status.Conditions, v1.ConditionIdentityReady)
 	if ready == nil || ready.Status != metav1.ConditionTrue {
 		return nil
