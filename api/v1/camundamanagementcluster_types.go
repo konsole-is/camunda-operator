@@ -148,7 +148,7 @@ type ManagedKeycloakSpec struct {
 	// ExternalURL is the URL that browsers reach Keycloak at, including the
 	// /auth path. Management Identity also reaches this URL, so it must
 	// resolve from inside the Kubernetes cluster.
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('http://') || self.startsWith('https://')",message="externalUrl must be an http or https URL"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL string `json:"externalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Keycloak database, in
 	// the namespace of this resource. Keycloak needs its own PostgreSQL
@@ -170,7 +170,7 @@ type ExternalKeycloakSpec struct {
 	// URL is the URL of Keycloak, including the /auth path when it has one.
 	// Management Identity reaches this URL, so it must resolve from inside
 	// the Kubernetes cluster.
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('http://') || self.startsWith('https://')",message="url must be an http or https URL"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="url must be a valid http or https URL"
 	URL string `json:"url"`
 	// Realm is the realm that Management Identity uses and creates. Empty
 	// means camunda-platform.
@@ -195,7 +195,7 @@ type IdentitySpec struct {
 	Version string `json:"version"`
 	// ExternalURL is the URL that browsers reach Management Identity at.
 	// Identity registers it as the redirect URI of its own client.
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('http://') || self.startsWith('https://')",message="externalUrl must be an http or https URL"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL string `json:"externalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Management Identity
 	// database, in the namespace of this resource. Identity needs its own
@@ -247,7 +247,7 @@ type ConsoleSpec struct {
 	Version string `json:"version"`
 	// ExternalURL is the URL that browsers reach Console at. Every selected
 	// CamundaCluster reports to it.
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('http://') || self.startsWith('https://')",message="externalUrl must be an http or https URL"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL  string `json:"externalUrl"`
 	WorkloadSpec `json:",inline"`
 }
@@ -260,11 +260,11 @@ type WebModelerSpec struct {
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
 	// ExternalURL is the URL that browsers reach Web Modeler at.
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('http://') || self.startsWith('https://')",message="externalUrl must be an http or https URL"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL string `json:"externalUrl"`
 	// WebsocketsExternalURL is the URL that browsers reach the websockets
 	// process at. Web Modeler pushes live updates over it.
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('http://') || self.startsWith('https://')",message="websocketsExternalUrl must be an http or https URL"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="websocketsExternalUrl must be a valid http or https URL"
 	WebsocketsExternalURL string `json:"websocketsExternalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Web Modeler database,
 	// in the namespace of this resource. Web Modeler needs its own PostgreSQL

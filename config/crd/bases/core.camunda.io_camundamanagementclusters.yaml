@@ -112,8 +112,9 @@ spec:
                       CamundaCluster reports to it.
                     type: string
                     x-kubernetes-validations:
-                    - message: externalUrl must be an http or https URL
-                      rule: self.startsWith('http://') || self.startsWith('https://')
+                    - message: externalUrl must be a valid http or https URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https') && url(self).getHostname() != ''
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -1101,8 +1102,9 @@ spec:
                       Identity registers it as the redirect URI of its own client.
                     type: string
                     x-kubernetes-validations:
-                    - message: externalUrl must be an http or https URL
-                      rule: self.startsWith('http://') || self.startsWith('https://')
+                    - message: externalUrl must be a valid http or https URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https') && url(self).getHostname() != ''
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -2075,8 +2077,10 @@ spec:
                           the Kubernetes cluster.
                         type: string
                         x-kubernetes-validations:
-                        - message: url must be an http or https URL
-                          rule: self.startsWith('http://') || self.startsWith('https://')
+                        - message: url must be a valid http or https URL
+                          rule: isURL(self) && (url(self).getScheme() == 'http' ||
+                            url(self).getScheme() == 'https') && url(self).getHostname()
+                            != ''
                     required:
                     - adminCredentialsSecretRef
                     - url
@@ -2100,8 +2104,10 @@ spec:
                           resolve from inside the Kubernetes cluster.
                         type: string
                         x-kubernetes-validations:
-                        - message: externalUrl must be an http or https URL
-                          rule: self.startsWith('http://') || self.startsWith('https://')
+                        - message: externalUrl must be a valid http or https URL
+                          rule: isURL(self) && (url(self).getScheme() == 'http' ||
+                            url(self).getScheme() == 'https') && url(self).getHostname()
+                            != ''
                       replicas:
                         description: Replicas is the number of Keycloak instances.
                           Defaults to 1.
@@ -2230,8 +2236,9 @@ spec:
                       at.
                     type: string
                     x-kubernetes-validations:
-                    - message: externalUrl must be an http or https URL
-                      rule: self.startsWith('http://') || self.startsWith('https://')
+                    - message: externalUrl must be a valid http or https URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https') && url(self).getHostname() != ''
                   mail:
                     description: |-
                       Mail configures the SMTP server that Web Modeler sends notifications
@@ -4143,8 +4150,10 @@ spec:
                       process at. Web Modeler pushes live updates over it.
                     type: string
                     x-kubernetes-validations:
-                    - message: websocketsExternalUrl must be an http or https URL
-                      rule: self.startsWith('http://') || self.startsWith('https://')
+                    - message: websocketsExternalUrl must be a valid http or https
+                        URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https') && url(self).getHostname() != ''
                 required:
                 - databaseConfigRef
                 - externalUrl

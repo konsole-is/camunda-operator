@@ -137,7 +137,13 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			"rejects an identity externalUrl without a scheme",
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Identity.ExternalURL = "identity.example.com"
-			}, "externalUrl must be an http or https URL",
+			}, "externalUrl must be a valid http or https URL",
+		),
+		Entry(
+			"rejects an identity externalUrl without a host",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "https://"
+			}, "externalUrl must be a valid http or https URL",
 		),
 		Entry(
 			"rejects a Web Modeler without a mail fromAddress",
@@ -149,7 +155,13 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			"rejects a websocketsExternalUrl without a scheme",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.WebModeler.WebsocketsExternalURL = "modeler-ws.example.com"
-			}, "websocketsExternalUrl must be an http or https URL",
+			}, "websocketsExternalUrl must be a valid http or https URL",
+		),
+		Entry(
+			"rejects a websocketsExternalUrl without a host",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.WebsocketsExternalURL = "https://"
+			}, "websocketsExternalUrl must be a valid http or https URL",
 		),
 		Entry(
 			"rejects an admin with both a claim and a username",
