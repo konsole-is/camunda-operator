@@ -4256,9 +4256,14 @@ spec:
                       type: string
                     reason:
                       description: |-
-                        Reason names why the cluster is not attached, for example
-                        ClaimedElsewhere or NotReady. It is empty while the cluster is
-                        attached.
+                        Reason names what the management plane found on this cluster. It is one
+                        of five values. Four of them say why the cluster is not attached:
+                        ClaimedElsewhere, another management plane holds it; NotReady, it
+                        publishes no gateway endpoints or it changed while the operator claimed
+                        it; InvalidReference, its platform config cannot be read;
+                        WriteFailed, the Console ping settings were refused. The fifth,
+                        BasicAuthUserFailed, accompanies an attached row: the management plane
+                        serves the cluster, and only the Web Modeler user on it is missing.
                       type: string
                   required:
                   - attached

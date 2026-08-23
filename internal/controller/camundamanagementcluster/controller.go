@@ -104,7 +104,6 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundamanagementclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/status,verbs=get
-// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaoptimizes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
@@ -199,8 +198,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	comps = built.Components
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
-	claimErr := r.recordInitialClaim(ctx, &mc)
-	userErr := r.webModelerUsers(ctx, &mc, attached, rows)
+	claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
+	userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	pingErr := r.syncPing(ctx, &mc, clusters, attached)
 	contractErr := r.writeContract(ctx, &mc, res)
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
@@ -233,8 +232,12 @@ func reconcileComponents(ctx context.Context, rec component.ReconcileContext, co
 // Only the oidc mode has a claim. The two Keycloak modes name a user instead,
 // and Identity creates that user on its first start, so a later change to
 // spec.identity.admin.username creates a second one.
-func (r *Reconciler) recordInitialClaim(ctx context.Context, mc *v1.CamundaManagementCluster) error {
-	if components.Mode(mc) != components.ModeOIDC {
+func (r *Reconciler) recordInitialClaim(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	mode components.ProviderMode,
+) error {
+	if mode != components.ModeOIDC {
 		return nil
 	}
 

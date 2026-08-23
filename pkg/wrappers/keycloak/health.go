@@ -116,7 +116,7 @@ func DefaultSuspensionStatusHandler(kc *Keycloak) (concepts.SuspensionStatusWith
 	if kc.Status.ObservedGeneration < kc.Generation {
 		return concepts.SuspensionStatusWithReason{
 			Status: concepts.SuspensionStatusSuspending,
-			Reason: "the Keycloak Operator has not observed the current generation yet",
+			Reason: "The Keycloak Operator has not observed the current generation yet",
 		}, nil
 	}
 

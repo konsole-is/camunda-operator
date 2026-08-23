@@ -18,8 +18,6 @@ package camundamanagementcluster
 
 import (
 	"fmt"
-	"net/url"
-	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -85,7 +83,7 @@ const (
 // of left running, and the gate keeps the Disabled condition out of Ready.
 func consoleComponents(in Input) (Built, error) {
 	deployed := in.Cluster.Spec.Console != nil
-	gate := component.GatedBy(feature.NewBooleanGate(deployed))
+	gate := feature.NewBooleanGate(deployed)
 
 	workload, err := deployment.NewBuilder(consoleDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentConsole), consoleContainer)...).
@@ -102,9 +100,9 @@ func consoleComponents(in Input) (Built, error) {
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentConsole).
 		WithConditionType(component.ConditionType(v1.ConditionConsoleReady)).
-		WithFeatureGate(feature.NewBooleanGate(deployed)).
-		WithResource(workload, gate).
-		WithResource(svc, gate).
+		WithFeatureGate(gate).
+		WithResource(workload, component.GatedBy(gate)).
+		WithResource(svc, component.GatedBy(gate)).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
@@ -144,7 +142,8 @@ func consoleDeployment(in Input) *appsv1.Deployment {
 
 // consoleContainerSpec renders the Console container. It carries the readiness
 // probe of the 8.9 Helm chart, and no liveness probe, which is what the chart
-// enables too.
+// enables too. It carries no startup probe either: Console migrates no schema,
+// so its readiness probe polls from the start.
 func consoleContainerSpec(in Input) corev1.Container {
 	return corev1.Container{
 		Name:  consoleContainer,
@@ -154,13 +153,9 @@ func consoleContainerSpec(in Input) corev1.Container {
 			{Name: portNameHTTP, ContainerPort: ConsolePortHTTP, Protocol: corev1.ProtocolTCP},
 			{Name: portNameManagement, ContainerPort: ConsolePortManagement, Protocol: corev1.ProtocolTCP},
 		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-				Path: consoleHealthPath,
-				Port: intstr.FromString(portNameManagement),
-			}},
-			PeriodSeconds: readinessPeriodSeconds,
-		},
+		ReadinessProbe: probe(
+			portNameManagement, consoleHealthPath, readinessPeriodSeconds, 0,
+		),
 	}
 }
 
@@ -196,7 +191,7 @@ func consoleEnv(in Input) []corev1.EnvVar {
 			corev1.EnvVar{Name: consoleEnvKeycloakRealm, Value: provider.Realm},
 		)
 	}
-	if path := consoleContextPath(in.console().ExternalURL); path != "" {
+	if path := externalPath(parseURL(in.console().ExternalURL)); path != "" {
 		env = append(env, corev1.EnvVar{Name: consoleEnvContextPath, Value: path})
 	}
 
@@ -213,18 +208,6 @@ func consoleEnv(in Input) []corev1.EnvVar {
 	}
 
 	return env
-}
-
-// consoleContextPath returns the path of the external URL of Console, without
-// a trailing slash. It returns an empty string for a URL that serves the root
-// of its host, and for one that does not parse.
-func consoleContextPath(externalURL string) string {
-	parsed, err := url.Parse(externalURL)
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSuffix(parsed.Path, "/")
 }
 
 // consoleService renders the Service of Console. Both ports are exposed: the

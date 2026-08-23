@@ -161,9 +161,6 @@ func TestResolveIdentityProviderDeclaresAClientPerDeployedComponent(t *testing.T
 	assert.Equal(t, keycloakAudienceConsole, full.Console.Audience)
 	assert.Equal(t, keycloakClientWebModeler, full.WebModeler.ID)
 	assert.Equal(t, keycloakAudienceWebModeler, full.WebModeler.Audience)
-	// Web Modeler validates two audiences and refuses to start with either
-	// one empty: the internal API that its own user interface calls, and the
-	// public API that a script calls.
 	assert.Equal(t, keycloakAudienceWebModeler, full.WebModelerAPI.Audience)
 	assert.Equal(t, keycloakAudienceWebModelerPublic, full.WebModelerPublicAPIAudience)
 }

@@ -61,7 +61,7 @@ type generatedSecret struct {
 // publishes, so a delete of the Secret always rotates it. The controller must
 // reconcile through credentials.NewApplyClient for that precondition to hold.
 func secretsComponents(in Input) (Built, error) {
-	keycloakMode := Mode(in.Cluster) != ModeOIDC
+	keycloakMode := in.Provider.Mode != ModeOIDC
 
 	builder := component.NewComponentBuilder().
 		WithName(ComponentSecrets).
@@ -85,14 +85,14 @@ func secretsComponents(in Input) (Built, error) {
 			Data: map[string][]byte{gen.key: []byte(password.Value)},
 		}).Build()
 		if err != nil {
-			return Built{}, fmt.Errorf("building %s component: %w", ComponentSecrets, err)
+			return Built{}, fmt.Errorf("building the %s component: %w", ComponentSecrets, err)
 		}
 		builder = builder.WithResource(published, component.GatedBy(feature.NewBooleanGate(gen.published)))
 	}
 
 	comp, err := builder.Build()
 	if err != nil {
-		return Built{}, fmt.Errorf("building %s component: %w", ComponentSecrets, err)
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentSecrets, err)
 	}
 
 	built := Built{Components: []*component.Component{comp}}
@@ -111,7 +111,7 @@ func secretsComponents(in Input) (Built, error) {
 // does not rotate.
 func generatedSecrets(in Input) []generatedSecret {
 	mc := in.Cluster
-	keycloakMode := Mode(mc) != ModeOIDC
+	keycloakMode := in.Provider.Mode != ModeOIDC
 
 	return []generatedSecret{
 		{

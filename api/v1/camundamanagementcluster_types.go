@@ -25,23 +25,25 @@ import (
 // shared vocabulary is in conditions.go.
 const (
 	// ConditionKeycloakReady is the condition of the Keycloak that the
-	// operator runs. It is absent in the externalKeycloak and the oidc mode.
+	// operator runs. It reads Disabled in the externalKeycloak and the oidc
+	// mode, which run none.
 	ConditionKeycloakReady = "KeycloakReady"
 	// ConditionIdentityReady is the condition of the Management Identity
 	// workload.
 	ConditionIdentityReady = "IdentityReady"
-	// ConditionConsoleReady is the condition of the Console workload. It is
-	// absent while console is unset.
+	// ConditionConsoleReady is the condition of the Console workload. It
+	// reads Disabled while console is unset.
 	ConditionConsoleReady = "ConsoleReady"
 	// ConditionWebModelerReady is the condition of the two Web Modeler
-	// workloads. It is absent while webModeler is unset.
+	// workloads. It reads Disabled while webModeler is unset.
 	ConditionWebModelerReady = "WebModelerReady"
 	// ConditionManagementAuthReady is the condition of the
 	// ManagementAuthConfig that this management cluster writes.
 	ConditionManagementAuthReady = "ManagementAuthReady"
 	// ConditionSecretsReady is the condition of the Secrets that the operator
-	// generates: the client secrets, the initial admin password, and the Web
-	// Modeler pusher credential.
+	// generates: the client secrets and the initial admin password. It reads
+	// Disabled in the oidc mode, where the platform config names every client
+	// secret and the first administrator is a token claim.
 	ConditionSecretsReady = "SecretsReady"
 
 	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider
@@ -58,9 +60,10 @@ const (
 	// ManagementAuthConfig. The message carries what the API server
 	// answered. The operator tries again.
 	ReasonWriteFailed = "WriteFailed"
-	// ReasonUnsupportedVersion means that a version in the spec is below the
-	// floor that the operator supports. The message names the field and the
-	// floor.
+	// ReasonUnsupportedVersion means that a version in the spec is outside
+	// the range that the operator supports: below the floor of its component,
+	// or, for the Keycloak that the operator runs, at or above the ceiling.
+	// The message names the field and the bound it crossed.
 	ReasonUnsupportedVersion = "UnsupportedVersion"
 	// ReasonClaimedElsewhere means that a selected CamundaCluster is already
 	// claimed by another management cluster. One cluster answers to one
@@ -394,9 +397,14 @@ type AttachedClusterStatus struct {
 	// Attached reports whether the management plane serves this cluster.
 	// Console lists it and Web Modeler deploys to it only while this is true.
 	Attached bool `json:"attached"`
-	// Reason names why the cluster is not attached, for example
-	// ClaimedElsewhere or NotReady. It is empty while the cluster is
-	// attached.
+	// Reason names what the management plane found on this cluster. It is one
+	// of five values. Four of them say why the cluster is not attached:
+	// ClaimedElsewhere, another management plane holds it; NotReady, it
+	// publishes no gateway endpoints or it changed while the operator claimed
+	// it; InvalidReference, its platform config cannot be read;
+	// WriteFailed, the Console ping settings were refused. The fifth,
+	// BasicAuthUserFailed, accompanies an attached row: the management plane
+	// serves the cluster, and only the Web Modeler user on it is missing.
 	// +optional
 	Reason string `json:"reason,omitempty"`
 	// Message explains the reason in one sentence.
