@@ -102,21 +102,55 @@ func (r *CamundaPlatformConfigReconciler) validate(
 			return metav1.Condition{}, err
 		}
 		if msg != "" {
-			return conditions.Ready(metav1.ConditionFalse, v1.ReasonMissingSecret, msg, cfg.Generation), nil
+			return conditions.Ready(
+				metav1.ConditionFalse, v1.ReasonMissingSecret, ref.Path+": "+msg, cfg.Generation,
+			), nil
 		}
 	}
 
 	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
 }
 
+// fieldRef is one Secret reference of a platform config together with the spec
+// path that holds it. A config carries up to seven references, so the message
+// of a MissingSecret condition names the field the user has to correct.
+type fieldRef struct {
+	Path string
+	v1.SecretKeyRef
+}
+
 // secretRefs is shared by validate and the SecretRefsField indexer so both see the same references.
-func secretRefs(cfg *v1.CamundaPlatformConfig) []v1.SecretKeyRef {
-	var refs []v1.SecretKeyRef
+func secretRefs(cfg *v1.CamundaPlatformConfig) []fieldRef {
+	var refs []fieldRef
 	if cfg.Spec.Method() == v1.AuthenticationMethodOIDC && cfg.Spec.Auth.OIDC != nil {
-		refs = append(refs, cfg.Spec.Auth.OIDC.ClientSecretRef)
+		oidc := cfg.Spec.Auth.OIDC
+		refs = append(refs, fieldRef{"spec.auth.oidc.clientSecretRef", oidc.ClientSecretRef})
+		refs = append(refs, managementClientRefs(oidc.Management)...)
 	}
 	if cfg.Spec.LicenseSecretRef != nil {
-		refs = append(refs, *cfg.Spec.LicenseSecretRef)
+		refs = append(refs, fieldRef{"spec.licenseSecretRef", *cfg.Spec.LicenseSecretRef})
+	}
+	return refs
+}
+
+// managementClientRefs returns the client secrets of the management plane
+// clients. The public clients of Console and Web Modeler have none.
+func managementClientRefs(mgmt *v1.ManagementOIDCClientsSpec) []fieldRef {
+	if mgmt == nil {
+		return nil
+	}
+
+	const prefix = "spec.auth.oidc.management.clients."
+
+	var refs []fieldRef
+	if c := mgmt.Clients.Identity; c != nil {
+		refs = append(refs, fieldRef{prefix + "identity.clientSecretRef", c.ClientSecretRef})
+	}
+	if c := mgmt.Clients.Optimize; c != nil {
+		refs = append(refs, fieldRef{prefix + "optimize.clientSecretRef", c.ClientSecretRef})
+	}
+	if c := mgmt.Clients.WebModelerAPI; c != nil {
+		refs = append(refs, fieldRef{prefix + "webModelerApi.clientSecretRef", c.ClientSecretRef})
 	}
 	return refs
 }

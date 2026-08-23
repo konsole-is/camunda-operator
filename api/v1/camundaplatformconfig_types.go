@@ -42,6 +42,13 @@ type OIDCSpec struct {
 	// endpoint fields override them.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https')",message="issuerUrl must be a valid http or https URL"
 	IssuerURL string `json:"issuerUrl"`
+	// ProviderType names the kind of identity provider. Management Identity
+	// reads it and changes how it resolves users and groups. Empty means
+	// generic, which fits any OIDC-compliant provider. Set microsoft for
+	// Microsoft Entra ID.
+	// +kubebuilder:validation:Enum=generic;microsoft
+	// +optional
+	ProviderType string `json:"providerType,omitempty"`
 	// JWKSURL is an explicit JWKS endpoint. It overrides the value from OIDC
 	// discovery.
 	// +kubebuilder:validation:XValidation:rule="self == '' || (isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https'))",message="jwksUrl must be empty or a valid http or https URL"
@@ -78,6 +85,79 @@ type OIDCSpec struct {
 	// ClientSecretRef names the Secret key that holds the default OIDC client
 	// secret.
 	ClientSecretRef SecretKeyRef `json:"clientSecretRef"`
+	// Management holds the clients that the management plane uses at this
+	// identity provider. A CamundaManagementCluster in the oidc mode reads
+	// them. Register one client per component at the provider first.
+	// +optional
+	Management *ManagementOIDCClientsSpec `json:"management,omitempty"`
+}
+
+// ManagementOIDCClientsSpec holds the identity provider clients of the
+// management plane.
+type ManagementOIDCClientsSpec struct {
+	// Clients holds one entry per component of the management plane.
+	Clients ManagementClients `json:"clients"`
+}
+
+// ManagementClients names the identity provider client of each component of
+// the management plane. A CamundaManagementCluster reports InvalidReference
+// when a component it deploys has no client here.
+type ManagementClients struct {
+	// Identity is the client of Management Identity.
+	// +optional
+	Identity *ConfidentialClientSpec `json:"identity,omitempty"`
+	// Optimize is the client of Optimize. The ManagementAuthConfig that the
+	// management cluster writes carries it, and Optimize reads it from there.
+	// +optional
+	Optimize *ConfidentialClientSpec `json:"optimize,omitempty"`
+	// WebModeler is the client of the Web Modeler user interface. The browser
+	// holds no secret, so it is a public client.
+	// +optional
+	WebModeler *PublicClientSpec `json:"webModeler,omitempty"`
+	// WebModelerAPI is the client of the Web Modeler API.
+	// +optional
+	WebModelerAPI *WebModelerAPIClientSpec `json:"webModelerApi,omitempty"`
+	// Console is the client of Console. The browser holds no secret, so it is
+	// a public client.
+	// +optional
+	Console *PublicClientSpec `json:"console,omitempty"`
+}
+
+// ConfidentialClientSpec is an identity provider client that authenticates
+// with a secret.
+type ConfidentialClientSpec struct {
+	// ClientID is the client id at the identity provider.
+	// +kubebuilder:validation:MinLength=1
+	ClientID string `json:"clientId"`
+	// Audience is the audience that the component validates in access tokens.
+	// Empty means the client id.
+	// +optional
+	Audience string `json:"audience,omitempty"`
+	// ClientSecretRef names the Secret key that holds the client secret.
+	ClientSecretRef SecretKeyRef `json:"clientSecretRef"`
+}
+
+// PublicClientSpec is an identity provider client that a browser uses, so it
+// has no secret.
+type PublicClientSpec struct {
+	// ClientID is the client id at the identity provider.
+	// +kubebuilder:validation:MinLength=1
+	ClientID string `json:"clientId"`
+	// Audience is the audience that the component validates in access tokens.
+	// Empty means the client id.
+	// +optional
+	Audience string `json:"audience,omitempty"`
+}
+
+// WebModelerAPIClientSpec is the client of the Web Modeler API. Web Modeler
+// validates two audiences: one for the API that its own user interface calls,
+// and one for the public API that your applications call.
+type WebModelerAPIClientSpec struct {
+	ConfidentialClientSpec `json:",inline"`
+	// PublicAPIAudience is the audience of the Web Modeler public API. Empty
+	// means web-modeler-public-api.
+	// +optional
+	PublicAPIAudience string `json:"publicApiAudience,omitempty"`
 }
 
 // PlatformAuthSpec selects the authentication method of every orchestration
@@ -110,6 +190,48 @@ type CamundaPlatformConfigSpec struct {
 	// Empty means the upstream Camunda registry.
 	// +optional
 	ImageRegistry string `json:"imageRegistry,omitempty"`
+	// Images renames one image, for example to a mirror that keeps a
+	// different repository path. The tag always comes from the version field
+	// of the resource that runs the image. An entry here replaces both the
+	// repository and the imageRegistry prefix for that one image.
+	// +optional
+	Images *ImagesSpec `json:"images,omitempty"`
+}
+
+// ImagesSpec renames the container images that the operator pulls. Each field
+// holds a full repository, for example mirror.example.com/camunda/optimize.
+// An empty field means the default repository of that image.
+type ImagesSpec struct {
+	// Camunda is the image of the orchestration cluster processes. Defaults
+	// to camunda/camunda.
+	// +optional
+	Camunda string `json:"camunda,omitempty"`
+	// Connectors is the image of the connectors runtime. Defaults to
+	// camunda/connectors-bundle.
+	// +optional
+	Connectors string `json:"connectors,omitempty"`
+	// Optimize is the image of Optimize. Defaults to camunda/optimize.
+	// +optional
+	Optimize string `json:"optimize,omitempty"`
+	// Identity is the image of Management Identity. Defaults to
+	// camunda/identity.
+	// +optional
+	Identity string `json:"identity,omitempty"`
+	// Console is the image of Console. Defaults to camunda/console.
+	// +optional
+	Console string `json:"console,omitempty"`
+	// WebModelerRestapi is the image of the Web Modeler restapi process.
+	// Defaults to camunda/web-modeler-restapi.
+	// +optional
+	WebModelerRestapi string `json:"webModelerRestapi,omitempty"`
+	// WebModelerWebsockets is the image of the Web Modeler websockets
+	// process. Defaults to camunda/web-modeler-websockets.
+	// +optional
+	WebModelerWebsockets string `json:"webModelerWebsockets,omitempty"`
+	// Keycloak is the image of the Keycloak that the operator runs. Defaults
+	// to camunda/keycloak.
+	// +optional
+	Keycloak string `json:"keycloak,omitempty"`
 }
 
 // Method returns the effective authentication method: basic when auth or its
