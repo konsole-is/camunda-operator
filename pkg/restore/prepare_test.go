@@ -40,6 +40,10 @@ const testPrepPoll = 3 * time.Second
 // as its precondition.
 const clusterUID = types.UID("cluster-uid")
 
+// newerVersion is one minor above the backup version of the prepare world,
+// for a cluster whose brokers still run what a later spec asked for.
+const newerVersion = "8.10.0"
+
 // applied is one apply that a preparation step made.
 type applied struct {
 	manager string
@@ -282,14 +286,38 @@ func TestPrepareWaitsForTheImageWithoutWritingAgain(t *testing.T) {
 	t.Parallel()
 
 	w := newPrepareWorld(t)
-	w.input.Target.Version = "8.10.0"
+	w.input.Target.Version = newerVersion
+	// The state after the write: the cluster declares the version and
+	// carries the sanction, which the cluster controller keeps until the
+	// brokers converge.
+	w.cluster.Annotations = map[string]string{components.AllowVersionDowngradeAnnotation: "8.9.9"}
 
 	outcome := w.look(t)
 
 	assert.False(t, outcome.Done)
 	assert.Equal(t, testPrepPoll, outcome.Wait)
 	assert.Empty(t, *w.applies, "the step wrote a version that the cluster already declares")
-	assert.Contains(t, ready(w.restore).Message, "brokers carry 8.10.0")
+	assert.Contains(t, ready(w.restore).Message, "brokers carry "+newerVersion)
+}
+
+// A hand edit can declare the version before the restore runs, and a tool
+// that prunes annotations can remove the sanction after the write. Either
+// way the cluster controller refuses the move, so the step owes the write
+// for as long as the brokers have not converged.
+func TestPrepareRestoresAMissingSanction(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.input.Target.Version = newerVersion
+
+	outcome := w.look(t)
+
+	assert.False(t, outcome.Done)
+	require.Len(t, *w.applies, 1)
+	assert.Equal(t, "8.9.9", (*w.applies)[0].cluster.Spec.Version)
+	assert.Equal(
+		t, "8.9.9", (*w.applies)[0].cluster.Annotations[components.AllowVersionDowngradeAnnotation],
+	)
 }
 
 // A cluster part way through an upgrade declares the newer version and still
@@ -300,7 +328,7 @@ func TestPrepareWritesTheVersionOfAClusterThatIsMidUpgrade(t *testing.T) {
 	t.Parallel()
 
 	w := newPrepareWorld(t)
-	w.cluster.Spec.Version = "8.10.0"
+	w.cluster.Spec.Version = newerVersion
 	require.NoError(t, w.client.Update(t.Context(), w.cluster))
 	w.input.Target.Version = "8.9.9"
 	w.input.Version = "8.9.9"

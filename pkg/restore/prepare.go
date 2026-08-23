@@ -278,7 +278,13 @@ func versionTarget(
 		return Outcome{Done: true}, nil
 	}
 
-	if in.Cluster.Spec.Version != in.Version {
+	// The sanction is part of the write. A cluster that already declares the
+	// version but carries no annotation, because a hand edit preceded the
+	// restore or a tool pruned it, would leave the cluster controller
+	// refusing a move that the restore waits on.
+	sanctioned := in.Cluster.Annotations[components.AllowVersionDowngradeAnnotation]
+	if in.Cluster.Spec.Version != in.Version ||
+		(in.Target.Version != in.Version && sanctioned != in.Version) {
 		if err := applyVersion(ctx, c, key, in.Cluster.UID, in.Version); err != nil {
 			return Outcome{}, err
 		}
