@@ -41,10 +41,17 @@ type versionedField struct {
 	floor   string
 }
 
+// referencedDatabase is one databaseConfigRef of the spec.
+type referencedDatabase struct {
+	field string
+	ref   string
+}
+
 // ValidateSpec checks the rules that the API server cannot: the version floor
-// of each component of the management plane. A version below its floor comes
-// back as a *conditions.PreCheckFailure with the reason UnsupportedVersion,
-// naming the field and the floor. A valid spec returns nil.
+// of each component of the management plane, and that no two components name
+// one DatabaseConfig. A broken rule comes back as a
+// *conditions.PreCheckFailure, with the reason UnsupportedVersion or
+// InvalidReference, naming the field. A valid spec returns nil.
 func ValidateSpec(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
 	floors := []versionedField{
 		{"spec.identity.version", mc.Spec.Identity.Version, camundaVersionFloor},
@@ -71,14 +78,49 @@ func ValidateSpec(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
 			))
 		}
 	}
-	if len(problems) == 0 {
-		return nil
+	if len(problems) > 0 {
+		return &conditions.PreCheckFailure{
+			Reason:  v1.ReasonUnsupportedVersion,
+			Message: strings.Join(problems, "; "),
+		}
 	}
 
-	return &conditions.PreCheckFailure{
-		Reason:  v1.ReasonUnsupportedVersion,
-		Message: strings.Join(problems, "; "),
+	return checkDistinctDatabases(mc)
+}
+
+// checkDistinctDatabases refuses two components that name one DatabaseConfig.
+// Management Identity, Keycloak, and Web Modeler each own every table of the
+// database they open, so two of them in one database overwrite each other.
+func checkDistinctDatabases(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
+	refs := []referencedDatabase{
+		{"spec.identity.databaseConfigRef", mc.Spec.Identity.DatabaseConfigRef},
 	}
+	if keycloak := mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
+		refs = append(refs, referencedDatabase{
+			"spec.identityProvider.keycloak.databaseConfigRef", keycloak.DatabaseConfigRef,
+		})
+	}
+	if webModeler := mc.Spec.WebModeler; webModeler != nil {
+		refs = append(refs, referencedDatabase{
+			"spec.webModeler.databaseConfigRef", webModeler.DatabaseConfigRef,
+		})
+	}
+
+	seen := map[string]string{}
+	for _, r := range refs {
+		if first, taken := seen[r.ref]; taken {
+			return &conditions.PreCheckFailure{
+				Reason: v1.ReasonInvalidReference,
+				Message: fmt.Sprintf(
+					"%s and %s both name DatabaseConfig %q; each component needs a database of its own",
+					first, r.field, r.ref,
+				),
+			}
+		}
+		seen[r.ref] = r.field
+	}
+
+	return nil
 }
 
 // atLeast reports whether version is floor or later. Both carry three numeric

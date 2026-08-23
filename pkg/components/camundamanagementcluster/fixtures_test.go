@@ -205,11 +205,11 @@ func goldenFixtures(t *testing.T) map[string]Input {
 	}
 }
 
-// renderedEnv returns the rendered environment of a component as a map from
-// the variable name to its value or its reference.
-func renderedEnv(in Input, comp string) map[string]string {
+// renderedEnv returns the rendered environment of Management Identity as a map
+// from the variable name to its value or its reference.
+func renderedEnv(in Input) map[string]string {
 	env := map[string]string{}
-	for _, e := range componentEnv(in, comp) {
+	for _, e := range componentEnv(in, ComponentIdentity) {
 		env[e.Name] = envValue(e)
 	}
 

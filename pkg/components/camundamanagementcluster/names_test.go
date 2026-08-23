@@ -73,7 +73,11 @@ func TestLocalSecretName(t *testing.T) {
 
 	mc := newCluster(nil)
 
-	assert.Equal(t, "oidc-credentials", LocalSecretName(mc, fixtureNamespace, "oidc-credentials", MirrorPurposeIdentityClient))
+	assert.Equal(
+		t,
+		"oidc-credentials",
+		LocalSecretName(mc, fixtureNamespace, "oidc-credentials", MirrorPurposeIdentityClient),
+	)
 	assert.Equal(
 		t,
 		"my-management-management-identity-client",

@@ -31,26 +31,28 @@ import (
 func TestIdentityEnvInOIDCMode(t *testing.T) {
 	t.Parallel()
 
-	env := renderedEnv(fixtureMinimal(t), ComponentIdentity)
+	env := renderedEnv(fixtureMinimal(t))
 
-	assert.Equal(t, map[string]string{
-		"SPRING_PROFILES_ACTIVE":              "oidc",
-		"CAMUNDA_IDENTITY_TYPE":               "GENERIC",
-		"CAMUNDA_IDENTITY_BASE_URL":           fixtureExternal,
-		"CAMUNDA_IDENTITY_ISSUER":             fixtureIssuer,
-		"CAMUNDA_IDENTITY_ISSUER_BACKEND_URL": fixtureIssuer,
-		"CAMUNDA_IDENTITY_CLIENT_ID":          "management-identity",
-		"CAMUNDA_IDENTITY_AUDIENCE":           "management-identity-api",
-		"CAMUNDA_IDENTITY_CLIENT_SECRET":      "secretKeyRef:oidc-credentials/identity-client-secret",
-		"IDENTITY_INITIAL_CLAIM_NAME":         "oid",
-		"IDENTITY_INITIAL_CLAIM_VALUE":        "admin-oid",
-		"IDENTITY_URL":                        fixtureExternal,
-		"IDENTITY_DATABASE_HOST":              "postgres.camunda.svc",
-		"IDENTITY_DATABASE_PORT":              "5432",
-		"IDENTITY_DATABASE_NAME":              "identity",
-		"IDENTITY_DATABASE_USERNAME":          "secretKeyRef:identity-db-credentials/username",
-		"IDENTITY_DATABASE_PASSWORD":          "secretKeyRef:identity-db-credentials/password",
-	}, env)
+	assert.Equal(
+		t, map[string]string{
+			"SPRING_PROFILES_ACTIVE":              "oidc",
+			"CAMUNDA_IDENTITY_TYPE":               "GENERIC",
+			"CAMUNDA_IDENTITY_BASE_URL":           fixtureExternal,
+			"CAMUNDA_IDENTITY_ISSUER":             fixtureIssuer,
+			"CAMUNDA_IDENTITY_ISSUER_BACKEND_URL": fixtureIssuer,
+			"CAMUNDA_IDENTITY_CLIENT_ID":          "management-identity",
+			"CAMUNDA_IDENTITY_AUDIENCE":           "management-identity-api",
+			"CAMUNDA_IDENTITY_CLIENT_SECRET":      "secretKeyRef:oidc-credentials/identity-client-secret",
+			"IDENTITY_INITIAL_CLAIM_NAME":         "oid",
+			"IDENTITY_INITIAL_CLAIM_VALUE":        "admin-oid",
+			"IDENTITY_URL":                        fixtureExternal,
+			"IDENTITY_DATABASE_HOST":              "postgres.camunda.svc",
+			"IDENTITY_DATABASE_PORT":              "5432",
+			"IDENTITY_DATABASE_NAME":              "identity",
+			"IDENTITY_DATABASE_USERNAME":          "secretKeyRef:identity-db-credentials/username",
+			"IDENTITY_DATABASE_PASSWORD":          "secretKeyRef:identity-db-credentials/password",
+		}, env,
+	)
 }
 
 // The audience is always set. Identity refuses to start without it, so a
@@ -62,7 +64,7 @@ func TestIdentityAudienceFallsBackToTheClientID(t *testing.T) {
 		in.Platform.Auth.OIDC.Management.Clients.Identity.Audience = ""
 	})
 
-	assert.Equal(t, "management-identity", renderedEnv(in, ComponentIdentity)["CAMUNDA_IDENTITY_AUDIENCE"])
+	assert.Equal(t, "management-identity", renderedEnv(in)["CAMUNDA_IDENTITY_AUDIENCE"])
 }
 
 // A Microsoft Entra ID platform config renders the MICROSOFT provider type,
@@ -71,10 +73,10 @@ func TestIdentityAudienceFallsBackToTheClientID(t *testing.T) {
 func TestIdentityReadsTheProviderTypeAndTheUsernameClaim(t *testing.T) {
 	t.Parallel()
 
-	minimal := renderedEnv(fixtureMinimal(t), ComponentIdentity)
+	minimal := renderedEnv(fixtureMinimal(t))
 	assert.NotContains(t, minimal, "CAMUNDA_IDENTITY_USERNAMECLAIM")
 
-	realistic := renderedEnv(fixtureRealistic(t), ComponentIdentity)
+	realistic := renderedEnv(fixtureRealistic(t))
 	assert.Equal(t, "MICROSOFT", realistic["CAMUNDA_IDENTITY_TYPE"])
 	assert.Equal(t, "unique_name", realistic["CAMUNDA_IDENTITY_USERNAMECLAIM"])
 }
@@ -83,11 +85,11 @@ func TestIdentityReadsTheProviderTypeAndTheUsernameClaim(t *testing.T) {
 func TestIdentityRendersTheLicenseOfThePlatformConfig(t *testing.T) {
 	t.Parallel()
 
-	assert.NotContains(t, renderedEnv(fixtureMinimal(t), ComponentIdentity), "CAMUNDA_LICENSE_KEY")
+	assert.NotContains(t, renderedEnv(fixtureMinimal(t)), "CAMUNDA_LICENSE_KEY")
 	assert.Equal(
 		t,
 		"secretKeyRef:my-management-management-license/license",
-		renderedEnv(fixtureRealistic(t), ComponentIdentity)["CAMUNDA_LICENSE_KEY"],
+		renderedEnv(fixtureRealistic(t))["CAMUNDA_LICENSE_KEY"],
 	)
 }
 
@@ -102,7 +104,7 @@ func TestIdentityKeepsTheRecordedInitialClaim(t *testing.T) {
 		in.Cluster.Spec.Identity.Admin.ClaimValue = "second-admin"
 	})
 
-	env := renderedEnv(in, ComponentIdentity)
+	env := renderedEnv(in)
 	assert.Equal(t, "oid", env["IDENTITY_INITIAL_CLAIM_NAME"])
 	assert.Equal(t, "first-admin", env["IDENTITY_INITIAL_CLAIM_VALUE"])
 	assert.Equal(t, "oid=second-admin", SpecInitialClaim(in.Cluster))

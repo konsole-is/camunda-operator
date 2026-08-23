@@ -34,9 +34,17 @@ import (
 )
 
 // The environment variables of the Management Identity container. The source
-// of each one is the configuration variables page
-// (https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/),
-// unless another page is named.
+// of each one is the configuration variables page, unless its comment names
+// another page below by title.
+//
+// Configuration variables:
+// https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/
+//
+// Connect Management Identity to an identity provider:
+// https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/
+//
+// Connect Camunda to Microsoft Entra ID:
+// https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/microsoft-entra/
 const (
 	// identityEnvURL is the URL of the Identity service itself. Identity
 	// registers it as the redirect URI of its own client.
@@ -65,8 +73,8 @@ const (
 	identityEnvClientID     = "CAMUNDA_IDENTITY_CLIENT_ID"
 	identityEnvClientSecret = "CAMUNDA_IDENTITY_CLIENT_SECRET"
 	// identityEnvAudience is the audience that access tokens must carry.
-	// Identity refuses to start without it
-	// (https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/microsoft-entra/).
+	// Identity refuses to start without it ("Connect Camunda to Microsoft
+	// Entra ID").
 	identityEnvAudience = "CAMUNDA_IDENTITY_AUDIENCE"
 	// identityEnvUsernameClaim is the token claim that holds the username of
 	// a person. Identity defaults it per provider type, so the operator sets
@@ -74,17 +82,19 @@ const (
 	identityEnvUsernameClaim = "CAMUNDA_IDENTITY_USERNAMECLAIM"
 	// identityEnvInitialClaimName and identityEnvInitialClaimValue name the
 	// first administrator of the management plane. Identity reads them on its
-	// first start only
-	// (https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/).
+	// first start only ("Connect Management Identity to an identity
+	// provider").
 	identityEnvInitialClaimName  = "IDENTITY_INITIAL_CLAIM_NAME"
 	identityEnvInitialClaimValue = "IDENTITY_INITIAL_CLAIM_VALUE"
 )
 
-// The literal values the renderer sets.
+// The literal values the renderer sets. The health endpoint and the port it
+// answers on come from the monitoring page:
+// https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/application-monitoring/
 const (
 	// identityProfileOIDC is the Spring profile that binds the settings of an
-	// external identity provider
-	// (https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/).
+	// external identity provider ("Connect Management Identity to an identity
+	// provider").
 	identityProfileOIDC = "oidc"
 	// identityTypeGeneric and identityTypeMicrosoft are the
 	// CAMUNDA_IDENTITY_TYPE values of the two external provider types that
@@ -92,9 +102,7 @@ const (
 	identityTypeGeneric   = "GENERIC"
 	identityTypeMicrosoft = "MICROSOFT"
 	// identityHealthPath is the health endpoint on the management port. It is
-	// the probe path of the 8.9 Helm chart and the endpoint that the
-	// monitoring page documents
-	// (https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/application-monitoring/).
+	// the probe path of the 8.9 Helm chart too.
 	identityHealthPath = "/actuator/health"
 	// identityContainer is the container of the Management Identity
 	// Deployment.

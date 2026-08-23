@@ -31,21 +31,23 @@ import (
 func TestManagementAuthSpecInOIDCMode(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, v1.ManagementAuthConfigSpec{
-		BaseURL:          fixtureExternal,
-		IssuerURL:        fixtureIssuer,
-		IssuerBackendURL: fixtureIssuer,
-		AuthURL:          fixtureIssuer + "/oauth/authorize",
-		TokenURL:         fixtureIssuer + "/oauth/token",
-		JwksURL:          fixtureIssuer + "/.well-known/jwks.json",
-		ClientID:         "optimize",
-		Audience:         "optimize",
-		ClientSecretRef: v1.SecretKeyRef{
-			Name:      "oidc-credentials",
-			Namespace: "platform",
-			Key:       "optimize-client-secret",
-		},
-	}, ManagementAuthSpec(fixtureMinimal(t)))
+	assert.Equal(
+		t, v1.ManagementAuthConfigSpec{
+			BaseURL:          fixtureExternal,
+			IssuerURL:        fixtureIssuer,
+			IssuerBackendURL: fixtureIssuer,
+			AuthURL:          fixtureIssuer + "/oauth/authorize",
+			TokenURL:         fixtureIssuer + "/oauth/token",
+			JwksURL:          fixtureIssuer + "/.well-known/jwks.json",
+			ClientID:         "optimize",
+			Audience:         "optimize",
+			ClientSecretRef: v1.SecretKeyRef{
+				Name:      "oidc-credentials",
+				Namespace: "platform",
+				Key:       "optimize-client-secret",
+			},
+		}, ManagementAuthSpec(fixtureMinimal(t)),
+	)
 }
 
 // The contract is cluster-scoped and its owner is namespaced, so the owner

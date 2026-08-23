@@ -33,6 +33,10 @@ spec:
           operator turns it into Deployments and Services, writes the
           ManagementAuthConfig that Optimize reads, and attaches the management plane
           to the orchestration clusters that clusterSelector matches.
+
+          Creating a CamundaManagementCluster is a platform-administrator action,
+          because the selector reaches CamundaClusters in every namespace and the
+          operator annotates the ones it matches.
         properties:
           apiVersion:
             description: |-
@@ -57,7 +61,9 @@ spec:
               clusterSelector:
                 description: |-
                   ClusterSelector selects the CamundaClusters, in every namespace, that
-                  Console and Web Modeler serve. An unset selector selects every cluster.
+                  Console and Web Modeler serve. It follows the Kubernetes label selector
+                  convention: an unset selector selects no cluster, and an empty selector
+                  ({}) selects every cluster.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.

@@ -39,9 +39,9 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/cacheopts"
-	"github.com/konsole-is/camunda-operator/internal/controller"
 	"github.com/konsole-is/camunda-operator/internal/controller/backupschedule"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundacluster"
+	"github.com/konsole-is/camunda-operator/internal/controller/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/database"
@@ -344,10 +344,9 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
 		os.Exit(1)
 	}
-	if err := (&controller.CamundaManagementClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err := camundamanagementcluster.New(
+		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(),
+	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "CamundaManagementCluster")
 		os.Exit(1)
 	}

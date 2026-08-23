@@ -238,8 +238,8 @@ func ResolveIdentityProvider(in Input) (IdentityProvider, error) {
 
 // resolveOIDC reads the identity provider of the platform config. The issuer
 // is both the front-channel and the back-channel issuer: Camunda does not
-// support split-horizon URLs for a generic OIDC provider
-// (https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/generic-oidc-provider/).
+// support split-horizon URLs for a generic OIDC provider, see
+// https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/
 func resolveOIDC(in Input) (IdentityProvider, error) {
 	if in.Platform.Method() != v1.AuthenticationMethodOIDC || in.Platform.Auth.OIDC == nil {
 		return IdentityProvider{}, &conditions.PreCheckFailure{
