@@ -52,8 +52,9 @@ const (
 	// through the Console API instead of a written cluster list. The
 	// documentation calls the mode experimental.
 	consoleEnvDiscoveryMode = "CAMUNDA_CONSOLE_EXPERIMENTAL_DISCOVERY_MODE"
-	// consoleEnvNodeEnv is the Node.js environment of the image. Console is a
-	// Node.js application, not a Spring Boot one.
+	// consoleEnvNodeEnv is the environment the image runs under. The Console
+	// configuration reference does not list it, so the operator sets what the
+	// Helm chart sets.
 	consoleEnvNodeEnv = "NODE_ENV"
 )
 
@@ -205,9 +206,8 @@ func consoleEnv(in Input) []corev1.EnvVar {
 }
 
 // consoleContextPath returns the path of the external URL of Console, without
-// a trailing slash, or empty when Console serves the root of its host. The
-// CRD accepts an http or an https URL only, so a URL that does not parse
-// carries no path either.
+// a trailing slash. It returns an empty string for a URL that serves the root
+// of its host, and for one that does not parse.
 func consoleContextPath(externalURL string) string {
 	parsed, err := url.Parse(externalURL)
 	if err != nil {

@@ -65,7 +65,6 @@ func TestConsoleEnvInAKeycloakMode(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureConsoleMinimal(t)
-	in.Provider.Mode = ModeKeycloak
 	in.Provider.SpringProfile = ""
 	in.Provider.Type = "KEYCLOAK"
 	in.Provider.KeycloakURL = "http://my-management-keycloak-service.camunda.svc:8080/auth"
