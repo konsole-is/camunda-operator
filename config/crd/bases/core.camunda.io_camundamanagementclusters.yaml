@@ -2284,6 +2284,8 @@ spec:
                         description: SMTPPort is the port of the SMTP server. Defaults
                           to 587.
                         format: int32
+                        maximum: 65535
+                        minimum: 1
                         type: integer
                       tls:
                         description: TLS turns STARTTLS on. Defaults to true.

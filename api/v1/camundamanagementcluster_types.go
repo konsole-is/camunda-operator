@@ -289,6 +289,8 @@ type WebModelerMailSpec struct {
 	SMTPHost string `json:"smtpHost"`
 	// SMTPPort is the port of the SMTP server. Defaults to 587.
 	// +kubebuilder:default=587
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
 	// +optional
 	SMTPPort int32 `json:"smtpPort,omitempty"`
 	// FromAddress is the address that Web Modeler sends from.
