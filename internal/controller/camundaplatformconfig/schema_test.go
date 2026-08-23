@@ -172,6 +172,30 @@ var _ = Describe("CamundaPlatformConfig schema", func() {
 			}, "",
 		),
 		Entry(
+			"accepts an image override on a host without a port",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Optimize: "mirror.example.com/camunda/optimize"}
+			}, "",
+		),
+		Entry(
+			"accepts an image override without a host",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Optimize: "camunda/optimize"}
+			}, "",
+		),
+		Entry(
+			"rejects an image override that is not a repository",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Optimize: "not a repo"}
+			}, "spec.images.optimize",
+		),
+		Entry(
+			"rejects an image override with an uppercase path component",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Optimize: "Camunda/optimize"}
+			}, "spec.images.optimize",
+		),
+		Entry(
 			"rejects an image override with a tag",
 			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
 				o.Spec.Images = &v1.ImagesSpec{Optimize: "camunda/optimize:8.9.0"}
