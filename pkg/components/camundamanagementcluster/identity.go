@@ -17,6 +17,7 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -131,19 +132,20 @@ const (
 
 // identityComponents renders Management Identity: its Deployment and its
 // Service, in one component under the IdentityReady condition. Identity is
-// always deployed, so this renders on every management plane. In the keycloak
-// mode it waits for the Keycloak to become ready.
-func identityComponents(in Input) ([]*component.Component, error) {
+// always deployed, so this renders on every management plane and always takes
+// part in Ready. In the keycloak mode it waits for the Keycloak to become
+// ready.
+func identityComponents(in Input) (Built, error) {
 	workload, err := deployment.NewBuilder(identityDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentIdentity), identityContainer)...).
 		Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentIdentity, err)
 	}
 
 	svc, err := service.NewBuilder(identityService(in)).Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentIdentity, err)
 	}
 
 	builder := component.NewComponentBuilder().
@@ -163,10 +165,12 @@ func identityComponents(in Input) ([]*component.Component, error) {
 
 	comp, err := builder.Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentIdentity, err)
 	}
 
-	return []*component.Component{comp}, nil
+	comps := []*component.Component{comp}
+
+	return Built{Components: comps, Ready: comps}, nil
 }
 
 // identityDeployment renders the base Deployment. workloadmutations.Mutations

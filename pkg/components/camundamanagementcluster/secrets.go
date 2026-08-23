@@ -85,14 +85,14 @@ func secretsComponents(in Input) (Built, error) {
 			Data: map[string][]byte{gen.key: []byte(password.Value)},
 		}).Build()
 		if err != nil {
-			return Built{}, fmt.Errorf("building %s component: %w", ComponentSecrets, err)
+			return Built{}, fmt.Errorf("building the %s component: %w", ComponentSecrets, err)
 		}
 		builder = builder.WithResource(published, component.GatedBy(feature.NewBooleanGate(gen.published)))
 	}
 
 	comp, err := builder.Build()
 	if err != nil {
-		return Built{}, fmt.Errorf("building %s component: %w", ComponentSecrets, err)
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentSecrets, err)
 	}
 
 	built := Built{Components: []*component.Component{comp}}

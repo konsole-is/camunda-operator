@@ -43,7 +43,7 @@ var builders = []func(Input) (Built, error){
 	mirroredSecretComponent,
 	secretsComponents,
 	keycloakComponents,
-	alwaysReady(identityComponents),
+	identityComponents,
 	consoleComponents,
 	webModelerComponents,
 }
@@ -62,20 +62,6 @@ func Build(in Input) (Built, error) {
 	}
 
 	return built, nil
-}
-
-// alwaysReady adapts a builder whose components all take part in Ready.
-func alwaysReady(
-	build func(Input) ([]*component.Component, error),
-) func(Input) (Built, error) {
-	return func(in Input) (Built, error) {
-		comps, err := build(in)
-		if err != nil {
-			return Built{}, err
-		}
-
-		return Built{Components: comps, Ready: comps}, nil
-	}
 }
 
 // managedLabels returns the labels of an object that the operator applies for
