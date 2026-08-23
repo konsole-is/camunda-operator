@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: consumer-wave
+status: review
 ---
 
 # Management plane — orchestration state
@@ -36,7 +36,7 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 | #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | #211 → feat/management-cluster | self-merged (c079ce5) |
 | #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | #209 → feat/management-cluster | self-merged (2fdeb6e) |
 | #208 | refactor/management-cluster--coherence-sweep | .claude/worktrees/management-cluster/.claude/worktrees/coherence-sweep | #210 → feat/management-cluster | self-merged (833f300) |
-| #213 | refactor/management-cluster--ready-and-seams | .claude/worktrees/management-cluster/.claude/worktrees/ready-and-seams | #214 → feat/management-cluster | ready, review round 1 |
+| #213 | refactor/management-cluster--ready-and-seams | .claude/worktrees/management-cluster/.claude/worktrees/ready-and-seams | #214 → feat/management-cluster | self-merged (427b87f) |
 
 ## Contracts
 
@@ -74,8 +74,8 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 ## Pending snapshot
 
-1. #214 (for #213, head 3f3983b): rounds 1 and 2 triaged (round 2 clean on 471cccb), then the late #211 findings landed as 3f3983b and round 3 (the cap) was requested 2026-08-23 16:5xZ; triage it, reply, resolve; list the reviews once more right before the merge; squash-merge when the `Camunda 8.9` check on the final head is green; `gh issue close 213`; state row.
-2. Verification on the feature worktree (`.claude/worktrees/management-cluster`, `git pull`, then the gates of CLAUDE.md without any e2e; the `Camunda 8.9` check of #214 is the e2e evidence), then the integration PR `feat/management-cluster` → `main` with `Closes #185` (ready shape per `opening-a-pull-request`; draft in `scratchpad/pr-integration-body.md`), copilot-review-loop on it, teardown of plan and state after CI is green (spec stays), remove the nested worktrees (`chmod -R u+w bin` first where envtest left read-only binaries; `git worktree remove`), report ready-to-merge. #212 (Keycloak 26.7 ceiling) is filed. The merge to main is the user's.
+1. Verification on the feature worktree at 427b87f (the gates of CLAUDE.md, no e2e; #211's `Camunda 8.9` run of all 75 specs is the e2e evidence, and #214 changed nothing on the success path, which the user confirmed as the reason to merge it without waiting for its e2e job).
+2. Integration PR `feat/management-cluster` → `main` with `Closes #185` (ready shape; draft in `scratchpad/pr-integration-body.md`, regenerate from the sub-PR bodies if the scratchpad is gone), copilot-review-loop on it (3-round cap, check for a late review before any merge), then teardown of plan and state after CI is green (spec stays), remove the nested worktrees (`chmod -R u+w bin` first where envtest left read-only binaries), report ready-to-merge. #212 (Keycloak 26.7 ceiling) is filed. The merge to main is the user's.
 
 ## Resume checklist
 
