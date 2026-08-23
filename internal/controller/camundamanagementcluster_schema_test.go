@@ -70,7 +70,7 @@ func realisticManagementCluster() *v1.CamundaManagementCluster {
 				Version:           "8.9.0",
 				ExternalURL:       "https://identity.example.com",
 				DatabaseConfigRef: "identity-db",
-				Admin:             v1.IdentityAdminSpec{Username: "admin"},
+				Admin:             v1.IdentityAdminSpec{Username: "admin", Email: "admin@example.com"},
 			},
 			Optimize: &v1.ManagementOptimizeSpec{
 				ExternalURL: "https://optimize.example.com",
@@ -88,6 +88,38 @@ func realisticManagementCluster() *v1.CamundaManagementCluster {
 					SMTPHost:    "smtp.example.com",
 					FromAddress: "camunda@example.com",
 				},
+			},
+		},
+	}
+}
+
+// externalKeycloakManagementCluster returns the externalKeycloak-mode example
+// of the CRD doc with a unique name. The caller chooses the namespace.
+func externalKeycloakManagementCluster() *v1.CamundaManagementCluster {
+	return &v1.CamundaManagementCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "mc-" + utilrand.String(8)},
+		Spec: v1.CamundaManagementClusterSpec{
+			PlatformConfigRef: "my-platform",
+			IdentityProvider: v1.IdentityProviderSpec{
+				ExternalKeycloak: &v1.ExternalKeycloakSpec{
+					URL:   "https://keycloak.example.com/auth",
+					Realm: "camunda-platform",
+					AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+						Name:        "keycloak-admin",
+						Namespace:   "camunda-system",
+						UsernameKey: "username",
+						PasswordKey: "password",
+					},
+				},
+			},
+			Identity: v1.IdentitySpec{
+				Version:           "8.9.0",
+				ExternalURL:       "https://identity.example.com",
+				DatabaseConfigRef: "identity-db",
+				Admin:             v1.IdentityAdminSpec{Username: "admin"},
+			},
+			Optimize: &v1.ManagementOptimizeSpec{
+				ExternalURL: "https://optimize.example.com",
 			},
 		},
 	}
@@ -232,6 +264,119 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.IdentityProvider.Keycloak.ExternalURL = "https://kc.example.com/sso/auth"
 			}, "externalUrl must carry the /auth path",
+		),
+		Entry(
+			"rejects a Keycloak externalUrl with a query",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.Keycloak.ExternalURL = "https://kc.example.com/auth?tenant=a"
+			}, "externalUrl must carry no query and no fragment",
+		),
+		Entry(
+			"rejects a Keycloak externalUrl with a fragment",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.Keycloak.ExternalURL = "https://kc.example.com/auth#top"
+			}, "externalUrl must carry no query and no fragment",
+		),
+		Entry(
+			"accepts the externalKeycloak doc example",
+			externalKeycloakManagementCluster, func(*v1.CamundaManagementCluster) {}, "",
+		),
+		Entry(
+			"rejects an external Keycloak url with a query",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.URL = "https://kc.example.com/auth?tenant=a"
+			}, "url must carry no query and no fragment",
+		),
+		Entry(
+			"rejects an external Keycloak url with a fragment",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.URL = "https://kc.example.com/auth#top"
+			}, "url must carry no query and no fragment",
+		),
+		Entry(
+			"accepts a realm of letters, digits, dots, hyphens, and underscores",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.Realm = "Team_blue.eu-1"
+			}, "",
+		),
+		Entry(
+			"rejects a realm with a path separator",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.Realm = "team/blue"
+			}, "realm must hold letters",
+		),
+		Entry(
+			"rejects a realm with a query",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.Realm = "team?debug=true"
+			}, "realm must hold letters",
+		),
+		Entry(
+			"rejects a realm with a fragment",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.Realm = "team#blue"
+			}, "realm must hold letters",
+		),
+		Entry(
+			"rejects a realm with a space",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.Realm = "team blue"
+			}, "realm must hold letters",
+		),
+		Entry(
+			"rejects a realm that ends in a hyphen",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.ExternalKeycloak.Realm = "team-"
+			}, "realm must hold letters",
+		),
+		Entry(
+			"rejects a web modeler without an admin email in the keycloak mode",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin.Email = ""
+			}, "identity.admin.email is required when webModeler is set in a keycloak mode",
+		),
+		Entry(
+			"rejects a web modeler without an admin email in the externalKeycloak mode",
+			externalKeycloakManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler = &v1.WebModelerSpec{
+					Version:               "8.9.0",
+					ExternalURL:           "https://modeler.example.com",
+					WebsocketsExternalURL: "https://modeler-ws.example.com",
+					DatabaseConfigRef:     "web-modeler-db",
+					Mail: v1.WebModelerMailSpec{
+						SMTPHost:    "smtp.example.com",
+						FromAddress: "camunda@example.com",
+					},
+				}
+			}, "identity.admin.email is required when webModeler is set in a keycloak mode",
+		),
+		Entry(
+			"accepts a keycloak mode without a web modeler and without an admin email",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin.Email = ""
+				o.Spec.WebModeler = nil
+			}, "",
+		),
+		Entry(
+			"accepts a web modeler without an admin email in the oidc mode",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler = &v1.WebModelerSpec{
+					Version:               "8.9.0",
+					ExternalURL:           "https://modeler.example.com",
+					WebsocketsExternalURL: "https://modeler-ws.example.com",
+					DatabaseConfigRef:     "web-modeler-db",
+					Mail: v1.WebModelerMailSpec{
+						SMTPHost:    "smtp.example.com",
+						FromAddress: "camunda@example.com",
+					},
+				}
+			}, "",
+		),
+		Entry(
+			"rejects a claimName that holds an equals sign",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin.ClaimName = "group=admin"
+			}, "claimName must not hold an equals sign",
 		),
 		Entry(
 			"rejects a keycloak mode without an optimize block",
