@@ -154,13 +154,9 @@ func consoleContainerSpec(in Input) corev1.Container {
 			{Name: portNameHTTP, ContainerPort: ConsolePortHTTP, Protocol: corev1.ProtocolTCP},
 			{Name: portNameManagement, ContainerPort: ConsolePortManagement, Protocol: corev1.ProtocolTCP},
 		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-				Path: consoleHealthPath,
-				Port: intstr.FromString(portNameManagement),
-			}},
-			PeriodSeconds: readinessPeriodSeconds,
-		},
+		ReadinessProbe: probe(
+			portNameManagement, consoleHealthPath, readinessPeriodSeconds, 0,
+		),
 	}
 }
 

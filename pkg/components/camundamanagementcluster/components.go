@@ -18,6 +18,8 @@ package camundamanagementcluster
 
 import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
@@ -30,6 +32,16 @@ type Built struct {
 	// Ready are the components that the Ready condition aggregates over.
 	Ready []*component.Component
 }
+
+// The probe timings of every workload of the management plane. The startup
+// probe allows five minutes, which covers the first start, where Management
+// Identity and Web Modeler migrate their database schema, and readiness polls
+// only after it passes.
+const (
+	startupFailureThreshold int32 = 60
+	startupPeriodSeconds    int32 = 5
+	readinessPeriodSeconds  int32 = 10
+)
 
 // builders render the components of the management plane, in reconcile order:
 // the copied and the generated Secrets first, because the workloads mount
@@ -74,4 +86,28 @@ func managedLabels(in Input, comp string) map[string]string {
 // component.
 func discoveryLabels(in Input, comp string) map[string]string {
 	return labels.Discovery(labels.ManagementCluster(in.Cluster.Name), comp)
+}
+
+// probe builds an HTTP probe on a health endpoint of a named port. A zero
+// failureThreshold keeps the Kubernetes default.
+func probe(port, path string, periodSeconds, failureThreshold int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
+			Path: path,
+			Port: intstr.FromString(port),
+		}},
+		PeriodSeconds:    periodSeconds,
+		FailureThreshold: failureThreshold,
+	}
+}
+
+// secretSource builds the source of an environment variable that reads one key
+// of a Secret in the pod's namespace. Every reference in Input already points
+// at a Secret of that namespace, because the controller copies the ones that
+// live elsewhere.
+func secretSource(name, key string) *corev1.EnvVarSource {
+	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: name},
+		Key:                  key,
+	}}
 }

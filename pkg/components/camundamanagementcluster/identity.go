@@ -115,21 +115,6 @@ const (
 	initialClaimSeparator = "="
 )
 
-// The port names of the container and the Service.
-const (
-	portNameHTTP       = "http"
-	portNameManagement = "management"
-)
-
-// The probe timings of Management Identity. The startup probe allows five
-// minutes, which covers the first start, where Identity migrates its database
-// schema, and readiness polls only after it passes.
-const (
-	startupFailureThreshold int32 = 60
-	startupPeriodSeconds    int32 = 5
-	readinessPeriodSeconds  int32 = 10
-)
-
 // identityComponents renders Management Identity: its Deployment and its
 // Service, in one component under the IdentityReady condition. Identity is
 // always deployed, so this renders on every management plane and always takes
@@ -212,21 +197,12 @@ func identityContainerSpec(in Input) corev1.Container {
 			{Name: portNameHTTP, ContainerPort: IdentityPortHTTP, Protocol: corev1.ProtocolTCP},
 			{Name: portNameManagement, ContainerPort: IdentityPortManagement, Protocol: corev1.ProtocolTCP},
 		},
-		StartupProbe:   identityProbe(startupPeriodSeconds, startupFailureThreshold),
-		ReadinessProbe: identityProbe(readinessPeriodSeconds, 0),
-	}
-}
-
-// identityProbe builds an HTTP probe on the health endpoint of the management
-// port. A zero failureThreshold keeps the Kubernetes default.
-func identityProbe(periodSeconds, failureThreshold int32) *corev1.Probe {
-	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-			Path: identityHealthPath,
-			Port: intstr.FromString(portNameManagement),
-		}},
-		PeriodSeconds:    periodSeconds,
-		FailureThreshold: failureThreshold,
+		StartupProbe: probe(
+			portNameManagement, identityHealthPath, startupPeriodSeconds, startupFailureThreshold,
+		),
+		ReadinessProbe: probe(
+			portNameManagement, identityHealthPath, readinessPeriodSeconds, 0,
+		),
 	}
 }
 
@@ -349,17 +325,6 @@ func identityDatabaseEnv(db Database) []corev1.EnvVar {
 			ValueFrom: secretSource(db.Credentials.Name, db.Credentials.PasswordKey),
 		},
 	}
-}
-
-// secretSource builds the source of an environment variable that reads one key
-// of a Secret in the pod's namespace. Every reference in Input already points
-// at a Secret of that namespace, because the controller copies the ones that
-// live elsewhere.
-func secretSource(name, key string) *corev1.EnvVarSource {
-	return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-		LocalObjectReference: corev1.LocalObjectReference{Name: name},
-		Key:                  key,
-	}}
 }
 
 // identityService renders the Service of Management Identity. Both ports are

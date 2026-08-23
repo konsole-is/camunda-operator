@@ -302,12 +302,12 @@ func webModelerRestapiContainerSpec(in Input) corev1.Container {
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
-		StartupProbe: webModelerProbe(
-			webModelerRestapiHealthPath, portNameManagement,
+		StartupProbe: probe(
+			portNameManagement, webModelerRestapiHealthPath,
 			startupPeriodSeconds, startupFailureThreshold,
 		),
-		ReadinessProbe: webModelerProbe(
-			webModelerRestapiHealthPath, portNameManagement, readinessPeriodSeconds, 0,
+		ReadinessProbe: probe(
+			portNameManagement, webModelerRestapiHealthPath, readinessPeriodSeconds, 0,
 		),
 	}
 }
@@ -494,12 +494,12 @@ func webModelerWebsocketsContainerSpec(in Input) corev1.Container {
 			ContainerPort: WebModelerWebsocketsPortHTTP,
 			Protocol:      corev1.ProtocolTCP,
 		}},
-		StartupProbe: webModelerProbe(
-			webModelerWebsocketsHealthPath, portNameHTTP,
+		StartupProbe: probe(
+			portNameHTTP, webModelerWebsocketsHealthPath,
 			startupPeriodSeconds, startupFailureThreshold,
 		),
-		ReadinessProbe: webModelerProbe(
-			webModelerWebsocketsHealthPath, portNameHTTP, readinessPeriodSeconds, 0,
+		ReadinessProbe: probe(
+			portNameHTTP, webModelerWebsocketsHealthPath, readinessPeriodSeconds, 0,
 		),
 	}
 }
@@ -521,19 +521,6 @@ func webModelerWebsocketsEnv(in Input) []corev1.EnvVar {
 			ValueFrom: secretSource(PusherSecretName(in.Cluster), PusherAppSecretKey),
 		},
 		{Name: webModelerEnvAppPath, Value: pusherPath(external)},
-	}
-}
-
-// webModelerProbe builds an HTTP probe on the health endpoint of a named port.
-// A zero failureThreshold keeps the Kubernetes default.
-func webModelerProbe(path, port string, periodSeconds, failureThreshold int32) *corev1.Probe {
-	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
-			Path: path,
-			Port: intstr.FromString(port),
-		}},
-		PeriodSeconds:    periodSeconds,
-		FailureThreshold: failureThreshold,
 	}
 }
 
