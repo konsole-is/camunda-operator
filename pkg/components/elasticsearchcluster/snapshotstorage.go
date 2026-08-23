@@ -309,7 +309,7 @@ func KeystoreComponent(
 // operator registers for the cluster in Elasticsearch. Every
 // ElasticsearchCluster writes under its own prefix of the shared bucket, so
 // two ElasticsearchClusters that reference the same bucket contract never
-// share a repository. One CamundaCluster uses one Elasticsearch, so the
+// share a repository. One CamundaCluster holds one storage contract, so the
 // repository is that cluster's alone. The credentials are not part of it:
 // they reach the nodes through the keystore.
 //

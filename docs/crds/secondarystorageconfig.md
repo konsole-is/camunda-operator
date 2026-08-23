@@ -9,9 +9,17 @@ The contract lives in the namespace of the consuming cluster. A `CamundaCluster`
 | Role | Who |
 | --- | --- |
 | Producers | [ElasticsearchCluster](elasticsearchcluster.md) (always, named by its `secondaryStorageConfig` field), [Database](database.md) (when its `secondaryStorageConfig` field is set, as a `rdbms` contract), or you, by hand |
-| Consumers | [CamundaCluster](camundacluster.md) (through `storageRef`, one cluster per backend, see [Secondary storage](camundacluster.md#secondary-storage)), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `storageRef` of the cluster they back up) |
+| Consumers | [CamundaCluster](camundacluster.md) (through `storageRef`, one cluster per contract, see [Secondary storage](camundacluster.md#secondary-storage)), [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) (through the `storageRef` of the cluster they back up) |
 
 This contract models the two backends the operator integrates with: `elasticsearch` and `rdbms`.
+
+## The claim
+
+One `CamundaCluster` holds one contract. The first cluster to name the contract in `spec.storageRef` claims it. The operator marks the claim with the annotations `camunda.io/claim-holder` and `camunda.io/claim-holder-uid`, and keeps them through an apply of the contract by its producer.
+
+To move the contract to another cluster by hand, remove both annotations. The next cluster that names the contract claims it.
+
+The contract is the unit of the claim, not the endpoint or the database it names. Give one contract to one backend, so two contracts never point the operator at data that one cluster already owns.
 
 The smallest contract for an Elasticsearch backend names the endpoint and the credentials:
 

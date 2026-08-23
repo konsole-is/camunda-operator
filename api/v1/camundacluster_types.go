@@ -67,14 +67,13 @@ const ReasonInvalidCredentials = "InvalidCredentials"
 // change of the password recovers it.
 const ReasonRejected = "Rejected"
 
-// ReasonStorageAlreadyAttached on Ready means that another CamundaCluster,
-// created earlier, already uses the secondary storage backend that
-// spec.storageRef resolves to. The backend is the Elasticsearch endpoint, or
-// the database on its server. One CamundaCluster uses one backend. The index
-// names and the tables are fixed, so two clusters on one backend write each
-// other's data. The operator keeps this cluster suspended, with its volumes,
-// until that cluster releases the backend. Then it resumes this cluster on
-// its own. The message names the holder and the backend.
+// ReasonStorageAlreadyAttached on Ready means that another CamundaCluster
+// holds the SecondaryStorageConfig that spec.storageRef names. One
+// CamundaCluster uses one contract. The index names and the tables are
+// fixed, so two clusters on one backend write each other's data. The
+// operator keeps this cluster suspended, with its volumes, until that
+// cluster releases the contract. Then it resumes this cluster on its own.
+// The message names the holder and the contract.
 const ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
 
 // ComponentMode says where a process of the unified binary runs.
@@ -448,7 +447,7 @@ type CamundaClusterSpec struct {
 	// StorageRef names the SecondaryStorageConfig, in the namespace of this
 	// cluster, that describes the secondary storage backend. Required on a
 	// CamundaCluster, forbidden in a preset. One CamundaCluster uses one
-	// backend. If an older cluster already uses the backend, the operator
+	// contract. If another cluster already holds the contract, the operator
 	// suspends this cluster and reports Ready reason StorageAlreadyAttached
 	// until that cluster releases it.
 	// +optional
