@@ -240,10 +240,48 @@ func TestIdentityEnvReadsTheAdministratorPasswordOfTheSpec(t *testing.T) {
 	assert.Equal(
 		t,
 		[]generatedSecret{
-			{name: "my-management-identity-client", key: ClientSecretKey},
-			{name: "my-management-optimize-client", key: ClientSecretKey},
+			{name: "my-management-identity-client", key: ClientSecretKey, rotates: true},
+			{name: "my-management-optimize-client", key: ClientSecretKey, rotates: true},
 		},
 		generatedSecrets(in),
+	)
+}
+
+// Deleting a client secret rotates it: the apply precondition of the reused
+// credential makes the delete win the race, and Management Identity applies
+// the new secret to the client on every start. The administrator password is
+// different. Management Identity creates the Keycloak user with it once, and
+// never reads it again, so its Secret carries no precondition and a delete
+// that races the apply republishes the password the user holds.
+func TestGeneratedSecretsRotateExceptTheAdministratorPassword(t *testing.T) {
+	t.Parallel()
+
+	in := newKeycloakInput(t, true, func(in *Input) {
+		for name, password := range in.Secrets.Values {
+			in.Secrets.Values[name] = credentials.Password{
+				Value: password.Value, SourceUID: "a-secret",
+			}
+		}
+	})
+
+	comps, err := secretsComponents(in)
+	require.NoError(t, err)
+	require.Len(t, comps, 1)
+	objects, err := comps[0].Preview()
+	require.NoError(t, err)
+
+	preconditions := map[string]string{}
+	for _, object := range objects {
+		preconditions[object.GetName()] = object.GetAnnotations()[credentials.PreconditionAnnotation]
+	}
+	assert.Equal(
+		t,
+		map[string]string{
+			IdentityClientSecretName(in.Cluster): "a-secret",
+			OptimizeClientSecretName(in.Cluster): "a-secret",
+			IdentityAdminSecretName(in.Cluster):  "",
+		},
+		preconditions,
 	)
 }
 

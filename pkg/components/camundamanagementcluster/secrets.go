@@ -34,6 +34,9 @@ type generatedSecret struct {
 	name string
 	// key is the key that holds the credential.
 	key string
+	// rotates reports whether deleting the Secret rotates the credential
+	// everywhere it is used.
+	rotates bool
 }
 
 // secretsComponents renders the Secrets that the operator generates. The two
@@ -43,7 +46,7 @@ type generatedSecret struct {
 // secret, and the first administrator is a token claim rather than a user
 // with a password.
 //
-// A generated Secret carries the apply precondition of the credential it
+// A rotating Secret carries the apply precondition of the credential it
 // publishes, so a delete of the Secret always rotates it. The controller must
 // reconcile through credentials.NewApplyClient for that precondition to hold.
 func secretsComponents(in Input) ([]*component.Component, error) {
@@ -58,12 +61,16 @@ func secretsComponents(in Input) ([]*component.Component, error) {
 
 	for _, gen := range generated {
 		password := in.Secrets.Values[gen.name]
+		var precondition map[string]string
+		if gen.rotates {
+			precondition = password.PreconditionAnnotations()
+		}
 		published, err := secret.NewBuilder(&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        gen.name,
 				Namespace:   in.Cluster.Namespace,
 				Labels:      managedLabels(in, ComponentSecrets),
-				Annotations: password.PreconditionAnnotations(),
+				Annotations: precondition,
 			},
 			Type: corev1.SecretTypeOpaque,
 			Data: map[string][]byte{gen.key: []byte(password.Value)},
@@ -85,12 +92,18 @@ func secretsComponents(in Input) ([]*component.Component, error) {
 // generatedSecrets returns the Secrets that the operator generates for this
 // management cluster, in the order it renders them. The administrator
 // password is generated only while spec.identity.admin names no Secret of its
-// own.
+// own. The administrator password is the one credential that does not rotate.
 func generatedSecrets(in Input) []generatedSecret {
 	var generated []generatedSecret
 	for _, gen := range []generatedSecret{
-		{name: in.Secrets.IdentityClient, key: ClientSecretKey},
-		{name: in.Secrets.OptimizeClient, key: ClientSecretKey},
+		{name: in.Secrets.IdentityClient, key: ClientSecretKey, rotates: true},
+		{name: in.Secrets.OptimizeClient, key: ClientSecretKey, rotates: true},
+		// Management Identity creates the Keycloak user with the
+		// administrator password on its first start and never reads the
+		// password again, so a new one would leave that user on the old one.
+		// Without the precondition, a delete that races the apply republishes
+		// the password the user holds. A delete that no apply follows loses
+		// the password, which only a reset in Keycloak recovers.
 		{name: in.Secrets.IdentityAdmin, key: PasswordKey},
 	} {
 		if gen.name != "" {

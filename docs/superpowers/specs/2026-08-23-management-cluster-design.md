@@ -545,8 +545,11 @@ it, and so is every Job image the backup and restore controllers render.
 
 - Generated secrets (Identity client secret, Optimize client secret, pusher credentials,
   Keycloak initial admin from the Keycloak Operator, Web Modeler cluster users, Identity admin
-  password in Keycloak modes) live in the management namespace, owned by the CR, and rotate by
-  deletion.
+  password in Keycloak modes) live in the management namespace and are owned by the CR. All of
+  them rotate by deletion except the Identity admin password: Management Identity reads it once,
+  at bootstrap, and creates the Keycloak user with it, so a new password would not reach that
+  user. Its Secret carries no apply precondition, and deleting it loses the password rather than
+  rotating it.
 - The only credential that crosses a namespace is the Optimize client secret reference in the
   cluster-scoped contract, which `CamundaOptimize` already mirrors into its own namespace.
 - The cluster admin credential is read by the management controller to create the Web Modeler
