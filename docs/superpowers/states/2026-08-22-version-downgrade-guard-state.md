@@ -3,7 +3,7 @@ feature: version-downgrade-guard
 spec: docs/superpowers/specs/2026-08-22-version-downgrade-guard-design.md
 plan: docs/superpowers/plans/2026-08-22-version-downgrade-guard-plan.md
 tracking_issue: #168
-status: planning
+status: review
 ---
 
 # Version downgrade guard — orchestration state
@@ -16,7 +16,7 @@ status: planning
 
 | Issue | Branch                         | Worktree path                                  | PR (→ base)   | Status      |
 | ----- | ------------------------------ | ---------------------------------------------- | ------------- | ----------- |
-| #168  | feat/version-downgrade-guard   | .claude/worktrees/version-downgrade-guard-168  | (not yet) → main | not-started |
+| #168  | feat/version-downgrade-guard   | .claude/worktrees/version-downgrade-guard-168  | (not yet) → main | in-progress |
 
 ## Contracts
 
@@ -30,10 +30,9 @@ status: planning
 
 ## Pending snapshot
 
-- Implement plan tasks 1–6 in the worktree, task by task, through `superpowers:subagent-driven-development` (implementer subagents off Fable; reviewer pass per task).
-- Reconcile #168 to the controller-side decision through `feature-dev-workflow:writing-github-issues` Step 2D once the spec commit is pushed.
-- Run the gates of plan task 7, open the PR with `feature-dev-workflow:opening-a-pull-request`, run `feature-dev-workflow:copilot-review-loop` to clean.
-- Tear down plan and state after CI is green on the PR; keep the spec (the repo has no `docs/adrs/`).
+- Tasks 1–6 implemented and reviewed (SDD ledger in the worktree's `.superpowers/sdd/`); final whole-branch review clean after one fix wave; all gates green on `9c57674`. #168 reconciled (decision comment + body).
+- Open the PR from `feat/version-downgrade-guard` to `main` with `feature-dev-workflow:opening-a-pull-request`, then run `feature-dev-workflow:copilot-review-loop` to clean (interactive context; the user asked for autonomy through the loop).
+- Tear down plan and state after CI is green on the PR; keep the spec (the repo has no `docs/adrs/`). The merge to main is the user's.
 
 ## Resume checklist
 
