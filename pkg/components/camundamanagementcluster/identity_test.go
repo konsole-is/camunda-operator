@@ -170,6 +170,25 @@ func TestStartedInitialClaimUsesTheFirstRunOfARestartedContainer(t *testing.T) {
 	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
 }
 
+// The kubelet records a start in seconds, so two pods of a rollout can share
+// one. The name breaks the tie in either list order.
+func TestStartedInitialClaimBreaksATieByPodName(t *testing.T) {
+	t.Parallel()
+
+	at := metav1.NewTime(time.Now().Truncate(time.Second))
+	a := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: at},
+	})
+	a.Name = "identity-a"
+	b := startedIdentityPod("second-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: at},
+	})
+	b.Name = "identity-b"
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{a, b}))
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{b, a}))
+}
+
 // A pod whose container never ran carries no claim. Its container is waiting
 // on an image or on a Secret, so Management Identity read nothing.
 func TestStartedInitialClaimIsEmptyWhileNoContainerRan(t *testing.T) {

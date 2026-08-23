@@ -319,15 +319,20 @@ func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
 // once, and the older one is the one whose claim Identity wrote into its
 // database.
 func StartedInitialClaim(pods []corev1.Pod) string {
-	var claim string
+	var claim, name string
 	var first *metav1.Time
 
+	// Two pods can share a start time, as the kubelet records it in seconds,
+	// and the list has no order. The name breaks the tie, so the pick does not
+	// change between reconciles.
 	for i := range pods {
 		started := identityStartedAt(&pods[i])
-		if started == nil || (first != nil && first.Before(started)) {
+		if started == nil {
 			continue
 		}
-		first, claim = started, identityClaimEnv(&pods[i])
+		if first == nil || started.Before(first) || (started.Equal(first) && pods[i].Name < name) {
+			first, name, claim = started, pods[i].Name, identityClaimEnv(&pods[i])
+		}
 	}
 
 	return claim
