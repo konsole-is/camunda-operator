@@ -54,9 +54,13 @@ type CamundaAuth interface {
 	script() string
 }
 
-// BasicAuth sends the user of a Secret with curl -u. The pod reads the Secret
+// BasicAuth sends a user and a password with curl -u. The password, and the
+// user unless Username names one, come from a Secret that the pod reads
 // through secretKeyRef, so the password never appears in the pod spec.
 type BasicAuth struct {
+	// Username is the user to sign in as. Set it for a Secret that holds the
+	// password alone. It wins over UsernameKey.
+	Username string
 	// Secret is the Secret in the namespace of the helper pod that holds the
 	// user under UsernameKey and PasswordKey.
 	Secret      string
@@ -65,10 +69,12 @@ type BasicAuth struct {
 }
 
 func (a BasicAuth) env() []corev1.EnvVar {
-	return []corev1.EnvVar{
-		SecretEnv("CAMUNDA_USER", a.Secret, a.UsernameKey),
-		SecretEnv("CAMUNDA_PASSWORD", a.Secret, a.PasswordKey),
+	user := SecretEnv("CAMUNDA_USER", a.Secret, a.UsernameKey)
+	if a.Username != "" {
+		user = corev1.EnvVar{Name: "CAMUNDA_USER", Value: a.Username}
 	}
+
+	return []corev1.EnvVar{user, SecretEnv("CAMUNDA_PASSWORD", a.Secret, a.PasswordKey)}
 }
 
 func (a BasicAuth) script() string {

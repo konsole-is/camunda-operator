@@ -83,8 +83,13 @@ func expectReady(
 }
 
 // notFoundMessage is the condition message for a Secret that does not exist.
-func notFoundMessage(ref v1.SecretKeyRef) string {
-	return fmt.Sprintf("Secret \"%s/%s\" not found", ref.Namespace, ref.Name)
+func notFoundMessage(path string, ref v1.SecretKeyRef) string {
+	return fmt.Sprintf("%s: Secret \"%s/%s\" not found", path, ref.Namespace, ref.Name)
+}
+
+// missingKeyMessage is the condition message for a Secret without the key.
+func missingKeyMessage(path string, ref v1.SecretKeyRef) string {
+	return fmt.Sprintf("%s: Secret \"%s/%s\" is missing key %q", path, ref.Namespace, ref.Name, ref.Key)
 }
 
 var _ = Describe("CamundaPlatformConfig controller", func() {
@@ -109,7 +114,12 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 		cfg.Spec.LicenseSecretRef = &ref
 		createPlatformConfig(cfg)
 
-		expectReady(cfg, metav1.ConditionFalse, v1.ReasonMissingSecret, Equal(notFoundMessage(ref)))
+		expectReady(
+			cfg,
+			metav1.ConditionFalse,
+			v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.licenseSecretRef", ref)),
+		)
 
 		createSecret(ref.Name, map[string]string{ref.Key: "x"})
 
@@ -126,7 +136,7 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 
 		expectReady(
 			cfg, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			Equal(fmt.Sprintf("Secret \"%s/%s\" is missing key %q", ref.Namespace, ref.Name, ref.Key)),
+			Equal(missingKeyMessage("spec.auth.oidc.clientSecretRef", ref)),
 		)
 
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), secret)).To(Succeed())
@@ -145,7 +155,12 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 		createSecret(clientRef.Name, map[string]string{clientRef.Key: "s"})
 		createPlatformConfig(cfg)
 
-		expectReady(cfg, metav1.ConditionFalse, v1.ReasonMissingSecret, Equal(notFoundMessage(licenseRef)))
+		expectReady(
+			cfg,
+			metav1.ConditionFalse,
+			v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.licenseSecretRef", licenseRef)),
+		)
 	})
 
 	It("flips back to MissingSecret when a referenced Secret is deleted", func() {
@@ -158,7 +173,64 @@ var _ = Describe("CamundaPlatformConfig controller", func() {
 
 		Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
 
-		expectReady(cfg, metav1.ConditionFalse, v1.ReasonMissingSecret, Equal(notFoundMessage(ref)))
+		expectReady(
+			cfg,
+			metav1.ConditionFalse,
+			v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.licenseSecretRef", ref)),
+		)
+	})
+
+	It("reports MissingSecret naming the management identity client, then Healthy once the Secret exists", func() {
+		cfg := realisticPlatformConfig()
+		cfg.Spec.LicenseSecretRef = nil
+		clientRef := secretRef("oidc", "client-secret")
+		identityRef := secretRef("mgmt-identity", "client-secret")
+		cfg.Spec.Auth.OIDC.ClientSecretRef = clientRef
+		cfg.Spec.Auth.OIDC.Management = &v1.ManagementOIDCClientsSpec{
+			Clients: v1.ManagementClients{
+				Identity: &v1.ConfidentialClientSpec{
+					ClientID: "camunda-identity", ClientSecretRef: identityRef,
+				},
+			},
+		}
+		createSecret(clientRef.Name, map[string]string{clientRef.Key: "s"})
+		createPlatformConfig(cfg)
+
+		expectReady(
+			cfg, metav1.ConditionFalse, v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.auth.oidc.management.clients.identity.clientSecretRef", identityRef)),
+		)
+
+		createSecret(identityRef.Name, map[string]string{identityRef.Key: "s"})
+
+		expectReady(cfg, metav1.ConditionTrue, v1.ReasonHealthy, Equal("All checks passed"))
+	})
+
+	It("reports MissingSecret naming the web modeler api client", func() {
+		cfg := realisticPlatformConfig()
+		cfg.Spec.LicenseSecretRef = nil
+		clientRef := secretRef("oidc", "client-secret")
+		apiRef := secretRef("mgmt-modeler-api", "client-secret")
+		cfg.Spec.Auth.OIDC.ClientSecretRef = clientRef
+		cfg.Spec.Auth.OIDC.Management = &v1.ManagementOIDCClientsSpec{
+			Clients: v1.ManagementClients{
+				Console:    &v1.PublicClientSpec{ClientID: "camunda-console"},
+				WebModeler: &v1.PublicClientSpec{ClientID: "camunda-web-modeler"},
+				WebModelerAPI: &v1.WebModelerAPIClientSpec{
+					ConfidentialClientSpec: v1.ConfidentialClientSpec{
+						ClientID: "camunda-web-modeler-api", ClientSecretRef: apiRef,
+					},
+				},
+			},
+		}
+		createSecret(clientRef.Name, map[string]string{clientRef.Key: "s"})
+		createPlatformConfig(cfg)
+
+		expectReady(
+			cfg, metav1.ConditionFalse, v1.ReasonMissingSecret,
+			Equal(notFoundMessage("spec.auth.oidc.management.clients.webModelerApi.clientSecretRef", apiRef)),
+		)
 	})
 
 	It("re-stamps observedGeneration after a spec update", func() {

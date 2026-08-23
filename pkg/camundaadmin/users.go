@@ -147,6 +147,67 @@ func (c *UserClient) UpdateUserPassword(ctx context.Context, user User, password
 	return c.putUser(ctx, user, password)
 }
 
+// CreateUser creates user with password through POST /v2/users
+// (https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/create-user/).
+// A username that the cluster already holds is ErrAlreadyExists, which travels
+// with ErrRejected: the caller decides whether to adopt that user, which it
+// can only do by setting a password it knows. A wrong credential is
+// ErrUnauthenticated.
+func (c *UserClient) CreateUser(ctx context.Context, user User, password string) error {
+	body, err := json.Marshal(struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+	}{Username: user.Username, Password: password, Name: user.Name, Email: user.Email})
+	if err != nil {
+		return fmt.Errorf("encoding request: %w", err)
+	}
+
+	_, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodPost,
+		Path:   "/v2/users",
+		Body:   body,
+		Accept: adminhttp.Status(http.StatusCreated),
+	})
+
+	return classifyUserError(err, status)
+}
+
+// DeleteUser removes user through DELETE /v2/users/{username}
+// (https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/delete-user/).
+// A user that the cluster does not hold is success, so a finalizer that runs
+// twice reports no failure the second time.
+func (c *UserClient) DeleteUser(ctx context.Context, username string) error {
+	_, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodDelete,
+		Path:   "/v2/users/" + url.PathEscape(username),
+		Accept: adminhttp.Status(http.StatusNoContent),
+	})
+	if status == http.StatusNotFound {
+		return nil
+	}
+
+	return classifyUserError(err, status)
+}
+
+// classifyUserError names the two refusals that a caller acts on: a credential
+// the cluster did not accept, and a name it already holds. Both travel with
+// ErrRejected, so a caller that only separates a rejected call from an
+// unreachable one is unaffected.
+func classifyUserError(err error, status int) error {
+	switch {
+	case err == nil:
+		return nil
+	case status == http.StatusUnauthorized:
+		return fmt.Errorf("%w: %w", ErrUnauthenticated, err)
+	case status == http.StatusConflict:
+		return fmt.Errorf("%w: %w", ErrAlreadyExists, err)
+	default:
+		return err
+	}
+}
+
 // checkUserAPIVersion rejects a Camunda version below userAPIVersionFloor. A
 // later minor or major passes: the user API endpoints keep their shape
 // across minors, so the operator must call every version it accepts. This is

@@ -31,6 +31,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/servicemonitor"
 )
 
@@ -81,7 +82,7 @@ func Build(in Input) ([]*component.Component, error) {
 // ServiceMonitor of one component.
 func buildComponent(in Input, name string) (*component.Component, error) {
 	workload, err := deployment.NewBuilder(deploymentFor(in, name)).
-		WithMutation(workloadMutations(in, name)...).
+		WithMutation(workloadmutations.Mutations(in.workload(name), optimizeContainer)...).
 		Build()
 	if err != nil {
 		return nil, err
@@ -130,7 +131,7 @@ func discoveryLabels(in Input, comp string) map[string]string {
 }
 
 // deploymentFor renders the base Deployment of a component.
-// workloadMutations layers the overrides on top.
+// workloadmutations.Mutations layers the overrides on top.
 func deploymentFor(in Input, comp string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

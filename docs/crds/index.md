@@ -31,6 +31,12 @@ A contract carries connection details and credential references. The operator va
 | [DatabaseConfig](databaseconfig.md) | Namespaced | One logical database and its credentials. |
 | [ManagementAuthConfig](managementauthconfig.md) | Cluster | The OIDC configuration of Management Identity. `CamundaOptimize` reads it. |
 
+## Management
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
+| [CamundaManagementCluster](camundamanagementcluster.md) | Namespaced | The management plane: Management Identity, its identity provider, Console, and Web Modeler. |
+
 ## Analytics
 
 | Kind | Scope | What it is |
@@ -76,6 +82,7 @@ graph LR
     LRR[LogicalRestoreRDBMS]
     MAC[ManagementAuthConfig]
     OPT[CamundaOptimize]
+    MC[CamundaManagementCluster]
 
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
@@ -101,15 +108,12 @@ graph LR
     OPT -.->|clusterRef| CC
     OPT -.->|managementAuthRef| MAC
 
+    MC -.->|platformConfigRef| PFC
+    MC -.->|databaseConfigRef| DBC
+    MC -.->|clusterSelector| CC
+    MC -->|creates| MAC
+
     BS -.->|clusterRef| CC
     BS -->|creates| LBE
     BS -->|creates| LBR
 ```
-
-## Planned kinds
-
-This CRD is installed with the operator, but the operator does not act on it yet. Its controller and its installed spec are placeholders, so do not create it. Its page describes the planned design and will be rewritten when the kind ships.
-
-| Kind | Scope | Planned purpose |
-| --- | --- | --- |
-| [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |

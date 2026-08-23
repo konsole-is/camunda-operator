@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: console
+    camunda.io/management-cluster: my-management
+  name: my-management-console
+  namespace: camunda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/component: console
+      camunda.io/management-cluster: my-management
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: 4b40e814c3af4649
+      labels:
+        camunda.io/component: console
+        camunda.io/management-cluster: my-management
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: oidc
+        - name: CAMUNDA_IDENTITY_TYPE
+          value: GENERIC
+        - name: CAMUNDA_IDENTITY_BASE_URL
+          value: http://my-management-identity.camunda.svc:80
+        - name: CAMUNDA_IDENTITY_ISSUER
+          value: https://login.example.com
+        - name: CAMUNDA_IDENTITY_ISSUER_BACKEND_URL
+          value: https://login.example.com
+        - name: CAMUNDA_IDENTITY_CLIENT_ID
+          value: console
+        - name: CAMUNDA_IDENTITY_AUDIENCE
+          value: console-api
+        - name: CAMUNDA_CONSOLE_EXPERIMENTAL_DISCOVERY_MODE
+          value: "true"
+        - name: NODE_ENV
+          value: prod
+        image: camunda/console:8.9.4
+        name: console
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 9100
+          name: management
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health/readiness
+            port: management
+          periodSeconds: 10
+        resources: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: console
+    camunda.io/management-cluster: my-management
+  name: my-management-console
+  namespace: camunda
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 9100
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/component: console
+    camunda.io/management-cluster: my-management
+status:
+  loadBalancer: {}

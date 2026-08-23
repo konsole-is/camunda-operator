@@ -1,14 +1,14 @@
 # ManagementAuthConfig
 
-`ManagementAuthConfig` is a cluster-scoped contract kind that carries the OIDC configuration of Management Identity: endpoints, a machine-to-machine client, and an audience. You create it, or another tool creates it for you.
+`ManagementAuthConfig` is a cluster-scoped contract kind that carries the OIDC configuration of Management Identity: endpoints, a machine-to-machine client, and an audience. A [CamundaManagementCluster](camundamanagementcluster.md) writes it for you, or you create it by hand.
 
 Components outside the orchestration cluster authenticate against Management Identity, which is a separate identity system from the one inside the orchestration cluster. This kind carries the OIDC endpoints and the default machine-to-machine client those components need. The thing that runs Management Identity and the thing that uses it do not need to know each other.
 
-[CamundaOptimize](camundaoptimize.md) consumes this contract, and the management plane kinds consume it when they arrive. The operator validates it and never provisions anything from it.
+[CamundaOptimize](camundaoptimize.md) consumes this contract. The operator validates it and never provisions anything from it.
 
 | Role | Who |
 | --- | --- |
-| Producers | You, by hand, or another tool that runs Management Identity and creates the contract for you |
+| Producers | A [CamundaManagementCluster](camundamanagementcluster.md), you by hand, or another tool that runs Management Identity |
 | Consumers | [CamundaOptimize](camundaoptimize.md) |
 
 The smallest contract names the endpoints, the client, the audience, and the client secret:
@@ -34,9 +34,37 @@ spec:
 
 ```mermaid
 graph LR
-    EXT["Management Identity (external)"] --> MAC[ManagementAuthConfig]
+    MC[CamundaManagementCluster] -->|writes| MAC[ManagementAuthConfig]
+    EXT["Management Identity (run elsewhere)"] -.->|"you write it by hand"| MAC
     MAC -.->|clientSecretRef| SEC[Secret]
+    OPT[CamundaOptimize] -.->|managementAuthRef| MAC
 ```
+
+## Who wrote this contract
+
+A contract that a [CamundaManagementCluster](camundamanagementcluster.md) wrote carries two labels that name its owner:
+
+| Label | Value |
+| --- | --- |
+| `camunda.io/management-cluster` | the name of the `CamundaManagementCluster` |
+| `camunda.io/management-cluster-namespace` | its namespace |
+
+Read them with `kubectl get managementauthconfig my-management-auth --show-labels`. A contract without them is one that you or another tool wrote.
+
+The owner keeps every field of a contract it wrote up to date. An edit of your own to such a contract goes back to the value the management plane computes.
+
+This kind is cluster-scoped, so two management planes in two namespaces can ask for one name. The first one there keeps it. The second reports `Ready=False` with reason `Conflict`, and its message names the holder:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: Conflict
+      message: ManagementAuthConfig "my-management-auth" exists and belongs to CamundaManagementCluster my-management-ns/my-management; set spec.managementAuthConfigName to a free name, or remove the object
+```
+
+A contract that you wrote by hand carries no owner labels. A management plane that asks for its name reports `Conflict` against "another writer" and leaves the object alone.
 
 ## Validation checks
 
@@ -128,5 +156,8 @@ spec:
 
 ## Related
 
+- [CamundaManagementCluster](camundamanagementcluster.md): writes this contract and keeps it up to date.
+- [CamundaOptimize](camundaoptimize.md): reads this contract through `managementAuthRef`.
+- [Management plane guide](../guides/management-plane.md): where this contract fits in the order of creation.
 - [Authentication guide](../guides/authentication.md): how authentication works in the operator.
 - [CamundaPlatformConfig](camundaplatformconfig.md): the contract that carries the identity configuration of an orchestration cluster.

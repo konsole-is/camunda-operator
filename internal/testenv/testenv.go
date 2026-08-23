@@ -46,6 +46,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/cacheopts"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
@@ -76,12 +77,16 @@ type Options struct {
 	// WithoutECK leaves the ECK CRDs out of the control plane, so a suite
 	// can show what the operator does on a cluster that does not serve them.
 	WithoutECK bool
+	// WithoutKeycloak leaves the Keycloak Operator CRD out of the control
+	// plane, so a suite can show what the operator does on a cluster where
+	// the Keycloak Operator is not installed.
+	WithoutKeycloak bool
 }
 
-// Start boots a control plane that carries the CRDs of the operator and of
-// ECK, registers the reconcilers of the caller through register, and starts
-// the manager in the background. register runs before the manager starts and
-// must not block.
+// Start boots a control plane that carries the CRDs of the operator, of ECK,
+// and of the Keycloak Operator, registers the reconcilers of the caller
+// through register, and starts the manager in the background. register runs
+// before the manager starts and must not block.
 //
 // Start asserts through Gomega. Call it from a Ginkgo node that has a fail
 // handler installed, normally BeforeSuite.
@@ -98,6 +103,7 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	gomega.Expect(v1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(esv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(monitoringv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
+	gomega.Expect(keycloak.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 
 	root, err := moduleRoot()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -110,6 +116,11 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		eckCRDPath, err := utils.ECKCRDPath()
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 		crdPaths = append(crdPaths, eckCRDPath)
+	}
+	if !opts.WithoutKeycloak {
+		// The Keycloak Operator publishes no Go module, so its CRD is
+		// vendored. The Keycloak Operator itself does not run in envtest.
+		crdPaths = append(crdPaths, filepath.Join(root, "internal", "testenv", "crds", "keycloak"))
 	}
 
 	ginkgo.By("bootstrapping test environment")

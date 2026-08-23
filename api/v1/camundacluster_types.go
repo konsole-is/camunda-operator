@@ -421,6 +421,10 @@ type CamundaClusterSpec struct {
 	// its own entry next to yours. One applied manifest cannot hold two
 	// entries with the same name.
 	//
+	// A CamundaManagementCluster that serves this cluster owns the four
+	// CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
+	// later) and replaces a value you set under those names.
+	//
 	// Two field managers that apply the same name do not conflict: the merge
 	// is per field inside the entry, so one manager can own value while the
 	// other owns valueFrom. A container rejects an entry that carries both,
@@ -482,6 +486,19 @@ type CamundaClusterSpec struct {
 	Pause bool `json:"pause,omitempty"`
 }
 
+// GatewayBinding is the published in-cluster address of the client APIs of a
+// cluster. A client library takes the gRPC address as a host and a port, and
+// the REST address as a base URL, so the two fields carry the forms that the
+// consumers pass on unchanged.
+type GatewayBinding struct {
+	// GRPCEndpoint is the host and the port of the gRPC API, for example
+	// my-cluster-gateway.my-cluster-ns.svc:26500.
+	GRPCEndpoint string `json:"grpcEndpoint"`
+	// RESTEndpoint is the base URL of the orchestration cluster REST API, for
+	// example http://my-cluster-gateway.my-cluster-ns.svc:8080.
+	RESTEndpoint string `json:"restEndpoint"`
+}
+
 // CamundaClusterStatus is the observed state of a CamundaCluster.
 type CamundaClusterStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
@@ -500,6 +517,13 @@ type CamundaClusterStatus struct {
 	// sees an unreachable cluster instead of a stale endpoint.
 	// +optional
 	Management *ManagementBinding `json:"management,omitempty"`
+	// Gateway is the published address of the client APIs of this cluster.
+	// Extensions read it instead of rebuilding the Service name and the ports
+	// from the internals of this controller. It is unset while the cluster is
+	// suspended, so a consumer sees an unreachable cluster instead of a stale
+	// endpoint.
+	// +optional
+	Gateway *GatewayBinding `json:"gateway,omitempty"`
 	// AdminPassword is the state of the admin credential of a basic-auth
 	// cluster. It is unset under OIDC.
 	// +optional

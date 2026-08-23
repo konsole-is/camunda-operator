@@ -100,10 +100,23 @@
     },
     {
       // curl and Keycloak are test fixtures with no minor to hold. Camunda 8.9
-      // supports every Keycloak 26.x, and the major stays off above.
-      matchDepNames: ["curlimages/curl", "quay.io/keycloak/keycloak"],
+      // supports every Keycloak 26.x, and the major stays off above. The
+      // Keycloak of the management plane flow has a bound of its own below.
+      matchDepNames: ["curlimages/curl", "quay.io/keycloak/keycloak", "camunda/keycloak"],
       matchUpdateTypes: ["minor"],
       enabled: true,
+    },
+    {
+      // The Keycloak that the management plane flow runs through the
+      // Keycloak Operator. From 26.7.0 Keycloak refuses every update of the
+      // realm-management client (the fix of CVE-2026-9796,
+      // keycloak/keycloak#49624), and Management Identity 8.9 updates that
+      // client when it sets up the realm, so it never starts. The bound
+      // lifts when an Identity 8.9 patch starts against 26.7.
+      matchFileNames: ["test/e2e/matrix/8.9.env"],
+      matchDepNames: ["camunda/keycloak"],
+      versioning: "semver",
+      allowedVersions: "<26.7.0",
     },
     {
       // The ECK operator the suite installs has to stay on the minor of the
@@ -140,7 +153,14 @@
       // .github/workflows/test-e2e.yml, and a rule like this one with its own
       // bound.
       matchFileNames: ["test/e2e/matrix/8.9.env"],
-      matchDepNames: ["camunda/camunda", "camunda/connectors-bundle", "camunda/optimize"],
+      matchDepNames: [
+        "camunda/camunda",
+        "camunda/connectors-bundle",
+        "camunda/optimize",
+        "camunda/identity",
+        "camunda/console",
+        "camunda/web-modeler-restapi",
+      ],
       versioning: "semver",
       allowedVersions: "<8.10.0",
     },

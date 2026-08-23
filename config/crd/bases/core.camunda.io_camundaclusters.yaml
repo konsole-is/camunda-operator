@@ -3074,6 +3074,10 @@ spec:
                   its own entry next to yours. One applied manifest cannot hold two
                   entries with the same name.
 
+                  A CamundaManagementCluster that serves this cluster owns the four
+                  CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
+                  later) and replaces a value you set under those names.
+
                   Two field managers that apply the same name do not conflict: the merge
                   is per field inside the entry, so one manager can own value while the
                   other owns valueFrom. A container rejects an entry that carries both,
@@ -7840,6 +7844,28 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              gateway:
+                description: |-
+                  Gateway is the published address of the client APIs of this cluster.
+                  Extensions read it instead of rebuilding the Service name and the ports
+                  from the internals of this controller. It is unset while the cluster is
+                  suspended, so a consumer sees an unreachable cluster instead of a stale
+                  endpoint.
+                properties:
+                  grpcEndpoint:
+                    description: |-
+                      GRPCEndpoint is the host and the port of the gRPC API, for example
+                      my-cluster-gateway.my-cluster-ns.svc:26500.
+                    type: string
+                  restEndpoint:
+                    description: |-
+                      RESTEndpoint is the base URL of the orchestration cluster REST API, for
+                      example http://my-cluster-gateway.my-cluster-ns.svc:8080.
+                    type: string
+                required:
+                - grpcEndpoint
+                - restEndpoint
+                type: object
               management:
                 description: |-
                   Management is the published address of the management API of this

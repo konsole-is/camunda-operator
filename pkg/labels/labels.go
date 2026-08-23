@@ -43,6 +43,15 @@ const (
 
 	// ClusterKey names the owning CamundaCluster.
 	ClusterKey = "camunda.io/cluster"
+	// ClusterNamespaceKey names the namespace of a CamundaCluster that an
+	// object of another namespace relates to. ClusterKey alone does not
+	// identify the cluster then, because two clusters in two namespaces can
+	// share a name.
+	ClusterNamespaceKey = "camunda.io/cluster-namespace"
+	// ClusterUIDKey names the UID of the CamundaCluster that an object
+	// relates to. It tells a cluster apart from a later one of the same name
+	// and namespace.
+	ClusterUIDKey = "camunda.io/cluster-uid"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
 	ElasticsearchClusterKey = "camunda.io/elasticsearch-cluster"
 	// DatabaseKey names the owning Database.
@@ -61,6 +70,16 @@ const (
 	LogicalRestoreRDBMSKey = "camunda.io/logical-restore-rdbms"
 	// PointInTimeRestoreKey names the owning PointInTimeRestore.
 	PointInTimeRestoreKey = "camunda.io/point-in-time-restore"
+	// ManagementClusterKey names the owning CamundaManagementCluster. It is
+	// also the annotation key of the claim that a management cluster puts on
+	// an orchestration cluster it serves.
+	ManagementClusterKey = "camunda.io/management-cluster"
+	// ManagementClusterNamespaceKey names the namespace of the owning
+	// CamundaManagementCluster. A cluster-scoped object that a namespaced
+	// owner writes, the ManagementAuthConfig, carries it next to
+	// ManagementClusterKey: the name alone does not identify the owner,
+	// because two management clusters in two namespaces can share it.
+	ManagementClusterNamespaceKey = "camunda.io/management-cluster-namespace"
 	// ComponentKey names the role of a resource inside its owner, for example
 	// "elasticsearch" or "elasticsearch-exporter".
 	ComponentKey = "camunda.io/component"
@@ -155,6 +174,12 @@ func LogicalRestoreRDBMS(name string) Owner {
 // with the given name renders.
 func PointInTimeRestore(name string) Owner {
 	return Owner{Key: PointInTimeRestoreKey, Name: OwnerName(name)}
+}
+
+// ManagementCluster returns the Owner of resources that a
+// CamundaManagementCluster with the given name renders.
+func ManagementCluster(name string) Owner {
+	return Owner{Key: ManagementClusterKey, Name: OwnerName(name)}
 }
 
 // Managed returns the labels of a resource that the operator applies: the

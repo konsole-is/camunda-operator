@@ -111,7 +111,7 @@ The pods run under the ServiceAccount `<name>-camunda`, or `spec.serviceAccount.
 
 The operator renders its own configuration first, then the user entries in this order: the top-level `extraEnv`, the `extraEnv` of the embedded gateway (on the brokers), the `extraEnv` of every embedded web application that the process hosts, and the `extraEnv` of the process itself. A later entry with the same name wins, and an entry replaces an operator entry with the same name. `extraEnvFrom` sources are concatenated in the same order. Connectors get the top-level entries and their own block only.
 
-The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by name under server-side apply. A field manager owns only the entries that it applies. An extension controller can therefore add an entry next to yours, and neither side removes the other. One applied manifest cannot hold two entries with the same name, and the API server rejects one that does. `spec.backup.dump.extraEnv` stays an atomic list, because the backup kinds share that block. Every `extraEnvFrom` stays atomic too, because a source carries no name to merge on.
+The per-process `extraEnv` blocks and the top-level `spec.extraEnv` merge by name under server-side apply. A field manager owns only the entries that it applies. An extension controller can therefore add an entry next to yours, and neither side removes the other. A [CamundaManagementCluster](camundamanagementcluster.md) that serves this cluster owns the four `CAMUNDA_CONSOLE_PING_*` entries (`CAMUNDA_HUB_PING_*` on Camunda 8.10 and later) and replaces a value you set under those names. One applied manifest cannot hold two entries with the same name, and the API server rejects one that does. `spec.backup.dump.extraEnv` stays an atomic list, because the backup kinds share that block. Every `extraEnvFrom` stays atomic too, because a source carries no name to merge on.
 
 Two field managers that apply the same name do not collide. The merge is per field inside the entry, so one manager can own `value` while the other owns `valueFrom`. The result would be one entry that carries both, which a container rejects. The API server refuses to store that combination, so the second apply fails with a clear message instead of stalling a rollout. Give your entry a name that no operator writes, or let the operator own the name.
 
@@ -120,6 +120,51 @@ Every unified process gets `JAVA_TOOL_OPTIONS=-XX:+ExitOnOutOfMemoryError`, so t
 To use a trust store of your own, name it with `-Djavax.net.ssl.trustStore` in your value. The JVM then reads your store and no other. That store must hold the certificate authority of the Elasticsearch endpoint, or the exporter fails and Optimize reads no records. This is also the way to trust a second private authority, for example an OIDC provider or a backup store. Put every authority in one store and name it. The spec has no volume field, so the store must already be in the process image. Build the Camunda image with the file in it and set `imageRegistry` on the [CamundaPlatformConfig](camundaplatformconfig.md).
 
 A `JAVA_TOOL_OPTIONS` entry that reads its value from a Secret or a ConfigMap cannot take the trust store options. The cluster records the Warning event `TrustStoreOptionsNotApplied` and names the processes. The store still exists at `/etc/camunda/es-truststore/cacerts` with the password `changeit`. Name it in the referenced value, or name a store of your own that holds the authority.
+
+## Management plane
+
+A [CamundaManagementCluster](camundamanagementcluster.md) can serve this cluster. It reaches clusters in every namespace through a label selector, so nothing on this resource points at it. A cluster it serves shows two changes.
+
+The first is an annotation that says which management plane serves this cluster:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+  annotations:
+    camunda.io/management-cluster: my-management-ns/my-management
+```
+
+The second appears while the management plane sets `spec.console`. Four entries in `spec.extraEnv` make the cluster report to Console:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  extraEnv:
+    - name: CAMUNDA_CONSOLE_PING_ENABLED
+      value: "true"
+    - name: CAMUNDA_CONSOLE_PING_ENDPOINT
+      value: http://my-management-console.my-management-ns.svc:80
+    - name: CAMUNDA_CONSOLE_PING_CLUSTERNAME
+      value: my-cluster
+    - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
+      value: 1h
+  # ... the rest of your cluster
+```
+
+On Camunda 8.10 and later the four names are `CAMUNDA_HUB_PING_*` instead. The management plane owns these names and replaces a value you set under them.
+
+The entries change `spec`, so the pods roll once when they arrive and once when they go. After that they stay as they are.
+
+To remove both changes, take the cluster out of `spec.clusterSelector` of the [CamundaManagementCluster](camundamanagementcluster.md), by changing the selector or by removing the label it matches on. The management plane then withdraws the annotation and the four entries by itself. Removing `spec.console` from the management plane withdraws the four entries alone, and the annotation stays. Deleting either by hand does not work: the management plane still selects the cluster and writes them again.
+
+`kubectl get camundamanagementcluster -A` shows the management planes on the Kubernetes cluster. `status.clusters` of each one says which clusters it serves.
 
 ## Monitoring
 
@@ -183,6 +228,17 @@ status:
     partitions: 3
     # Elasticsearch path with a backupStorageRef only: the snapshot repository of the storage contract.
     backupRepository: my-cluster
+```
+
+`status.gateway` publishes the address of the client APIs, so a client or another resource connects without knowing which process runs the gateway. It is empty while the cluster is suspended.
+
+```yaml
+status:
+  gateway:
+    # The Service of the process that runs the gateway, on port 26500. No scheme: a Zeebe client takes the address in this form.
+    grpcEndpoint: my-cluster-gateway.my-cluster-ns.svc:26500
+    # The same Service, on port 8080. The base URL of the /v2 REST API.
+    restEndpoint: http://my-cluster-gateway.my-cluster-ns.svc:8080
 ```
 
 `status.adminPassword.rotation` is the last admin password rotation that the operator applied: the effective `spec.auth.basic.passwordRotation` value, after the preset merge, that produced the password in the admin Secret. It follows the Secret: the operator publishes the applied value there together with the password it answers, and the status projects it. A rotation is in progress while the effective value is not empty and differs from it. Clearing the field does not stop a rotation that the operator already staged. That rotation completes, and the status then records the value that staged it. A cluster that inherits the value from its preset carries none of its own in the spec, so compare the preset value with the status of each cluster.
@@ -492,6 +548,7 @@ spec:
 - [SecondaryStorageConfig](secondarystorageconfig.md): `storageRef` names the secondary storage, Elasticsearch or RDBMS, in the namespace of the cluster.
 - [ObjectStorageConfig](objectstorageconfig.md): `backupStorageRef` and `documentStorageRef` name the buckets.
 - [LogicalBackupElasticsearch](logicalbackupelasticsearch.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md): they reference this cluster through `clusterRef` and back it up.
+- [CamundaManagementCluster](camundamanagementcluster.md): selects this cluster through `clusterSelector`, so that Console lists it and Web Modeler deploys to it.
 - [Getting started](../getting-started.md): the order in which you create the resources.
 - [Secondary storage guide](../guides/secondary-storage.md): how to set up Elasticsearch or a database.
 - [Authentication guide](../guides/authentication.md): basic and OIDC authentication, and the admin role.

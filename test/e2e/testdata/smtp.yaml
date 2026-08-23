@@ -1,0 +1,55 @@
+# An SMTP sink for the management plane flows. The Web Modeler restapi process
+# refuses to start without a mail server, so one has to answer on the host and
+# the port that spec.webModeler.mail names. Mailpit accepts every message and
+# keeps it in memory; nothing reads them back.
+#
+# STARTTLS stays off, so spec.webModeler.mail.tls is false in the flows that
+# use this server.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smtp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smtp
+  template:
+    metadata:
+      labels:
+        app: smtp
+    spec:
+      containers:
+        - name: mailpit
+          # renovate: datasource=docker depName=axllent/mailpit
+          image: axllent/mailpit:v1.31.0
+          ports:
+            - containerPort: 1025
+              name: smtp
+            - containerPort: 8025
+              name: http
+          readinessProbe:
+            tcpSocket:
+              port: smtp
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smtp
+spec:
+  selector:
+    app: smtp
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: smtp
+    - name: http
+      port: 8025
+      targetPort: http
