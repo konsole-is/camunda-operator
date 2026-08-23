@@ -288,6 +288,39 @@ The claim of the spec then reaches Management Identity again. Management Identit
 
 An empty database does the same. Point `spec.identity.databaseConfigRef` at one, and Management Identity starts over. It then loses the roles and the tenants it held, and your provider keeps every user.
 
+### Step 3d: Web Modeler
+
+Web Modeler is optional. Add this block to the manifest of your mode before you apply it, or to the resource later. The operator treats both the same. Web Modeler needs a database of its own (`my-web-modeler-db` from step 1) and an SMTP server. It does not start without either.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  webModeler:
+    version: "8.9.0"
+    externalUrl: "https://modeler.camunda.example.com"
+    websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
+    databaseConfigRef: "my-web-modeler-db"
+    mail:
+      smtpHost: "smtp.example.com"
+      fromAddress: "noreply@example.com"
+      credentialsSecretRef:
+        name: "my-smtp-credentials"
+        namespace: "my-management-ns"
+        usernameKey: "username"
+        passwordKey: "password"
+  # ... the rest of your management cluster
+```
+
+Route both URLs. `externalUrl` goes to `my-management-web-modeler-restapi` and `websocketsExternalUrl` to `my-management-web-modeler-websockets`. A browser opens both.
+
+The mode examples above set `identity.admin.email` already. Web Modeler is the reason: in the two Keycloak modes it needs an address for every person who signs in.
+
+In the `oidc` mode, Web Modeler needs two clients on the platform config: `webModeler` for the user interface, and `webModelerApi` for the API behind it. Declare both before you deploy it. See [The clients of the management plane](../crds/camundaplatformconfig.md#the-clients-of-the-management-plane).
+
 ## Step 4: The orchestration clusters
 
 `spec.clusterSelector` decides which clusters Console lists and Web Modeler deploys to. It reaches every namespace of the Kubernetes cluster, which is why creating a `CamundaManagementCluster` is a platform-administrator action.
@@ -334,38 +367,7 @@ One cluster answers to one management plane. A cluster that another one already 
 
 A cluster the operator attached carries the annotation `camunda.io/management-cluster`. While the management plane sets `spec.console`, it also carries four `CAMUNDA_CONSOLE_PING_*` entries in `spec.extraEnv`. The entries are what makes it appear in Console. See [Management plane](../crds/camundacluster.md#management-plane) on the cluster page.
 
-## Step 5: Web Modeler
-
-Web Modeler needs a database of its own and an SMTP server. It does not start without either.
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaManagementCluster
-metadata:
-  name: my-management
-  namespace: my-management-ns
-spec:
-  webModeler:
-    version: "8.9.0"
-    externalUrl: "https://modeler.camunda.example.com"
-    websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
-    databaseConfigRef: "my-web-modeler-db"
-    mail:
-      smtpHost: "smtp.example.com"
-      fromAddress: "noreply@example.com"
-      credentialsSecretRef:
-        name: "my-smtp-credentials"
-        namespace: "my-management-ns"
-        usernameKey: "username"
-        passwordKey: "password"
-  # ... the rest of your management cluster
-```
-
-Route both URLs. `externalUrl` goes to `my-management-web-modeler-restapi` and `websocketsExternalUrl` to `my-management-web-modeler-websockets`. A browser opens both.
-
-The Step 3 examples set `identity.admin.email` already. Web Modeler is the reason: in the two Keycloak modes it needs an address for every person who signs in. If you left it out, add it before you deploy Web Modeler.
-
-In the `oidc` mode, Web Modeler needs two clients on the platform config: `webModeler` for the user interface, and `webModelerApi` for the API behind it. Declare both before you deploy it. See [The clients of the management plane](../crds/camundaplatformconfig.md#the-clients-of-the-management-plane).
+### Deploy from Web Modeler
 
 The deploy dialog of Web Modeler lists every attached cluster. How it authenticates follows the cluster:
 
@@ -387,7 +389,7 @@ Decode a password with `base64 -d` and give it to the people who deploy from Web
 
 Each of those Secrets also carries the key `applied`, which means that the cluster holds the user under that password. A Secret without `applied` holds a password that never reached the cluster.
 
-## Step 6: Optimize
+## Step 5: Optimize
 
 [CamundaOptimize](../crds/camundaoptimize.md) is a resource of its own, in the namespace of the cluster it reports on. It reads the contract that the management plane wrote:
 
