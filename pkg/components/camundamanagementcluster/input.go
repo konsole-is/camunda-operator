@@ -19,6 +19,7 @@ package camundamanagementcluster
 import (
 	"cmp"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -333,6 +334,11 @@ func keycloakProvider(
 	backendURL, publicURL, realm string,
 	admin *v1.CredentialsSecretRef,
 ) IdentityProvider {
+	// Every URL below appends a path, so a URL that ends in a slash would
+	// build "//realms", which Keycloak serves under no such address.
+	backendURL = strings.TrimRight(backendURL, "/")
+	publicURL = strings.TrimRight(publicURL, "/")
+
 	issuer := publicURL + keycloakRealmPath + realm
 	backendIssuer := backendURL + keycloakRealmPath + realm
 

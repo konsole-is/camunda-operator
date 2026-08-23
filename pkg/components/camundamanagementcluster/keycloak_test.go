@@ -116,6 +116,27 @@ func TestResolveIdentityProviderTakesTheRealmOfAnExistingKeycloak(t *testing.T) 
 	assert.Equal(t, fixtureKeycloak+"/realms/camunda-eu", in.Provider.IssuerURL)
 }
 
+// A URL that ends in a slash is as valid as one that does not, and the CRD
+// takes it. Every issuer URL appends a path to it, so it has to lose the
+// slash before it reaches one.
+func TestResolveIdentityProviderTrimsATrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	in := newKeycloakInput(t, false, func(in *Input) {
+		in.Cluster.Spec.IdentityProvider.ExternalKeycloak.URL = fixtureKeycloak + "/"
+	})
+
+	assert.Equal(t, fixtureKeycloak, in.Provider.KeycloakURL)
+	assert.Equal(t, fixtureKeycloak, in.Provider.KeycloakPublicURL)
+	assert.Equal(t, fixtureKeycloak+"/realms/camunda-platform", in.Provider.IssuerURL)
+	assert.Equal(t, fixtureKeycloak+"/realms/camunda-platform", in.Provider.IssuerBackendURL)
+	assert.Equal(
+		t,
+		fixtureKeycloak+"/realms/camunda-platform/protocol/openid-connect/certs",
+		in.Provider.JwksURL,
+	)
+}
+
 // Management Identity creates one client per component it serves, so a client
 // of a component that the spec does not deploy would never exist.
 func TestResolveIdentityProviderDeclaresAClientPerDeployedComponent(t *testing.T) {
