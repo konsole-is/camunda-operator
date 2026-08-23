@@ -39,8 +39,7 @@ type Built struct {
 // The probe timings of the management plane. The startup probe allows five
 // minutes, which covers the first start, where Management Identity and Web
 // Modeler migrate their database schema, and readiness polls only after it
-// passes. Console migrates nothing and carries no startup probe, so its
-// readiness probe polls from the start.
+// passes.
 const (
 	startupFailureThreshold int32 = 60
 	startupPeriodSeconds    int32 = 5
@@ -129,9 +128,9 @@ func parseURL(raw string) *url.URL {
 	return parsed
 }
 
-// externalPath returns the path of an external URL, without a trailing slash.
-// It is empty for a URL that serves the root of its host. A component that
-// runs under a path of its own has to be told that path.
-func externalPath(raw string) string {
-	return strings.TrimSuffix(parseURL(raw).Path, "/")
+// externalPath returns the path of a parsed external URL, without a trailing
+// slash. It is empty for a URL that serves the root of its host. A component
+// that runs under a path of its own has to be told that path.
+func externalPath(external *url.URL) string {
+	return strings.TrimSuffix(external.Path, "/")
 }

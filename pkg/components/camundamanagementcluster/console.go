@@ -142,7 +142,8 @@ func consoleDeployment(in Input) *appsv1.Deployment {
 
 // consoleContainerSpec renders the Console container. It carries the readiness
 // probe of the 8.9 Helm chart, and no liveness probe, which is what the chart
-// enables too.
+// enables too. It carries no startup probe either: Console migrates no schema,
+// so its readiness probe polls from the start.
 func consoleContainerSpec(in Input) corev1.Container {
 	return corev1.Container{
 		Name:  consoleContainer,
@@ -190,7 +191,7 @@ func consoleEnv(in Input) []corev1.EnvVar {
 			corev1.EnvVar{Name: consoleEnvKeycloakRealm, Value: provider.Realm},
 		)
 	}
-	if path := externalPath(in.console().ExternalURL); path != "" {
+	if path := externalPath(parseURL(in.console().ExternalURL)); path != "" {
 		env = append(env, corev1.EnvVar{Name: consoleEnvContextPath, Value: path})
 	}
 

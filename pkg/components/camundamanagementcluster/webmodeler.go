@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -399,7 +398,7 @@ func webModelerServerEnv(spec v1.WebModelerSpec) []corev1.EnvVar {
 		{Name: webModelerEnvServerURL, Value: spec.ExternalURL},
 		{Name: webModelerEnvHTTPSOnly, Value: strconv.FormatBool(external.Scheme == schemeHTTPS)},
 	}
-	if path := strings.TrimSuffix(external.Path, "/"); path != "" {
+	if path := externalPath(external); path != "" {
 		env = append(env, corev1.EnvVar{Name: webModelerEnvContextPath, Value: path})
 	}
 
@@ -565,7 +564,7 @@ func webModelerWebsocketsService(in Input) *corev1.Service {
 // pusherPath returns the base path of the WebSocket endpoint, which both sides
 // of the pairing must agree on. A URL that names no path uses the root.
 func pusherPath(external *url.URL) string {
-	if path := strings.TrimSuffix(external.Path, "/"); path != "" {
+	if path := externalPath(external); path != "" {
 		return path
 	}
 

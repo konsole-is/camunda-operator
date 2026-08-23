@@ -41,9 +41,9 @@ const (
 	// ManagementAuthConfig that this management cluster writes.
 	ConditionManagementAuthReady = "ManagementAuthReady"
 	// ConditionSecretsReady is the condition of the Secrets that the operator
-	// generates: the client secrets, the initial admin password, and the Web
-	// Modeler pusher credential. It reads Disabled in the oidc mode, where the
-	// platform config names every client secret.
+	// generates: the client secrets and the initial admin password. It reads
+	// Disabled in the oidc mode, where the platform config names every client
+	// secret and the first administrator is a token claim.
 	ConditionSecretsReady = "SecretsReady"
 
 	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider
