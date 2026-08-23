@@ -414,7 +414,7 @@ type AttachedClusterStatus struct {
 	// ClaimedElsewhere, another management plane holds it; NotReady, it
 	// publishes no gateway endpoints or it changed while the operator claimed
 	// it; InvalidReference, its platform config cannot be read, or the cluster
-	// authenticates with oidc and names another issuer than the management
+	// authenticates with OIDC and names another issuer than the management
 	// plane; WriteFailed, the Console ping settings were refused. The fifth,
 	// BasicAuthUserFailed, accompanies an attached row: the management plane
 	// serves the cluster, and only the Web Modeler user on it is missing.
