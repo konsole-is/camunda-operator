@@ -155,11 +155,23 @@ func (s brokerStorage) volumes() []v1.VolumeStatus {
 	return volumes
 }
 
-// runningVersion returns the tag of the broker image on the applied
-// StatefulSet, or the empty string before the first apply or when the
-// container carries no tag. This is the version that the next broker start
-// runs, whatever spec.version says.
+// runningVersion returns the version that the next broker start runs,
+// whatever spec.version says: the version on the applied StatefulSet, or,
+// without one, the version stamped on the bound claims, which a cluster
+// recreated on retained volumes carries. The empty string means that
+// nothing constrains the version.
 func (s brokerStorage) runningVersion() string {
+	if version := s.appliedVersion(); version != "" {
+		return version
+	}
+
+	return components.RetainedVersion(s.claims)
+}
+
+// appliedVersion returns the tag of the broker image on the applied
+// StatefulSet, or the empty string before the first apply or when the
+// container carries no tag.
+func (s brokerStorage) appliedVersion() string {
 	if s.statefulSet == nil {
 		return ""
 	}
@@ -171,6 +183,35 @@ func (s brokerStorage) runningVersion() string {
 	}
 
 	return ""
+}
+
+// stampBrokerVersion patches the broker version annotation onto every bound
+// broker claim that does not carry the version of the applied StatefulSet.
+// The stamp survives a delete of the cluster with retained volumes, so the
+// downgrade rule holds for the cluster that is recreated on them.
+func (r *CamundaClusterReconciler) stampBrokerVersion(ctx context.Context, storage brokerStorage) error {
+	version := storage.appliedVersion()
+	if version == "" {
+		return nil
+	}
+
+	for i := range storage.claims {
+		claim := &storage.claims[i]
+		if claim.Annotations[components.BrokerVersionAnnotation] == version {
+			continue
+		}
+
+		patch := client.MergeFrom(claim.DeepCopy())
+		if claim.Annotations == nil {
+			claim.Annotations = map[string]string{}
+		}
+		claim.Annotations[components.BrokerVersionAnnotation] = version
+		if err := r.Patch(ctx, claim, patch); err != nil {
+			return fmt.Errorf("stamping the broker version on claim %q: %w", claim.Name, err)
+		}
+	}
+
+	return nil
 }
 
 // growBrokerClaims patches every bound broker claim that requests less than

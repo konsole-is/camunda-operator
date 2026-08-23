@@ -129,7 +129,9 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // before anything is applied, unless the annotation
 // camunda.io/allow-version-downgrade names it. The annotation is removed once
 // the brokers carry that version, and as soon as it names a version the
-// cluster is not asked to run. The broker storage lifecycle then grows the
+// cluster is not asked to run. The running version is stamped on the bound
+// broker claims, so it survives a delete with retained volumes and the rule
+// holds for a cluster recreated on them. The broker storage lifecycle then grows the
 // bound broker claims in place and records an ignored shrink; the claim
 // template keeps its applied size, so the StatefulSet is never recreated.
 // The admin credential resolves next, and a requested password rotation runs
@@ -211,6 +213,10 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	storage, err := r.readBrokerStorage(ctx, &cluster)
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.stampBrokerVersion(ctx, storage); err != nil {
 		return ctrl.Result{}, err
 	}
 

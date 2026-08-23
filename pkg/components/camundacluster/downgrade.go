@@ -16,6 +16,8 @@ limitations under the License.
 
 package camundacluster
 
+import corev1 "k8s.io/api/core/v1"
+
 // VersionDowngrade reports whether effective is below running, segment by
 // segment. It reports false when either value is not of the form x.y.z. A
 // cluster without a running version has nothing to move back from.
@@ -39,4 +41,23 @@ func VersionDowngrade(effective, running string) bool {
 	}
 
 	return false
+}
+
+// RetainedVersion returns the highest broker version that the
+// BrokerVersionAnnotation stamps on claims, or the empty string when no
+// claim carries a well-formed one. It is the running version of a cluster
+// recreated on retained volumes, which has no StatefulSet to read one from.
+func RetainedVersion(claims []corev1.PersistentVolumeClaim) string {
+	var highest string
+	for i := range claims {
+		stamped := claims[i].Annotations[BrokerVersionAnnotation]
+		if _, err := parseVersion(stamped); err != nil {
+			continue
+		}
+		if highest == "" || VersionDowngrade(highest, stamped) {
+			highest = stamped
+		}
+	}
+
+	return highest
 }

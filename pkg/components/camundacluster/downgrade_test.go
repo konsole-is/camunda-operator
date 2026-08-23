@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestVersionDowngrade(t *testing.T) {
@@ -43,6 +45,43 @@ func TestVersionDowngrade(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, tc.want, VersionDowngrade(tc.effective, tc.running))
+		})
+	}
+}
+
+// stampedClaims returns one claim per version, each carrying it as the
+// broker version annotation.
+func stampedClaims(versions ...string) []corev1.PersistentVolumeClaim {
+	claims := make([]corev1.PersistentVolumeClaim, 0, len(versions))
+	for _, version := range versions {
+		claims = append(claims, corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{BrokerVersionAnnotation: version},
+			},
+		})
+	}
+	return claims
+}
+
+func TestRetainedVersion(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		claims []corev1.PersistentVolumeClaim
+		want   string
+	}{
+		"no claims":                    {nil, ""},
+		"a claim without the stamp":    {[]corev1.PersistentVolumeClaim{{}}, ""},
+		"one stamped claim":            {stampedClaims("8.9.9"), "8.9.9"},
+		"the highest stamp, numeric":   {stampedClaims("8.9.8", "8.9.10", "8.9.9"), "8.9.10"},
+		"a malformed stamp is skipped": {stampedClaims("latest", "8.9.9"), "8.9.9"},
+		"only malformed stamps":        {stampedClaims("latest", "8.9"), ""},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, RetainedVersion(tc.claims))
 		})
 	}
 }

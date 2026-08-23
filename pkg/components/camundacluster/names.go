@@ -53,6 +53,11 @@ const (
 	// and as soon as it names a version other than the effective one. Set it
 	// in the same edit as the version, or after the refusal.
 	AllowVersionDowngradeAnnotation = "camunda.io/allow-version-downgrade"
+	// BrokerVersionAnnotation is the annotation that the controller stamps
+	// on every bound broker claim with the version its StatefulSet runs. It
+	// outlives the cluster when the claims are retained, so a cluster
+	// recreated on them reads the version that wrote their data from it.
+	BrokerVersionAnnotation = "camunda.io/broker-version"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"
 	// DefaultAdminEmail is the email of the seeded admin user when
