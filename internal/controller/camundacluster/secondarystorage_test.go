@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,6 +37,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
@@ -132,6 +134,48 @@ func TestStaleHolder(t *testing.T) {
 			assert.Equal(t, tc.stale, stale)
 		})
 	}
+}
+
+// TestStorageHeld covers the Ready condition storageHeld builds for a
+// suspended cluster, with and without an apply error, and that the result
+// keeps CamundaCluster.Suspended true either way.
+func TestStorageHeld(t *testing.T) {
+	holder := &components.StorageHolder{
+		Cluster:  types.NamespacedName{Namespace: "ns", Name: "holder"},
+		Contract: types.NamespacedName{Namespace: "ns", Name: "storage"},
+	}
+	cluster := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Generation: 3},
+	}
+
+	t.Run("without an apply error", func(t *testing.T) {
+		cond := storageHeld(cluster, holder, nil)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, v1.ReasonStorageAlreadyAttached, cond.Reason)
+		assert.Equal(t, cluster.Generation, cond.ObservedGeneration)
+		assert.Contains(t, cond.Message, "ns/holder")
+		assert.Contains(t, cond.Message, "ns/storage")
+		assert.NotContains(t, cond.Message, "failed")
+	})
+
+	t.Run("with an apply error", func(t *testing.T) {
+		cond := storageHeld(cluster, holder, errors.New("apply exploded"))
+		assert.Equal(t, metav1.ConditionFalse, cond.Status)
+		assert.Equal(t, v1.ReasonStorageAlreadyAttached, cond.Reason)
+		assert.Contains(t, cond.Message, "The last apply of the suspended workloads failed: apply exploded")
+	})
+
+	t.Run("the gate", func(t *testing.T) {
+		for _, applyErr := range []error{nil, errors.New("apply exploded")} {
+			gated := &v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+				Spec:       v1.CamundaClusterSpec{Suspend: false},
+			}
+			cond := storageHeld(gated, holder, applyErr)
+			meta.SetStatusCondition(&gated.Status.Conditions, cond)
+			assert.True(t, gated.Suspended())
+		}
+	})
 }
 
 // newNamedCluster is newCluster with a name prefix, so a spec that creates
