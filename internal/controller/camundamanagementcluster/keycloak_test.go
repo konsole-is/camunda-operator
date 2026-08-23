@@ -19,6 +19,7 @@ package camundamanagementcluster
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -137,6 +138,47 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 				g.Expect(second.UID).NotTo(Equal(first.UID))
 				g.Expect(second.Data).NotTo(Equal(first.Data))
 			}, timeout, interval).Should(Succeed())
+		})
+	})
+
+	Context("when the identity provider mode changes", func() {
+		It("deletes the Keycloak of a management cluster that moves to an existing one", func() {
+			s := newScenario(withManagedKeycloak, func(f *fixture) { f.withKeycloakAdmin = true })
+
+			Eventually(func(g Gomega) {
+				var kc keycloak.Keycloak
+				g.Expect(k8sClient.Get(ctx, keycloakKey(s), &kc)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				latest := readManagementCluster(g, s.mc)
+				latest.Spec.IdentityProvider = v1.IdentityProviderSpec{
+					ExternalKeycloak: &v1.ExternalKeycloakSpec{
+						URL: keycloakExternalURL,
+						AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+							Name:        keycloakAdminSecret,
+							Namespace:   s.namespace,
+							UsernameKey: "username",
+							PasswordKey: "password",
+						},
+					},
+				}
+				g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				var kc keycloak.Keycloak
+				g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, keycloakKey(s), &kc))).To(BeTrue())
+
+				// The component is still built, so the condition stays and
+				// says the Keycloak is off rather than going missing.
+				condition := conditionOf(g, s.mc, v1.ConditionKeycloakReady)
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.Reason).To(Equal(string(component.Disabled)))
+			}, timeout, interval).Should(Succeed())
+
+			identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+			expectReadyWhileStamping(s.mc, identity)
 		})
 	})
 
