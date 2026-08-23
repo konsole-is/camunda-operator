@@ -69,7 +69,7 @@ To move the cluster off that version, declare the version you want:
 
 CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a preset: an explicit `spec.version` always wins over the preset, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the preset control again.
 
-If the version of the preset is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the preset in the same edit that removes the field. The operator removes an annotation that does not name the effective version, so two commands do not work here.
+If the version of the preset is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the preset in the same edit that removes the field. Setting the annotation first does not work. The operator removes an annotation that does not name the version the cluster is asked to run. Remove the field first and set the annotation after the refusal, or do both in the one command shown.
 
 ```bash
 kubectl patch camundacluster my-cluster -n my-cluster-ns --type=merge -p '{
