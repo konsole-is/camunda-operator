@@ -56,7 +56,6 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			)
 
 			for _, name := range []string{
-				components.IdentityClientSecretName(s.mc),
 				components.OptimizeClientSecretName(s.mc),
 				components.IdentityAdminSecretName(s.mc),
 			} {
@@ -146,7 +145,7 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			s := newScenario(withManagedKeycloak)
 
 			key := client.ObjectKey{
-				Namespace: s.namespace, Name: components.IdentityClientSecretName(s.mc),
+				Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc),
 			}
 			var first corev1.Secret
 			Eventually(func(g Gomega) {
@@ -211,7 +210,6 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			s := newScenario(withManagedKeycloak)
 
 			generated := []client.ObjectKey{
-				{Namespace: s.namespace, Name: components.IdentityClientSecretName(s.mc)},
 				{Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc)},
 				{Namespace: s.namespace, Name: components.IdentityAdminSecretName(s.mc)},
 			}

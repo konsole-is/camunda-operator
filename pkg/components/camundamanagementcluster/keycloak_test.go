@@ -145,7 +145,7 @@ func TestResolveIdentityProviderDeclaresAClientPerDeployedComponent(t *testing.T
 	minimal := newKeycloakInput(t, true, nil).Provider.Clients
 	assert.Equal(t, keycloakClientIdentity, minimal.Identity.ID)
 	assert.Equal(t, keycloakAudienceIdentity, minimal.Identity.Audience)
-	assert.Equal(t, "my-management-identity-client", minimal.Identity.SecretRef.Name)
+	assert.Nil(t, minimal.Identity.SecretRef)
 	assert.Equal(t, keycloakClientOptimize, minimal.Optimize.ID)
 	assert.Equal(t, keycloakAudienceOptimize, minimal.Optimize.Audience)
 	assert.Equal(t, "my-management-optimize-client", minimal.Optimize.SecretRef.Name)
@@ -192,7 +192,6 @@ func TestIdentityEnvInTheKeycloakModes(t *testing.T) {
 			"IDENTITY_AUTH_PROVIDER_ISSUER_URL":  fixtureKeycloak + "/realms/camunda-platform",
 			"IDENTITY_AUTH_PROVIDER_BACKEND_URL": keycloakServiceURL + "/realms/camunda-platform",
 			"IDENTITY_CLIENT_ID":                 "camunda-identity",
-			"IDENTITY_CLIENT_SECRET":             "secretKeyRef:my-management-identity-client/client-secret",
 			"KEYCLOAK_SETUP_USER":                "secretKeyRef:my-management-keycloak-initial-admin/username",
 			"KEYCLOAK_SETUP_PASSWORD":            "secretKeyRef:my-management-keycloak-initial-admin/password",
 			"KEYCLOAK_SETUP_REALM":               "master",
@@ -228,6 +227,29 @@ func TestIdentityEnvInTheKeycloakModesCarriesNoInitialClaim(t *testing.T) {
 
 	assert.NotContains(t, env, "IDENTITY_INITIAL_CLAIM_NAME")
 	assert.NotContains(t, env, "IDENTITY_INITIAL_CLAIM_VALUE")
+}
+
+// With IDENTITY_CLIENT_SECRET set, Management Identity signs in to the realm
+// with client credentials before it has created the realm, and never runs its
+// setup. Without it, Identity signs in as the Keycloak administrator, creates
+// the client, and makes the secret itself, so the operator publishes no
+// Secret for it either.
+func TestKeycloakModesGiveIdentityNoClientSecret(t *testing.T) {
+	t.Parallel()
+
+	in := newKeycloakInput(t, true, nil)
+
+	assert.NotContains(t, renderedEnv(in, ComponentIdentity), "IDENTITY_CLIENT_SECRET")
+
+	built, err := Build(in)
+	require.NoError(t, err)
+
+	objects, err := builtComponent(t, built, ComponentSecrets).Preview()
+	require.NoError(t, err)
+
+	for _, object := range objects {
+		assert.NotEqual(t, suffixed(in.Cluster.Name, "identity-client"), object.GetName())
+	}
 }
 
 // A password of your own replaces the generated one: Management Identity
@@ -271,7 +293,6 @@ func TestGeneratedSecretsRotateExceptTheAdministratorPassword(t *testing.T) {
 	assert.Equal(
 		t,
 		map[string]string{
-			IdentityClientSecretName(in.Cluster): "a-secret",
 			OptimizeClientSecretName(in.Cluster): "a-secret",
 			IdentityAdminSecretName(in.Cluster):  "",
 		},
@@ -397,11 +418,7 @@ func TestBuildGatesTheGeneratedAdministratorPasswordOffForOneOfYourOwn(t *testin
 	for _, object := range objects {
 		names = append(names, object.GetName())
 	}
-	assert.Equal(
-		t,
-		[]string{IdentityClientSecretName(in.Cluster), OptimizeClientSecretName(in.Cluster)},
-		names,
-	)
+	assert.Equal(t, []string{OptimizeClientSecretName(in.Cluster)}, names)
 }
 
 // A Keycloak that the user runs is not this operator's to reconcile. The
@@ -447,7 +464,7 @@ func TestConfigHashFollowsAGeneratedCredential(t *testing.T) {
 	in := newKeycloakInput(t, true, nil)
 	before := ConfigHash(in, ComponentIdentity)
 
-	in.Secrets.Values[IdentityClientSecretName(in.Cluster)] = credentials.Password{
+	in.Secrets.Values[OptimizeClientSecretName(in.Cluster)] = credentials.Password{
 		Value: "rotated", SourceUID: "a-new-secret",
 	}
 

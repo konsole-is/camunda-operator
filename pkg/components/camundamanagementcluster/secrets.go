@@ -115,12 +115,6 @@ func generatedSecrets(in Input) []generatedSecret {
 
 	return []generatedSecret{
 		{
-			name:      IdentityClientSecretName(mc),
-			key:       ClientSecretKey,
-			rotates:   true,
-			published: keycloakMode,
-		},
-		{
 			name:      OptimizeClientSecretName(mc),
 			key:       ClientSecretKey,
 			rotates:   true,
