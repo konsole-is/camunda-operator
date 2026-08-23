@@ -398,8 +398,8 @@ func identityType(providerType v1.OIDCProviderType) string {
 
 // workload returns the WorkloadSpec of a component, or the zero value when the
 // spec sets no block for it.
-func (in Input) workload(component string) v1.WorkloadSpec {
-	if component == ComponentIdentity {
+func (in Input) workload(comp string) v1.WorkloadSpec {
+	if comp == ComponentIdentity {
 		return in.Cluster.Spec.Identity.WorkloadSpec
 	}
 
@@ -408,8 +408,8 @@ func (in Input) workload(component string) v1.WorkloadSpec {
 
 // replicas returns the replica count of a component. Every component defaults
 // to 1.
-func (in Input) replicas(component string) int32 {
-	if r := in.workload(component).Replicas; r != nil {
+func (in Input) replicas(comp string) int32 {
+	if r := in.workload(comp).Replicas; r != nil {
 		return *r
 	}
 

@@ -19,7 +19,6 @@ package camundamanagementcluster
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strconv"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -96,7 +95,6 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 	}
 
 	out.Input.Mirrors = res.mirrors
-	slices.Sort(res.inputs)
 	out.Input.HashInputs = res.inputs
 
 	return out, nil
