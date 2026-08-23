@@ -130,8 +130,9 @@ func IsKeycloakOperatorInstalled(namespace string) bool {
 }
 
 // InstallKeycloakCRDs applies the custom resource definitions of the Keycloak
-// Operator release that KeycloakOperatorVersion names, skipping a file that
-// the release does not publish.
+// Operator release that KeycloakOperatorVersion names. It skips an optional
+// file that the release does not publish, and fails on a required one, which
+// means that the version names no release.
 func InstallKeycloakCRDs() error {
 	version, err := KeycloakOperatorVersion()
 	if err != nil {
