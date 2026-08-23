@@ -197,6 +197,22 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "set claimName and claimValue together",
 		),
 		Entry(
+			"accepts an admin passwordSecretRef in the keycloak mode",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
+					Name: "admin-credentials", Namespace: "camunda-system", Key: "password",
+				}
+			}, "",
+		),
+		Entry(
+			"rejects an admin passwordSecretRef in the oidc mode",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
+					Name: "admin-credentials", Namespace: "camunda-system", Key: "password",
+				}
+			}, "identity.admin.passwordSecretRef applies to the keycloak modes only",
+		),
+		Entry(
 			"rejects a two-segment Keycloak version",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.IdentityProvider.Keycloak.Version = "26.0"

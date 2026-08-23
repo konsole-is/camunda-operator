@@ -4171,6 +4171,9 @@ spec:
                 username in the keycloak modes'
               rule: 'has(self.identityProvider.oidc) ? has(self.identity.admin.claimName)
                 : has(self.identity.admin.username)'
+            - message: identity.admin.passwordSecretRef applies to the keycloak modes
+                only
+              rule: '!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)'
           status:
             description: status defines the observed state of CamundaManagementCluster
             properties:
