@@ -29,20 +29,23 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
-// The Keycloak server options that the rendered Keycloak sets. Camunda
+// The Keycloak server settings that the rendered Keycloak sets. Camunda
 // documents both, together with the whole custom resource, in the guide to
 // the operator-based infrastructure:
 // https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/
 const (
 	// keycloakOptionRelativePath serves Keycloak under /auth. The Camunda
 	// build of Keycloak is built for that path, and the issuer URLs of the
-	// realm carry it.
+	// realm carry it. It has no field of its own on the custom resource, so
+	// it goes into the additional options.
 	keycloakOptionRelativePath = "http-relative-path"
-	// keycloakOptionProxyHeaders makes Keycloak read the scheme and the host
+	// keycloakProxyHeadersValue makes Keycloak read the scheme and the host
 	// of a request from the X-Forwarded headers, so the URLs it builds match
-	// the address that the browser used to reach the ingress.
-	keycloakOptionProxyHeaders = "proxy-headers"
-	// keycloakProxyHeadersValue is the header set that Camunda documents.
+	// the address that the browser used to reach the ingress. Camunda
+	// documents it as the proxy-headers server option; the custom resource
+	// carries spec.proxy.headers for it, and the Keycloak Operator warns on
+	// the resource when the option is set through the additional options
+	// instead.
 	keycloakProxyHeadersValue = "xforwarded"
 )
 
@@ -142,9 +145,9 @@ func keycloakCR(in Input) *keycloak.Keycloak {
 				Strict:   new(true),
 			},
 			Ingress: &keycloak.KeycloakIngressSpec{Enabled: new(false)},
+			Proxy:   &keycloak.KeycloakProxySpec{Headers: keycloakProxyHeadersValue},
 			AdditionalOptions: []keycloak.KeycloakValueOrSecret{
 				{Name: keycloakOptionRelativePath, Value: keycloakBasePath},
-				{Name: keycloakOptionProxyHeaders, Value: keycloakProxyHeadersValue},
 			},
 			Unsupported: &keycloak.KeycloakUnsupportedSpec{
 				PodTemplate: &corev1.PodTemplateSpec{
