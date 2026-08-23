@@ -287,7 +287,8 @@ func teardownECK() {
 //
 // The Keycloak Operator watches its own namespace and no other, so it runs in
 // the namespace of that flow. The namespace is created here rather than in
-// the flow, because the operator has to be there before the manager starts.
+// the flow, because the operator has to be there before the manager starts,
+// and teardownKeycloakOperator removes it again with the operator.
 func setupKeycloakOperator() {
 	if os.Getenv("KEYCLOAK_OPERATOR_INSTALL_SKIP") == "true" {
 		_, _ = fmt.Fprintf(
@@ -328,4 +329,8 @@ func teardownKeycloakOperator() {
 
 	By("uninstalling the Keycloak Operator")
 	utils.UninstallKeycloakOperator(mcKeycloakNamespace)
+
+	// The suite created the namespace for the operator, so it removes it too.
+	// The flow in that namespace removed its own resources in its AfterAll.
+	_, _ = utils.Kubectl("delete", "ns", mcKeycloakNamespace, "--ignore-not-found", "--wait=false")
 }

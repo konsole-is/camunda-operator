@@ -236,7 +236,24 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelM
 			"--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl("delete", dbServerResource, mcKeycloakServer, "--ignore-not-found")
-		_, _ = utils.Kubectl("delete", "ns", mcKeycloakNamespace, "--wait=false")
+
+		// The namespace also holds the Keycloak Operator, and the suite
+		// created it for that operator, so the suite removes it with the
+		// operator it installed. A Keycloak Operator that was there before the
+		// suite keeps its namespace, and the flow removes its own fixtures
+		// instead.
+		_, _ = utils.Kubectl(
+			"delete", esResource, esName, "-n", mcKeycloakNamespace, "--ignore-not-found", "--wait=false",
+		)
+		_, _ = utils.Kubectl(
+			"delete", "secret", mcClusterSecretName, "-n", mcKeycloakNamespace, "--ignore-not-found",
+		)
+		for _, manifest := range []string{"postgres.yaml", "smtp.yaml"} {
+			_, _ = utils.Kubectl(
+				"delete", "-n", mcKeycloakNamespace, "-f", "test/e2e/testdata/"+manifest,
+				"--ignore-not-found", "--wait=false",
+			)
+		}
 	})
 
 	AfterEach(func() {
