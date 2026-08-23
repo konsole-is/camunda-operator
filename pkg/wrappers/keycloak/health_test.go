@@ -113,6 +113,29 @@ func TestDefaultGraceStatusHandlerIsHealthyOrDown(t *testing.T) {
 	assert.Equal(t, concepts.GraceStatusDown, down.Status)
 }
 
+// Convergence and grace read the same object in one reconcile, so a Keycloak
+// that reports Ready and HasErrors together must not converge as Failing and
+// grade as Healthy.
+func TestDefaultGraceStatusHandlerAgreesWithConvergenceOnErrors(t *testing.T) {
+	t.Parallel()
+
+	kc := withConditions(
+		KeycloakCondition{Type: ConditionReady, Status: conditionTrue},
+		KeycloakCondition{
+			Type: ConditionHasErrors, Status: conditionTrue, Message: "database unreachable",
+		},
+	)
+
+	converging, err := DefaultConvergingStatusHandler(concepts.ConvergingOperationUpdated, kc)
+	require.NoError(t, err)
+	assert.Equal(t, concepts.AliveConvergingStatusFailing, converging.Status)
+
+	grace, err := DefaultGraceStatusHandler(kc)
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GraceStatusDown, grace.Status)
+	assert.Equal(t, "Keycloak reports errors: database unreachable", grace.Reason)
+}
+
 // Suspension scales the Keycloak to zero and keeps the custom resource. Every
 // realm, client, and user lives in PostgreSQL, so a resume brings the same
 // server back.

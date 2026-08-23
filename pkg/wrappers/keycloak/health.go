@@ -26,7 +26,9 @@ import (
 // registers by default; they replace the scaffolded defaults the ocf
 // generator writes into builder.go. After regenerating the wrapper with
 // --force, delete the scaffolded Default* handlers from builder.go again so
-// these implementations take their place.
+// these implementations take their place, and delete the package doc that the
+// generator writes at the top of mutator.go: doc.go holds the one package doc
+// of this package.
 
 // conditionTrue is the value of a Keycloak condition that holds. The Keycloak
 // Operator writes the status of a condition as a string, not as a boolean.
@@ -64,9 +66,19 @@ func DefaultConvergingStatusHandler(
 }
 
 // DefaultGraceStatusHandler grades a Keycloak that is still not converged
-// after the grace period: ready is Healthy, anything else is Down. A Keycloak
-// serves requests or it does not, so it has no degraded state of its own.
+// after the grace period: ready and free of errors is Healthy, anything else
+// is Down. A Keycloak serves requests or it does not, so it has no degraded
+// state of its own. The errors are read here as well as in convergence,
+// because a Keycloak that reports both Ready and HasErrors would otherwise
+// converge as Failing and grade as Healthy in the same reconcile.
 func DefaultGraceStatusHandler(kc *Keycloak) (concepts.GraceStatusWithReason, error) {
+	if errors, found := condition(kc, ConditionHasErrors); found && errors.Status == conditionTrue {
+		return concepts.GraceStatusWithReason{
+			Status: concepts.GraceStatusDown,
+			Reason: conditionMessage("Keycloak reports errors", errors),
+		}, nil
+	}
+
 	if ready, found := condition(kc, ConditionReady); found && ready.Status == conditionTrue {
 		return concepts.GraceStatusWithReason{
 			Status: concepts.GraceStatusHealthy,

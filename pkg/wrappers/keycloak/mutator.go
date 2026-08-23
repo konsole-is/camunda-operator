@@ -1,4 +1,3 @@
-// Package keycloak provides a builder and resource for managing Keycloak objects.
 package keycloak
 
 import (

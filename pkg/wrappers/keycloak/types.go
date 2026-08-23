@@ -14,19 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package keycloak holds the Go types of the Keycloak custom resource of the
-// Keycloak Operator, k8s.keycloak.org/v2alpha1. The Keycloak project publishes
-// no Go module for its CRDs, so the types here carry the fields that the
-// operator sets and reads. The schema they follow is vendored in
-// internal/testenv/crds/keycloak.
-//
-// v2alpha1 is deprecated since Keycloak 26.7 in favor of v2beta1. It is the
-// only version that every supported 26.x Keycloak Operator serves.
-//
-// Each type below carries the object:generate marker of its own. The marker
-// of the whole package would also reach the wrapper in this package, whose
-// mutation type names an ocf interface that controller-gen cannot copy.
-// +groupName=k8s.keycloak.org
 package keycloak
 
 import (
