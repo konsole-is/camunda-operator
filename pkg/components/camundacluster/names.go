@@ -54,10 +54,11 @@ const (
 	// in the same edit as the version, or after the refusal.
 	AllowVersionDowngradeAnnotation = "camunda.io/allow-version-downgrade"
 	// BrokerVersionAnnotation is the annotation that the controller stamps
-	// on every bound broker claim with the version on the applied broker
-	// StatefulSet, which can lead the pods during a roll. It outlives the
-	// cluster when the claims are retained, so the version rule holds for a
-	// cluster recreated on them.
+	// on every bound broker claim with the highest version an applied broker
+	// StatefulSet has asked the claim's data to run, which can lead the pods
+	// during a roll. The stamp never goes down on a live claim. It outlives
+	// the cluster when the claims are retained, so the version rule holds
+	// for a cluster recreated on them.
 	BrokerVersionAnnotation = "camunda.io/broker-version"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"

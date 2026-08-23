@@ -85,7 +85,7 @@ The rule reads the effective version. Three edits therefore meet it the same way
 - A removed `spec.version`, when the preset carries a lower version.
 - A preset whose version is lowered.
 
-The running version is the version on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. The operator also stamps it on each broker volume, as the annotation `camunda.io/broker-version`. A cluster recreated on retained volumes ([Storage](#storage)) reads its running version from them, so the rule holds for it. A new cluster with new volumes has no running version, and the rule does not apply to it.
+The running version is the version on the broker workload. After a version change it is the new version, even before the pods have rolled. The refusal message names it. The operator also stamps the highest version it asked each broker volume to run, as the annotation `camunda.io/broker-version`. A cluster recreated on retained volumes ([Storage](#storage)) reads its running version from that stamp, so the rule holds for it. A new cluster with new volumes has no running version, and the rule does not apply to it.
 
 A restore sanctions its own move to the version of its backup. The [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md#why-the-downgrade-is-safe-here) and [LogicalRestoreRDBMS](logicalrestorerdbms.md#why-the-downgrade-is-safe-here) pages explain why that move is safe.
 

@@ -161,6 +161,16 @@ func TestStampBrokerVersion(t *testing.T) {
 			want: "8.9.9",
 		},
 		{
+			name:  "never lowers a stamp",
+			image: "camunda/camunda:8.9.8", stamped: "8.9.9",
+			want: "8.9.9",
+		},
+		{
+			name:  "replaces a malformed stamp",
+			image: "camunda/camunda:8.9.9", stamped: "latest",
+			want: "8.9.9", patched: true,
+		},
+		{
 			name:    "writes nothing without a StatefulSet",
 			stamped: "8.9.9",
 			want:    "8.9.9",

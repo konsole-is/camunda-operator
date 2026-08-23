@@ -195,9 +195,13 @@ func (s brokerStorage) appliedVersion() string {
 }
 
 // stampBrokerVersion patches the broker version annotation onto every bound
-// broker claim that does not carry the version of the applied StatefulSet.
-// The stamp survives a delete of the cluster with retained volumes, so the
-// downgrade rule holds for the cluster that is recreated on them.
+// broker claim whose stamp is absent, malformed, or below the version of the
+// applied StatefulSet. The stamp survives a delete of the cluster with
+// retained volumes, so the downgrade rule holds for the cluster that is
+// recreated on them. It is never lowered: a sanctioned restore lowers the
+// StatefulSet before it erases the claims, and an abandoned restore must not
+// leave newer data under a lower stamp. The erased claim comes back
+// unstamped and takes the lower version then.
 func (r *CamundaClusterReconciler) stampBrokerVersion(ctx context.Context, storage brokerStorage) error {
 	version := storage.appliedVersion()
 	if version == "" {
@@ -206,7 +210,8 @@ func (r *CamundaClusterReconciler) stampBrokerVersion(ctx context.Context, stora
 
 	for i := range storage.claims {
 		claim := &storage.claims[i]
-		if claim.Annotations[components.BrokerVersionAnnotation] == version {
+		stamped := claim.Annotations[components.BrokerVersionAnnotation]
+		if stamped == version || components.VersionDowngrade(version, stamped) {
 			continue
 		}
 
