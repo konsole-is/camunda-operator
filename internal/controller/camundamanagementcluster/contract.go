@@ -145,7 +145,11 @@ func (r *Reconciler) withdrawContractNamed(
 		return nil
 	}
 
-	if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
+	// The delete is bound to the object whose owner was checked. A contract
+	// that another owner recreated under this name in the meantime answers
+	// with a conflict and is left alone; the next pass reads the new owner.
+	err := r.Delete(ctx, &existing, client.Preconditions{UID: &existing.UID})
+	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 		return fmt.Errorf("deleting ManagementAuthConfig %q: %w", name, err)
 	}
 

@@ -79,6 +79,9 @@ func (r *Reconciler) syncPing(
 			continue
 		}
 		if err != nil {
+			// The row must not say attached while the ping is not written:
+			// Console does not list a cluster whose ping never reached it.
+			reportPingFailure(mc, key, err)
 			errs = append(errs, err)
 		}
 	}
