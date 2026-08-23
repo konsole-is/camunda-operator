@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
 // The event vocabulary of this controller.
@@ -63,7 +64,7 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		eventReasonAttachmentRemoved,
 		eventActionFinalize,
 		"Withdrew the claims on the orchestration clusters and removed ManagementAuthConfig %q",
-		mc.Status.ManagementAuthConfig,
+		components.ContractName(mc),
 	)
 
 	controllerutil.RemoveFinalizer(mc, Finalizer)
