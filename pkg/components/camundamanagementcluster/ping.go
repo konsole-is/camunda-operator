@@ -63,8 +63,8 @@ type pingEnvNames struct {
 // PingCollision is an entry of spec.extraEnv that holds a ping setting with
 // valueFrom.
 type PingCollision struct {
-	// Index is where the entry sits in spec.extraEnv of the cluster that
-	// PingCollisions read.
+	// Index is where the entry sits in spec.extraEnv of the cluster given to
+	// PingCollisions.
 	Index int
 	// Name is the ping setting that the entry holds.
 	Name string
