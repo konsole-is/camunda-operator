@@ -19,25 +19,23 @@ package camundaoptimize
 import (
 	"testing"
 
-	"github.com/sourcehawk/operator-component-framework/pkg/feature"
-	"github.com/sourcehawk/operator-component-framework/pkg/primitives/deployment"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
 
 // registeredMutations are the mutations of every component, in registration
 // order.
 var registeredMutations = []string{
-	MutationResources,
-	MutationSchedulingConstraints,
-	MutationPodMetadata,
-	MutationExtraEnv,
-	MutationExtraEnvFrom,
+	workloadmutations.MutationResources,
+	workloadmutations.MutationSchedulingConstraints,
+	workloadmutations.MutationPodMetadata,
+	workloadmutations.MutationExtraEnv,
+	workloadmutations.MutationExtraEnvFrom,
 }
 
 // A component without overrides registers every mutation and fires none: the
@@ -86,12 +84,12 @@ func TestMutationsFireOnTheirOwnComponent(t *testing.T) {
 
 	assert.Equal(
 		t,
-		[]string{MutationResources, MutationPodMetadata, MutationExtraEnv, MutationExtraEnvFrom},
+		[]string{workloadmutations.MutationResources, workloadmutations.MutationPodMetadata, workloadmutations.MutationExtraEnv, workloadmutations.MutationExtraEnvFrom},
 		firing[ComponentWebapp],
 	)
 	assert.Equal(
 		t,
-		[]string{MutationResources, MutationSchedulingConstraints},
+		[]string{workloadmutations.MutationResources, workloadmutations.MutationSchedulingConstraints},
 		firing[ComponentImporter],
 	)
 }
@@ -157,67 +155,4 @@ func filterEnv(env []corev1.EnvVar, name string) []corev1.EnvVar {
 	}
 
 	return found
-}
-
-// TestContainerEditsSkipASidecar pins the container scope of every mutation
-// that edits a container. The pod of a component has one container today, so
-// a mutation that edits every container and one that edits the Optimize
-// container render the same workload, and no test that goes through Build can
-// tell them apart. This one applies the mutations to a two-container
-// Deployment, where they differ.
-func TestContainerEditsSkipASidecar(t *testing.T) {
-	t.Parallel()
-
-	in := newInput(t, func(in *Input) {
-		in.Optimize.Spec.Webapp = &v1.WorkloadSpec{
-			Resources: &corev1.ResourceRequirements{Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-			}},
-			ExtraEnv: []corev1.EnvVar{{Name: "OPTIMIZE_JAVA_OPTS", Value: "-Xmx2048m"}},
-			ExtraEnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "optimize-extra"},
-			}}},
-		}
-	})
-
-	workload := deploymentFor(in, ComponentWebapp)
-	workload.Spec.Template.Spec.Containers = append(
-		workload.Spec.Template.Spec.Containers,
-		corev1.Container{Name: "sidecar"},
-	)
-
-	// ApplyIntent honours the gate of each mutation, the way the builder does,
-	// so a mutation whose field the fixture leaves unset never runs.
-	mutator := deployment.NewMutator(workload)
-	for _, mutation := range workloadMutations(in, ComponentWebapp) {
-		gated := feature.Mutation[*deployment.Mutator](mutation)
-		require.NoError(t, gated.ApplyIntent(mutator), mutation.Name)
-		mutator.NextFeature()
-	}
-	require.NoError(t, mutator.Apply())
-
-	optimize, sidecar := containerNamed(t, workload, optimizeContainer), containerNamed(t, workload, "sidecar")
-
-	assert.Equal(t, resource.MustParse("1Gi"), optimize.Resources.Requests[corev1.ResourceMemory])
-	assert.Contains(t, optimize.Env, corev1.EnvVar{Name: "OPTIMIZE_JAVA_OPTS", Value: "-Xmx2048m"})
-	assert.Len(t, optimize.EnvFrom, 1)
-
-	assert.Empty(t, sidecar.Resources.Requests, "the sidecar keeps its own resources")
-	assert.Empty(t, filterEnv(sidecar.Env, "OPTIMIZE_JAVA_OPTS"), "extraEnv is not for the sidecar")
-	assert.Empty(t, sidecar.EnvFrom, "extraEnvFrom is not for the sidecar")
-}
-
-// containerNamed returns the container of the pod template with the given
-// name.
-func containerNamed(t *testing.T, workload *appsv1.Deployment, name string) corev1.Container {
-	t.Helper()
-
-	for _, container := range workload.Spec.Template.Spec.Containers {
-		if container.Name == name {
-			return container
-		}
-	}
-	require.FailNow(t, "no container named "+name)
-
-	return corev1.Container{}
 }

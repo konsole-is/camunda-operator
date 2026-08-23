@@ -31,6 +31,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
 	"github.com/konsole-is/camunda-operator/pkg/images"
+	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
 
 // The environment variables of the Management Identity container. The source
@@ -133,7 +134,7 @@ const (
 // always deployed, so this renders on every management plane.
 func identityComponents(in Input) ([]*component.Component, error) {
 	workload, err := deployment.NewBuilder(identityDeployment(in)).
-		WithMutation(workloadMutations(in, ComponentIdentity, identityContainer)...).
+		WithMutation(workloadmutations.Mutations(in.workload(ComponentIdentity), identityContainer)...).
 		Build()
 	if err != nil {
 		return nil, err
@@ -158,8 +159,8 @@ func identityComponents(in Input) ([]*component.Component, error) {
 	return []*component.Component{comp}, nil
 }
 
-// identityDeployment renders the base Deployment. workloadMutations layers the
-// override surfaces of spec.identity on top.
+// identityDeployment renders the base Deployment. workloadmutations.Mutations
+// layers the override surfaces of spec.identity on top.
 func identityDeployment(in Input) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
