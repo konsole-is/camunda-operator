@@ -211,7 +211,7 @@ const (
 // keycloakDerivedSuffixMax is the longest suffix that the Keycloak Operator
 // appends to the name of a Keycloak: -service, -initial-admin, and
 // -discovery.
-var keycloakDerivedSuffixMax = max(
+const keycloakDerivedSuffixMax = max(
 	len(keycloakServiceSuffix), len(keycloakInitialAdminSuffix), len(keycloakDiscoverySuffix),
 )
 
