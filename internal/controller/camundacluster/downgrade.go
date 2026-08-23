@@ -30,10 +30,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
+// A restore cannot serve as the remedy while the refusal stands: it suspends
+// the cluster first, and a refused cluster applies nothing, so the brokers
+// never stop. The message therefore orders the remedies.
 const msgVersionDowngradeRefused = "the effective version %s is below the running version %s. " +
 	"Camunda does not support a downgrade of a running cluster: a broker that starts on data that " +
-	"a newer version wrote marks itself unhealthy. Set the version to %s or later, restore a backup " +
-	"taken with %s, or set the annotation %s=%q on the cluster to downgrade on purpose"
+	"a newer version wrote marks itself unhealthy. Set the version to %s or later. To run %s on " +
+	"the data of a backup taken with it, restore that backup after that: the restore sets the " +
+	"version itself, and it cannot start while this refusal stands. To downgrade on purpose over " +
+	"the data the brokers have, set the annotation %s=%q on the cluster"
 
 // consumeDowngradeSanction removes the downgrade annotation from cluster once
 // the brokers carry the version it names, and as soon as it names a version

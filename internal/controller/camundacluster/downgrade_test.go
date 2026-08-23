@@ -233,7 +233,11 @@ func TestRefuseDowngrade(t *testing.T) {
 			assert.Equal(t, v1.ReasonVersionDowngradeRefused, failure.Reason)
 			assert.Contains(t, failure.Message, tt.effective+" is below the running version "+tt.running)
 			assert.Contains(t, failure.Message, "Set the version to "+tt.running+" or later")
-			assert.Contains(t, failure.Message, "restore a backup taken with "+tt.effective)
+			assert.Contains(t, failure.Message, "To run "+tt.effective+" on the data of a backup taken with it")
+			assert.Contains(
+				t, failure.Message, "cannot start while this refusal stands",
+				"the message orders the remedies: the version goes back first, the restore comes after",
+			)
 			assert.Contains(
 				t, failure.Message,
 				components.AllowVersionDowngradeAnnotation+`="`+tt.effective+`"`,

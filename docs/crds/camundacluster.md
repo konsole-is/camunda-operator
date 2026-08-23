@@ -70,8 +70,11 @@ status:
       message: 'the effective version 8.9.0 is below the running version 8.9.5. Camunda
         does not support a downgrade of a running cluster: a broker that starts on
         data that a newer version wrote marks itself unhealthy. Set the version to
-        8.9.5 or later, restore a backup taken with 8.9.0, or set the annotation camunda.io/allow-version-downgrade="8.9.0"
-        on the cluster to downgrade on purpose'
+        8.9.5 or later. To run 8.9.0 on the data of a backup taken with it, restore
+        that backup after that: the restore sets the version itself, and it cannot
+        start while this refusal stands. To downgrade on purpose over the data the
+        brokers have, set the annotation camunda.io/allow-version-downgrade="8.9.0"
+        on the cluster'
       observedGeneration: 4
       lastTransitionTime: "2026-08-20T09:14:00Z"
 ```
@@ -88,7 +91,7 @@ A restore sanctions its own move to the version of its backup. The [LogicalResto
 
 ### Downgrade on purpose
 
-CAUTION: Do not downgrade a cluster over data that a newer version wrote. The rule above gives the reason and the source. To recover, set the version back to the one that wrote the data. You can also restore a backup taken with the lower version.
+CAUTION: Do not downgrade a cluster over data that a newer version wrote. The rule above gives the reason and the source. To recover, set the version back to the one that wrote the data. To run the lower version on the data of a backup taken with it, restore that backup after that. The restore sets the version itself, so do not lower `spec.version` for it. A restore cannot start while the refusal stands: it suspends the cluster first, and a refused cluster applies nothing, so the brokers never stop.
 
 To downgrade on purpose, set the annotation `camunda.io/allow-version-downgrade` to the target version. Set `spec.version` to the same value in the same edit.
 
