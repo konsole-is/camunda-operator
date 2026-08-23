@@ -146,6 +146,30 @@ func TestStartedInitialClaimCountsAContainerThatRanAndStopped(t *testing.T) {
 	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{crashLooping}))
 }
 
+// A container that restarted runs again with a later start time. Its first
+// run is the one that reached the database, so a restarted older pod still
+// wins over a newer pod.
+func TestStartedInitialClaimUsesTheFirstRunOfARestartedContainer(t *testing.T) {
+	t.Parallel()
+
+	firstRun := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+	newer := metav1.NewTime(time.Now().Add(-time.Minute))
+	restarted := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+	})
+	restarted.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: firstRun},
+	}
+	pods := []corev1.Pod{
+		startedIdentityPod("second-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: newer},
+		}),
+		restarted,
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
+}
+
 // A pod whose container never ran carries no claim. Its container is waiting
 // on an image or on a Secret, so Management Identity read nothing.
 func TestStartedInitialClaimIsEmptyWhileNoContainerRan(t *testing.T) {

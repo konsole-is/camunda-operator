@@ -334,28 +334,45 @@ func StartedInitialClaim(pods []corev1.Pod) string {
 }
 
 // identityStartedAt returns when the Management Identity container of pod
-// began to run, or nil while it never ran.
+// first began to run, or nil while it never ran.
 //
 // The started field of the container status is not the signal. The container
 // carries a startup probe, so the kubelet sets that field only after the probe
 // passes on the health endpoint, which is just before the pod is ready.
 // Identity reads the administrator claim as it boots, well before that.
+//
+// The current state holds the latest run only. A container that restarted
+// keeps its earlier run in the last termination state, and that earlier run
+// is the one that reached the database, so the earliest known start wins.
 func identityStartedAt(pod *corev1.Pod) *metav1.Time {
 	for _, status := range pod.Status.ContainerStatuses {
 		if status.Name != identityContainer {
 			continue
 		}
-		if running := status.State.Running; running != nil {
-			return &running.StartedAt
+		var first *metav1.Time
+		for _, started := range []*metav1.Time{
+			runStartedAt(status.State),
+			runStartedAt(status.LastTerminationState),
+		} {
+			if started != nil && (first == nil || started.Before(first)) {
+				first = started
+			}
 		}
-		if terminated := status.State.Terminated; terminated != nil {
-			return &terminated.StartedAt
-		}
-		// A container that crash-loops waits between its runs, and the run it
-		// already had is the one that reached the database.
-		if last := status.LastTerminationState.Terminated; last != nil {
-			return &last.StartedAt
-		}
+
+		return first
+	}
+
+	return nil
+}
+
+// runStartedAt returns when the run that state describes began, or nil for a
+// container that waits and has not run.
+func runStartedAt(state corev1.ContainerState) *metav1.Time {
+	if state.Running != nil {
+		return &state.Running.StartedAt
+	}
+	if state.Terminated != nil {
+		return &state.Terminated.StartedAt
 	}
 
 	return nil
