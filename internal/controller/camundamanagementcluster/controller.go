@@ -95,6 +95,10 @@ type Reconciler struct {
 	// cluster again whose user API refused it. No watch reports the recovery
 	// of that API. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+	// ConvergeInterval overrides how long a cluster that holds the Web Modeler
+	// user is left alone before the controller reads it again. Zero means
+	// defaultConvergeInterval; tests shorten it.
+	ConvergeInterval time.Duration
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -250,11 +254,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 
-	// A cluster whose user API refused the call is called again after a
-	// while: no watch reports that the API is back.
+	// Nothing watches the user API of a cluster, so the controller comes back
+	// on its own: soon when a cluster refused the call, and on the converge
+	// interval to find a user that somebody removed on the cluster.
 	var result ctrl.Result
-	if anyRow(rows, v1.ReasonBasicAuthUserFailed) {
+	switch {
+	case anyRow(rows, v1.ReasonBasicAuthUserFailed):
 		result.RequeueAfter = r.retryInterval()
+	case convergesUsers(&mc, attached):
+		result.RequeueAfter = r.convergeInterval()
 	}
 
 	return result, errors.Join(reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr)

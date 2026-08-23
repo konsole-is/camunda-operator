@@ -348,9 +348,30 @@ kubectl get secret -n my-management-ns \
 
 Drop the two cluster labels from the selector to list every cluster's Secret.
 
-Every value is base64 encoded. The key `applied` next to the password means that the cluster holds the user under that password. A Secret without it is a password that never reached the cluster.
+Every value is base64 encoded. The key `applied` next to the password means that the cluster took the user under that password. A Secret without it is a password that never reached the cluster.
 
 A cluster that refuses the call keeps its row in `status.clusters` with the reason `BasicAuthUserFailed`. The management plane still serves the cluster, and Web Modeler still lists it. Only the user is missing.
+
+### Repair of the cluster user
+
+The operator reads every attached basic-auth cluster again and repairs the user there. It repairs two things:
+
+- A user that somebody removed on the cluster. It comes back with the password that the Secret publishes.
+- A permission that somebody revoked. The operator grants only the permissions that are missing, so it does not add a second row of a permission the user already holds.
+
+The operator does not repair these:
+
+- A password that somebody changed on the cluster. No API gives a password back, so the operator cannot see the change. Delete the Secret to publish a new password and set it on the cluster.
+- The name and the email address of the user. They are yours to change.
+- A `web-modeler` user on a cluster that this management plane does not serve.
+
+One cluster is read at most once every 10 minutes, so a repair takes up to that long. The row of a cluster that refused the repair reports the reason `BasicAuthUserFailed`.
+
+### Withdrawal of the cluster user
+
+A cluster that leaves the management plane loses the user, and the Secret that published its password goes with it. The cluster leaves when it leaves `spec.clusterSelector` or the namespace bound, when you remove `spec.webModeler`, or when you delete the cluster.
+
+A cluster that stopped accepting basic credentials keeps the user. Nothing signs in with it there, and the cluster no longer publishes the administrator credential that a removal needs. The operator deletes the Secret, records the event `WebModelerUserLeftBehind` on the `CamundaManagementCluster`, and lets the cluster go. Remove that user yourself if you do not want it there.
 
 ## Clusters
 

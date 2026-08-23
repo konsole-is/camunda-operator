@@ -84,8 +84,10 @@ var _ = BeforeSuite(func() {
 
 		r := New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme())
 		// A refused user API is called again soon, so that a spec can watch
-		// the retry.
+		// the retry, and a cluster that holds the user is read again soon, so
+		// that a spec can watch the repair.
 		r.RetryInterval = time.Second
+		r.ConvergeInterval = time.Second
 
 		return r.SetupWithManager(mgr)
 	})
