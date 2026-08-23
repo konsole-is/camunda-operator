@@ -152,6 +152,25 @@ func TestServerVersionReportsTheMajor(t *testing.T) {
 	assert.Equal(t, "17", major)
 }
 
+// TestSystemIdentifierMatchesPgControlSystem pins the identity that the
+// collision rule keys on: the value the server itself reports, read again
+// through a second connection.
+func TestSystemIdentifierMatchesPgControlSystem(t *testing.T) {
+	b := connect(t)
+
+	id, err := b.SystemIdentifier(t.Context())
+	require.NoError(t, err)
+	assert.Regexp(t, `^\d{15,20}$`, id)
+
+	conn := mustConnectAs(t, adminConn.User, adminConn.Password, "postgres")
+	var want string
+	require.NoError(
+		t,
+		conn.QueryRow(t.Context(), "SELECT system_identifier::text FROM pg_control_system()").Scan(&want),
+	)
+	assert.Equal(t, want, id)
+}
+
 func TestMajorVersionParsesServerVersionNum(t *testing.T) {
 	t.Parallel()
 
