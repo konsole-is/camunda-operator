@@ -68,6 +68,27 @@ var _ = Describe("Keycloak types", func() {
 				},
 				Ingress: &keycloak.KeycloakIngressSpec{Enabled: new(false)},
 				Proxy:   &keycloak.KeycloakProxySpec{Headers: "xforwarded"},
+				Scheduling: &keycloak.KeycloakSchedulingSpec{
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+									MatchExpressions: []corev1.NodeSelectorRequirement{{
+										Key:      "pool",
+										Operator: corev1.NodeSelectorOpIn,
+										Values:   []string{"auth"},
+									}},
+								}},
+							},
+						},
+					},
+					Tolerations: []corev1.Toleration{{
+						Key:      "dedicated",
+						Operator: corev1.TolerationOpEqual,
+						Value:    "auth",
+						Effect:   corev1.TaintEffectNoSchedule,
+					}},
+				},
 				AdditionalOptions: []keycloak.KeycloakValueOrSecret{
 					{Name: "http-relative-path", Value: "/auth"},
 					{Name: "log-level", Secret: &corev1.SecretKeySelector{

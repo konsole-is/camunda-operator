@@ -96,6 +96,8 @@ Stay below `26.7.0` with Management Identity 8.9. From 26.7.0, Keycloak refuses 
 
 Keycloak needs a PostgreSQL database of its own. `databaseConfigRef` names a [DatabaseConfig](databaseconfig.md) in the namespace of this resource.
 
+`scheduling` places the Keycloak pods: `nodeAffinity`, `podAffinity`, and `tolerations`, the same block every other workload of this resource takes.
+
 The Keycloak Operator writes the first Keycloak administrator into the Secret `my-management-keycloak-initial-admin`. Management Identity signs in with it to create the realm.
 
 ### You run Keycloak
@@ -559,6 +561,9 @@ spec:
       replicas: 1
       # object. Optional. CPU and memory of the Keycloak container.
       resources: {}
+      # object. Optional. Scheduling constraints of the Keycloak pods:
+      # nodeAffinity, podAffinity, tolerations.
+      scheduling: {}
     # object. Optional. Connect to a Keycloak that you run.
     externalKeycloak:
       # string. Required. URL of Keycloak, including the /auth path when it has one. It must resolve from inside the Kubernetes cluster.

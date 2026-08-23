@@ -17,6 +17,7 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -494,6 +495,39 @@ func TestConfigHashFollowsAComponentInput(t *testing.T) {
 
 // The Keycloak Operator owns the pods of a Keycloak, so the spec offers the
 // instance count and the resources instead of a whole WorkloadSpec.
+// The Keycloak custom resource carries a first-class scheduling block, so the
+// constraints go there rather than into the unsupported pod template.
+func TestKeycloakCRCarriesTheSchedulingConstraints(t *testing.T) {
+	t.Parallel()
+
+	toleration := corev1.Toleration{
+		Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "auth", Effect: corev1.TaintEffectNoSchedule,
+	}
+	affinity := &corev1.NodeAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+			NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+				MatchExpressions: []corev1.NodeSelectorRequirement{{
+					Key: "pool", Operator: corev1.NodeSelectorOpIn, Values: []string{"auth"},
+				}},
+			}},
+		},
+	}
+
+	in := newKeycloakInput(t, true, func(in *Input) {
+		in.Cluster.Spec.IdentityProvider.Keycloak.Scheduling = &v1.SchedulingSpec{
+			NodeAffinity: affinity,
+			Tolerations:  []corev1.Toleration{toleration},
+		}
+	})
+
+	kc := keycloakCR(in)
+	require.NotNil(t, kc.Spec.Scheduling)
+	assert.Equal(t, affinity, kc.Spec.Scheduling.Affinity.NodeAffinity)
+	assert.Equal(t, []corev1.Toleration{toleration}, kc.Spec.Scheduling.Tolerations)
+
+	assert.Nil(t, keycloakCR(newKeycloakInput(t, true, nil)).Spec.Scheduling)
+}
+
 func TestKeycloakTakesItsReplicasFromTheSpec(t *testing.T) {
 	t.Parallel()
 

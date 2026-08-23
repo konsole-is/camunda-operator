@@ -132,7 +132,7 @@ func keycloakCR(in Input) *keycloak.Keycloak {
 
 	spec := in.Cluster.Spec.IdentityProvider.Keycloak
 
-	return &keycloak.Keycloak{
+	cr := &keycloak.Keycloak{
 		ObjectMeta: meta,
 		Spec: keycloak.KeycloakSpec{
 			Instances: new(in.replicas(ComponentKeycloak)),
@@ -161,6 +161,18 @@ func keycloakCR(in Input) *keycloak.Keycloak {
 			Resources: spec.Resources.DeepCopy(),
 		},
 	}
+	if spec.Scheduling != nil {
+		scheduling := &keycloak.KeycloakSchedulingSpec{Tolerations: spec.Scheduling.Tolerations}
+		if spec.Scheduling.NodeAffinity != nil || spec.Scheduling.PodAffinity != nil {
+			scheduling.Affinity = &corev1.Affinity{
+				NodeAffinity: spec.Scheduling.NodeAffinity,
+				PodAffinity:  spec.Scheduling.PodAffinity,
+			}
+		}
+		cr.Spec.Scheduling = scheduling
+	}
+
+	return cr
 }
 
 // keycloakDB renders the database connection of Keycloak, from the resolved

@@ -97,6 +97,9 @@ type KeycloakSpec struct {
 	// Proxy configures the reverse proxy that stands in front of Keycloak.
 	// +optional
 	Proxy *KeycloakProxySpec `json:"proxy,omitempty"`
+	// Scheduling carries the scheduling constraints of the Keycloak pods.
+	// +optional
+	Scheduling *KeycloakSchedulingSpec `json:"scheduling,omitempty"`
 	// AdditionalOptions are Keycloak server options that have no field of
 	// their own, as the keys of https://www.keycloak.org/server/all-config.
 	// The Keycloak Operator reports an option that does have a field of its
@@ -185,6 +188,19 @@ type KeycloakProxySpec struct {
 	// listens on rather than the one the browser used.
 	// +optional
 	Headers string `json:"headers,omitempty"`
+}
+
+// KeycloakSchedulingSpec is the scheduling block of a Keycloak. It declares
+// the fields the operator sets; the custom resource also offers
+// priorityClassName and topologySpreadConstraints.
+// +kubebuilder:object:generate=true
+type KeycloakSchedulingSpec struct {
+	// Affinity of the Keycloak pods.
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// Tolerations of the Keycloak pods.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // KeycloakValueOrSecret is one Keycloak server option. It carries a literal

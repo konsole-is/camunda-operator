@@ -210,6 +210,9 @@ type ManagedKeycloakSpec struct {
 	// Resources are the CPU and memory of the Keycloak container.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// Scheduling constraints of the Keycloak pods.
+	// +optional
+	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 }
 
 // ExternalKeycloakSpec connects Management Identity to a Keycloak that you
