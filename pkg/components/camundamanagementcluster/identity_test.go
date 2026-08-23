@@ -171,7 +171,8 @@ func TestStartedInitialClaimUsesTheFirstRunOfARestartedContainer(t *testing.T) {
 }
 
 // A container that restarted twice has lost its first run, so the start time
-// of the pod, which is older than every run, orders the pods instead.
+// of the pod, which is older than every run, orders the pods instead. A pod
+// that still holds its first run is ordered by that run.
 func TestStartedInitialClaimOrdersByPodStartTimeAfterRestarts(t *testing.T) {
 	t.Parallel()
 
@@ -181,6 +182,7 @@ func TestStartedInitialClaimOrdersByPodStartTimeAfterRestarts(t *testing.T) {
 		Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
 	})
 	restarted.Status.StartTime = &podStart
+	restarted.Status.ContainerStatuses[0].RestartCount = 2
 	restarted.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
 		Terminated: &corev1.ContainerStateTerminated{StartedAt: metav1.Now()},
 	}
@@ -192,6 +194,21 @@ func TestStartedInitialClaimOrdersByPodStartTimeAfterRestarts(t *testing.T) {
 	}
 
 	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
+
+	// A pod that restarted once still holds its first run, and a pod admitted
+	// early whose container ran late does not win on its admission time.
+	admittedEarly := startedIdentityPod("second-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+	})
+	admittedEarly.Status.StartTime = &podStart
+	admittedEarly.Status.ContainerStatuses[0].RestartCount = 1
+	admittedEarly.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: metav1.Now()},
+	}
+	ranFirst := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: newer},
+	})
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{admittedEarly, ranFirst}))
 
 	// A pod that never ran its container has no start to order by, whatever
 	// its start time says.

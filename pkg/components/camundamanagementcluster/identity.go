@@ -347,10 +347,10 @@ func StartedInitialClaim(pods []corev1.Pod) string {
 // Identity reads the administrator claim as it boots, well before that.
 //
 // The container states hold the latest run and the one before it only, so a
-// container that restarted twice has lost its first run. The start time of
-// the pod is older than every run and stays, so it orders the pods once the
-// container ran at least once. A pod without one falls back to the earliest
-// run its container states still hold.
+// container that restarted twice or more has lost its first run. Only then
+// does the start time of the pod order it: that time is when the pod was
+// admitted, which can be long before the container ran, so it is a fallback
+// and not the first choice.
 func identityStartedAt(pod *corev1.Pod) *metav1.Time {
 	for _, status := range pod.Status.ContainerStatuses {
 		if status.Name != identityContainer {
@@ -365,7 +365,7 @@ func identityStartedAt(pod *corev1.Pod) *metav1.Time {
 				first = started
 			}
 		}
-		if first != nil && pod.Status.StartTime != nil {
+		if first != nil && status.RestartCount >= 2 && pod.Status.StartTime != nil {
 			return pod.Status.StartTime
 		}
 
