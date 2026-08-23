@@ -38,8 +38,6 @@ const (
 // The names that a user or another operator can observe on the rendered
 // resources.
 const (
-	// OptimizeImage is the image of both workloads.
-	OptimizeImage = "camunda/optimize"
 	// ZeebeRecordPrefix is the index prefix that the exporter writes and that
 	// Optimize reads. It is the default of both sides
 	// (ElasticsearchExporterConfiguration.IndexConfiguration.prefix and

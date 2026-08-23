@@ -17,9 +17,8 @@ limitations under the License.
 package camundaoptimize
 
 import (
-	"strings"
-
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/images"
 )
 
 // Input is everything the pure package needs to render one Optimize instance.
@@ -63,17 +62,11 @@ type Input struct {
 	ServiceMonitorSupported bool
 }
 
-// Image returns the container image of both workloads: the platform registry
-// prefix, when set, in front of camunda/optimize:<spec.version>. Optimize has
-// its own patch line, so the tag comes from the CamundaOptimize and not from
-// the cluster.
+// Image returns the container image of both workloads. Optimize has its own
+// patch line, so the tag comes from the CamundaOptimize and not from the
+// cluster. The platform config governs the repository and the registry.
 func Image(in Input) string {
-	image := OptimizeImage + ":" + in.Optimize.Spec.Version
-	if registry := strings.TrimRight(in.Platform.ImageRegistry, "/"); registry != "" {
-		return registry + "/" + image
-	}
-
-	return image
+	return images.Resolve(&in.Platform, images.Optimize, in.Optimize.Spec.Version)
 }
 
 // workload returns the WorkloadSpec of a component, or the zero value when the

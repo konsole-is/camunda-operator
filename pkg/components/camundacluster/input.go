@@ -17,11 +17,10 @@ limitations under the License.
 package camundacluster
 
 import (
-	"strings"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/images"
 )
 
 // Storage is the resolved secondary storage binding, filled by the
@@ -170,21 +169,17 @@ func ResolveAuth(in Input) EffectiveAuth {
 	return auth
 }
 
-// Image returns the container image of a process: the platform registry
-// prefix, when set, in front of camunda/camunda:<version> for a unified
-// process or camunda/connectors-bundle:<connectors.version> for connectors.
+// Image returns the container image of a process: the unified image at
+// spec.version, or the connectors runtime at connectors.version. The platform
+// config governs the repository and the registry.
 func Image(in Input, p Process) string {
-	image := CamundaImage + ":" + in.Effective.Version
 	if p.Component == ComponentConnectors {
 		version := ""
 		if in.Effective.Connectors != nil {
 			version = in.Effective.Connectors.Version
 		}
-		image = ConnectorsImage + ":" + version
+		return images.Resolve(&in.Platform, images.Connectors, version)
 	}
 
-	if registry := strings.TrimRight(in.Platform.ImageRegistry, "/"); registry != "" {
-		return registry + "/" + image
-	}
-	return image
+	return images.Resolve(&in.Platform, images.Camunda, in.Effective.Version)
 }
