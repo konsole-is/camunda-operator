@@ -91,9 +91,9 @@ const (
 
 // KeycloakServicePort is the HTTP port of the Keycloak that the operator
 // renders. The rendered resource sets it as spec.http.httpPort, the port the
-// container listens on, and it sets no spec.http.serviceHttpPort, so the
-// Service that the Keycloak Operator creates publishes the same port. The
-// value is the Keycloak default.
+// container listens on. It sets no spec.http.serviceHttpPort, so the Service
+// that the Keycloak Operator creates publishes the same port. The value is
+// the Keycloak default.
 const KeycloakServicePort int32 = 8080
 
 // The ports of the Management Identity container. The HTTP port is the

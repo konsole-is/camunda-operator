@@ -86,8 +86,9 @@ const (
 	// keycloakEnvInitConsoleRootURL is the URL that browsers reach Console
 	// at. The configuration-variables page names OPERATE, OPTIMIZE, TASKLIST,
 	// and WEBMODELER as the components, and it leaves Console out. The preset
-	// exists all the same: charts/camunda-platform-8.9/templates/identity/
-	// configmap.yaml sets keycloak.init.console.root-url and defines a
+	// exists all the same. The 8.9 chart file
+	// charts/camunda-platform-8.9/templates/identity/configmap.yaml sets
+	// keycloak.init.console.root-url. The same file defines a
 	// component-presets.console block with the console client, the
 	// console-api resource server, and the Console role.
 	keycloakEnvInitConsoleRootURL    = "KEYCLOAK_INIT_CONSOLE_ROOT_URL"

@@ -41,9 +41,9 @@ const configHashLength = 16
 // controller read, and the digests carry the credentials that the operator
 // itself generates, which no reference records either.
 //
-// A generated credential and the entry of in.ComponentInputs for a component
-// enter the hash of that component and of no other, so a change to either
-// rolls that component alone.
+// A generated credential and the in.ComponentInputs entry of a component
+// enter the hash of that component and of no other. A change to either rolls
+// that component alone.
 func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")

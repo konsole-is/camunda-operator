@@ -71,7 +71,7 @@ func Build(in Input) (Built, error) {
 // A gated-off component reports True with the reason Disabled, and Disabled
 // outranks Healthy in the aggregate, so a management cluster that copies no
 // Secret would read "Ready=True/Disabled". Each component below is built in
-// every mode, so that turning it off deletes its resources; it only stays out
+// every mode, so that turning it off deletes its resources. It only stays out
 // of Ready while it is off.
 func takesPartInReady(in Input, comp *component.Component) bool {
 	switch comp.GetName() {

@@ -48,8 +48,8 @@ const (
 
 // keycloakDBVendor is the database that the operator runs Keycloak on, and
 // keycloakDBSchema is the schema it opens there. Keycloak needs a PostgreSQL
-// database of its own, and the reference deployment of Camunda names the
-// schema rather than leaving it to the search path of the database user
+// database of its own. The reference deployment of Camunda names the schema
+// instead of leaving it to the search path of the database user
 // (the keycloak-instance manifests of
 // https://github.com/camunda/camunda-deployment-references, under
 // generic/kubernetes/operator-based/keycloak).
@@ -71,8 +71,8 @@ const keycloakJDBCPrefix = "jdbc:aws-wrapper:postgresql://"
 // keycloakComponents renders the Keycloak that the operator runs through the
 // Keycloak Operator. The component is built in every mode and gated on the
 // keycloak mode, so a move to externalKeycloak or to oidc deletes the custom
-// resource. A Kubernetes cluster that does not serve the Keycloak kind gets
-// no component at all: there is no resource to delete, and a delete would
+// resource. A Kubernetes cluster that does not serve the Keycloak kind gets no
+// component at all. There is no resource to delete there, and the delete would
 // fail against an API that serves no such kind.
 //
 // The Keycloak Operator owns everything below the custom resource: the
@@ -107,8 +107,8 @@ func keycloakComponents(in Input) ([]*component.Component, error) {
 // Keycloak Operator stays off: the route to Keycloak is the one that
 // spec.identityProvider.keycloak.externalUrl names, and it is yours to run.
 //
-// Another mode carries no Keycloak block, and the component is then gated off
-// and deletes the resource, so the identity alone is rendered.
+// Another mode carries no keycloak block. The component is then gated off, so
+// it deletes the resource and never applies what this function returns.
 func keycloakCR(in Input) *keycloak.Keycloak {
 	meta := metav1.ObjectMeta{
 		Name:      KeycloakName(in.Cluster),

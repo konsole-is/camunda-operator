@@ -26,7 +26,7 @@ import (
 )
 
 // The versions the operator supports. Camunda 8.9 is the first release with
-// the management plane in this shape, and it supports Keycloak 26 only, so
+// the management plane in this shape. It supports Keycloak 26 only, so
 // Keycloak carries a ceiling as well as a floor
 // (https://docs.camunda.io/docs/reference/announcements-release-notes/890/890-announcements/#supported-environments).
 const (

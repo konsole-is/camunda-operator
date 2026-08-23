@@ -181,11 +181,10 @@ type ManagedKeycloakSpec struct {
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
 	// ExternalURL is the URL that browsers reach Keycloak at, including the
-	// /auth path. It is the front-channel issuer of every token, and
-	// Management Identity uses the front-channel URL since 8.5.3, so the
-	// Identity pods must reach it too. Management Identity administers
-	// Keycloak through the Service that the Keycloak Operator creates, not
-	// through this URL.
+	// /auth path. It is the front-channel issuer of every token. Management
+	// Identity uses the front-channel URL since 8.5.3, so the Identity pods
+	// must also reach it. Management Identity administers Keycloak through
+	// the Service that the Keycloak Operator creates, not through this URL.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getEscapedPath() == '/auth'",message="externalUrl must carry the /auth path, for example https://keycloak.example.com/auth"
 	ExternalURL string `json:"externalUrl"`
