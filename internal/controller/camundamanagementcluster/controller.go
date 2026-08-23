@@ -48,6 +48,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
@@ -192,11 +193,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
 	claimErr := r.recordInitialClaim(ctx, &mc)
+	userErr := r.webModelerUsers(ctx, &mc, attached, rows)
 	pingErr := r.syncPing(ctx, &mc, clusters, attached)
 	contractErr := r.writeContract(ctx, &mc, res)
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 
-	return ctrl.Result{}, errors.Join(reconcileErr, claimErr, pingErr, contractErr)
+	return ctrl.Result{}, errors.Join(reconcileErr, claimErr, userErr, pingErr, contractErr)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -343,7 +345,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = componentClient
+		// The apply wrapper enforces the precondition of a reused generated
+		// credential, so a delete of its Secret rotates it.
+		r.componentClient = credentials.NewApplyClient(componentClient)
 	}
 	r.keycloakServed = keycloakKindServed(mgr)
 

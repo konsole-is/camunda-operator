@@ -24,15 +24,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// A management cluster that does not deploy Console renders no component for
-// it, so nothing but the spec turns Console on.
+// A management cluster that does not deploy Console renders no object for it.
+// The component is built either way, gated off, so that a management cluster
+// that drops Console has its workload deleted rather than left running.
 func TestConsoleRendersNothingWhileItIsDisabled(t *testing.T) {
 	t.Parallel()
 
-	comps, err := consoleComponents(fixtureMinimal(t))
+	built, err := consoleComponents(fixtureMinimal(t))
+	require.NoError(t, err)
+	require.Len(t, built.Components, 1)
+	assert.Empty(t, built.Ready)
+
+	objects, err := built.Components[0].Preview()
 
 	require.NoError(t, err)
-	assert.Empty(t, comps)
+	assert.Empty(t, objects)
 }
 
 // The environment of Console in the oidc mode: the oidc profile, the Identity
@@ -127,11 +133,12 @@ func TestConsoleDeploymentCarriesTheOverridesAndTheConfigHash(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureConsoleRealistic(t)
-	comps, err := consoleComponents(in)
+	built, err := consoleComponents(in)
 	require.NoError(t, err)
-	require.Len(t, comps, 1)
+	require.Len(t, built.Components, 1)
+	require.Len(t, built.Ready, 1)
 
-	objects, err := comps[0].Preview()
+	objects, err := built.Components[0].Preview()
 	require.NoError(t, err)
 	workload := previewedDeployment(t, objects)
 

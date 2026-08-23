@@ -254,10 +254,12 @@ func goldenFixtures(t *testing.T) map[string]Input {
 	t.Helper()
 
 	return map[string]Input{
-		"oidc/minimal":      fixtureMinimal(t),
-		"oidc/realistic":    fixtureRealistic(t),
-		"console/minimal":   fixtureConsoleMinimal(t),
-		"console/realistic": fixtureConsoleRealistic(t),
+		"oidc/minimal":          fixtureMinimal(t),
+		"oidc/realistic":        fixtureRealistic(t),
+		"console/minimal":       fixtureConsoleMinimal(t),
+		"console/realistic":     fixtureConsoleRealistic(t),
+		"web-modeler/minimal":   fixtureWebModelerMinimal(t),
+		"web-modeler/realistic": fixtureWebModelerRealistic(t),
 	}
 }
 
