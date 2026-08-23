@@ -32,7 +32,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 9e336409b6f96005
+        camunda.io/config-hash: 3fb945c766048581
       labels:
         camunda.io/component: web-modeler-restapi
         camunda.io/management-cluster: my-management
@@ -70,8 +70,9 @@ spec:
         - name: CAMUNDA_IDENTITY_TYPE
           value: KEYCLOAK
         - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API
-          value: web-modeler-public-api
+          value: web-modeler-api
         - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API
+          value: web-modeler-public-api
         - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
           value: https://keycloak.example.com/auth/realms/camunda-platform
         - name: RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL

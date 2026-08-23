@@ -393,8 +393,9 @@ func keycloakClients(in Input) ProviderClients {
 			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModeler,
 		}
 		clients.WebModelerAPI = Client{
-			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModelerPublic,
+			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModeler,
 		}
+		clients.WebModelerPublicAPIAudience = keycloakAudienceWebModelerPublic
 	}
 
 	return clients

@@ -301,6 +301,21 @@ func TestWebModelerRestapiEnvCarriesTheOptionalSettings(t *testing.T) {
 	assert.Equal(t, "preferred_username", env["CAMUNDA_MODELER_OAUTH2_TOKEN_USERNAMECLAIM"])
 }
 
+// Web Modeler validates two audiences, one per resource server that
+// Management Identity creates in the realm. A blank public API audience
+// refuses the start of the restapi process, so a Keycloak mode has to render
+// both, and it must not render the public audience as the internal one.
+func TestWebModelerRestapiEnvCarriesBothAudiencesInTheKeycloakModes(t *testing.T) {
+	t.Parallel()
+
+	env := renderedEnv(newKeycloakInput(t, true, func(in *Input) {
+		in.Cluster.Spec.WebModeler = webModeler("web-modeler-db")
+	}), ComponentWebModelerRestapi)
+
+	assert.Equal(t, "web-modeler-api", env["CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API"])
+	assert.Equal(t, "web-modeler-public-api", env["CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API"])
+}
+
 // Web Modeler redirects a browser to https unless it is told not to, so an
 // http external URL has to turn that off.
 func TestWebModelerRestapiEnvFollowsTheSchemeOfTheExternalURL(t *testing.T) {

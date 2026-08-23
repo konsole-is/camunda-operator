@@ -161,7 +161,8 @@ func TestResolveIdentityProviderDeclaresAClientPerDeployedComponent(t *testing.T
 	assert.Equal(t, keycloakAudienceConsole, full.Console.Audience)
 	assert.Equal(t, keycloakClientWebModeler, full.WebModeler.ID)
 	assert.Equal(t, keycloakAudienceWebModeler, full.WebModeler.Audience)
-	assert.Equal(t, keycloakAudienceWebModelerPublic, full.WebModelerAPI.Audience)
+	assert.Equal(t, keycloakAudienceWebModeler, full.WebModelerAPI.Audience)
+	assert.Equal(t, keycloakAudienceWebModelerPublic, full.WebModelerPublicAPIAudience)
 }
 
 // The Keycloak modes bind the keycloak profile of Management Identity, which
