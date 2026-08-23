@@ -58,7 +58,7 @@ The operator generates the admin password once and keeps it stable. To rotate it
 
 The effective version is `spec.version`, or the version of the preset when the field is absent. It is the version the operator deploys, and a new version rolls every workload.
 
-The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster: a broker that starts on data that a newer version wrote marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records the Warning event `VersionDowngradeRefused`, and applies nothing. The brokers keep the version they have.
+The operator refuses a version below the one the brokers run. Camunda does not support a downgrade of a running cluster, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/). A broker that starts on data that a newer version wrote marks itself unhealthy. The cluster reports `Ready: False` with reason `VersionDowngradeRefused`, records the Warning event `VersionDowngradeRefused`, and applies nothing. The brokers keep the version they have.
 
 ```yaml
 status:
@@ -88,7 +88,7 @@ A restore sanctions its own move to the version of its backup. The [LogicalResto
 
 ### Downgrade on purpose
 
-CAUTION: Do not downgrade a cluster over data that a newer version wrote. Every broker then reports itself unhealthy. To recover, set the version back to the one that wrote the data. You can also restore a backup taken with the lower version.
+CAUTION: Do not downgrade a cluster over data that a newer version wrote. The rule above gives the reason and the source. To recover, set the version back to the one that wrote the data. You can also restore a backup taken with the lower version.
 
 To downgrade on purpose, set the annotation `camunda.io/allow-version-downgrade` to the target version. Set `spec.version` to the same value in the same edit.
 
@@ -105,9 +105,9 @@ spec:
   # ... the rest of your cluster
 ```
 
-The annotation sanctions a move to that version and to no other. The operator removes the annotation once the brokers carry the version. An annotation that names a version the cluster never moves to stays until you remove it.
+The annotation sanctions a move to that version and to no other. The operator removes the annotation once the brokers carry the version. It also removes an annotation that does not name the effective version. Set the annotation in the same edit as the version, or after the refusal. The refusal keeps the lower effective version pending, so an annotation set after it matches.
 
-After a restore, you can give the preset control of the version again. Set the annotation to the version of the preset, and remove `spec.version` in the same edit.
+After a restore, you can give the preset control of the version again. Set the annotation to the version of the preset, and remove `spec.version` in the same edit. You can also remove `spec.version` first, and set the annotation after the refusal.
 
 ## Storage
 

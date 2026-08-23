@@ -79,7 +79,7 @@ Each write is a server-side apply of one field, under a field manager of its own
 | Field | Field manager | What happens at the end |
 | --- | --- | --- |
 | `spec.suspend` | `camunda-operator/restore-suspend` | The restore withdraws it when it reaches `Completed`. |
-| `spec.version` and the annotation `camunda.io/allow-version-downgrade` | `camunda-operator/restore-version` | The restore keeps `spec.version`. The operator removes the annotation once the brokers carry the version. |
+| `spec.version` and the annotation `camunda.io/allow-version-downgrade` | `camunda-operator/restore-version` | The restore keeps `spec.version`. The operator removes the annotation once the brokers carry the version, and as soon as it names another version. |
 
 These names are published. A GitOps tool reads them, and so does a layer above this operator, for example a `CloudCamundaCluster` of `camunda-cloud-operator`. The names tell a write of a restore from a write of a user.
 
@@ -94,19 +94,16 @@ To move the cluster off that version, declare the version you want:
 
 CAUTION: A manifest that omits `spec.version` does not take the field back. Server-side apply removes a field only from the manager that declared it, and `camunda-operator/restore-version` still declares this one. Watch for this on a cluster that took its version from a preset: an explicit `spec.version` always wins over the preset, so the value the restore wrote governs the cluster until somebody removes the field. Remove it by hand to give the preset control again.
 
-If the version of the preset is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the preset first:
+If the version of the preset is below the one the brokers run, the operator refuses that removal. Set the annotation `camunda.io/allow-version-downgrade` to the version of the preset in the same edit that removes the field. The operator removes an annotation that does not name the effective version, so two commands do not work here.
 
 ```bash
-kubectl annotate camundacluster my-cluster -n my-cluster-ns --overwrite \
-  camunda.io/allow-version-downgrade=8.9.0
+kubectl patch camundacluster my-cluster -n my-cluster-ns --type=merge -p '{
+  "metadata": {"annotations": {"camunda.io/allow-version-downgrade": "8.9.0"}},
+  "spec": {"version": null}
+}'
 ```
 
-Then remove the field:
-
-```bash
-kubectl patch camundacluster my-cluster -n my-cluster-ns \
-  --type=json -p '[{"op":"remove","path":"/spec/version"}]'
-```
+A merge patch keeps the other annotations of the cluster, and it writes the annotations map when the cluster has none. The value `null` removes `spec.version`.
 
 ### Why the downgrade is safe here
 
