@@ -96,16 +96,19 @@ func KeycloakOperatorVersion() (string, error) {
 	return version, nil
 }
 
-// IsKeycloakOperatorInstalled reports whether the cluster serves the Keycloak
-// CRD and runs the Keycloak Operator Deployment in namespace. A cluster with
-// the CRDs but without the operator, for example after a partial uninstall,
-// is not installed: the suite then installs the Keycloak Operator again.
-func IsKeycloakOperatorInstalled(namespace string) bool {
+// AreKeycloakCRDsInstalled reports whether the cluster serves the Keycloak
+// kind. The manager probes that kind once at startup, so the CRDs have to be
+// there before the manager, while the operator itself is only needed by the
+// flow that creates a Keycloak.
+func AreKeycloakCRDsInstalled() bool {
 	crds, err := Run(exec.Command("kubectl", "get", "crds"))
-	if err != nil || !strings.Contains(crds, "keycloaks.k8s.keycloak.org") {
-		return false
-	}
 
+	return err == nil && strings.Contains(crds, "keycloaks.k8s.keycloak.org")
+}
+
+// IsKeycloakOperatorInstalled reports whether the Keycloak Operator
+// Deployment runs in namespace.
+func IsKeycloakOperatorInstalled(namespace string) bool {
 	operator, err := Run(exec.Command(
 		"kubectl", "get", "deployment", keycloakOperatorDeployment,
 		"-n", namespace, "--ignore-not-found", "-o", "name",
@@ -117,13 +120,10 @@ func IsKeycloakOperatorInstalled(namespace string) bool {
 	return strings.TrimSpace(operator) != ""
 }
 
-// InstallKeycloakOperator installs the Keycloak CRDs and runs the Keycloak
-// Operator in namespace, then waits until its Deployment is rolled out.
-//
-// The operator watches the namespace it runs in and no other
-// (JOSDK_WATCH_CURRENT in its Deployment), so it goes next to the Keycloak
-// resources it manages rather than into an operator namespace of its own.
-func InstallKeycloakOperator(namespace string) error {
+// InstallKeycloakCRDs applies the custom resource definitions of the Keycloak
+// Operator release that KeycloakOperatorVersion names, skipping a file that
+// the release does not publish.
+func InstallKeycloakCRDs() error {
 	version, err := KeycloakOperatorVersion()
 	if err != nil {
 		return err
@@ -149,38 +149,16 @@ func InstallKeycloakOperator(namespace string) error {
 		}
 	}
 
-	cmd := exec.Command(
-		"kubectl", "apply", "--server-side", "-n", namespace,
-		"-f", fmt.Sprintf(keycloakResourceURLTmpl, version, keycloakOperatorManifest),
-	)
-	if _, err := Run(cmd); err != nil {
-		return err
-	}
-
-	cmd = exec.Command(
-		"kubectl", "rollout", "status", "deployment/"+keycloakOperatorDeployment,
-		"--namespace", namespace, "--timeout", "5m",
-	)
-	_, err = Run(cmd)
-
-	return err
+	return nil
 }
 
-// UninstallKeycloakOperator removes the Keycloak Operator from namespace and
-// its CRDs.
-func UninstallKeycloakOperator(namespace string) {
+// UninstallKeycloakCRDs removes the custom resource definitions that
+// InstallKeycloakCRDs applied.
+func UninstallKeycloakCRDs() {
 	version, err := KeycloakOperatorVersion()
 	if err != nil {
 		warnError(err)
 		return
-	}
-
-	cmd := exec.Command(
-		"kubectl", "delete", "-n", namespace, "--ignore-not-found",
-		"-f", fmt.Sprintf(keycloakResourceURLTmpl, version, keycloakOperatorManifest),
-	)
-	if _, err := Run(cmd); err != nil {
-		warnError(err)
 	}
 
 	for _, crd := range keycloakOperatorCRDs {
@@ -198,6 +176,55 @@ func UninstallKeycloakOperator(namespace string) {
 		if _, err := Run(cmd); err != nil {
 			warnError(err)
 		}
+	}
+}
+
+// InstallKeycloakOperator runs the Keycloak Operator in namespace and waits
+// until its Deployment is rolled out. The CRDs come from InstallKeycloakCRDs.
+//
+// The operator watches the namespace it runs in and no other
+// (JOSDK_WATCH_CURRENT in its Deployment), so it goes next to the Keycloak
+// resources it manages rather than into an operator namespace of its own. It
+// requests 300m of CPU for as long as it runs, which is why the flow that
+// needs it installs it and removes it again, rather than the suite.
+func InstallKeycloakOperator(namespace string) error {
+	version, err := KeycloakOperatorVersion()
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(
+		"kubectl", "apply", "--server-side", "-n", namespace,
+		"-f", fmt.Sprintf(keycloakResourceURLTmpl, version, keycloakOperatorManifest),
+	)
+	if _, err := Run(cmd); err != nil {
+		return err
+	}
+
+	cmd = exec.Command(
+		"kubectl", "rollout", "status", "deployment/"+keycloakOperatorDeployment,
+		"--namespace", namespace, "--timeout", "5m",
+	)
+	_, err = Run(cmd)
+
+	return err
+}
+
+// UninstallKeycloakOperator removes the Keycloak Operator from namespace. The
+// CRDs stay until UninstallKeycloakCRDs.
+func UninstallKeycloakOperator(namespace string) {
+	version, err := KeycloakOperatorVersion()
+	if err != nil {
+		warnError(err)
+		return
+	}
+
+	cmd := exec.Command(
+		"kubectl", "delete", "-n", namespace, "--ignore-not-found",
+		"-f", fmt.Sprintf(keycloakResourceURLTmpl, version, keycloakOperatorManifest),
+	)
+	if _, err := Run(cmd); err != nil {
+		warnError(err)
 	}
 }
 
