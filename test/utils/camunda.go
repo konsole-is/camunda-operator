@@ -54,11 +54,12 @@ type CamundaAuth interface {
 	script() string
 }
 
-// BasicAuth sends the user of a Secret with curl -u. The pod reads the Secret
+// BasicAuth sends a user and a password with curl -u. The password, and the
+// user unless Username names one, come from a Secret that the pod reads
 // through secretKeyRef, so the password never appears in the pod spec.
 type BasicAuth struct {
 	// Username is the user to sign in as. Set it for a Secret that holds the
-	// password alone; it wins over UsernameKey.
+	// password alone. It wins over UsernameKey.
 	Username string
 	// Secret is the Secret in the namespace of the helper pod that holds the
 	// user under UsernameKey and PasswordKey.

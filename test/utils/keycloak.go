@@ -205,7 +205,7 @@ func UninstallKeycloakOperator(namespace string) {
 // fails the install instead of holding the suite.
 const urlProbeTimeout = 30 * time.Second
 
-// urlExists reports whether a GET of url answers 200. A 404 is false; any
+// urlExists reports whether a HEAD of url answers 200. A 404 is false; any
 // other answer or a transport error is an error, so a flaky network never
 // reads as a release that publishes no such file.
 func urlExists(url string) (bool, error) {
