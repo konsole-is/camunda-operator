@@ -32,7 +32,9 @@ const keycloakServiceURL = "http://my-management-keycloak-service.camunda.svc:80
 
 // A Keycloak that the operator runs answers on two addresses: browsers reach
 // it at the external URL, which signs the tokens, and containers reach it at
-// the Service that the Keycloak Operator creates.
+// the Service that the Keycloak Operator creates. The login redirect goes to
+// the external URL, and the token exchange and the signing keys, which are
+// server-to-server, go to the Service.
 func TestResolveIdentityProviderSplitsTheURLsOfAManagedKeycloak(t *testing.T) {
 	t.Parallel()
 
@@ -56,10 +58,14 @@ func TestResolveIdentityProviderSplitsTheURLsOfAManagedKeycloak(t *testing.T) {
 		t, fixtureKeycloak+"/realms/camunda-platform/protocol/openid-connect/auth", provider.AuthURL,
 	)
 	assert.Equal(
-		t, fixtureKeycloak+"/realms/camunda-platform/protocol/openid-connect/token", provider.TokenURL,
+		t,
+		keycloakServiceURL+"/realms/camunda-platform/protocol/openid-connect/token",
+		provider.TokenURL,
 	)
 	assert.Equal(
-		t, fixtureKeycloak+"/realms/camunda-platform/protocol/openid-connect/certs", provider.JwksURL,
+		t,
+		keycloakServiceURL+"/realms/camunda-platform/protocol/openid-connect/certs",
+		provider.JwksURL,
 	)
 	assert.Equal(
 		t,
@@ -232,6 +238,21 @@ func TestManagementAuthSpecInTheKeycloakModes(t *testing.T) {
 		t,
 		keycloakServiceURL+"/realms/camunda-platform",
 		spec.IssuerBackendURL,
+	)
+	assert.Equal(
+		t,
+		fixtureKeycloak+"/realms/camunda-platform/protocol/openid-connect/auth",
+		spec.AuthURL,
+	)
+	assert.Equal(
+		t,
+		keycloakServiceURL+"/realms/camunda-platform/protocol/openid-connect/token",
+		spec.TokenURL,
+	)
+	assert.Equal(
+		t,
+		keycloakServiceURL+"/realms/camunda-platform/protocol/openid-connect/certs",
+		spec.JwksURL,
 	)
 	assert.Equal(t, keycloakClientOptimize, spec.ClientID)
 	assert.Equal(t, keycloakAudienceOptimize, spec.Audience)

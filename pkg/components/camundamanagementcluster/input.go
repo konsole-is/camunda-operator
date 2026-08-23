@@ -96,8 +96,12 @@ type IdentityProvider struct {
 	// IssuerBackendURL is the issuer that a container reaches from inside the
 	// Kubernetes cluster.
 	IssuerBackendURL string
-	// AuthURL, TokenURL, and JwksURL are the endpoints of the provider.
-	AuthURL, TokenURL, JwksURL string
+	// AuthURL is the authorization endpoint that a browser is redirected to.
+	AuthURL string
+	// TokenURL and JwksURL are the endpoints that a container calls: the
+	// token exchange and the fetch of the signing keys. Both are
+	// server-to-server, so they follow IssuerBackendURL.
+	TokenURL, JwksURL string
 	// KeycloakURL is the in-cluster Keycloak URL, the /auth path included. It
 	// is empty in the oidc mode.
 	KeycloakURL string
@@ -254,9 +258,9 @@ func Mode(mc *v1.CamundaManagementCluster) ProviderMode {
 }
 
 // resolveManagedKeycloak reads the Keycloak that the operator runs. Browsers
-// and the Identity pods reach it at spec.externalUrl; every container reaches
-// it at the Service that the Keycloak Operator creates. The two URLs are the
-// front-channel and the back-channel issuer of the realm.
+// reach it at spec.externalUrl and every container reaches it at the Service
+// that the Keycloak Operator creates. The two URLs are the front-channel and
+// the back-channel issuer of the realm.
 //
 // The administrator is the one the Keycloak Operator writes into
 // <keycloak>-initial-admin next to the Keycloak custom resource.
@@ -303,16 +307,17 @@ func keycloakProvider(
 	admin *v1.CredentialsSecretRef,
 ) IdentityProvider {
 	issuer := publicURL + keycloakRealmPath + realm
+	backendIssuer := backendURL + keycloakRealmPath + realm
 
 	return IdentityProvider{
 		Mode:              mode,
 		Type:              identityTypeKeycloak,
 		SpringProfile:     identityProfileKeycloak,
 		IssuerURL:         issuer,
-		IssuerBackendURL:  backendURL + keycloakRealmPath + realm,
+		IssuerBackendURL:  backendIssuer,
 		AuthURL:           issuer + keycloakAuthPath,
-		TokenURL:          issuer + keycloakTokenPath,
-		JwksURL:           issuer + keycloakCertsPath,
+		TokenURL:          backendIssuer + keycloakTokenPath,
+		JwksURL:           backendIssuer + keycloakCertsPath,
 		KeycloakURL:       backendURL,
 		KeycloakPublicURL: publicURL,
 		Realm:             realm,
