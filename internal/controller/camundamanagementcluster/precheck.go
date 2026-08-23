@@ -134,8 +134,8 @@ func (r *Reconciler) checkKeycloakOperator(mc *v1.CamundaManagementCluster) *con
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonKeycloakOperatorNotInstalled,
 		Message: "spec.identityProvider selects keycloak and this Kubernetes cluster does not serve " +
-			"k8s.keycloak.org/v2alpha1 Keycloak; install the Keycloak Operator, or select the " +
-			"externalKeycloak or the oidc mode",
+			"k8s.keycloak.org/v2alpha1 Keycloak; install the Keycloak Operator and restart the " +
+			"operator, or select the externalKeycloak or the oidc mode",
 	}
 }
 

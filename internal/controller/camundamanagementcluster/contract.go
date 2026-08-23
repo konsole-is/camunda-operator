@@ -90,12 +90,29 @@ func (r *Reconciler) applyContract(
 }
 
 // withdrawContract deletes the ManagementAuthConfig of this management
-// cluster. The contract is cluster-scoped and its owner is namespaced, so
-// Kubernetes collects nothing: the finalizer is what removes it. A contract
-// that another owner holds is left alone.
+// cluster: the one its spec names, and the one its status recorded before,
+// when a rename left the two apart. The contract is cluster-scoped and its
+// owner is namespaced, so Kubernetes collects nothing: the finalizer is what
+// removes it. A contract that another owner holds is left alone.
 func (r *Reconciler) withdrawContract(ctx context.Context, mc *v1.CamundaManagementCluster) error {
 	name := components.ContractName(mc)
+	if err := r.withdrawContractNamed(ctx, mc, name); err != nil {
+		return err
+	}
+	if previous := mc.Status.ManagementAuthConfig; previous != "" && previous != name {
+		return r.withdrawContractNamed(ctx, mc, previous)
+	}
 
+	return nil
+}
+
+// withdrawContractNamed deletes the ManagementAuthConfig of that name when
+// this management cluster owns it.
+func (r *Reconciler) withdrawContractNamed(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	name string,
+) error {
 	var existing v1.ManagementAuthConfig
 	if err := r.APIReader.Get(ctx, client.ObjectKey{Name: name}, &existing); err != nil {
 		if apierrors.IsNotFound(err) {

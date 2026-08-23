@@ -189,6 +189,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	res.Input.Clusters = attached
 	mc.Status.Clusters = rows
+	// A renamed contract leaves the old name behind until the new contract is
+	// written, so the status keeps naming the old one until then.
+	previousContract := mc.Status.ManagementAuthConfig
 	mc.Status.ManagementAuthConfig = res.ContractName
 
 	built, err := components.Build(res.Input)
@@ -205,6 +208,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	pingErr := r.syncPing(ctx, &mc, clusters, attached)
 	contractErr := r.writeContract(ctx, &mc, res)
+	if contractErr == nil && previousContract != "" && previousContract != res.ContractName {
+		// The new contract is written, so the old one goes. A failed
+		// withdrawal keeps the old name on the status, which is what makes
+		// the next reconcile withdraw it again.
+		if err := r.withdrawContractNamed(ctx, &mc, previousContract); err != nil {
+			mc.Status.ManagementAuthConfig = previousContract
+			contractErr = err
+		}
+	}
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 
 	return ctrl.Result{}, errors.Join(reconcileErr, claimErr, userErr, pingErr, contractErr)

@@ -165,6 +165,30 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			expectReadyReason(s.mc, v1.ReasonWriteFailed)
 		})
 
+		It("withdraws the old contract when the spec renames it", func() {
+			s := newScenario()
+
+			oldName := client.ObjectKey{Name: s.mc.Name}
+			Eventually(func(g Gomega) {
+				var written v1.ManagementAuthConfig
+				g.Expect(k8sClient.Get(ctx, oldName, &written)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			renamed := s.mc.Name + "-renamed"
+			Eventually(func(g Gomega) {
+				latest := readManagementCluster(g, s.mc)
+				latest.Spec.ManagementAuthConfigName = renamed
+				g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				var written v1.ManagementAuthConfig
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: renamed}, &written)).To(Succeed())
+				g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, oldName, &written))).To(BeTrue())
+				g.Expect(readManagementCluster(g, s.mc).Status.ManagementAuthConfig).To(Equal(renamed))
+			}, timeout, interval).Should(Succeed())
+		})
+
 		It("removes the contract with the management cluster", func() {
 			s := newScenario()
 

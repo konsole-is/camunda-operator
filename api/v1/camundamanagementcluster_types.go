@@ -380,8 +380,8 @@ type CamundaManagementClusterStatus struct {
 	// Conditions represent the current state. Ready carries a pre-check
 	// reason, or it is derived from the conditions of the deployed components.
 	// The per-component conditions (KeycloakReady, IdentityReady,
-	// ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady) also
-	// appear here.
+	// ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady,
+	// MirroredSecretsReady) also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

@@ -334,7 +334,7 @@ How Web Modeler authenticates against a cluster follows the authentication metho
 - An OIDC cluster takes the token of the person who is signed in. Nothing else is needed.
 - A basic-auth cluster asks the person for a user name and a password in the deploy dialog. No setting of Web Modeler carries them.
 
-For every attached basic-auth cluster, the operator creates the user `web-modeler` on that cluster. It publishes the password of that user in a Secret of the management namespace, named `my-management-web-modeler-cluster-<uid>`. The `<uid>` is the first eight characters of the UID of the `CamundaCluster`. The user holds only the permissions that deploying and starting a process needs.
+For every attached basic-auth cluster, the operator creates the user `web-modeler` on that cluster. That user name is reserved on every attached basic-auth cluster: a user of that name that already exists there gets the password of the operator, and the operator removes it when the cluster leaves the management plane. Do not create a `web-modeler` user of your own on those clusters. It publishes the password of that user in a Secret of the management namespace, named `my-management-web-modeler-cluster-<uid>`. The `<uid>` is the first eight characters of the UID of the `CamundaCluster`. The user holds only the permissions that deploying and starting a process needs.
 
 Read the password and give it to the people who deploy from Web Modeler:
 
@@ -416,6 +416,8 @@ status:
 
 The contract is cluster-scoped, so two management planes in two namespaces can ask for the same name. The first one there keeps it, and the second reports `Ready=False` with reason `Conflict`.
 
+If you change `spec.managementAuthConfigName` later, the operator writes the contract under the new name and removes the old one. A `CamundaOptimize` that names the old one in its `managementAuthRef` loses its contract, so change that reference at the same time.
+
 ## Images
 
 Every image of the management plane has three sources on the referenced [CamundaPlatformConfig](camundaplatformconfig.md), in this order:
@@ -481,7 +483,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, and `Suspended
 | `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
 | `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |
 | `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing is wrong. Set `suspend` back to `false` to bring the management plane up. |
-| `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator, or select the `externalKeycloak` or the `oidc` mode. See [Installation](../installation.md#requirements). |
+| `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator and restart the operator, or select the `externalKeycloak` or the `oidc` mode. See [Installation](../installation.md#requirements). |
 | `Ready` | `UnsupportedVersion` | A version field is outside the range the operator supports. The message names the field and the bound. | Set a supported version. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. | Read the message. Create the missing resource, or correct the field it names. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. The message names both. | Create the Secret with the named key. |
