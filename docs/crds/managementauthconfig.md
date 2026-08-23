@@ -64,7 +64,7 @@ status:
       message: ManagementAuthConfig "my-management-auth" exists and belongs to CamundaManagementCluster my-management-ns/my-management; set spec.managementAuthConfigName to a free name, or remove the object
 ```
 
-A contract that you wrote by hand carries no owner labels, so a management plane that asks for its name reports `Conflict` against "another writer" and leaves the object alone.
+A contract that you wrote by hand carries no owner labels. A management plane that asks for its name reports `Conflict` against "another writer" and leaves the object alone.
 
 ## Validation checks
 

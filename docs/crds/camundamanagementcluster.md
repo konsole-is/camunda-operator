@@ -68,7 +68,7 @@ Read the names back with `kubectl get deploy,svc -l camunda.io/management-cluste
 
 ### The operator runs Keycloak
 
-`identityProvider.keycloak` runs Keycloak through the [Keycloak Operator](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment), which you install first (see [Installation](../installation.md#requirements)). Management Identity then creates the realm `camunda-platform`, the client of every component, and the first user in it.
+`identityProvider.keycloak` runs Keycloak through the [Keycloak Operator](https://www.keycloak.org/operator/installation), which you install first (see [Installation](../installation.md#requirements)). Management Identity then creates the realm `camunda-platform`, the client of every component, and the first user in it.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -121,9 +121,9 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. Include the `/auth` path when your Keycloak serves under it. `realm` defaults to `camunda-platform`.
+`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. `realm` defaults to `camunda-platform`.
 
-`adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret can live in any namespace. The operator copies it into the namespace of this resource, because a pod reads a Secret of its own namespace only.
+`adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret can live in any namespace. A pod reads a Secret of its own namespace only, so the operator copies it into the namespace of this resource.
 
 ### Your own OIDC provider
 
@@ -205,7 +205,7 @@ Management Identity needs a PostgreSQL database of its own. Each component that 
 
 `spec.identity.admin` names the person who signs in first and grants the rest. Management Identity reads it on its first start only and stores the result in its database.
 
-In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. Set `email` too when you deploy Web Modeler, because Web Modeler needs an address for every person who signs in. `passwordSecretRef` names a password of your own. Without it the operator generates one into `my-management-identity-admin`.
+In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you deploy Web Modeler, set `email` too, because Web Modeler needs an address for every person who signs in. `passwordSecretRef` names a password of your own. Without it the operator generates one into `my-management-identity-admin`.
 
 A later change to `username` does not rename the first user. Management Identity creates a second one, and the first one keeps its access.
 
@@ -222,7 +222,7 @@ status:
 
 There are two ways out, and the operator cannot do either for you.
 
-The recorded administrator is a real person. Put the recorded value back on `spec.identity.admin`, sign in as that person, and grant the rest in the Management Identity user interface.
+The recorded administrator is a real person. Put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant the rest in the Management Identity user interface.
 
 Nobody holds the recorded claim, so nobody can sign in. The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim` on this resource, and renders that recorded value from then on. Remove the annotation:
 
@@ -257,6 +257,11 @@ spec:
 A cluster appears in Console once it reports to Console. The operator adds four entries to `spec.extraEnv` of every attached cluster, so you add nothing to a cluster yourself:
 
 ```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
 spec:
   extraEnv:
     - name: CAMUNDA_CONSOLE_PING_ENABLED
@@ -267,13 +272,14 @@ spec:
       value: my-cluster
     - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
       value: 1h
+  # ... the rest of your cluster
 ```
 
 The endpoint is the Console Service, reached from inside the Kubernetes cluster. Console therefore needs no Ingress for a cluster to report to it. Camunda documents what the entries mean in [Console ping configuration](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/configuration/broker-config/#console-ping-configuration).
 
 The operator owns these four names and replaces a value you set under them. It removes them again when the cluster leaves `spec.clusterSelector`, when you remove `spec.console`, or when you delete this resource. See [Management plane](camundacluster.md#management-plane) on the cluster page.
 
-Camunda 8.10 renamed Console to Hub and the settings with it. A cluster of version 8.10 or later gets the four `CAMUNDA_HUB_PING_*` names instead. That release also expects machine-to-machine credentials under the ping. The management plane does not issue them yet, so a cluster of 8.10 or later logs a validation error and reports to nobody.
+Camunda 8.10 renamed Console to Hub and the ping settings with it, and it expects machine-to-machine credentials under the ping. The [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) lists those settings. A cluster of version 8.10 or later gets the four `CAMUNDA_HUB_PING_*` names instead. The management plane issues no credentials yet, so such a cluster logs a validation error and reports to nobody.
 
 Camunda marks cluster discovery in Console experimental in 8.9. It is documented under [experimental features](https://docs.camunda.io/docs/self-managed/components/console/configuration/#experimental-features).
 
@@ -407,7 +413,13 @@ The contract is cluster-scoped, so two management planes in two namespaces can a
 
 ## Images
 
-Every image of the management plane has three sources, in this order: a rename under `spec.images` of the referenced [CamundaPlatformConfig](camundaplatformconfig.md), the `spec.imageRegistry` prefix of that resource in front of the default repository, and the default repository of Camunda. The tag comes from the `version` field of the component that runs the image. Keycloak is the exception: its tag is `quay-optimized-<version>`, which is what Camunda publishes its Keycloak build under. See [Images](camundaplatformconfig.md#images).
+Every image of the management plane has three sources on the referenced [CamundaPlatformConfig](camundaplatformconfig.md), in this order:
+
+1. A rename under `spec.images`.
+2. The `spec.imageRegistry` prefix in front of the default repository.
+3. The default repository of Camunda.
+
+The tag comes from the `version` field of the component that runs the image. Keycloak is the exception: its tag is `quay-optimized-<version>`, which is what Camunda publishes its Keycloak build under. See [Images](camundaplatformconfig.md#images).
 
 ## Suspension
 
@@ -417,7 +429,7 @@ The `ManagementAuthConfig`, the claims on the orchestration clusters, and the Co
 
 `Ready` reads `True` with reason `Suspended`. Zero replicas is the state you asked for, so this is not an error.
 
-Nobody can sign in to Console, Web Modeler, or Optimize while the plane is down. All three authenticate through Management Identity, and in the `keycloak` mode the provider behind it is down as well. A `CamundaOptimize` keeps its own `Ready` condition, because the contract it reads is still there. The orchestration clusters run on, and they keep exporting, executing, and serving their own web applications.
+Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is down. All three authenticate through Management Identity, and in the `keycloak` mode the provider behind it is down as well. A `CamundaOptimize` keeps its own `Ready` condition, because the contract it reads is still there. The orchestration clusters run on, and they keep exporting, executing, and serving their own web applications.
 
 ## Deletion
 
@@ -472,7 +484,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, and `Suspended
 | `Ready` | `Conflict` | A `ManagementAuthConfig` of that name exists and belongs to another owner. The message names the holder. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
 | `Ready` | `WriteFailed` | The `ManagementAuthConfig` could not be written. | Read the `ManagementAuthReady` row. |
 
-`Ready` is `True` only when every condition that takes part in it is `True` and the `ManagementAuthConfig` is written. A failed write is never a ready management plane, because the contract is the one thing a `CamundaOptimize` reads from this resource.
+`Ready` is `True` only when every condition that takes part in it is `True` and the `ManagementAuthConfig` is written.
 
 A condition that reads `Disabled` stays out of `Ready`. This is not an error.
 
@@ -502,7 +514,9 @@ metadata:
   name: my-management
   namespace: my-management-ns
 spec:
-  # string. Required. Name of the cluster-scoped CamundaPlatformConfig that carries the license, the image settings, and, in the oidc mode, the identity provider and every client of the management plane.
+  # string. Required. Name of the cluster-scoped CamundaPlatformConfig.
+  # It carries the license and the image settings. In the oidc mode it also
+  # carries the identity provider and every client of the management plane.
   platformConfigRef: "my-platform-config"
   # boolean. Optional, default: false. Scale every workload of this management plane to zero.
   suspend: false
@@ -587,8 +601,12 @@ spec:
     version: "8.9.0"
     # string. Required. The URL a browser reaches Console at. Console serves under the path of this URL.
     externalUrl: "https://console.camunda.example.com"
-    # The workload fields of spec.identity apply here too: replicas, resources, extraEnv, extraEnvFrom, podLabels, podAnnotations, scheduling.
+    # integer. Optional, default: 1. Number of Console replicas.
     replicas: 1
+    # object. Optional. CPU and memory of the container.
+    resources: {}
+    # The other workload fields of spec.identity apply here too: extraEnv,
+    # extraEnvFrom, podLabels, podAnnotations, scheduling.
   # object. Optional. Web Modeler. Web Modeler is not deployed while this is unset.
   webModeler:
     # string. Required. Web Modeler version, as major.minor.patch. Supported: 8.9.0 and later.
@@ -617,11 +635,16 @@ spec:
         namespace: "my-management-ns"
         usernameKey: "username"
         passwordKey: "password"
-    # object. Optional. Workload fields of the application process: replicas, resources, extraEnv, extraEnvFrom, podLabels, podAnnotations, scheduling.
+    # object. Optional. Workload fields of the application process. It takes
+    # the same fields as spec.identity: replicas, resources, extraEnv,
+    # extraEnvFrom, podLabels, podAnnotations, scheduling.
     restapi:
+      # integer. Optional, default: 1. Number of replicas.
       replicas: 1
-    # object. Optional. Workload fields of the live-update process. Same shape as restapi.
+    # object. Optional. Workload fields of the live-update process. Same shape
+    # as restapi.
     websockets:
+      # integer. Optional, default: 1. Number of replicas.
       replicas: 1
   # object. Optional, required in the keycloak modes, forbidden in the oidc mode. The Optimize that this management plane serves. The operator deploys no Optimize from it.
   optimize:

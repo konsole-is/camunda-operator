@@ -55,7 +55,7 @@ Declare the client of each component you deploy:
 | --- | --- | --- |
 | `identity` | confidential | Always. Management Identity is always deployed. |
 | `optimize` | confidential | Always. The `ManagementAuthConfig` always carries it, and [CamundaOptimize](camundaoptimize.md) reads it from there. |
-| `console` | public | `spec.console` is set on the management cluster. |
+| `console` | public | `spec.console` is set on the `CamundaManagementCluster`. |
 | `webModeler` | public | `spec.webModeler` is set. It is the client of the user interface. |
 | `webModelerApi` | confidential | `spec.webModeler` is set. It is the client of the API behind that interface. |
 
@@ -96,9 +96,9 @@ spec:
   # ... the rest of your platform config
 ```
 
-`authUrl`, `tokenUrl`, and `jwksUrl` are optional for an orchestration cluster, which reads them from the discovery document of your provider. A management cluster in the `oidc` mode needs all three, because the `ManagementAuthConfig` carries them. Read them from the discovery document of your provider and set them here.
+`authUrl`, `tokenUrl`, and `jwksUrl` are optional for an orchestration cluster, which reads them from the discovery document of your provider. A `CamundaManagementCluster` in the `oidc` mode needs all three, because the `ManagementAuthConfig` carries them. Read them from the discovery document of your provider and set them here.
 
-A management cluster that finds no client for a component it deploys reports `Ready=False` with reason `InvalidReference`, and the message names the missing field.
+A `CamundaManagementCluster` that finds no client for a component it deploys reports `Ready=False` with reason `InvalidReference`, and the message names the missing field.
 
 `providerType` tells Management Identity what kind of provider is behind the issuer. Leave it `generic` for any OIDC-compliant provider. Set it to `microsoft` for Microsoft Entra ID.
 
@@ -139,7 +139,7 @@ Three rules govern both fields:
 
 The tag of the Keycloak image is `quay-optimized-<version>`, not the bare version. Camunda publishes its Keycloak build under that tag, as [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment) states.
 
-The default repository of an image can change with the version. From Camunda 8.10 the two Web Modeler images become `camunda/hub` and `camunda/hub-websockets`. A rename of your own always wins, so a mirror stays a mirror across that change.
+The default repository of an image can change with the version. From Camunda 8.10 the two Web Modeler images become `camunda/hub` and `camunda/hub-websockets`, which the [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) names. A rename of your own always wins, so a mirror stays a mirror across that change.
 
 ## Changes and referenced Secrets
 

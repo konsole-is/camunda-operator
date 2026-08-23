@@ -1,4 +1,4 @@
-# The management plane
+# Management plane
 
 Console, Web Modeler, and Optimize are not part of an orchestration cluster. They sign in against Management Identity, which is its own identity system. Camunda explains the split in [Management Identity](https://docs.camunda.io/docs/self-managed/components/management-identity/overview/).
 
@@ -12,7 +12,7 @@ You need:
 
 - The operator installed. See [Installation](../installation.md).
 - A PostgreSQL server, described by a [DatabaseServerConfig](../crds/databaseserverconfig.md). The management plane needs one logical database per component.
-- The [Keycloak Operator](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment), if you want the operator to run Keycloak for you. Skip it if you run your own Keycloak, or your own OIDC provider.
+- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you want the operator to run Keycloak for you. If you run your own Keycloak, or your own OIDC provider, skip it.
 - A way to route traffic from outside the Kubernetes cluster to a Service. The operator creates no Ingress.
 
 ## The order of creation
@@ -44,7 +44,7 @@ spec:
   targetNamespace: "my-management-ns"
 ```
 
-Repeat it for `my-keycloak-db` and `my-web-modeler-db`, with a `databaseName` of its own each time. Each `Database` publishes a `DatabaseConfig` of the same name in `targetNamespace`, and that name is what the management cluster references.
+Repeat it for `my-keycloak-db` and `my-web-modeler-db`, with a `databaseName` of its own each time. Each `Database` publishes a `DatabaseConfig` of the same name in `targetNamespace`, and that name is what the `CamundaManagementCluster` references.
 
 Set no `secondaryStorageConfig` on these three. That field is for a database an orchestration cluster stores its data in.
 
@@ -72,7 +72,7 @@ The `auth` block above says how the **orchestration** clusters authenticate. It 
 
 A management plane in the `oidc` mode is the one case that constrains this block. It reads its clients from the platform config it names, so that config must set `spec.auth.method: oidc`. It does not have to be the same platform config the orchestration clusters use. Every resource names its own through `platformConfigRef`, so a second `CamundaPlatformConfig` for the management plane leaves the clusters on basic authentication. [Step 3c](#step-3c-your-own-oidc-provider) covers the mode.
 
-## Step 3: The management cluster
+## Step 3: The CamundaManagementCluster
 
 Pick one of the three identity provider modes below. Everything else on the resource is the same.
 
@@ -134,7 +134,7 @@ Sign in to Management Identity at `https://identity.camunda.example.com` with `a
 
 The operator generates two more Secrets in this mode, `my-management-identity-client` and `my-management-optimize-client`. They hold the client secrets that Management Identity gives to its own client and to the Optimize client. You read them only to rotate them. See [The generated Secrets](../crds/camundamanagementcluster.md#the-generated-secrets).
 
-> **Caution:** Do not delete `my-management-identity-admin` to rotate that password. Management Identity sets it on the Keycloak user once, on its first start, and never reads it again. The Secret would come back with a password that the Keycloak user does not hold. Change the password in Keycloak instead.
+> **Caution:** Do not delete `my-management-identity-admin` to rotate that password. Management Identity sets it on the Keycloak user once, on its first start, and never reads it again. A deleted Secret comes back with a new password that the Keycloak user does not hold. To rotate the password, change it in Keycloak.
 
 ### Step 3b: You run Keycloak
 
@@ -233,7 +233,7 @@ spec:
 
 `console` carries no `clientSecretRef` above, and `identity` and `optimize` do. Console runs in a browser, so its application is a public client and holds no secret. Web Modeler has one of each: a public client for the user interface and a confidential one for the API behind it.
 
-Then point the management cluster at that provider:
+Then point the `CamundaManagementCluster` at that provider:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -260,7 +260,7 @@ spec:
 
 There is no `spec.optimize` in this mode. The platform config declares the Optimize client, and you registered its redirect URI at your provider.
 
-`identity.admin` names a token claim instead of a user. Sign in to your provider once, decode the access token, and read the value of the claim you want to use. Camunda explains how in [JWT token claims](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/jwt-token-claims/).
+`identity.admin` names a token claim instead of a user. Sign in to your provider once and decode the access token. Then read the value of the claim you want to use. Camunda explains how in [JWT token claims](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/jwt-token-claims/).
 
 Get this pair right the first time. Management Identity reads it on its first start only and stores the result in its database. A later change has no effect, and the operator says so with `IdentityReady` and the reason `ImmutableAfterStart`:
 
@@ -275,7 +275,7 @@ status:
 
 If it happens anyway, the operator cannot correct it for you. Two ways out are open.
 
-The first works while the recorded claim belongs to a real person. Put the recorded value back on `spec.identity.admin`, sign in as that person, and grant the rest in the Management Identity user interface.
+The first works while the recorded claim belongs to a real person. Put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant the rest in the Management Identity user interface.
 
 The second is for a claim that nobody holds. The operator records the claim that Management Identity started with, and renders that recorded value from then on. Remove the annotation that carries it:
 
@@ -330,7 +330,7 @@ status:
 
 A cluster is attached once it publishes `status.gateway`. Every cluster publishes that block unless `spec.suspend` is true, so a suspended cluster stays `NotReady`.
 
-One cluster answers to one management plane. A cluster that another one already serves stays `ClaimedElsewhere`, and the message names the holder. To move it, take it out of the selector of the plane that holds it. The claim is withdrawn, and the next plane that selects the cluster takes it.
+One cluster answers to one management plane. A cluster that another one already serves stays `ClaimedElsewhere`, and the message names the holder. To move it, take it out of the selector of the management plane that holds it. The claim is withdrawn, and the next management plane that selects the cluster takes it.
 
 A cluster the operator attached carries the annotation `camunda.io/management-cluster`. While the management plane sets `spec.console`, it also carries four `CAMUNDA_CONSOLE_PING_*` entries in `spec.extraEnv`. The entries are what makes it appear in Console. See [Management plane](../crds/camundacluster.md#management-plane) on the cluster page.
 
@@ -382,6 +382,8 @@ kubectl get secret -n my-management-ns \
 
 Decode a password with `base64 -d` and give it to the people who deploy from Web Modeler. They type `web-modeler` and that password in the deploy dialog, so nobody needs the administrator of the orchestration cluster.
 
+Each of those Secrets also carries the key `applied`, which means that the cluster holds the user under that password. A Secret without `applied` holds a password that never reached the cluster.
+
 ## Step 6: Optimize
 
 [CamundaOptimize](../crds/camundaoptimize.md) is a resource of its own, in the namespace of the cluster it reports on. It reads the contract that the management plane wrote:
@@ -399,7 +401,7 @@ spec:
     name: my-cluster
 ```
 
-`managementAuthRef` names the [ManagementAuthConfig](../crds/managementauthconfig.md), which is cluster-scoped. Its name is the name of the management cluster, unless `spec.managementAuthConfigName` on that resource gave it another:
+`managementAuthRef` names the [ManagementAuthConfig](../crds/managementauthconfig.md), which is cluster-scoped. Its name is the name of the `CamundaManagementCluster`, unless `spec.managementAuthConfigName` on that resource gave it another:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -412,7 +414,7 @@ spec:
   # ... the rest of your management cluster
 ```
 
-Set it when a `ManagementAuthConfig` of the default name already exists. Read the name in use:
+If a `ManagementAuthConfig` of the default name already exists, set this field. Read the name in use:
 
 ```bash
 kubectl get camundamanagementcluster my-management -n my-management-ns \
@@ -441,12 +443,13 @@ kubectl get camundamanagementcluster my-management -n my-management-ns \
   -o jsonpath='{range .status.conditions[*]}{.type}{"\t"}{.status}{"\t"}{.reason}{"\t"}{.message}{"\n"}{end}'
 ```
 
-## Change the plane later
+## Change the management plane later
 
 - **Add or remove Console or Web Modeler.** Add or remove `spec.console` or `spec.webModeler`. There is no field that turns a component on. Removing the block removes the workloads, and the condition of that component reads `Disabled`.
 - **Serve another cluster.** Change `spec.clusterSelector`, or label the cluster. A cluster that leaves the selector loses the annotation and the Console settings by itself.
 - **Rotate a client secret.** In the two Keycloak modes, delete `my-management-identity-client` or `my-management-optimize-client`. The operator generates a new value and rolls the pods that read it. In the `oidc` mode, rotate the secret at your provider and update the Secret the platform config names.
-- **Take the plane down for maintenance.** Set `spec.suspend: true`. Every workload goes to zero, Keycloak included. The contract, the annotation on each served cluster, and the Console settings stay, so nothing else has to change. `Ready` reads `True` with reason `Suspended`. Nobody can sign in to Console, Web Modeler, or Optimize while the plane is down, because all three authenticate through Management Identity. The orchestration clusters run on.
+- **Take the management plane down for maintenance.** Set `spec.suspend: true`. Every workload goes to zero, Keycloak included. The contract, the annotation on each served cluster, and the Console settings stay, so nothing else has to change. `Ready` reads `True` with reason `Suspended`. Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is down, because all three authenticate through Management Identity. The orchestration clusters run on.
+- **Upgrade a component.** Raise `identity.version`, `console.version`, `webModeler.version`, or `identityProvider.keycloak.version`. Each component carries its own version, so each one rolls on its own. The Keycloak Operator rolls Keycloak. In the two Keycloak modes, Management Identity applies the realm and the clients again on every start.
 - **Move to another identity provider.** Change `spec.identityProvider`. The workloads roll into the new mode. The first administrator does not move with them: Management Identity keeps the one it started with, in its database.
 
 ## Related
