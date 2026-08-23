@@ -78,29 +78,35 @@ const keycloakJDBCPrefix = "jdbc:aws-wrapper:postgresql://"
 // The Keycloak Operator owns everything below the custom resource: the
 // StatefulSet, the Service, and the Secret with the first administrator. This
 // operator only writes the resource and reads its Ready condition.
-func keycloakComponents(in Input) ([]*component.Component, error) {
+func keycloakComponents(in Input) (Built, error) {
 	if !in.KeycloakCRDServed {
-		return nil, nil
+		return Built{}, nil
 	}
 
 	resource, err := keycloak.NewBuilder(keycloakCR(in)).Build()
 	if err != nil {
-		return nil, fmt.Errorf("building %s component: %w", ComponentKeycloak, err)
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentKeycloak, err)
 	}
 
-	managed := feature.NewBooleanGate(in.Provider.Mode == ModeKeycloak)
+	managed := in.Provider.Mode == ModeKeycloak
+	gate := feature.NewBooleanGate(managed)
 	comp, err := component.NewComponentBuilder().
 		WithName(ComponentKeycloak).
 		WithConditionType(component.ConditionType(v1.ConditionKeycloakReady)).
-		WithFeatureGate(managed).
-		WithResource(resource, component.GatedBy(managed)).
+		WithFeatureGate(gate).
+		WithResource(resource, component.GatedBy(gate)).
 		Suspend(in.Suspended).
 		Build()
 	if err != nil {
-		return nil, fmt.Errorf("building %s component: %w", ComponentKeycloak, err)
+		return Built{}, fmt.Errorf("building the %s component: %w", ComponentKeycloak, err)
 	}
 
-	return []*component.Component{comp}, nil
+	built := Built{Components: []*component.Component{comp}}
+	if managed {
+		built.Ready = built.Components
+	}
+
+	return built, nil
 }
 
 // keycloakCR renders the Keycloak custom resource. The Ingress of the

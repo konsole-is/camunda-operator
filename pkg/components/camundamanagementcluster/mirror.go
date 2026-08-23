@@ -44,11 +44,20 @@ type MirrorPurpose string
 // cluster-scoped, so one platform config serves every namespace and its
 // references can name only one.
 const (
-	MirrorPurposeLicense        MirrorPurpose = "license"
+	// MirrorPurposeLicense names the copy of the Camunda license Secret.
+	MirrorPurposeLicense MirrorPurpose = "license"
+	// MirrorPurposeIdentityClient names the copy of the Management Identity OIDC client secret.
 	MirrorPurposeIdentityClient MirrorPurpose = "identity-client"
-	MirrorPurposeIdentityDB     MirrorPurpose = "identity-db"
-	MirrorPurposeKeycloakAdmin  MirrorPurpose = "keycloak-admin"
-	MirrorPurposeKeycloakDB     MirrorPurpose = "keycloak-db"
+	// MirrorPurposeIdentityDB names the copy of the Management Identity database credentials Secret.
+	MirrorPurposeIdentityDB MirrorPurpose = "identity-db"
+	// MirrorPurposeKeycloakAdmin names the copy of the administrator credentials of an external Keycloak.
+	MirrorPurposeKeycloakAdmin MirrorPurpose = "keycloak-admin"
+	// MirrorPurposeKeycloakDB names the copy of the Keycloak database credentials Secret.
+	MirrorPurposeKeycloakDB MirrorPurpose = "keycloak-db"
+	// MirrorPurposeWebModelerDB names the copy of the Web Modeler database credentials Secret.
+	MirrorPurposeWebModelerDB MirrorPurpose = "web-modeler-db"
+	// MirrorPurposeWebModelerMail names the copy of the Web Modeler SMTP credentials Secret.
+	MirrorPurposeWebModelerMail MirrorPurpose = "web-modeler-mail"
 )
 
 // MirrorPurposes is the closed set of purposes that the component renders, in
@@ -59,6 +68,8 @@ var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeIdentityDB,
 	MirrorPurposeKeycloakAdmin,
 	MirrorPurposeKeycloakDB,
+	MirrorPurposeWebModelerDB,
+	MirrorPurposeWebModelerMail,
 }
 
 // MirroredSecretName returns the name of the copy of a referenced Secret in
@@ -95,10 +106,10 @@ func (p MirrorPurpose) Valid() bool {
 // purpose being present: without one it reads Disabled and stays out of Ready.
 // A purpose that is not in MirrorPurposes is an error, because nothing would
 // render its copy.
-func mirroredSecretComponent(in Input) ([]*component.Component, error) {
+func mirroredSecretComponent(in Input) (Built, error) {
 	for purpose := range in.Mirrors {
 		if !purpose.Valid() {
-			return nil, fmt.Errorf(
+			return Built{}, fmt.Errorf(
 				"building %s component: purpose %q is not in MirrorPurposes", ComponentMirroredSecrets, purpose,
 			)
 		}
@@ -121,15 +132,20 @@ func mirroredSecretComponent(in Input) ([]*component.Component, error) {
 			Data: data,
 		}).Build()
 		if err != nil {
-			return nil, fmt.Errorf("building %s component: %w", ComponentMirroredSecrets, err)
+			return Built{}, fmt.Errorf("building %s component: %w", ComponentMirroredSecrets, err)
 		}
 		builder = builder.WithResource(mirrored, component.GatedBy(feature.NewBooleanGate(present)))
 	}
 
 	comp, err := builder.Build()
 	if err != nil {
-		return nil, err
+		return Built{}, fmt.Errorf("building %s component: %w", ComponentMirroredSecrets, err)
 	}
 
-	return []*component.Component{comp}, nil
+	built := Built{Components: []*component.Component{comp}}
+	if len(in.Mirrors) > 0 {
+		built.Ready = built.Components
+	}
+
+	return built, nil
 }

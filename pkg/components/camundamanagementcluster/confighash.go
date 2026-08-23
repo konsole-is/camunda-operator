@@ -31,19 +31,15 @@ const configHashLength = 16
 
 // ConfigHash hashes the rendered environment of one component (names, values,
 // and Secret references, never Secret data) together with in.HashInputs and
-// the digest of every generated credential that the component reads. It is
-// stable across reconciles for the same input, so the pods roll only when a
-// value rendered for that component or a credential it reads changes.
+// the hash inputs of that component alone. It is stable across reconciles for
+// the same input, so the pods roll only when a value rendered for that
+// component or a referenced object changes.
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
 // does. HashInputs carries the resource version of every Secret the
-// controller read, and the digests carry the credentials that the operator
-// itself generates, which no reference records either.
-//
-// A generated credential and the in.ComponentInputs entry of a component
-// enter the hash of that component and of no other. A change to either rolls
-// that component alone.
+// controller read, and componentInputs carries what one component alone
+// reads, the credentials that the operator generates itself included.
 func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")
@@ -51,14 +47,10 @@ func ConfigHash(in Input, comp string) string {
 		b.WriteString(e.Name + "=" + envValue(e) + "\n")
 	}
 
-	inputs := slices.Concat(in.HashInputs, in.ComponentInputs[comp])
+	inputs := slices.Concat(in.HashInputs, componentInputs(in, comp))
 	slices.Sort(inputs)
 	for _, input := range inputs {
 		b.WriteString("input=" + input + "\n")
-	}
-
-	for _, digest := range componentCredentialHashes(in, comp) {
-		b.WriteString("credential=" + digest + "\n")
 	}
 
 	sum := sha256.Sum256([]byte(b.String()))
@@ -69,44 +61,50 @@ func ConfigHash(in Input, comp string) string {
 // componentEnv returns the rendered environment of a component. A component
 // this package does not render yet has none.
 func componentEnv(in Input, comp string) []corev1.EnvVar {
-	if comp == ComponentIdentity {
+	switch comp {
+	case ComponentIdentity:
 		return baseEnv(in)
+	case ComponentConsole:
+		return consoleEnv(in)
+	case ComponentWebModelerRestapi:
+		return webModelerRestapiEnv(in)
+	case ComponentWebModelerWebsockets:
+		return webModelerWebsocketsEnv(in)
 	}
 
 	return nil
 }
 
-// componentCredentialHashes returns the digest of every generated credential
-// that a component reads, in the order the Secrets are rendered. Management
-// Identity reads all of them: it creates the clients and the first user with
-// them on its first start.
-func componentCredentialHashes(in Input, comp string) []string {
-	if comp != ComponentIdentity {
-		return nil
-	}
-
-	var digests []string
-	for _, gen := range generatedSecrets(in) {
-		if digest := passwordHash(in.Secrets.Values[gen.name].Value); digest != "" {
-			digests = append(digests, digest)
+// componentInputs returns the hash inputs of one component alone: what the
+// controller resolved under that component, the credentials that Management
+// Identity creates the clients and the first user with, and the pusher
+// credentials of the two Web Modeler processes. A credential that one
+// component alone reads belongs here rather than in in.HashInputs, so that
+// rotating it rolls the pods that read it and no others.
+//
+// The operator writes these Secrets itself, so the source of a reused
+// credential is what a regeneration changes: the Secret is deleted, the next
+// reconcile finds none, and the new one has a UID of its own. The very first
+// reconcile renders no source, because the Secret does not exist yet, so the
+// pods roll once more when the reconcile after it reads the created Secret
+// back. Every credential is looked up on its own, so a Secret that holds one
+// of two keys keeps that UID for it.
+func componentInputs(in Input, comp string) []string {
+	inputs := slices.Clone(in.ComponentHashInputs[comp])
+	switch comp {
+	case ComponentIdentity:
+		for _, gen := range generatedSecrets(in) {
+			inputs = append(inputs, "generated="+gen.name+"="+string(in.Secrets.Values[gen.name].SourceUID))
 		}
+	case ComponentWebModelerRestapi, ComponentWebModelerWebsockets:
+		inputs = append(
+			inputs,
+			"pusherKey="+string(in.Pusher.Key.SourceUID),
+			"pusherSecret="+string(in.Pusher.Secret.SourceUID),
+		)
 	}
 
-	return digests
-}
-
-// passwordHash returns the hash input of a credential: the first 64 bits of
-// its SHA-256 digest, hex encoded. An empty value returns "", so a management
-// cluster without the credential adds no input. The digest of a generated
-// password, which carries 191 bits of entropy, does not expose the password.
-func passwordHash(value string) string {
-	if value == "" {
-		return ""
-	}
-
-	sum := sha256.Sum256([]byte(value))
-
-	return hex.EncodeToString(sum[:])[:configHashLength]
+	return inputs
 }
 
 // envValue renders the value of an environment entry as a reference, never as

@@ -72,10 +72,11 @@ func TestCamundaManagementClusterGoldens(t *testing.T) {
 }
 
 // The oidc mode renders Management Identity alone. The copies of referenced
-// Secrets and the Keycloak are always built, so a reference that moved into
-// the management namespace has its copy deleted and a move off the keycloak
-// mode has its Keycloak deleted. Both take part in Ready only while they are
-// on.
+// Secrets, the Keycloak, Console, and Web Modeler are built either way, so a
+// reference that moved into the management namespace, a Keycloak the spec
+// moved off, and a Console or a Web Modeler that the spec dropped, have what
+// they left behind deleted. Each takes part in Ready only while there is
+// something to render.
 func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 	t.Parallel()
 
@@ -83,7 +84,13 @@ func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		[]string{ComponentMirroredSecrets, ComponentKeycloak, ComponentIdentity},
+		[]string{
+			ComponentMirroredSecrets,
+			ComponentKeycloak,
+			ComponentIdentity,
+			ComponentConsole,
+			ComponentWebModeler,
+		},
 		componentNames(minimal.Components),
 	)
 	assert.Equal(t, []string{ComponentIdentity}, componentNames(minimal.Ready))

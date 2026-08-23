@@ -50,20 +50,23 @@ type resolved struct {
 // that one component alone reads goes into componentInputs under the name of
 // that component.
 type resolver struct {
-	reader          client.Reader
-	scheme          *runtime.Scheme
-	mc              *v1.CamundaManagementCluster
-	mirrors         map[components.MirrorPurpose]map[string][]byte
-	inputs          []string
+	reader  client.Reader
+	scheme  *runtime.Scheme
+	mc      *v1.CamundaManagementCluster
+	mirrors map[components.MirrorPurpose]map[string][]byte
+	inputs  []string
+	// componentInputs are the hash inputs of single components, by component
+	// name. forComponent records a block of reads here instead of in inputs,
+	// so what one component alone reads rolls that component alone.
 	componentInputs map[string][]string
 }
 
 // preCheck resolves every reference of mc, in the documented order: the rules
 // that the API server cannot check, the platform config and its license, the
-// identity provider and its client secrets, and the database of Management
-// Identity. A Secret outside the management namespace is copied into the
-// returned mirrors, and the input references the copy, so the renderer only
-// ever names Secrets of that namespace.
+// identity provider and its client secrets, the database of Management
+// Identity, and what Web Modeler needs. A Secret outside the management
+// namespace is copied into the returned mirrors, and the input references the
+// copy, so the renderer only ever names Secrets of that namespace.
 //
 // A failed check returns a *conditions.PreCheckFailure: UnsupportedVersion for
 // a version below its floor, InvalidReference for a dangling reference or a
@@ -105,13 +108,16 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := res.resolveDatabases(ctx, &out); err != nil {
 		return out, err
 	}
+	if err := res.resolveWebModeler(ctx, &out); err != nil {
+		return out, err
+	}
 	if err := r.checkContractOwner(ctx, mc, out.ContractName); err != nil {
 		return out, err
 	}
 
 	out.Input.Mirrors = res.mirrors
 	out.Input.HashInputs = res.inputs
-	out.Input.ComponentInputs = res.componentInputs
+	out.Input.ComponentHashInputs = res.componentInputs
 
 	return out, nil
 }
@@ -273,9 +279,10 @@ func (res *resolver) resolveProvider(ctx context.Context, out *resolved) error {
 	return nil
 }
 
-// resolveDatabases reads the DatabaseConfig of every component that needs one
-// and the server behind it: Management Identity always, and the Keycloak that
-// the operator runs when the spec selects the keycloak mode.
+// resolveDatabases reads the DatabaseConfig of Management Identity and of the
+// Keycloak that the operator runs, and the server behind each. Management
+// Identity is always deployed, so its database is never optional. Web Modeler
+// reads its own database under its own component.
 func (res *resolver) resolveDatabases(ctx context.Context, out *resolved) error {
 	identity, err := res.resolveDatabase(
 		ctx, res.mc.Spec.Identity.DatabaseConfigRef, components.MirrorPurposeIdentityDB,
@@ -298,6 +305,92 @@ func (res *resolver) resolveDatabases(ctx context.Context, out *resolved) error 
 	return nil
 }
 
+// resolveWebModeler reads what Web Modeler needs: the database of its own, the
+// SMTP credentials, both pointed at their local copy, and the credentials that
+// pair its two processes. It resolves nothing while the spec deploys no Web
+// Modeler.
+//
+// The database and the SMTP server are read under the restapi component, so
+// rotating one of their credentials rolls Web Modeler and leaves Management
+// Identity where it is.
+func (res *resolver) resolveWebModeler(ctx context.Context, out *resolved) error {
+	webModeler := res.mc.Spec.WebModeler
+	if webModeler == nil {
+		return nil
+	}
+
+	err := res.forComponent(components.ComponentWebModelerRestapi, func() error {
+		database, err := res.resolveDatabase(
+			ctx, webModeler.DatabaseConfigRef, components.MirrorPurposeWebModelerDB,
+		)
+		if err != nil {
+			return err
+		}
+		out.Input.Databases.WebModeler = &database
+
+		ref := webModeler.Mail.CredentialsSecretRef
+		if ref == nil {
+			return nil
+		}
+
+		local := ref.DeepCopy()
+		if err := res.localizeCredentials(ctx, local, components.MirrorPurposeWebModelerMail); err != nil {
+			return err
+		}
+		out.Input.WebModelerMail = local
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	pusher, err := res.resolvePusher(ctx)
+	if err != nil {
+		return err
+	}
+	out.Input.Pusher = pusher
+
+	return nil
+}
+
+// forComponent runs read and records every hash input it produces under comp
+// rather than in the shared inputs. A failed read keeps what it recorded up to
+// the failure, the way the shared inputs do.
+func (res *resolver) forComponent(comp string, read func() error) error {
+	shared := res.inputs
+	res.inputs = nil
+
+	err := read()
+
+	res.componentInputs[comp] = append(res.componentInputs[comp], res.inputs...)
+	res.inputs = shared
+
+	return err
+}
+
+// resolvePusher reads the credentials that the two Web Modeler processes
+// authenticate their WebSocket connection with, and generates them when the
+// Secret that holds them is absent. Deleting that Secret therefore rotates
+// them.
+func (res *resolver) resolvePusher(ctx context.Context) (components.PusherCredentials, error) {
+	key := client.ObjectKey{
+		Namespace: res.mc.Namespace,
+		Name:      components.PusherSecretName(res.mc),
+	}
+
+	appKey, err := credentials.LookupOrNew(ctx, res.reader, key, components.PusherAppKeyKey)
+	if err != nil {
+		return components.PusherCredentials{}, err
+	}
+	appSecret, err := credentials.LookupOrNew(ctx, res.reader, key, components.PusherAppSecretKey)
+	if err != nil {
+		return components.PusherCredentials{}, err
+	}
+
+	return components.PusherCredentials{Key: appKey, Secret: appSecret}, nil
+}
+
 // resolveDatabase reads one DatabaseConfig of the management namespace and the
 // DatabaseServerConfig it names, and points its credentials at their local
 // copy.
@@ -316,8 +409,8 @@ func (res *resolver) resolveDatabase(
 		return components.Database{}, err
 	}
 
-	appUser := *cfg.Spec.CredentialsSecretRef.DeepCopy()
-	if err := res.localizeCredentials(ctx, &appUser, purpose); err != nil {
+	secretRef := *cfg.Spec.CredentialsSecretRef.DeepCopy()
+	if err := res.localizeCredentials(ctx, &secretRef, purpose); err != nil {
 		return components.Database{}, err
 	}
 
@@ -325,7 +418,7 @@ func (res *resolver) resolveDatabase(
 		Host:        server.Spec.Host,
 		Port:        server.Spec.Port,
 		Name:        cfg.Spec.DatabaseName,
-		Credentials: appUser,
+		Credentials: secretRef,
 	}, nil
 }
 

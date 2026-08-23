@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: f32800f42cc1a7f9
+        camunda.io/config-hash: 344870d3a795cdd9
       labels:
         camunda.io/component: management-identity
         camunda.io/management-cluster: my-management

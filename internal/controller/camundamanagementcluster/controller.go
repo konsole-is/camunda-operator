@@ -21,10 +21,10 @@ limitations under the License.
 // reads, and claims the orchestration clusters that spec.clusterSelector
 // matches.
 //
-// A CamundaCluster never knows that a management plane serves it. The claim is
-// an annotation that this controller applies under its own field manager, and
-// it is withdrawn when the cluster leaves the selector or the management
-// cluster is deleted.
+// A CamundaCluster never knows that a management plane serves it. The claim
+// annotation and the Console ping settings are applied by this controller,
+// each under a field manager of its own, and both are withdrawn when the
+// cluster leaves the selector or the management cluster is deleted.
 package camundamanagementcluster
 
 import (
@@ -121,7 +121,8 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // finalizer is added before the first side effect, the pre-checks resolve every
 // reference into the render input, and a failed pre-check reports its Ready
 // reason and stops. Then the orchestration clusters are selected and claimed,
-// the components converge, and the ManagementAuthConfig is applied. Ready is
+// the components converge, every attached cluster is pointed at Console, and
+// the ManagementAuthConfig is applied. Ready is
 // True only when every component that takes part in it is True and the
 // contract is written; a failed write reports WriteFailed.
 //
@@ -178,7 +179,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	attached, rows, err := r.attachedClusters(ctx, &mc)
+	clusters, err := r.listClusters(ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	attached, rows, err := r.attachedClusters(ctx, &mc, clusters)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -194,10 +200,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
 	claimErr := r.recordInitialClaim(ctx, &mc)
+	userErr := r.webModelerUsers(ctx, &mc, attached, rows)
+	pingErr := r.syncPing(ctx, &mc, clusters, attached)
 	contractErr := r.writeContract(ctx, &mc, res)
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 
-	return ctrl.Result{}, errors.Join(reconcileErr, claimErr, contractErr)
+	return ctrl.Result{}, errors.Join(reconcileErr, claimErr, userErr, pingErr, contractErr)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -344,6 +352,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
+		// The credentials wrapper enforces the precondition of a reused
+		// generated credential, so a delete of its Secret rotates it. The
+		// Keycloak wrapper sanitizes the apply of the Keycloak custom
+		// resource, whose CRD schema refuses what the typed struct serializes.
 		r.componentClient = keycloak.NewApplyClient(credentials.NewApplyClient(componentClient))
 	}
 	r.keycloakServed = keycloakKindServed(mgr.GetRESTMapper())

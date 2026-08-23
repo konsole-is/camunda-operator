@@ -289,8 +289,10 @@ type ConsoleSpec struct {
 	// operator supports 8.9.0 and later.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
-	// ExternalURL is the URL that browsers reach Console at. Every selected
-	// CamundaCluster reports to it.
+	// ExternalURL is the URL that browsers reach Console at. Console serves
+	// under the path of this URL. Every selected CamundaCluster reports to
+	// Console over the Service of the Kubernetes cluster, so the operator
+	// needs no Ingress in front of it.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	ExternalURL  string `json:"externalUrl"`
 	WorkloadSpec `json:",inline"`

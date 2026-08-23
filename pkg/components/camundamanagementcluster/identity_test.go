@@ -31,7 +31,7 @@ import (
 func TestIdentityEnvInOIDCMode(t *testing.T) {
 	t.Parallel()
 
-	env := renderedEnv(fixtureMinimal(t))
+	env := renderedEnv(fixtureMinimal(t), ComponentIdentity)
 
 	assert.Equal(
 		t, map[string]string{
@@ -64,7 +64,7 @@ func TestIdentityAudienceFallsBackToTheClientID(t *testing.T) {
 		in.Platform.Auth.OIDC.Management.Clients.Identity.Audience = ""
 	})
 
-	assert.Equal(t, "management-identity", renderedEnv(in)["CAMUNDA_IDENTITY_AUDIENCE"])
+	assert.Equal(t, "management-identity", renderedEnv(in, ComponentIdentity)["CAMUNDA_IDENTITY_AUDIENCE"])
 }
 
 // A Microsoft Entra ID platform config renders the MICROSOFT provider type,
@@ -73,10 +73,10 @@ func TestIdentityAudienceFallsBackToTheClientID(t *testing.T) {
 func TestIdentityReadsTheProviderTypeAndTheUsernameClaim(t *testing.T) {
 	t.Parallel()
 
-	minimal := renderedEnv(fixtureMinimal(t))
+	minimal := renderedEnv(fixtureMinimal(t), ComponentIdentity)
 	assert.NotContains(t, minimal, "CAMUNDA_IDENTITY_USERNAMECLAIM")
 
-	realistic := renderedEnv(fixtureRealistic(t))
+	realistic := renderedEnv(fixtureRealistic(t), ComponentIdentity)
 	assert.Equal(t, "MICROSOFT", realistic["CAMUNDA_IDENTITY_TYPE"])
 	assert.Equal(t, "unique_name", realistic["CAMUNDA_IDENTITY_USERNAMECLAIM"])
 }
@@ -85,11 +85,11 @@ func TestIdentityReadsTheProviderTypeAndTheUsernameClaim(t *testing.T) {
 func TestIdentityRendersTheLicenseOfThePlatformConfig(t *testing.T) {
 	t.Parallel()
 
-	assert.NotContains(t, renderedEnv(fixtureMinimal(t)), "CAMUNDA_LICENSE_KEY")
+	assert.NotContains(t, renderedEnv(fixtureMinimal(t), ComponentIdentity), "CAMUNDA_LICENSE_KEY")
 	assert.Equal(
 		t,
 		"secretKeyRef:my-management-management-license/license",
-		renderedEnv(fixtureRealistic(t))["CAMUNDA_LICENSE_KEY"],
+		renderedEnv(fixtureRealistic(t), ComponentIdentity)["CAMUNDA_LICENSE_KEY"],
 	)
 }
 
@@ -104,7 +104,7 @@ func TestIdentityKeepsTheRecordedInitialClaim(t *testing.T) {
 		in.Cluster.Spec.Identity.Admin.ClaimValue = "second-admin"
 	})
 
-	env := renderedEnv(in)
+	env := renderedEnv(in, ComponentIdentity)
 	assert.Equal(t, "oid", env["IDENTITY_INITIAL_CLAIM_NAME"])
 	assert.Equal(t, "first-admin", env["IDENTITY_INITIAL_CLAIM_VALUE"])
 	assert.Equal(t, "oid=second-admin", SpecInitialClaim(in.Cluster))

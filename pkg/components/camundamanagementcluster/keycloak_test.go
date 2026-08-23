@@ -155,7 +155,7 @@ func TestIdentityEnvInTheKeycloakModes(t *testing.T) {
 		}
 		in.Cluster.Spec.WebModeler = webModeler("web-modeler-db")
 		in.Cluster.Spec.WebModeler.ExternalURL = "https://modeler.example.com"
-	}))
+	}), ComponentIdentity)
 
 	assert.Equal(
 		t, map[string]string{
@@ -199,7 +199,7 @@ func TestIdentityEnvInTheKeycloakModes(t *testing.T) {
 func TestIdentityEnvInTheKeycloakModesCarriesNoInitialClaim(t *testing.T) {
 	t.Parallel()
 
-	env := renderedEnv(newKeycloakInput(t, true, nil))
+	env := renderedEnv(newKeycloakInput(t, true, nil), ComponentIdentity)
 
 	assert.NotContains(t, env, "IDENTITY_INITIAL_CLAIM_NAME")
 	assert.NotContains(t, env, "IDENTITY_INITIAL_CLAIM_VALUE")
@@ -212,7 +212,7 @@ func TestIdentityEnvReadsTheAdministratorPasswordOfTheSpec(t *testing.T) {
 
 	in := fixtureKeycloakRealistic(t, true)
 
-	env := renderedEnv(in)
+	env := renderedEnv(in, ComponentIdentity)
 
 	assert.Equal(t, "secretKeyRef:admin-password/password", env["KEYCLOAK_USERS_0_PASSWORD"])
 	assert.Equal(t, "admin@example.com", env["KEYCLOAK_USERS_0_EMAIL"])
@@ -283,7 +283,14 @@ func TestBuildRendersTheGeneratedSecretsOfTheKeycloakModesOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		[]string{ComponentMirroredSecrets, ComponentSecrets, ComponentKeycloak, ComponentIdentity},
+		[]string{
+			ComponentMirroredSecrets,
+			ComponentSecrets,
+			ComponentKeycloak,
+			ComponentIdentity,
+			ComponentConsole,
+			ComponentWebModeler,
+		},
 		componentNames(keycloak.Components),
 	)
 	assert.Equal(
@@ -328,14 +335,17 @@ func TestBuildRendersNoKeycloakWithoutTheKeycloakOperator(t *testing.T) {
 
 // A generated client secret reaches Management Identity through a Secret
 // reference, and the reference does not change when the secret behind it
-// rotates. The digest in the config hash is what rolls the pods.
+// rotates. The rotation deletes the Secret, so the new one carries a UID of
+// its own, and that UID in the config hash is what rolls the pods.
 func TestConfigHashFollowsAGeneratedCredential(t *testing.T) {
 	t.Parallel()
 
 	in := newKeycloakInput(t, true, nil)
 	before := ConfigHash(in, ComponentIdentity)
 
-	in.Secrets.Values[IdentityClientSecretName(in.Cluster)] = credentials.Password{Value: "rotated"}
+	in.Secrets.Values[IdentityClientSecretName(in.Cluster)] = credentials.Password{
+		Value: "rotated", SourceUID: "a-new-secret",
+	}
 
 	assert.NotEqual(t, before, ConfigHash(in, ComponentIdentity))
 }
@@ -350,7 +360,7 @@ func TestConfigHashFollowsAComponentInput(t *testing.T) {
 	identity := ConfigHash(in, ComponentIdentity)
 	keycloak := ConfigHash(in, ComponentKeycloak)
 
-	in.ComponentInputs = map[string][]string{
+	in.ComponentHashInputs = map[string][]string{
 		ComponentIdentity: {"Secret/camunda/my-management-keycloak-initial-admin=7"},
 	}
 

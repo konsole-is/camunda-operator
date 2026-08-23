@@ -46,6 +46,14 @@ type Input struct {
 	// Secrets are the names of the Secrets that the operator generates. They
 	// are empty in the oidc mode, which generates nothing.
 	Secrets GeneratedSecrets
+	// Pusher are the credentials that pair the two Web Modeler processes. The
+	// controller reads them back from the generated Secret, or generates
+	// them. They are empty while spec.webModeler is unset.
+	Pusher PusherCredentials
+	// WebModelerMail names the SMTP credentials of Web Modeler, already
+	// pointed at their copy in the management namespace. It is nil for an
+	// SMTP server that needs none.
+	WebModelerMail *v1.CredentialsSecretRef
 	// Mirrors are the copies of the referenced Secrets that live outside the
 	// management namespace, by purpose. A pod mounts a Secret only from its
 	// own namespace.
@@ -61,10 +69,11 @@ type Input struct {
 	// "kind/namespace/name=version" strings. ConfigHash sorts them, so the
 	// order does not matter.
 	HashInputs []string
-	// ComponentInputs are the same strings for a referenced object that one
-	// component alone reads, by component name. A change to such an object
-	// rolls that component and no other.
-	ComponentInputs map[string][]string
+	// ComponentHashInputs are the same strings for what one component alone
+	// reads, by component name. ConfigHash adds them to that component and to
+	// no other, so a credential that only Web Modeler reads never rolls
+	// Management Identity.
+	ComponentHashInputs map[string][]string
 	// KeycloakCRDServed reports whether the Kubernetes cluster serves the
 	// Keycloak kind of the Keycloak Operator.
 	KeycloakCRDServed bool
@@ -133,6 +142,11 @@ type ProviderClients struct {
 	Identity, Optimize, WebModelerAPI Client
 	// WebModeler and Console run in a browser, so they hold no secret.
 	WebModeler, Console PublicClient
+	// WebModelerPublicAPIAudience is the audience of the Web Modeler public
+	// API, which your applications call. Web Modeler validates it separately
+	// from the audience of the API that its own user interface calls, so the
+	// WebModelerAPI client carries two.
+	WebModelerPublicAPIAudience string
 }
 
 // Client is an identity provider client that authenticates with a secret.
@@ -200,6 +214,15 @@ type GeneratedSecrets struct {
 	// of a component folds in the digest of every value that component reads,
 	// so a rotation rolls that component and no other.
 	Values map[string]credentials.Password
+}
+
+// PusherCredentials authenticate the Web Modeler restapi process at the
+// WebSocket server that pushes live updates to the browser. Both processes
+// read the same values, so a change to either one has to reach both.
+type PusherCredentials struct {
+	// Key and Secret are the generated credentials. They come from one
+	// Secret, so they rotate together when it is deleted.
+	Key, Secret credentials.Password
 }
 
 // AttachedCluster is one orchestration cluster that the management plane
@@ -485,6 +508,9 @@ func resolveOIDCClients(in Input, oidc *v1.OIDCSpec) (ProviderClients, error) {
 		}
 		clients.WebModeler = publicClient(*declared.WebModeler)
 		clients.WebModelerAPI = confidentialClient(declared.WebModelerAPI.ConfidentialClientSpec)
+		clients.WebModelerPublicAPIAudience = cmp.Or(
+			declared.WebModelerAPI.PublicAPIAudience, webModelerDefaultPublicAPIAudience,
+		)
 	}
 
 	return clients, nil
@@ -530,11 +556,49 @@ func identityType(providerType v1.OIDCProviderType) string {
 	return identityTypeGeneric
 }
 
+// console returns spec.console, or the zero value while the spec deploys no
+// Console. The renderer runs either way: a Console that the spec dropped is
+// rendered gated off, so that its component deletes what it left behind.
+func (in Input) console() v1.ConsoleSpec {
+	if in.Cluster.Spec.Console == nil {
+		return v1.ConsoleSpec{}
+	}
+
+	return *in.Cluster.Spec.Console
+}
+
+// webModeler returns spec.webModeler, or the zero value while the spec deploys
+// no Web Modeler. The renderer runs either way: a Web Modeler that the spec
+// dropped is rendered gated off, so that its component deletes what it left
+// behind.
+func (in Input) webModeler() v1.WebModelerSpec {
+	if in.Cluster.Spec.WebModeler == nil {
+		return v1.WebModelerSpec{}
+	}
+
+	return *in.Cluster.Spec.WebModeler
+}
+
 // workload returns the WorkloadSpec of a component, or the zero value when the
 // spec sets no block for it.
 func (in Input) workload(comp string) v1.WorkloadSpec {
-	if comp == ComponentIdentity {
+	webModeler := in.Cluster.Spec.WebModeler
+
+	switch comp {
+	case ComponentIdentity:
 		return in.Cluster.Spec.Identity.WorkloadSpec
+	case ComponentConsole:
+		if in.Cluster.Spec.Console != nil {
+			return in.Cluster.Spec.Console.WorkloadSpec
+		}
+	case ComponentWebModelerRestapi:
+		if webModeler != nil && webModeler.Restapi != nil {
+			return *webModeler.Restapi
+		}
+	case ComponentWebModelerWebsockets:
+		if webModeler != nil && webModeler.Websockets != nil {
+			return *webModeler.Websockets
+		}
 	}
 
 	return v1.WorkloadSpec{}

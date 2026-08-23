@@ -32,15 +32,18 @@ type Built struct {
 }
 
 // builders render the components of the management plane, in reconcile order:
-// the Secrets first, because the workloads mount them, then Keycloak, whose
-// operator writes the Secret that Management Identity signs in with, then one
-// entry per remaining workload. This list is the extension point of the
-// package.
-var builders = []func(Input) ([]*component.Component, error){
+// the copied and the generated Secrets first, because the workloads mount
+// them, then Keycloak, whose operator writes the Secret that Management
+// Identity signs in with, then one entry per remaining workload. A builder
+// reports which of its components take part in Ready, so that a component the
+// spec turned off still reconciles and deletes what it left behind without
+// its Disabled reason becoming the reason of the whole management plane. This
+// list is the extension point of the package.
+var builders = []func(Input) (Built, error){
 	mirroredSecretComponent,
-	secretsComponents,
+	alwaysReady(secretsComponents),
 	keycloakComponents,
-	identityComponents,
+	alwaysReady(identityComponents),
 	consoleComponents,
 	webModelerComponents,
 }
@@ -50,37 +53,28 @@ var builders = []func(Input) ([]*component.Component, error){
 func Build(in Input) (Built, error) {
 	var built Built
 	for _, build := range builders {
-		comps, err := build(in)
+		rendered, err := build(in)
 		if err != nil {
 			return Built{}, err
 		}
-		built.Components = append(built.Components, comps...)
-		for _, comp := range comps {
-			if takesPartInReady(in, comp) {
-				built.Ready = append(built.Ready, comp)
-			}
-		}
+		built.Components = append(built.Components, rendered.Components...)
+		built.Ready = append(built.Ready, rendered.Ready...)
 	}
 
 	return built, nil
 }
 
-// takesPartInReady reports whether the Ready condition aggregates over a
-// component.
-//
-// A gated-off component reports True with the reason Disabled, and Disabled
-// outranks Healthy in the aggregate, so a management cluster that copies no
-// Secret would read "Ready=True/Disabled". Each component below is built in
-// every mode, so that turning it off deletes its resources. It only stays out
-// of Ready while it is off.
-func takesPartInReady(in Input, comp *component.Component) bool {
-	switch comp.GetName() {
-	case ComponentMirroredSecrets:
-		return len(in.Mirrors) > 0
-	case ComponentKeycloak:
-		return in.Provider.Mode == ModeKeycloak
-	default:
-		return true
+// alwaysReady adapts a builder whose components all take part in Ready.
+func alwaysReady(
+	build func(Input) ([]*component.Component, error),
+) func(Input) (Built, error) {
+	return func(in Input) (Built, error) {
+		comps, err := build(in)
+		if err != nil {
+			return Built{}, err
+		}
+
+		return Built{Components: comps, Ready: comps}, nil
 	}
 }
 
