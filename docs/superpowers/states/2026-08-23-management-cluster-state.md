@@ -8,7 +8,7 @@ feature_worktree: .claude/worktrees/management-cluster
 sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
-integration_pr:
+integration_pr: #215
 status: review
 ---
 
@@ -74,8 +74,8 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 ## Pending snapshot
 
-1. Verification on the feature worktree at 427b87f (the gates of CLAUDE.md, no e2e; #211's `Camunda 8.9` run of all 75 specs is the e2e evidence, and #214 changed nothing on the success path, which the user confirmed as the reason to merge it without waiting for its e2e job).
-2. Integration PR `feat/management-cluster` → `main` with `Closes #185` (ready shape; draft in `scratchpad/pr-integration-body.md`, regenerate from the sub-PR bodies if the scratchpad is gone), copilot-review-loop on it (3-round cap, check for a late review before any merge), then teardown of plan and state after CI is green (spec stays), remove the nested worktrees (`chmod -R u+w bin` first where envtest left read-only binaries), report ready-to-merge. #212 (Keycloak 26.7 ceiling) is filed. The merge to main is the user's.
+1. Integration PR #215 `feat/management-cluster` → `main` (`Closes #185`, 153 files), opened 2026-08-23 after the feature worktree passed every gate at 427b87f. copilot-review-loop round 1 requested (3-round cap; Copilot may review only part of a 38k-line diff; check for a late review before any merge); triage posted + suppressed, reply, resolve, fix on the feature branch directly (small commits, the feature branch is the PR head).
+2. When the loop is clean and CI on #215 is green: teardown of the plan and this state file in one commit on the feature branch (the spec stays), remove the nested worktrees and the sibling ones of merged branches (`chmod -R u+w bin` first where envtest left read-only binaries; `git worktree remove`; `git branch -D` the local branches whose remotes are gone), report ready-to-merge to the user. The merge to main is the user's.
 
 ## Resume checklist
 
