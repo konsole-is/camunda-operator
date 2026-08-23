@@ -66,7 +66,7 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 One `CamundaCluster` uses one contract. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other. The first cluster to use a contract claims it: the operator writes `camunda.io/claim-holder` and `camunda.io/claim-holder-uid` on the contract. The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
 
-The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. To release a claim by hand, delete the two annotations from the contract.
+The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. After a repoint, the pods of the previous holder reach their new backend only when its rollout finishes. For that time both clusters write the old backend. If that overlap matters, stop the holder first. Removing the two claim annotations does not move the contract, because the holder claims it again.
 
 A recreated contract is a new claim. If the producer deletes the contract and creates it again, the holder and a suspended cluster race for the new claim. The holder can lose that race. Do not recreate a contract while two clusters name it.
 
@@ -77,7 +77,7 @@ status:
       status: "False"
       reason: StorageAlreadyAttached
       message: >-
-        CamundaCluster "my-other-ns/my-other-cluster" already holds
+        CamundaCluster "my-cluster-ns/my-other-cluster" already holds
         SecondaryStorageConfig "my-cluster-ns/my-storage-config". One
         CamundaCluster uses one secondary storage contract, so this cluster
         stays suspended until that one releases it
@@ -133,7 +133,7 @@ The operator checks every reference at reconcile time, not at admission, so you 
 
 The operator also suspends a cluster whose storage contract another cluster holds, see [Secondary storage](#secondary-storage). `spec.suspend` stays yours. That suspension shows in the `Ready` reason `StorageAlreadyAttached` and ends when the holder releases the contract.
 
-`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down.
+`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down. The suspension of a cluster whose storage contract another cluster holds reaches them too. A `CamundaOptimize` attached to that cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
 `spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
