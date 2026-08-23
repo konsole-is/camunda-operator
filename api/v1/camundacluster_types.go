@@ -411,6 +411,10 @@ type CamundaClusterSpec struct {
 	// its own entry next to yours. One applied manifest cannot hold two
 	// entries with the same name.
 	//
+	// A CamundaManagementCluster that serves this cluster owns the four
+	// CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
+	// later) and replaces a value you set under those names.
+	//
 	// Two field managers that apply the same name do not conflict: the merge
 	// is per field inside the entry, so one manager can own value while the
 	// other owns valueFrom. A container rejects an entry that carries both,

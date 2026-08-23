@@ -399,8 +399,11 @@ func identityType(providerType v1.OIDCProviderType) string {
 // workload returns the WorkloadSpec of a component, or the zero value when the
 // spec sets no block for it.
 func (in Input) workload(comp string) v1.WorkloadSpec {
-	if comp == ComponentIdentity {
+	switch {
+	case comp == ComponentIdentity:
 		return in.Cluster.Spec.Identity.WorkloadSpec
+	case comp == ComponentConsole && in.Cluster.Spec.Console != nil:
+		return in.Cluster.Spec.Console.WorkloadSpec
 	}
 
 	return v1.WorkloadSpec{}
