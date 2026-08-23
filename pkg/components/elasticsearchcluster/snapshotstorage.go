@@ -307,11 +307,12 @@ func KeystoreComponent(
 
 // RepositoryConfig returns the settings of the snapshot repository that the
 // operator registers for the cluster in Elasticsearch. Every
-// ElasticsearchCluster writes under its own prefix of the shared bucket, so
-// two ElasticsearchClusters that reference the same bucket contract never
-// share a repository. One CamundaCluster holds one storage contract, so the
-// repository is that cluster's alone. The credentials are not part of it:
-// they reach the nodes through the keystore.
+// ElasticsearchCluster writes under its own namespace and name prefix of the
+// shared bucket. The repository name is the cluster name alone, so two
+// same-named ElasticsearchClusters in two namespaces on one Elasticsearch
+// meet on one registration (#195). One CamundaCluster holds one storage
+// contract, so the repository is that cluster's alone. The credentials are
+// not part of it: they reach the nodes through the keystore.
 //
 // An s3 repository carries the region of the contract, so the nodes sign
 // their requests for the region the other consumers of the bucket sign for
