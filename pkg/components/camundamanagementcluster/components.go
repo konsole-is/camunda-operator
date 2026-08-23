@@ -17,6 +17,9 @@ limitations under the License.
 package camundamanagementcluster
 
 import (
+	"net/url"
+	"strings"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -110,4 +113,24 @@ func secretSource(name, key string) *corev1.EnvVarSource {
 		LocalObjectReference: corev1.LocalObjectReference{Name: name},
 		Key:                  key,
 	}}
+}
+
+// parseURL reads an external URL of the spec. The CRD validates every one of
+// them as an http or https URL with a host, so a URL that does not parse
+// cannot reach the renderer. It yields the empty URL rather than an error the
+// caller could not act on.
+func parseURL(raw string) *url.URL {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return &url.URL{}
+	}
+
+	return parsed
+}
+
+// externalPath returns the path of an external URL, without a trailing slash.
+// It is empty for a URL that serves the root of its host. A component that
+// runs under a path of its own has to be told that path.
+func externalPath(raw string) string {
+	return strings.TrimSuffix(parseURL(raw).Path, "/")
 }

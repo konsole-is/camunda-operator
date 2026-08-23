@@ -399,24 +399,11 @@ func webModelerServerEnv(spec v1.WebModelerSpec) []corev1.EnvVar {
 		{Name: webModelerEnvServerURL, Value: spec.ExternalURL},
 		{Name: webModelerEnvHTTPSOnly, Value: strconv.FormatBool(external.Scheme == schemeHTTPS)},
 	}
-	if path := strings.TrimSuffix(external.Path, "/"); path != "" {
+	if path := externalPath(spec.ExternalURL); path != "" {
 		env = append(env, corev1.EnvVar{Name: webModelerEnvContextPath, Value: path})
 	}
 
 	return env
-}
-
-// parseURL reads an external URL of the spec. The CRD validates every one of
-// them as an http or https URL with a host, so a URL that does not parse
-// cannot reach the renderer. It yields the empty URL rather than an error the
-// caller could not act on.
-func parseURL(raw string) *url.URL {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return &url.URL{}
-	}
-
-	return parsed
 }
 
 // webModelerProviderEnv renders the identity provider and Management Identity.

@@ -18,8 +18,6 @@ package camundamanagementcluster
 
 import (
 	"fmt"
-	"net/url"
-	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -192,7 +190,7 @@ func consoleEnv(in Input) []corev1.EnvVar {
 			corev1.EnvVar{Name: consoleEnvKeycloakRealm, Value: provider.Realm},
 		)
 	}
-	if path := consoleContextPath(in.console().ExternalURL); path != "" {
+	if path := externalPath(in.console().ExternalURL); path != "" {
 		env = append(env, corev1.EnvVar{Name: consoleEnvContextPath, Value: path})
 	}
 
@@ -209,18 +207,6 @@ func consoleEnv(in Input) []corev1.EnvVar {
 	}
 
 	return env
-}
-
-// consoleContextPath returns the path of the external URL of Console, without
-// a trailing slash. It returns an empty string for a URL that serves the root
-// of its host, and for one that does not parse.
-func consoleContextPath(externalURL string) string {
-	parsed, err := url.Parse(externalURL)
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSuffix(parsed.Path, "/")
 }
 
 // consoleService renders the Service of Console. Both ports are exposed: the
