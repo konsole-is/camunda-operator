@@ -592,12 +592,17 @@ var _ = Describe("BackupSchedule controller", func() {
 		Expect(backup.GetName()).To(HavePrefix("nightly-"))
 		Expect(len(backup.GetName())).To(BeNumerically("<=", validation.DNS1123SubdomainMaxLength))
 
-		var current v1.BackupSchedule
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
-		Expect(current.Status.LastBackupName).To(Equal(backup.GetName()))
-		ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
-		Expect(ready).NotTo(BeNil())
-		Expect(ready.Reason).To(Equal(v1.ReasonHealthy))
+		// The backup exists before the status of the schedule is written, at
+		// the end of the same reconcile, so the status is read until it names
+		// the backup.
+		Eventually(func(g Gomega) {
+			var current v1.BackupSchedule
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastBackupName).To(Equal(backup.GetName()))
+			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonHealthy))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("adopts the backup of a crashed trigger for a schedule with a long name", func() {
