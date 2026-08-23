@@ -173,9 +173,35 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelM
 			},
 		}
 		cluster = newCluster(mcKeycloakNamespace, mcKeycloakClusterPlatform, mcKeycloakStorage, "", false)
+		// installedKeycloakOperator records that this flow installed the
+		// Keycloak Operator, and with it that the namespace is its own to
+		// remove. KEYCLOAK_OPERATOR_INSTALL_SKIP=true names a cluster that
+		// already serves one in this namespace.
+		installedKeycloakOperator = false
 	)
 
+	// The flows run one at a time on one node, so what a flow reserves has to
+	// fit beside the system pods, the manager, and the operators on a
+	// four-vCPU runner. The requests below are scheduling room, not a
+	// performance setting, and the Keycloak Operator adds 300m of its own.
+	cluster.Spec.Zeebe.Resources = requests("500m", "1Gi")
+	cluster.Spec.Gateway.Resources = requests("200m", "512Mi")
+	elasticsearch.Spec.Resources = requests("300m", "1Gi")
+
 	BeforeAll(func() {
+		By("creating the namespace of the flow")
+		Expect(apply(managementKeycloakNamespaceObject())).To(Succeed())
+
+		if os.Getenv("KEYCLOAK_OPERATOR_INSTALL_SKIP") != "true" &&
+			!utils.IsKeycloakOperatorInstalled(mcKeycloakNamespace) {
+			version, err := utils.KeycloakOperatorVersion()
+			Expect(err).NotTo(HaveOccurred())
+
+			By(fmt.Sprintf("installing the Keycloak Operator %s", version))
+			Expect(utils.InstallKeycloakOperator(mcKeycloakNamespace)).To(Succeed())
+			installedKeycloakOperator = true
+		}
+
 		By("deploying PostgreSQL and the SMTP sink")
 		deployBackingServices(mcKeycloakNamespace)
 
@@ -237,11 +263,15 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelM
 		)
 		_, _ = utils.Kubectl("delete", dbServerResource, mcKeycloakServer, "--ignore-not-found")
 
-		// The namespace also holds the Keycloak Operator, and the suite
-		// created it for that operator, so the suite removes it with the
-		// operator it installed. A Keycloak Operator that was there before the
-		// suite keeps its namespace, and the flow removes its own fixtures
-		// instead.
+		// A Keycloak Operator that this flow installed goes with the
+		// namespace. One that was there before the flow keeps its namespace,
+		// and the flow removes its own fixtures instead.
+		if installedKeycloakOperator {
+			By("uninstalling the Keycloak Operator with the namespace of the flow")
+			utils.UninstallKeycloakOperator(mcKeycloakNamespace)
+			_, _ = utils.Kubectl("delete", "ns", mcKeycloakNamespace, "--wait=false")
+			return
+		}
 		_, _ = utils.Kubectl(
 			"delete", esResource, esName, "-n", mcKeycloakNamespace, "--ignore-not-found", "--wait=false",
 		)
@@ -403,6 +433,10 @@ var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(labelManag
 		mc      = oidcManagementCluster()
 		cluster = newCluster(mcOIDCNamespace, mcOIDCClusterPlatform, mcOIDCStorage, "", false)
 	)
+
+	// The same four-vCPU room as the Keycloak flow.
+	cluster.Spec.Zeebe.Resources = requests("500m", "1Gi")
+	cluster.Spec.Gateway.Resources = requests("200m", "512Mi")
 
 	BeforeAll(func() {
 		By("creating the test namespace")
@@ -573,7 +607,7 @@ func keycloakManagementCluster() *v1.CamundaManagementCluster {
 				ExternalURL:       keycloakServiceURL(mc),
 				DatabaseConfigRef: mcKeycloakDatabase,
 				Replicas:          new(int32(1)),
-				Resources:         requests("300m", "768Mi"),
+				Resources:         requests("200m", "768Mi"),
 			},
 		},
 		Identity: v1.IdentitySpec{
@@ -581,13 +615,13 @@ func keycloakManagementCluster() *v1.CamundaManagementCluster {
 			ExternalURL:       components.IdentityServiceURL(mc),
 			DatabaseConfigRef: mcKeycloakIdentityDB,
 			Admin:             v1.IdentityAdminSpec{Username: mcAdminUsername, Email: mcAdminEmail},
-			WorkloadSpec:      v1.WorkloadSpec{Resources: requests("300m", "1Gi")},
+			WorkloadSpec:      v1.WorkloadSpec{Resources: requests("200m", "1Gi")},
 		},
 		Optimize: &v1.ManagementOptimizeSpec{ExternalURL: optimizeWebappURL()},
 		Console: &v1.ConsoleSpec{
 			Version:      os.Getenv(envConsoleVersion),
 			ExternalURL:  components.ConsoleServiceURL(mc),
-			WorkloadSpec: v1.WorkloadSpec{Resources: requests("100m", "256Mi")},
+			WorkloadSpec: v1.WorkloadSpec{Resources: requests("50m", "256Mi")},
 		},
 		WebModeler: webModelerSpec(mc, mcKeycloakWebModelerDB),
 	}
@@ -618,7 +652,7 @@ func oidcManagementCluster() *v1.CamundaManagementCluster {
 				ClaimName:  mcOIDCAdminClaimName,
 				ClaimValue: mcOIDCAdminClaimValue,
 			},
-			WorkloadSpec: v1.WorkloadSpec{Resources: requests("300m", "1Gi")},
+			WorkloadSpec: v1.WorkloadSpec{Resources: requests("200m", "1Gi")},
 		},
 		WebModeler: webModelerSpec(mc, mcOIDCWebModelerDB),
 	}
@@ -642,8 +676,8 @@ func webModelerSpec(mc *v1.CamundaManagementCluster, databaseRef string) *v1.Web
 			// The SMTP sink speaks no STARTTLS.
 			TLS: new(false),
 		},
-		Restapi:    &v1.WorkloadSpec{Resources: requests("300m", "1Gi")},
-		Websockets: &v1.WorkloadSpec{Resources: requests("100m", "256Mi")},
+		Restapi:    &v1.WorkloadSpec{Resources: requests("200m", "1Gi")},
+		Websockets: &v1.WorkloadSpec{Resources: requests("50m", "256Mi")},
 	}
 }
 
@@ -703,8 +737,8 @@ func managementOptimize() *v1.CamundaOptimize {
 			Version:           os.Getenv(envOptimizeVersion),
 			ManagementAuthRef: mcKeycloakName,
 			ClusterRef:        v1.ClusterRef{Name: ccName},
-			Webapp:            &v1.WorkloadSpec{Resources: requests("250m", "1Gi")},
-			Importer:          &v1.WorkloadSpec{Resources: requests("250m", "1Gi")},
+			Webapp:            &v1.WorkloadSpec{Resources: requests("150m", "1Gi")},
+			Importer:          &v1.WorkloadSpec{Resources: requests("150m", "1Gi")},
 		},
 	}
 }
