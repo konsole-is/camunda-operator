@@ -344,8 +344,11 @@ rendered env keeps the first value; the docs say the database is the place to ch
 
 **Identity in every mode.** `IDENTITY_URL` = `identity.externalUrl`, database env from its
 `DatabaseConfig`, `CAMUNDA_LICENSE_KEY` from the platform, `CAMUNDA_IDENTITY_AUDIENCE` always
-set. One Deployment, one Service (80 -> 8080, 82 -> 8082), readiness
-`/actuator/health/readiness` on 8082.
+set. One Deployment, one Service (80 -> 8080, 82 -> 8082), readiness `/actuator/health` on
+8082 (the chart's probe; `/actuator/health/readiness` needs a Spring setting the chart does not
+set — recorded at the wave-2 checkpoint). Referenced Secrets that live in another namespace
+(platform license and client secrets) are copied into the management namespace; the copies
+report `MirroredSecretsReady`, included in `Ready` only when a copy exists.
 
 ### The `ManagementAuthConfig` output
 
@@ -389,7 +392,9 @@ in `status.clusters` with `attached: false`, `reason: ClaimedElsewhere`. The cla
 on deselect and on deletion.
 
 **Ping.** For each claimed cluster the controller applies top-level `spec.extraEnv` entries
-under its own field manager with the cluster UID as precondition, the `patchExporter` shape:
+under a ping field manager of its own (distinct from the claim's, because two applies under one
+manager strip each other's fields) with the cluster UID as precondition, the `patchExporter`
+shape:
 `CAMUNDA_CONSOLE_PING_ENABLED=true`, `_ENDPOINT=<console.externalUrl>`,
 `_CLUSTERNAME=<cluster name>`, `_PINGPERIOD=1h`. The key set is selected from the cluster's
 `status.management.version`: `CAMUNDA_CONSOLE_PING_*` for 8.9, `CAMUNDA_HUB_PING_*` for 8.10 and
