@@ -85,7 +85,8 @@ first.
 - Camunda documents the Keycloak Operator: `apiVersion: k8s.keycloak.org/v2alpha1`,
   `kind: Keycloak`, image `camunda/keycloak:quay-optimized-<version>`, `db.url` plus
   `usernameSecret`/`passwordSecret`, HTTP enabled, `additionalOptions`
-  `http-relative-path=/auth` and `proxy-headers=xforwarded`, `ingress.enabled: false`,
+  `http-relative-path=/auth`, `proxy.headers: xforwarded` (the first-class field, because the
+  Keycloak Operator warns when the option arrives through `additionalOptions`), `ingress.enabled: false`,
   `hostname.hostname` with the `/auth` path. Keycloak needs its own PostgreSQL.
   https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/
 - The Bitnami Keycloak subchart is marked deprecated in the 8.9 chart README.
@@ -333,8 +334,8 @@ handler that sets `instances: 0`. `SetupWithManager` probes the RESTMapper once 
 `Ready=False/KeycloakOperatorNotInstalled`, the `ECKNotInstalled` shape. The CR:
 `instances`, `image` (through `pkg/images`), `db` from the `DatabaseConfig` (the whole
 `jdbc:aws-wrapper:postgresql://` URL, `schema: public`, `usernameSecret` and `passwordSecret`
-pointing at the credentials Secret keys), HTTP on, `additionalOptions` `http-relative-path=/auth`
-and `proxy-headers=xforwarded`, `hostname.hostname` = `externalUrl`, Ingress off, pod template
+pointing at the credentials Secret keys), HTTP on, `additionalOptions` `http-relative-path=/auth`,
+`proxy.headers: xforwarded`, `hostname.hostname` = `externalUrl`, Ingress off, pod template
 labels. The Keycloak Operator writes `<name>-initial-admin`; Identity's
 `KEYCLOAK_SETUP_USER|PASSWORD` read it, and the Identity component waits for `KeycloakReady`
 through an ocf prerequisite. `KEYCLOAK_URL` is the in-cluster Service URL the operator creates
