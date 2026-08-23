@@ -119,9 +119,11 @@ first.
   `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI`, `..._JWK_SET_URI`,
   `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL`, `CAMUNDA_MODELER_OAUTH2_TOKEN_USERNAMECLAIM`.
   Two clients: public UI, confidential API.
-- External URL: `RESTAPI_SERVER_URL`, `SERVER_SERVLET_CONTEXTPATH`. WebSocket pairing:
-  `RESTAPI_PUSHER_HOST|PORT|APP_ID|KEY|SECRET` on restapi, `PUSHER_APP_ID|KEY|SECRET` on
-  websockets, `CLIENT_PUSHER_HOST|PORT|PATH|FORCE_TLS` for the browser.
+- External URL: `RESTAPI_SERVER_URL`, `SERVER_SERVLET_CONTEXTPATH`, and `SERVER_HTTPS_ONLY`,
+  which defaults to true and redirects a browser from http to https. WebSocket pairing:
+  `RESTAPI_PUSHER_HOST|PORT|APP_ID|KEY|SECRET` on restapi, `PUSHER_APP_ID|KEY|SECRET|APP_PATH`
+  on websockets, where `PUSHER_APP_PATH` is the base path the WebSocket server serves under,
+  `CLIENT_PUSHER_HOST|PORT|PATH|FORCE_TLS` for the browser.
 - Clusters: `CAMUNDA_MODELER_CLUSTERS_<n>_{ID,NAME,VERSION,AUTHENTICATION,URL_GRPC,URL_REST,URL_WEBAPP,AUTHORIZATIONS_ENABLED}`.
   Authentication `BEARER_TOKEN`, `BASIC`, or `NONE`. Without clusters, no deploy.
   `URL_GRPC` is a URL with a `grpc://` or `grpcs://` scheme, not a host and a port.
@@ -422,14 +424,20 @@ Two Deployments and Services: `web-modeler-restapi` (80 -> 8081, readiness
 
 `restapi` env: `SPRING_DATASOURCE_URL|USERNAME|PASSWORD` from its `DatabaseConfig`,
 `RESTAPI_MAIL_*` from `spec.webModeler.mail`, `RESTAPI_SERVER_URL`,
-`SERVER_SERVLET_CONTEXTPATH` from `externalUrl`, `OAUTH2_CLIENT_ID` (`web-modeler` or
+`SERVER_SERVLET_CONTEXTPATH` and `SERVER_HTTPS_ONLY` from `externalUrl`, where
+`SERVER_HTTPS_ONLY` is off for an http URL, `OAUTH2_CLIENT_ID` (`web-modeler` or
 `management.clients.webModeler`), `CAMUNDA_IDENTITY_BASEURL` (internal), `CAMUNDA_IDENTITY_TYPE`,
 `CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API`, `..._PUBLIC_API`,
 `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI`, `..._JWK_SET_URI`,
 `RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL`, `CAMUNDA_MODELER_OAUTH2_TOKEN_USERNAMECLAIM` from the
-platform's `usernameClaim`, `RESTAPI_PUSHER_*` with generated app id, key, secret,
-`CLIENT_PUSHER_HOST|PORT|PATH|FORCE_TLS` from `websocketsExternalUrl`, `CAMUNDA_LICENSE_KEY`, and
-the cluster list. `websockets` env: `PUSHER_APP_ID|KEY|SECRET`.
+platform's `usernameClaim`, `RESTAPI_PUSHER_*`, `CLIENT_PUSHER_HOST|PORT|PATH|FORCE_TLS` from
+`websocketsExternalUrl`, `CAMUNDA_LICENSE_KEY`, and the cluster list. `websockets` env:
+`PUSHER_APP_ID|KEY|SECRET`, and `PUSHER_APP_PATH` with the base path of
+`websocketsExternalUrl`, which is the path the browser is told through `CLIENT_PUSHER_PATH`.
+
+The pusher app id is the fixed identifier `web-modeler` on both sides. Only the app key and the
+app secret are generated. They live in the Secret `<name>-web-modeler-pusher` of the management
+namespace, and deleting it rotates them.
 
 Cluster list: one `CAMUNDA_MODELER_CLUSTERS_<n>_*` block per attached cluster: `ID` = the
 cluster UID, `NAME` = `<namespace>/<name>`, `VERSION` = `status.management.version`, `URL_GRPC`
