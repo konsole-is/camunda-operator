@@ -44,10 +44,15 @@ type MirrorPurpose string
 // cluster-scoped, so one platform config serves every namespace and its
 // references can name only one.
 const (
-	MirrorPurposeLicense        MirrorPurpose = "license"
+	// MirrorPurposeLicense names the copy of the Camunda license Secret.
+	MirrorPurposeLicense MirrorPurpose = "license"
+	// MirrorPurposeIdentityClient names the copy of the Management Identity OIDC client secret.
 	MirrorPurposeIdentityClient MirrorPurpose = "identity-client"
-	MirrorPurposeIdentityDB     MirrorPurpose = "identity-db"
-	MirrorPurposeWebModelerDB   MirrorPurpose = "web-modeler-db"
+	// MirrorPurposeIdentityDB names the copy of the Management Identity database credentials Secret.
+	MirrorPurposeIdentityDB MirrorPurpose = "identity-db"
+	// MirrorPurposeWebModelerDB names the copy of the Web Modeler database credentials Secret.
+	MirrorPurposeWebModelerDB MirrorPurpose = "web-modeler-db"
+	// MirrorPurposeWebModelerMail names the copy of the Web Modeler SMTP credentials Secret.
 	MirrorPurposeWebModelerMail MirrorPurpose = "web-modeler-mail"
 )
 
