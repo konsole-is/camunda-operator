@@ -532,6 +532,7 @@ spec:
     # object. Optional. Run Keycloak through the Keycloak Operator.
     keycloak:
       # string. Required. Keycloak version, as major.minor.patch. Supported: 26.0.0 and later, below 27.0.0.
+      # With Management Identity 8.9, stay below 26.7.0. See "The operator runs Keycloak".
       version: "26.6.4"
       # string. Required. The URL a browser reaches Keycloak at, including the /auth path. It is the issuer of every token.
       externalUrl: "https://camunda.example.com/auth"
@@ -668,7 +669,7 @@ The API server enforces these at admission:
 
 The operator checks these after you apply the resource and reports them on `Ready`:
 
-- `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside a range reports `UnsupportedVersion`.
+- `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside a range reports `UnsupportedVersion`. The operator accepts `26.7.0` and later, and Management Identity 8.9 does not start against them. See [The operator runs Keycloak](#the-operator-runs-keycloak).
 - Management Identity, Keycloak, and Web Modeler name three different `DatabaseConfig` resources. Two that name one report `InvalidReference`.
 - Every referenced resource and Secret exists. A missing one reports `InvalidReference` or `MissingSecret`.
 

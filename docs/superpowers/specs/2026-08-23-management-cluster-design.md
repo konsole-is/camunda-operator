@@ -554,7 +554,7 @@ it, and so is every Job image the backup and restore controllers render.
 
 ### Security
 
-- Generated secrets (Identity client secret, Optimize client secret, pusher credentials,
+- Generated secrets (Optimize client secret, pusher credentials,
   Keycloak initial admin from the Keycloak Operator, Web Modeler cluster users, Identity admin
   password in Keycloak modes) live in the management namespace and are owned by the CR. All of
   them rotate by deletion except the Identity admin password: Management Identity reads it once,
@@ -565,8 +565,12 @@ it, and so is every Job image the backup and restore controllers render.
   this: a marker that says the administrator has bootstrapped cannot live on the Secret, because
   the deletion it guards removes it, and a marker on the CR would leave the Identity pods
   mounting a Secret that the operator no longer publishes.
-- The only credential that crosses a namespace is the Optimize client secret reference in the
-  cluster-scoped contract, which `CamundaOptimize` already mirrors into its own namespace.
+- Two kinds of credential cross a namespace. The Optimize client secret reference in the
+  cluster-scoped contract, which `CamundaOptimize` mirrors into its own namespace. And the Secrets
+  that the management cluster references in other namespaces (the license, the oidc client secret,
+  the database credentials, the Keycloak administrator, the SMTP credentials), which the operator
+  copies into the management namespace under `MirroredSecretsReady`, because a pod reads a Secret
+  of its own namespace only.
 - The cluster admin credential is read by the management controller to create the Web Modeler
   user and is never rendered into any pod.
 - RBAC: the controller needs `camundaclusters` get/list/watch/patch, `keycloaks` full,

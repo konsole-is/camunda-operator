@@ -234,18 +234,24 @@ func TestIdentityEnvInTheKeycloakModesCarriesNoInitialClaim(t *testing.T) {
 func TestKeycloakModesGiveIdentityNoClientSecret(t *testing.T) {
 	t.Parallel()
 
-	in := newKeycloakInput(t, true, nil)
+	for name, managed := range map[string]bool{"keycloak": true, "externalKeycloak": false} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	assert.NotContains(t, renderedEnv(in, ComponentIdentity), "IDENTITY_CLIENT_SECRET")
+			in := newKeycloakInput(t, managed, nil)
 
-	built, err := Build(in)
-	require.NoError(t, err)
+			assert.NotContains(t, renderedEnv(in, ComponentIdentity), "IDENTITY_CLIENT_SECRET")
 
-	objects, err := builtComponent(t, built, ComponentSecrets).Preview()
-	require.NoError(t, err)
+			built, err := Build(in)
+			require.NoError(t, err)
 
-	for _, object := range objects {
-		assert.NotEqual(t, suffixed(in.Cluster.Name, "identity-client"), object.GetName())
+			objects, err := builtComponent(t, built, ComponentSecrets).Preview()
+			require.NoError(t, err)
+
+			for _, object := range objects {
+				assert.NotEqual(t, suffixed(in.Cluster.Name, "identity-client"), object.GetName())
+			}
+		})
 	}
 }
 
