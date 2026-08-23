@@ -36,16 +36,18 @@ const msgVersionDowngradeRefused = "the effective version %s is below the runnin
 	"taken with %s, or set the annotation %s=%q on the cluster to downgrade on purpose"
 
 // consumeDowngradeSanction removes the downgrade annotation from cluster once
-// the brokers carry the version it names. The sanction is spent at that
-// point, whoever set it. A merge patch removes the key from every manager
-// that declared it, which is what a spent sanction needs.
+// the brokers carry the version it names, and as soon as it names a version
+// that the cluster is not asked to run. The sanction covers one move to the
+// effective version, whoever set it. A merge patch removes the key from every
+// manager that declared it, which is what a spent sanction needs.
 func (r *CamundaClusterReconciler) consumeDowngradeSanction(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
+	in components.Input,
 	storage brokerStorage,
 ) error {
 	sanctioned, ok := cluster.Annotations[components.AllowVersionDowngradeAnnotation]
-	if !ok || sanctioned != storage.runningVersion() {
+	if !ok || (sanctioned == in.Effective.Version && sanctioned != storage.runningVersion()) {
 		return nil
 	}
 

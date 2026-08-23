@@ -201,7 +201,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if err := r.consumeDowngradeSanction(ctx, &cluster, storage); err != nil {
+	if err := r.consumeDowngradeSanction(ctx, &cluster, in, storage); err != nil {
 		return ctrl.Result{}, err
 	}
 

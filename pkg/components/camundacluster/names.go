@@ -49,7 +49,9 @@ const (
 	// AllowVersionDowngradeAnnotation is the annotation of a CamundaCluster
 	// that sanctions one move of its effective version below the version its
 	// brokers run. The value is the exact target version, x.y.z. The
-	// controller removes the annotation once the brokers carry that version.
+	// controller removes the annotation once the brokers carry that version,
+	// and as soon as it names a version other than the effective one. Set it
+	// in the same edit as the version, or after the refusal.
 	AllowVersionDowngradeAnnotation = "camunda.io/allow-version-downgrade"
 	// AdminUsername is the initial admin user of a basic-auth cluster.
 	AdminUsername = "admin"

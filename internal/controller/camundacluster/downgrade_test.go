@@ -38,6 +38,8 @@ func TestConsumeDowngradeSanction(t *testing.T) {
 		// sanctioned is the version that the annotation names. Empty means
 		// that the cluster carries no annotation.
 		sanctioned string
+		// effective is the version of the preset-merged spec.
+		effective string
 		// want is the annotation value on the live object after the call.
 		// Empty means that the cluster carries no annotation.
 		want string
@@ -45,16 +47,31 @@ func TestConsumeDowngradeSanction(t *testing.T) {
 		patched bool
 	}{
 		{
-			name: "no annotation",
+			name:      "no annotation",
+			effective: "8.9.8",
 		},
 		{
-			name:       "the annotation names another version",
-			sanctioned: "8.9.7",
-			want:       "8.9.7",
+			name:       "the annotation names the pending effective version",
+			sanctioned: "8.9.8",
+			effective:  "8.9.8",
+			want:       "8.9.8",
 		},
 		{
 			name:       "the annotation names the running version",
 			sanctioned: "8.9.9",
+			effective:  "8.9.8",
+			patched:    true,
+		},
+		{
+			name:       "the annotation names neither version",
+			sanctioned: "8.9.7",
+			effective:  "8.9.8",
+			patched:    true,
+		},
+		{
+			name:       "the brokers carry the sanctioned effective version",
+			sanctioned: "8.9.9",
+			effective:  "8.9.9",
 			patched:    true,
 		},
 	}
@@ -81,15 +98,18 @@ func TestConsumeDowngradeSanction(t *testing.T) {
 			require.NoError(t, r.Get(context.Background(), key, &live))
 			applied := live.ResourceVersion
 
+			in := components.Input{
+				Effective: components.NewEffective(v1.CamundaClusterSpec{Version: tt.effective}),
+			}
 			storage := brokerStorageRunning("camunda/camunda:8.9.9")
-			require.NoError(t, r.consumeDowngradeSanction(context.Background(), cluster, storage))
+			require.NoError(t, r.consumeDowngradeSanction(context.Background(), cluster, in, storage))
 
 			require.NoError(t, r.Get(context.Background(), key, &live))
 			assert.Equal(t, tt.want, live.Annotations[components.AllowVersionDowngradeAnnotation])
 			if tt.patched {
 				assert.NotEqual(t, applied, live.ResourceVersion, "a spent sanction is removed with a patch")
 			} else {
-				assert.Equal(t, applied, live.ResourceVersion, "there is no sanction to spend, so nothing is written")
+				assert.Equal(t, applied, live.ResourceVersion, "an unspent sanction is left in place")
 			}
 		})
 	}
