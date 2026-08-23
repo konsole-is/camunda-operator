@@ -39,9 +39,13 @@ const (
 	// keycloakEnvRealm is the realm that holds every Camunda client and user.
 	keycloakEnvRealm = "KEYCLOAK_REALM"
 	// keycloakEnvSetupUser and keycloakEnvSetupPassword are the Keycloak
-	// administrator that Identity signs in as.
+	// administrator that Identity signs in as. keycloakEnvSetupRealm and
+	// keycloakEnvSetupClientID are the realm and the client it signs in
+	// through.
 	keycloakEnvSetupUser     = "KEYCLOAK_SETUP_USER"
 	keycloakEnvSetupPassword = "KEYCLOAK_SETUP_PASSWORD"
+	keycloakEnvSetupRealm    = "KEYCLOAK_SETUP_REALM"
+	keycloakEnvSetupClientID = "KEYCLOAK_SETUP_CLIENT_ID"
 	// keycloakEnvIdentityClientID and keycloakEnvIdentityClientSecret are the
 	// credentials of the Identity client in the realm. Identity creates the
 	// client with this secret and then authenticates with it.
@@ -111,6 +115,15 @@ const (
 	// keycloakDefaultRealm is the realm that Management Identity creates and
 	// uses when the spec names none.
 	keycloakDefaultRealm = "camunda-platform"
+	// keycloakSetupRealm and keycloakSetupClientID are the realm the Keycloak
+	// administrator lives in and the client Management Identity signs in
+	// through. Both are the documented defaults of Management Identity, and
+	// both are rendered so that the configuration says where the
+	// administrator comes from. The Keycloak Operator writes its first
+	// administrator into the master realm, and every Keycloak serves
+	// admin-cli there.
+	keycloakSetupRealm    = "master"
+	keycloakSetupClientID = "admin-cli"
 	// keycloakBasePath is the path that the Camunda build of Keycloak serves
 	// under. The image bakes it in, and the rendered Keycloak sets the same
 	// value in its server options
@@ -180,6 +193,8 @@ func keycloakProviderEnv(in Input) []corev1.EnvVar {
 				Name:      keycloakEnvSetupPassword,
 				ValueFrom: secretSource(admin.Name, admin.PasswordKey),
 			},
+			corev1.EnvVar{Name: keycloakEnvSetupRealm, Value: keycloakSetupRealm},
+			corev1.EnvVar{Name: keycloakEnvSetupClientID, Value: keycloakSetupClientID},
 		)
 	}
 

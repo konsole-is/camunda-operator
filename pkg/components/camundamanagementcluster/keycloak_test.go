@@ -170,6 +170,8 @@ func TestIdentityEnvInTheKeycloakModes(t *testing.T) {
 			"IDENTITY_CLIENT_SECRET":             "secretKeyRef:my-management-identity-client/client-secret",
 			"KEYCLOAK_SETUP_USER":                "secretKeyRef:my-management-keycloak-initial-admin/username",
 			"KEYCLOAK_SETUP_PASSWORD":            "secretKeyRef:my-management-keycloak-initial-admin/password",
+			"KEYCLOAK_SETUP_REALM":               "master",
+			"KEYCLOAK_SETUP_CLIENT_ID":           "admin-cli",
 			"KEYCLOAK_INIT_OPTIMIZE_ROOT_URL":    fixtureOptimize,
 			"KEYCLOAK_INIT_OPTIMIZE_SECRET":      "secretKeyRef:my-management-optimize-client/client-secret",
 			"KEYCLOAK_INIT_CONSOLE_ROOT_URL":     "https://console.example.com",
