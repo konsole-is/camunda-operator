@@ -520,11 +520,14 @@ func (res *resolver) olderSibling(
 	return oldest, nil
 }
 
-// olderThan reports whether a was created before b, with the name as the
-// tie-break, so exactly one of two clusters ever yields.
+// olderThan reports whether a was created before b, with the name and then
+// the namespace as the tie-break, so exactly one of two clusters ever yields.
 func olderThan(a, b *v1.CamundaCluster) bool {
 	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
 		return a.CreationTimestamp.Before(&b.CreationTimestamp)
 	}
-	return a.Name < b.Name
+	if a.Name != b.Name {
+		return a.Name < b.Name
+	}
+	return a.Namespace < b.Namespace
 }

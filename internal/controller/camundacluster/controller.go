@@ -235,7 +235,9 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 
 	cred.stageFailure(&cluster, priorAdminSecret)
-	if in.Storage.Holder != nil {
+	// A failed apply keeps the aggregate, which carries the error. The parked
+	// reason claims a suspension that has not landed yet.
+	if in.Storage.Holder != nil && reconcileErr == nil {
 		conditions.Stage(&cluster, storageHeld(&cluster, in.Storage.Holder))
 	} else {
 		conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
