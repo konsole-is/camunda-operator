@@ -61,6 +61,10 @@ const (
 	LogicalRestoreRDBMSKey = "camunda.io/logical-restore-rdbms"
 	// PointInTimeRestoreKey names the owning PointInTimeRestore.
 	PointInTimeRestoreKey = "camunda.io/point-in-time-restore"
+	// ManagementClusterKey names the owning CamundaManagementCluster. It is
+	// also the annotation key of the claim that a management cluster puts on
+	// an orchestration cluster it serves.
+	ManagementClusterKey = "camunda.io/management-cluster"
 	// ComponentKey names the role of a resource inside its owner, for example
 	// "elasticsearch" or "elasticsearch-exporter".
 	ComponentKey = "camunda.io/component"
@@ -155,6 +159,12 @@ func LogicalRestoreRDBMS(name string) Owner {
 // with the given name renders.
 func PointInTimeRestore(name string) Owner {
 	return Owner{Key: PointInTimeRestoreKey, Name: OwnerName(name)}
+}
+
+// ManagementCluster returns the Owner of resources that a
+// CamundaManagementCluster with the given name renders.
+func ManagementCluster(name string) Owner {
+	return Owner{Key: ManagementClusterKey, Name: OwnerName(name)}
 }
 
 // Managed returns the labels of a resource that the operator applies: the

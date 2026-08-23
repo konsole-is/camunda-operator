@@ -95,12 +95,6 @@ const (
 	DataMountPath = "/usr/local/camunda/data"
 	// CAMountPath is where the Elasticsearch CA certificate is mounted.
 	CAMountPath = "/etc/camunda/es-ca"
-	// CamundaImage is the image of every unified process
-	// (camunda.Dockerfile).
-	CamundaImage = "camunda/camunda"
-	// ConnectorsImage is the image of the connectors runtime (helm chart
-	// 14.8.3 values.yaml:2289).
-	ConnectorsImage = "camunda/connectors-bundle"
 	// CamundaEntrypoint is the entrypoint of the unified image
 	// (camunda.Dockerfile:156).
 	CamundaEntrypoint = "/usr/local/camunda/bin/camunda"

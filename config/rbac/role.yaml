@@ -93,7 +93,6 @@ rules:
   - camundaplatformconfigs
   - databaseserverconfigs
   - elasticsearchclusterpresets
-  - managementauthconfigs
   - objectstorageconfigs
   verbs:
   - get
@@ -136,6 +135,7 @@ rules:
   - logicalbackuprdbmses
   - logicalrestoreelasticsearches
   - logicalrestorerdbmses
+  - managementauthconfigs
   - pointintimerestores
   - secondarystorageconfigs
   verbs:
@@ -173,6 +173,24 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - k8s.keycloak.org
+  resources:
+  - keycloaks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - k8s.keycloak.org
+  resources:
+  - keycloaks/status
+  verbs:
+  - get
 - apiGroups:
   - monitoring.coreos.com
   resources:

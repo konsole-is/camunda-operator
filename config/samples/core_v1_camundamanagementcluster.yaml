@@ -6,4 +6,25 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: camundamanagementcluster-sample
 spec:
-  # TODO(user): Add fields here
+  platformConfigRef: "camundaplatformconfig-sample"
+  identityProvider:
+    oidc: {}
+  identity:
+    version: "8.9.0"
+    externalUrl: "https://identity.example.com"
+    databaseConfigRef: "identity-db"
+    admin:
+      claimName: "oid"
+      claimValue: "1f8c0e2a-2b1a-4a5f-9f0d-2b0a1c3d4e5f"
+  console:
+    version: "8.9.0"
+    externalUrl: "https://console.example.com"
+  webModeler:
+    version: "8.9.0"
+    externalUrl: "https://modeler.example.com"
+    websocketsExternalUrl: "https://modeler-ws.example.com"
+    databaseConfigRef: "web-modeler-db"
+    mail:
+      smtpHost: "smtp.example.com"
+      fromAddress: "camunda@example.com"
+      fromName: "Camunda Web Modeler"

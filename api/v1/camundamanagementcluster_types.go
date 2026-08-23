@@ -17,52 +17,359 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// The condition vocabulary that only CamundaManagementCluster reports. The
+// shared vocabulary is in conditions.go.
+const (
+	// ConditionKeycloakReady is the condition of the Keycloak that the
+	// operator runs. It is absent in the externalKeycloak and the oidc mode.
+	ConditionKeycloakReady = "KeycloakReady"
+	// ConditionIdentityReady is the condition of the Management Identity
+	// workload.
+	ConditionIdentityReady = "IdentityReady"
+	// ConditionConsoleReady is the condition of the Console workload. It is
+	// absent while console is unset.
+	ConditionConsoleReady = "ConsoleReady"
+	// ConditionWebModelerReady is the condition of the two Web Modeler
+	// workloads. It is absent while webModeler is unset.
+	ConditionWebModelerReady = "WebModelerReady"
+	// ConditionManagementAuthReady is the condition of the
+	// ManagementAuthConfig that this management cluster writes.
+	ConditionManagementAuthReady = "ManagementAuthReady"
+	// ConditionSecretsReady is the condition of the Secrets that the operator
+	// generates: the client secrets, the initial admin password, and the Web
+	// Modeler pusher credential.
+	ConditionSecretsReady = "SecretsReady"
 
-// CamundaManagementClusterSpec defines the desired state of CamundaManagementCluster
+	// ReasonKeycloakOperatorNotInstalled means that spec.identityProvider
+	// selects keycloak and that the Kubernetes cluster does not serve the
+	// Keycloak kind of the Keycloak Operator. Install the Keycloak Operator,
+	// or select another mode.
+	ReasonKeycloakOperatorNotInstalled = "KeycloakOperatorNotInstalled"
+	// ReasonConflict means that a cluster-scoped object of the name this
+	// management cluster writes already exists and belongs to another owner.
+	// The message names the object. Set managementAuthConfigName to a free
+	// name, or remove the object.
+	ReasonConflict = "Conflict"
+	// ReasonUnsupportedVersion means that a version in the spec is below the
+	// floor that the operator supports. The message names the field and the
+	// floor.
+	ReasonUnsupportedVersion = "UnsupportedVersion"
+	// ReasonClaimedElsewhere means that a selected CamundaCluster is already
+	// claimed by another management cluster. One cluster answers to one
+	// management plane, so this operator leaves the cluster untouched. The
+	// message names the holder.
+	ReasonClaimedElsewhere = "ClaimedElsewhere"
+	// ReasonNotReady means that a selected CamundaCluster publishes no
+	// gateway endpoints yet, so Web Modeler cannot deploy to it. The state
+	// clears when the cluster becomes ready.
+	ReasonNotReady = "NotReady"
+	// ReasonImmutableAfterStart means that identity.admin changed after
+	// Management Identity started. Identity stores the initial administrator
+	// in its database and reads the setting only on the first start, so the
+	// operator refuses the change instead of rendering a value that has no
+	// effect.
+	ReasonImmutableAfterStart = "ImmutableAfterStart"
+	// ReasonBasicAuthUserFailed means that the operator could not create the
+	// Web Modeler user on a basic-auth CamundaCluster. The row of that
+	// cluster in status.clusters carries the message.
+	ReasonBasicAuthUserFailed = "BasicAuthUserFailed"
+)
+
+// CamundaManagementClusterSpec describes one management plane: Management
+// Identity, its identity provider, and optionally Console and Web Modeler.
+// +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
+// +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)",message="identity.admin.passwordSecretRef applies to the keycloak modes only"
 type CamundaManagementClusterSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of CamundaManagementCluster. Edit camundamanagementcluster_types.go to remove/update
+	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
+	// carries the license, the image settings, and, in the oidc mode, the
+	// identity provider and every client of the management plane.
+	// +kubebuilder:validation:MinLength=1
+	PlatformConfigRef string `json:"platformConfigRef"`
+	// Suspend scales every workload of this management cluster to zero. The
+	// ManagementAuthConfig, the claims on the orchestration clusters, and the
+	// Console ping settings stay, so nothing else has to change while the
+	// management plane is down.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Suspend bool `json:"suspend,omitempty"`
+	// ClusterSelector selects the CamundaClusters, in every namespace, that
+	// Console and Web Modeler serve. An unset selector selects every cluster.
+	// +optional
+	ClusterSelector *metav1.LabelSelector `json:"clusterSelector,omitempty"`
+	// ManagementAuthConfigName is the name of the cluster-scoped
+	// ManagementAuthConfig that this management cluster writes. A
+	// CamundaOptimize reads it through its managementAuthRef. Empty means the
+	// name of this resource.
+	// +optional
+	ManagementAuthConfigName string `json:"managementAuthConfigName,omitempty"`
+	// IdentityProvider selects where users authenticate. Exactly one of
+	// keycloak, externalKeycloak, or oidc is set.
+	// +kubebuilder:validation:XValidation:rule="[has(self.keycloak), has(self.externalKeycloak), has(self.oidc)].filter(x, x).size() == 1",message="exactly one identity provider: keycloak, externalKeycloak, or oidc"
+	IdentityProvider IdentityProviderSpec `json:"identityProvider"`
+	// Identity configures Management Identity. Console, Web Modeler, and
+	// Optimize all authenticate through it, so it is always deployed.
+	Identity IdentitySpec `json:"identity"`
+	// Console configures Console. Console is not deployed while this is unset.
+	// +optional
+	Console *ConsoleSpec `json:"console,omitempty"`
+	// WebModeler configures Web Modeler. Web Modeler is not deployed while
+	// this is unset.
+	// +optional
+	WebModeler *WebModelerSpec `json:"webModeler,omitempty"`
 }
 
-// CamundaManagementClusterStatus defines the observed state of CamundaManagementCluster.
+// IdentityProviderSpec holds one of the three identity provider modes.
+type IdentityProviderSpec struct {
+	// Keycloak runs Keycloak through the Keycloak Operator. The Keycloak
+	// Operator must be installed on the Kubernetes cluster.
+	// +optional
+	Keycloak *ManagedKeycloakSpec `json:"keycloak,omitempty"`
+	// ExternalKeycloak connects Management Identity to a Keycloak that you
+	// run. Management Identity still creates the realm, the clients, and the
+	// initial administrator in it.
+	// +optional
+	ExternalKeycloak *ExternalKeycloakSpec `json:"externalKeycloak,omitempty"`
+	// OIDC connects Management Identity to the identity provider of the
+	// referenced CamundaPlatformConfig.
+	// +optional
+	OIDC *ManagementOIDCSpec `json:"oidc,omitempty"`
+}
+
+// ManagedKeycloakSpec configures the Keycloak that the operator runs through
+// the Keycloak Operator.
+type ManagedKeycloakSpec struct {
+	// Version is the Keycloak version, as a full semantic version. Camunda
+	// 8.9 supports Keycloak 26 only. The image is
+	// camunda/keycloak:quay-optimized-<version> unless the platform config
+	// overrides the repository.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	Version string `json:"version"`
+	// ExternalURL is the URL that browsers reach Keycloak at, including the
+	// /auth path. Management Identity also reaches this URL, so it must
+	// resolve from inside the Kubernetes cluster.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	ExternalURL string `json:"externalUrl"`
+	// DatabaseConfigRef names the DatabaseConfig of the Keycloak database, in
+	// the namespace of this resource. Keycloak needs its own PostgreSQL
+	// database.
+	// +kubebuilder:validation:MinLength=1
+	DatabaseConfigRef string `json:"databaseConfigRef"`
+	// Replicas is the number of Keycloak instances. Defaults to 1.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
+	// Resources are the CPU and memory of the Keycloak container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// ExternalKeycloakSpec connects Management Identity to a Keycloak that you
+// run.
+type ExternalKeycloakSpec struct {
+	// URL is the URL of Keycloak, including the /auth path when it has one.
+	// Management Identity reaches this URL, so it must resolve from inside
+	// the Kubernetes cluster.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="url must be a valid http or https URL"
+	URL string `json:"url"`
+	// Realm is the realm that Management Identity uses and creates. Empty
+	// means camunda-platform.
+	// +optional
+	Realm string `json:"realm,omitempty"`
+	// AdminCredentialsSecretRef names the Secret with the Keycloak
+	// administrator credentials. Management Identity uses them to create the
+	// realm, the clients, and the initial administrator.
+	AdminCredentialsSecretRef CredentialsSecretRef `json:"adminCredentialsSecretRef"`
+}
+
+// ManagementOIDCSpec selects the identity provider of the referenced
+// CamundaPlatformConfig. The clients of the management plane live there, under
+// spec.auth.oidc.management.clients, so this block carries no fields.
+type ManagementOIDCSpec struct{}
+
+// IdentitySpec configures Management Identity.
+type IdentitySpec struct {
+	// Version is the Management Identity version, as a full semantic version.
+	// The operator supports 8.9.0 and later.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	Version string `json:"version"`
+	// ExternalURL is the URL that browsers reach Management Identity at.
+	// Identity registers it as the redirect URI of its own client.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	ExternalURL string `json:"externalUrl"`
+	// DatabaseConfigRef names the DatabaseConfig of the Management Identity
+	// database, in the namespace of this resource. Identity needs its own
+	// PostgreSQL database.
+	// +kubebuilder:validation:MinLength=1
+	DatabaseConfigRef string `json:"databaseConfigRef"`
+	// Admin names the first administrator of the management plane.
+	Admin        IdentityAdminSpec `json:"admin"`
+	WorkloadSpec `json:",inline"`
+}
+
+// IdentityAdminSpec names the first administrator of the management plane.
+// Management Identity reads it on the first start only and stores the result
+// in its database. A later change reports ImmutableAfterStart.
+//
+// In the oidc mode the administrator is a claim of the tokens that the
+// provider issues, so set claimName and claimValue. In the two Keycloak modes
+// the administrator is the first Keycloak user, so set username.
+// +kubebuilder:validation:XValidation:rule="(has(self.claimName) && has(self.claimValue)) != has(self.username)",message="set claimName and claimValue (oidc mode) or username (keycloak modes)"
+// +kubebuilder:validation:XValidation:rule="has(self.claimName) == has(self.claimValue)",message="set claimName and claimValue together"
+type IdentityAdminSpec struct {
+	// ClaimName is the token claim that identifies the administrator, for
+	// example oid or sub. Set it in the oidc mode.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	ClaimName string `json:"claimName,omitempty"`
+	// ClaimValue is the value that the claim carries for the administrator.
+	// Set it in the oidc mode.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	ClaimValue string `json:"claimValue,omitempty"`
+	// Username is the name of the first Keycloak user. Set it in the keycloak
+	// and the externalKeycloak mode.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Username string `json:"username,omitempty"`
+	// PasswordSecretRef names the Secret key that holds the password of the
+	// first Keycloak user. The operator generates a password when this is
+	// unset.
+	// +optional
+	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
+}
+
+// ConsoleSpec configures Console.
+type ConsoleSpec struct {
+	// Version is the Console version, as a full semantic version. The
+	// operator supports 8.9.0 and later.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	Version string `json:"version"`
+	// ExternalURL is the URL that browsers reach Console at. Every selected
+	// CamundaCluster reports to it.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	ExternalURL  string `json:"externalUrl"`
+	WorkloadSpec `json:",inline"`
+}
+
+// WebModelerSpec configures Web Modeler. Web Modeler runs as two workloads:
+// the restapi process and the websockets process.
+type WebModelerSpec struct {
+	// Version is the Web Modeler version, as a full semantic version. The
+	// operator supports 8.9.0 and later.
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	Version string `json:"version"`
+	// ExternalURL is the URL that browsers reach Web Modeler at.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	ExternalURL string `json:"externalUrl"`
+	// WebsocketsExternalURL is the URL that browsers reach the websockets
+	// process at. Web Modeler pushes live updates over it.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="websocketsExternalUrl must be a valid http or https URL"
+	WebsocketsExternalURL string `json:"websocketsExternalUrl"`
+	// DatabaseConfigRef names the DatabaseConfig of the Web Modeler database,
+	// in the namespace of this resource. Web Modeler needs its own PostgreSQL
+	// database.
+	// +kubebuilder:validation:MinLength=1
+	DatabaseConfigRef string `json:"databaseConfigRef"`
+	// Mail configures the SMTP server that Web Modeler sends notifications
+	// through. Web Modeler does not start without it.
+	Mail WebModelerMailSpec `json:"mail"`
+	// Restapi configures the workload of the restapi process.
+	// +optional
+	Restapi *WorkloadSpec `json:"restapi,omitempty"`
+	// Websockets configures the workload of the websockets process.
+	// +optional
+	Websockets *WorkloadSpec `json:"websockets,omitempty"`
+}
+
+// WebModelerMailSpec configures the SMTP server of Web Modeler.
+type WebModelerMailSpec struct {
+	// SMTPHost is the host name of the SMTP server.
+	// +kubebuilder:validation:MinLength=1
+	SMTPHost string `json:"smtpHost"`
+	// SMTPPort is the port of the SMTP server. Defaults to 587.
+	// +kubebuilder:default=587
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	SMTPPort int32 `json:"smtpPort,omitempty"`
+	// FromAddress is the address that Web Modeler sends from.
+	// +kubebuilder:validation:MinLength=3
+	FromAddress string `json:"fromAddress"`
+	// FromName is the display name that Web Modeler sends under.
+	// +optional
+	FromName string `json:"fromName,omitempty"`
+	// TLS turns STARTTLS on. Defaults to true.
+	// +optional
+	TLS *bool `json:"tls,omitempty"`
+	// CredentialsSecretRef names the Secret with the user and the password of
+	// the SMTP server. Leave it unset for a server that needs no credentials.
+	// +optional
+	CredentialsSecretRef *CredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
+}
+
+// CamundaManagementClusterStatus is the observed state of a
+// CamundaManagementCluster.
 type CamundaManagementClusterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the CamundaManagementCluster resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// ObservedGeneration is the last generation reconciled by the operator.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// ManagementAuthConfig is the name of the ManagementAuthConfig that this
+	// management cluster writes. A CamundaOptimize reads it through its
+	// managementAuthRef.
+	// +optional
+	ManagementAuthConfig string `json:"managementAuthConfig,omitempty"`
+	// Clusters lists every CamundaCluster that clusterSelector matched, and
+	// reports whether the management plane serves it.
+	// +listType=map
+	// +listMapKey=namespace
+	// +listMapKey=name
+	// +optional
+	Clusters []AttachedClusterStatus `json:"clusters,omitempty"`
+	// Conditions represent the current state. Ready carries a pre-check
+	// reason, or it is derived from the conditions of the deployed components.
+	// The per-component conditions (KeycloakReady, IdentityReady,
+	// ConsoleReady, WebModelerReady, ManagementAuthReady, SecretsReady) also
+	// appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// AttachedClusterStatus is one CamundaCluster that clusterSelector matched.
+type AttachedClusterStatus struct {
+	// Name is the name of the CamundaCluster.
+	Name string `json:"name"`
+	// Namespace is the namespace of the CamundaCluster.
+	Namespace string `json:"namespace"`
+	// Attached reports whether the management plane serves this cluster.
+	// Console lists it and Web Modeler deploys to it only while this is true.
+	Attached bool `json:"attached"`
+	// Reason names why the cluster is not attached, for example
+	// ClaimedElsewhere or NotReady. It is empty while the cluster is
+	// attached.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// Message explains the reason in one sentence.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// CamundaManagementCluster is the Schema for the camundamanagementclusters API
+// CamundaManagementCluster describes one Camunda management plane: Management
+// Identity, an identity provider, and optionally Console and Web Modeler. The
+// operator turns it into Deployments and Services, writes the
+// ManagementAuthConfig that Optimize reads, and attaches the management plane
+// to the orchestration clusters that clusterSelector matches.
 type CamundaManagementCluster struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -77,6 +384,21 @@ type CamundaManagementCluster struct {
 	// status defines the observed state of CamundaManagementCluster
 	// +optional
 	Status CamundaManagementClusterStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *CamundaManagementCluster) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *CamundaManagementCluster) GetKind() string { return "CamundaManagementCluster" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *CamundaManagementCluster) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
 }
 
 // +kubebuilder:object:root=true

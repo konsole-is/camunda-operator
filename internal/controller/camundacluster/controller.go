@@ -228,6 +228,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	cluster.Status.Volumes = storage.volumes()
 	cluster.Status.Management = managementBinding(&cluster, in)
+	cluster.Status.Gateway = gatewayBinding(&cluster, in)
 	cluster.Status.ServiceAccountName = components.PodServiceAccountName(in)
 	cred.recordRotation(&cluster)
 

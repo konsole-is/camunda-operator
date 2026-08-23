@@ -112,4 +112,4 @@ This CRD is installed with the operator, but the operator does not act on it yet
 
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
-| [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
+| [CamundaManagementCluster](camundamanagementcluster.md) | Namespaced | The management plane: Console, Web Modeler, Identity. |

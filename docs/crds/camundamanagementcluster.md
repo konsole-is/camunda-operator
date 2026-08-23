@@ -3,7 +3,9 @@
 Deploys the Camunda management plane — Keycloak, Management Identity, Console, and Web Modeler — once per platform.
 
 !!! warning "Not implemented yet"
-    The operator does not implement this kind yet. This page describes the planned design.
+    The operator does not implement this kind yet. This page describes an earlier planned design.
+    The CRD already carries the real spec, and its field names differ from the ones below. Read
+    `kubectl explain camundamanagementcluster.spec` until this page is rewritten.
 
 ## Purpose
 
