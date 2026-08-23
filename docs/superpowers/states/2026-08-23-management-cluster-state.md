@@ -27,7 +27,7 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #186 | feat/management-cluster--api-types | .claude/worktrees/management-cluster--api-types | | not-started |
+| #186 | feat/management-cluster--api-types | .claude/worktrees/management-cluster--api-types | | in-progress |
 | #187 | feat/management-cluster--identity-oidc-contract | .claude/worktrees/management-cluster--identity-oidc-contract | | not-started |
 | #188 | feat/management-cluster--keycloak-modes | .claude/worktrees/management-cluster--keycloak-modes | | not-started |
 | #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster--console-ping | | not-started |
