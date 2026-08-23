@@ -3,11 +3,12 @@
 Deploys the Camunda management plane — Keycloak, Management Identity, Console, and Web Modeler — once per platform.
 
 !!! warning "This page is out of date"
-    The operator now deploys Management Identity against an external OIDC provider, writes the
-    `ManagementAuthConfig`, and attaches to the orchestration clusters that `spec.clusterSelector`
-    matches. Keycloak, Console, and Web Modeler are still on the way. This page describes an earlier
-    planned design, and its field names differ from the ones the CRD carries. Read
-    `kubectl explain camundamanagementcluster.spec` until this page is rewritten.
+    The operator now deploys Management Identity against Keycloak or an external OIDC provider,
+    runs Keycloak through the Keycloak Operator, writes the `ManagementAuthConfig`, and attaches to
+    the orchestration clusters that `spec.clusterSelector` matches. Console and Web Modeler are
+    still on the way. This page describes an earlier planned design, and its field names differ
+    from the ones the CRD carries. Read `kubectl explain camundamanagementcluster.spec` until this
+    page is rewritten.
 
 ## Purpose
 

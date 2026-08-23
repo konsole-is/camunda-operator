@@ -26,14 +26,14 @@ import (
 )
 
 // NewApplyClient wraps c so that Server-Side Apply patches of typed Keycloak
-// objects are serialized without the fields that the Keycloak CRD schema does
-// not declare, and without the status subresource. The pod template of
-// spec.unsupported is a corev1.PodTemplateSpec, and the typed struct always
-// serializes the creationTimestamp of its metadata and of every container
-// probe; the CRD declares none of them, and Server-Side Apply rejects an
-// undeclared field. The wrapper converts such a patch to sanitized
-// unstructured content, applies it, and decodes the server response back into
-// the typed object. Every other call passes through unchanged.
+// objects are serialized without the zero values that the Keycloak CRD schema
+// refuses. The pod template of spec.unsupported is a corev1.PodTemplateSpec,
+// and the typed struct always serializes its creationTimestamp, which the CRD
+// does not declare, and a null container list, which the CRD declares as an
+// array. Server-Side Apply refuses either one. The wrapper converts such a
+// patch to sanitized unstructured content, applies it, and decodes the server
+// response back into the typed object. Every other call passes through
+// unchanged.
 //
 // A controller that reconciles the Keycloak Resource through an ocf component
 // must place this wrapper in the Client of the ReconcileContext.
@@ -77,10 +77,10 @@ func (c *applyClient) Patch(
 	return nil
 }
 
-// sanitizeForApply converts kc to unstructured content that carries only the
-// fields the Keycloak CRD schema declares. It removes the status, which is a
-// subresource, and every creationTimestamp that the typed structs serialize
-// as a zero value.
+// sanitizeForApply converts kc to unstructured content that the Keycloak CRD
+// schema accepts. It removes the status, which is a subresource, every
+// creationTimestamp that the typed structs serialize as a zero value, and the
+// null container list of an empty pod template.
 func sanitizeForApply(kc *Keycloak) (*unstructured.Unstructured, error) {
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(kc)
 	if err != nil {
@@ -92,6 +92,19 @@ func sanitizeForApply(kc *Keycloak) (*unstructured.Unstructured, error) {
 	unstructured.RemoveNestedField(
 		raw, "spec", "unsupported", "podTemplate", "metadata", "creationTimestamp",
 	)
+	removeNil(raw, "spec", "unsupported", "podTemplate", "spec", "containers")
 
 	return &unstructured.Unstructured{Object: raw}, nil
+}
+
+// removeNil deletes the field at path when it holds no value. A pod template
+// that names no container still serializes "containers: null", and the schema
+// declares an array there, so the null has to go; a template that does name a
+// container keeps its list.
+func removeNil(content map[string]any, path ...string) {
+	value, found, err := unstructured.NestedFieldNoCopy(content, path...)
+	if err != nil || !found || value != nil {
+		return
+	}
+	unstructured.RemoveNestedField(content, path...)
 }

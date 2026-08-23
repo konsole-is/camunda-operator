@@ -27,9 +27,10 @@ import (
 )
 
 // The Keycloak CRD schema declares neither a creationTimestamp on the pod
-// template of spec.unsupported nor a status the operator may write, and
-// Server-Side Apply rejects an undeclared field, so the serialized patch must
-// not carry the zero values that the typed structs always produce.
+// template of spec.unsupported nor a status the operator may write, and it
+// declares an array where an empty pod template serializes a null container
+// list. The API server refuses each of them, so the serialized patch must not
+// carry the zero values that the typed structs always produce.
 func TestSanitizeForApplyDropsFieldsTheKeycloakSchemaDoesNotDeclare(t *testing.T) {
 	t.Parallel()
 
@@ -61,6 +62,12 @@ func TestSanitizeForApplyDropsFieldsTheKeycloakSchemaDoesNotDeclare(t *testing.T
 	)
 	require.NoError(t, err)
 	assert.False(t, found, "the creationTimestamp of the pod template must be dropped")
+
+	_, found, err = unstructured.NestedFieldNoCopy(
+		u.Object, "spec", "unsupported", "podTemplate", "spec", "containers",
+	)
+	require.NoError(t, err)
+	assert.False(t, found, "the null container list of the pod template must be dropped")
 
 	podLabels, found, err := unstructured.NestedStringMap(
 		u.Object, "spec", "unsupported", "podTemplate", "metadata", "labels",

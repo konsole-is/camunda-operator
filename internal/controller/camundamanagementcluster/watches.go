@@ -36,6 +36,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
 // The index fields of CamundaManagementClusters, one per reference kind. The
@@ -77,8 +78,9 @@ var indexers = map[string]client.IndexerFunc{
 }
 
 // setupWatches registers the controller, the reference indexes, and the
-// watches. It owns the Deployments and the Services it applies, and the copies
-// of referenced Secrets (metadata only). Every reference is watched: the
+// watches. It owns the Deployments, the Services, and the Secrets it applies
+// (Secrets metadata only), and the Keycloak custom resource where the
+// Kubernetes cluster serves that kind. Every reference is watched: the
 // platform config, the DatabaseConfigs, and the contract through the indexes
 // above, the database servers through the DatabaseConfigs that name them, and
 // Secrets (metadata only) through the namespace and the contracts that reach
@@ -96,11 +98,20 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 	cached := mgr.GetClient()
 	list := &v1.CamundaManagementClusterList{}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.CamundaManagementCluster{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.Secret{}, builder.OnlyMetadata).
+		Owns(&corev1.Secret{}, builder.OnlyMetadata)
+	// A watch on a kind the Kubernetes cluster does not serve fails the
+	// manager at start, so the Keycloak is only watched where the Keycloak
+	// Operator is installed. Without it the pre-check reports
+	// KeycloakOperatorNotInstalled and the keycloak mode renders nothing.
+	if r.keycloakServed {
+		controller = controller.Owns(&keycloak.Keycloak{})
+	}
+
+	return controller.
 		Watches(
 			&v1.CamundaPlatformConfig{},
 			refindex.Enqueue(cached, list, PlatformConfigRefField, refindex.ObjectName),
@@ -124,8 +135,8 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 // names, in the namespace of that management cluster.
 func databaseConfigRefs(mc *v1.CamundaManagementCluster) []string {
 	refs := []string{mc.Spec.Identity.DatabaseConfigRef}
-	if keycloak := mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
-		refs = append(refs, keycloak.DatabaseConfigRef)
+	if managed := mc.Spec.IdentityProvider.Keycloak; managed != nil {
+		refs = append(refs, managed.DatabaseConfigRef)
 	}
 	if webModeler := mc.Spec.WebModeler; webModeler != nil {
 		refs = append(refs, webModeler.DatabaseConfigRef)

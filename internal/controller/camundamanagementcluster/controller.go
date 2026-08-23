@@ -48,6 +48,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
@@ -56,6 +57,10 @@ import (
 // is cluster-scoped and its owner is namespaced, and a claim is an annotation
 // on an object of another owner.
 const Finalizer = "core.camunda.io/camundamanagementcluster-attachment"
+
+// keycloakKind is the kind of the Keycloak custom resource, which the
+// RESTMapper probe asks the Kubernetes cluster for.
+const keycloakKind = "Keycloak"
 
 // Reconciler turns a CamundaManagementCluster into one management plane: the
 // Management Identity Deployment and Service, the copies of referenced
@@ -77,7 +82,10 @@ type Reconciler struct {
 	// reconcile through. The cached client of the manager must not be used
 	// here: the typed Gets of ocf start a cluster-wide Secret informer, which
 	// breaks the metadata-only Secret posture of the operator.
-	// SetupWithManager sets it when it is nil.
+	// SetupWithManager sets it when it is nil, wrapped so that a generated
+	// credential cannot be republished into a Secret that was deleted, and so
+	// that an apply of the Keycloak carries only the fields its schema
+	// declares.
 	componentClient client.Client
 	// keycloakServed reports whether the Kubernetes cluster serves the
 	// Keycloak kind of the Keycloak Operator. SetupWithManager probes the
@@ -336,9 +344,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = componentClient
+		r.componentClient = keycloak.NewApplyClient(credentials.NewApplyClient(componentClient))
 	}
-	r.keycloakServed = keycloakKindServed(mgr)
+	r.keycloakServed = keycloakKindServed(mgr.GetRESTMapper())
 
 	return r.setupWatches(mgr)
 }
@@ -346,9 +354,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // keycloakKindServed reports whether the Kubernetes cluster serves the
 // Keycloak kind. On a cluster without the Keycloak Operator the pre-check
 // reports KeycloakOperatorNotInstalled instead of failing every reconcile.
-func keycloakKindServed(mgr ctrl.Manager) bool {
-	_, err := mgr.GetRESTMapper().RESTMapping(
-		schema.GroupKind{Group: keycloak.GroupVersion.Group, Kind: "Keycloak"},
+func keycloakKindServed(mapper meta.RESTMapper) bool {
+	_, err := mapper.RESTMapping(
+		schema.GroupKind{Group: keycloak.GroupVersion.Group, Kind: keycloakKind},
 		keycloak.GroupVersion.Version,
 	)
 

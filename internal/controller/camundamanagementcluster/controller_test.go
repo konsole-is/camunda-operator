@@ -184,6 +184,9 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 const (
 	issuerURL           = "https://login.example.com"
 	identityExternalURL = "https://identity.example.com"
+	// keycloakAdminSecret holds the administrator of a Keycloak that the user
+	// runs.
+	keycloakAdminSecret = "keycloak-admin"
 )
 
 // fixture is the set of objects that a scenario creates, before they reach the
@@ -194,6 +197,13 @@ type fixture struct {
 	// withClientSecret creates the Secret that the platform config names.
 	// A spec turns it off to exercise MissingSecret.
 	withClientSecret bool
+	// keycloakDatabase creates a second DatabaseConfig and points
+	// spec.identityProvider.keycloak at it.
+	keycloakDatabase bool
+	// withKeycloakAdmin creates the Secret with the administrator of a
+	// Keycloak that the user runs. A spec turns it off to exercise
+	// MissingSecret.
+	withKeycloakAdmin bool
 }
 
 // scenario is a created fixture: the namespace it lives in and the management
@@ -221,6 +231,14 @@ func newScenario(mutate ...func(f *fixture)) scenario {
 		m(f)
 	}
 	f.mc.Spec.PlatformConfigRef = f.platform.Name
+	if f.keycloakDatabase {
+		f.mc.Spec.IdentityProvider.Keycloak.DatabaseConfigRef = createDatabase(namespace)
+	}
+	if f.withKeycloakAdmin {
+		createSecret(namespace, keycloakAdminSecret, map[string]string{
+			"username": "keycloak-admin", "password": "keycloak-s3cret",
+		})
+	}
 
 	Expect(k8sClient.Create(ctx, f.platform)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, f.platform) })
@@ -291,9 +309,12 @@ func newManagementCluster(namespace, database string) *v1.CamundaManagementClust
 
 // createDatabase creates a DatabaseServerConfig, a DatabaseConfig of
 // namespace, and the credentials Secret they name, and returns the name of the
-// DatabaseConfig.
+// DatabaseConfig. The Secret is named after the DatabaseConfig, so a scenario
+// that needs a second database in one namespace gets a second Secret.
 func createDatabase(namespace string) string {
 	GinkgoHelper()
+
+	credentials := "db-credentials-" + utilrand.String(8)
 
 	server := &v1.DatabaseServerConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-" + utilrand.String(8)},
@@ -302,7 +323,7 @@ func createDatabase(namespace string) string {
 			Host:   "postgres." + namespace + ".svc",
 			Port:   5432,
 			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "db-credentials", Namespace: namespace,
+				Name: credentials, Namespace: namespace,
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
@@ -316,14 +337,14 @@ func createDatabase(namespace string) string {
 			ServerRef:    server.Name,
 			DatabaseName: "identity",
 			CredentialsSecretRef: v1.CredentialsSecretRef{
-				Name: "db-credentials", Namespace: namespace,
+				Name: credentials, Namespace: namespace,
 				UsernameKey: "username", PasswordKey: "password",
 			},
 		},
 	}
 	Expect(k8sClient.Create(ctx, database)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, database) })
-	createSecret(namespace, "db-credentials", map[string]string{
+	createSecret(namespace, credentials, map[string]string{
 		"username": "identity", "password": "db-s3cret",
 	})
 

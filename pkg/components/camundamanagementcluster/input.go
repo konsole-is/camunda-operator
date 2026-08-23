@@ -229,16 +229,28 @@ type AttachedCluster struct {
 // carry, or a component of the management plane with no client. The message
 // names the field.
 func ResolveIdentityProvider(in Input) (IdentityProvider, error) {
-	spec := in.Cluster.Spec.IdentityProvider
-	if spec.OIDC != nil {
+	switch Mode(in.Cluster) {
+	case ModeOIDC:
 		return resolveOIDC(in)
-	}
-
-	if spec.Keycloak != nil {
+	case ModeKeycloak:
 		return resolveManagedKeycloak(in), nil
+	default:
+		return resolveExternalKeycloak(in), nil
 	}
+}
 
-	return resolveExternalKeycloak(in), nil
+// Mode returns the identity provider mode that the spec selects. The API
+// server admits exactly one of the three blocks, so an unset keycloak and an
+// unset oidc block leave externalKeycloak.
+func Mode(mc *v1.CamundaManagementCluster) ProviderMode {
+	switch {
+	case mc.Spec.IdentityProvider.OIDC != nil:
+		return ModeOIDC
+	case mc.Spec.IdentityProvider.Keycloak != nil:
+		return ModeKeycloak
+	default:
+		return ModeExternalKeycloak
+	}
 }
 
 // resolveManagedKeycloak reads the Keycloak that the operator runs. Browsers
