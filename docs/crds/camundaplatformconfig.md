@@ -2,7 +2,7 @@
 
 `CamundaPlatformConfig` is a cluster-scoped resource that holds the settings every orchestration cluster of an environment shares. You create it, or another tool creates it for you.
 
-The settings that are the same for every orchestration cluster live here: how users and clients authenticate (basic or OIDC), the Camunda license, and the registry that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once.
+The settings that are the same for every orchestration cluster live here: how users and clients authenticate (basic or OIDC), the Camunda license, and the registry that images are pulled from. You create one per environment. Each [CamundaCluster](camundacluster.md) references it by name through `platformConfigRef`, so you define the settings once. A [CamundaManagementCluster](camundamanagementcluster.md) references it the same way.
 
 The OIDC fields follow the OIDC discovery vocabulary. They work with Keycloak, Auth0, Entra ID, Okta, or any other OIDC-compliant identity provider.
 
@@ -23,6 +23,7 @@ spec:
 ```mermaid
 graph LR
     CC[CamundaCluster] -.->|platformConfigRef| PFC[CamundaPlatformConfig]
+    MC[CamundaManagementCluster] -.->|platformConfigRef| PFC
     CCP[CamundaClusterPreset] -.->|auth baseline| CC
     PFC -.->|clientSecretRef, licenseSecretRef| SEC["Secrets"]
     PFC -.->|issuerUrl| IDP["Identity provider (external)"]
@@ -43,6 +44,102 @@ The OIDC client credentials here are the defaults of the environment. A [Camunda
 When the identity provider is reachable at a different URL from inside the Kubernetes cluster, keep `issuerUrl` equal to the issuer claim of the tokens. Set `jwksUrl` and `tokenUrl` to the in-cluster endpoints.
 
 The [authentication guide](../guides/authentication.md) explains the setup of both methods.
+
+## The clients of the management plane
+
+`spec.auth.oidc.management.clients` names the identity provider application of each component of the management plane. A [CamundaManagementCluster](camundamanagementcluster.md) in the `oidc` mode reads them. It is the one mode where you register the applications yourself. In the two Keycloak modes, Management Identity creates every client, and this block stays empty.
+
+Declare the client of each component you deploy:
+
+| Client | Type | Needed when |
+| --- | --- | --- |
+| `identity` | confidential | Always. Management Identity is always deployed. |
+| `optimize` | confidential | Always. The `ManagementAuthConfig` always carries it, and [CamundaOptimize](camundaoptimize.md) reads it from there. |
+| `console` | public | `spec.console` is set on the `CamundaManagementCluster`. |
+| `webModeler` | public | `spec.webModeler` is set. It is the client of the user interface. |
+| `webModelerApi` | confidential | `spec.webModeler` is set. It is the client of the API behind that interface. |
+
+A confidential client names a `clientSecretRef`. A public client runs in a browser and holds no secret. Camunda lists the same split in [Connect Management Identity to an identity provider](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/).
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  auth:
+    method: oidc
+    oidc:
+      issuerUrl: "https://login.example.com/realms/camunda"
+      authUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/auth"
+      tokenUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/token"
+      jwksUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/certs"
+      clientId: "camunda-orchestration"
+      clientSecretRef:
+        name: "my-oidc-credentials"
+        namespace: "camunda-system"
+        key: "client-secret"
+      management:
+        clients:
+          identity:
+            clientId: "camunda-identity"
+            clientSecretRef:
+              name: "my-management-identity-credentials"
+              namespace: "camunda-system"
+              key: "client-secret"
+          optimize:
+            clientId: "camunda-optimize"
+            clientSecretRef:
+              name: "my-optimize-credentials"
+              namespace: "camunda-system"
+              key: "client-secret"
+  # ... the rest of your platform config
+```
+
+`authUrl`, `tokenUrl`, and `jwksUrl` are optional for an orchestration cluster, which reads them from the discovery document of your provider. A `CamundaManagementCluster` in the `oidc` mode needs all three, because the `ManagementAuthConfig` carries them. Read them from the discovery document of your provider and set them here.
+
+A `CamundaManagementCluster` that finds no client for a component it deploys reports `Ready=False` with reason `InvalidReference`, and the message names the missing field.
+
+`providerType` tells Management Identity what kind of provider is behind the issuer. Leave it `generic` for any OIDC-compliant provider. Set it to `microsoft` for Microsoft Entra ID.
+
+## Images
+
+`spec.imageRegistry` puts a prefix in front of every Camunda repository, for a mirror that keeps the upstream paths:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  imageRegistry: "registry.example.com"
+  # ... the rest of your platform config
+```
+
+An orchestration cluster of version `8.9.9` then pulls `registry.example.com/camunda/camunda:8.9.9`.
+
+`spec.images` renames one image, for a mirror that keeps a path of its own:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  images:
+    optimize: "mirror.example.com/team/optimize"
+  # ... the rest of your platform config
+```
+
+Three rules govern both fields:
+
+- A value is a repository only. It carries no tag and no digest. The tag always comes from the `version` field of the resource that runs the image.
+- A rename replaces both the default repository and the `imageRegistry` prefix for that image. The two never stack.
+- An image that `spec.images` does not name keeps its default repository, with the `imageRegistry` prefix in front of it.
+
+The tag of the Keycloak image is `quay-optimized-<version>`, not the bare version. Camunda publishes its Keycloak build under that tag, as [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment) states.
+
+The default repository of an image can change with the version. From Camunda 8.10 the two Web Modeler images become `camunda/hub` and `camunda/hub-websockets`, which the [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) names. A rename of your own always wins, so a mirror stays a mirror across that change.
 
 ## Changes and referenced Secrets
 
@@ -207,6 +304,7 @@ spec:
 ## Related
 
 - [CamundaCluster](camundacluster.md): references this resource through `platformConfigRef` and rolls its pods when it changes.
+- [CamundaManagementCluster](camundamanagementcluster.md): references it the same way, and reads `management.clients` in the `oidc` mode.
 - [CamundaClusterPreset](camundaclusterpreset.md): its `auth` block overrides the default OIDC client credentials for the clusters that use the preset.
 - [Getting started](../getting-started.md): where this resource fits in the order of creation.
 - [Authentication guide](../guides/authentication.md): how to set up basic and OIDC authentication.

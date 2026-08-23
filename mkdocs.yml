@@ -84,6 +84,7 @@ nav:
       - Presets: guides/presets.md
       - Secondary storage: guides/secondary-storage.md
       - Authentication: guides/authentication.md
+      - Management plane: guides/management-plane.md
       - Backup: guides/backup.md
       - Operations: guides/operations.md
   - CRD reference:
@@ -102,14 +103,15 @@ nav:
           - DatabaseServerConfig: crds/databaseserverconfig.md
           - DatabaseConfig: crds/databaseconfig.md
           - ManagementAuthConfig: crds/managementauthconfig.md
+      - Management:
+          - CamundaManagementCluster: crds/camundamanagementcluster.md
+      - Analytics:
+          - CamundaOptimize: crds/camundaoptimize.md
       - Backup:
           - LogicalBackupElasticsearch: crds/logicalbackupelasticsearch.md
           - LogicalBackupRDBMS: crds/logicalbackuprdbms.md
+          - BackupSchedule: crds/backupschedule.md
       - Restore:
           - LogicalRestoreElasticsearch: crds/logicalrestoreelasticsearch.md
           - LogicalRestoreRDBMS: crds/logicalrestorerdbms.md
           - PointInTimeRestore: crds/pointintimerestore.md
-      - Planned:
-          - BackupSchedule: crds/backupschedule.md
-          - CamundaOptimize: crds/camundaoptimize.md
-          - CamundaManagementCluster: crds/camundamanagementcluster.md
