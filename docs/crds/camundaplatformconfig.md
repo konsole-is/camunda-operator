@@ -272,7 +272,7 @@ spec:
 - In `spec.auth.oidc`, `issuerUrl`, `clientId`, and `clientSecretRef` are required.
 - `issuerUrl` must be an http or https URL. `jwksUrl`, `tokenUrl`, and `authUrl` must be empty or an http or https URL.
 - Each `spec.images` value is a lowercase repository name, with no tag and no digest. A registry host can carry a port, as in `registry:5000/camunda/optimize`.
-- The operator checks the Secrets after you apply this resource, not when you apply it. `Ready` reads `False` with reason `MissingSecret` until a Secret exists, so you can create or rotate one afterwards.
+- The API server accepts this resource without the Secrets it names. The operator reports `Ready=False` with reason `MissingSecret` until each Secret exists, so you can create or rotate one later.
 
 ### A production-shaped example
 

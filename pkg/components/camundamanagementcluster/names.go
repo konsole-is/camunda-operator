@@ -54,9 +54,9 @@ const (
 	// cluster writes. The contract is not a workload, so a selector on the
 	// owner and this value reaches the contract alone.
 	ComponentManagementAuth = "management-auth"
-	// ComponentWebModelerClusterUser is the Secrets that hold the passwords
-	// of the Web Modeler users on the attached basic-auth orchestration
-	// clusters. No workload carries it.
+	// ComponentWebModelerClusterUser labels the Secrets that hold the
+	// passwords of the Web Modeler users on the attached basic-auth
+	// orchestration clusters. No workload carries this value.
 	ComponentWebModelerClusterUser = "web-modeler-cluster-user"
 )
 
