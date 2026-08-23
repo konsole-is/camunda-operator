@@ -43,14 +43,12 @@ type userRecord struct {
 // empty one; that mirrors the overlay of the real update processor.
 //
 // The operation names for the inherited FailNext and DropNext are
-// "updateUser", "createUser", "deleteUser", "assignRole", and
-// "createAuthorization". A failing call answers 500.
+// "updateUser", "createUser", "deleteUser", and "createAuthorization". A
+// failing call answers 500.
 type UserAPI struct {
 	adminhttptest.Fake
 
 	users map[string]userRecord
-	// roles holds the role ids of each user, in assignment order.
-	roles map[string][]string
 	// authorizations holds every created authorization, in creation order,
 	// duplicates included: the real endpoint creates rather than converges.
 	authorizations []Authorization
@@ -70,7 +68,7 @@ type Authorization struct {
 
 // NewUserAPI starts a fake user API with no users. Close it with Close.
 func NewUserAPI() *UserAPI {
-	api := &UserAPI{users: map[string]userRecord{}, roles: map[string][]string{}}
+	api := &UserAPI{users: map[string]userRecord{}}
 	api.Start(api.handle)
 
 	return api
@@ -132,14 +130,6 @@ func (s *UserAPI) Exists(username string) bool {
 	return exists
 }
 
-// Roles returns the role ids assigned to username, in assignment order.
-func (s *UserAPI) Roles(username string) []string {
-	s.Lock()
-	defer s.Unlock()
-
-	return slices.Clone(s.roles[username])
-}
-
 // Authorizations returns every authorization the fake created, in creation
 // order.
 func (s *UserAPI) Authorizations() []Authorization {
@@ -176,8 +166,6 @@ func (s *UserAPI) handle(w http.ResponseWriter, r *http.Request) {
 		s.createUser(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/v2/authorizations":
 		s.createAuthorization(w, r)
-	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v2/roles/"):
-		s.assignRole(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v2/users/"):
 		s.updateUser(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v2/users/"):
@@ -288,33 +276,6 @@ func (s *UserAPI) deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delete(s.users, username)
-	delete(s.roles, username)
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// assignRole serves PUT /v2/roles/{roleId}/users/{username}. A role the user
-// already holds answers 409, the way the real endpoint does.
-func (s *UserAPI) assignRole(w http.ResponseWriter, r *http.Request) {
-	roleID, username, found := strings.Cut(strings.TrimPrefix(r.URL.Path, "/v2/roles/"), "/users/")
-	if !found || roleID == "" || username == "" {
-		problem(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)
-		return
-	}
-
-	if s.injected(w, "assignRole") || !s.authenticated(w, r) {
-		return
-	}
-
-	if _, exists := s.users[username]; !exists {
-		problem(w, http.StatusNotFound, "user "+username+" was not found")
-		return
-	}
-	if slices.Contains(s.roles[username], roleID) {
-		problem(w, http.StatusConflict, "role "+roleID+" is already assigned to "+username)
-		return
-	}
-	s.roles[username] = append(s.roles[username], roleID)
 
 	w.WriteHeader(http.StatusNoContent)
 }

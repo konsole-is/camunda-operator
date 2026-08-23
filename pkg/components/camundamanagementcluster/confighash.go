@@ -59,7 +59,8 @@ func ConfigHash(in Input, comp string) string {
 }
 
 // componentEnv returns the rendered environment of a component. A component
-// this package does not render yet has none.
+// that this package renders no container for, Keycloak and the Secrets, has
+// none.
 func componentEnv(in Input, comp string) []corev1.EnvVar {
 	switch comp {
 	case ComponentIdentity:

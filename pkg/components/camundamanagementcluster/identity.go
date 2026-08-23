@@ -94,13 +94,14 @@ const (
 // answers on come from the monitoring page:
 // https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/application-monitoring/
 const (
-	// identityProfileOIDC is the Spring profile that binds the settings of an
-	// external identity provider ("Connect Management Identity to an identity
-	// provider").
-	identityProfileOIDC = "oidc"
-	// identityTypeGeneric and identityTypeMicrosoft are the
-	// CAMUNDA_IDENTITY_TYPE values of the two external provider types that
-	// the platform config offers.
+	// identityProfileOIDC and identityProfileKeycloak are the Spring profiles
+	// that bind the settings of an external identity provider and of a
+	// Keycloak ("Connect Management Identity to an identity provider").
+	identityProfileOIDC     = "oidc"
+	identityProfileKeycloak = "keycloak"
+	// The CAMUNDA_IDENTITY_TYPE values of the three provider types: a
+	// Keycloak, and the two external ones that the platform config offers.
+	identityTypeKeycloak  = "KEYCLOAK"
 	identityTypeGeneric   = "GENERIC"
 	identityTypeMicrosoft = "MICROSOFT"
 	// identityHealthPath is the health endpoint on the management port. It is
@@ -233,12 +234,12 @@ func identityProviderEnv(in Input) []corev1.EnvVar {
 		return keycloakProviderEnv(in)
 	}
 
-	return oidcProviderEnv(in)
+	return identityOIDCProviderEnv(in)
 }
 
-// oidcProviderEnv renders the connection to an identity provider that the
-// operator does not run.
-func oidcProviderEnv(in Input) []corev1.EnvVar {
+// identityOIDCProviderEnv renders the connection to an identity provider that
+// the operator does not run.
+func identityOIDCProviderEnv(in Input) []corev1.EnvVar {
 	provider := in.Provider
 	client := provider.Clients.Identity
 

@@ -54,6 +54,10 @@ const (
 	// cluster writes. The contract is not a workload, so a selector on the
 	// owner and this value reaches the contract alone.
 	ComponentManagementAuth = "management-auth"
+	// ComponentWebModelerClusterUser is the Secrets that hold the passwords
+	// of the Web Modeler users on the attached basic-auth orchestration
+	// clusters. No workload carries it.
+	ComponentWebModelerClusterUser = "web-modeler-cluster-user"
 )
 
 // The keys and identities that a user or another controller can observe on
@@ -170,10 +174,9 @@ const (
 
 // The keys of the generated Web Modeler Secrets.
 const (
-	// PusherAppIDKey, PusherAppKeyKey, and PusherAppSecretKey are the keys of
-	// the Secret that pairs the two Web Modeler processes. Both containers
-	// read all three, and the two sides must carry the same values.
-	PusherAppIDKey     = "app-id"
+	// PusherAppKeyKey and PusherAppSecretKey are the keys of the Secret that
+	// pairs the two Web Modeler processes. Both containers read both, and the
+	// two sides must carry the same values.
 	PusherAppKeyKey    = "app-key"
 	PusherAppSecretKey = "app-secret"
 	// WebModelerClusterUserPasswordKey holds the password of the Web Modeler
@@ -199,7 +202,10 @@ const WebModelerClusterUsername = "web-modeler"
 // https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/configuration/
 const PusherAppID = "web-modeler"
 
-// The workload name suffixes, one per component.
+// The name suffixes and prefixes that the derived names are built from: one
+// per workload of the management plane, one per generated Secret, the three
+// that the Keycloak Operator appends to the name of a Keycloak, and the one
+// that starts the name of a Web Modeler cluster user Secret.
 const (
 	identitySuffix              = "identity"
 	keycloakSuffix              = "keycloak"

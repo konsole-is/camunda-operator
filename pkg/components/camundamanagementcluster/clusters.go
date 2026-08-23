@@ -66,7 +66,7 @@ const (
 // scheme is added here.
 const grpcScheme = "grpc://"
 
-// ClustersEnv renders the cluster list of Web Modeler: one numbered block per
+// clustersEnv renders the cluster list of Web Modeler: one numbered block per
 // cluster that Web Modeler can deploy to, in the order of clusters.
 //
 // A cluster that publishes no gateway endpoints is left out, and the numbering
@@ -78,7 +78,7 @@ const grpcScheme = "grpc://"
 // cluster takes a user name and a password that Web Modeler asks the person
 // for; the operator publishes a user for that in
 // WebModelerClusterUserSecretName, because no setting can carry them.
-func ClustersEnv(clusters []AttachedCluster) []corev1.EnvVar {
+func clustersEnv(clusters []AttachedCluster) []corev1.EnvVar {
 	var env []corev1.EnvVar
 	index := 0
 	for _, cluster := range clusters {

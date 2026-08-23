@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/konsole-is/camunda-operator/pkg/adminhttp"
 )
@@ -59,24 +58,6 @@ type Authorization struct {
 	// PermissionTypes are the actions to grant, for example CREATE or
 	// CREATE_PROCESS_INSTANCE. The set is unique to the resource type.
 	PermissionTypes []string
-}
-
-// AssignRole gives roleID to username through
-// PUT /v2/roles/{roleId}/users/{username}
-// (https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/assign-role-to-user/).
-// The user inherits every authorization of the role.
-//
-// A role the user already holds is ErrAlreadyExists, so a caller that
-// converges towards a state reads it as success. A missing role or user is
-// ErrRejected, and a wrong credential is ErrUnauthenticated.
-func (c *UserClient) AssignRole(ctx context.Context, roleID, username string) error {
-	_, status, err := c.api.Do(ctx, adminhttp.Request{
-		Method: http.MethodPut,
-		Path:   "/v2/roles/" + url.PathEscape(roleID) + "/users/" + url.PathEscape(username),
-		Accept: adminhttp.Status(http.StatusNoContent),
-	})
-
-	return classifyUserError(err, status)
 }
 
 // CreateAuthorization creates authorization through POST /v2/authorizations

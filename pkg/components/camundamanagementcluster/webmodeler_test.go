@@ -190,17 +190,6 @@ func fixtureAttachedClusters() []AttachedCluster {
 	}
 }
 
-// componentEnvOf returns the rendered environment of one component as a map
-// from the variable name to its value or its reference.
-func componentEnvOf(in Input, comp string) map[string]string {
-	env := map[string]string{}
-	for _, e := range componentEnv(in, comp) {
-		env[e.Name] = envValue(e)
-	}
-
-	return env
-}
-
 // A management cluster that does not deploy Web Modeler renders neither
 // workload nor the credential that pairs them. The component is built either
 // way, gated off, so that a management cluster that drops Web Modeler has its
@@ -253,7 +242,7 @@ func TestWebModelerRendersOneComponentOverBothProcesses(t *testing.T) {
 func TestWebModelerRestapiEnvIsTheDocumentedTable(t *testing.T) {
 	t.Parallel()
 
-	env := componentEnvOf(fixtureWebModelerMinimal(t), ComponentWebModelerRestapi)
+	env := renderedEnv(fixtureWebModelerMinimal(t), ComponentWebModelerRestapi)
 
 	assert.Equal(
 		t, map[string]string{
@@ -291,7 +280,7 @@ func TestWebModelerRestapiEnvIsTheDocumentedTable(t *testing.T) {
 func TestWebModelerRestapiEnvCarriesTheOptionalSettings(t *testing.T) {
 	t.Parallel()
 
-	env := componentEnvOf(fixtureWebModelerRealistic(t), ComponentWebModelerRestapi)
+	env := renderedEnv(fixtureWebModelerRealistic(t), ComponentWebModelerRestapi)
 
 	assert.Equal(t, "Camunda", env["RESTAPI_MAIL_FROM_NAME"])
 	assert.Equal(t, "false", env["RESTAPI_MAIL_ENABLE_TLS"])
@@ -325,7 +314,7 @@ func TestWebModelerRestapiEnvFollowsTheSchemeOfTheExternalURL(t *testing.T) {
 	in.Cluster.Spec.WebModeler.ExternalURL = "http://modeler.example.com/modeler"
 	in.Cluster.Spec.WebModeler.WebsocketsExternalURL = "http://modeler.example.com:8060"
 
-	env := componentEnvOf(in, ComponentWebModelerRestapi)
+	env := renderedEnv(in, ComponentWebModelerRestapi)
 
 	assert.Equal(t, "false", env["SERVER_HTTPS_ONLY"])
 	assert.Equal(t, "/modeler", env["SERVER_SERVLET_CONTEXTPATH"])
@@ -338,7 +327,7 @@ func TestWebModelerRestapiEnvFollowsTheSchemeOfTheExternalURL(t *testing.T) {
 func TestWebModelerRestapiEnvOmitsTheContextPathOfARootURL(t *testing.T) {
 	t.Parallel()
 
-	env := componentEnvOf(fixtureWebModelerMinimal(t), ComponentWebModelerRestapi)
+	env := renderedEnv(fixtureWebModelerMinimal(t), ComponentWebModelerRestapi)
 
 	assert.NotContains(t, env, "SERVER_SERVLET_CONTEXTPATH")
 }
@@ -348,7 +337,7 @@ func TestWebModelerRestapiEnvOmitsTheContextPathOfARootURL(t *testing.T) {
 func TestWebModelerRestapiEnvCarriesTheLicense(t *testing.T) {
 	t.Parallel()
 
-	minimal := componentEnvOf(fixtureWebModelerMinimal(t), ComponentWebModelerRestapi)
+	minimal := renderedEnv(fixtureWebModelerMinimal(t), ComponentWebModelerRestapi)
 	assert.NotContains(t, minimal, "CAMUNDA_LICENSE_KEY")
 
 	in := fixtureWebModelerMinimal(t)
@@ -359,7 +348,7 @@ func TestWebModelerRestapiEnvCarriesTheLicense(t *testing.T) {
 	assert.Equal(
 		t,
 		"secretKeyRef:license-copy/license",
-		componentEnvOf(in, ComponentWebModelerRestapi)["CAMUNDA_LICENSE_KEY"],
+		renderedEnv(in, ComponentWebModelerRestapi)["CAMUNDA_LICENSE_KEY"],
 	)
 }
 
@@ -368,7 +357,7 @@ func TestWebModelerRestapiEnvCarriesTheLicense(t *testing.T) {
 func TestWebModelerWebsocketsEnvIsThePairing(t *testing.T) {
 	t.Parallel()
 
-	env := componentEnvOf(fixtureWebModelerMinimal(t), ComponentWebModelerWebsockets)
+	env := renderedEnv(fixtureWebModelerMinimal(t), ComponentWebModelerWebsockets)
 
 	assert.Equal(
 		t, map[string]string{
@@ -444,13 +433,13 @@ func TestWebModelerComponentInputsRollWebModelerAlone(t *testing.T) {
 func TestWebModelerPusherSecretCarriesTheApplyPrecondition(t *testing.T) {
 	t.Parallel()
 
-	fresh, err := pusherSecret(fixtureWebModelerMinimal(t))
+	fresh, err := webModelerPusherSecret(fixtureWebModelerMinimal(t))
 	require.NoError(t, err)
 	object, err := fresh.Preview()
 	require.NoError(t, err)
 	assert.NotContains(t, object.GetAnnotations(), credentials.PreconditionAnnotation)
 
-	reused, err := pusherSecret(fixtureWebModelerRealistic(t))
+	reused, err := webModelerPusherSecret(fixtureWebModelerRealistic(t))
 	require.NoError(t, err)
 	object, err = reused.Preview()
 	require.NoError(t, err)
