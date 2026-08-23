@@ -247,7 +247,10 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 
 // The identities that every scenario shares.
 const (
-	issuerURL           = "https://login.example.com"
+	issuerURL = "https://login.example.com"
+	// otherIssuerURL is an identity provider that the management plane does
+	// not sign anybody in to.
+	otherIssuerURL      = "https://login.elsewhere.example.com"
 	identityExternalURL = "https://identity.example.com"
 	// keycloakAdminSecret holds the administrator of a Keycloak that the user
 	// runs.

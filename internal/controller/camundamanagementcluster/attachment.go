@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -44,17 +45,20 @@ func ClaimValue(mc *v1.CamundaManagementCluster) string {
 
 // attachedClusters selects the orchestration clusters that mc serves, claims
 // each of them, and reports what the management plane can do with each one.
+// provider is the identity provider that the pre-checks resolved.
 //
 // The selector follows the Kubernetes convention: an unset selector selects no
 // cluster, and an empty one selects every cluster. A selected cluster that no
 // other management plane holds gets the claim annotation. A cluster that
 // another one holds is left untouched and reported ClaimedElsewhere. A cluster
 // that publishes no gateway endpoints yet, and one whose claim the API server
-// refused because the cluster changed, is reported NotReady. A cluster that
-// the selector no longer matches keeps its claim until releaseClaims runs,
-// after the Web Modeler user and the Console ping are withdrawn: a claim that
-// went first would let another management plane adopt the web-modeler user
-// that this one is about to remove.
+// refused because the cluster changed, is reported NotReady. A cluster whose
+// platform config cannot be read is reported InvalidReference, and so is an
+// oidc cluster that trusts another issuer. A cluster that the selector no longer
+// matches keeps its claim until releaseClaims runs, after the Web Modeler user
+// and the Console ping are withdrawn: a claim that went first would let
+// another management plane adopt the web-modeler user that this one is about
+// to remove.
 //
 // Only an API failure that concerns every cluster stops the reconcile. What
 // one cluster answers is a row of that cluster, so a single broken cluster
@@ -68,6 +72,7 @@ func (r *Reconciler) attachedClusters(
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 	namespaces map[string]bool,
+	provider components.IdentityProvider,
 ) ([]components.AttachedCluster, []v1.AttachedClusterStatus, error) {
 	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
 	if err != nil {
@@ -82,7 +87,7 @@ func (r *Reconciler) attachedClusters(
 			continue
 		}
 
-		row, err := r.attach(ctx, mc, cluster, &attached)
+		row, err := r.attach(ctx, mc, cluster, provider, &attached)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -187,6 +192,7 @@ func (r *Reconciler) attach(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	cluster *v1.CamundaCluster,
+	provider components.IdentityProvider,
 	attached *[]components.AttachedCluster,
 ) (v1.AttachedClusterStatus, error) {
 	row := v1.AttachedClusterStatus{Name: cluster.Name, Namespace: cluster.Namespace}
@@ -221,7 +227,7 @@ func (r *Reconciler) attach(
 		return row, nil
 	}
 
-	method, failure, err := r.clusterAuthMethod(ctx, cluster)
+	method, failure, err := r.clusterAuth(ctx, cluster, provider)
 	if err != nil {
 		return row, err
 	}
@@ -266,14 +272,22 @@ func basicUserSecret(
 	return components.WebModelerClusterUserSecretName(mc, cluster.UID)
 }
 
-// clusterAuthMethod reads how a cluster authenticates its users and clients,
-// from the platform config that the cluster names. A dangling reference comes
-// back as a message for the row of that cluster: the cluster's own controller
-// reports the same reference, and one broken cluster must not stop the
-// management plane.
-func (r *Reconciler) clusterAuthMethod(
+// clusterAuth reads how a cluster authenticates its users and clients, from
+// the platform config that the cluster names, and refuses an oidc cluster that
+// validates the tokens of another issuer than provider. It returns the
+// authentication method, or a message for the row of that cluster when the
+// management plane cannot serve it.
+//
+// A dangling reference is a message rather than an error: the cluster's own
+// controller reports the same reference, and one broken cluster must not stop
+// the management plane.
+//
+// A basic-auth cluster is never refused for its issuer. Web Modeler signs in
+// to it with a user that the operator publishes.
+func (r *Reconciler) clusterAuth(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
+	provider components.IdentityProvider,
 ) (v1.AuthenticationMethod, string, error) {
 	var cfg v1.CamundaPlatformConfig
 	key := client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}
@@ -284,7 +298,60 @@ func (r *Reconciler) clusterAuthMethod(
 		return "", "", fmt.Errorf("reading CamundaPlatformConfig %q: %w", key.Name, err)
 	}
 
-	return cfg.Spec.Method(), "", nil
+	method := cfg.Spec.Method()
+	// The CRD admits no oidc method without the oidc block. The nil check
+	// keeps an object that reached the API server before that rule from
+	// stopping the manager.
+	if method != v1.AuthenticationMethodOIDC || cfg.Spec.Auth.OIDC == nil {
+		return method, "", nil
+	}
+
+	issuer := cfg.Spec.Auth.OIDC.IssuerURL
+	if !trustsIssuer(issuer, provider) {
+		return method, fmt.Sprintf(
+			"Web Modeler deploys with tokens of the issuer %q, and this cluster validates tokens of %q instead",
+			provider.IssuerURL, issuer,
+		), nil
+	}
+
+	return method, "", nil
+}
+
+// trustsIssuer reports whether a cluster that names issuer validates the
+// tokens that the management plane hands out.
+//
+// The management plane carries two forms of its issuer: the one a browser
+// reaches, which every token names, and the one a container reaches inside the
+// Kubernetes cluster. They are the same address for a generic OIDC provider
+// and different ones for a Keycloak that the operator runs, and a cluster may
+// name either.
+func trustsIssuer(issuer string, provider components.IdentityProvider) bool {
+	if issuer == "" {
+		return false
+	}
+	normalized := normalizeIssuer(issuer)
+
+	return normalized == normalizeIssuer(provider.IssuerURL) ||
+		normalized == normalizeIssuer(provider.IssuerBackendURL)
+}
+
+// normalizeIssuer returns the form of an issuer URL that trustsIssuer
+// compares: the scheme and the host lowercased, and no trailing slash. A port,
+// a path, and the case of a path select another issuer, so they are kept.
+//
+// A URL that does not parse comes back with the trailing slash removed and
+// nothing else, so two such strings still compare exactly.
+func normalizeIssuer(issuer string) string {
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return strings.TrimRight(issuer, "/")
+	}
+
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+
+	return parsed.String()
 }
 
 // clusterVersion returns the Camunda version that a cluster runs: the one it

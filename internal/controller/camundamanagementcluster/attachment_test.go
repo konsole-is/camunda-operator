@@ -19,9 +19,11 @@ package camundamanagementcluster
 import (
 	"context"
 	"errors"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -107,6 +109,50 @@ var _ = Describe("Orchestration cluster attachment", func() {
 				HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(s.mc)),
 			)
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// Web Modeler deploys to an oidc cluster with the bearer token of the
+	// person who is signed in, and that token is issued by the identity
+	// provider of the management plane. A cluster on another issuer refuses
+	// every such deployment, so the management plane must not offer it.
+	It("leaves an oidc cluster that trusts another issuer out of the clusters it serves", func() {
+		mc := newManagementCluster("camunda", "identity-db")
+		mc.Spec.ClusterSelector = &metav1.LabelSelector{}
+
+		platform := newPlatformConfig(mc.Namespace)
+		elsewhere := newPlatformConfig(mc.Namespace)
+		elsewhere.Spec.Auth.OIDC.IssuerURL = otherIssuerURL
+
+		trusting := readyCluster("cc-trusting", mc.Namespace, platform.Name)
+		trusting.Annotations = map[string]string{components.ClaimAnnotation: ClaimValue(mc)}
+		wrongIssuer := readyCluster("cc-wrong-issuer", mc.Namespace, elsewhere.Name)
+		wrongIssuer.Annotations = map[string]string{components.ClaimAnnotation: ClaimValue(mc)}
+
+		reader := readerWith(platform, elsewhere, trusting, wrongIssuer)
+		r := &Reconciler{Client: refusingClient(), APIReader: reader, Scheme: k8sClient.Scheme()}
+
+		clusters, err := r.listClusters(ctx)
+		Expect(err).NotTo(HaveOccurred())
+
+		attached, rows, err := r.attachedClusters(ctx, mc, clusters, nil, oidcProvider(issuerURL))
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(attached).To(HaveLen(1))
+		Expect(attached[0].Name).To(Equal(trusting.Name))
+		Expect(rows).To(HaveLen(2))
+		Expect(rows[0].Attached).To(BeTrue())
+		Expect(rows[1].Attached).To(BeFalse())
+		Expect(rows[1].Reason).To(Equal(v1.ReasonInvalidReference))
+		Expect(rows[1].Message).To(ContainSubstring(otherIssuerURL))
+		Expect(rows[1].Message).To(ContainSubstring(issuerURL))
+	})
+
+	It("attaches an oidc cluster whose issuer differs only in case and a trailing slash", func() {
+		s := newScenario(withSelector(map[string]string{}))
+		variant := createPlatformConfig(s.namespace, "https://LOGIN.Example.com/")
+		cluster := createOrchestrationClusterOn(s, nil, true, variant)
+
+		expectAttached(s.mc, cluster)
 	})
 
 	It("withdraws the claim from a cluster that leaves the selector", func() {
@@ -212,7 +258,7 @@ var _ = Describe("Orchestration cluster attachment", func() {
 		clusters, err := r.listClusters(ctx)
 		Expect(err).NotTo(HaveOccurred())
 
-		attached, rows, err := r.attachedClusters(ctx, mc, clusters, nil)
+		attached, rows, err := r.attachedClusters(ctx, mc, clusters, nil, oidcProvider(issuerURL))
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(attached).To(HaveLen(1))
@@ -286,6 +332,20 @@ func createOrchestrationCluster(
 ) *v1.CamundaCluster {
 	GinkgoHelper()
 
+	return createOrchestrationClusterOn(s, clusterLabels, ready, s.mc.Spec.PlatformConfigRef)
+}
+
+// createOrchestrationClusterOn creates a CamundaCluster that reads the named
+// platform config, which is how a spec puts a cluster on another identity
+// provider than the management plane.
+func createOrchestrationClusterOn(
+	s scenario,
+	clusterLabels map[string]string,
+	ready bool,
+	platformRef string,
+) *v1.CamundaCluster {
+	GinkgoHelper()
+
 	cluster := &v1.CamundaCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "cc-" + utilrand.String(8),
@@ -295,7 +355,7 @@ func createOrchestrationCluster(
 		Spec: v1.CamundaClusterSpec{
 			Version:           "8.9.4",
 			StorageRef:        "storage",
-			PlatformConfigRef: s.mc.Spec.PlatformConfigRef,
+			PlatformConfigRef: platformRef,
 			ExtraEnv:          []corev1.EnvVar{userEnv},
 		},
 	}
@@ -311,6 +371,25 @@ func createOrchestrationCluster(
 	}
 
 	return cluster
+}
+
+// createPlatformConfig creates a CamundaPlatformConfig on the given issuer and
+// returns its name.
+func createPlatformConfig(namespace, issuer string) string {
+	GinkgoHelper()
+
+	platform := newPlatformConfig(namespace)
+	platform.Spec.Auth.OIDC.IssuerURL = issuer
+	Expect(k8sClient.Create(ctx, platform)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, platform) })
+
+	return platform.Name
+}
+
+// oidcProvider returns the resolved identity provider of a management plane
+// that serves one issuer to browsers and containers alike.
+func oidcProvider(issuer string) components.IdentityProvider {
+	return components.IdentityProvider{IssuerURL: issuer, IssuerBackendURL: issuer}
 }
 
 // readyCluster returns a CamundaCluster that publishes its gateway endpoints.
@@ -405,4 +484,46 @@ func expectClaimWithdrawn(cluster *v1.CamundaCluster) {
 			HaveKey(components.ClaimAnnotation),
 		)
 	}, timeout, interval).Should(Succeed())
+}
+
+// TestNormalizeIssuer pins what the comparison of two issuer URLs ignores and
+// what it keeps. A port, a path, and the case of a path all select a different
+// issuer, so none of them may be normalized away.
+func TestNormalizeIssuer(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct{ in, want string }{
+		"unchanged":        {"https://login.example.com/realms/camunda", "https://login.example.com/realms/camunda"},
+		"trailing slash":   {"https://login.example.com/", "https://login.example.com"},
+		"trailing slashes": {"https://login.example.com/realms/camunda//", "https://login.example.com/realms/camunda"},
+		"host case":        {"https://LOGIN.Example.COM/realms", "https://login.example.com/realms"},
+		"scheme case":      {"HTTPS://login.example.com", "https://login.example.com"},
+		"path case kept":   {"https://login.example.com/Realms/Camunda", "https://login.example.com/Realms/Camunda"},
+		"port kept":        {"https://login.example.com:8443/realms", "https://login.example.com:8443/realms"},
+		"unparseable":      {"https://login.example.com/%zz/", "https://login.example.com/%zz"},
+		"empty":            {"", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.want, normalizeIssuer(tc.in))
+		})
+	}
+}
+
+// TestTrustsIssuer pins that a cluster may name either issuer form of the
+// management plane. A Keycloak that the operator runs carries two: the one a
+// browser reaches, which every token names, and the in-cluster one.
+func TestTrustsIssuer(t *testing.T) {
+	t.Parallel()
+
+	provider := components.IdentityProvider{
+		IssuerURL:        "https://keycloak.example.com/realms/camunda",
+		IssuerBackendURL: "http://keycloak.camunda.svc:8080/auth/realms/camunda",
+	}
+
+	assert.True(t, trustsIssuer("https://keycloak.example.com/realms/camunda/", provider))
+	assert.True(t, trustsIssuer("http://KEYCLOAK.camunda.svc:8080/auth/realms/camunda", provider))
+	assert.False(t, trustsIssuer("https://keycloak.example.com/realms/other", provider))
+	assert.False(t, trustsIssuer("", provider))
 }

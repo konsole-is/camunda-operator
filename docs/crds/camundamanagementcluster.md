@@ -380,6 +380,32 @@ spec:
 
 A cluster whose namespace leaves the bound is deselected like one that leaves `clusterSelector`: the claim, the Console settings, and the Web Modeler user go by themselves.
 
+### An OIDC cluster must name the same issuer
+
+Console and Web Modeler call an OIDC cluster with the token of the person who is signed in. The identity provider of the management plane issues that token. A cluster that validates the tokens of another issuer refuses every such call.
+
+A selected OIDC cluster is therefore attached only while it names the issuer of this management plane. The cluster names it in `spec.auth.oidc.issuerUrl`, on the [CamundaPlatformConfig](camundaplatformconfig.md) that the `spec.platformConfigRef` of that cluster points at.
+
+The issuer of the management plane follows from the `spec.identityProvider` block of this resource:
+
+| `spec.identityProvider` | The issuer of the management plane |
+| --- | --- |
+| `keycloak` | `<keycloak.externalUrl>/realms/camunda-platform`. The in-cluster address `http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform` names the same Keycloak realm, and it is accepted too. |
+| `externalKeycloak` | `<externalKeycloak.url>/realms/<externalKeycloak.realm>` |
+| `oidc` | `spec.auth.oidc.issuerUrl` of the platform config that the `spec.platformConfigRef` of **this** resource names |
+
+Two issuer URLs name the same issuer when they differ only in one of these:
+
+- the case of the scheme, such as `HTTPS://` against `https://`
+- the case of the host, such as `LOGIN.Example.com` against `login.example.com`
+- a trailing slash
+
+A different port names a different issuer, and so does a different path.
+
+A cluster on another issuer gets `attached: false` with the reason `InvalidReference`. The message names both issuers. Console does not list that cluster, and Web Modeler does not deploy to it. The cluster itself keeps running. It keeps the `camunda.io/management-cluster` annotation while the selector matches it, and the operator removes its `CAMUNDA_CONSOLE_PING_*` entries.
+
+A basic-auth cluster has no such rule. Web Modeler signs in to it with the `web-modeler` user that the operator creates there.
+
 `status.clusters` lists one row per selected cluster and says whether the management plane serves it:
 
 ```yaml
@@ -400,7 +426,7 @@ status:
 | (empty, `attached: true`) | Console lists the cluster and Web Modeler deploys to it. | Nothing. |
 | `NotReady` | The cluster publishes no `status.gateway` yet, or it changed while the operator claimed it. | Wait. The row clears when the cluster settles. |
 | `ClaimedElsewhere` | Another management plane already serves this cluster. The message names it. | One cluster answers to one management plane. Remove the cluster from one of the two selectors. |
-| `InvalidReference` | The `platformConfigRef` of the cluster does not resolve, so the operator cannot read how the cluster authenticates. | Create the named `CamundaPlatformConfig`, or correct the reference on the cluster. |
+| `InvalidReference` | The `platformConfigRef` of the cluster does not resolve, or the cluster authenticates with `oidc` on another issuer than the management plane. The message says which. | Create the named `CamundaPlatformConfig`, correct the reference on the cluster, or point the cluster at the issuer of the management plane. |
 | `WriteFailed` | The Console settings could not be written on the cluster. | Read the message. The operator tries again. |
 | `BasicAuthUserFailed` | The Web Modeler user could not be created on this basic-auth cluster. `attached` stays true. | Read the message. It usually names a missing administrator Secret or a cluster that does not answer. |
 

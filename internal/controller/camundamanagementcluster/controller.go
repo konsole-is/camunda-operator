@@ -207,7 +207,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	attached, rows, err := r.attachedClusters(ctx, &mc, clusters, namespaces)
+	attached, rows, err := r.attachedClusters(ctx, &mc, clusters, namespaces, res.Input.Provider)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
