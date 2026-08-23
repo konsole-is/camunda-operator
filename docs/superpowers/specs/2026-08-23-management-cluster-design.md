@@ -244,7 +244,10 @@ spec:
       claimName: oid                    # oidc mode
       claimValue: "11111111-2222-3333-4444-555555555555"
       # username: admin                 # keycloak modes
+      # email: admin@example.com        # keycloak modes
       # passwordSecretRef: {name: identity-admin, key: password}
+  optimize:                             # required in the keycloak modes
+    externalUrl: https://optimize.example.com
     # WorkloadSpec: replicas, resources, extraEnv, extraEnvFrom, podLabels, podAnnotations, scheduling
   console:
     enabled: true
@@ -313,26 +316,40 @@ module does not see them), `builder.go`, `mutator.go`, `resource.go`, `health.go
 handler that sets `instances: 0`. `SetupWithManager` probes the RESTMapper once and registers
 `Owns(&Keycloak{})` only when the kind is served; otherwise the pre-check reports
 `Ready=False/KeycloakOperatorNotInstalled`, the `ECKNotInstalled` shape. The CR:
-`instances`, `image` (through `pkg/images`), `db` from the `DatabaseConfig` (`host`, `port`,
-`database`, `usernameSecret`, `passwordSecret` pointing at the credentials Secret keys), HTTP
-on, `additionalOptions` `http-relative-path=/auth` and `proxy-headers=xforwarded`,
-`hostname.hostname` = `externalUrl`, Ingress off, pod template labels. The Keycloak Operator
-writes `<name>-initial-admin`; Identity's `KEYCLOAK_SETUP_USER|PASSWORD` read it.
-`KEYCLOAK_URL` is the in-cluster Service URL the operator creates (`<name>-service`), the
-issuer for consumers is `<externalUrl>/realms/camunda-platform`, the backend issuer is the
-in-cluster URL.
+`instances`, `image` (through `pkg/images`), `db` from the `DatabaseConfig` (the whole
+`jdbc:aws-wrapper:postgresql://` URL, `schema: public`, `usernameSecret` and `passwordSecret`
+pointing at the credentials Secret keys), HTTP on, `additionalOptions` `http-relative-path=/auth`
+and `proxy-headers=xforwarded`, `hostname.hostname` = `externalUrl`, Ingress off, pod template
+labels. The Keycloak Operator writes `<name>-initial-admin`; Identity's
+`KEYCLOAK_SETUP_USER|PASSWORD` read it, and the Identity component waits for `KeycloakReady`
+through an ocf prerequisite. `KEYCLOAK_URL` is the in-cluster Service URL the operator creates
+(`<name>-service`), the issuer for consumers is `<externalUrl>/realms/camunda-platform`, and the
+backend issuer is the in-cluster URL. The authorization endpoint follows the front-channel
+issuer; the token and JWKS endpoints are server-to-server, so they follow the backend issuer.
+`externalUrl` must carry the `/auth` path, because the rendered Keycloak serves there.
 
 **`externalKeycloak`.** Same Identity rendering. `KEYCLOAK_URL` = `spec.url`, setup credentials
-from `adminCredentialsSecretRef`, realm from `spec.realm`. No Keycloak component, no
-`KeycloakReady`. Issuer and backend issuer are both `<url>/realms/<realm>`.
+from `adminCredentialsSecretRef`, realm from `spec.realm`. Issuer and backend issuer are both
+`<url>/realms/<realm>`. The Keycloak component is built in every mode and gated on the `keycloak`
+mode, so a move to `externalKeycloak` or `oidc` deletes the custom resource the operator wrote. A
+gated-off component reports `KeycloakReady=True/Disabled` and stays out of `Ready`. A Kubernetes
+cluster that serves no Keycloak kind gets no component at all.
 
 **Both Keycloak modes.** Identity bootstraps the realm and the clients. The operator generates
 (`pkg/credentials`, rotatable by deleting the Secret) `IDENTITY_CLIENT_SECRET`,
-`KEYCLOAK_INIT_OPTIMIZE_SECRET`, and the Web Modeler pusher credentials. It sets
-`KEYCLOAK_INIT_WEBMODELER_ROOT_URL` = `webModeler.externalUrl` and declares the Console client
-through `KEYCLOAK_CLIENTS_<n>_*` (public, root URL = `console.externalUrl`, permissions on
-`console-api`). The initial admin is `identity.admin.username` with the password from
-`passwordSecretRef` or a generated one.
+`KEYCLOAK_INIT_OPTIMIZE_SECRET`, and the Web Modeler pusher credentials. Every client comes from
+a component preset, Console included: the 8.9 chart carries a `console` preset
+(`charts/camunda-platform-8.9/templates/identity/configmap.yaml`, `keycloak.init.console.root-url`
+and the `component-presets.console` block), so the operator sets
+`KEYCLOAK_INIT_CONSOLE_ROOT_URL` = `console.externalUrl`,
+`KEYCLOAK_INIT_OPTIMIZE_ROOT_URL` = `optimize.externalUrl`, and
+`KEYCLOAK_INIT_WEBMODELER_ROOT_URL` = `webModeler.externalUrl`. A preset also creates the
+resource server that the audience of the component names, which a hand-written
+`KEYCLOAK_CLIENTS_<n>_*` entry would not. `KEYCLOAK_SETUP_REALM` (`master`) and
+`KEYCLOAK_SETUP_CLIENT_ID` (`admin-cli`) are rendered at their documented defaults, so the
+configuration says where the Keycloak administrator comes from. The initial admin is
+`identity.admin.username` with the password from `passwordSecretRef` or a generated one, and an
+optional `identity.admin.email`.
 
 **`oidc`.** `SPRING_PROFILES_ACTIVE=oidc`, `CAMUNDA_IDENTITY_TYPE` from
 `platform.auth.oidc.providerType`, `CAMUNDA_IDENTITY_ISSUER` and `_ISSUER_BACKEND_URL` from the
@@ -550,12 +567,14 @@ it, and so is every Job image the backup and restore controllers render.
 
 ## Risks and open items
 
-- **Optimize redirect URIs in Keycloak modes.** Identity bootstraps one `optimize` client.
-  Every `CamundaOptimize` on the platform needs its callback URL in that client. Candidate:
-  declare `optimize` through `KEYCLOAK_CLIENTS_<n>_*` with one redirect URI per `CamundaOptimize`
-  the controller discovers, and let Identity re-bootstrap on restart. Whether Identity updates
-  the redirect URIs of an existing client on restart is verified in implementation. Fallback: a
-  wildcard redirect per domain, documented.
+- **Optimize redirect URIs in Keycloak modes.** *Answered in implementation.* Identity
+  re-applies the whole client representation on every start
+  (https://github.com/camunda/camunda/issues/59963), so a changed root URL reaches Keycloak on
+  the next roll of Management Identity. One preset carries one root URL, and `CamundaOptimize`
+  carries no `externalUrl` of its own, so `spec.optimize.externalUrl` is required in both
+  Keycloak modes and names the single Optimize this management plane bootstraps. A second
+  Optimize needs its callback URL added to the `optimize` client by hand. A follow-up,
+  "one Keycloak client per CamundaOptimize", holds the multi-Optimize case.
 - **Console discovery is experimental in 8.9.** If e2e shows a cluster does not appear, the
   fallback is a generated `console.configuration` block from the same attached-cluster data.
 - **8.10 renames.** Console becomes Hub, `camunda.console.ping` becomes `camunda.hub.ping`, the
