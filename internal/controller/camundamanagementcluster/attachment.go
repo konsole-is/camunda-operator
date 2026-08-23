@@ -307,6 +307,11 @@ func (r *Reconciler) clusterAuth(
 	}
 
 	issuer := cfg.Spec.Auth.OIDC.IssuerURL
+	if issuer == "" {
+		return method, fmt.Sprintf(
+			"CamundaPlatformConfig %q of this cluster sets no spec.auth.oidc.issuerUrl", key.Name,
+		), nil
+	}
 	if !trustsIssuer(issuer, provider) {
 		return method, fmt.Sprintf(
 			"Web Modeler deploys with tokens of the issuer %q, and this cluster validates tokens of %q instead",
