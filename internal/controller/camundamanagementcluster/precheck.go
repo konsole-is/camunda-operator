@@ -46,13 +46,16 @@ type resolved struct {
 
 // resolver accumulates what the pre-checks read: the data of every Secret to
 // copy into the management namespace, and the hash inputs that roll the pods
-// when a referenced object changes behind an unchanged reference.
+// when a referenced object changes behind an unchanged reference. An object
+// that one component alone reads goes into componentInputs under the name of
+// that component.
 type resolver struct {
-	reader  client.Reader
-	scheme  *runtime.Scheme
-	mc      *v1.CamundaManagementCluster
-	mirrors map[components.MirrorPurpose]map[string][]byte
-	inputs  []string
+	reader          client.Reader
+	scheme          *runtime.Scheme
+	mc              *v1.CamundaManagementCluster
+	mirrors         map[components.MirrorPurpose]map[string][]byte
+	inputs          []string
+	componentInputs map[string][]string
 }
 
 // preCheck resolves every reference of mc, in the documented order: the rules
@@ -77,10 +80,11 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 	}
 
 	res := &resolver{
-		reader:  r.APIReader,
-		scheme:  r.Scheme,
-		mc:      mc,
-		mirrors: map[components.MirrorPurpose]map[string][]byte{},
+		reader:          r.APIReader,
+		scheme:          r.Scheme,
+		mc:              mc,
+		mirrors:         map[components.MirrorPurpose]map[string][]byte{},
+		componentInputs: map[string][]string{},
 	}
 
 	if failure := r.checkKeycloakOperator(mc); failure != nil {
@@ -107,6 +111,7 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 
 	out.Input.Mirrors = res.mirrors
 	out.Input.HashInputs = res.inputs
+	out.Input.ComponentInputs = res.componentInputs
 
 	return out, nil
 }
@@ -153,7 +158,8 @@ func (res *resolver) resolvePlatform(ctx context.Context, out *resolved) error {
 // Secret that the Keycloak Operator writes next to the Keycloak; that one is
 // absent until the Keycloak Operator has acted, and refusing the reconcile
 // over it would stop the very apply that creates the Keycloak, so it only
-// contributes a hash input while it exists.
+// contributes a hash input while it exists. Management Identity is the one
+// component that reads it, so the input is its own.
 func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 	switch components.Mode(res.mc) {
 	case components.ModeExternalKeycloak:
@@ -174,7 +180,10 @@ func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 			}
 			return fmt.Errorf("reading Secret %q: %w", key, err)
 		}
-		res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+secret.ResourceVersion)
+		res.componentInputs[components.ComponentIdentity] = append(
+			res.componentInputs[components.ComponentIdentity],
+			"Secret/"+objectPath(key)+"="+secret.ResourceVersion,
+		)
 
 		return nil
 	default:

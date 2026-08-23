@@ -340,6 +340,24 @@ func TestConfigHashFollowsAGeneratedCredential(t *testing.T) {
 	assert.NotEqual(t, before, ConfigHash(in, ComponentIdentity))
 }
 
+// Management Identity is the one component that signs in with the
+// administrator that the Keycloak Operator writes, so a rewrite of that
+// Secret rolls Identity and leaves every other component where it is.
+func TestConfigHashFollowsAComponentInput(t *testing.T) {
+	t.Parallel()
+
+	in := newKeycloakInput(t, true, nil)
+	identity := ConfigHash(in, ComponentIdentity)
+	keycloak := ConfigHash(in, ComponentKeycloak)
+
+	in.ComponentInputs = map[string][]string{
+		ComponentIdentity: {"Secret/camunda/my-management-keycloak-initial-admin=7"},
+	}
+
+	assert.NotEqual(t, identity, ConfigHash(in, ComponentIdentity))
+	assert.Equal(t, keycloak, ConfigHash(in, ComponentKeycloak))
+}
+
 // The Keycloak Operator owns the pods of a Keycloak, so the spec offers the
 // instance count and the resources instead of a whole WorkloadSpec.
 func TestKeycloakTakesItsReplicasFromTheSpec(t *testing.T) {

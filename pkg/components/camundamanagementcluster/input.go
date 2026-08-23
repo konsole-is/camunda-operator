@@ -61,6 +61,10 @@ type Input struct {
 	// "kind/namespace/name=version" strings. ConfigHash sorts them, so the
 	// order does not matter.
 	HashInputs []string
+	// ComponentInputs are the same strings for a referenced object that one
+	// component alone reads, by component name. A change to such an object
+	// rolls that component and no other.
+	ComponentInputs map[string][]string
 	// KeycloakCRDServed reports whether the Kubernetes cluster serves the
 	// Keycloak kind of the Keycloak Operator.
 	KeycloakCRDServed bool
