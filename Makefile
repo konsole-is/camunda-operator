@@ -113,8 +113,8 @@ ECK_VERSION ?= 3.5.0
 # E2E_CAMUNDA_MINOR selects the Camunda minor the suite runs against. Each
 # supported minor has a file test/e2e/matrix/<minor>.env with the image
 # versions of that minor and the list of spec flows that run for it. The
-# recipe exports the file to the suite, and the e2e workflow runs one job per
-# file.
+# recipe exports the file to the suite. The e2e workflow runs two jobs per
+# file, each with an E2E_LABEL_FILTER of its own.
 E2E_CAMUNDA_MINOR ?= 8.9
 
 # E2E_LABEL_FILTER is a Ginkgo label filter for one run of the suite. It wins
