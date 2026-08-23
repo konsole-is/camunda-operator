@@ -172,7 +172,7 @@ jobs:
         run: cosign sign --yes "${CHART_REPO}@${{ steps.chart.outputs.digest }}"
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/install.yaml
