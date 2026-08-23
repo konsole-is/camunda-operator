@@ -1,0 +1,452 @@
+# DatabaseServer: PostgreSQL through CloudNativePG, and point-in-time restore on it
+
+**Status:** draft for review
+**Date:** 2026-08-24
+**Epic:** #127, with #128 as its first sub-issue
+**Scope:** a `DatabaseServer` kind and its `DatabaseServerPreset`, a CloudNativePG `Cluster`
+wrapper and a Barman Cloud `ObjectStore` wrapper, `DatabaseServerConfig` and `Database` moved to
+namespace scope, server identity by PostgreSQL system identifier, `PointInTimeRestore` driving
+the database recovery when a `DatabaseServer` runs the server
+
+## Summary
+
+The operator runs Elasticsearch through ECK but cannot run PostgreSQL. A user who wants an
+RDBMS-backed orchestration cluster brings a server, and point-in-time restore stops at the
+database: `PointInTimeRestore` requires that the database is already recovered to the target
+time before the CR exists, because the base backups and the WAL archive belong to whoever runs
+the server.
+
+`DatabaseServer` closes both gaps. It is a namespaced kind that creates a CloudNativePG
+`Cluster`, archives its WAL and base backups to an `ObjectStorageConfig` through the Barman
+Cloud plugin, and publishes a `DatabaseServerConfig` whose `pitr` block states what the server
+can do. Because the operator controls the archive, `PointInTimeRestore` can ask the
+`DatabaseServer` to recover the server to the target time, and then continue with the primary
+storage restore it already performs.
+
+The RDBMS chain becomes namespace-local: `DatabaseServerConfig` and `Database` move to namespace
+scope and `Database.spec.targetNamespace` goes away. A server is identified by the system
+identifier PostgreSQL reports, not by the name of a contract, so the rules that depend on server
+identity hold when two namespaces describe one server.
+
+The work ships as one epic with sub-PRs on `feat/cnpg-database-server`. The PR breakdown and the
+contracts between PRs live in the plan, not here.
+
+## Verified facts
+
+The CloudNativePG facts below were read on 2026-08-24 from the pages named. Implementation
+verifies every field name against the API reference of the pinned CloudNativePG version before it
+writes it.
+
+### Backup and the Barman Cloud plugin
+
+- In-tree `spec.backup.barmanObjectStore` is deprecated since 1.26. The release notes for 1.30.0
+  (2026-06-29, the latest minor) say the in-tree Barman Cloud support "will now be removed in
+  CloudNativePG 1.31.0". https://github.com/cloudnative-pg/cloudnative-pg/releases
+- The replacement is the Barman Cloud CNPG-I plugin, version 0.14.0. It needs CloudNativePG 1.26
+  or newer (1.27 recommended), it needs cert-manager, and it installs into the namespace of the
+  CloudNativePG operator (`cnpg-system`).
+  https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/
+- The plugin serves `barmancloud.cnpg.io/v1 ObjectStore`, a namespaced kind. Its spec carries
+  `configuration.destinationPath`, `configuration.endpointURL`, one credentials block
+  (`s3Credentials`, `azureCredentials`, `googleCredentials`), `configuration.wal.compression`,
+  `configuration.data.compression`, and `configuration.retentionPolicy`. A `Cluster` archives
+  through `spec.plugins[]` with `name: barman-cloud.cloudnative-pg.io`, `isWALArchiver: true`,
+  `parameters.barmanObjectName`, and `parameters.serverName`. `Backup` and `ScheduledBackup` use
+  `method: plugin` with `pluginConfiguration.name`.
+  https://cloudnative-pg.io/plugin-barman-cloud/docs/usage/
+- WAL archiving alone does not give point-in-time recovery. Recovery starts from a base backup
+  and replays WAL from there, so the archive needs base backups on a schedule.
+  https://cloudnative-pg.io/docs/devel/backup
+
+### Recovery
+
+- Recovery is never in place. It bootstraps a new `Cluster` from a backup through
+  `bootstrap.recovery.source`, which names an entry of `externalClusters[]`. With the plugin the
+  entry carries `plugin.name` and `plugin.parameters` (`barmanObjectName`, `serverName`).
+- `bootstrap.recovery.recoveryTarget.targetTime` holds the target. A timestamp without a timezone
+  is read as UTC; the docs say to always give an explicit timezone.
+- A recovered cluster must archive under its own `serverName`. Reusing the `serverName` of the
+  source overwrites the source archive. A safety check in the plugin refuses to archive into a
+  path that another server already uses.
+  https://cloudnative-pg.io/docs/devel/recovery
+
+### Identity and monitoring
+
+- `Cluster.status.systemID` holds "the latest detected PostgreSQL SystemID". Over SQL the same
+  value is `SELECT system_identifier FROM pg_control_system()`.
+  https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1
+- Metrics are served on port 9187 at `/metrics`. `spec.monitoring.enablePodMonitor` is
+  deprecated; the docs say to create a `PodMonitor` yourself.
+  https://cloudnative-pg.io/docs/devel/monitoring
+- The CloudNativePG Go types are published as their own module,
+  `github.com/cloudnative-pg/api`, without the operator's dependencies.
+
+### This repository
+
+- `ElasticsearchCluster` is the template for a kind that runs a third-party operator's CR:
+  `pkg/wrappers/eckelasticsearch` wraps the ECK CR through `pkg/generic`, the controller decides
+  once at start whether ECK is installed (`eckInstalled`, commit a4e6a02), and `presetRef` merges
+  a cluster-scoped preset into the spec.
+- `DatabaseServerConfig` has a status-only controller that probes the server every ten minutes
+  through `pkg/pgbootstrap` and publishes `status.serverVersion`. The probe is the one place the
+  operator opens an admin connection to read facts about the server.
+- `Database` rejects a duplicate claim through `CollisionKey` in
+  `pkg/components/database/collision.go`, keyed on `serverRef` and `databaseName`.
+- `PointInTimeRestore` pins the resolved chain in `status.storage` (`PointInTimeRestoreStorage`,
+  with the `Endpoint` it reached) and re-checks it on every look. Its `dedicatedServer` rule
+  lists `Database` objects across all namespaces and compares `spec.serverRef` to the contract
+  name. It writes the `CamundaCluster` suspend through server-side apply under its own field
+  manager.
+- `api/` is its own Go module with three dependencies. Nothing in `api/v1` may import
+  CloudNativePG types.
+
+## Goals
+
+- Run a PostgreSQL server for an orchestration cluster from one namespaced CR, with the sizing,
+  storage, scheduling, and monitoring shape that `ElasticsearchCluster` has.
+- Publish a `DatabaseServerConfig` whose `pitr` block is true because the operator owns the
+  archive.
+- Let `PointInTimeRestore` perform the database recovery when a `DatabaseServer` runs the server,
+  and keep the current prerequisite for every other server.
+- Make the RDBMS chain namespace-local so owner references clean it up and admin credentials
+  never leave the namespace.
+- Identify a server by what it reports, so the `Database` collision rule and the
+  `PointInTimeRestore` dedicated-server rule hold across namespaces.
+- Start the operator when the CloudNativePG CRDs are absent.
+
+## Non-goals
+
+- Managed PostgreSQL. A hand-written `DatabaseServerConfig` keeps working, and
+  `PointInTimeRestore` keeps its prerequisite for it.
+- One server shared by several orchestration clusters. It stays possible with a hand-written
+  contract in each namespace, and it gives up point-in-time restore.
+- Changing how `Database` creates a logical database. It keeps its SQL path and never uses the
+  CloudNativePG `Database` kind.
+- Replacing `LogicalBackupRDBMS`. Logical dumps and the WAL archive solve different problems.
+- Engines other than PostgreSQL.
+- Pruning old archives in the bucket after a recovery. The user removes them.
+- A migration or conversion for the scope change. This is a clean-slate project.
+
+## Decisions
+
+### The archive goes through the Barman Cloud plugin, not the in-tree field
+
+The in-tree field is removed in 1.31.0. A component that starts on a path with a removal date
+inherits a rewrite. The plugin is the only path forward, so `DatabaseServer` creates an
+`ObjectStore` next to the `Cluster` and wires the `Cluster` to it through `spec.plugins[]`.
+
+The cost is two more things the user installs: cert-manager and the plugin, both into
+`cnpg-system`. The installation docs list them next to CloudNativePG itself. The e2e suite
+installs all three.
+
+### The operator creates base backups, not only the WAL archive
+
+The epic names continuous WAL archiving. Recovery needs a base backup to start from, so
+`DatabaseServer` also owns a `ScheduledBackup` with `method: plugin`. The schedule comes from
+`spec.archive.baseBackupSchedule` (default daily at 02:00 UTC) and the first backup runs at
+once (`immediate: true`). `ArchiveReady` is `True` only after the first base backup completed,
+because a server whose archive holds WAL but no base backup cannot be recovered to any point.
+
+The published `pitr.retentionPeriodDays` equals `spec.archive.retentionPeriodDays`, which also
+sets `configuration.retentionPolicy` on the `ObjectStore`. The value the operator declares is the
+value it enforces.
+
+### PointInTimeRestore asks, DatabaseServer acts
+
+One controller owns the CloudNativePG objects. `PointInTimeRestore` never creates a `Cluster`.
+It writes a `spec.recovery` block on the `DatabaseServer` through server-side apply under its own
+field manager, the same way it writes the `CamundaCluster` suspend, and waits for
+`status.recovery` to report the block applied. `DatabaseServer` performs the recovery in its own
+reconcile.
+
+The alternative, where `PointInTimeRestore` builds the recovery `Cluster`, puts two controllers
+on one set of CloudNativePG objects and makes the `DatabaseServer` reconcile adopt a `Cluster` it
+did not create. Rejected.
+
+### A recovery creates a new Cluster under a new name and removes the old one
+
+The recovered cluster is `<name>-r<N>`, where `N` is the recovery sequence number from status.
+It archives under its own `serverName`, equal to its `Cluster` name. When it is Healthy the
+operator repoints `host` on the published contract to the new read-write Service and deletes the
+previous `Cluster`. Its volumes go with it under the PVC retention policy of the spec.
+
+The same-name shape keeps the endpoint stable but has nothing to roll back to between the delete
+and the recovery, and it still needs a new `serverName`. Keeping the old `Cluster` after a
+successful recovery doubles the storage for a server nobody connects to. The endpoint change is
+absorbed by the contract: `CamundaCluster` reads `host` from the contract on reconcile and rolls
+its pods.
+
+### A restore can reach any point in retention, across recoveries
+
+Each recovery starts a new archive. `status.archive.history[]` records every archive the server
+has written: `serverName`, `from`, and `to` (`to` is unset for the current archive). A recovery
+picks the source whose interval holds `targetTime`. A target that no interval holds is refused
+with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user prunes them.
+
+The alternative, only the current archive, is simpler but cannot correct a recovery to the wrong
+point with a second restore further back.
+
+### The RDBMS chain becomes namespace-local
+
+`DatabaseServerConfig` and `Database` move to namespace scope. `Database.spec.targetNamespace`
+is removed; the bindings land in the `Database`'s own namespace. `serverRef` on `Database` and
+`DatabaseConfig` resolves in the CR's namespace. `adminCredentialsSecretRef` on
+`DatabaseServerConfig` names a Secret in the contract's namespace and loses its namespace field.
+
+A platform team that owned `Database` objects centrally writes `DatabaseConfig` and
+`SecondaryStorageConfig` directly in the target namespace instead. `DatabaseServerPreset` and
+`ObjectStorageConfig` stay cluster-scoped: they are catalogs many namespaces read.
+
+### A server is identified by its system identifier
+
+`pkg/pgbootstrap` gains `SystemIdentifier`, read from `pg_control_system()`. The
+`DatabaseServerConfig` probe publishes it to `status.systemIdentifier` next to `serverVersion`.
+
+`Database` keys its collision index on `systemIdentifier` and `databaseName`. A `Database` whose
+contract has no identifier yet waits with `Ready=False` and a message that says so. The winner
+rule stays: oldest `creationTimestamp`, then the smaller `namespace/name`.
+
+`PointInTimeRestore` counts the `Database` objects across all namespaces whose contract reports
+the same identifier. `PointInTimeRestoreStorage` pins `systemIdentifier` next to `Endpoint`, and
+the pin check fails the restore when it changes, except during the operator's own recovery,
+where the identifier is expected to change and the pin is refreshed from the recovered server.
+
+This is #128. It ships first because every later PR builds on the namespaced kinds and the
+identifier.
+
+### CloudNativePG types come from `github.com/cloudnative-pg/api`
+
+The wrapper in `pkg/wrappers/cnpgcluster` imports the published API module, the way
+`eckelasticsearch` imports the ECK module. Hand-written types (the Keycloak precedent) exist to
+avoid a heavy dependency; the API module is light, so the precedent does not apply. The
+`ObjectStore` type of the plugin is small and has no published module, so
+`pkg/wrappers/barmanobjectstore` carries hand-written types with generated deep-copy, the
+Keycloak way. `api/v1` imports neither.
+
+### The operator starts without the CloudNativePG CRDs
+
+Commit a4e6a02 is copied: `cnpgInstalled` is decided once in `SetupWithManager` through the
+REST mapper, `Owns` on the `Cluster` is conditional, a `DatabaseServer` on a cluster without the
+CRDs reports `Ready=False` with `ReasonCNPGNotInstalled`, and the message says to install
+CloudNativePG and restart the operator. `internal/testenv` gains `Options{WithoutCNPG}` and a
+`withoutcnpg` suite. The plugin CRD is checked the same way; a `DatabaseServer` with an `archive`
+block on a cluster without the plugin reports `ReasonBarmanPluginNotInstalled`.
+
+### Admin credentials are the CloudNativePG superuser Secret
+
+The `Cluster` sets `enableSuperuserAccess: true`. CloudNativePG writes `<name>-superuser` with
+`username` and `password`. The published contract points at it. No password passes through the
+operator, and `Database` connects the way it does today.
+
+## API
+
+### DatabaseServer
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  name: camunda
+  namespace: camunda
+spec:
+  presetRef: production            # DatabaseServerPreset, cluster-scoped, optional
+  version: "17"                    # PostgreSQL major, required; image tag is resolved from it
+  instances: 2                     # 1..N, default 1
+  resources: {}
+  storageSize: 20Gi                # may not shrink (CEL)
+  storageClassName: ""
+  walStorageSize: 5Gi              # optional separate WAL volume
+  serviceAccount: {}
+  scheduling: {}
+  podLabels: {}
+  podAnnotations: {}
+  monitoring:
+    podMonitor:
+      enabled: true
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+  databaseServerConfig: camunda    # name of the contract this server publishes, required
+  archive:                         # optional; without it the contract says pitr.enabled=false
+    objectStorageRef: backups      # ObjectStorageConfig, cluster-scoped
+    retentionPeriodDays: 30
+    baseBackupSchedule: "0 0 2 * * *"   # CloudNativePG six-field cron, default daily 02:00 UTC
+  recovery:                        # written by PointInTimeRestore, never by a preset (CEL)
+    targetTime: "2026-08-20T14:30:00Z"
+    requestedBy: camunda/pitr-1
+  suspend: false
+status:
+  observedGeneration: 3
+  cluster: camunda-r1              # the CloudNativePG Cluster the contract points at
+  systemIdentifier: "7370..."
+  archive:
+    history:
+      - serverName: camunda
+        from: "2026-08-01T10:00:00Z"
+        to: "2026-08-20T14:30:00Z"
+      - serverName: camunda-r1
+        from: "2026-08-20T14:30:00Z"
+  recovery:
+    applied:
+      targetTime: "2026-08-20T14:30:00Z"
+      requestedBy: camunda/pitr-1
+    cluster: camunda-r1
+    completedAt: "2026-08-20T15:02:11Z"
+  volumes: []
+  conditions: []
+```
+
+Printcolumns: `Ready`, `Reason`, `Version`, `Age`. The image is
+`ghcr.io/cloudnative-pg/postgresql:<version>` by default, resolved through `pkg/images` so the
+platform config can override the repository.
+
+Validation: `databaseServerConfig` required; `storageSize` may not shrink; `archive` requires
+`retentionPeriodDays >= 1`; `recovery.targetTime` must be RFC 3339 with an explicit zone;
+`version` matches `^\d+$` and is floored at the oldest major Camunda 8.9 supports (verified with
+the `camunda-docs` MCP during implementation).
+
+Conditions and components, one component per condition:
+
+| Condition | Component owns | True when |
+| --- | --- | --- |
+| `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy |
+| `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed |
+| `ContractReady` | `DatabaseServerConfig` | the contract exists and its own Ready is True |
+| `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
+
+`Ready` on the owner aggregates them. `ReasonCNPGNotInstalled` and
+`ReasonBarmanPluginNotInstalled` are pre-check failures on the owner, before any component runs.
+
+Suspend scales the `Cluster` to zero instances through the wrapper's suspend mutation, the
+scale-to-zero path from `ocf:custom-resource-wrappers`, so the volumes survive.
+
+### DatabaseServerPreset
+
+Cluster-scoped. `spec.server DatabaseServerSpec` with a CEL rule that forbids `presetRef`,
+`databaseServerConfig`, `recovery`, and `suspend` inside a preset, the shape of
+`ElasticsearchClusterPreset`. `presetRef` on the server merges the preset under the server's own
+fields the way `ElasticsearchCluster` does.
+
+### DatabaseServerConfig
+
+Namespaced. `adminCredentialsSecretRef` becomes `{name, key...}` in the contract's namespace.
+`status.systemIdentifier` is added. The rest of the spec stays. A `DatabaseServer` owns the
+contract it publishes through an owner reference and the `camunda.io/database-server` label;
+the contract controller does not care who wrote it.
+
+### Database
+
+Namespaced. `targetNamespace` is removed. `applicationCredentials.secretNamespace` and
+`backupCredentials.secretNamespace` are removed too; a Secret the user names lives in the
+`Database`'s namespace. The collision key changes as decided above.
+
+### PointInTimeRestore
+
+Phase `RestoringDatabase` is added between `Pending` and `ValidatingDatabaseState`:
+
+```
+Pending → RestoringDatabase → ValidatingDatabaseState → RestoringPrimaryStorage → Completed
+                                                                                → Failed
+```
+
+`admit` enters `RestoringDatabase` when the pinned `DatabaseServerConfig` carries the
+`camunda.io/database-server` label and an owner reference to a `DatabaseServer`; otherwise it
+enters `ValidatingDatabaseState` as today. In `RestoringDatabase` the restore:
+
+1. Patches `spec.recovery {targetTime, requestedBy}` on the `DatabaseServer` under its own field
+   manager. `targetTime` is `spec.timestamp` rendered in RFC 3339 UTC.
+2. Polls the `DatabaseServer` until `status.recovery.applied` equals the block it wrote and
+   `Ready` is `True`, then refreshes the `systemIdentifier` pin from the contract and moves on.
+3. Fails with `PitrUnavailable` when the `DatabaseServer` reports that no archive holds the
+   target, and with `Failed` when the `DatabaseServer` reports the recovery failed.
+
+`status.storage` gains `databaseServer` (name, same namespace) and `systemIdentifier`.
+`ValidatingDatabaseState` then finds the database at the target and continues unchanged.
+
+## Recovery in DatabaseServer
+
+The reconcile sees `spec.recovery` newer than `status.recovery.applied` and:
+
+1. Picks the archive from `status.archive.history[]` whose interval holds `targetTime`. None:
+   `Ready=False`, `ReasonPitrUnavailable`, and the message names the covered intervals. The
+   restore reads that reason.
+2. Applies `Cluster <name>-r<N>` with `bootstrap.recovery.source: source`,
+   `recoveryTarget.targetTime`, an `externalClusters` entry that names the `ObjectStore` and the
+   source `serverName`, and its own `plugins[]` entry with `serverName: <name>-r<N>`.
+3. Waits for the new `Cluster` to be Healthy. Applies the contract with the new `host` and
+   `status.cluster` with the new name.
+4. Deletes the previous `Cluster`. Closes the previous archive interval at `targetTime` and
+   appends the new one. Applies a `ScheduledBackup` for the new cluster with `immediate: true`.
+5. Records `status.recovery {applied, cluster, completedAt}`.
+
+Each step is idempotent and keyed on what exists, so a restart in the middle resumes. The
+previous `Cluster` is deleted only after the contract points at the new one, so a failure before
+step 4 leaves the old server intact and the restore reports `Failed` without data loss.
+
+A recovery while `suspend` is true is refused; the restore holds in `RestoringDatabase` with a
+message that says so.
+
+## Watches and indexes
+
+- `DatabaseServer` owns `Cluster`, `ObjectStore`, `ScheduledBackup`, `PodMonitor`, and
+  `DatabaseServerConfig`. It watches the `ObjectStorageConfig` it names and its credentials
+  Secret through the existing `refindex` helpers, and the `DatabaseServerPreset` it names.
+- `Database` watches `DatabaseServerConfig` in its namespace and keeps a cluster-wide index on
+  the collision key. The `PointInTimeRestore` dedicated-server rule keeps its live, unindexed
+  list, filtered on the identifier the contract of each `Database` reports.
+- No controller lists or watches a sibling `DatabaseServer`. A recovery request is a claim on
+  one object; nothing coordinates across servers.
+
+## Testing
+
+- Unit: mutation tests and golden snapshots for the two wrappers and each component
+  (`ocf:testing-operators`); the archive selection rule; the RFC 3339 rendering; the collision
+  key; `SystemIdentifier` against a testcontainers PostgreSQL, next to the `ServerVersion` test.
+- envtest: the `DatabaseServer` controller against the CloudNativePG and plugin CRDs read from
+  the Go module cache and a vendored copy respectively, with a fake Healthy status written by the
+  test; the `withoutcnpg` suite; the `Database` collision through two contracts that report one
+  identifier; `PointInTimeRestore` entering `RestoringDatabase` and waiting on the
+  `DatabaseServer` status.
+- e2e (CI only): `test/utils/cnpg.go` installs CloudNativePG and the plugin from pinned versions
+  (`CNPG_VERSION`, `BARMAN_PLUGIN_VERSION` in `test/e2e/matrix/8.9.env` with renovate markers;
+  cert-manager is already installed). A `databaseserver` flow brings a server up, sees the
+  contract published with `pitr.enabled: true`, sees the first base backup in MinIO, and runs a
+  `Database` on it. The RDBMS cluster flow gains the case where a `PointInTimeRestore` recovers
+  the server: write, note the time, write more, restore, and read only the first write.
+
+## Docs
+
+- New `docs/crds/databaseserver.md` and `docs/crds/databaseserverpreset.md`, from `TEMPLATE.md`.
+- `docs/crds/pointintimerestore.md`: the claim that the operator never restores the server
+  becomes conditional; the new phase; the dedicated-server rule in terms of the identifier.
+- `docs/crds/databaseserverconfig.md` and `docs/crds/database.md`: namespaced scope, the Secret
+  in the same namespace, the identifier, the removed fields, the stale line about `pitr`.
+- `docs/guides/secondary-storage.md`: one server per orchestration cluster as the recommended
+  topology and why; the shared-server topology and what it gives up.
+- `docs/installation.md`, `docs/getting-started.md`, `README.md`: CloudNativePG, cert-manager,
+  and the plugin as optional installs, next to ECK.
+- `docs/architecture.md` and `docs/crds/index.md`: the new kinds and the scope change.
+
+## Risks
+
+- The Barman Cloud plugin is below 1.0 and sits on the durability path. Mitigation: the e2e
+  flow exercises a real recovery on every PR, and the version is pinned and bumped by renovate.
+- A `DatabaseServer` with `instances: 1` has no failover. The preset docs say so and the
+  production preset sets 2.
+- The endpoint changes on every recovery. `CamundaCluster` rolls its pods; the docs state that a
+  point-in-time restore restarts the orchestration cluster, which the existing suspend already
+  implies.
+- Major version upgrades of PostgreSQL are the user's operation. Raising `spec.version` across a
+  major is refused until a later epic defines the path.
+- CloudNativePG serves its own `Database` kind in `postgresql.cnpg.io`. The docs name the group
+  whenever both could be meant.
+
+## Implementation breakdown
+
+Sub-PRs on `feat/cnpg-database-server`, in this order; the plan holds the contracts:
+
+1. Namespaced `DatabaseServerConfig` and `Database`, the system identifier, the collision key,
+   and the `PointInTimeRestore` rules on it (#128).
+2. The `cnpgcluster` and `barmanobjectstore` wrappers with the CloudNativePG dependency.
+3. `DatabaseServer` types, preset, controller, components, without-CRD start, and CRD docs.
+4. `PointInTimeRestore` recovery phase and `DatabaseServer` recovery.
+5. e2e flows, installation and guide docs.
