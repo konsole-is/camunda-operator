@@ -82,7 +82,14 @@ const (
 	// (https://github.com/camunda/camunda/issues/59963). One preset carries
 	// one root URL, so a second Optimize needs its callback URL added to the
 	// client by hand.
-	keycloakEnvInitOptimizeRootURL   = "KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"
+	keycloakEnvInitOptimizeRootURL = "KEYCLOAK_INIT_OPTIMIZE_ROOT_URL"
+	// keycloakEnvInitConsoleRootURL is the URL that browsers reach Console
+	// at. The configuration-variables page names OPERATE, OPTIMIZE, TASKLIST,
+	// and WEBMODELER as the components, and it leaves Console out. The preset
+	// exists all the same: charts/camunda-platform-8.9/templates/identity/
+	// configmap.yaml sets keycloak.init.console.root-url and defines a
+	// component-presets.console block with the console client, the
+	// console-api resource server, and the Console role.
 	keycloakEnvInitConsoleRootURL    = "KEYCLOAK_INIT_CONSOLE_ROOT_URL"
 	keycloakEnvInitWebModelerRootURL = "KEYCLOAK_INIT_WEBMODELER_ROOT_URL"
 )
