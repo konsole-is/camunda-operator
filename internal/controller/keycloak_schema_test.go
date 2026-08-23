@@ -46,10 +46,9 @@ var _ = Describe("Keycloak types", func() {
 				Instances: new(int32(2)),
 				Image:     "camunda/keycloak:quay-optimized-26.0.7",
 				DB: &keycloak.KeycloakDBSpec{
-					Vendor:   "postgres",
-					Host:     "postgres.my-cluster-ns.svc",
-					Port:     new(int32(5432)),
-					Database: "keycloak",
+					Vendor: "postgres",
+					URL:    "jdbc:aws-wrapper:postgresql://postgres.my-cluster-ns.svc:5432/keycloak",
+					Schema: "public",
 					UsernameSecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{Name: "keycloak-db"},
 						Key:                  "username",
@@ -68,9 +67,9 @@ var _ = Describe("Keycloak types", func() {
 					Strict:   new(false),
 				},
 				Ingress: &keycloak.KeycloakIngressSpec{Enabled: new(false)},
+				Proxy:   &keycloak.KeycloakProxySpec{Headers: "xforwarded"},
 				AdditionalOptions: []keycloak.KeycloakValueOrSecret{
 					{Name: "http-relative-path", Value: "/auth"},
-					{Name: "proxy-headers", Value: "xforwarded"},
 					{Name: "log-level", Secret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{Name: "keycloak-options"},
 						Key:                  "log-level",

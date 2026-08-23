@@ -122,8 +122,9 @@ E2E_CAMUNDA_MINOR ?= 8.9
 # default 10 minutes of go test. The Optimize flow adds an Elasticsearch, a
 # Keycloak, a cluster, and two Optimize workloads of its own. The restore specs
 # of both storage paths add two backups, two restores, and two point-in-time
-# restores on top of that.
-E2E_TIMEOUT ?= 120m
+# restores on top of that. The two management plane flows add a Keycloak, a
+# Management Identity, a Console, and two Web Modeler processes each.
+E2E_TIMEOUT ?= 180m
 
 # setup-test-e2e ends with an unconditional context switch. The e2e suite
 # drives kubectl through the current context, and only a cluster that kind

@@ -318,8 +318,8 @@ func dumpDiagnostics(testNamespace string) {
 		"resources": {
 			"get",
 			"all,pvc,secrets,elasticsearchclusters,databases,databaseconfigs,secondarystorageconfigs," +
-				"camundaclusters,camundaoptimizes,logicalbackupelasticsearches," +
-				"logicalbackuprdbmses,backupschedules," +
+				"camundaclusters,camundamanagementclusters,camundaoptimizes," +
+				"logicalbackupelasticsearches,logicalbackuprdbmses,backupschedules," +
 				"logicalrestoreelasticsearches,logicalrestorerdbmses,pointintimerestores",
 			"-n", testNamespace,
 		},
@@ -343,9 +343,21 @@ func dumpDiagnostics(testNamespace string) {
 		"elasticsearch of ECK": {
 			"get", "elasticsearches.elasticsearch.k8s.elastic.co", "-n", testNamespace, "-o", "yaml",
 		},
+		// The Keycloak Operator owns this resource the same way, and its
+		// status is the only record of why a Keycloak did not come up. It is
+		// absent when the suite skipped the Keycloak Operator.
+		"keycloak of the Keycloak Operator": {
+			"get", "keycloaks.k8s.keycloak.org", "-n", testNamespace, "-o", "yaml",
+		},
 		"pods": {"describe", "pods", "-n", testNamespace},
 		"workload logs": {
 			"logs", "-l", "camunda.io/cluster", "-n", testNamespace, "--all-containers", "--prefix", "--tail=200",
+		},
+		// The workloads of a management plane carry the owner label of their
+		// own kind, so the selector above reaches none of them.
+		"management plane logs": {
+			"logs", "-l", "camunda.io/management-cluster", "-n", testNamespace,
+			"--all-containers", "--prefix", "--tail=200",
 		},
 	} {
 		out, err := utils.Kubectl(args...)
@@ -497,6 +509,7 @@ var customResourceKinds = []string{
 	"secondarystorageconfigs",
 	"databaseconfigs",
 	"camundaclusters",
+	"camundamanagementclusters",
 	"camundaoptimizes",
 	"logicalbackupelasticsearches",
 	"logicalbackuprdbmses",

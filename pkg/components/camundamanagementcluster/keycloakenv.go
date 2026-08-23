@@ -46,11 +46,13 @@ const (
 	keycloakEnvSetupPassword = "KEYCLOAK_SETUP_PASSWORD"
 	keycloakEnvSetupRealm    = "KEYCLOAK_SETUP_REALM"
 	keycloakEnvSetupClientID = "KEYCLOAK_SETUP_CLIENT_ID"
-	// keycloakEnvIdentityClientID and keycloakEnvIdentityClientSecret are the
-	// credentials of the Identity client in the realm. Identity creates the
-	// client with this secret and then authenticates with it.
-	keycloakEnvIdentityClientID     = "IDENTITY_CLIENT_ID"
-	keycloakEnvIdentityClientSecret = "IDENTITY_CLIENT_SECRET"
+	// keycloakEnvIdentityClientID is the id of the Identity client in the
+	// realm. Identity creates the client and makes a new secret for it on
+	// every start, so the operator sets the id only. IDENTITY_CLIENT_SECRET
+	// is for a realm that a person prepared by hand, the page above, and the
+	// operator does not render it. With it set, Identity signs in with client
+	// credentials before the realm exists and never runs its setup.
+	keycloakEnvIdentityClientID = "IDENTITY_CLIENT_ID"
 	// keycloakEnvIssuerURL is the front-channel issuer of the realm, used for
 	// the login redirect and the logout.
 	keycloakEnvIssuerURL = "IDENTITY_AUTH_PROVIDER_ISSUER_URL"
@@ -192,12 +194,6 @@ func keycloakProviderEnv(in Input) []corev1.EnvVar {
 		{Name: keycloakEnvIssuerURL, Value: provider.IssuerURL},
 		{Name: keycloakEnvBackendURL, Value: provider.IssuerBackendURL},
 		{Name: keycloakEnvIdentityClientID, Value: provider.Clients.Identity.ID},
-	}
-	if ref := provider.Clients.Identity.SecretRef; ref != nil {
-		env = append(env, corev1.EnvVar{
-			Name:      keycloakEnvIdentityClientSecret,
-			ValueFrom: secretSource(ref.Name, ref.Key),
-		})
 	}
 	if admin := provider.AdminCredentials; admin != nil {
 		env = append(

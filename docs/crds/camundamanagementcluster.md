@@ -159,15 +159,14 @@ The redirect URI of each component is the one Camunda documents in [component-sp
 
 ### The generated Secrets
 
-In the two Keycloak modes the operator generates the credentials that Management Identity gives to the clients and to the first user:
+In the two Keycloak modes the operator generates the credentials that Management Identity gives to the Optimize client and to the first user:
 
 | Secret | Key | What it holds |
 | --- | --- | --- |
-| `my-management-identity-client` | `client-secret` | The client secret of Management Identity. |
 | `my-management-optimize-client` | `client-secret` | The client secret of Optimize. The `ManagementAuthConfig` points at this Secret. |
 | `my-management-identity-admin` | `password` | The password of the first Keycloak user. Absent while `spec.identity.admin.passwordSecretRef` names a Secret of your own. |
 
-Delete a client Secret to rotate that client secret. The operator generates a new value, writes it back, and rolls the pods that read it.
+Delete `my-management-optimize-client` to rotate that client secret. The operator generates a new value, writes it back, and rolls the pods that read it. Management Identity holds no client secret of its own in these modes. It creates its `camunda-identity` client and gives it a new secret on every start.
 
 > **Caution:** Do not delete `my-management-identity-admin`. Management Identity sets that password on the Keycloak user once, on its first start, and never reads it again. A deleted Secret comes back with a new password that the Keycloak user does not hold. Only a password reset in Keycloak recovers the account. To rotate the password, change it in Keycloak.
 
@@ -533,6 +532,7 @@ spec:
     # object. Optional. Run Keycloak through the Keycloak Operator.
     keycloak:
       # string. Required. Keycloak version, as major.minor.patch. Supported: 26.0.0 and later, below 27.0.0.
+      # With Management Identity 8.9, stay below 26.7.0. See "The operator runs Keycloak".
       version: "26.6.4"
       # string. Required. The URL a browser reaches Keycloak at, including the /auth path. It is the issuer of every token.
       externalUrl: "https://camunda.example.com/auth"
@@ -669,7 +669,7 @@ The API server enforces these at admission:
 
 The operator checks these after you apply the resource and reports them on `Ready`:
 
-- `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside a range reports `UnsupportedVersion`.
+- `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside a range reports `UnsupportedVersion`. The operator accepts `26.7.0` and later, and Management Identity 8.9 does not start against them. See [The operator runs Keycloak](#the-operator-runs-keycloak).
 - Management Identity, Keycloak, and Web Modeler name three different `DatabaseConfig` resources. Two that name one report `InvalidReference`.
 - Every referenced resource and Secret exists. A missing one reports `InvalidReference` or `MissingSecret`.
 

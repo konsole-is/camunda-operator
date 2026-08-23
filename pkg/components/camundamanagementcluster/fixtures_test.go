@@ -296,11 +296,9 @@ func newKeycloakInput(t *testing.T, managed bool, mutate func(in *Input)) Input 
 	return newInput(t, func(in *Input) {
 		in.Cluster = newKeycloakCluster(managed, nil)
 		in.Secrets = GeneratedSecrets{
-			IdentityClient: IdentityClientSecretName(in.Cluster),
 			OptimizeClient: OptimizeClientSecretName(in.Cluster),
 			IdentityAdmin:  IdentityAdminSecretName(in.Cluster),
 			Values: map[string]credentials.Password{
-				IdentityClientSecretName(in.Cluster): {Value: "golden-identity-client"},
 				OptimizeClientSecretName(in.Cluster): {Value: "golden-optimize-client"},
 				IdentityAdminSecretName(in.Cluster):  {Value: "golden-admin-password"},
 			},

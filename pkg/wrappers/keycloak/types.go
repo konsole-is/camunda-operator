@@ -94,8 +94,13 @@ type KeycloakSpec struct {
 	// default.
 	// +optional
 	Ingress *KeycloakIngressSpec `json:"ingress,omitempty"`
+	// Proxy configures the reverse proxy that stands in front of Keycloak.
+	// +optional
+	Proxy *KeycloakProxySpec `json:"proxy,omitempty"`
 	// AdditionalOptions are Keycloak server options that have no field of
 	// their own, as the keys of https://www.keycloak.org/server/all-config.
+	// The Keycloak Operator reports an option that does have a field of its
+	// own as a warning on the resource, so a first-class field always wins.
 	// +optional
 	AdditionalOptions []KeycloakValueOrSecret `json:"additionalOptions,omitempty"`
 	// Unsupported carries the pod template that the Keycloak Operator merges
@@ -169,6 +174,17 @@ type KeycloakIngressSpec struct {
 	// Keycloak that this operator runs is yours, so it is off.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// KeycloakProxySpec configures the reverse proxy settings of a Keycloak.
+// +kubebuilder:object:generate=true
+type KeycloakProxySpec struct {
+	// Headers is the proxy header set that Keycloak reads the scheme and the
+	// host of a request from: forwarded or xforwarded. An unset value makes
+	// Keycloak ignore both, so the URLs it builds carry the address it
+	// listens on rather than the one the browser used.
+	// +optional
+	Headers string `json:"headers,omitempty"`
 }
 
 // KeycloakValueOrSecret is one Keycloak server option. It carries a literal

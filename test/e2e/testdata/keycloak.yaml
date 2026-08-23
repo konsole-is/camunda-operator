@@ -1,18 +1,26 @@
-# A single Keycloak realm for the OIDC flow of the CamundaCluster suite. It
-# serves one confidential client for both the browser login and the machine
-# callers, and one static user. The data lives in the development-mode
-# in-memory database: the server exists for one suite run.
+# A single Keycloak realm for the flows of the suite that authenticate against
+# an identity provider they do not run themselves. It serves one confidential
+# client for both the browser login and the machine callers, the clients of a
+# management plane in the oidc mode, and one static user. The data lives in
+# the development-mode in-memory database: the server exists for one suite
+# run.
 #
-# The realm export holds the client secret and the password of the user, so it
-# is a Secret and not a ConfigMap, as the PostgreSQL fixture of the suite
+# The realm export holds the client secrets and the password of the user, so
+# it is a Secret and not a ConfigMap, as the PostgreSQL fixture of the suite
 # already does with its credentials.
 #
-# The client carries two protocol mappers, and the flow does not work without
-# either one. The audience mapper puts the client id in "aud", because
-# Keycloak otherwise issues "aud": "account" and the Camunda audiences check
-# refuses the token. The hardcoded-claim mapper puts "client_id" in the access
-# token, because a Keycloak token names its client in "azp", and "azp" is also
-# present in the tokens of persons.
+# The "camunda" client carries two protocol mappers, and the CamundaCluster
+# flow does not work without either one. The audience mapper puts the client
+# id in "aud", because Keycloak otherwise issues "aud": "account" and the
+# Camunda audiences check refuses the token. The hardcoded-claim mapper puts
+# "client_id" in the access token, because a Keycloak token names its client
+# in "azp", and "azp" is also present in the tokens of persons.
+#
+# The four "management-" clients are the ones a CamundaManagementCluster in
+# the oidc mode names in spec.auth.oidc.management.clients. Management
+# Identity creates no client in that mode, so the realm has to hold them
+# already. Every confidential one takes the same secret, so a single Secret of
+# the namespace serves all of them.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -60,6 +68,88 @@ stringData:
                 "access.token.claim": "true",
                 "id.token.claim": "false",
                 "userinfo.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": "management-identity",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "camunda-e2e-secret",
+          "standardFlowEnabled": true,
+          "serviceAccountsEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"],
+          "protocolMappers": [
+            {
+              "name": "management-identity-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.client.audience": "management-identity",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": "management-optimize",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "camunda-e2e-secret",
+          "standardFlowEnabled": true,
+          "serviceAccountsEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"],
+          "protocolMappers": [
+            {
+              "name": "management-optimize-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.client.audience": "management-optimize",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": "management-web-modeler",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"]
+        },
+        {
+          "clientId": "management-web-modeler-api",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "camunda-e2e-secret",
+          "standardFlowEnabled": true,
+          "serviceAccountsEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"],
+          "protocolMappers": [
+            {
+              "name": "management-web-modeler-api-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.client.audience": "management-web-modeler-api",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
               }
             }
           ]
