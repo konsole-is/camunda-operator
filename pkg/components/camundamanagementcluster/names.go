@@ -41,8 +41,8 @@ const (
 	// ComponentSecrets is the Secrets that the operator generates.
 	ComponentSecrets = "management-secrets"
 	// ComponentManagementAuth is the ManagementAuthConfig that the management
-	// cluster writes. The contract is no workload, so a selector on the owner
-	// and this value reaches the contract alone.
+	// cluster writes. The contract is not a workload, so a selector on the
+	// owner and this value reaches the contract alone.
 	ComponentManagementAuth = "management-auth"
 )
 
