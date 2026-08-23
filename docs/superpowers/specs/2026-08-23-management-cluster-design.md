@@ -548,8 +548,12 @@ it, and so is every Job image the backup and restore controllers render.
   password in Keycloak modes) live in the management namespace and are owned by the CR. All of
   them rotate by deletion except the Identity admin password: Management Identity reads it once,
   at bootstrap, and creates the Keycloak user with it, so a new password would not reach that
-  user. Its Secret carries no apply precondition, and deleting it loses the password rather than
-  rotating it.
+  user. Its Secret carries no apply precondition, so a deletion does not rotate the password. The
+  next reconcile re-creates the Secret with a new password, and the Keycloak user keeps the one
+  it was created with. Only a password reset in Keycloak gives access back. No guard prevents
+  this: a marker that says the administrator has bootstrapped cannot live on the Secret, because
+  the deletion it guards removes it, and a marker on the CR would leave the Identity pods
+  mounting a Secret that the operator no longer publishes.
 - The only credential that crosses a namespace is the Optimize client secret reference in the
   cluster-scoped contract, which `CamundaOptimize` already mirrors into its own namespace.
 - The cluster admin credential is read by the management controller to create the Web Modeler
