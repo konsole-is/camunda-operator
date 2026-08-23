@@ -43,6 +43,15 @@ const (
 
 	// ClusterKey names the owning CamundaCluster.
 	ClusterKey = "camunda.io/cluster"
+	// ClusterNamespaceKey names the namespace of a CamundaCluster that an
+	// object of another namespace relates to. ClusterKey alone does not
+	// identify the cluster then, because two clusters in two namespaces can
+	// share a name.
+	ClusterNamespaceKey = "camunda.io/cluster-namespace"
+	// ClusterUIDKey names the UID of the CamundaCluster that an object
+	// relates to. It tells a cluster apart from a later one of the same name
+	// and namespace.
+	ClusterUIDKey = "camunda.io/cluster-uid"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
 	ElasticsearchClusterKey = "camunda.io/elasticsearch-cluster"
 	// DatabaseKey names the owning Database.

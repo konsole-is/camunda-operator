@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -94,9 +95,8 @@ var webModelerAuthorizations = []camundaadmin.Authorization{
 
 // syncWebModelerUsers gives Web Modeler a user of its own on every attached
 // basic-auth cluster, publishes its password in a Secret of the management
-// namespace, and removes the user from every other cluster: one that left the
-// selector, one that no longer authenticates with basic credentials, and every
-// cluster of a management plane that deploys no Web Modeler.
+// namespace, and withdraws the user from every cluster the management plane
+// no longer serves.
 //
 // Web Modeler asks a person for the credentials of a basic-auth cluster in its
 // deploy dialog: no setting of Web Modeler carries them. This user is what
@@ -114,254 +114,27 @@ func (r *Reconciler) syncWebModelerUsers(
 	attached []components.AttachedCluster,
 	rows []v1.AttachedClusterStatus,
 ) error {
-	basic := map[client.ObjectKey]components.AttachedCluster{}
+	served := map[types.UID]bool{}
+
+	var errs []error
 	if mc.Spec.WebModeler != nil {
 		for _, cluster := range attached {
 			if cluster.AuthMethod != v1.AuthenticationMethodBasic {
 				continue
 			}
-			basic[client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name}] = cluster
-		}
-	}
+			served[cluster.UID] = true
 
-	var firstErr error
-	for i := range clusters {
-		cluster := &clusters[i]
-
-		served, serve := basic[client.ObjectKeyFromObject(cluster)]
-		if !serve {
-			if err := r.withdrawWebModelerUser(ctx, mc, cluster); err != nil && firstErr == nil {
-				firstErr = err
+			failure, err := r.webModelerUser(ctx, mc, cluster)
+			if err != nil {
+				errs = append(errs, err)
 			}
-			continue
-		}
-
-		failure, err := r.webModelerUser(ctx, mc, served)
-		if err != nil && firstErr == nil {
-			firstErr = err
-		}
-		if failure != "" {
-			markCluster(rows, served, v1.ReasonBasicAuthUserFailed, failure)
+			if failure != "" {
+				markCluster(rows, cluster, v1.ReasonBasicAuthUserFailed, failure)
+			}
 		}
 	}
 
-	return firstErr
-}
-
-// markCluster records a reason and a message on the row of one cluster. It
-// leaves Attached alone. The management plane still serves the cluster and
-// Web Modeler still lists it. Only the user of Web Modeler is missing.
-func markCluster(
-	rows []v1.AttachedClusterStatus,
-	cluster components.AttachedCluster,
-	reason, message string,
-) {
-	for i := range rows {
-		if rows[i].Name == cluster.Name && rows[i].Namespace == cluster.Namespace {
-			rows[i].Reason = reason
-			rows[i].Message = message
-
-			return
-		}
-	}
-}
-
-// webModelerUser converges the user on one cluster. It returns the message of
-// the row of that cluster when the cluster refused the work, and an error when
-// the Kubernetes API did.
-//
-// The password is published only after the cluster holds it, under a marker
-// that says so. A crash between the two therefore leaves a Secret without the
-// marker, and the next reconcile generates another password and sets that one
-// instead of trusting a value the cluster may never have seen.
-func (r *Reconciler) webModelerUser(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-	cluster components.AttachedCluster,
-) (string, error) {
-	key := client.ObjectKey{
-		Namespace: mc.Namespace,
-		Name:      components.WebModelerClusterUserSecretName(mc, cluster.UID),
-	}
-
-	published, err := r.publishedUser(ctx, key)
-	if err != nil {
-		return "", err
-	}
-	if published.applied {
-		return "", nil
-	}
-
-	password := published.password
-	if password.Value == "" {
-		if password, err = credentials.LookupOrNew(
-			ctx, r.APIReader, key, components.WebModelerClusterUserPasswordKey,
-		); err != nil {
-			return "", err
-		}
-	}
-
-	users, failure, err := r.clusterUserClient(ctx, cluster)
-	if err != nil || failure != "" {
-		return failure, err
-	}
-
-	if failure := ensureClusterUser(ctx, users, password.Value); failure != "" {
-		return failure, nil
-	}
-
-	return "", r.publishUserSecret(ctx, mc, key, password)
-}
-
-// publishedUserSecret is the Web Modeler user Secret of one cluster as a
-// reconcile found it.
-type publishedUserSecret struct {
-	// password is the published password and the Secret it came from, so a
-	// republish can carry the apply precondition of a reused credential.
-	password credentials.Password
-	// applied reports that the cluster holds the user under that password,
-	// with its authorizations.
-	applied bool
-}
-
-// publishedUser reads the user Secret at key. A Secret that is not there is
-// the zero value, which means that nothing has been published yet.
-func (r *Reconciler) publishedUser(
-	ctx context.Context,
-	key client.ObjectKey,
-) (publishedUserSecret, error) {
-	var found corev1.Secret
-	if err := r.APIReader.Get(ctx, key, &found); err != nil {
-		if apierrors.IsNotFound(err) {
-			return publishedUserSecret{}, nil
-		}
-		return publishedUserSecret{}, fmt.Errorf("reading Secret %q: %w", key, err)
-	}
-
-	return publishedUserSecret{
-		password: credentials.Password{
-			Value:     string(found.Data[components.WebModelerClusterUserPasswordKey]),
-			SourceUID: found.UID,
-		},
-		applied: string(found.Data[components.WebModelerClusterUserAppliedKey]) == webModelerUserApplied,
-	}, nil
-}
-
-// clusterUserClient builds a client for the user API of one cluster,
-// authenticated as the administrator of that cluster. A missing administrator
-// credential is a message for the row of the cluster: the cluster publishes
-// its own state, and one broken cluster must not stop the management plane.
-func (r *Reconciler) clusterUserClient(
-	ctx context.Context,
-	cluster components.AttachedCluster,
-) (*camundaadmin.UserClient, string, error) {
-	key := client.ObjectKey{
-		Namespace: cluster.Namespace,
-		// The name of the admin Secret follows from the cluster name alone.
-		Name: clustercomponents.AdminSecretName(
-			&v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: cluster.Name}},
-		),
-	}
-
-	var admin corev1.Secret
-	if err := r.APIReader.Get(ctx, key, &admin); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Sprintf("Secret %q with the cluster administrator not found", key), nil
-		}
-		return nil, "", fmt.Errorf("reading Secret %q: %w", key, err)
-	}
-
-	users, err := camundaadmin.NewUserClient(camundaadmin.UserBinding{
-		Endpoint: cluster.RESTEndpoint,
-		Version:  cluster.Version,
-		Auth: camundaadmin.Auth{
-			Username: string(admin.Data[clustercomponents.AdminUsernameKey]),
-			Password: string(admin.Data[clustercomponents.AdminPasswordKey]),
-		},
-	})
-	if err != nil {
-		return nil, err.Error(), nil
-	}
-
-	return users, "", nil
-}
-
-// ensureClusterUser creates the Web Modeler user with password and grants it
-// the authorizations it needs. A user that the cluster already holds takes the
-// new password and the same grants again. The caller reaches this function
-// only while the published Secret carries no applied marker, so a user that a
-// failed pass left without permissions, and one that was there before the
-// operator, both end up with them. A repeated grant adds an authorization row
-// and no access, because the endpoint creates rather than converges.
-//
-// It returns the message of the row of the cluster, or an empty string when
-// the cluster holds the user.
-func ensureClusterUser(ctx context.Context, users *camundaadmin.UserClient, password string) string {
-	user := camundaadmin.User{
-		Username: components.WebModelerClusterUsername,
-		Name:     components.WebModelerClusterUsername,
-		Email:    webModelerUserEmail,
-	}
-
-	switch err := users.CreateUser(ctx, user, password); {
-	case errors.Is(err, camundaadmin.ErrAlreadyExists):
-		if err := users.UpdateUserPassword(ctx, user, password); err != nil {
-			return fmt.Sprintf("Setting the password of the user %q: %v", user.Username, err)
-		}
-	case err != nil:
-		return fmt.Sprintf("Creating the user %q: %v", user.Username, err)
-	}
-
-	for _, authorization := range webModelerAuthorizations {
-		authorization.OwnerID = user.Username
-		if err := users.CreateAuthorization(ctx, authorization); err != nil {
-			return fmt.Sprintf(
-				"Granting %v on %s to the user %q: %v",
-				authorization.PermissionTypes, authorization.ResourceType, user.Username, err,
-			)
-		}
-	}
-
-	return ""
-}
-
-// publishUserSecret writes the password of the user together with the marker
-// that says the cluster holds it. A reused password carries its apply
-// precondition, so a delete of the Secret rotates the credential instead of
-// republishing one the operator can no longer prove.
-func (r *Reconciler) publishUserSecret(
-	ctx context.Context,
-	mc *v1.CamundaManagementCluster,
-	key client.ObjectKey,
-	password credentials.Password,
-) error {
-	secret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        key.Name,
-			Namespace:   key.Namespace,
-			Labels:      labels.Managed(labels.ManagementCluster(mc.Name), webModelerUserComponent),
-			Annotations: password.PreconditionAnnotations(),
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			components.WebModelerClusterUserPasswordKey: []byte(password.Value),
-			components.WebModelerClusterUserAppliedKey:  []byte(webModelerUserApplied),
-		},
-	}
-	if err := ctrl.SetControllerReference(mc, secret, r.Scheme); err != nil {
-		return fmt.Errorf("owning Secret %q: %w", key, err)
-	}
-
-	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
-	if err := r.componentClient.Patch(
-		ctx, secret, client.Apply,
-		client.FieldOwner(components.FieldManager), client.ForceOwnership,
-	); err != nil {
-		return fmt.Errorf("publishing Secret %q: %w", key, err)
-	}
-
-	return nil
+	return errors.Join(append(errs, r.withdrawUnservedUsers(ctx, mc, clusters, served))...)
 }
 
 // withdrawWebModelerUsers removes the Web Modeler user from every
@@ -372,36 +145,72 @@ func (r *Reconciler) withdrawWebModelerUsers(
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 ) error {
-	return r.syncWebModelerUsers(ctx, mc, clusters, nil, nil)
+	return r.withdrawUnservedUsers(ctx, mc, clusters, nil)
+}
+
+// withdrawUnservedUsers removes the user of every published Secret whose
+// cluster is not in served, and deletes the Secret with it.
+//
+// The Secrets are the record of which users exist, so one withdrawal covers
+// every way a cluster stops being served: it left the selector, it moved to
+// oidc, the spec dropped Web Modeler, or Kubernetes no longer holds the
+// cluster at all. A cluster is never read one at a time; clusters is the list
+// the reconcile already made, and it names the cluster to call.
+func (r *Reconciler) withdrawUnservedUsers(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+	served map[types.UID]bool,
+) error {
+	var users corev1.SecretList
+	if err := r.APIReader.List(
+		ctx, &users,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(
+			labels.Managed(labels.ManagementCluster(mc.Name), webModelerUserComponent),
+		),
+	); err != nil {
+		return fmt.Errorf("listing the Web Modeler user Secrets: %w", err)
+	}
+
+	byUID := make(map[types.UID]*v1.CamundaCluster, len(clusters))
+	for i := range clusters {
+		byUID[clusters[i].UID] = &clusters[i]
+	}
+
+	var errs []error
+	for i := range users.Items {
+		published := &users.Items[i]
+
+		uid := types.UID(published.Labels[labels.ClusterUIDKey])
+		if served[uid] {
+			continue
+		}
+		errs = append(errs, r.withdrawWebModelerUser(ctx, mc, published, byUID[uid]))
+	}
+
+	return errors.Join(errs...)
 }
 
 // withdrawWebModelerUser removes the user from one cluster and deletes the
-// Secret that published its password. The Secret is what records that the
-// cluster holds the user, so a cluster without one needs no call at all.
+// Secret that published its password. A nil cluster is one that Kubernetes no
+// longer holds, and leaves nothing to remove the user from.
 func (r *Reconciler) withdrawWebModelerUser(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
+	published *corev1.Secret,
 	cluster *v1.CamundaCluster,
 ) error {
-	key := client.ObjectKey{
-		Namespace: mc.Namespace,
-		Name:      components.WebModelerClusterUserSecretName(mc, cluster.UID),
+	if cluster != nil {
+		r.removeWebModelerUser(ctx, mc, cluster)
 	}
-
-	var published corev1.Secret
-	if err := r.APIReader.Get(ctx, key, &published); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("reading Secret %q: %w", key, err)
-	}
-
-	r.removeWebModelerUser(ctx, mc, cluster)
 
 	// The password goes with the user. A Secret that outlived the user would
 	// let a later reconcile trust a credential the cluster no longer holds.
-	if err := r.Delete(ctx, &published); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("deleting Secret %q: %w", key, err)
+	if err := r.Delete(ctx, published); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf(
+			"deleting Secret %q: %w", client.ObjectKeyFromObject(published), err,
+		)
 	}
 
 	return nil
@@ -447,4 +256,253 @@ func (r *Reconciler) removeWebModelerUser(
 		"Could not remove the user %q from CamundaCluster %q: %s",
 		components.WebModelerClusterUsername, cluster.Namespace+"/"+cluster.Name, failure,
 	)
+}
+
+// clusterUserClient builds a client for the user API of one cluster,
+// authenticated as the administrator of that cluster. A missing administrator
+// credential is a message for the row of the cluster: the cluster publishes
+// its own state, and one broken cluster must not stop the management plane.
+func (r *Reconciler) clusterUserClient(
+	ctx context.Context,
+	cluster components.AttachedCluster,
+) (*camundaadmin.UserClient, string, error) {
+	key := client.ObjectKey{
+		Namespace: cluster.Namespace,
+		// The name of the admin Secret follows from the cluster name alone.
+		Name: clustercomponents.AdminSecretName(
+			&v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: cluster.Name}},
+		),
+	}
+
+	var admin corev1.Secret
+	if err := r.APIReader.Get(ctx, key, &admin); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Sprintf("Secret %q with the cluster administrator not found", key), nil
+		}
+		return nil, "", fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+
+	users, err := camundaadmin.NewUserClient(camundaadmin.UserBinding{
+		Endpoint: cluster.RESTEndpoint,
+		Version:  cluster.Version,
+		Auth: camundaadmin.Auth{
+			Username: string(admin.Data[clustercomponents.AdminUsernameKey]),
+			Password: string(admin.Data[clustercomponents.AdminPasswordKey]),
+		},
+	})
+	if err != nil {
+		return nil, err.Error(), nil
+	}
+
+	return users, "", nil
+}
+
+// webModelerUser converges the user on one cluster. It returns the message of
+// the row of that cluster when the cluster refused the work, and an error when
+// the Kubernetes API did.
+//
+// The password is published before the cluster is called and marked only once
+// the cluster holds it. A crash between the two therefore leaves a Secret
+// without the marker, and the next reconcile sets the password it already
+// published rather than a second one that nothing has seen.
+func (r *Reconciler) webModelerUser(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	cluster components.AttachedCluster,
+) (string, error) {
+	key := client.ObjectKey{
+		Namespace: mc.Namespace,
+		Name:      components.WebModelerClusterUserSecretName(mc, cluster.UID),
+	}
+
+	published, err := r.publishedUser(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	if published.applied {
+		return "", nil
+	}
+
+	password := published.password
+	if password.Value == "" {
+		if password, err = credentials.LookupOrNew(
+			ctx, r.APIReader, key, components.WebModelerClusterUserPasswordKey,
+		); err != nil {
+			return "", err
+		}
+	}
+
+	if password, err = r.publishUserSecret(ctx, mc, cluster, key, password, false); err != nil {
+		return "", err
+	}
+
+	users, failure, err := r.clusterUserClient(ctx, cluster)
+	if err != nil || failure != "" {
+		return failure, err
+	}
+
+	if failure := ensureClusterUser(ctx, users, password.Value); failure != "" {
+		return failure, nil
+	}
+
+	_, err = r.publishUserSecret(ctx, mc, cluster, key, password, true)
+
+	return "", err
+}
+
+// publishedUserSecret is the Web Modeler user Secret of one cluster as a
+// reconcile found it.
+type publishedUserSecret struct {
+	// password is the published password and the Secret it came from, so a
+	// republish can carry the apply precondition of a reused credential.
+	password credentials.Password
+	// applied reports that the cluster holds the user under that password,
+	// with its authorizations.
+	applied bool
+}
+
+// publishedUser reads the user Secret at key. A Secret that is not there is
+// the zero value, which means that nothing has been published yet.
+func (r *Reconciler) publishedUser(
+	ctx context.Context,
+	key client.ObjectKey,
+) (publishedUserSecret, error) {
+	var found corev1.Secret
+	if err := r.APIReader.Get(ctx, key, &found); err != nil {
+		if apierrors.IsNotFound(err) {
+			return publishedUserSecret{}, nil
+		}
+		return publishedUserSecret{}, fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+
+	return publishedUserSecret{
+		password: credentials.Password{
+			Value:     string(found.Data[components.WebModelerClusterUserPasswordKey]),
+			SourceUID: found.UID,
+		},
+		applied: string(found.Data[components.WebModelerClusterUserAppliedKey]) == webModelerUserApplied,
+	}, nil
+}
+
+// publishUserSecret applies the Secret that publishes the password of the user
+// on one cluster, and returns the password bound to the Secret the server now
+// holds, so that a later apply of the same Secret carries the rotation
+// precondition of the credential.
+//
+// applied writes the marker that says the cluster holds the user under this
+// password, with its authorizations.
+func (r *Reconciler) publishUserSecret(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	cluster components.AttachedCluster,
+	key client.ObjectKey,
+	password credentials.Password,
+	applied bool,
+) (credentials.Password, error) {
+	data := map[string][]byte{
+		components.WebModelerClusterUserPasswordKey: []byte(password.Value),
+	}
+	if applied {
+		data[components.WebModelerClusterUserAppliedKey] = []byte(webModelerUserApplied)
+	}
+
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        key.Name,
+			Namespace:   key.Namespace,
+			Labels:      webModelerUserLabels(mc, cluster),
+			Annotations: password.PreconditionAnnotations(),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: data,
+	}
+	if err := ctrl.SetControllerReference(mc, secret, r.Scheme); err != nil {
+		return password, fmt.Errorf("owning Secret %q: %w", key, err)
+	}
+
+	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
+	if err := r.componentClient.Patch(
+		ctx, secret, client.Apply,
+		client.FieldOwner(components.FieldManager), client.ForceOwnership,
+	); err != nil {
+		return password, fmt.Errorf("publishing Secret %q: %w", key, err)
+	}
+	password.SourceUID = secret.UID
+
+	return password, nil
+}
+
+// webModelerUserLabels returns the labels of a user Secret: the ones every
+// managed resource carries, and the cluster the user belongs to. The name of
+// the Secret holds only a hash of the cluster UID, so without them nothing on
+// the object says which cluster it serves, and the withdrawal has nothing to
+// select on.
+func webModelerUserLabels(
+	mc *v1.CamundaManagementCluster,
+	cluster components.AttachedCluster,
+) map[string]string {
+	set := labels.Managed(labels.ManagementCluster(mc.Name), webModelerUserComponent)
+	set[labels.ClusterKey] = labels.OwnerName(cluster.Name)
+	set[labels.ClusterNamespaceKey] = cluster.Namespace
+	set[labels.ClusterUIDKey] = string(cluster.UID)
+
+	return set
+}
+
+// ensureClusterUser creates the Web Modeler user with password and grants it
+// the authorizations it needs. A user that the cluster already holds takes the
+// new password and the same grants again. The caller reaches this function
+// only while the published Secret carries no applied marker, so a user that a
+// failed pass left without permissions, and one that was there before the
+// operator, both end up with them. A repeated grant adds an authorization row
+// and no access, because the endpoint creates rather than converges.
+//
+// It returns the message of the row of the cluster, or an empty string when
+// the cluster holds the user.
+func ensureClusterUser(ctx context.Context, users *camundaadmin.UserClient, password string) string {
+	user := camundaadmin.User{
+		Username: components.WebModelerClusterUsername,
+		Name:     components.WebModelerClusterUsername,
+		Email:    webModelerUserEmail,
+	}
+
+	switch err := users.CreateUser(ctx, user, password); {
+	case errors.Is(err, camundaadmin.ErrAlreadyExists):
+		if err := users.UpdateUserPassword(ctx, user, password); err != nil {
+			return fmt.Sprintf("Setting the password of the user %q: %v", user.Username, err)
+		}
+	case err != nil:
+		return fmt.Sprintf("Creating the user %q: %v", user.Username, err)
+	}
+
+	for _, authorization := range webModelerAuthorizations {
+		authorization.OwnerID = user.Username
+		if err := users.CreateAuthorization(ctx, authorization); err != nil {
+			return fmt.Sprintf(
+				"Granting %v on %s to the user %q: %v",
+				authorization.PermissionTypes, authorization.ResourceType, user.Username, err,
+			)
+		}
+	}
+
+	return ""
+}
+
+// markCluster records a reason and a message on the row of one cluster. It
+// leaves Attached alone. The management plane still serves the cluster and
+// Web Modeler still lists it. Only the user of Web Modeler is missing.
+func markCluster(
+	rows []v1.AttachedClusterStatus,
+	cluster components.AttachedCluster,
+	reason, message string,
+) {
+	for i := range rows {
+		if rows[i].Name == cluster.Name && rows[i].Namespace == cluster.Namespace {
+			rows[i].Reason = reason
+			rows[i].Message = message
+
+			return
+		}
+	}
 }
