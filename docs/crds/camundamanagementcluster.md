@@ -338,13 +338,16 @@ How Web Modeler authenticates against a cluster follows the authentication metho
 
 For every attached basic-auth cluster, the operator creates the user `web-modeler` on that cluster. That user name is reserved on every attached basic-auth cluster: a user of that name that already exists there gets the password of the operator, and the operator removes it when the cluster leaves the management plane. Do not create a `web-modeler` user of your own on those clusters. It publishes the password of that user in a Secret of the management namespace, named `my-management-web-modeler-cluster-<uid>`. The `<uid>` is the first eight characters of the UID of the `CamundaCluster`. The user holds only the permissions that deploying and starting a process needs.
 
-Read the password and give it to the people who deploy from Web Modeler:
+Read the password and give it to the people who deploy from Web Modeler. Each Secret carries the name and the namespace of its cluster as labels, so select the one cluster you are after:
 
 ```bash
 kubectl get secret -n my-management-ns \
   -l camunda.io/component=web-modeler-cluster-user \
+  -l camunda.io/cluster=my-cluster,camunda.io/cluster-namespace=my-cluster-ns \
   -o custom-columns='SECRET:.metadata.name,PASSWORD:.data.password'
 ```
+
+Drop the second `-l` to list every cluster's Secret.
 
 Every value is base64 encoded. The key `applied` next to the password means that the cluster holds the user under that password. A Secret without it is a password that never reached the cluster.
 

@@ -32,6 +32,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin/camundaadmintest"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // The administrator that every basic-auth orchestration cluster of this file
@@ -133,6 +134,10 @@ var _ = Describe("Web Modeler", func() {
 			g.Expect(string(published.Data[components.WebModelerClusterUserAppliedKey])).To(
 				Equal("true"),
 			)
+			// The docs tell the reader to select the Secret of one cluster by
+			// these two labels.
+			g.Expect(published.Labels).To(HaveKeyWithValue(labels.ClusterKey, cluster.Name))
+			g.Expect(published.Labels).To(HaveKeyWithValue(labels.ClusterNamespaceKey, cluster.Namespace))
 
 			env := envOf(readDeployment(g, s.namespace, components.WebModelerRestapiName(s.mc)))
 			g.Expect(env).To(HaveKeyWithValue(

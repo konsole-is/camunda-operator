@@ -377,8 +377,11 @@ For a basic-auth cluster the operator creates the user `web-modeler` on that clu
 ```bash
 kubectl get secret -n my-management-ns \
   -l camunda.io/component=web-modeler-cluster-user \
+  -l camunda.io/cluster=my-cluster,camunda.io/cluster-namespace=my-cluster-ns \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.data.password}{"\n"}{end}'
 ```
+
+The second `-l` selects the Secret of one cluster by its name and namespace; drop it to list them all.
 
 Decode a password with `base64 -d` and give it to the people who deploy from Web Modeler. They type `web-modeler` and that password in the deploy dialog, so nobody needs the administrator of the orchestration cluster.
 
