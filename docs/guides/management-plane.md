@@ -12,7 +12,7 @@ You need:
 
 - The operator installed. See [Installation](../installation.md).
 - A PostgreSQL server, described by a [DatabaseServerConfig](../crds/databaseserverconfig.md). The management plane needs one logical database per component.
-- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you want the operator to run Keycloak for you. If you run your own Keycloak, or your own OIDC provider, skip it.
+- The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you want the operator to run Keycloak for you. Install the release of the Keycloak version you set in [step 3a](#step-3a-the-operator-runs-keycloak), below 26.7. If you run your own Keycloak, or your own OIDC provider, skip it.
 - A way to route traffic from outside the Kubernetes cluster to a Service. The operator creates no Ingress.
 
 ## The order of creation
@@ -78,7 +78,7 @@ Pick one of the three identity provider modes below. Everything else on the reso
 
 ### Step 3a: The operator runs Keycloak
 
-Use this when you want a self-contained platform. The operator creates a Keycloak for the Keycloak Operator to run, and Management Identity creates the realm, every client, and the first user in it.
+Use this when you want a self-contained platform. The operator creates a Keycloak for the Keycloak Operator to run, and Management Identity creates the realm, every client, and the first user in it. Set a `version` below `26.7.0`. See [The operator runs Keycloak](../crds/camundamanagementcluster.md#the-operator-runs-keycloak) for why.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -91,7 +91,7 @@ spec:
   clusterSelector: {}
   identityProvider:
     keycloak:
-      version: "26.0.7"
+      version: "26.6.4"
       externalUrl: "https://camunda.example.com/auth"
       databaseConfigRef: "my-keycloak-db"
   identity:

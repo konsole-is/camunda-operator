@@ -16,7 +16,7 @@ spec:
   platformConfigRef: "my-platform-config"
   identityProvider:
     keycloak:
-      version: "26.0.7"
+      version: "26.6.4"
       externalUrl: "https://camunda.example.com/auth"
       databaseConfigRef: "my-keycloak-db"
   identity:
@@ -79,7 +79,7 @@ metadata:
 spec:
   identityProvider:
     keycloak:
-      version: "26.0.7"
+      version: "26.6.4"
       externalUrl: "https://camunda.example.com/auth"
       databaseConfigRef: "my-keycloak-db"
       replicas: 2
@@ -92,13 +92,15 @@ spec:
 
 `version` is the Keycloak version. The operator supports `26.0.0` and later, and below `27.0.0`. Camunda 8.9 supports Keycloak 26 only, as its [supported environments](https://docs.camunda.io/docs/reference/supported-environments/) page states.
 
+Stay below `26.7.0` with Management Identity 8.9. From 26.7.0, Keycloak refuses every change to its `realm-management` client (the fix of [CVE-2026-9796](https://github.com/keycloak/keycloak/pull/49624)). Management Identity 8.9 changes that client when it creates the realm, so it stops with `HTTP 403 Forbidden` and `IdentityReady` never leaves `Creating`. Install the Keycloak Operator of the same release as `version`. The [Keycloak Operator](https://www.keycloak.org/operator/customizing-keycloak) supports the Keycloak it was released with.
+
 Keycloak needs a PostgreSQL database of its own. `databaseConfigRef` names a [DatabaseConfig](databaseconfig.md) in the namespace of this resource.
 
 The Keycloak Operator writes the first Keycloak administrator into the Secret `my-management-keycloak-initial-admin`. Management Identity signs in with it to create the realm.
 
 ### You run Keycloak
 
-`identityProvider.externalKeycloak` connects Management Identity to a Keycloak that you run. Management Identity still creates the realm, the clients, and the first user in it.
+`identityProvider.externalKeycloak` connects Management Identity to a Keycloak that you run. Management Identity still creates the realm, the clients, and the first user in it. Run Keycloak 26, below 26.7.0, for the reason the [section above](#the-operator-runs-keycloak) gives.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -531,7 +533,7 @@ spec:
     # object. Optional. Run Keycloak through the Keycloak Operator.
     keycloak:
       # string. Required. Keycloak version, as major.minor.patch. Supported: 26.0.0 and later, below 27.0.0.
-      version: "26.0.7"
+      version: "26.6.4"
       # string. Required. The URL a browser reaches Keycloak at, including the /auth path. It is the issuer of every token.
       externalUrl: "https://camunda.example.com/auth"
       # string. Required. Name of the DatabaseConfig of the Keycloak database, in this namespace.
@@ -691,7 +693,7 @@ spec:
       environment: "production"
   identityProvider:
     keycloak:
-      version: "26.0.7"
+      version: "26.6.4"
       externalUrl: "https://camunda.example.com/auth"
       databaseConfigRef: "my-keycloak-db"
       replicas: 2
