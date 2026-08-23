@@ -42,6 +42,14 @@ import (
 // controllers look platform configs up by it when a Secret changes.
 const SecretRefsField = "camundaplatformconfig.spec.secretRefs"
 
+// fieldRef is one Secret reference of a platform config together with the spec
+// path that holds it. The message of a MissingSecret condition names that
+// path, so the user knows which field to correct.
+type fieldRef struct {
+	Path string
+	v1.SecretKeyRef
+}
+
 // CamundaPlatformConfigReconciler validates CamundaPlatformConfig resources
 // and maintains their Ready condition.
 type CamundaPlatformConfigReconciler struct {
@@ -80,11 +88,10 @@ func (r *CamundaPlatformConfigReconciler) Reconcile(ctx context.Context, req ctr
 	)
 }
 
-// validate checks every Secret reference of the platform config: the OIDC
-// client secret when the method is oidc, and the license when it is set. The
-// first missing Secret or key becomes the condition message. The CRD schema
-// ties the oidc block to method oidc. An object that passed admission with
-// method oidc and no block yields an error, not a condition.
+// validate checks every Secret reference that secretRefs returns. The first
+// missing Secret or key becomes the condition message. The CRD schema ties
+// the oidc block to method oidc. An object that passed admission with method
+// oidc and no block yields an error, not a condition.
 func (r *CamundaPlatformConfigReconciler) validate(
 	ctx context.Context,
 	cfg *v1.CamundaPlatformConfig,
@@ -109,14 +116,6 @@ func (r *CamundaPlatformConfigReconciler) validate(
 	}
 
 	return conditions.Ready(metav1.ConditionTrue, v1.ReasonHealthy, "All checks passed", cfg.Generation), nil
-}
-
-// fieldRef is one Secret reference of a platform config together with the spec
-// path that holds it. A config carries up to seven references, so the message
-// of a MissingSecret condition names the field the user has to correct.
-type fieldRef struct {
-	Path string
-	v1.SecretKeyRef
 }
 
 // secretRefs is shared by validate and the SecretRefsField indexer so both see the same references.
