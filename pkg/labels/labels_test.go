@@ -66,6 +66,11 @@ func TestRestoreOwners(t *testing.T) {
 	assert.Equal(t, "camunda.io/point-in-time-restore", PointInTimeRestoreKey)
 }
 
+func TestManagementClusterOwner(t *testing.T) {
+	assert.Equal(t, Owner{Key: ManagementClusterKey, Name: "m"}, ManagementCluster("m"))
+	assert.Equal(t, "camunda.io/management-cluster", ManagementClusterKey)
+}
+
 func TestBoundedNameKeepsANameThatFits(t *testing.T) {
 	t.Parallel()
 
@@ -110,6 +115,7 @@ func TestALongOwnerNameFitsALabelValue(t *testing.T) {
 		LogicalRestoreRDBMS(strings.Repeat("y", 253)),
 		BackupSchedule(strings.Repeat("s", 253)),
 		PointInTimeRestore(strings.Repeat("p", 253)),
+		ManagementCluster(strings.Repeat("m", 253)),
 	}
 
 	for _, owner := range owners {
