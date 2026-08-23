@@ -226,25 +226,15 @@ func TestIdentityEnvInTheKeycloakModesCarriesNoInitialClaim(t *testing.T) {
 	assert.NotContains(t, env, "IDENTITY_INITIAL_CLAIM_VALUE")
 }
 
-// A password of your own replaces the generated one, and no Secret is
-// generated for it.
+// A password of your own replaces the generated one: Management Identity
+// reads it from the Secret that the spec names.
 func TestIdentityEnvReadsTheAdministratorPasswordOfTheSpec(t *testing.T) {
 	t.Parallel()
 
-	in := fixtureKeycloakRealistic(t, true)
-
-	env := renderedEnv(in, ComponentIdentity)
+	env := renderedEnv(fixtureKeycloakRealistic(t, true), ComponentIdentity)
 
 	assert.Equal(t, "secretKeyRef:admin-password/password", env["KEYCLOAK_USERS_0_PASSWORD"])
 	assert.Equal(t, "admin@example.com", env["KEYCLOAK_USERS_0_EMAIL"])
-	assert.Equal(
-		t,
-		[]generatedSecret{
-			{name: "my-management-identity-client", key: ClientSecretKey, rotates: true},
-			{name: "my-management-optimize-client", key: ClientSecretKey, rotates: true},
-		},
-		generatedSecrets(in),
-	)
 }
 
 // Deleting a client secret rotates it: the apply precondition of the reused
@@ -264,10 +254,10 @@ func TestGeneratedSecretsRotateExceptTheAdministratorPassword(t *testing.T) {
 		}
 	})
 
-	comps, err := secretsComponents(in)
+	built, err := secretsComponents(in)
 	require.NoError(t, err)
-	require.Len(t, comps, 1)
-	objects, err := comps[0].Preview()
+	require.Len(t, built.Components, 1)
+	objects, err := built.Components[0].Preview()
 	require.NoError(t, err)
 
 	preconditions := map[string]string{}
@@ -349,15 +339,21 @@ func TestManagementAuthSpecInTheKeycloakModes(t *testing.T) {
 	)
 }
 
-// The oidc mode generates nothing, so it reports no SecretsReady at all: a
-// gated-off component would read Disabled and outrank the healthy ones in the
-// Ready condition.
+// The oidc mode generates no credential of its own. The component is still
+// built and gated off, so a move from a Keycloak mode to oidc deletes the
+// client secrets and the administrator password that the operator published,
+// and the gated-off component stays out of Ready.
 func TestBuildRendersTheGeneratedSecretsOfTheKeycloakModesOnly(t *testing.T) {
 	t.Parallel()
 
 	oidc, err := Build(fixtureMinimal(t))
 	require.NoError(t, err)
-	assert.NotContains(t, componentNames(oidc.Components), ComponentSecrets)
+	assert.Contains(t, componentNames(oidc.Components), ComponentSecrets)
+	assert.NotContains(t, componentNames(oidc.Ready), ComponentSecrets)
+
+	objects, err := builtComponent(t, oidc, ComponentSecrets).Preview()
+	require.NoError(t, err)
+	assert.Empty(t, objects)
 
 	keycloak, err := Build(newKeycloakInput(t, true, nil))
 	require.NoError(t, err)
@@ -377,6 +373,30 @@ func TestBuildRendersTheGeneratedSecretsOfTheKeycloakModesOnly(t *testing.T) {
 		t,
 		[]string{ComponentSecrets, ComponentKeycloak, ComponentIdentity},
 		componentNames(keycloak.Ready),
+	)
+}
+
+// An administrator password of your own replaces the generated one, so the
+// Secret that the operator published for an earlier spec is deleted rather
+// than kept next to the one you named.
+func TestBuildGatesTheGeneratedAdministratorPasswordOffForOneOfYourOwn(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureKeycloakRealistic(t, true)
+	built, err := Build(in)
+	require.NoError(t, err)
+
+	objects, err := builtComponent(t, built, ComponentSecrets).Preview()
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(objects))
+	for _, object := range objects {
+		names = append(names, object.GetName())
+	}
+	assert.Equal(
+		t,
+		[]string{IdentityClientSecretName(in.Cluster), OptimizeClientSecretName(in.Cluster)},
+		names,
 	)
 }
 

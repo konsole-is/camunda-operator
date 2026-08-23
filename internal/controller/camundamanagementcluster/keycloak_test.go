@@ -203,6 +203,46 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			identity := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
 			expectReadyWhileStamping(s.mc, identity)
 		})
+
+		// The oidc mode creates no client and no user, so the credentials
+		// that a Keycloak mode published name nothing. Left in place they
+		// would keep a SecretsReady that says nothing about the plane.
+		It("deletes the generated Secrets of a management cluster that moves to oidc", func() {
+			s := newScenario(withManagedKeycloak)
+
+			generated := []client.ObjectKey{
+				{Namespace: s.namespace, Name: components.IdentityClientSecretName(s.mc)},
+				{Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc)},
+				{Namespace: s.namespace, Name: components.IdentityAdminSecretName(s.mc)},
+			}
+			Eventually(func(g Gomega) {
+				for _, key := range generated {
+					var published corev1.Secret
+					g.Expect(k8sClient.Get(ctx, key, &published)).To(Succeed())
+				}
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				latest := readManagementCluster(g, s.mc)
+				latest.Spec.IdentityProvider = v1.IdentityProviderSpec{OIDC: &v1.ManagementOIDCSpec{}}
+				latest.Spec.Identity.Admin = v1.IdentityAdminSpec{
+					ClaimName: "oid", ClaimValue: "admin-oid",
+				}
+				latest.Spec.Optimize = nil
+				g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				for _, key := range generated {
+					var published corev1.Secret
+					g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, key, &published))).To(BeTrue())
+				}
+
+				condition := conditionOf(g, s.mc, v1.ConditionSecretsReady)
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.Reason).To(Equal(string(component.Disabled)))
+			}, timeout, interval).Should(Succeed())
+		})
 	})
 
 	Context("with a Keycloak that the user runs", func() {

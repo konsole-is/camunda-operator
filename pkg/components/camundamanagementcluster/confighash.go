@@ -94,6 +94,9 @@ func componentInputs(in Input, comp string) []string {
 	switch comp {
 	case ComponentIdentity:
 		for _, gen := range generatedSecrets(in) {
+			if !gen.published {
+				continue
+			}
 			inputs = append(inputs, "generated="+gen.name+"="+string(in.Secrets.Values[gen.name].SourceUID))
 		}
 	case ComponentWebModelerRestapi, ComponentWebModelerWebsockets:

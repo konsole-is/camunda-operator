@@ -41,7 +41,7 @@ type Built struct {
 // list is the extension point of the package.
 var builders = []func(Input) (Built, error){
 	mirroredSecretComponent,
-	alwaysReady(secretsComponents),
+	secretsComponents,
 	keycloakComponents,
 	alwaysReady(identityComponents),
 	consoleComponents,
