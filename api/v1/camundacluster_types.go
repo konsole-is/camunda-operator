@@ -18,6 +18,7 @@ package v1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -75,6 +76,15 @@ const ReasonRejected = "Rejected"
 // camunda.io/allow-version-downgrade, with the target version as its value,
 // sanctions one such move.
 const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
+
+// ReasonStorageAlreadyAttached on Ready means that another CamundaCluster
+// holds the SecondaryStorageConfig that spec.storageRef names. One
+// CamundaCluster uses one contract. The index names and the tables are
+// fixed, so two clusters on one backend write each other's data. The
+// operator keeps this cluster suspended, with its volumes, until that
+// cluster releases the contract. Then it resumes this cluster on its own.
+// The message names the holder and the contract.
+const ReasonStorageAlreadyAttached = "StorageAlreadyAttached"
 
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
@@ -449,7 +459,10 @@ type CamundaClusterSpec struct {
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
 	// StorageRef names the SecondaryStorageConfig, in the namespace of this
 	// cluster, that describes the secondary storage backend. Required on a
-	// CamundaCluster, forbidden in a preset.
+	// CamundaCluster, forbidden in a preset. One CamundaCluster uses one
+	// contract. If another cluster already holds the contract, the operator
+	// suspends this cluster and reports Ready reason StorageAlreadyAttached
+	// until that cluster releases it.
 	// +optional
 	StorageRef string `json:"storageRef,omitempty"`
 	// BackupStorageRef names a cluster-scoped ObjectStorageConfig for
@@ -565,6 +578,16 @@ func (in *CamundaCluster) GetKind() string { return "CamundaCluster" }
 // SetObservedGeneration records the last reconciled generation in status.
 func (in *CamundaCluster) SetObservedGeneration(generation int64) {
 	in.Status.ObservedGeneration = generation
+}
+
+// Suspended reports whether the operator scales every workload of the cluster
+// to zero: spec.suspend is set, or another cluster holds the storage contract
+// and Ready carries reason StorageAlreadyAttached. An extension attached to
+// the cluster follows this, not spec.suspend alone.
+func (in *CamundaCluster) Suspended() bool {
+	ready := meta.FindStatusCondition(in.Status.Conditions, ConditionReady)
+
+	return in.Spec.Suspend || (ready != nil && ready.Reason == ReasonStorageAlreadyAttached)
 }
 
 // +kubebuilder:object:root=true

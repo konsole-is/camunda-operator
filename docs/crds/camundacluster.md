@@ -115,6 +115,35 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` decides what happens to the volumes when you delete the cluster: `Delete` (the default) removes them, `Retain` keeps them for a later cluster with the same name. A scale-down and a suspension always keep them.
 
+## Secondary storage
+
+`spec.storageRef` names the `SecondaryStorageConfig` in the namespace of the cluster. The contract tells the cluster where its secondary storage is.
+
+One `CamundaCluster` uses one contract. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
+
+The claim goes to the cluster whose reconcile patches the contract first. This is reconcile order, not creation order. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator writes `camunda.io/claim-holder` and `camunda.io/claim-holder-uid` on the contract to record the claim.
+
+The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
+
+The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. After a repoint, the pods of the previous holder reach their new backend only when its rollout finishes. For that time both clusters write the old backend. If that overlap matters, stop the holder first. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
+
+A recreated contract is a new claim. If the producer deletes the contract and creates it again, the holder and a suspended cluster race for the new claim. The holder can lose that race. Do not recreate a contract while two clusters name it.
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: StorageAlreadyAttached
+      message: >-
+        CamundaCluster "my-cluster-ns/my-other-cluster" already holds
+        SecondaryStorageConfig "my-cluster-ns/my-storage-config". One
+        CamundaCluster uses one secondary storage contract, so this cluster
+        stays suspended until that one releases it
+```
+
+The operator compares contracts, not endpoints. Give one contract to one backend. Two hand-written contracts that name one Elasticsearch are not caught.
+
 ## Secondary storage over TLS
 
 When the [SecondaryStorageConfig](secondarystorageconfig.md) names a certificate authority under `elasticsearch.caSecretRef`, the brokers, the gateway, and the web applications trust that authority. A cluster on an [ElasticsearchCluster](elasticsearchcluster.md) gets this without a step from you, because that kind fills `caSecretRef` itself. For an Elasticsearch of your own behind a private authority, set `caSecretRef` on the contract.
@@ -161,7 +190,9 @@ The operator checks every reference at reconcile time, not at admission, so you 
 
 `spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` is empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
-`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down.
+The operator also suspends a cluster whose storage contract another cluster holds, see [Secondary storage](#secondary-storage). `spec.suspend` stays yours. That suspension shows in the `Ready` reason `StorageAlreadyAttached` and ends when the holder releases the contract.
+
+`suspend` reaches the extensions attached to this cluster, not only its own workloads. A [CamundaOptimize](camundaoptimize.md) whose `clusterRef` names this cluster scales its webapp and its importer to zero with it, and starts them again when you clear the field. The Optimize importer reads Elasticsearch directly, so without this it would keep importing while the cluster is down. The suspension of a cluster whose storage contract another cluster holds reaches them too. A `CamundaOptimize` attached to that cluster scales to zero, and a backup of it waits with reason `ClusterSuspended`.
 
 `spec.pause: true` stops all reconciliation of this resource. The operator records one `Paused` event and writes nothing, not even status, until `pause` is false again.
 
@@ -189,6 +220,7 @@ Deleting the cluster removes every resource that the operator created for it. Th
 | `Ready` | `Failing` | A component has replicas that do not become ready. | Read the pods of the named component. |
 | `Ready` | `Degraded` / `Down` | Some or no replicas of a component are ready after the grace period. | Read the pods and events of the named component. |
 | `Ready` | `Suspended` | `spec.suspend` is true and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend: false` to resume. |
+| `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the `SecondaryStorageConfig` that `storageRef` names. This cluster is suspended. | Give this cluster a contract of its own, or delete the holder. The message names both, and the last apply error of the workloads when one occurred. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, a ServiceAccount with `create: false` is absent, two buckets conflict, an Azure container is shared, a snapshot repository is missing, or the merged spec is invalid. | Read the message. Create the missing resource or correct the field it names. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. | Create the Secret with the named key. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version the brokers run, and no annotation sanctions the move. The operator applies nothing, and the brokers keep the version they have. | Read [Version](#version). Set the version forward again, or sanction the downgrade. |

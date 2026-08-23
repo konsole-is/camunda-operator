@@ -107,7 +107,15 @@ KIND_CLUSTER ?= camunda-operator-test-e2e
 # ECK_VERSION pins the ECK operator release that the e2e suite installs. Keep
 # it on the same minor as the cloud-on-k8s module in go.mod: the operator
 # under test renders Elasticsearch resources with the types of that module.
+# renovate: datasource=github-releases depName=elastic/cloud-on-k8s extractVersion=^v(?<version>.*)$
 ECK_VERSION ?= 3.5.0
+
+# E2E_CAMUNDA_MINOR selects the Camunda minor the suite runs against. Each
+# supported minor has a file test/e2e/matrix/<minor>.env with the image
+# versions of that minor and the list of spec flows that run for it. The
+# recipe exports the file to the suite, and the e2e workflow runs one job per
+# file.
+E2E_CAMUNDA_MINOR ?= 8.9
 
 # E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the
 # Elasticsearch image and bootstraps a node, which takes longer than the
@@ -140,6 +148,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+	set -a && . ./test/e2e/matrix/$(E2E_CAMUNDA_MINOR).env && set +a && \
 	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) ECK_VERSION=$(ECK_VERSION) \
 		go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT)
 	$(MAKE) cleanup-test-e2e
@@ -161,6 +170,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify --schema "$(GOLANGCI_LINT_SCHEMA)"
+
+.PHONY: lint-renovate
+lint-renovate: ## Verify renovate.json5 with the validator of RENOVATE_VERSION. Needs npx.
+	npx --yes --package renovate@$(RENOVATE_VERSION) renovate-config-validator --strict renovate.json5
 
 ##@ Build
 
@@ -289,6 +302,10 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.8.0
+# RENOVATE_VERSION is the Renovate release whose validator lint-renovate runs
+# against renovate.json5.
+# renovate: datasource=npm depName=renovate
+RENOVATE_VERSION ?= 44.39.2
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)

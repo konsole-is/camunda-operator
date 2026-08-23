@@ -108,9 +108,8 @@ graph LR
 
 ## Planned kinds
 
-These CRDs are installed with the operator, but the operator does not act on them yet. Their controllers and their installed spec are placeholders, so do not create them. Their pages describe the planned design and will be rewritten when the kind ships.
+This CRD is installed with the operator, but the operator does not act on it yet. Its controller and its installed spec are placeholders, so do not create it. Its page describes the planned design and will be rewritten when the kind ships.
 
 | Kind | Scope | Planned purpose |
 | --- | --- | --- |
 | [CamundaManagementCluster](camundamanagementcluster.md) | Cluster | The management plane: Console, Web Modeler, Identity. |
-| [PVCAutoResize](pvcautoresize.md) | Namespaced | Grow the volumes of a cluster on their own. |

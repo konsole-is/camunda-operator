@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -30,28 +31,34 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// The purposes of the mirrored Secrets. A pod can only reference a Secret in
-// its own namespace, so the controller copies every referenced Secret that
-// lives elsewhere into the cluster namespace, one copy per purpose.
+// MirrorPurpose names one mirrored Secret of a CamundaCluster. A pod can
+// only reference a Secret in its own namespace, so the controller copies
+// every referenced Secret that lives elsewhere into the cluster namespace,
+// one copy per purpose. The copies of a cluster are the ones that
+// MirrorPurposes lists; a purpose outside that set gets a name and no
+// Secret, so every constant of this type must appear there.
+type MirrorPurpose string
+
+// The purposes of the mirrored Secrets.
 const (
-	MirrorPurposeLicense       = "license"
-	MirrorPurposeOIDCClient    = "oidc-client"
-	MirrorPurposeAuthClient    = "auth-client"
-	MirrorPurposeESCredentials = "es-credentials"
-	MirrorPurposeESCA          = "es-ca"
-	MirrorPurposeDBCredentials = "db-credentials"
+	MirrorPurposeLicense       MirrorPurpose = "license"
+	MirrorPurposeOIDCClient    MirrorPurpose = "oidc-client"
+	MirrorPurposeAuthClient    MirrorPurpose = "auth-client"
+	MirrorPurposeESCredentials MirrorPurpose = "es-credentials"
+	MirrorPurposeESCA          MirrorPurpose = "es-ca"
+	MirrorPurposeDBCredentials MirrorPurpose = "db-credentials"
 	// MirrorPurposeBackupCredentials is the static credentials of the backup
 	// bucket, for a contract that authenticates with keys instead of a
 	// workload identity.
-	MirrorPurposeBackupCredentials = "backup-credentials"
+	MirrorPurposeBackupCredentials MirrorPurpose = "backup-credentials"
 	// MirrorPurposeDumpCredentials is the backup user of the logical
 	// database, which the dump Job of a LogicalBackupRDBMS mounts.
-	MirrorPurposeDumpCredentials = "dump-credentials"
+	MirrorPurposeDumpCredentials MirrorPurpose = "dump-credentials"
 )
 
-// MirrorPurposes lists every purpose in the order the component renders its
-// Secrets.
-var MirrorPurposes = []string{
+// MirrorPurposes is the closed set of purposes that the component renders, in
+// the order it renders their Secrets.
+var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeLicense,
 	MirrorPurposeOIDCClient,
 	MirrorPurposeAuthClient,
@@ -68,8 +75,8 @@ const mirroredComponentName = "mirrored-secrets"
 // MirroredSecretName returns the name of the copy of a referenced Secret in
 // the cluster namespace: <name>-camunda-<purpose>. A long cluster name
 // truncates, the way WorkloadName truncates.
-func MirroredSecretName(cluster *v1.CamundaCluster, purpose string) string {
-	suffix := "-camunda-" + purpose
+func MirroredSecretName(cluster *v1.CamundaCluster, purpose MirrorPurpose) string {
+	suffix := "-camunda-" + string(purpose)
 
 	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
@@ -80,11 +87,20 @@ func MirroredSecretName(cluster *v1.CamundaCluster, purpose string) string {
 // the reference names). The Secret of an absent purpose is gated off, so a
 // reference that moved into the cluster namespace or went away deletes its
 // copy. The component is gated on any purpose being present: without one it
-// reads Disabled and stays out of Ready.
+// reads Disabled and stays out of Ready. A purpose that is not in
+// MirrorPurposes is an error, because nothing would render its copy.
 func MirroredSecretComponent(
 	cluster *v1.CamundaCluster,
-	mirrors map[string]map[string][]byte,
+	mirrors map[MirrorPurpose]map[string][]byte,
 ) (*component.Component, error) {
+	for purpose := range mirrors {
+		if !purpose.Valid() {
+			return nil, fmt.Errorf(
+				"building %s component: purpose %q is not in MirrorPurposes", mirroredComponentName, purpose,
+			)
+		}
+	}
+
 	builder := component.NewComponentBuilder().
 		WithName(mirroredComponentName).
 		WithConditionType(component.ConditionType(v1.ConditionMirroredSecretsReady)).
@@ -108,4 +124,10 @@ func MirroredSecretComponent(
 	}
 
 	return builder.Build()
+}
+
+// Valid reports whether p is in MirrorPurposes, the set the component
+// renders.
+func (p MirrorPurpose) Valid() bool {
+	return slices.Contains(MirrorPurposes, p)
 }

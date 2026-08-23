@@ -18,7 +18,6 @@ resources:
 - bases/core.camunda.io_camundaoptimizes.yaml
 - bases/core.camunda.io_camundamanagementclusters.yaml
 - bases/core.camunda.io_managementauthconfigs.yaml
-- bases/core.camunda.io_pvcautoresizes.yaml
 - bases/core.camunda.io_logicalbackuprdbmses.yaml
 - bases/core.camunda.io_logicalrestoreelasticsearches.yaml
 - bases/core.camunda.io_logicalrestorerdbmses.yaml

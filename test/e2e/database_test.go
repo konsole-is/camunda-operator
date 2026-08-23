@@ -56,7 +56,7 @@ const (
 	sscResource      = "secondarystorageconfigs.core.camunda.io"
 )
 
-var _ = Describe("Database", Ordered, func() {
+var _ = Describe("Database", Ordered, Label(labelDatabase), func() {
 	var (
 		server = &v1.DatabaseServerConfig{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServerConfig"},

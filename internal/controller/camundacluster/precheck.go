@@ -33,6 +33,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/mirror"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -49,29 +50,35 @@ const eventReasonTrustStoreOptions = "TrustStoreOptionsNotApplied"
 
 // mirroredSecrets are the copies of the referenced Secrets that live outside
 // the cluster namespace: the copied keys and their data, by purpose.
-type mirroredSecrets map[string]map[string][]byte
+type mirroredSecrets map[components.MirrorPurpose]map[string][]byte
 
 // resolver accumulates what the pre-checks read: the hash inputs of every
 // referenced object and the data of every Secret to mirror. Each resolve
 // method fills exactly one part of the render input.
 type resolver struct {
-	reader   client.Reader
+	reader client.Reader
+	// writer writes the claim on the storage contract. Every read stays on
+	// reader.
+	writer   client.Writer
 	scheme   *runtime.Scheme
 	cluster  *v1.CamundaCluster
 	recorder events.EventRecorder
 	inputs   []string
 	mirrors  mirroredSecrets
+	// storage is the SecondaryStorageConfig that spec.storageRef names, set
+	// by resolveStorage for the steps after it.
+	storage *v1.SecondaryStorageConfig
 }
 
 // preCheck resolves every reference of cluster into the render input, in the
 // documented order: the preset and the merged spec, the platform config and
-// its Secrets, the storage binding and its chain, the object storage
-// references. Every Secret is checked for its keys through the uncached
-// reader. A Secret outside the cluster namespace is copied into the returned
-// mirrors, and the input references the copy, so the renderer only ever
-// names Secrets of the cluster namespace. HashInputs carry the resource
-// version of every Secret and the generation of every CR read, sorted, so a
-// change to any of them rolls the pods. A failed check returns a
+// its Secrets, the storage binding and its chain, the claim on the binding,
+// the object storage references. Every Secret is checked for its keys through
+// the uncached reader. A Secret outside the cluster namespace is copied into
+// the returned mirrors, and the input references the copy, so the renderer
+// only ever names Secrets of the cluster namespace. HashInputs carry the
+// resource version of every Secret and the generation of every CR read,
+// sorted, so a change to any of them rolls the pods. A failed check returns a
 // *conditions.PreCheckFailure: InvalidReference for a dangling reference or
 // an invalid effective spec, MissingSecret for a missing Secret or key. Any
 // other error is a transient API failure.
@@ -81,6 +88,7 @@ func (r *CamundaClusterReconciler) preCheck(
 ) (components.Input, mirroredSecrets, error) {
 	res := &resolver{
 		reader:   r.APIReader,
+		writer:   r.Client,
 		scheme:   r.Scheme,
 		cluster:  cluster,
 		recorder: r.EventRecorder,
@@ -93,6 +101,7 @@ func (r *CamundaClusterReconciler) preCheck(
 		res.resolvePlatform,
 		res.resolveAuth,
 		res.resolveStorage,
+		res.claimStorage,
 		res.warnReferencedJavaToolOptions,
 		res.resolveObjectStorage,
 	}
@@ -196,6 +205,7 @@ func (res *resolver) resolveStorage(ctx context.Context, in *components.Input) e
 		return err
 	}
 	in.Storage.Type = binding.Spec.Type
+	res.storage = &binding
 
 	switch binding.Spec.Type {
 	case v1.SecondaryStorageTypeElasticsearch:
@@ -351,7 +361,7 @@ func (res *resolver) exists(ctx context.Context, key client.ObjectKey, obj clien
 
 // localize checks the Secret of ref through secret and rewrites ref to its
 // local key.
-func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose string) error {
+func (res *resolver) localize(ctx context.Context, ref *v1.SecretKeyRef, purpose components.MirrorPurpose) error {
 	local, err := res.secret(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose, ref.Key)
 	if err != nil {
 		return err
@@ -393,7 +403,7 @@ func (res *resolver) mirrorDumpCredentials(
 
 		return nil
 	}
-	if key.Namespace == res.cluster.Namespace {
+	if !mirror.Needed(res.cluster, key.Namespace) {
 		return nil
 	}
 
@@ -409,7 +419,7 @@ func (res *resolver) mirrorDumpCredentials(
 func (res *resolver) localizeCredentials(
 	ctx context.Context,
 	ref *v1.CredentialsSecretRef,
-	purpose string,
+	purpose components.MirrorPurpose,
 ) error {
 	local, err := res.secret(
 		ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, purpose,
@@ -426,13 +436,13 @@ func (res *resolver) localizeCredentials(
 // secret checks that the Secret at key carries every one of keys and records
 // its resource version as a hash input. When purpose is set and the Secret
 // lives outside the cluster namespace, it copies the keys into the mirror of
-// that purpose and returns the key of the copy in the cluster namespace;
-// otherwise it returns key unchanged. A missing Secret or key maps to
-// MissingSecret.
+// that purpose and returns the key of the copy in the cluster namespace, the
+// key that pkg/mirror resolves for a reader; otherwise it returns key
+// unchanged. A missing Secret or key maps to MissingSecret.
 func (res *resolver) secret(
 	ctx context.Context,
 	key client.ObjectKey,
-	purpose string,
+	purpose components.MirrorPurpose,
 	keys ...string,
 ) (client.ObjectKey, error) {
 	secret, msg, err := secretref.Get(ctx, res.reader, key, keys...)
@@ -444,7 +454,7 @@ func (res *resolver) secret(
 	}
 	res.inputs = append(res.inputs, "Secret/"+objectPath(key)+"="+secret.ResourceVersion)
 
-	if purpose == "" || key.Namespace == res.cluster.Namespace {
+	if purpose == "" || !mirror.Needed(res.cluster, key.Namespace) {
 		return key, nil
 	}
 
@@ -456,7 +466,7 @@ func (res *resolver) secret(
 
 	return client.ObjectKey{
 		Namespace: res.cluster.Namespace,
-		Name:      components.MirroredSecretName(res.cluster, purpose),
+		Name:      mirror.LocalSecretName(res.cluster, key.Namespace, key.Name, purpose),
 	}, nil
 }
 

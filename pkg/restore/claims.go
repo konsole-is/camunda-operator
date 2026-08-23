@@ -101,8 +101,8 @@ func (t *Target) ClaimSize(recorded *resource.Quantity) resource.Quantity {
 }
 
 // BuildClaim renders the broker data claim of one ordinal at the given size.
-// Everything but the size comes from the claim template, so the selectors of
-// the StatefulSet and the PVCAutoResize controller keep working.
+// Everything but the size comes from the claim template, so the StatefulSet
+// selector and the discovery labels keep working.
 //
 // The claim carries no owner reference. The StatefulSet owns the broker
 // volumes. An owner reference to a restore deletes a live broker volume as

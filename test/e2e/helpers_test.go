@@ -366,11 +366,11 @@ func dumpDiagnostics(testNamespace string) {
 // namespace that holds a container which is not ready.
 //
 // A pod that stays not ready explains itself nowhere else. The pod state says
-// only that the readiness probe answered 503, and the connectors runtime
-// writes no application log at all: its logback configuration wraps every
-// appender in a condition that resolves to none, so the root logger discards
-// the whole startup of the process. The health document is the one record of
-// which indicator is down.
+// only that the readiness probe answered 503, and no log line of the process
+// names the indicator that answered it. The health document is the one record
+// of which indicator is down. Connectors 8.9.7 wrote no application log at
+// all, and that is what first made this dump necessary. 8.9.8 fixed the log,
+// and the dump keeps its value because it reports what no log line carries.
 //
 // The distinction it makes is the one that matters for connectors. Its
 // readiness group holds zeebeClient and processDefinitionImport, and the

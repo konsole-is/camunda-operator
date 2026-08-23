@@ -42,7 +42,7 @@ func TestLocalSecretName(t *testing.T) {
 		name      string
 		namespace string
 		source    string
-		purpose   string
+		purpose   camundacluster.MirrorPurpose
 		want      string
 	}{
 		{
@@ -73,6 +73,34 @@ func TestLocalSecretName(t *testing.T) {
 			got := LocalSecretName(testCluster(), tt.namespace, tt.source, tt.purpose)
 			assert.Equal(t, tt.want, got)
 		})
+	}
+}
+
+func TestNeeded(t *testing.T) {
+	assert.False(t, Needed(testCluster(), "cluster-ns"))
+	assert.True(t, Needed(testCluster(), "elsewhere"))
+}
+
+// The copy that a reader resolves for a source in another namespace is, for
+// every purpose, the Secret that the writer renders: the two sides agree by
+// construction, not by coincidence.
+func TestLocalSecretNameIsRendered(t *testing.T) {
+	cluster := testCluster()
+	mirrors := map[camundacluster.MirrorPurpose]map[string][]byte{}
+	for _, purpose := range camundacluster.MirrorPurposes {
+		mirrors[purpose] = map[string][]byte{"key": []byte("value")}
+	}
+	comp, err := camundacluster.MirroredSecretComponent(cluster, mirrors)
+	require.NoError(t, err)
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	rendered := make([]string, 0, len(objects))
+	for _, obj := range objects {
+		rendered = append(rendered, obj.GetName())
+	}
+	for _, purpose := range camundacluster.MirrorPurposes {
+		assert.Contains(t, rendered, LocalSecretName(cluster, "elsewhere", "source", purpose))
 	}
 }
 

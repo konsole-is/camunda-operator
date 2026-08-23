@@ -27,7 +27,9 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/test/utils"
@@ -54,16 +56,38 @@ var (
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
 // To skip ECK installation, set: ECK_INSTALL_SKIP=true
 // To install a different ECK release, set: ECK_VERSION=<version>
+// To run against another Camunda minor: make test-e2e E2E_CAMUNDA_MINOR=<minor>
+// That picks the file of test/e2e/matrix/ that holds the image versions and
+// the label list of the run.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting camunda-operator e2e test suite\n")
-	RunSpecs(t, "e2e suite")
+
+	// -ginkgo.label-filter on the command line wins over the list of the
+	// matrix entry.
+	suiteConfig, reporterConfig := GinkgoConfiguration()
+	if suiteConfig.LabelFilter == "" {
+		filter, err := utils.LabelFilter(os.Getenv(envLabels), allLabels)
+		require.NoError(t, err, envLabels)
+		suiteConfig.LabelFilter = filter
+	}
+
+	RunSpecs(t, "e2e suite", suiteConfig, reporterConfig)
 }
 
 // The suite deploys the manager once, after ECK. The ECK CRDs must be present
 // before the manager starts, because the ElasticsearchCluster controller
 // watches the ECK Elasticsearch kind.
 var _ = BeforeSuite(func() {
+	By("checking the image versions of the run")
+	for _, name := range versionEnv {
+		Expect(os.Getenv(name)).NotTo(
+			BeEmpty(),
+			"%s is not set. Run the suite through make test-e2e, which exports it from test/e2e/matrix/<minor>.env",
+			name,
+		)
+	}
+
 	By("building the manager image")
 	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", managerImage))
 	_, err := utils.Run(cmd)
@@ -95,6 +119,18 @@ var _ = AfterSuite(func() {
 	undeployManager()
 	teardownECK()
 	teardownCertManager()
+})
+
+// A spec without a label never runs under a label filter, so a container
+// that forgot its Label would drop its flow from every matrix entry that
+// selects by name. The report lists every spec, selected or not.
+var _ = ReportAfterSuite("every spec carries a label", func(report Report) {
+	for _, spec := range report.SpecReports {
+		if spec.LeafNodeType != types.NodeTypeIt {
+			continue
+		}
+		Expect(spec.Labels()).NotTo(BeEmpty(), "%s has no label", spec.FullText())
+	}
 })
 
 // deployManager creates the manager namespace with the restricted security

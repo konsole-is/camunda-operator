@@ -21,6 +21,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -41,9 +42,6 @@ const (
 	esName      = "camunda-es"
 	// esStorageConfig is the SecondaryStorageConfig that the cluster publishes.
 	esStorageConfig = "camunda-es-storage"
-	// esVersion is a Camunda 8.9 supported Elasticsearch release that ECK
-	// runs.
-	esVersion = "9.2.4"
 	// esStorageSize is small: kind binds it from the local-path provisioner.
 	esStorageSize = "1Gi"
 	// esIndex holds the document that must survive suspend and resume. It has
@@ -65,13 +63,13 @@ var dataVolumeSelector = k8slabels.SelectorFromSet(
 	labels.Discovery(labels.ElasticsearchCluster(esName), "elasticsearch"),
 ).String()
 
-var _ = Describe("ElasticsearchCluster", Ordered, func() {
+var _ = Describe("ElasticsearchCluster", Ordered, Label(labelElasticsearchCluster), func() {
 	var (
 		cluster = &v1.ElasticsearchCluster{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
 			ObjectMeta: metav1.ObjectMeta{Name: esName, Namespace: esNamespace},
 			Spec: v1.ElasticsearchClusterSpec{
-				Version:     esVersion,
+				Version:     os.Getenv(envElasticsearchVersion),
 				Replicas:    new(int32(1)),
 				StorageSize: new(resource.MustParse(esStorageSize)),
 				Resources: &corev1.ResourceRequirements{
