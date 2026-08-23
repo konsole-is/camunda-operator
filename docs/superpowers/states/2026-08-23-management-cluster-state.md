@@ -27,13 +27,13 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #186 | feat/management-cluster--api-types | .claude/worktrees/management-cluster--api-types | #193 → feat/management-cluster | ready |
-| #187 | feat/management-cluster--identity-oidc-contract | .claude/worktrees/management-cluster--identity-oidc-contract | | not-started |
-| #188 | feat/management-cluster--keycloak-modes | .claude/worktrees/management-cluster--keycloak-modes | | not-started |
-| #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster--console-ping | | not-started |
-| #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster--web-modeler | | not-started |
-| #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster--e2e-flows | | not-started |
-| #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster--user-docs | | not-started |
+| #186 | feat/management-cluster--api-types | .claude/worktrees/management-cluster/.claude/worktrees/api-types | #193 → feat/management-cluster | ready |
+| #187 | feat/management-cluster--identity-oidc-contract | .claude/worktrees/management-cluster/.claude/worktrees/identity-oidc-contract | | not-started |
+| #188 | feat/management-cluster--keycloak-modes | .claude/worktrees/management-cluster/.claude/worktrees/keycloak-modes | | not-started |
+| #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster/.claude/worktrees/console-ping | | not-started |
+| #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster/.claude/worktrees/web-modeler | | not-started |
+| #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | | not-started |
+| #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | | not-started |
 
 ## Contracts
 
@@ -51,6 +51,8 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 ## Bubble-up log
 
+- 2026-08-23 — Worktree subagents inherit the orchestrator's Bash isolation pin (`.claude/worktrees/management-cluster`) and cannot run commands in a sibling worktree. Decision: sub-worktrees live nested under the feature worktree at `.claude/worktrees/management-cluster/.claude/worktrees/<sub-name>` (`**/.claude/worktrees/` is gitignored). The #186 worktree was moved there; waves 2+ are created there. The PR-table paths below are the nested ones.
+- 2026-08-23 — Copilot on #193: `MinLength=1` added on `IdentityAdminSpec.claimName/claimValue/username` (`has()` admits an explicit empty string). Pushed back on "GoDoc promises behaviour the scaffold does not implement": the kind's GoDoc is its contract and the controller lands on this feature branch before the integration PR.
 - 2026-08-23 — Cluster discovery and the claim annotation moved from #189 (Console) into #187 (core) so that #189 and #190 can run in parallel against one attachment. Propagated: plan Task 2.3, issue bodies #187 and #189 updated.
 
 ## Pending snapshot
