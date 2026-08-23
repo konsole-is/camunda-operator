@@ -128,10 +128,10 @@ var defaultPorts = map[string]string{"http": "80", "https": "443"}
 // ElasticsearchIdentity normalizes an Elasticsearch endpoint URL so that two
 // spellings of one server compare equal. The scheme and the host are lower
 // case, the host has no trailing dot, and the port is explicit (the default
-// port of the scheme when the URL names none). The path loses its trailing
-// slash, and the query and the fragment are dropped. The path stays, because
-// an Elasticsearch behind a path prefix is another server. An endpoint
-// without a scheme, a host, or a resolvable port is an error.
+// port of the scheme when the URL names none). The escaped path loses its
+// trailing slash, and the query and the fragment are dropped. The path
+// stays, because an Elasticsearch behind a path prefix is another server. An
+// endpoint without a scheme, a host, or a resolvable port is an error.
 func ElasticsearchIdentity(endpoint string) (string, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
@@ -153,12 +153,13 @@ func ElasticsearchIdentity(endpoint string) (string, error) {
 		return "", fmt.Errorf("endpoint %q names no port and scheme %q has no default port", endpoint, scheme)
 	}
 
-	return scheme + "://" + net.JoinHostPort(host, port) + strings.TrimRight(parsed.Path, "/"), nil
+	return scheme + "://" + net.JoinHostPort(host, port) + strings.TrimRight(parsed.EscapedPath(), "/"), nil
 }
 
 // RDBMSIdentity is the identity of a relational backend, host:port/database.
-// The host is lower case. The database name keeps its case, because
-// PostgreSQL distinguishes it.
+// The host is lower case and has no trailing dot. The database name keeps
+// its case, because PostgreSQL distinguishes it.
 func RDBMSIdentity(host string, port int32, database string) string {
-	return net.JoinHostPort(strings.ToLower(host), strconv.Itoa(int(port))) + "/" + database
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return net.JoinHostPort(host, strconv.Itoa(int(port))) + "/" + database
 }

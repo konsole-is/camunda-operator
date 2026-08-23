@@ -59,6 +59,9 @@ func TestElasticsearchIdentity(t *testing.T) {
 		"drops a trailing dot of the host": {
 			endpoint: "https://es.example.com.:9200", want: "https://es.example.com:9200",
 		},
+		"keeps a percent-encoded path distinct": {
+			endpoint: "https://es.example.com:9200/a%2Fb", want: "https://es.example.com:9200/a%2Fb",
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -67,6 +70,12 @@ func TestElasticsearchIdentity(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+
+	encoded, err := ElasticsearchIdentity("https://es.example.com:9200/a%2Fb")
+	require.NoError(t, err)
+	plain, err := ElasticsearchIdentity("https://es.example.com:9200/a/b")
+	require.NoError(t, err)
+	assert.NotEqual(t, plain, encoded, "a percent-encoded slash names a different path than a literal one")
 
 	for name, endpoint := range map[string]string{
 		"no scheme":    "es.example.com:9200",
@@ -85,6 +94,7 @@ func TestElasticsearchIdentity(t *testing.T) {
 func TestRDBMSIdentity(t *testing.T) {
 	assert.Equal(t, "pg.example.com:5432/Camunda", RDBMSIdentity("PG.Example.com", 5432, "Camunda"))
 	assert.Equal(t, "[::1]:5432/camunda", RDBMSIdentity("::1", 5432, "camunda"))
+	assert.Equal(t, "pg.example.com:5432/camunda", RDBMSIdentity("PG.example.com.", 5432, "camunda"))
 }
 
 func TestBackendString(t *testing.T) {
