@@ -188,6 +188,17 @@ func fixtureRealistic(t *testing.T) Input {
 			PodLabels:      map[string]string{"team": "platform"},
 			PodAnnotations: map[string]string{"prometheus.io/scrape": "true"},
 			Scheduling: &v1.SchedulingSpec{
+				NodeAffinity: &corev1.NodeAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+						NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+							MatchExpressions: []corev1.NodeSelectorRequirement{{
+								Key:      "topology.kubernetes.io/zone",
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"eu-west-1a"},
+							}},
+						}},
+					},
+				},
 				Tolerations: []corev1.Toleration{{Key: "camunda", Operator: corev1.TolerationOpExists}},
 			},
 		}

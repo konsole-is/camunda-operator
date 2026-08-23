@@ -24,6 +24,15 @@ spec:
         camunda.io/management-cluster: my-management
         team: platform
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - eu-west-1a
       containers:
       - env:
         - name: SPRING_PROFILES_ACTIVE
