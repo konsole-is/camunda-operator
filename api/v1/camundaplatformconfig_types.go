@@ -33,6 +33,17 @@ const (
 	AuthenticationMethodOIDC AuthenticationMethod = "oidc"
 )
 
+// OIDCProviderType names the product behind an OIDC connection. Management
+// Identity reads it and changes how it resolves users and groups.
+type OIDCProviderType string
+
+const (
+	// OIDCProviderGeneric fits any OIDC-compliant provider.
+	OIDCProviderGeneric OIDCProviderType = "generic"
+	// OIDCProviderMicrosoft selects Microsoft Entra ID.
+	OIDCProviderMicrosoft OIDCProviderType = "microsoft"
+)
+
 // OIDCSpec is the identity provider connection of a platform config. The
 // fields follow the OIDC discovery vocabulary and work with any OIDC-compliant
 // provider.
@@ -48,7 +59,7 @@ type OIDCSpec struct {
 	// Microsoft Entra ID.
 	// +kubebuilder:validation:Enum=generic;microsoft
 	// +optional
-	ProviderType string `json:"providerType,omitempty"`
+	ProviderType OIDCProviderType `json:"providerType,omitempty"`
 	// JWKSURL is an explicit JWKS endpoint. It overrides the value from OIDC
 	// discovery.
 	// +kubebuilder:validation:XValidation:rule="self == '' || (isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https'))",message="jwksUrl must be empty or a valid http or https URL"
