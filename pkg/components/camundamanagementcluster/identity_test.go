@@ -170,6 +170,38 @@ func TestStartedInitialClaimUsesTheFirstRunOfARestartedContainer(t *testing.T) {
 	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
 }
 
+// A container that restarted twice has lost its first run, so the start time
+// of the pod, which is older than every run, orders the pods instead.
+func TestStartedInitialClaimOrdersByPodStartTimeAfterRestarts(t *testing.T) {
+	t.Parallel()
+
+	podStart := metav1.NewTime(time.Now().Add(-3 * time.Minute))
+	newer := metav1.NewTime(time.Now().Add(-time.Minute))
+	restarted := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+	})
+	restarted.Status.StartTime = &podStart
+	restarted.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: metav1.Now()},
+	}
+	pods := []corev1.Pod{
+		startedIdentityPod("second-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: newer},
+		}),
+		restarted,
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
+
+	// A pod that never ran its container has no start to order by, whatever
+	// its start time says.
+	pending := startedIdentityPod("third-admin", corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"},
+	})
+	pending.Status.StartTime = &podStart
+	assert.Empty(t, StartedInitialClaim([]corev1.Pod{pending}))
+}
+
 // The kubelet records a start in seconds, so two pods of a rollout can share
 // one. The name breaks the tie in either list order.
 func TestStartedInitialClaimBreaksATieByPodName(t *testing.T) {
