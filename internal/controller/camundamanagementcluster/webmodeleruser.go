@@ -42,9 +42,6 @@ const (
 	// is the one RFC 2606 reserves for documentation, so the operator never
 	// claims an address that somebody owns.
 	webModelerUserEmail = "web-modeler@example.com"
-	// webModelerUserComponent is the component label of the Secrets that hold
-	// the passwords of these users.
-	webModelerUserComponent = "web-modeler-cluster-user"
 	// webModelerUserApplied is the value under
 	// WebModelerClusterUserAppliedKey once the cluster holds the user with
 	// the password beside it.
@@ -167,7 +164,7 @@ func (r *Reconciler) withdrawUnservedUsers(
 		ctx, &users,
 		client.InNamespace(mc.Namespace),
 		client.MatchingLabels(
-			labels.Managed(labels.ManagementCluster(mc.Name), webModelerUserComponent),
+			labels.Managed(labels.ManagementCluster(mc.Name), components.ComponentWebModelerClusterUser),
 		),
 	); err != nil {
 		return fmt.Errorf("listing the Web Modeler user Secrets: %w", err)
@@ -442,7 +439,7 @@ func webModelerUserLabels(
 	mc *v1.CamundaManagementCluster,
 	cluster components.AttachedCluster,
 ) map[string]string {
-	set := labels.Managed(labels.ManagementCluster(mc.Name), webModelerUserComponent)
+	set := labels.Managed(labels.ManagementCluster(mc.Name), components.ComponentWebModelerClusterUser)
 	set[labels.ClusterKey] = labels.OwnerName(cluster.Name)
 	set[labels.ClusterNamespaceKey] = cluster.Namespace
 	set[labels.ClusterUIDKey] = string(cluster.UID)

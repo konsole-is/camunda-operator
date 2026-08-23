@@ -40,7 +40,7 @@ func envMap(env []corev1.EnvVar) map[string]string {
 func TestClustersEnvRendersAnOIDCCluster(t *testing.T) {
 	t.Parallel()
 
-	env := ClustersEnv(fixtureAttachedClusters()[:1])
+	env := clustersEnv(fixtureAttachedClusters()[:1])
 
 	assert.Equal(
 		t, map[string]string{
@@ -62,7 +62,7 @@ func TestClustersEnvRendersAnOIDCCluster(t *testing.T) {
 func TestClustersEnvRendersABasicAuthCluster(t *testing.T) {
 	t.Parallel()
 
-	env := ClustersEnv(fixtureAttachedClusters()[1:2])
+	env := clustersEnv(fixtureAttachedClusters()[1:2])
 
 	assert.Equal(
 		t, map[string]string{
@@ -83,7 +83,7 @@ func TestClustersEnvNumbersOverAClusterWithoutEndpoints(t *testing.T) {
 	t.Parallel()
 
 	clusters := fixtureAttachedClusters()
-	env := envMap(ClustersEnv([]AttachedCluster{clusters[2], clusters[0], clusters[1]}))
+	env := envMap(clustersEnv([]AttachedCluster{clusters[2], clusters[0], clusters[1]}))
 
 	assert.Equal(t, "prod-ns/prod", env["CAMUNDA_MODELER_CLUSTERS_0_NAME"])
 	assert.Equal(t, "staging-ns/staging", env["CAMUNDA_MODELER_CLUSTERS_1_NAME"])
@@ -94,7 +94,7 @@ func TestClustersEnvNumbersOverAClusterWithoutEndpoints(t *testing.T) {
 func TestClustersEnvKeepsAGRPCSchemeThatIsAlreadyThere(t *testing.T) {
 	t.Parallel()
 
-	env := envMap(ClustersEnv([]AttachedCluster{{
+	env := envMap(clustersEnv([]AttachedCluster{{
 		Name:         "prod",
 		Namespace:    "prod-ns",
 		GRPCEndpoint: "grpcs://prod.example.com:26500",
@@ -110,5 +110,5 @@ func TestClustersEnvKeepsAGRPCSchemeThatIsAlreadyThere(t *testing.T) {
 func TestClustersEnvRendersNothingWithoutACluster(t *testing.T) {
 	t.Parallel()
 
-	assert.Empty(t, ClustersEnv(nil))
+	assert.Empty(t, clustersEnv(nil))
 }

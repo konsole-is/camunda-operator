@@ -60,6 +60,9 @@ type generatedSecret struct {
 // A rotating Secret carries the apply precondition of the credential it
 // publishes, so a delete of the Secret always rotates it. The controller must
 // reconcile through credentials.NewApplyClient for that precondition to hold.
+//
+// The component carries no Suspend. An ocf Secret models no suspension, so
+// these Secrets stay as they are while the workloads are scaled to zero.
 func secretsComponents(in Input) (Built, error) {
 	keycloakMode := in.Provider.Mode != ModeOIDC
 

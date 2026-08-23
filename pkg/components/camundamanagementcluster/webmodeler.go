@@ -37,8 +37,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
 
-// The environment variables of the Web Modeler restapi container. Every one of
-// them is on the configuration page, in the section its comment names.
+// The environment variables of the Web Modeler restapi container that no other
+// component of the management plane sets. Every one of them is on the
+// configuration page, in the section its comment names. Web Modeler also sets
+// CAMUNDA_IDENTITY_TYPE, which identity.go declares.
 //
 // Configuration of the restapi component:
 // https://docs.camunda.io/docs/self-managed/components/modeler/web-modeler/configuration/
@@ -75,9 +77,6 @@ const (
 	// Identity, which Web Modeler reads its users from ("Identity /
 	// Keycloak").
 	webModelerEnvIdentityBaseURL = "CAMUNDA_IDENTITY_BASEURL"
-	// webModelerEnvIdentityType selects the kind of identity provider, the
-	// CAMUNDA_IDENTITY_TYPE of Management Identity.
-	webModelerEnvIdentityType = "CAMUNDA_IDENTITY_TYPE"
 	// The two audiences that Web Modeler validates: the internal one in the
 	// tokens of a person, the public one in the tokens of an application that
 	// calls the Web Modeler API ("Identity / Keycloak").
@@ -132,9 +131,9 @@ const (
 	// The containers of the two Deployments.
 	webModelerRestapiContainer    = "restapi"
 	webModelerWebsocketsContainer = "websockets"
-	// defaultPusherPath is the WebSocket base path when the external URL
-	// names none.
-	defaultPusherPath = "/"
+	// webModelerDefaultPusherPath is the WebSocket base path when the
+	// external URL names none.
+	webModelerDefaultPusherPath = "/"
 )
 
 // The scheme and the default ports that an external URL is read against. The
@@ -159,7 +158,7 @@ func webModelerComponents(in Input) (Built, error) {
 	deployed := in.Cluster.Spec.WebModeler != nil
 	gate := feature.NewBooleanGate(deployed)
 
-	pusher, err := pusherSecret(in)
+	pusher, err := webModelerPusherSecret(in)
 	if err != nil {
 		return Built{}, err
 	}
@@ -213,14 +212,14 @@ func webModelerComponents(in Input) (Built, error) {
 	return built, nil
 }
 
-// pusherSecret renders the generated credentials that both Web Modeler
+// webModelerPusherSecret renders the generated credentials that both Web Modeler
 // processes authenticate the WebSocket connection with. An ocf Secret models
 // no suspension, so it stays as it is while the workloads are scaled to zero.
 //
 // A reused credential carries its apply precondition onto the Secret, so a
 // delete of the Secret always rotates it. The controller must reconcile this
 // component through credentials.NewApplyClient for that to hold.
-func pusherSecret(in Input) (*secret.Resource, error) {
+func webModelerPusherSecret(in Input) (*secret.Resource, error) {
 	pusher, err := secret.NewBuilder(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        PusherSecretName(in.Cluster),
@@ -230,7 +229,6 @@ func pusherSecret(in Input) (*secret.Resource, error) {
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			PusherAppIDKey:     []byte(PusherAppID),
 			PusherAppKeyKey:    []byte(in.Pusher.Key.Value),
 			PusherAppSecretKey: []byte(in.Pusher.Secret.Value),
 		},
@@ -330,7 +328,7 @@ func webModelerRestapiEnv(in Input) []corev1.EnvVar {
 		})
 	}
 
-	return append(env, ClustersEnv(in.Clusters)...)
+	return append(env, clustersEnv(in.Clusters)...)
 }
 
 // webModelerDatabaseEnv renders the connection to the Web Modeler database. It
@@ -412,7 +410,7 @@ func webModelerProviderEnv(in Input) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{Name: webModelerEnvClientID, Value: provider.Clients.WebModeler.ID},
 		{Name: webModelerEnvIdentityBaseURL, Value: IdentityServiceURL(in.Cluster)},
-		{Name: webModelerEnvIdentityType, Value: provider.Type},
+		{Name: identityEnvType, Value: provider.Type},
 		{Name: webModelerEnvAudienceInternalAPI, Value: provider.Clients.WebModelerAPI.Audience},
 		{Name: webModelerEnvAudiencePublicAPI, Value: provider.Clients.WebModelerPublicAPIAudience},
 		{Name: webModelerEnvIssuerURI, Value: provider.IssuerURL},
@@ -457,13 +455,26 @@ func webModelerPusherEnv(in Input) []corev1.EnvVar {
 			ValueFrom: secretSource(PusherSecretName(in.Cluster), PusherAppSecretKey),
 		},
 		{Name: webModelerEnvClientPusherHost, Value: external.Hostname()},
-		{Name: webModelerEnvClientPusherPort, Value: externalPort(external)},
-		{Name: webModelerEnvClientPusherPath, Value: pusherPath(external)},
+		{Name: webModelerEnvClientPusherPort, Value: webModelerClientPusherPort(external)},
+		{Name: webModelerEnvClientPusherPath, Value: webModelerPusherPath(external)},
 		{
 			Name:  webModelerEnvClientPusherForceTLS,
 			Value: strconv.FormatBool(external.Scheme == schemeHTTPS),
 		},
 	}
+}
+
+// webModelerClientPusherPort returns the port a browser connects to: the one
+// the WebSocket URL names, or the default of its scheme.
+func webModelerClientPusherPort(external *url.URL) string {
+	if port := external.Port(); port != "" {
+		return port
+	}
+	if external.Scheme == schemeHTTPS {
+		return strconv.Itoa(portHTTPS)
+	}
+
+	return strconv.Itoa(portHTTP)
 }
 
 // webModelerWebsocketsContainerSpec renders the websockets container. It reads
@@ -506,7 +517,7 @@ func webModelerWebsocketsEnv(in Input) []corev1.EnvVar {
 			Name:      webModelerEnvAppSecret,
 			ValueFrom: secretSource(PusherSecretName(in.Cluster), PusherAppSecretKey),
 		},
-		{Name: webModelerEnvAppPath, Value: pusherPath(external)},
+		{Name: webModelerEnvAppPath, Value: webModelerPusherPath(external)},
 	}
 }
 
@@ -561,25 +572,13 @@ func webModelerWebsocketsService(in Input) *corev1.Service {
 	}
 }
 
-// pusherPath returns the base path of the WebSocket endpoint, which both sides
-// of the pairing must agree on. A URL that names no path uses the root.
-func pusherPath(external *url.URL) string {
+// webModelerPusherPath returns the base path of the WebSocket endpoint, which
+// both sides of the pairing must agree on. A URL that names no path uses the
+// root.
+func webModelerPusherPath(external *url.URL) string {
 	if path := externalPath(external); path != "" {
 		return path
 	}
 
-	return defaultPusherPath
-}
-
-// externalPort returns the port a browser connects to: the one the URL names,
-// or the default of its scheme.
-func externalPort(external *url.URL) string {
-	if port := external.Port(); port != "" {
-		return port
-	}
-	if external.Scheme == schemeHTTPS {
-		return strconv.Itoa(portHTTPS)
-	}
-
-	return strconv.Itoa(portHTTP)
+	return webModelerDefaultPusherPath
 }

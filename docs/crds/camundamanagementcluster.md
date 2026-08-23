@@ -166,7 +166,7 @@ In the two Keycloak modes the operator generates the credentials that Management
 | `my-management-optimize-client` | `client-secret` | The client secret of Optimize. The `ManagementAuthConfig` points at this Secret. |
 | `my-management-identity-admin` | `password` | The password of the first Keycloak user. Absent while `spec.identity.admin.passwordSecretRef` names a Secret of your own. |
 
-Delete `my-management-optimize-client` to rotate that client secret. The operator generates a new value, writes it back, and rolls the pods that read it. Management Identity holds no client secret of its own in these modes. It creates its `camunda-identity` client and gives it a new secret on every start.
+Delete `my-management-optimize-client` to rotate that client secret. The operator generates a new value, writes it back, and rolls the pods that read it. There is no Secret for the client of Management Identity itself. Management Identity creates its `camunda-identity` client in the realm and gives it a new secret on every start, and nothing outside Management Identity needs that secret.
 
 > **Caution:** Do not delete `my-management-identity-admin`. Management Identity sets that password on the Keycloak user once, on its first start, and never reads it again. A deleted Secret comes back with a new password that the Keycloak user does not hold. Only a password reset in Keycloak recovers the account. To rotate the password, change it in Keycloak.
 
@@ -210,7 +210,7 @@ In the two Keycloak modes, set `username`. Management Identity creates that Keyc
 
 A later change to `username` does not rename the first user. Management Identity creates a second one, and the first one keeps its access.
 
-In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. This pair is fixed once Management Identity has started. A later change reports `IdentityReady` with reason `ImmutableAfterStart`, and the message names the recorded value and the value you asked for:
+In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. This pair is fixed once Management Identity has started. A later change reports `IdentityReady` and `Ready` with reason `ImmutableAfterStart`, and the message names the recorded value and the value you asked for:
 
 ```yaml
 status:
@@ -219,6 +219,10 @@ status:
       status: "False"
       reason: ImmutableAfterStart
       message: 'Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
+    - type: Ready
+      status: "False"
+      reason: ImmutableAfterStart
+      message: 'management-identity: Management Identity started with the administrator claim "oid=8f1c...e2" and stores it in its database; spec.identity.admin now asks for "oid=41ab...77", which only a change in the database can do'
 ```
 
 There are two ways out, and the operator cannot do either for you.
@@ -436,7 +440,7 @@ Nobody can sign in to Console, Web Modeler, or Optimize while the management pla
 
 Deleting the `CamundaManagementCluster` removes:
 
-- Every Deployment, Service, and generated Secret. They carry an owner reference.
+- Every Deployment, Service, and generated Secret.
 - The `Keycloak` resource in the `keycloak` mode, and with it the Keycloak pods.
 - The `ManagementAuthConfig`. A `CamundaOptimize` that reads it then reports `InvalidReference`.
 - The Console settings and the `camunda.io/management-cluster` annotation on every orchestration cluster it served.
@@ -461,23 +465,22 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, and `Suspended
 | `SecretsReady` | `Healthy` / `Disabled` | The generated Secrets are applied, or the mode generates none (`oidc`). | Nothing. |
 | `KeycloakReady` | `Healthy` | The Keycloak Operator reports the Keycloak ready. | Nothing. |
 | `KeycloakReady` | `Creating` / `Updating` | The Keycloak Operator rolls the Keycloak pods. | Wait. |
-| `KeycloakReady` | `Failing` / `Down` | Keycloak reports errors, or it does not become ready. The message carries what Keycloak said. | Read the pods and events of `my-management-keycloak`. |
+| `KeycloakReady` | `Failing` | Keycloak reports errors, or it does not become ready. The message carries what Keycloak said. | Read the pods and events of `my-management-keycloak`. |
 | `KeycloakReady` | `Disabled` | The mode is `externalKeycloak` or `oidc`, so the operator runs no Keycloak. | Nothing. |
 | `IdentityReady` | `Healthy` | Every Management Identity replica is ready. | Nothing. |
 | `IdentityReady` | `PrerequisiteNotMet` | The mode is `keycloak` and `KeycloakReady` is not `True` yet. Management Identity waits for Keycloak, so this is normal while Keycloak starts. | Read the `KeycloakReady` row. It clears when Keycloak is ready. |
 | `IdentityReady` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Put the recorded value back, or remove the recorded claim and change the administrator in the database. See [The first administrator](#the-first-administrator). |
 | `ConsoleReady`, `WebModelerReady` | `Healthy` / `Disabled` | Every replica is ready, or the block is unset. | Nothing. |
-| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. |
-| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Failing` | The workload has replicas that do not become ready. | Read the pods of the named Deployment. |
-| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Degraded` / `Down` | Some or no replicas are ready. | Read the pods and events of the named Deployment. |
+| `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Creating` / `Updating` / `Scaling` | The workload rolls out or scales. | Wait. If the reason does not change, read the pods of the named Deployment. |
 | `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspended` | `spec.suspend` is `true`, so the workload is at zero. | Nothing. |
 | `KeycloakReady`, `IdentityReady`, `ConsoleReady`, `WebModelerReady` | `Suspending` | `spec.suspend` is `true` and the workload still runs pods. | Wait. |
 | `KeycloakReady` | `PendingSuspension` | `spec.suspend` is `true` and the `Keycloak` resource does not ask for zero instances yet. | Wait. |
 | `ManagementAuthReady` | `Healthy` | The `ManagementAuthConfig` is up to date. | Nothing. |
 | `ManagementAuthReady` | `WriteFailed` | The operator could not write the `ManagementAuthConfig`. The message carries the answer of the API server. | Read the message. The operator tries again. |
 | `Ready` | `Healthy` | Every condition that takes part is healthy and the contract is written. | Nothing. |
-| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Degraded` / `Down` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
-| `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing. Set `suspend` back to `false`. |
+| `Ready` | `Creating` / `Updating` / `Scaling` / `Failing` / `Suspending` / `PendingSuspension` / `PrerequisiteNotMet` | The reason of the governing condition. The message names it. | Read the row of that condition. |
+| `Ready` | `ImmutableAfterStart` | `spec.identity.admin` asks for an administrator claim that Management Identity did not start with. | Read the `IdentityReady` row. |
+| `Ready` | `Suspended` | `spec.suspend` is `true` and every workload is at zero. `Ready` is `True`. | Nothing is wrong. Set `suspend` back to `false` to bring the management plane up. |
 | `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator, or select the `externalKeycloak` or the `oidc` mode. See [Installation](../installation.md#requirements). |
 | `Ready` | `UnsupportedVersion` | A version field is outside the range the operator supports. The message names the field and the bound. | Set a supported version. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. | Read the message. Create the missing resource, or correct the field it names. |
@@ -656,7 +659,7 @@ spec:
 
 ### Validation rules
 
-The API server enforces these at admission:
+The API server refuses an apply that breaks one of these:
 
 - `spec.identityProvider` sets exactly one of `keycloak`, `externalKeycloak`, and `oidc`.
 - `spec.identity.admin` sets `claimName` and `claimValue` together, or `username`, never both pairs.

@@ -109,6 +109,9 @@ func (p MirrorPurpose) Valid() bool {
 // purpose being present: without one it reads Disabled and stays out of Ready.
 // A purpose that is not in MirrorPurposes is an error, because nothing would
 // render its copy.
+//
+// The component carries no Suspend. An ocf Secret models no suspension, so
+// these copies stay as they are while the workloads are scaled to zero.
 func mirroredSecretComponent(in Input) (Built, error) {
 	for purpose := range in.Mirrors {
 		if !purpose.Valid() {

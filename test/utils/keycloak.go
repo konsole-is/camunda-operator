@@ -57,13 +57,22 @@ const (
 // Operator. The operator registers a controller for each kind it ships (the
 // QUARKUS_OPERATOR_SDK_CONTROLLERS_* variables of its Deployment name them),
 // so every one the release publishes is installed even though this operator
-// writes only Keycloak resources. The two client kinds arrived in 26.7.0, so
-// the installer skips a file that the release does not publish.
-var keycloakOperatorCRDs = []string{
-	"keycloaks.k8s.keycloak.org-v1.yml",
-	"keycloakrealmimports.k8s.keycloak.org-v1.yml",
-	"keycloakoidcclients.k8s.keycloak.org-v1.yml",
-	"keycloaksamlclients.k8s.keycloak.org-v1.yml",
+// writes only Keycloak resources. Every release publishes the first two. The
+// two client kinds arrived in 26.7.0, so the installer skips one of those
+// that the release does not publish, and fails on a missing required one,
+// which means the version names no release.
+var keycloakOperatorCRDs = []keycloakOperatorCRD{
+	{file: "keycloaks.k8s.keycloak.org-v1.yml", required: true},
+	{file: "keycloakrealmimports.k8s.keycloak.org-v1.yml", required: true},
+	{file: "keycloakoidcclients.k8s.keycloak.org-v1.yml"},
+	{file: "keycloaksamlclients.k8s.keycloak.org-v1.yml"},
+}
+
+// keycloakOperatorCRD is one custom resource definition file of a Keycloak
+// Operator release. A required one is published by every release.
+type keycloakOperatorCRD struct {
+	file     string
+	required bool
 }
 
 // KeycloakOperatorVersion returns the Keycloak Operator release that the
@@ -121,8 +130,9 @@ func IsKeycloakOperatorInstalled(namespace string) bool {
 }
 
 // InstallKeycloakCRDs applies the custom resource definitions of the Keycloak
-// Operator release that KeycloakOperatorVersion names, skipping a file that
-// the release does not publish.
+// Operator release that KeycloakOperatorVersion names. It skips an optional
+// file that the release does not publish, and fails on a required one, which
+// means that the version names no release.
 func InstallKeycloakCRDs() error {
 	version, err := KeycloakOperatorVersion()
 	if err != nil {
@@ -130,13 +140,18 @@ func InstallKeycloakCRDs() error {
 	}
 
 	for _, crd := range keycloakOperatorCRDs {
-		url := fmt.Sprintf(keycloakResourceURLTmpl, version, crd)
+		url := fmt.Sprintf(keycloakResourceURLTmpl, version, crd.file)
 		published, err := urlExists(url)
 		if err != nil {
 			return err
 		}
+		if !published && crd.required {
+			return fmt.Errorf("the Keycloak Operator %s publishes no %s: no such release", version, crd.file)
+		}
 		if !published {
-			_, _ = fmt.Fprintf(GinkgoWriter, "The Keycloak Operator %s publishes no %s, skipping it\n", version, crd)
+			_, _ = fmt.Fprintf(
+				GinkgoWriter, "The Keycloak Operator %s publishes no %s, skipping it\n", version, crd.file,
+			)
 			continue
 		}
 
@@ -162,7 +177,7 @@ func UninstallKeycloakCRDs() {
 	}
 
 	for _, crd := range keycloakOperatorCRDs {
-		url := fmt.Sprintf(keycloakResourceURLTmpl, version, crd)
+		url := fmt.Sprintf(keycloakResourceURLTmpl, version, crd.file)
 		published, err := urlExists(url)
 		if err != nil {
 			warnError(err)

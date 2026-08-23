@@ -33,9 +33,9 @@ const (
 	adminPassword = "admin-password"
 )
 
-// newRoleClient starts a fake user API with an administrator and returns a
+// newAdminClient starts a fake user API with an administrator and returns a
 // client authenticated as that administrator.
-func newRoleClient(t *testing.T) (*camundaadmintest.UserAPI, *camundaadmin.UserClient) {
+func newAdminClient(t *testing.T) (*camundaadmintest.UserAPI, *camundaadmin.UserClient) {
 	t.Helper()
 
 	api := camundaadmintest.NewUserAPI()
@@ -52,47 +52,10 @@ func newRoleClient(t *testing.T) (*camundaadmintest.UserAPI, *camundaadmin.UserC
 	return api, client
 }
 
-func TestAssignRoleGivesTheRoleToTheUser(t *testing.T) {
-	t.Parallel()
-
-	api, client := newRoleClient(t)
-	api.SetUser("web-modeler", "Web Modeler", "web-modeler@example.com", "secret")
-
-	require.NoError(t, client.AssignRole(context.Background(), "admin", "web-modeler"))
-
-	assert.Equal(t, []string{"admin"}, api.Roles("web-modeler"))
-}
-
-// A role the user already holds means the state the caller asked for, so the
-// error names it and a converging caller reads it as success.
-func TestAssignRoleReportsARoleTheUserAlreadyHolds(t *testing.T) {
-	t.Parallel()
-
-	api, client := newRoleClient(t)
-	api.SetUser("web-modeler", "Web Modeler", "web-modeler@example.com", "secret")
-	require.NoError(t, client.AssignRole(context.Background(), "admin", "web-modeler"))
-
-	err := client.AssignRole(context.Background(), "admin", "web-modeler")
-
-	require.ErrorIs(t, err, camundaadmin.ErrAlreadyExists)
-	require.ErrorIs(t, err, camundaadmin.ErrRejected)
-}
-
-func TestAssignRoleReportsAMissingUser(t *testing.T) {
-	t.Parallel()
-
-	_, client := newRoleClient(t)
-
-	err := client.AssignRole(context.Background(), "admin", "nobody")
-
-	require.ErrorIs(t, err, camundaadmin.ErrRejected)
-	assert.NotErrorIs(t, err, camundaadmin.ErrAlreadyExists)
-}
-
 func TestCreateAuthorizationRecordsThePermissions(t *testing.T) {
 	t.Parallel()
 
-	api, client := newRoleClient(t)
+	api, client := newAdminClient(t)
 
 	require.NoError(t, client.CreateAuthorization(context.Background(), camundaadmin.Authorization{
 		OwnerID:         "web-modeler",
@@ -118,7 +81,7 @@ func TestCreateAuthorizationRecordsThePermissions(t *testing.T) {
 func TestCreateAuthorizationCreatesADuplicate(t *testing.T) {
 	t.Parallel()
 
-	api, client := newRoleClient(t)
+	api, client := newAdminClient(t)
 	authorization := camundaadmin.Authorization{
 		OwnerID:         "web-modeler",
 		OwnerType:       camundaadmin.OwnerUser,
@@ -136,7 +99,7 @@ func TestCreateAuthorizationCreatesADuplicate(t *testing.T) {
 func TestCreateAuthorizationReportsARefusedCall(t *testing.T) {
 	t.Parallel()
 
-	api, client := newRoleClient(t)
+	api, client := newAdminClient(t)
 	api.FailNext("createAuthorization", 1)
 
 	err := client.CreateAuthorization(context.Background(), camundaadmin.Authorization{
@@ -153,7 +116,7 @@ func TestCreateAuthorizationReportsARefusedCall(t *testing.T) {
 func TestCreateUserStoresTheCredential(t *testing.T) {
 	t.Parallel()
 
-	api, client := newRoleClient(t)
+	api, client := newAdminClient(t)
 
 	require.NoError(t, client.CreateUser(
 		context.Background(),
@@ -170,7 +133,7 @@ func TestCreateUserStoresTheCredential(t *testing.T) {
 func TestCreateUserReportsAUsernameTheClusterHolds(t *testing.T) {
 	t.Parallel()
 
-	api, client := newRoleClient(t)
+	api, client := newAdminClient(t)
 	api.SetUser("web-modeler", "Web Modeler", "web-modeler@example.com", "existing")
 
 	err := client.CreateUser(
@@ -186,7 +149,7 @@ func TestCreateUserReportsAUsernameTheClusterHolds(t *testing.T) {
 func TestCreateUserReportsAWrongAdministratorPassword(t *testing.T) {
 	t.Parallel()
 
-	api, _ := newRoleClient(t)
+	api, _ := newAdminClient(t)
 	client, err := camundaadmin.NewUserClient(camundaadmin.UserBinding{
 		Endpoint: api.URL(),
 		Version:  "8.9.9",
@@ -204,7 +167,7 @@ func TestCreateUserReportsAWrongAdministratorPassword(t *testing.T) {
 func TestDeleteUserRemovesTheUser(t *testing.T) {
 	t.Parallel()
 
-	api, client := newRoleClient(t)
+	api, client := newAdminClient(t)
 	api.SetUser("web-modeler", "Web Modeler", "web-modeler@example.com", "secret")
 
 	require.NoError(t, client.DeleteUser(context.Background(), "web-modeler"))
@@ -217,7 +180,7 @@ func TestDeleteUserRemovesTheUser(t *testing.T) {
 func TestDeleteUserAcceptsAUserThatIsGone(t *testing.T) {
 	t.Parallel()
 
-	_, client := newRoleClient(t)
+	_, client := newAdminClient(t)
 
 	assert.NoError(t, client.DeleteUser(context.Background(), "web-modeler"))
 }

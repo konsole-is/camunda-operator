@@ -29,9 +29,9 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
-// The Keycloak server settings that the rendered Keycloak sets. Camunda
-// documents both, together with the whole custom resource, in the guide to
-// the operator-based infrastructure:
+// A Keycloak server option that the rendered Keycloak sets, and the value of
+// another one. Camunda documents both, together with the whole custom
+// resource, in the guide to the operator-based infrastructure:
 // https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/
 const (
 	// keycloakOptionRelativePath serves Keycloak under /auth. The Camunda
@@ -126,10 +126,11 @@ func keycloakCR(in Input) *keycloak.Keycloak {
 		Labels:    managedLabels(in, ComponentKeycloak),
 	}
 
-	spec := in.Cluster.Spec.IdentityProvider.Keycloak
-	if spec == nil {
+	if in.Provider.Mode != ModeKeycloak {
 		return &keycloak.Keycloak{ObjectMeta: meta}
 	}
+
+	spec := in.Cluster.Spec.IdentityProvider.Keycloak
 
 	return &keycloak.Keycloak{
 		ObjectMeta: meta,

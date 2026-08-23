@@ -79,6 +79,10 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 				identity := conditionOf(g, s.mc, v1.ConditionIdentityReady)
 				g.Expect(identity.Status).To(Equal(metav1.ConditionFalse))
 				g.Expect(identity.Reason).To(Equal(v1.ReasonImmutableAfterStart))
+
+				ready := conditionOf(g, s.mc, v1.ConditionReady)
+				g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(ready.Reason).To(Equal(v1.ReasonImmutableAfterStart))
 			}, timeout, interval).Should(Succeed())
 
 			var workload appsv1.Deployment

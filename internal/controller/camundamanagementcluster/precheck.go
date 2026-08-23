@@ -274,7 +274,7 @@ func (res *resolver) resolveProvider(ctx context.Context, out *resolved) error {
 	}
 	out.Input.Provider = provider
 
-	if components.Mode(res.mc) != components.ModeOIDC {
+	if out.Input.Provider.Mode != components.ModeOIDC {
 		return nil
 	}
 

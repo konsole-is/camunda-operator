@@ -76,8 +76,8 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 		corev1.EventTypeNormal,
 		eventReasonAttachmentRemoved,
 		eventActionFinalize,
-		"Withdrew the claims and the Console ping settings on the orchestration clusters "+
-			"and removed ManagementAuthConfig %q",
+		"Withdrew the claims, the Console ping settings, and the Web Modeler users on the "+
+			"orchestration clusters and removed ManagementAuthConfig %q",
 		components.ContractName(mc),
 	)
 

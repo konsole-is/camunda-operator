@@ -125,12 +125,6 @@ const (
 // starting configuration page
 // (https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/starting-configuration/).
 const (
-	// identityProfileKeycloak is the Spring profile that binds the Keycloak
-	// settings of Management Identity.
-	identityProfileKeycloak = "keycloak"
-	// identityTypeKeycloak is the CAMUNDA_IDENTITY_TYPE value of a Keycloak
-	// provider.
-	identityTypeKeycloak = "KEYCLOAK"
 	// keycloakDefaultRealm is the realm that Management Identity creates and
 	// uses when the spec names none.
 	keycloakDefaultRealm = "camunda-platform"

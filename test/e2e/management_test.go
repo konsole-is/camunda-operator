@@ -197,9 +197,11 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelM
 			version, err := utils.KeycloakOperatorVersion()
 			Expect(err).NotTo(HaveOccurred())
 
+			// Recorded before the install, so that a Deployment the apply
+			// created and the rollout never finished is removed all the same.
+			installedKeycloakOperator = true
 			By(fmt.Sprintf("installing the Keycloak Operator %s", version))
 			Expect(utils.InstallKeycloakOperator(mcKeycloakNamespace)).To(Succeed())
-			installedKeycloakOperator = true
 		}
 
 		By("deploying PostgreSQL and the SMTP sink")

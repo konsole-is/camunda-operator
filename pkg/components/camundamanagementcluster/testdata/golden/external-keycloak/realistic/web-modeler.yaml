@@ -1,6 +1,5 @@
 apiVersion: v1
 data:
-  app-id: d2ViLW1vZGVsZXI=
   app-key: Z29sZGVuLXB1c2hlci1rZXk=
   app-secret: Z29sZGVuLXB1c2hlci1zZWNyZXQ=
 kind: Secret

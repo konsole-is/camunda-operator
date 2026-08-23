@@ -198,6 +198,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	comps = built.Components
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
+	// recordInitialClaim overwrites IdentityReady, and readyCondition
+	// aggregates that condition. The refusal must therefore reach the CR
+	// before the aggregate, or Ready reads True beside it.
 	claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
 	userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	pingErr := r.syncPing(ctx, &mc, clusters, attached)
