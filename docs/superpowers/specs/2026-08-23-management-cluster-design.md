@@ -348,8 +348,11 @@ gated-off component reports `KeycloakReady=True/Disabled` and stays out of `Read
 cluster that serves no Keycloak kind gets no component at all.
 
 **Both Keycloak modes.** Identity bootstraps the realm and the clients. The operator generates
-(`pkg/credentials`, rotatable by deleting the Secret) `IDENTITY_CLIENT_SECRET`,
-`KEYCLOAK_INIT_OPTIMIZE_SECRET`, and the Web Modeler pusher credentials. Every client comes from
+(`pkg/credentials`, rotatable by deleting the Secret) `KEYCLOAK_INIT_OPTIMIZE_SECRET` and the Web
+Modeler pusher credentials. It sets no `IDENTITY_CLIENT_SECRET`: Identity creates its own client
+and gives it a new secret on every start, and with the variable set it signs in with client
+credentials before the realm exists and never runs its setup (the 8.9 chart sets none either; the
+e2e run of #191 found it). Every client comes from
 a component preset, Console included: the 8.9 chart carries a `console` preset
 (`charts/camunda-platform-8.9/templates/identity/configmap.yaml`, `keycloak.init.console.root-url`
 and the `component-presets.console` block), so the operator sets
