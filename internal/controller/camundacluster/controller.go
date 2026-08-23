@@ -237,10 +237,11 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 
 	cred.stageFailure(&cluster, priorAdminSecret)
-	// A failed apply keeps the aggregate, which carries the error. The parked
-	// reason claims a suspension that has not landed yet.
-	if in.Storage.Holder != nil && reconcileErr == nil {
-		conditions.Stage(&cluster, storageHeld(&cluster, in.Storage.Holder))
+	if in.Storage.Holder != nil {
+		// The parked reason is the gate that Suspended reports to extensions and
+		// backups, so it stays while the apply fails. The message carries the
+		// error, and the component conditions carry the state of each workload.
+		conditions.Stage(&cluster, storageHeld(&cluster, in.Storage.Holder, reconcileErr))
 	} else {
 		conditions.Stage(&cluster, conditions.Aggregate(&cluster, built.ready...))
 	}

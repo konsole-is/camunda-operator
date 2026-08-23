@@ -15,7 +15,7 @@ This contract models the two backends the operator integrates with: `elasticsear
 
 ## The claim
 
-One `CamundaCluster` holds one contract. The first cluster to name the contract in `spec.storageRef` claims it. The operator marks the claim with the annotations `camunda.io/claim-holder` and `camunda.io/claim-holder-uid`, and keeps them through an apply of the contract by its producer.
+One `CamundaCluster` holds one contract. The claim goes to the cluster whose reconcile patches the contract first. This is reconcile order, not creation order. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator marks the claim with the annotations `camunda.io/claim-holder` and `camunda.io/claim-holder-uid`, and keeps them through an apply of the contract by its producer.
 
 To move the contract to another cluster, repoint or delete the holder. The cluster that waits for the contract takes the claim within 30 seconds. Do not remove the annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
 

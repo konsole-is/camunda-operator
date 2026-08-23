@@ -108,6 +108,17 @@ func TestStaleHolder(t *testing.T) {
 			},
 			stale: false,
 		},
+		"a paused holder that names another contract still holds": {
+			objects: []client.Object{&v1.CamundaCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "holder", Namespace: "team-a", UID: "uid-1"},
+				Spec:       v1.CamundaClusterSpec{Pause: true, StorageRef: "another-contract"},
+			}},
+			holder: secondarystorageconfig.Holder{
+				Cluster: types.NamespacedName{Namespace: "team-a", Name: "holder"},
+				UID:     "uid-1",
+			},
+			stale: false,
+		},
 	}
 
 	for name, tc := range cases {

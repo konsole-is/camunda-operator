@@ -87,7 +87,9 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 // staleHolder reports whether holder no longer uses the contract: it does
 // not exist, it is a later cluster with the same name, or its storageRef
 // names another contract. The read is live, so a holder that was just
-// repointed is seen as it is.
+// repointed is seen as it is. A paused holder keeps its claim: its pods stay
+// where they are while it is paused, so a repoint counts only when the
+// holder reconciles again.
 func (res *resolver) staleHolder(ctx context.Context, holder secondarystorageconfig.Holder) (bool, error) {
 	var owner v1.CamundaCluster
 	if err := res.reader.Get(ctx, holder.Cluster, &owner); err != nil {
@@ -102,21 +104,23 @@ func (res *resolver) staleHolder(ctx context.Context, holder secondarystoragecon
 	}
 
 	held := client.ObjectKey{Namespace: holder.Cluster.Namespace, Name: owner.Spec.StorageRef}
+	repointed := !owner.Spec.Pause && held != client.ObjectKeyFromObject(res.storage)
 
-	return owner.UID != holder.UID || held != client.ObjectKeyFromObject(res.storage), nil
+	return owner.UID != holder.UID || repointed, nil
 }
 
 // storageHeld builds the Ready condition of a cluster whose storage contract
-// another cluster holds.
-func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder) metav1.Condition {
-	return conditions.Ready(
-		metav1.ConditionFalse,
-		v1.ReasonStorageAlreadyAttached,
-		fmt.Sprintf(
-			"CamundaCluster %q already holds SecondaryStorageConfig %q. One CamundaCluster uses one "+
-				"secondary storage contract, so this cluster stays suspended until that one releases it",
-			objectPath(holder.Cluster), objectPath(holder.Contract),
-		),
-		cluster.Generation,
+// another cluster holds; applyErr, when set, is the error of the last apply
+// and lands in the message.
+func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder, applyErr error) metav1.Condition {
+	message := fmt.Sprintf(
+		"CamundaCluster %q already holds SecondaryStorageConfig %q. One CamundaCluster uses one "+
+			"secondary storage contract, so this cluster stays suspended until that one releases it",
+		objectPath(holder.Cluster), objectPath(holder.Contract),
 	)
+	if applyErr != nil {
+		message += fmt.Sprintf(". The last apply of the suspended workloads failed: %s", applyErr)
+	}
+
+	return conditions.Ready(metav1.ConditionFalse, v1.ReasonStorageAlreadyAttached, message, cluster.Generation)
 }
