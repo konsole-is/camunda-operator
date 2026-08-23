@@ -64,7 +64,11 @@ The brokers keep their data on one PersistentVolumeClaim per pod. `spec.zeebe.st
 
 `spec.storageRef` names the `SecondaryStorageConfig` in the namespace of the cluster. The contract tells the cluster where its secondary storage is.
 
-One `CamundaCluster` uses one contract. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other. The claim goes to the cluster whose reconcile patches the contract first. This is reconcile order, not creation order. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator writes `camunda.io/claim-holder` and `camunda.io/claim-holder-uid` on the contract to record the claim. The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
+One `CamundaCluster` uses one contract. Camunda fixes the index names and the tables. Two clusters on one backend write each other's data, and a restore of one deletes the data of the other.
+
+The claim goes to the cluster whose reconcile patches the contract first. This is reconcile order, not creation order. When two clusters already name one contract, for example right after an upgrade, either one can win. The operator writes `camunda.io/claim-holder` and `camunda.io/claim-holder-uid` on the contract to record the claim.
+
+The API server accepts a second cluster that names a held contract. That cluster is suspended: every workload at zero and the volumes kept. Its `Ready` is `False` with reason `StorageAlreadyAttached`, and the message names the holder and the contract.
 
 The suspended cluster looks again every 30 seconds. When the holder is deleted or names another contract, the suspended cluster takes the claim and resumes on its own. A paused holder keeps its claim until you unpause it. After a repoint, the pods of the previous holder reach their new backend only when its rollout finishes. For that time both clusters write the old backend. If that overlap matters, stop the holder first. Do not remove the two claim annotations by hand while two clusters name the contract. Both clusters then race for the free contract, and the holder can lose it and be suspended.
 

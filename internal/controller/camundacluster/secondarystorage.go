@@ -87,9 +87,9 @@ func (res *resolver) claimStorage(ctx context.Context, in *components.Input) err
 // staleHolder reports whether holder no longer uses the contract: it does
 // not exist, it is a later cluster with the same name, or its storageRef
 // names another contract. The read is live, so a holder that was just
-// repointed is seen as it is. A paused holder keeps its claim: its pods stay
-// where they are while it is paused, so a repoint counts only when the
-// holder reconciles again.
+// repointed is seen as it is. A paused holder keeps its claim. Its pods stay
+// where they are while it is paused, so a repoint counts only after it is
+// unpaused.
 func (res *resolver) staleHolder(ctx context.Context, holder secondarystorageconfig.Holder) (bool, error) {
 	var owner v1.CamundaCluster
 	if err := res.reader.Get(ctx, holder.Cluster, &owner); err != nil {
@@ -110,8 +110,8 @@ func (res *resolver) staleHolder(ctx context.Context, holder secondarystoragecon
 }
 
 // storageHeld builds the Ready condition of a cluster whose storage contract
-// another cluster holds; applyErr, when set, is the error of the last apply
-// and lands in the message.
+// another cluster holds. When applyErr is set, the message carries it as the
+// error of the last apply.
 func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder, applyErr error) metav1.Condition {
 	message := fmt.Sprintf(
 		"CamundaCluster %q already holds SecondaryStorageConfig %q. One CamundaCluster uses one "+
