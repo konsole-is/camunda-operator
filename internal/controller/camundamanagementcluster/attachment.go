@@ -177,9 +177,28 @@ func (r *Reconciler) attach(
 		GRPCEndpoint: cluster.Status.Gateway.GRPCEndpoint,
 		RESTEndpoint: cluster.Status.Gateway.RESTEndpoint,
 		AuthMethod:   method,
+		// The name follows from the cluster UID, so it is known before the
+		// Secret exists. The Web Modeler user hook publishes it later in the
+		// same reconcile.
+		BasicUserSecret: basicUserSecret(mc, cluster, method),
 	})
 
 	return row, nil
+}
+
+// basicUserSecret returns the name of the Secret that holds the password of
+// the Web Modeler user on a basic-auth cluster. An oidc cluster needs no user
+// of its own, so it gets no name.
+func basicUserSecret(
+	mc *v1.CamundaManagementCluster,
+	cluster *v1.CamundaCluster,
+	method v1.AuthenticationMethod,
+) string {
+	if method != v1.AuthenticationMethodBasic || mc.Spec.WebModeler == nil {
+		return ""
+	}
+
+	return components.WebModelerClusterUserSecretName(mc, cluster.UID)
 }
 
 // clusterAuthMethod reads how a cluster authenticates its users and clients,

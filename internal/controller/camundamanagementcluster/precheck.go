@@ -29,6 +29,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
@@ -90,6 +91,9 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := res.resolveDatabases(ctx, &out); err != nil {
 		return out, err
 	}
+	if err := res.resolveWebModeler(ctx, &out); err != nil {
+		return out, err
+	}
 	if err := r.checkContractOwner(ctx, mc, out.ContractName); err != nil {
 		return out, err
 	}
@@ -144,8 +148,8 @@ func (res *resolver) resolveProvider(ctx context.Context, out *resolved) error {
 }
 
 // resolveDatabases reads the DatabaseConfig of every component that needs one
-// and the server behind it. The oidc mode deploys Management Identity alone,
-// so it needs one database.
+// and the server behind it. Management Identity is always deployed; Web
+// Modeler needs a database of its own when the spec deploys it.
 func (res *resolver) resolveDatabases(ctx context.Context, out *resolved) error {
 	identity, err := res.resolveDatabase(
 		ctx, res.mc.Spec.Identity.DatabaseConfigRef, components.MirrorPurposeIdentityDB,
@@ -155,7 +159,66 @@ func (res *resolver) resolveDatabases(ctx context.Context, out *resolved) error 
 	}
 	out.Input.Databases.Identity = identity
 
+	if webModeler := res.mc.Spec.WebModeler; webModeler != nil {
+		database, err := res.resolveDatabase(
+			ctx, webModeler.DatabaseConfigRef, components.MirrorPurposeWebModelerDB,
+		)
+		if err != nil {
+			return err
+		}
+		out.Input.Databases.WebModeler = &database
+	}
+
 	return nil
+}
+
+// resolveWebModeler reads what Web Modeler needs beyond its database: the
+// SMTP credentials, pointed at their local copy, and the credentials that
+// pair its two processes. It resolves nothing while the spec deploys no Web
+// Modeler.
+func (res *resolver) resolveWebModeler(ctx context.Context, out *resolved) error {
+	webModeler := res.mc.Spec.WebModeler
+	if webModeler == nil {
+		return nil
+	}
+
+	if ref := webModeler.Mail.CredentialsSecretRef; ref != nil {
+		local := ref.DeepCopy()
+		if err := res.localizeCredentials(ctx, local, components.MirrorPurposeWebModelerMail); err != nil {
+			return err
+		}
+		out.Input.WebModelerMail = local
+	}
+
+	pusher, err := res.resolvePusher(ctx)
+	if err != nil {
+		return err
+	}
+	out.Input.Pusher = pusher
+
+	return nil
+}
+
+// resolvePusher reads the credentials that the two Web Modeler processes
+// authenticate their WebSocket connection with, and generates them when the
+// Secret that holds them is absent. Deleting that Secret therefore rotates
+// them.
+func (res *resolver) resolvePusher(ctx context.Context) (components.PusherCredentials, error) {
+	key := client.ObjectKey{
+		Namespace: res.mc.Namespace,
+		Name:      components.PusherSecretName(res.mc),
+	}
+
+	appKey, err := credentials.LookupOrNew(ctx, res.reader, key, components.PusherAppKeyKey)
+	if err != nil {
+		return components.PusherCredentials{}, fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+	appSecret, err := credentials.LookupOrNew(ctx, res.reader, key, components.PusherAppSecretKey)
+	if err != nil {
+		return components.PusherCredentials{}, fmt.Errorf("reading Secret %q: %w", key, err)
+	}
+
+	return components.PusherCredentials{Key: appKey, Secret: appSecret}, nil
 }
 
 // resolveDatabase reads one DatabaseConfig of the management namespace and the
@@ -176,8 +239,8 @@ func (res *resolver) resolveDatabase(
 		return components.Database{}, err
 	}
 
-	credentials := *cfg.Spec.CredentialsSecretRef.DeepCopy()
-	if err := res.localizeCredentials(ctx, &credentials, purpose); err != nil {
+	secretRef := *cfg.Spec.CredentialsSecretRef.DeepCopy()
+	if err := res.localizeCredentials(ctx, &secretRef, purpose); err != nil {
 		return components.Database{}, err
 	}
 
@@ -185,7 +248,7 @@ func (res *resolver) resolveDatabase(
 		Host:        server.Spec.Host,
 		Port:        server.Spec.Port,
 		Name:        cfg.Spec.DatabaseName,
-		Credentials: credentials,
+		Credentials: secretRef,
 	}, nil
 }
 

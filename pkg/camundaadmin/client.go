@@ -78,6 +78,12 @@ var (
 	// holds a second password can tell a stale credential from a call that
 	// the cluster refused on its content.
 	ErrUnauthenticated = errors.New("the cluster refused the credentials")
+	// ErrAlreadyExists marks a call that created nothing because the cluster
+	// already holds what it asked for: a user with that name, a role already
+	// on that user. It travels with ErrRejected, so a caller that only
+	// separates a rejected call from an unreachable one is unaffected, and a
+	// caller that converges towards a state reads it as success.
+	ErrAlreadyExists = errors.New("the cluster already holds this object")
 )
 
 // State is the aggregated state of a backup as the management API reports
