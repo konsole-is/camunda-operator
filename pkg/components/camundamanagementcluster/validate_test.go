@@ -40,8 +40,9 @@ func TestValidateSpecChecksTheCamundaVersionFloor(t *testing.T) {
 	assert.Contains(t, below.Message, "the operator supports 8.9.0 and later")
 }
 
-// Camunda 8.9 supports Keycloak 26 only, so the Keycloak floor is its own.
-func TestValidateSpecChecksTheKeycloakVersionFloor(t *testing.T) {
+// Camunda 8.9 supports Keycloak 26 only, so the Keycloak version has a range
+// of its own: a floor and a ceiling.
+func TestValidateSpecChecksTheKeycloakVersionRange(t *testing.T) {
 	t.Parallel()
 
 	below := ValidateSpec(newCluster(func(mc *v1.CamundaManagementCluster) {
@@ -52,6 +53,15 @@ func TestValidateSpecChecksTheKeycloakVersionFloor(t *testing.T) {
 	require.NotNil(t, below)
 	assert.Contains(t, below.Message, "spec.identityProvider.keycloak.version is 25.0.6")
 	assert.Contains(t, below.Message, "the operator supports 26.0.0 and later")
+
+	above := ValidateSpec(newCluster(func(mc *v1.CamundaManagementCluster) {
+		mc.Spec.IdentityProvider = v1.IdentityProviderSpec{
+			Keycloak: &v1.ManagedKeycloakSpec{Version: "27.0.0"},
+		}
+	}))
+	require.NotNil(t, above)
+	assert.Contains(t, above.Message, "spec.identityProvider.keycloak.version is 27.0.0")
+	assert.Contains(t, above.Message, "the operator supports versions below 27.0.0")
 
 	assert.Nil(t, ValidateSpec(newCluster(func(mc *v1.CamundaManagementCluster) {
 		mc.Spec.IdentityProvider = v1.IdentityProviderSpec{
