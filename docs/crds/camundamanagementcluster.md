@@ -342,12 +342,11 @@ Read the password and give it to the people who deploy from Web Modeler. Each Se
 
 ```bash
 kubectl get secret -n my-management-ns \
-  -l camunda.io/component=web-modeler-cluster-user \
-  -l camunda.io/cluster=my-cluster,camunda.io/cluster-namespace=my-cluster-ns \
+  -l camunda.io/component=web-modeler-cluster-user,camunda.io/cluster=my-cluster,camunda.io/cluster-namespace=my-cluster-ns \
   -o custom-columns='SECRET:.metadata.name,PASSWORD:.data.password'
 ```
 
-Drop the second `-l` to list every cluster's Secret.
+Drop the two cluster labels from the selector to list every cluster's Secret.
 
 Every value is base64 encoded. The key `applied` next to the password means that the cluster holds the user under that password. A Secret without it is a password that never reached the cluster.
 
@@ -478,6 +477,7 @@ A condition reads `True` under the reasons `Healthy`, `Disabled`, and `Suspended
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | Every copy of a referenced Secret from another namespace is applied, or no such Secret exists. | Nothing. |
 | `SecretsReady` | `Healthy` / `Disabled` | The generated Secrets are applied, or the mode generates none (`oidc`). | Nothing. |
 | `KeycloakReady` | `Healthy` | The Keycloak Operator reports the Keycloak ready. | Nothing. |
+| `KeycloakReady` | absent | The Kubernetes cluster does not serve the `Keycloak` kind, in any mode. | Install the Keycloak Operator if you use the `keycloak` mode; nothing otherwise. |
 | `KeycloakReady` | `Creating` / `Updating` | The Keycloak Operator rolls the Keycloak pods. | Wait. |
 | `KeycloakReady` | `Failing` | Keycloak reports errors, or it does not become ready. The message carries what Keycloak said. | Read the pods and events of `my-management-keycloak`. |
 | `KeycloakReady` | `Disabled` | The mode is `externalKeycloak` or `oidc`, so the operator runs no Keycloak. | Nothing. |
