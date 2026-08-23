@@ -222,6 +222,18 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "version",
 		),
 		Entry(
+			"rejects a Keycloak externalUrl without the /auth path",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.Keycloak.ExternalURL = "https://kc.example.com"
+			}, "externalUrl must carry the /auth path",
+		),
+		Entry(
+			"rejects a Keycloak externalUrl with a path in front of /auth",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.Keycloak.ExternalURL = "https://kc.example.com/sso/auth"
+			}, "externalUrl must carry the /auth path",
+		),
+		Entry(
 			"rejects a keycloak mode without an optimize block",
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Optimize = nil

@@ -187,6 +187,7 @@ type ManagedKeycloakSpec struct {
 	// Keycloak through the Service that the Keycloak Operator creates, not
 	// through this URL.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getEscapedPath() == '/auth'",message="externalUrl must carry the /auth path, for example https://keycloak.example.com/auth"
 	ExternalURL string `json:"externalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Keycloak database, in
 	// the namespace of this resource. Keycloak needs its own PostgreSQL

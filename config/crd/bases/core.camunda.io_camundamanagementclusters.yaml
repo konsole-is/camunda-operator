@@ -2113,14 +2113,20 @@ spec:
                       externalUrl:
                         description: |-
                           ExternalURL is the URL that browsers reach Keycloak at, including the
-                          /auth path. Management Identity also reaches this URL, so it must
-                          resolve from inside the Kubernetes cluster.
+                          /auth path. It is the front-channel issuer of every token, and
+                          Management Identity uses the front-channel URL since 8.5.3, so the
+                          Identity pods must reach it too. Management Identity administers
+                          Keycloak through the Service that the Keycloak Operator creates, not
+                          through this URL.
                         type: string
                         x-kubernetes-validations:
                         - message: externalUrl must be a valid http or https URL
                           rule: isURL(self) && (url(self).getScheme() == 'http' ||
                             url(self).getScheme() == 'https') && url(self).getHostname()
                             != ''
+                        - message: externalUrl must carry the /auth path, for example
+                            https://keycloak.example.com/auth
+                          rule: '!isURL(self) || url(self).getEscapedPath() == ''/auth'''
                       replicas:
                         description: Replicas is the number of Keycloak instances.
                           Defaults to 1.
