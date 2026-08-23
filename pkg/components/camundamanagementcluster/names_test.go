@@ -66,6 +66,27 @@ func TestALongNameFitsADNSLabel(t *testing.T) {
 	assert.NotEqual(t, IdentityName(long), IdentityName(other))
 }
 
+// The Keycloak Operator names the Service and the initial-administrator
+// Secret after the Keycloak custom resource. Both are DNS labels, so the name
+// of the Keycloak has to leave room for the longest suffix that the Keycloak
+// Operator appends.
+func TestKeycloakNameLeavesRoomForTheOperatorSuffixes(t *testing.T) {
+	t.Parallel()
+
+	long := newCluster(func(mc *v1.CamundaManagementCluster) {
+		mc.Name = strings.Repeat("a", validation.DNS1123LabelMaxLength)
+	})
+	other := newCluster(func(mc *v1.CamundaManagementCluster) {
+		mc.Name = strings.Repeat("a", validation.DNS1123LabelMaxLength-1) + "b"
+	})
+
+	assert.LessOrEqual(t, len(KeycloakServiceName(long)), validation.DNS1123LabelMaxLength)
+	assert.LessOrEqual(
+		t, len(KeycloakInitialAdminSecretName(long)), validation.DNS1123LabelMaxLength,
+	)
+	assert.NotEqual(t, KeycloakName(long), KeycloakName(other))
+}
+
 // A Secret of the management namespace is reachable where it is; one from
 // another namespace is reachable through its copy.
 func TestLocalSecretName(t *testing.T) {

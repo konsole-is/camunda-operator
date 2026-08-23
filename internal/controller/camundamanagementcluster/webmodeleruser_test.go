@@ -311,16 +311,15 @@ func withWebModeler(f *fixture) {
 	}
 }
 
-// createWebModelerDatabase creates the second DatabaseConfig of the scenario,
-// the one Web Modeler opens. It reads the credentials Secret that the
-// Management Identity database already created: no rule keeps two databases of
-// one server apart by credential, and one Secret per namespace keeps the
-// fixture readable.
+// createWebModelerDatabase creates the DatabaseConfig that Web Modeler opens,
+// with a credentials Secret of its own. The spec refuses two components that
+// name one DatabaseConfig, so Web Modeler never shares the one Management
+// Identity opens.
 func createWebModelerDatabase(namespace string) string {
 	GinkgoHelper()
 
 	credentials := v1.CredentialsSecretRef{
-		Name: "db-credentials", Namespace: namespace,
+		Name: "db-credentials-" + utilrand.String(8), Namespace: namespace,
 		UsernameKey: "username", PasswordKey: "password",
 	}
 
@@ -348,6 +347,9 @@ func createWebModelerDatabase(namespace string) string {
 	}
 	Expect(k8sClient.Create(ctx, database)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, database) })
+	createSecret(namespace, credentials.Name, map[string]string{
+		"username": "web-modeler", "password": "db-s3cret",
+	})
 
 	return database.Name
 }

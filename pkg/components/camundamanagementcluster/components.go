@@ -32,38 +32,26 @@ type Built struct {
 }
 
 // builders render the components of the management plane, in reconcile order:
-// the generated Secrets first, because the workloads mount them, then one
-// entry per workload. A builder reports which of its components take part in
-// Ready, so that a component the spec turned off still reconciles and deletes
-// what it left behind without its Disabled reason becoming the reason of the
-// whole management plane. This list is the extension point of the package.
+// the copied and the generated Secrets first, because the workloads mount
+// them, then Keycloak, whose operator writes the Secret that Management
+// Identity signs in with, then one entry per remaining workload. A builder
+// reports which of its components take part in Ready, so that a component the
+// spec turned off still reconciles and deletes what it left behind without
+// its Disabled reason becoming the reason of the whole management plane. This
+// list is the extension point of the package.
 var builders = []func(Input) (Built, error){
-	alwaysReady(secretsComponents),
+	mirroredSecretComponent,
+	secretsComponents,
+	keycloakComponents,
 	alwaysReady(identityComponents),
-	alwaysReady(keycloakComponents),
 	consoleComponents,
 	webModelerComponents,
 }
 
-// Build renders every component of one management plane. The copies of
-// referenced Secrets come first, so a workload that mounts one finds it, and
-// the builders follow in their registered order.
+// Build renders every component of one management plane, in the order the
+// builders are registered.
 func Build(in Input) (Built, error) {
-	mirrored, err := mirroredSecretComponent(in)
-	if err != nil {
-		return Built{}, err
-	}
-
-	built := Built{Components: []*component.Component{mirrored}}
-	// A gated-off component reports True with the reason Disabled, and
-	// Disabled outranks Healthy in the aggregate, so a management cluster
-	// that copies nothing would read "Ready=True/Disabled". The copies
-	// component is built either way, so a reference that moved into the
-	// management namespace has its copy deleted.
-	if len(in.Mirrors) > 0 {
-		built.Ready = append(built.Ready, mirrored)
-	}
-
+	var built Built
 	for _, build := range builders {
 		rendered, err := build(in)
 		if err != nil {

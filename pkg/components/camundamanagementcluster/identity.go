@@ -131,7 +131,8 @@ const (
 
 // identityComponents renders Management Identity: its Deployment and its
 // Service, in one component under the IdentityReady condition. Identity is
-// always deployed, so this renders on every management plane.
+// always deployed, so this renders on every management plane. In the keycloak
+// mode it waits for the Keycloak to become ready.
 func identityComponents(in Input) ([]*component.Component, error) {
 	workload, err := deployment.NewBuilder(identityDeployment(in)).
 		WithMutation(workloadmutations.Mutations(in.workload(ComponentIdentity), identityContainer)...).
@@ -145,13 +146,22 @@ func identityComponents(in Input) ([]*component.Component, error) {
 		return nil, err
 	}
 
-	comp, err := component.NewComponentBuilder().
+	builder := component.NewComponentBuilder().
 		WithName(ComponentIdentity).
 		WithConditionType(component.ConditionType(v1.ConditionIdentityReady)).
 		WithResource(workload).
 		WithResource(svc).
-		Suspend(in.Suspended).
-		Build()
+		Suspend(in.Suspended)
+	if in.Provider.Mode == ModeKeycloak {
+		// The Keycloak Operator writes the administrator Secret that
+		// KEYCLOAK_SETUP_USER and KEYCLOAK_SETUP_PASSWORD name, so an
+		// Identity pod cannot start before the Keycloak is ready.
+		builder = builder.WithPrerequisite(
+			component.DependsOn(component.ConditionType(v1.ConditionKeycloakReady)),
+		)
+	}
+
+	comp, err := builder.Build()
 	if err != nil {
 		return nil, err
 	}
@@ -234,8 +244,21 @@ func baseEnv(in Input) []corev1.EnvVar {
 	return env
 }
 
-// providerEnv renders the connection to the identity provider.
+// providerEnv renders the connection to the identity provider. The two modes
+// carry two settings: an external provider is bound by the oidc profile of
+// Management Identity, and a Keycloak by the keycloak profile, which also
+// bootstraps the realm.
 func providerEnv(in Input) []corev1.EnvVar {
+	if in.Provider.Mode != ModeOIDC {
+		return keycloakProviderEnv(in)
+	}
+
+	return oidcProviderEnv(in)
+}
+
+// oidcProviderEnv renders the connection to an identity provider that the
+// operator does not run.
+func oidcProviderEnv(in Input) []corev1.EnvVar {
 	provider := in.Provider
 	client := provider.Clients.Identity
 

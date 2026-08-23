@@ -58,6 +58,10 @@ import (
 // on an object of another owner.
 const Finalizer = "core.camunda.io/camundamanagementcluster-attachment"
 
+// keycloakKind is the kind of the Keycloak custom resource, which the
+// RESTMapper probe asks the Kubernetes cluster for.
+const keycloakKind = "Keycloak"
+
 // Reconciler turns a CamundaManagementCluster into one management plane: the
 // Management Identity Deployment and Service, the copies of referenced
 // Secrets, the ManagementAuthConfig, and the claims on the orchestration
@@ -78,7 +82,10 @@ type Reconciler struct {
 	// reconcile through. The cached client of the manager must not be used
 	// here: the typed Gets of ocf start a cluster-wide Secret informer, which
 	// breaks the metadata-only Secret posture of the operator.
-	// SetupWithManager sets it when it is nil.
+	// SetupWithManager sets it when it is nil, wrapped so that a generated
+	// credential cannot be republished into a Secret that was deleted, and so
+	// that an apply of the Keycloak carries only the fields its schema
+	// declares.
 	componentClient client.Client
 	// keycloakServed reports whether the Kubernetes cluster serves the
 	// Keycloak kind of the Keycloak Operator. SetupWithManager probes the
@@ -222,7 +229,15 @@ func reconcileComponents(ctx context.Context, rec component.ReconcileContext, co
 // its database. The annotation is what keeps the rendered environment on the
 // value that Identity actually holds; without it a later edit of
 // spec.identity.admin would roll the pods into a claim that changes nothing.
+//
+// Only the oidc mode has a claim. The two Keycloak modes name a user instead,
+// and Identity creates that user on its first start, so a later change to
+// spec.identity.admin.username creates a second one.
 func (r *Reconciler) recordInitialClaim(ctx context.Context, mc *v1.CamundaManagementCluster) error {
+	if components.Mode(mc) != components.ModeOIDC {
+		return nil
+	}
+
 	ready := meta.FindStatusCondition(mc.Status.Conditions, v1.ConditionIdentityReady)
 	if ready == nil || ready.Status != metav1.ConditionTrue {
 		return nil
@@ -345,11 +360,13 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		// The apply wrapper enforces the precondition of a reused generated
-		// credential, so a delete of its Secret rotates it.
-		r.componentClient = credentials.NewApplyClient(componentClient)
+		// The credentials wrapper enforces the precondition of a reused
+		// generated credential, so a delete of its Secret rotates it. The
+		// Keycloak wrapper sanitizes the apply of the Keycloak custom
+		// resource, whose CRD schema refuses what the typed struct serializes.
+		r.componentClient = keycloak.NewApplyClient(credentials.NewApplyClient(componentClient))
 	}
-	r.keycloakServed = keycloakKindServed(mgr)
+	r.keycloakServed = keycloakKindServed(mgr.GetRESTMapper())
 
 	return r.setupWatches(mgr)
 }
@@ -357,9 +374,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // keycloakKindServed reports whether the Kubernetes cluster serves the
 // Keycloak kind. On a cluster without the Keycloak Operator the pre-check
 // reports KeycloakOperatorNotInstalled instead of failing every reconcile.
-func keycloakKindServed(mgr ctrl.Manager) bool {
-	_, err := mgr.GetRESTMapper().RESTMapping(
-		schema.GroupKind{Group: keycloak.GroupVersion.Group, Kind: "Keycloak"},
+func keycloakKindServed(mapper meta.RESTMapper) bool {
+	_, err := mapper.RESTMapping(
+		schema.GroupKind{Group: keycloak.GroupVersion.Group, Kind: keycloakKind},
 		keycloak.GroupVersion.Version,
 	)
 

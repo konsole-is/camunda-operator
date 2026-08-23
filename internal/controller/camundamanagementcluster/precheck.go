@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strconv"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,7 +46,9 @@ type resolved struct {
 
 // resolver accumulates what the pre-checks read: the data of every Secret to
 // copy into the management namespace, and the hash inputs that roll the pods
-// when a referenced object changes behind an unchanged reference.
+// when a referenced object changes behind an unchanged reference. An object
+// that one component alone reads goes into componentInputs under the name of
+// that component.
 type resolver struct {
 	reader  client.Reader
 	scheme  *runtime.Scheme
@@ -87,13 +90,22 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 		componentInputs: map[string][]string{},
 	}
 
+	if failure := r.checkKeycloakOperator(mc); failure != nil {
+		return out, failure
+	}
 	if err := res.resolvePlatform(ctx, &out); err != nil {
+		return out, err
+	}
+	if err := res.resolveKeycloakAdmin(ctx); err != nil {
+		return out, err
+	}
+	if err := res.resolveGeneratedSecrets(ctx, &out); err != nil {
 		return out, err
 	}
 	if err := res.resolveProvider(ctx, &out); err != nil {
 		return out, err
 	}
-	if err := res.resolveIdentityDatabase(ctx, &out); err != nil {
+	if err := res.resolveDatabases(ctx, &out); err != nil {
 		return out, err
 	}
 	if err := res.resolveWebModeler(ctx, &out); err != nil {
@@ -108,6 +120,23 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 	out.Input.ComponentHashInputs = res.componentInputs
 
 	return out, nil
+}
+
+// checkKeycloakOperator refuses the keycloak mode on a Kubernetes cluster
+// that does not serve the Keycloak kind. Nothing would create the Keycloak,
+// and every other reference would resolve, so the management cluster would
+// wait for a Keycloak that never arrives.
+func (r *Reconciler) checkKeycloakOperator(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
+	if components.Mode(mc) != components.ModeKeycloak || r.keycloakServed {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonKeycloakOperatorNotInstalled,
+		Message: "spec.identityProvider selects keycloak and this Kubernetes cluster does not serve " +
+			"k8s.keycloak.org/v2alpha1 Keycloak; install the Keycloak Operator, or select the " +
+			"externalKeycloak or the oidc mode",
+	}
 }
 
 // resolvePlatform reads the CamundaPlatformConfig that spec.platformConfigRef
@@ -126,17 +155,128 @@ func (res *resolver) resolvePlatform(ctx context.Context, out *resolved) error {
 	return nil
 }
 
+// resolveKeycloakAdmin reads the Keycloak administrator that Management
+// Identity bootstraps the realm with.
+//
+// The externalKeycloak mode names the Secret, so a missing one is a
+// MissingSecret the user must correct, and the copy in the management
+// namespace is what the Identity pods mount. The keycloak mode reads the
+// Secret that the Keycloak Operator writes next to the Keycloak; that one is
+// absent until the Keycloak Operator has acted, and refusing the reconcile
+// over it would stop the very apply that creates the Keycloak, so it only
+// contributes a hash input while it exists.
+//
+// Management Identity is the one component that signs in with the
+// administrator, in either mode, so the input is its own.
+func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
+	switch components.Mode(res.mc) {
+	case components.ModeExternalKeycloak:
+		// The rewritten reference is dropped: the render package derives the
+		// same local name from LocalSecretName, so this call is here for the
+		// check, the copy, and the hash input.
+		ref := res.mc.Spec.IdentityProvider.ExternalKeycloak.AdminCredentialsSecretRef.DeepCopy()
+
+		return res.forComponent(components.ComponentIdentity, func() error {
+			return res.localizeCredentials(ctx, ref, components.MirrorPurposeKeycloakAdmin)
+		})
+	case components.ModeKeycloak:
+		key := client.ObjectKey{
+			Namespace: res.mc.Namespace,
+			Name:      components.KeycloakInitialAdminSecretName(res.mc),
+		}
+		var secret corev1.Secret
+		if err := res.reader.Get(ctx, key, &secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("reading Secret %q: %w", key, err)
+		}
+		res.componentInputs[components.ComponentIdentity] = append(
+			res.componentInputs[components.ComponentIdentity],
+			"Secret/"+objectPath(key)+"="+secret.ResourceVersion,
+		)
+
+		return nil
+	default:
+		return nil
+	}
+}
+
+// resolveGeneratedSecrets reads the credentials that the operator publishes
+// itself: the client secret of Management Identity and of Optimize, and the
+// password of the first administrator. Only the two Keycloak modes need them,
+// because Management Identity creates the clients and the user there.
+//
+// A credential that a Secret already holds is read back, so it stays stable
+// after creation. Deleting the Secret is what rotates it.
+//
+// An administrator password of your own replaces the generated one. It is
+// checked here, and copied into the management namespace when it lives
+// outside it, because the Identity pods mount it. Management Identity is the
+// one component that reads it, so the input is its own.
+func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved) error {
+	if components.Mode(res.mc) == components.ModeOIDC {
+		return nil
+	}
+
+	secrets := components.GeneratedSecrets{
+		IdentityClient: components.IdentityClientSecretName(res.mc),
+		OptimizeClient: components.OptimizeClientSecretName(res.mc),
+		Values:         map[string]credentials.Password{},
+	}
+	generated := map[string]string{
+		secrets.IdentityClient: components.ClientSecretKey,
+		secrets.OptimizeClient: components.ClientSecretKey,
+	}
+	if res.mc.Spec.Identity.Admin.PasswordSecretRef == nil {
+		secrets.IdentityAdmin = components.IdentityAdminSecretName(res.mc)
+		generated[secrets.IdentityAdmin] = components.PasswordKey
+	}
+
+	for name, field := range generated {
+		key := client.ObjectKey{Namespace: res.mc.Namespace, Name: name}
+		password, err := credentials.LookupOrNew(ctx, res.reader, key, field)
+		if err != nil {
+			return err
+		}
+		secrets.Values[name] = password
+	}
+	out.Input.Secrets = secrets
+
+	if ref := res.mc.Spec.Identity.Admin.PasswordSecretRef; ref != nil {
+		// The rewritten reference is dropped: the render package derives the
+		// same local name from LocalSecretName, so this call is here for the
+		// check, the copy, and the hash input.
+		local := ref.DeepCopy()
+
+		return res.forComponent(components.ComponentIdentity, func() error {
+			return res.localize(ctx, local, components.MirrorPurposeIdentityAdmin)
+		})
+	}
+
+	return nil
+}
+
 // resolveProvider builds the identity provider and resolves the client
 // secrets it names. The Management Identity secret is pointed at its local
 // copy, because the Identity pods mount it. The Optimize secret keeps the
 // namespace it was declared in: the contract is cluster-scoped, and the
 // CamundaOptimize that reads it makes a copy of its own.
+//
+// Only the oidc mode has secrets to resolve. In the two Keycloak modes both
+// client secrets name Secrets that this operator generates in the management
+// namespace, and the Secrets component is what creates them, so requiring
+// them here would refuse the very reconcile that writes them.
 func (res *resolver) resolveProvider(ctx context.Context, out *resolved) error {
 	provider, err := components.ResolveIdentityProvider(out.Input)
 	if err != nil {
 		return err
 	}
 	out.Input.Provider = provider
+
+	if components.Mode(res.mc) != components.ModeOIDC {
+		return nil
+	}
 
 	if ref := out.Input.Provider.Clients.Identity.SecretRef; ref != nil {
 		if err := res.localize(ctx, ref, components.MirrorPurposeIdentityClient); err != nil {
@@ -153,10 +293,11 @@ func (res *resolver) resolveProvider(ctx context.Context, out *resolved) error {
 	return nil
 }
 
-// resolveIdentityDatabase reads the DatabaseConfig of Management Identity, the
-// server behind it, and its credentials. Management Identity is always
-// deployed, so its database is never optional.
-func (res *resolver) resolveIdentityDatabase(ctx context.Context, out *resolved) error {
+// resolveDatabases reads the DatabaseConfig of Management Identity and of the
+// Keycloak that the operator runs, and the server behind each. Management
+// Identity is always deployed, so its database is never optional. Web Modeler
+// reads its own database under its own component.
+func (res *resolver) resolveDatabases(ctx context.Context, out *resolved) error {
 	identity, err := res.resolveDatabase(
 		ctx, res.mc.Spec.Identity.DatabaseConfigRef, components.MirrorPurposeIdentityDB,
 	)
@@ -164,6 +305,16 @@ func (res *resolver) resolveIdentityDatabase(ctx context.Context, out *resolved)
 		return err
 	}
 	out.Input.Databases.Identity = identity
+
+	if keycloak := res.mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
+		db, err := res.resolveDatabase(
+			ctx, keycloak.DatabaseConfigRef, components.MirrorPurposeKeycloakDB,
+		)
+		if err != nil {
+			return err
+		}
+		out.Input.Databases.Keycloak = &db
+	}
 
 	return nil
 }

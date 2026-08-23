@@ -37,8 +37,9 @@ const configHashLength = 16
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
-// does. HashInputs carries the resource version of every Secret the controller
-// read, so a rotated password rolls the pods.
+// does. HashInputs carries the resource version of every Secret the
+// controller read, and componentInputs carries what one component alone
+// reads, the credentials that the operator generates itself included.
 func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")
@@ -46,7 +47,7 @@ func ConfigHash(in Input, comp string) string {
 		b.WriteString(e.Name + "=" + envValue(e) + "\n")
 	}
 
-	inputs := append(slices.Clone(in.HashInputs), componentInputs(in, comp)...)
+	inputs := slices.Concat(in.HashInputs, componentInputs(in, comp))
 	slices.Sort(inputs)
 	for _, input := range inputs {
 		b.WriteString("input=" + input + "\n")
@@ -75,29 +76,38 @@ func componentEnv(in Input, comp string) []corev1.EnvVar {
 }
 
 // componentInputs returns the hash inputs of one component alone: what the
-// controller resolved under that component, and the pusher Secret for the two
-// Web Modeler processes. A credential that only one component reads belongs
-// here rather than in in.HashInputs, so that rotating it rolls the pods that
-// read it and no others.
+// controller resolved under that component, the credentials that Management
+// Identity creates the clients and the first user with, and the pusher
+// credentials of the two Web Modeler processes. A credential that one
+// component alone reads belongs here rather than in in.HashInputs, so that
+// rotating it rolls the pods that read it and no others.
 //
-// The operator writes the pusher Secret itself, so the source of a reused
+// The operator writes these Secrets itself, so the source of a reused
 // credential is what a regeneration changes: the Secret is deleted, the next
 // reconcile finds none, and the new one has a UID of its own. The very first
 // reconcile renders no source, because the Secret does not exist yet, so the
 // pods roll once more when the reconcile after it reads the created Secret
-// back. The key and the secret are looked up one by one, so both sources
-// count: a Secret that holds one of the two keeps that UID for it.
+// back. Every credential is looked up on its own, so a Secret that holds one
+// of two keys keeps that UID for it.
 func componentInputs(in Input, comp string) []string {
 	inputs := slices.Clone(in.ComponentHashInputs[comp])
-	if comp != ComponentWebModelerRestapi && comp != ComponentWebModelerWebsockets {
-		return inputs
+	switch comp {
+	case ComponentIdentity:
+		for _, gen := range generatedSecrets(in) {
+			if !gen.published {
+				continue
+			}
+			inputs = append(inputs, "generated="+gen.name+"="+string(in.Secrets.Values[gen.name].SourceUID))
+		}
+	case ComponentWebModelerRestapi, ComponentWebModelerWebsockets:
+		inputs = append(
+			inputs,
+			"pusherKey="+string(in.Pusher.Key.SourceUID),
+			"pusherSecret="+string(in.Pusher.Secret.SourceUID),
+		)
 	}
 
-	return append(
-		inputs,
-		"pusherKey="+string(in.Pusher.Key.SourceUID),
-		"pusherSecret="+string(in.Pusher.Secret.SourceUID),
-	)
+	return inputs
 }
 
 // envValue renders the value of an environment entry as a reference, never as

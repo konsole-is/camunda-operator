@@ -88,6 +88,7 @@ const (
 // Identity, its identity provider, and optionally Console and Web Modeler.
 // +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
 // +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)",message="identity.admin.passwordSecretRef applies to the keycloak modes only"
+// +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) != has(self.optimize)",message="set optimize in the keycloak modes, where Management Identity creates the Optimize client; in the oidc mode the platform config declares it"
 type CamundaManagementClusterSpec struct {
 	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
 	// carries the license, the image settings, and, in the oidc mode, the
@@ -126,6 +127,31 @@ type CamundaManagementClusterSpec struct {
 	// this is unset.
 	// +optional
 	WebModeler *WebModelerSpec `json:"webModeler,omitempty"`
+	// Optimize describes the Optimize that this management plane serves. Set
+	// it in the two Keycloak modes, where Management Identity creates the
+	// Optimize client and needs the URL of Optimize to register the redirect
+	// URI of that client. Leave it unset in the oidc mode, where the platform
+	// config declares the Optimize client.
+	//
+	// The operator deploys no Optimize from this block. A CamundaOptimize is
+	// its own resource, and it reads the ManagementAuthConfig that this
+	// management cluster writes.
+	// +optional
+	Optimize *ManagementOptimizeSpec `json:"optimize,omitempty"`
+}
+
+// ManagementOptimizeSpec describes the Optimize that a management plane
+// serves.
+type ManagementOptimizeSpec struct {
+	// ExternalURL is the URL that browsers reach Optimize at. Management
+	// Identity registers the login callback under it as the redirect URI of
+	// the Optimize client.
+	//
+	// One management plane bootstraps one Optimize client with one URL. Run a
+	// second Optimize against this management plane only if you add its
+	// callback URL to the Optimize client in Keycloak yourself.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	ExternalURL string `json:"externalUrl"`
 }
 
 // IdentityProviderSpec holds one of the three identity provider modes.
@@ -155,9 +181,12 @@ type ManagedKeycloakSpec struct {
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
 	// ExternalURL is the URL that browsers reach Keycloak at, including the
-	// /auth path. Management Identity also reaches this URL, so it must
-	// resolve from inside the Kubernetes cluster.
+	// /auth path. It is the front-channel issuer of every token. Management
+	// Identity uses the front-channel URL since 8.5.3, so the Identity pods
+	// must also reach it. Management Identity administers Keycloak through
+	// the Service that the Keycloak Operator creates, not through this URL.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getEscapedPath() == '/auth'",message="externalUrl must carry the /auth path, for example https://keycloak.example.com/auth"
 	ExternalURL string `json:"externalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Keycloak database, in
 	// the namespace of this resource. Keycloak needs its own PostgreSQL
@@ -237,7 +266,9 @@ type IdentityAdminSpec struct {
 	// +optional
 	ClaimValue string `json:"claimValue,omitempty"`
 	// Username is the name of the first Keycloak user. Set it in the keycloak
-	// and the externalKeycloak mode.
+	// and the externalKeycloak mode. Management Identity creates the user on
+	// its first start, so a later change to this field creates a second user
+	// rather than renaming the first one.
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Username string `json:"username,omitempty"`
@@ -246,6 +277,12 @@ type IdentityAdminSpec struct {
 	// unset.
 	// +optional
 	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
+	// Email is the email address of the first Keycloak user. Web Modeler
+	// needs an address for every person who signs in, so set it when you
+	// deploy Web Modeler in a Keycloak mode.
+	// +kubebuilder:validation:MinLength=3
+	// +optional
+	Email string `json:"email,omitempty"`
 }
 
 // ConsoleSpec configures Console.

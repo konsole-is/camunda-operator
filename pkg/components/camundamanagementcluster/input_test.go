@@ -144,24 +144,6 @@ func TestResolveIdentityProviderRequiresAClientPerComponent(t *testing.T) {
 	}
 }
 
-// The Keycloak modes are not rendered yet, and the reason names the mode that
-// the spec selects.
-func TestResolveIdentityProviderRefusesTheKeycloakModes(t *testing.T) {
-	t.Parallel()
-
-	mc := newCluster(func(mc *v1.CamundaManagementCluster) {
-		mc.Spec.IdentityProvider = v1.IdentityProviderSpec{
-			ExternalKeycloak: &v1.ExternalKeycloakSpec{URL: "https://keycloak.example.com/auth"},
-		}
-	})
-
-	_, err := ResolveIdentityProvider(Input{Cluster: mc, Platform: newPlatform(nil)})
-
-	failure := preCheckFailure(t, err)
-	assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
-	assert.Contains(t, failure.Message, "externalKeycloak")
-}
-
 // preCheckFailure asserts that err is a pre-check failure and returns it.
 func preCheckFailure(t *testing.T, err error) *conditions.PreCheckFailure {
 	t.Helper()

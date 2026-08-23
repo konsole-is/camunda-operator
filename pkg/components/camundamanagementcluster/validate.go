@@ -25,20 +25,23 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// The lowest versions the operator supports. Camunda 8.9 is the first release
-// with the management plane in this shape, and it supports Keycloak 26 only
+// The versions the operator supports. Camunda 8.9 is the first release with
+// the management plane in this shape. It supports Keycloak 26 only, so
+// Keycloak carries a ceiling as well as a floor
 // (https://docs.camunda.io/docs/reference/announcements-release-notes/890/890-announcements/#supported-environments).
 const (
-	camundaVersionFloor  = "8.9.0"
-	keycloakVersionFloor = "26.0.0"
+	camundaVersionFloor    = "8.9.0"
+	keycloakVersionFloor   = "26.0.0"
+	keycloakVersionCeiling = "27.0.0"
 )
 
-// versionedField is one version field of the spec and the lowest value the
-// operator supports in it.
+// versionedField is one version field of the spec and the range the operator
+// supports in it. An empty ceiling means no upper bound.
 type versionedField struct {
 	field   string
 	version string
 	floor   string
+	ceiling string
 }
 
 // referencedDatabase is one databaseConfigRef of the spec.
@@ -47,34 +50,44 @@ type referencedDatabase struct {
 	ref   string
 }
 
-// ValidateSpec checks the rules that the API server cannot: the version floor
-// of each component of the management plane, and that no two components name
-// one DatabaseConfig. A broken rule comes back as a
+// ValidateSpec checks the rules that the API server cannot: the supported
+// version range of each component of the management plane, and that no two
+// components name one DatabaseConfig. A broken rule comes back as a
 // *conditions.PreCheckFailure, with the reason UnsupportedVersion or
 // InvalidReference, naming the field. A valid spec returns nil.
 func ValidateSpec(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
-	floors := []versionedField{
-		{"spec.identity.version", mc.Spec.Identity.Version, camundaVersionFloor},
+	bounds := []versionedField{
+		{field: "spec.identity.version", version: mc.Spec.Identity.Version, floor: camundaVersionFloor},
 	}
 	if keycloak := mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
-		floors = append(floors, versionedField{
-			"spec.identityProvider.keycloak.version", keycloak.Version, keycloakVersionFloor,
+		bounds = append(bounds, versionedField{
+			field:   "spec.identityProvider.keycloak.version",
+			version: keycloak.Version,
+			floor:   keycloakVersionFloor,
+			ceiling: keycloakVersionCeiling,
 		})
 	}
 	if console := mc.Spec.Console; console != nil {
-		floors = append(floors, versionedField{"spec.console.version", console.Version, camundaVersionFloor})
+		bounds = append(bounds, versionedField{
+			field: "spec.console.version", version: console.Version, floor: camundaVersionFloor,
+		})
 	}
 	if webModeler := mc.Spec.WebModeler; webModeler != nil {
-		floors = append(
-			floors, versionedField{"spec.webModeler.version", webModeler.Version, camundaVersionFloor},
-		)
+		bounds = append(bounds, versionedField{
+			field: "spec.webModeler.version", version: webModeler.Version, floor: camundaVersionFloor,
+		})
 	}
 
 	var problems []string
-	for _, f := range floors {
-		if !atLeast(f.version, f.floor) {
+	for _, f := range bounds {
+		switch {
+		case !atLeast(f.version, f.floor):
 			problems = append(problems, fmt.Sprintf(
 				"%s is %s; the operator supports %s and later", f.field, f.version, f.floor,
+			))
+		case f.ceiling != "" && atLeast(f.version, f.ceiling):
+			problems = append(problems, fmt.Sprintf(
+				"%s is %s; the operator supports versions below %s", f.field, f.version, f.ceiling,
 			))
 		}
 	}

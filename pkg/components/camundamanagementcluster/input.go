@@ -19,6 +19,7 @@ package camundamanagementcluster
 import (
 	"cmp"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -101,16 +102,20 @@ type IdentityProvider struct {
 	// MICROSOFT.
 	Type string
 	// SpringProfile is the SPRING_PROFILES_ACTIVE value that binds the
-	// settings of this mode on Management Identity and Console. It is empty
-	// in the Keycloak modes, which need no profile.
+	// settings of this mode on Management Identity and Console: "oidc" in the
+	// oidc mode and "keycloak" in the two Keycloak modes.
 	SpringProfile string
 	// IssuerURL is the issuer that a browser is redirected to.
 	IssuerURL string
 	// IssuerBackendURL is the issuer that a container reaches from inside the
 	// Kubernetes cluster.
 	IssuerBackendURL string
-	// AuthURL, TokenURL, and JwksURL are the endpoints of the provider.
-	AuthURL, TokenURL, JwksURL string
+	// AuthURL is the authorization endpoint that a browser is redirected to.
+	AuthURL string
+	// TokenURL and JwksURL are the endpoints that a container calls: the
+	// token exchange and the fetch of the signing keys. Both are
+	// server-to-server, so they follow IssuerBackendURL.
+	TokenURL, JwksURL string
 	// KeycloakURL is the in-cluster Keycloak URL, the /auth path included. It
 	// is empty in the oidc mode.
 	KeycloakURL string
@@ -122,6 +127,11 @@ type IdentityProvider struct {
 	// UsernameClaim is the token claim that holds the username of a person,
 	// or empty for the default of each component.
 	UsernameClaim string
+	// AdminCredentials names the Secret with the Keycloak administrator that
+	// Management Identity signs in with to create the realm, the clients, and
+	// the initial administrator. It is nil in the oidc mode, which bootstraps
+	// nothing.
+	AdminCredentials *v1.CredentialsSecretRef
 	// Clients is the provider client of each component.
 	Clients ProviderClients
 }
@@ -200,6 +210,11 @@ type GeneratedSecrets struct {
 	// WebModelerPusher holds the credentials that the two Web Modeler
 	// processes push live updates over.
 	WebModelerPusher string
+	// Values are the generated credentials, by the name of the Secret that
+	// publishes them. The Secrets component writes them, and the config hash
+	// of a component folds in the digest of every value that component reads,
+	// so a rotation rolls that component and no other.
+	Values map[string]credentials.Password
 }
 
 // PusherCredentials authenticate the Web Modeler restapi process at the
@@ -246,22 +261,143 @@ type AttachedCluster struct {
 // carry, or a component of the management plane with no client. The message
 // names the field.
 func ResolveIdentityProvider(in Input) (IdentityProvider, error) {
-	spec := in.Cluster.Spec.IdentityProvider
-	if spec.OIDC != nil {
+	switch Mode(in.Cluster) {
+	case ModeOIDC:
 		return resolveOIDC(in)
+	case ModeKeycloak:
+		return resolveManagedKeycloak(in), nil
+	default:
+		return resolveExternalKeycloak(in), nil
+	}
+}
+
+// Mode returns the identity provider mode that the spec selects. The API
+// server admits exactly one of the three blocks, so an unset keycloak and an
+// unset oidc block leave externalKeycloak.
+func Mode(mc *v1.CamundaManagementCluster) ProviderMode {
+	switch {
+	case mc.Spec.IdentityProvider.OIDC != nil:
+		return ModeOIDC
+	case mc.Spec.IdentityProvider.Keycloak != nil:
+		return ModeKeycloak
+	default:
+		return ModeExternalKeycloak
+	}
+}
+
+// resolveManagedKeycloak reads the Keycloak that the operator runs.
+// Management Identity administers Keycloak through the Service that the
+// Keycloak Operator creates, and that Service is the back-channel issuer of
+// the realm. Browsers use spec.externalUrl, and so does the front-channel
+// issuer that every token carries.
+//
+// The administrator is the one the Keycloak Operator writes into
+// <keycloak>-initial-admin next to the Keycloak custom resource.
+func resolveManagedKeycloak(in Input) IdentityProvider {
+	spec := in.Cluster.Spec.IdentityProvider.Keycloak
+	service := fmt.Sprintf(
+		"http://%s.%s.svc:%d%s",
+		KeycloakServiceName(in.Cluster), in.Cluster.Namespace, KeycloakServicePort, keycloakBasePath,
+	)
+
+	return keycloakProvider(in, ModeKeycloak, service, spec.ExternalURL, keycloakDefaultRealm, &v1.CredentialsSecretRef{
+		Name:        KeycloakInitialAdminSecretName(in.Cluster),
+		Namespace:   in.Cluster.Namespace,
+		UsernameKey: KeycloakAdminUsernameKey,
+		PasswordKey: KeycloakAdminPasswordKey,
+	})
+}
+
+// resolveExternalKeycloak reads the Keycloak that the user runs. One URL
+// serves browsers and containers alike, so the front-channel and the
+// back-channel issuer are the same. The administrator comes from
+// adminCredentialsSecretRef, through its copy in the management namespace.
+func resolveExternalKeycloak(in Input) IdentityProvider {
+	spec := in.Cluster.Spec.IdentityProvider.ExternalKeycloak
+	admin := spec.AdminCredentialsSecretRef.DeepCopy()
+	admin.Name = LocalSecretName(
+		in.Cluster, admin.Namespace, admin.Name, MirrorPurposeKeycloakAdmin,
+	)
+	admin.Namespace = in.Cluster.Namespace
+
+	return keycloakProvider(
+		in, ModeExternalKeycloak, spec.URL, spec.URL, cmp.Or(spec.Realm, keycloakDefaultRealm), admin,
+	)
+}
+
+// keycloakProvider builds the identity provider of both Keycloak modes.
+// Management Identity creates every client in the realm on its first start,
+// so the client ids and the audiences are the ones it uses, not values a user
+// chooses.
+func keycloakProvider(
+	in Input,
+	mode ProviderMode,
+	backendURL, publicURL, realm string,
+	admin *v1.CredentialsSecretRef,
+) IdentityProvider {
+	// Every URL below appends a path, so a URL that ends in a slash would
+	// build "//realms", which Keycloak serves under no such address.
+	backendURL = strings.TrimRight(backendURL, "/")
+	publicURL = strings.TrimRight(publicURL, "/")
+
+	issuer := publicURL + keycloakRealmPath + realm
+	backendIssuer := backendURL + keycloakRealmPath + realm
+
+	return IdentityProvider{
+		Mode:              mode,
+		Type:              identityTypeKeycloak,
+		SpringProfile:     identityProfileKeycloak,
+		IssuerURL:         issuer,
+		IssuerBackendURL:  backendIssuer,
+		AuthURL:           issuer + keycloakAuthPath,
+		TokenURL:          backendIssuer + keycloakTokenPath,
+		JwksURL:           backendIssuer + keycloakCertsPath,
+		KeycloakURL:       backendURL,
+		KeycloakPublicURL: publicURL,
+		Realm:             realm,
+		AdminCredentials:  admin,
+		Clients:           keycloakClients(in),
+	}
+}
+
+// keycloakClients returns the clients that Management Identity creates in the
+// realm, one per component the spec deploys. A Keycloak client holds no
+// secret of its own for a browser application, and Web Modeler is one client
+// in front of two resource servers, so its two entries carry the same id.
+func keycloakClients(in Input) ProviderClients {
+	clients := ProviderClients{
+		Identity: Client{
+			ID:       keycloakClientIdentity,
+			Audience: keycloakAudienceIdentity,
+			SecretRef: &v1.SecretKeyRef{
+				Name:      in.Secrets.IdentityClient,
+				Namespace: in.Cluster.Namespace,
+				Key:       ClientSecretKey,
+			},
+		},
+		Optimize: Client{
+			ID:       keycloakClientOptimize,
+			Audience: keycloakAudienceOptimize,
+			SecretRef: &v1.SecretKeyRef{
+				Name:      in.Secrets.OptimizeClient,
+				Namespace: in.Cluster.Namespace,
+				Key:       ClientSecretKey,
+			},
+		},
+	}
+	if in.Cluster.Spec.Console != nil {
+		clients.Console = PublicClient{ID: keycloakClientConsole, Audience: keycloakAudienceConsole}
+	}
+	if in.Cluster.Spec.WebModeler != nil {
+		clients.WebModeler = PublicClient{
+			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModeler,
+		}
+		clients.WebModelerAPI = Client{
+			ID: keycloakClientWebModeler, Audience: keycloakAudienceWebModelerPublic,
+		}
 	}
 
-	mode := ModeExternalKeycloak
-	if spec.Keycloak != nil {
-		mode = ModeKeycloak
-	}
-
-	return IdentityProvider{}, &conditions.PreCheckFailure{
-		Reason: v1.ReasonInvalidReference,
-		Message: fmt.Sprintf(
-			"spec.identityProvider selects %s; this operator supports the oidc mode only", mode,
-		),
-	}
+	return clients
 }
 
 // resolveOIDC reads the identity provider of the platform config. The issuer
@@ -478,6 +614,17 @@ func (in Input) workload(comp string) v1.WorkloadSpec {
 // replicas returns the replica count of a component. Every component defaults
 // to 1.
 func (in Input) replicas(comp string) int32 {
+	if comp == ComponentKeycloak {
+		// Keycloak has no WorkloadSpec: the Keycloak Operator owns its pods,
+		// so the spec offers the replica count and the resources alone.
+		if keycloak := in.Cluster.Spec.IdentityProvider.Keycloak; keycloak != nil &&
+			keycloak.Replicas != nil {
+			return *keycloak.Replicas
+		}
+
+		return 1
+	}
+
 	if r := in.workload(comp).Replicas; r != nil {
 		return *r
 	}

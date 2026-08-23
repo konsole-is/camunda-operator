@@ -84,6 +84,39 @@ func TestEnqueueForCluster(t *testing.T) {
 	})
 }
 
+// A Secret that the spec names itself may live in any namespace. The
+// namespace enqueue never reaches one outside the management namespace, so
+// without this index a rotation of it refreshes neither the copy nor the pods
+// that read it.
+func TestSecretRefsIndexesEveryReferenceOfTheSpec(t *testing.T) {
+	t.Parallel()
+
+	mc := &v1.CamundaManagementCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "management", Namespace: enqueueNamespace},
+		Spec: v1.CamundaManagementClusterSpec{
+			IdentityProvider: v1.IdentityProviderSpec{ExternalKeycloak: &v1.ExternalKeycloakSpec{
+				AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+					Name: "keycloak-admin", Namespace: "identity",
+				},
+			}},
+			Identity: v1.IdentitySpec{Admin: v1.IdentityAdminSpec{
+				Username:          "admin",
+				PasswordSecretRef: &v1.SecretKeyRef{Name: "admin-password", Namespace: "secrets"},
+			}},
+			WebModeler: &v1.WebModelerSpec{Mail: v1.WebModelerMailSpec{
+				CredentialsSecretRef: &v1.CredentialsSecretRef{Name: "smtp", Namespace: "mail"},
+			}},
+		},
+	}
+
+	assert.Equal(
+		t,
+		[]string{"identity/keycloak-admin", "secrets/admin-password", "mail/smtp"},
+		secretRefs(mc),
+	)
+	assert.Empty(t, secretRefs(managementClusterWithSelector("bare", nil)))
+}
+
 // managementClusterWithSelector returns a management cluster whose
 // spec.clusterSelector is the given selector.
 func managementClusterWithSelector(

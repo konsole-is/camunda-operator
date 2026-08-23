@@ -36,6 +36,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
 // The index fields of CamundaManagementClusters, one per reference kind. The
@@ -51,6 +52,10 @@ const (
 	// ContractNameField lists management clusters by the
 	// ManagementAuthConfig they write.
 	ContractNameField = "camundamanagementcluster.spec.managementAuthConfigName"
+	// SecretRefsField lists management clusters by every Secret they name
+	// themselves. The Secrets they reach through a platform config or a
+	// DatabaseConfig are indexed by those resources instead.
+	SecretRefsField = "camundamanagementcluster.spec.secretRefs"
 )
 
 // indexers are the index functions of the fields above.
@@ -74,11 +79,15 @@ var indexers = map[string]client.IndexerFunc{
 	ContractNameField: func(o client.Object) []string {
 		return []string{components.ContractName(o.(*v1.CamundaManagementCluster))}
 	},
+	SecretRefsField: func(o client.Object) []string {
+		return secretRefs(o.(*v1.CamundaManagementCluster))
+	},
 }
 
 // setupWatches registers the controller, the reference indexes, and the
-// watches. It owns the Deployments and the Services it applies, and the copies
-// of referenced Secrets (metadata only). Every reference is watched: the
+// watches. It owns the Deployments, the Services, and the Secrets it applies
+// (Secrets metadata only), and the Keycloak custom resource where the
+// Kubernetes cluster serves that kind. Every reference is watched: the
 // platform config, the DatabaseConfigs, and the contract through the indexes
 // above, the database servers through the DatabaseConfigs that name them, and
 // Secrets (metadata only) through the namespace and the contracts that reach
@@ -96,11 +105,20 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 	cached := mgr.GetClient()
 	list := &v1.CamundaManagementClusterList{}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.CamundaManagementCluster{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.Secret{}, builder.OnlyMetadata).
+		Owns(&corev1.Secret{}, builder.OnlyMetadata)
+	// A watch on a kind the Kubernetes cluster does not serve fails the
+	// manager at start, so the Keycloak is only watched where the Keycloak
+	// Operator is installed. Without it the pre-check reports
+	// KeycloakOperatorNotInstalled and the keycloak mode renders nothing.
+	if r.keycloakServed {
+		controller = controller.Owns(&keycloak.Keycloak{})
+	}
+
+	return controller.
 		Watches(
 			&v1.CamundaPlatformConfig{},
 			refindex.Enqueue(cached, list, PlatformConfigRefField, refindex.ObjectName),
@@ -120,12 +138,34 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+// secretRefs returns every Secret that a management cluster names itself, as
+// namespaced index keys. A Secret of another namespace is copied into the
+// management namespace, and the mounted copy follows the original, so an
+// event on any of them has to reach the management cluster that reads it.
+func secretRefs(mc *v1.CamundaManagementCluster) []string {
+	var keys []string
+	if external := mc.Spec.IdentityProvider.ExternalKeycloak; external != nil {
+		ref := external.AdminCredentialsSecretRef
+		keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+	}
+	if ref := mc.Spec.Identity.Admin.PasswordSecretRef; ref != nil {
+		keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+	}
+	if webModeler := mc.Spec.WebModeler; webModeler != nil {
+		if ref := webModeler.Mail.CredentialsSecretRef; ref != nil {
+			keys = append(keys, refindex.NamespacedKey(ref.Namespace, ref.Name))
+		}
+	}
+
+	return keys
+}
+
 // databaseConfigRefs returns every DatabaseConfig that a management cluster
 // names, in the namespace of that management cluster.
 func databaseConfigRefs(mc *v1.CamundaManagementCluster) []string {
 	refs := []string{mc.Spec.Identity.DatabaseConfigRef}
-	if keycloak := mc.Spec.IdentityProvider.Keycloak; keycloak != nil {
-		refs = append(refs, keycloak.DatabaseConfigRef)
+	if managed := mc.Spec.IdentityProvider.Keycloak; managed != nil {
+		refs = append(refs, managed.DatabaseConfigRef)
 	}
 	if webModeler := mc.Spec.WebModeler; webModeler != nil {
 		refs = append(refs, webModeler.DatabaseConfigRef)
@@ -190,17 +230,18 @@ func (r *Reconciler) enqueueForDatabaseServer() handler.EventHandler {
 }
 
 // enqueueForSecret maps a Secret event to every management cluster that can
-// reference it: every one of the Secret namespace, and every one that reaches
-// it through a platform config or a DatabaseConfig. A Secret in another
-// namespace is copied into the management namespace, so an event on it must
-// refresh that copy. The reads go through the cached client; the Secret watch
-// is metadata-only.
+// reference it: every one of the Secret namespace, every one that names it in
+// its own spec, and every one that reaches it through a platform config or a
+// DatabaseConfig. A Secret in another namespace is copied into the management
+// namespace, so an event on it must refresh that copy. The reads go through
+// the cached client; the Secret watch is metadata-only.
 func (r *Reconciler) enqueueForSecret() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		key := refindex.ObjectNamespacedName(o)
 		set := requestSet{}
 
 		set.addList(ctx, r.Client, client.InNamespace(o.GetNamespace()))
+		set.addList(ctx, r.Client, client.MatchingFields{SecretRefsField: key})
 
 		var configs v1.CamundaPlatformConfigList
 		if err := r.List(

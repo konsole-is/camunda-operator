@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/credentials"
 )
 
 // The fixture identities. Every value is fixed, so the golden manifests stay
@@ -38,6 +39,9 @@ const (
 	fixtureExternal       = "https://identity.example.com"
 	fixtureConsoleURL     = "https://console.example.com"
 	fixtureConsolePathURL = "https://camunda.example.com/console"
+	fixtureKeycloak       = "https://keycloak.example.com/auth"
+	fixtureOptimize       = "https://optimize.example.com"
+	fixtureAdmin          = "platform-admin"
 )
 
 // newCluster returns the minimal CamundaManagementCluster in the oidc mode,
@@ -118,6 +122,10 @@ func newInput(t *testing.T, mutate func(in *Input)) Input {
 	in := Input{
 		Cluster:  newCluster(nil),
 		Platform: newPlatform(nil),
+		// Every fixture runs on a Kubernetes cluster that serves the Keycloak
+		// kind, so the Keycloak component is built in every mode and the
+		// gate is what tells the modes apart.
+		KeycloakCRDServed: true,
 		Databases: Databases{Identity: Database{
 			Host: "postgres.camunda.svc",
 			Port: 5432,
@@ -248,18 +256,127 @@ func withConsole(in *Input, externalURL string) {
 	}
 }
 
+// newKeycloakCluster returns a CamundaManagementCluster in one of the two
+// Keycloak modes: an operator-run Keycloak when managed is true, and one that
+// the user runs when it is false.
+func newKeycloakCluster(managed bool, mutate func(mc *v1.CamundaManagementCluster)) *v1.CamundaManagementCluster {
+	return newCluster(func(mc *v1.CamundaManagementCluster) {
+		if managed {
+			mc.Spec.IdentityProvider = v1.IdentityProviderSpec{Keycloak: &v1.ManagedKeycloakSpec{
+				Version:           "26.4.1",
+				ExternalURL:       fixtureKeycloak,
+				DatabaseConfigRef: "keycloak-db",
+			}}
+		} else {
+			mc.Spec.IdentityProvider = v1.IdentityProviderSpec{
+				ExternalKeycloak: &v1.ExternalKeycloakSpec{
+					URL: fixtureKeycloak,
+					AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+						Name:        "keycloak-admin",
+						Namespace:   "platform",
+						UsernameKey: "username",
+						PasswordKey: "password",
+					},
+				},
+			}
+		}
+		mc.Spec.Identity.Admin = v1.IdentityAdminSpec{Username: fixtureAdmin}
+		mc.Spec.Optimize = &v1.ManagementOptimizeSpec{ExternalURL: fixtureOptimize}
+		if mutate != nil {
+			mutate(mc)
+		}
+	})
+}
+
+// newKeycloakInput returns the render input of a Keycloak mode, with the
+// generated Secrets filled in the way the controller fills them.
+func newKeycloakInput(t *testing.T, managed bool, mutate func(in *Input)) Input {
+	t.Helper()
+
+	return newInput(t, func(in *Input) {
+		in.Cluster = newKeycloakCluster(managed, nil)
+		in.Secrets = GeneratedSecrets{
+			IdentityClient: IdentityClientSecretName(in.Cluster),
+			OptimizeClient: OptimizeClientSecretName(in.Cluster),
+			IdentityAdmin:  IdentityAdminSecretName(in.Cluster),
+			Values: map[string]credentials.Password{
+				IdentityClientSecretName(in.Cluster): {Value: "golden-identity-client"},
+				OptimizeClientSecretName(in.Cluster): {Value: "golden-optimize-client"},
+				IdentityAdminSecretName(in.Cluster):  {Value: "golden-admin-password"},
+			},
+		}
+		if managed {
+			in.Databases.Keycloak = &Database{
+				Host: "postgres.camunda.svc",
+				Port: 5432,
+				Name: "keycloak",
+				Credentials: v1.CredentialsSecretRef{
+					Name:        "keycloak-db-credentials",
+					Namespace:   fixtureNamespace,
+					UsernameKey: "username",
+					PasswordKey: "password",
+				},
+			}
+		} else {
+			in.Mirrors = map[MirrorPurpose]map[string][]byte{
+				MirrorPurposeKeycloakAdmin: {
+					"username": []byte("admin"), "password": []byte("golden-keycloak-admin"),
+				},
+			}
+		}
+		if mutate != nil {
+			mutate(in)
+		}
+	})
+}
+
+// fixtureKeycloakRealistic exercises the override surfaces of a Keycloak
+// mode: a platform registry and license, an administrator with an address and
+// a password of their own, more Keycloak instances, and Keycloak resources.
+func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
+	t.Helper()
+
+	return newKeycloakInput(t, managed, func(in *Input) {
+		in.Cluster.Spec.Identity.Admin.Email = "admin@example.com"
+		in.Cluster.Spec.Identity.Admin.PasswordSecretRef = &v1.SecretKeyRef{
+			Name: "admin-password", Namespace: fixtureNamespace, Key: "password",
+		}
+		in.Secrets.IdentityAdmin = ""
+		delete(in.Secrets.Values, IdentityAdminSecretName(in.Cluster))
+		in.Platform = newPlatform(func(p *v1.CamundaPlatformConfigSpec) {
+			p.ImageRegistry = "registry.example.com/mirror"
+			p.LicenseSecretRef = &v1.SecretKeyRef{
+				Name:      MirroredSecretName(in.Cluster, MirrorPurposeLicense),
+				Namespace: fixtureNamespace,
+				Key:       "license",
+			}
+		})
+		in.HashInputs = []string{"Secret/platform/oidc-credentials=42"}
+		if keycloak := in.Cluster.Spec.IdentityProvider.Keycloak; keycloak != nil {
+			keycloak.Replicas = new(int32(2))
+			keycloak.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")},
+			}
+		}
+	})
+}
+
 // goldenFixtures are the fixtures that the golden test renders, by directory
 // name.
 func goldenFixtures(t *testing.T) map[string]Input {
 	t.Helper()
 
 	return map[string]Input{
-		"oidc/minimal":          fixtureMinimal(t),
-		"oidc/realistic":        fixtureRealistic(t),
-		"console/minimal":       fixtureConsoleMinimal(t),
-		"console/realistic":     fixtureConsoleRealistic(t),
-		"web-modeler/minimal":   fixtureWebModelerMinimal(t),
-		"web-modeler/realistic": fixtureWebModelerRealistic(t),
+		"oidc/minimal":                fixtureMinimal(t),
+		"oidc/realistic":              fixtureRealistic(t),
+		"console/minimal":             fixtureConsoleMinimal(t),
+		"console/realistic":           fixtureConsoleRealistic(t),
+		"web-modeler/minimal":         fixtureWebModelerMinimal(t),
+		"web-modeler/realistic":       fixtureWebModelerRealistic(t),
+		"managed-keycloak/minimal":    newKeycloakInput(t, true, nil),
+		"managed-keycloak/realistic":  fixtureKeycloakRealistic(t, true),
+		"external-keycloak/minimal":   newKeycloakInput(t, false, nil),
+		"external-keycloak/realistic": fixtureKeycloakRealistic(t, false),
 	}
 }
 

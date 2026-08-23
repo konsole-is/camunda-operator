@@ -72,6 +72,9 @@ func realisticManagementCluster() *v1.CamundaManagementCluster {
 				DatabaseConfigRef: "identity-db",
 				Admin:             v1.IdentityAdminSpec{Username: "admin"},
 			},
+			Optimize: &v1.ManagementOptimizeSpec{
+				ExternalURL: "https://optimize.example.com",
+			},
 			Console: &v1.ConsoleSpec{
 				Version:     "8.9.0",
 				ExternalURL: "https://console.example.com",
@@ -217,6 +220,38 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.IdentityProvider.Keycloak.Version = "26.0"
 			}, "version",
+		),
+		Entry(
+			"rejects a Keycloak externalUrl without the /auth path",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.Keycloak.ExternalURL = "https://kc.example.com"
+			}, "externalUrl must carry the /auth path",
+		),
+		Entry(
+			"rejects a Keycloak externalUrl with a path in front of /auth",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.IdentityProvider.Keycloak.ExternalURL = "https://kc.example.com/sso/auth"
+			}, "externalUrl must carry the /auth path",
+		),
+		Entry(
+			"rejects a keycloak mode without an optimize block",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Optimize = nil
+			}, "set optimize in the keycloak modes",
+		),
+		Entry(
+			"rejects an optimize block in the oidc mode",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Optimize = &v1.ManagementOptimizeSpec{
+					ExternalURL: "https://optimize.example.com",
+				}
+			}, "set optimize in the keycloak modes",
+		),
+		Entry(
+			"rejects an optimize externalUrl without a scheme",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Optimize.ExternalURL = "optimize.example.com"
+			}, "externalUrl must be a valid http or https URL",
 		),
 		Entry(
 			"rejects an empty platformConfigRef",

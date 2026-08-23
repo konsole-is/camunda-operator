@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -71,10 +72,12 @@ func TestCamundaManagementClusterGoldens(t *testing.T) {
 }
 
 // The oidc mode renders Management Identity alone. The copies of referenced
-// Secrets, Console, and Web Modeler are built either way, so a reference that
-// moved into the management namespace, and a Console or a Web Modeler that the
-// spec dropped, have what they left behind deleted. Each takes part in Ready
-// only while there is something to render.
+// Secrets, the generated Secrets, the Keycloak, Console, and Web Modeler are
+// built either way, so a reference that moved into the management namespace,
+// a credential that a Keycloak mode published, a Keycloak the spec moved off,
+// and a Console or a Web Modeler that the spec dropped, have what they left
+// behind deleted. Each takes part in Ready only while there is something to
+// render.
 func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 	t.Parallel()
 
@@ -82,7 +85,14 @@ func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		[]string{mirroredComponentName, ComponentIdentity, ComponentConsole, ComponentWebModeler},
+		[]string{
+			ComponentMirroredSecrets,
+			ComponentSecrets,
+			ComponentKeycloak,
+			ComponentIdentity,
+			ComponentConsole,
+			ComponentWebModeler,
+		},
 		componentNames(minimal.Components),
 	)
 	assert.Equal(t, []string{ComponentIdentity}, componentNames(minimal.Ready))
@@ -90,7 +100,7 @@ func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 	realistic, err := Build(fixtureRealistic(t))
 	require.NoError(t, err)
 	assert.Equal(
-		t, []string{mirroredComponentName, ComponentIdentity}, componentNames(realistic.Ready),
+		t, []string{ComponentMirroredSecrets, ComponentIdentity}, componentNames(realistic.Ready),
 	)
 }
 
@@ -118,6 +128,21 @@ func componentNames(comps []*component.Component) []string {
 	return names
 }
 
+// builtComponent returns the component of the given name, and fails when the
+// build rendered none.
+func builtComponent(t *testing.T, built Built, name string) *component.Component {
+	t.Helper()
+
+	for _, comp := range built.Components {
+		if comp.GetName() == name {
+			return comp
+		}
+	}
+	require.FailNowf(t, "component not built", "no component named %q", name)
+
+	return nil
+}
+
 // goldenScheme registers every type for which the golden serializer must
 // resolve TypeMeta.
 func goldenScheme(t *testing.T) *runtime.Scheme {
@@ -126,6 +151,7 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
+	require.NoError(t, keycloak.AddToScheme(scheme))
 
 	return scheme
 }
