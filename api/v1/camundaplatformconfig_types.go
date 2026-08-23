@@ -199,37 +199,47 @@ type CamundaPlatformConfigSpec struct {
 }
 
 // ImagesSpec renames the container images that the operator pulls. Each field
-// holds a full repository, for example mirror.example.com/camunda/optimize.
-// An empty field means the default repository of that image.
+// holds a repository without a tag or a digest, for example
+// mirror.example.com/camunda/optimize. The version of the component supplies
+// the tag. A registry port is allowed, as in registry:5000/camunda/optimize.
+// An unset field means the default repository of that image.
 type ImagesSpec struct {
 	// Camunda is the image of the orchestration cluster processes. Defaults
 	// to camunda/camunda.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	Camunda string `json:"camunda,omitempty"`
 	// Connectors is the image of the connectors runtime. Defaults to
 	// camunda/connectors-bundle.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	Connectors string `json:"connectors,omitempty"`
 	// Optimize is the image of Optimize. Defaults to camunda/optimize.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	Optimize string `json:"optimize,omitempty"`
 	// Identity is the image of Management Identity. Defaults to
 	// camunda/identity.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	Identity string `json:"identity,omitempty"`
 	// Console is the image of Console. Defaults to camunda/console.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	Console string `json:"console,omitempty"`
 	// WebModelerRestapi is the image of the Web Modeler restapi process.
 	// Defaults to camunda/web-modeler-restapi.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	WebModelerRestapi string `json:"webModelerRestapi,omitempty"`
 	// WebModelerWebsockets is the image of the Web Modeler websockets
 	// process. Defaults to camunda/web-modeler-websockets.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	WebModelerWebsockets string `json:"webModelerWebsockets,omitempty"`
 	// Keycloak is the image of the Keycloak that the operator runs. Defaults
 	// to camunda/keycloak.
+	// +kubebuilder:validation:Pattern=`^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$`
 	// +optional
 	Keycloak string `json:"keycloak,omitempty"`
 }

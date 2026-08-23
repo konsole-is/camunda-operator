@@ -106,6 +106,14 @@ func TestResolveOverridePerImage(t *testing.T) {
 	}
 }
 
+func TestResolveOverrideTrailingSlash(t *testing.T) {
+	spec := &v1.CamundaPlatformConfigSpec{
+		Images: &v1.ImagesSpec{Optimize: "mirror.example.com/team/optimize/"},
+	}
+
+	assert.Equal(t, "mirror.example.com/team/optimize:8.9.9", Resolve(spec, Optimize, "8.9.9"))
+}
+
 // Every declared image must resolve to a repository. A constant without one
 // would render a reference that starts with a colon.
 func TestEveryImageHasARepository(t *testing.T) {

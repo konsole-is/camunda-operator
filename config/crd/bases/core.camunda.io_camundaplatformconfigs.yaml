@@ -361,37 +361,45 @@ spec:
                     description: |-
                       Camunda is the image of the orchestration cluster processes. Defaults
                       to camunda/camunda.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                   connectors:
                     description: |-
                       Connectors is the image of the connectors runtime. Defaults to
                       camunda/connectors-bundle.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                   console:
                     description: Console is the image of Console. Defaults to camunda/console.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                   identity:
                     description: |-
                       Identity is the image of Management Identity. Defaults to
                       camunda/identity.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                   keycloak:
                     description: |-
                       Keycloak is the image of the Keycloak that the operator runs. Defaults
                       to camunda/keycloak.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                   optimize:
                     description: Optimize is the image of Optimize. Defaults to camunda/optimize.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                   webModelerRestapi:
                     description: |-
                       WebModelerRestapi is the image of the Web Modeler restapi process.
                       Defaults to camunda/web-modeler-restapi.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                   webModelerWebsockets:
                     description: |-
                       WebModelerWebsockets is the image of the Web Modeler websockets
                       process. Defaults to camunda/web-modeler-websockets.
+                    pattern: ^[^:@/]+(:[0-9]+)?(/[^:@/]+)*/?$
                     type: string
                 type: object
               licenseSecretRef:

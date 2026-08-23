@@ -79,7 +79,7 @@ func Resolve(p *v1.CamundaPlatformConfigSpec, img Image, version string) string 
 		tag = keycloakTagPrefix + version
 	}
 
-	if repo := override(p, img); repo != "" {
+	if repo := strings.TrimRight(override(p, img), "/"); repo != "" {
 		return repo + ":" + tag
 	}
 
