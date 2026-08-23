@@ -130,7 +130,9 @@ func PingsConsole(env []corev1.EnvVar, consoleURL string) bool {
 }
 
 // PingCollisions returns the entries of spec.extraEnv that hold a ping setting
-// with valueFrom, from the last of the list to the first. A caller that
+// of the key set the cluster's version reads, with valueFrom, from the last of
+// the list to the first. An entry under the other key set stays: the
+// management plane never writes it for this cluster. A caller that
 // removes them in that order keeps the index of every entry it has not
 // reached yet.
 //
@@ -140,10 +142,11 @@ func PingsConsole(env []corev1.EnvVar, consoleURL string) bool {
 // carries value and valueFrom together. Such an entry has to go before the
 // apply.
 func PingCollisions(cluster *v1.CamundaCluster) []PingCollision {
+	names := pingEnvNamesFor(cluster.Spec.Version)
 	var collisions []PingCollision
 	for i := len(cluster.Spec.ExtraEnv) - 1; i >= 0; i-- {
 		entry := cluster.Spec.ExtraEnv[i]
-		if entry.ValueFrom == nil || !pingEnvName(entry.Name) {
+		if entry.ValueFrom == nil || !names.holds(entry.Name) {
 			continue
 		}
 		collisions = append(collisions, PingCollision{
@@ -156,15 +159,9 @@ func PingCollisions(cluster *v1.CamundaCluster) []PingCollision {
 	return collisions
 }
 
-// pingEnvName reports whether name is a ping setting of either key set.
-func pingEnvName(name string) bool {
-	switch name {
-	case consolePingEnvEnabled, consolePingEnvEndpoint, consolePingEnvClusterName, consolePingEnvPingPeriod,
-		hubPingEnvEnabled, hubPingEnvEndpoint, hubPingEnvClusterName, hubPingEnvPingPeriod:
-		return true
-	default:
-		return false
-	}
+// holds reports whether name is one of the four settings of this key set.
+func (n pingEnvNames) holds(name string) bool {
+	return name == n.enabled || name == n.endpoint || name == n.clusterName || name == n.pingPeriod
 }
 
 // valueFromManager returns the field manager that owns valueFrom of the

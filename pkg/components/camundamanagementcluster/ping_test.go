@@ -101,22 +101,29 @@ func TestPingCollisionsReadsTheEntriesUnderAPingName(t *testing.T) {
 			Key:                  "endpoint",
 		},
 	}
-	cluster := &v1.CamundaCluster{Spec: v1.CamundaClusterSpec{ExtraEnv: []corev1.EnvVar{
+	extraEnv := []corev1.EnvVar{
 		{Name: "USER_SETTING", ValueFrom: fromConfigMap},
 		{Name: "CAMUNDA_CONSOLE_PING_ENABLED", Value: "false"},
 		{Name: "CAMUNDA_CONSOLE_PING_ENDPOINT", ValueFrom: fromConfigMap},
+		{Name: "CAMUNDA_CONSOLE_PING_PINGPERIOD", ValueFrom: fromConfigMap},
 		{Name: "CAMUNDA_HUB_PING_CLUSTERNAME", ValueFrom: fromConfigMap},
-	}}}
-
-	collisions := PingCollisions(cluster)
+	}
+	cluster := &v1.CamundaCluster{Spec: v1.CamundaClusterSpec{Version: "8.9.9", ExtraEnv: extraEnv}}
 
 	// The last entry comes first, so a caller that removes them in this order
-	// keeps the index of the entries it has not reached yet.
+	// keeps the index of the entries it has not reached yet. The Hub entry is
+	// not a setting an 8.9 cluster reads, so it stays.
 	assert.Equal(
 		t, []PingCollision{
-			{Index: 3, Name: "CAMUNDA_HUB_PING_CLUSTERNAME"},
+			{Index: 3, Name: "CAMUNDA_CONSOLE_PING_PINGPERIOD"},
 			{Index: 2, Name: "CAMUNDA_CONSOLE_PING_ENDPOINT"},
-		}, collisions,
+		}, PingCollisions(cluster),
+	)
+
+	// An 8.10 cluster reads the Hub key set, and the Console entries stay.
+	cluster.Spec.Version = "8.10.0"
+	assert.Equal(
+		t, []PingCollision{{Index: 4, Name: "CAMUNDA_HUB_PING_CLUSTERNAME"}}, PingCollisions(cluster),
 	)
 }
 
@@ -184,8 +191,9 @@ func TestPingCollisionsWithoutAFieldManager(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{
 			{Manager: "kubectl", FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:version":{}}}`)},
 			{Manager: "broken", FieldsV1: metav1.NewFieldsV1("not json")},
+			{Manager: "empty"},
 		}},
-		Spec: v1.CamundaClusterSpec{ExtraEnv: []corev1.EnvVar{{
+		Spec: v1.CamundaClusterSpec{Version: "8.10.0", ExtraEnv: []corev1.EnvVar{{
 			Name:      "CAMUNDA_HUB_PING_PINGPERIOD",
 			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"}},
 		}}},
