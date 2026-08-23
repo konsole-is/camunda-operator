@@ -212,6 +212,50 @@ var _ = Describe("Web Modeler", func() {
 		expectIdentityDeployed(s)
 	})
 
+	It("removes the user from a cluster that leaves the selector", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			expectSecretGone(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("removes the user when the spec stops asking for Web Modeler", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		disableWebModeler(s.mc)
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			expectSecretGone(g, s.namespace, name)
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("removes the user with the management cluster", func() {
 		api := newClusterUserAPI()
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))
@@ -280,6 +324,13 @@ func expectServiceGone(g Gomega, namespace, name string) {
 	var svc corev1.Service
 	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &svc)
 	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Service %s/%s is still there", namespace, name)
+}
+
+// expectSecretGone asserts that the API server holds no Secret of that name.
+func expectSecretGone(g Gomega, namespace, name string) {
+	var secret corev1.Secret
+	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Secret %s/%s is still there", namespace, name)
 }
 
 // withWebModeler adds Web Modeler to the management cluster under test, with a

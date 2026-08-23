@@ -64,7 +64,7 @@ func (r *Reconciler) finalize(ctx context.Context, mc *v1.CamundaManagementClust
 	if err := r.withdrawClaims(ctx, mc, clusters); err != nil {
 		return err
 	}
-	if err := r.removeWebModelerUsers(ctx, mc); err != nil {
+	if err := r.withdrawWebModelerUsers(ctx, mc, clusters); err != nil {
 		return err
 	}
 	if err := r.withdrawContract(ctx, mc); err != nil {

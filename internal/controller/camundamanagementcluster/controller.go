@@ -200,7 +200,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
 	claimErr := r.recordInitialClaim(ctx, &mc)
-	userErr := r.webModelerUsers(ctx, &mc, attached, rows)
+	userErr := r.syncWebModelerUsers(ctx, &mc, clusters, attached, rows)
 	pingErr := r.syncPing(ctx, &mc, clusters, attached)
 	contractErr := r.writeContract(ctx, &mc, res)
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
