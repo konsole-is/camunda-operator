@@ -21,7 +21,7 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 - **Wave 1 (foundational)** — `#186` API types and shared contracts
 - **Wave 2 (foundational)** — `#187` Identity on oidc, contract output, cluster discovery and claim (depends on #186)
 - **Wave 3 (consumers, parallel)** — `#188` Keycloak modes, `#189` Console + ping, `#190` Web Modeler + cluster list + user (depend on #187)
-- **Wave 4 (parallel)** — `#191` e2e flows, `#192` docs (depend on wave 3)
+- **Wave 4 (parallel)** — `#191` e2e flows, `#192` docs, `#208` coherence sweep (depend on wave 3)
 
 ## PRs / worktrees
 
@@ -32,8 +32,9 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 | #188 | feat/management-cluster--keycloak-modes | .claude/worktrees/management-cluster/.claude/worktrees/keycloak-modes | #205 → feat/management-cluster | self-merged (d10e55d) |
 | #189 | feat/management-cluster--console-ping | .claude/worktrees/management-cluster/.claude/worktrees/console-ping | #203 → feat/management-cluster | self-merged (84ef8b8) |
 | #190 | feat/management-cluster--web-modeler | .claude/worktrees/management-cluster/.claude/worktrees/web-modeler | #204 → feat/management-cluster | self-merged (f50c39e) |
-| #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | | not-started |
-| #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | | not-started |
+| #191 | test/management-cluster--e2e-flows | .claude/worktrees/management-cluster/.claude/worktrees/e2e-flows | | in-progress |
+| #192 | docs/management-cluster--user-docs | .claude/worktrees/management-cluster/.claude/worktrees/user-docs | | in-progress |
+| #208 | refactor/management-cluster--coherence-sweep | .claude/worktrees/management-cluster/.claude/worktrees/coherence-sweep | | in-progress |
 
 ## Contracts
 
@@ -51,6 +52,7 @@ The user granted full autonomy on 2026-08-23: file issues, write the plan, imple
 
 ## Bubble-up log
 
+- 2026-08-23 — Wave-3 checkpoint (union at d10e55d): READY FOR WAVE 4. Follow-ups filed as #208 (coherence sweep: Web Modeler user withdrawn on deselect/disable, Keycloak-mode goldens with Console/Web Modeler, helper/probe/gate unification, `alwaysReady` removed, GoDoc corrections, spec reconciled with seven doc-visible deltas); #191 told to install the Keycloak Operator before `deployManager()`, pin its version, add the management images to the matrix; #192 told the seven spec deltas and the status reasons. No late Copilot review on #205.
 - 2026-08-23 — #205 merged at d10e55d with its Copilot loop unfinished: round 1 (7 posted + 13 suppressed) was fully triaged and applied; two consecutive 30-minute waits after remove/re-add produced no second review while a request stayed attached. Merged on the strength of the spec pass, the full quality pass, and a delta quality pass on the merge-forward + round 2 + polish (all clean). A late Copilot review on the closed PR is triaged at the wave-3 checkpoint / integration PR. Wave 3 complete: #203 (84ef8b8), #204 (f50c39e), #205 (d10e55d); #188/#189/#190 closed.
 - 2026-08-23 — #204 fix round found that a nil-returning component builder leaves resources running when the user removes the spec block (`spec.webModeler` unset → both Deployments stayed). Convention added to the plan: optional components are always built and feature-gated off; ocf deletes gated-off resources and a Disabled component stays out of `Ready`. Propagated: #204 converts Web Modeler and Console (after merging #203 forward); #205 told by message to convert Keycloak (mode switch deletes the CR). Merge order for wave 3: #203 (done, 84ef8b8) → #204 → #205, each merging the feature branch forward (never rebase) before its own merge.
 - 2026-08-23 — #205 (Keycloak modes) decisions: Identity re-applies the whole client representation on every start (verified in Identity source, camunda/camunda#59963), so redirect URIs can change across restarts; but `CamundaOptimize` has no `externalUrl` field, so the Optimize client root URL cannot be discovered. `spec.optimize.externalUrl` is added and required in the Keycloak modes (the contract always publishes the Optimize client; its Keycloak client needs a root URL), forbidden in oidc. Follow-up (not this epic): `CamundaOptimize.spec.externalUrl` + discovery by the management cluster, then the field becomes optional. Console is bootstrapped through the `KEYCLOAK_INIT_CONSOLE_*` preset (chart parity), not `KEYCLOAK_CLIENTS_<n>_*`; `KEYCLOAK_SETUP_REALM`/`CLIENT_ID` rendered with the documented defaults, no new field. `identity.admin` gains `email` (+ `firstName`/`lastName` optional with defaults, needed by Web Modeler for the first user). #203 (Console) decisions: ping endpoint = Console's in-cluster Service URL (spec corrected on the branch); 8.10 hub ping needs M2M credentials (unfiled follow-up); `ForceOwnership` on the four ping entries kept and documented on `CamundaClusterSpec.ExtraEnv`. #204 (Web Modeler): `BASIC` carries no credentials (the Web Modeler docs: the person enters them in the UI), the dedicated user is still created with the documented authorizations; `URL_GRPC` gets `grpc://`; pusher app id is the fixed identifier `web-modeler`; `SERVER_HTTPS_ONLY`/`PUSHER_APP_PATH` recorded in the spec.
