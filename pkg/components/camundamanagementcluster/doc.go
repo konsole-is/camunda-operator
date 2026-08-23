@@ -15,10 +15,10 @@ limitations under the License.
 */
 
 // Package camundamanagementcluster renders the resources of one management
-// plane: the Management Identity Deployment and Service, the copies of
-// referenced Secrets from other namespaces, and later the identity provider,
-// Console, and Web Modeler. It also derives the ManagementAuthConfig that
-// Optimize reads.
+// plane: Management Identity, the Keycloak of the keycloak mode, Console, the
+// two Web Modeler processes, the generated credential Secrets, and the copies
+// of referenced Secrets from other namespaces. It also derives the
+// ManagementAuthConfig that Optimize reads.
 //
 // The package is pure: spec in, resources out, no API calls. The controller in
 // internal/controller/camundamanagementcluster resolves the references into
