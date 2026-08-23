@@ -14,15 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package keycloak holds the Go types of the Keycloak custom resource that the
-// Keycloak Operator serves, and the ocf primitive that renders it. The
-// Keycloak project publishes no Go module for its CRDs, so the types here
-// carry the fields that the operator sets and reads. The schema they follow is
-// vendored in internal/testenv/crds/keycloak.
+// Package keycloak holds the Go types of the Keycloak custom resource of the
+// Keycloak Operator, k8s.keycloak.org/v2alpha1. The Keycloak project publishes
+// no Go module for its CRDs, so the types here carry the fields that the
+// operator sets and reads. The schema they follow is vendored in
+// internal/testenv/crds/keycloak.
 //
-// The types follow v2alpha1. It is deprecated since Keycloak 26.7 in favor of
-// v2beta1, and it is the only version that every supported 26.x Keycloak
-// Operator serves.
+// v2alpha1 is deprecated since Keycloak 26.7 in favor of v2beta1. It is the
+// only version that every supported 26.x Keycloak Operator serves.
 // +kubebuilder:object:generate=true
 // +groupName=k8s.keycloak.org
 package keycloak
