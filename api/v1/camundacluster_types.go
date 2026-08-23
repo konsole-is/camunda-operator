@@ -376,7 +376,8 @@ type CamundaClusterSpec struct {
 	// result, the schema pins only the three-segment shape. Required unless
 	// the resolved preset provides it. A value below the version that the
 	// brokers run is refused with Ready VersionDowngradeRefused unless the
-	// annotation camunda.io/allow-version-downgrade names it.
+	// annotation camunda.io/allow-version-downgrade on the CamundaCluster
+	// names it.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`

@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -45,6 +46,10 @@ func TestConsumeDowngradeSanction(t *testing.T) {
 		want string
 		// patched is true when the call must write the live object.
 		patched bool
+		// staleWrite is true when another manager updates the stored object
+		// after the test reads it, so the cluster passed to the call carries
+		// a resourceVersion older than the one on the server.
+		staleWrite bool
 	}{
 		{
 			name:      "no annotation",
@@ -74,6 +79,13 @@ func TestConsumeDowngradeSanction(t *testing.T) {
 			effective:  "8.9.9",
 			patched:    true,
 		},
+		{
+			name:       "a concurrent write conflicts",
+			sanctioned: "8.9.9",
+			effective:  "8.9.8",
+			want:       "8.9.9",
+			staleWrite: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -98,12 +110,26 @@ func TestConsumeDowngradeSanction(t *testing.T) {
 			require.NoError(t, r.Get(context.Background(), key, &live))
 			applied := live.ResourceVersion
 
+			if tt.staleWrite {
+				live.Labels = map[string]string{"changed-by": "another-manager"}
+				require.NoError(t, r.Update(context.Background(), &live))
+			}
+
 			in := components.Input{
 				Effective: components.NewEffective(v1.CamundaClusterSpec{Version: tt.effective}),
 			}
 			storage := brokerStorageRunning("camunda/camunda:8.9.9")
-			require.NoError(t, r.consumeDowngradeSanction(context.Background(), cluster, in, storage))
+			err = r.consumeDowngradeSanction(context.Background(), cluster, in, storage)
 
+			if tt.staleWrite {
+				require.Error(t, err)
+				assert.True(t, apierrors.IsConflict(err), "a stale patch reports a conflict, got: %v", err)
+				require.NoError(t, r.Get(context.Background(), key, &live))
+				assert.Equal(t, tt.want, live.Annotations[components.AllowVersionDowngradeAnnotation])
+				return
+			}
+
+			require.NoError(t, err)
 			require.NoError(t, r.Get(context.Background(), key, &live))
 			assert.Equal(t, tt.want, live.Annotations[components.AllowVersionDowngradeAnnotation])
 			if tt.patched {

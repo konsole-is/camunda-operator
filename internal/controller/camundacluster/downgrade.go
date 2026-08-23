@@ -39,7 +39,9 @@ const msgVersionDowngradeRefused = "the effective version %s is below the runnin
 // the brokers carry the version it names, and as soon as it names a version
 // that the cluster is not asked to run. The sanction covers one move to the
 // effective version, whoever set it. A merge patch removes the key from every
-// manager that declared it, which is what a spent sanction needs.
+// manager that declared it, which is what a spent sanction needs. The patch
+// carries the resource version, so a concurrent write conflicts and the
+// reconcile retries.
 func (r *CamundaClusterReconciler) consumeDowngradeSanction(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
@@ -53,7 +55,8 @@ func (r *CamundaClusterReconciler) consumeDowngradeSanction(
 
 	before := cluster.DeepCopy()
 	delete(cluster.Annotations, components.AllowVersionDowngradeAnnotation)
-	if err := r.Patch(ctx, cluster, client.MergeFrom(before)); err != nil {
+	patch := client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})
+	if err := r.Patch(ctx, cluster, patch); err != nil {
 		return fmt.Errorf(
 			"removing the %s annotation of CamundaCluster %q: %w",
 			components.AllowVersionDowngradeAnnotation, cluster.Name, err,
