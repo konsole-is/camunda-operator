@@ -206,7 +206,6 @@ const (
 	consoleSuffix               = "console"
 	webModelerRestapiSuffix     = "web-modeler-restapi"
 	webModelerWebsocketsSuffix  = "web-modeler-websockets"
-	identityClientSuffix        = "identity-client"
 	optimizeClientSuffix        = "optimize-client"
 	identityAdminSuffix         = "identity-admin"
 	pusherSuffix                = "web-modeler-pusher"
@@ -287,13 +286,6 @@ func KeycloakServiceName(mc *v1.CamundaManagementCluster) string {
 // administrator.
 func KeycloakInitialAdminSecretName(mc *v1.CamundaManagementCluster) string {
 	return KeycloakName(mc) + keycloakInitialAdminSuffix
-}
-
-// IdentityClientSecretName returns the name of the generated Secret that
-// holds the Management Identity client secret. The operator generates it in
-// the Keycloak modes only.
-func IdentityClientSecretName(mc *v1.CamundaManagementCluster) string {
-	return suffixed(mc.Name, identityClientSuffix)
 }
 
 // OptimizeClientSecretName returns the name of the generated Secret that

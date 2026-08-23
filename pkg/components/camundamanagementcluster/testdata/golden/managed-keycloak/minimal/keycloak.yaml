@@ -11,8 +11,6 @@ spec:
   additionalOptions:
   - name: http-relative-path
     value: /auth
-  - name: proxy-headers
-    value: xforwarded
   db:
     passwordSecret:
       key: password
@@ -33,6 +31,8 @@ spec:
   ingress:
     enabled: false
   instances: 1
+  proxy:
+    headers: xforwarded
   unsupported:
     podTemplate:
       metadata:

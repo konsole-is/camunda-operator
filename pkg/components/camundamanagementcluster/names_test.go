@@ -38,7 +38,6 @@ func TestResourceNames(t *testing.T) {
 	assert.Equal(t, "my-management-console", ConsoleName(mc))
 	assert.Equal(t, "my-management-web-modeler-restapi", WebModelerRestapiName(mc))
 	assert.Equal(t, "my-management-web-modeler-websockets", WebModelerWebsocketsName(mc))
-	assert.Equal(t, "my-management-identity-client", IdentityClientSecretName(mc))
 	assert.Equal(t, "my-management-optimize-client", OptimizeClientSecretName(mc))
 	assert.Equal(t, "my-management-identity-admin", IdentityAdminSecretName(mc))
 	assert.Equal(t, "my-management-web-modeler-pusher", PusherSecretName(mc))

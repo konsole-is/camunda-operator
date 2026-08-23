@@ -85,7 +85,8 @@ first.
 - Camunda documents the Keycloak Operator: `apiVersion: k8s.keycloak.org/v2alpha1`,
   `kind: Keycloak`, image `camunda/keycloak:quay-optimized-<version>`, `db.url` plus
   `usernameSecret`/`passwordSecret`, HTTP enabled, `additionalOptions`
-  `http-relative-path=/auth` and `proxy-headers=xforwarded`, `ingress.enabled: false`,
+  `http-relative-path=/auth`, `proxy.headers: xforwarded` (the first-class field, because the
+  Keycloak Operator warns when the option arrives through `additionalOptions`), `ingress.enabled: false`,
   `hostname.hostname` with the `/auth` path. Keycloak needs its own PostgreSQL.
   https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/
 - The Bitnami Keycloak subchart is marked deprecated in the 8.9 chart README.
@@ -333,8 +334,8 @@ handler that sets `instances: 0`. `SetupWithManager` probes the RESTMapper once 
 `Ready=False/KeycloakOperatorNotInstalled`, the `ECKNotInstalled` shape. The CR:
 `instances`, `image` (through `pkg/images`), `db` from the `DatabaseConfig` (the whole
 `jdbc:aws-wrapper:postgresql://` URL, `schema: public`, `usernameSecret` and `passwordSecret`
-pointing at the credentials Secret keys), HTTP on, `additionalOptions` `http-relative-path=/auth`
-and `proxy-headers=xforwarded`, `hostname.hostname` = `externalUrl`, Ingress off, pod template
+pointing at the credentials Secret keys), HTTP on, `additionalOptions` `http-relative-path=/auth`,
+`proxy.headers: xforwarded`, `hostname.hostname` = `externalUrl`, Ingress off, pod template
 labels. The Keycloak Operator writes `<name>-initial-admin`; Identity's
 `KEYCLOAK_SETUP_USER|PASSWORD` read it, and the Identity component waits for `KeycloakReady`
 through an ocf prerequisite. `KEYCLOAK_URL` is the in-cluster Service URL the operator creates
@@ -351,8 +352,11 @@ gated-off component reports `KeycloakReady=True/Disabled` and stays out of `Read
 cluster that serves no Keycloak kind gets no component at all.
 
 **Both Keycloak modes.** Identity bootstraps the realm and the clients. The operator generates
-(`pkg/credentials`, rotatable by deleting the Secret) `IDENTITY_CLIENT_SECRET`,
-`KEYCLOAK_INIT_OPTIMIZE_SECRET`, and the Web Modeler pusher credentials. Every client comes from
+(`pkg/credentials`, rotatable by deleting the Secret) `KEYCLOAK_INIT_OPTIMIZE_SECRET` and the Web
+Modeler pusher credentials. It sets no `IDENTITY_CLIENT_SECRET`: Identity creates its own client
+and gives it a new secret on every start, and with the variable set it signs in with client
+credentials before the realm exists and never runs its setup (the 8.9 chart sets none either; the
+e2e run of #191 found it). Every client comes from
 a component preset, Console included: the 8.9 chart carries a `console` preset
 (`charts/camunda-platform-8.9/templates/identity/configmap.yaml`, `keycloak.init.console.root-url`
 and the `component-presets.console` block), so the operator sets
@@ -550,7 +554,7 @@ it, and so is every Job image the backup and restore controllers render.
 
 ### Security
 
-- Generated secrets (Identity client secret, Optimize client secret, pusher credentials,
+- Generated secrets (Optimize client secret, pusher credentials,
   Keycloak initial admin from the Keycloak Operator, Web Modeler cluster users, Identity admin
   password in Keycloak modes) live in the management namespace and are owned by the CR. All of
   them rotate by deletion except the Identity admin password: Management Identity reads it once,
@@ -561,8 +565,12 @@ it, and so is every Job image the backup and restore controllers render.
   this: a marker that says the administrator has bootstrapped cannot live on the Secret, because
   the deletion it guards removes it, and a marker on the CR would leave the Identity pods
   mounting a Secret that the operator no longer publishes.
-- The only credential that crosses a namespace is the Optimize client secret reference in the
-  cluster-scoped contract, which `CamundaOptimize` already mirrors into its own namespace.
+- Two kinds of credential cross a namespace. The Optimize client secret reference in the
+  cluster-scoped contract, which `CamundaOptimize` mirrors into its own namespace. And the Secrets
+  that the management cluster references in other namespaces (the license, the oidc client secret,
+  the database credentials, the Keycloak administrator, the SMTP credentials), which the operator
+  copies into the management namespace under `MirroredSecretsReady`, because a pod reads a Secret
+  of its own namespace only.
 - The cluster admin credential is read by the management controller to create the Web Modeler
   user and is never rendered into any pod.
 - RBAC: the controller needs `camundaclusters` get/list/watch/patch, `keycloaks` full,

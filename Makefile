@@ -122,8 +122,11 @@ E2E_CAMUNDA_MINOR ?= 8.9
 # default 10 minutes of go test. The Optimize flow adds an Elasticsearch, a
 # Keycloak, a cluster, and two Optimize workloads of its own. The restore specs
 # of both storage paths add two backups, two restores, and two point-in-time
-# restores on top of that.
-E2E_TIMEOUT ?= 120m
+# restores on top of that. The two management plane flows add a Keycloak, a
+# Management Identity, a Console, and two Web Modeler processes each. Ginkgo
+# has a suite timeout of its own, one hour by default, so the same value goes
+# to -ginkgo.timeout.
+E2E_TIMEOUT ?= 180m
 
 # setup-test-e2e ends with an unconditional context switch. The e2e suite
 # drives kubectl through the current context, and only a cluster that kind
@@ -150,7 +153,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
 	set -a && . ./test/e2e/matrix/$(E2E_CAMUNDA_MINOR).env && set +a && \
 	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) ECK_VERSION=$(ECK_VERSION) \
-		go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT)
+		go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT) -ginkgo.timeout $(E2E_TIMEOUT)
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e

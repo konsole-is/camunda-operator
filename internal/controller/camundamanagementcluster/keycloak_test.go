@@ -48,6 +48,7 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			Expect(kc.Spec.DB.URL).To(HavePrefix("jdbc:aws-wrapper:postgresql://"))
 			Expect(kc.Spec.Hostname.Hostname).To(Equal(keycloakExternalURL))
 			Expect(*kc.Spec.Ingress.Enabled).To(BeFalse())
+			Expect(kc.Spec.Proxy.Headers).To(Equal("xforwarded"))
 			Expect(kc.Spec.AdditionalOptions).To(ContainElement(
 				keycloak.KeycloakValueOrSecret{Name: "http-relative-path", Value: "/auth"},
 			))
@@ -56,7 +57,6 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			)
 
 			for _, name := range []string{
-				components.IdentityClientSecretName(s.mc),
 				components.OptimizeClientSecretName(s.mc),
 				components.IdentityAdminSecretName(s.mc),
 			} {
@@ -146,7 +146,7 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			s := newScenario(withManagedKeycloak)
 
 			key := client.ObjectKey{
-				Namespace: s.namespace, Name: components.IdentityClientSecretName(s.mc),
+				Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc),
 			}
 			var first corev1.Secret
 			Eventually(func(g Gomega) {
@@ -211,7 +211,6 @@ var _ = Describe("CamundaManagementCluster controller in the Keycloak modes", fu
 			s := newScenario(withManagedKeycloak)
 
 			generated := []client.ObjectKey{
-				{Namespace: s.namespace, Name: components.IdentityClientSecretName(s.mc)},
 				{Namespace: s.namespace, Name: components.OptimizeClientSecretName(s.mc)},
 				{Namespace: s.namespace, Name: components.IdentityAdminSecretName(s.mc)},
 			}

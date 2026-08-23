@@ -47,15 +47,21 @@ var (
 	shouldCleanupCertManager = false
 	// shouldCleanupECK tracks whether the ECK operator was installed by this suite.
 	shouldCleanupECK = false
+	// shouldCleanupKeycloakCRDs tracks whether the Keycloak CRDs were
+	// installed by this suite.
+	shouldCleanupKeycloakCRDs = false
 )
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
-// The default setup requires Kind, CertManager, and the ECK operator. The suite
-// installs CertManager and ECK when the cluster does not serve them.
+// The default setup requires Kind, CertManager, the ECK operator, and the
+// Keycloak Operator. The suite installs all three when the cluster does not
+// serve them.
 //
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
 // To skip ECK installation, set: ECK_INSTALL_SKIP=true
 // To install a different ECK release, set: ECK_VERSION=<version>
+// To skip the Keycloak CRD and Keycloak Operator installation, set: KEYCLOAK_OPERATOR_INSTALL_SKIP=true
+// To install a different Keycloak Operator release, set: KEYCLOAK_OPERATOR_VERSION=<version>
 // To run against another Camunda minor: make test-e2e E2E_CAMUNDA_MINOR=<minor>
 // That picks the file of test/e2e/matrix/ that holds the image versions and
 // the label list of the run.
@@ -75,9 +81,12 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "e2e suite", suiteConfig, reporterConfig)
 }
 
-// The suite deploys the manager once, after ECK. The ECK CRDs must be present
-// before the manager starts, because the ElasticsearchCluster controller
-// watches the ECK Elasticsearch kind.
+// The suite deploys the manager once, after ECK and the Keycloak CRDs. The
+// CRDs of both must be present before the manager starts: the
+// ElasticsearchCluster controller watches the ECK Elasticsearch kind, and the
+// CamundaManagementCluster controller probes the Keycloak kind once at
+// startup. The Keycloak Operator itself is installed by the flow that creates
+// a Keycloak, because it reserves CPU for as long as it runs.
 var _ = BeforeSuite(func() {
 	By("checking the image versions of the run")
 	for _, name := range versionEnv {
@@ -110,6 +119,7 @@ var _ = BeforeSuite(func() {
 
 	setupCertManager()
 	setupECK()
+	setupKeycloakCRDs()
 	deployManager()
 	setupMinIO()
 })
@@ -117,6 +127,7 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	teardownMinIO()
 	undeployManager()
+	teardownKeycloakCRDs()
 	teardownECK()
 	teardownCertManager()
 })
@@ -269,4 +280,46 @@ func teardownECK() {
 
 	By("uninstalling ECK")
 	utils.UninstallECK()
+}
+
+// setupKeycloakCRDs installs the custom resource definitions of the Keycloak
+// Operator, so that the manager finds the Keycloak kind when it starts. Skips
+// installation if KEYCLOAK_OPERATOR_INSTALL_SKIP=true or if already present.
+// The operator itself is installed by the management-keycloak flow, in its
+// own namespace, for the time of that flow.
+func setupKeycloakCRDs() {
+	if os.Getenv("KEYCLOAK_OPERATOR_INSTALL_SKIP") == "true" {
+		_, _ = fmt.Fprintf(
+			GinkgoWriter, "Skipping Keycloak CRD installation (KEYCLOAK_OPERATOR_INSTALL_SKIP=true)\n",
+		)
+		return
+	}
+
+	By("checking if the Keycloak CRDs are already installed")
+	if utils.AreKeycloakCRDsInstalled() {
+		_, _ = fmt.Fprintf(GinkgoWriter, "The Keycloak CRDs are already installed. Skipping installation.\n")
+		return
+	}
+
+	shouldCleanupKeycloakCRDs = true
+
+	version, err := utils.KeycloakOperatorVersion()
+	Expect(err).NotTo(HaveOccurred(), "Failed to read the Keycloak Operator version")
+
+	By(fmt.Sprintf("installing the Keycloak CRDs of the Keycloak Operator %s", version))
+	Expect(utils.InstallKeycloakCRDs()).To(Succeed(), "Failed to install the Keycloak CRDs")
+}
+
+// teardownKeycloakCRDs removes the Keycloak CRDs if setupKeycloakCRDs
+// installed them.
+func teardownKeycloakCRDs() {
+	if !shouldCleanupKeycloakCRDs {
+		_, _ = fmt.Fprintf(
+			GinkgoWriter, "Skipping Keycloak CRD cleanup (not installed by this suite)\n",
+		)
+		return
+	}
+
+	By("uninstalling the Keycloak CRDs")
+	utils.UninstallKeycloakCRDs()
 }

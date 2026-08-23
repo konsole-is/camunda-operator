@@ -201,8 +201,6 @@ type Databases struct {
 // the oidc mode, where the platform config names every client secret and the
 // initial administrator is a token claim.
 type GeneratedSecrets struct {
-	// IdentityClient holds the Management Identity client secret.
-	IdentityClient string
 	// OptimizeClient holds the Optimize client secret.
 	OptimizeClient string
 	// IdentityAdmin holds the password of the first administrator.
@@ -358,19 +356,15 @@ func keycloakProvider(
 }
 
 // keycloakClients returns the clients that Management Identity creates in the
-// realm, one per component the spec deploys. A Keycloak client holds no
-// secret of its own for a browser application, and Web Modeler is one client
-// in front of two resource servers, so its two entries carry the same id.
+// realm, one per component the spec deploys. A browser application holds no
+// secret, and Identity makes the secret of its own client, so only Optimize
+// carries a reference. Web Modeler is one client in front of two resource
+// servers, so its two entries carry the same id.
 func keycloakClients(in Input) ProviderClients {
 	clients := ProviderClients{
 		Identity: Client{
 			ID:       keycloakClientIdentity,
 			Audience: keycloakAudienceIdentity,
-			SecretRef: &v1.SecretKeyRef{
-				Name:      in.Secrets.IdentityClient,
-				Namespace: in.Cluster.Namespace,
-				Key:       ClientSecretKey,
-			},
 		},
 		Optimize: Client{
 			ID:       keycloakClientOptimize,

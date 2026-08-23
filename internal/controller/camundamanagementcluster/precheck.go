@@ -203,9 +203,10 @@ func (res *resolver) resolveKeycloakAdmin(ctx context.Context) error {
 }
 
 // resolveGeneratedSecrets reads the credentials that the operator publishes
-// itself: the client secret of Management Identity and of Optimize, and the
-// password of the first administrator. Only the two Keycloak modes need them,
-// because Management Identity creates the clients and the user there.
+// itself: the Optimize client secret and the password of the first
+// administrator. Only the two Keycloak modes need them, because Management
+// Identity creates the clients and the user there. Identity makes its own
+// client secret, so the operator publishes none for it.
 //
 // A credential that a Secret already holds is read back, so it stays stable
 // after creation. Deleting the Secret is what rotates it.
@@ -220,12 +221,10 @@ func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved)
 	}
 
 	secrets := components.GeneratedSecrets{
-		IdentityClient: components.IdentityClientSecretName(res.mc),
 		OptimizeClient: components.OptimizeClientSecretName(res.mc),
 		Values:         map[string]credentials.Password{},
 	}
 	generated := map[string]string{
-		secrets.IdentityClient: components.ClientSecretKey,
 		secrets.OptimizeClient: components.ClientSecretKey,
 	}
 	if res.mc.Spec.Identity.Admin.PasswordSecretRef == nil {
@@ -263,10 +262,11 @@ func (res *resolver) resolveGeneratedSecrets(ctx context.Context, out *resolved)
 // namespace it was declared in: the contract is cluster-scoped, and the
 // CamundaOptimize that reads it makes a copy of its own.
 //
-// Only the oidc mode has secrets to resolve. In the two Keycloak modes both
-// client secrets name Secrets that this operator generates in the management
-// namespace, and the Secrets component is what creates them, so requiring
-// them here would refuse the very reconcile that writes them.
+// Only the oidc mode has secrets to resolve. In the two Keycloak modes
+// Management Identity makes the client secret of every client it creates,
+// and the Optimize one names a Secret that this operator generates in the
+// management namespace. The Secrets component is what creates that Secret,
+// so requiring it here would refuse the very reconcile that writes it.
 func (res *resolver) resolveProvider(ctx context.Context, out *resolved) error {
 	provider, err := components.ResolveIdentityProvider(out.Input)
 	if err != nil {
