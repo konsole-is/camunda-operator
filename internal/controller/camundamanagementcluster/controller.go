@@ -261,12 +261,17 @@ func (r *Reconciler) recordAnnotation(
 		return fmt.Errorf("building the initial administrator claim patch: %w", err)
 	}
 
-	if err := r.Patch(ctx, mc, client.RawPatch(types.MergePatchType, body)); err != nil {
+	// The patch goes through a copy. A write decodes the answer of the API
+	// server into the object it was given, and that answer carries the stored
+	// status, which would drop every condition the reconcile has staged so far.
+	patched := mc.DeepCopy()
+	if err := r.Patch(ctx, patched, client.RawPatch(types.MergePatchType, body)); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("recording the initial administrator claim: %w", err)
 	}
+	mc.ObjectMeta = patched.ObjectMeta
 
 	return nil
 }
