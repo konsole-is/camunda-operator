@@ -47,15 +47,21 @@ var (
 	shouldCleanupCertManager = false
 	// shouldCleanupECK tracks whether the ECK operator was installed by this suite.
 	shouldCleanupECK = false
+	// shouldCleanupKeycloakOperator tracks whether the Keycloak Operator was
+	// installed by this suite.
+	shouldCleanupKeycloakOperator = false
 )
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
-// The default setup requires Kind, CertManager, and the ECK operator. The suite
-// installs CertManager and ECK when the cluster does not serve them.
+// The default setup requires Kind, CertManager, the ECK operator, and the
+// Keycloak Operator. The suite installs all three when the cluster does not
+// serve them.
 //
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
 // To skip ECK installation, set: ECK_INSTALL_SKIP=true
 // To install a different ECK release, set: ECK_VERSION=<version>
+// To skip the Keycloak Operator installation, set: KEYCLOAK_OPERATOR_INSTALL_SKIP=true
+// To install a different Keycloak Operator release, set: KEYCLOAK_OPERATOR_VERSION=<version>
 // To run against another Camunda minor: make test-e2e E2E_CAMUNDA_MINOR=<minor>
 // That picks the file of test/e2e/matrix/ that holds the image versions and
 // the label list of the run.
@@ -75,9 +81,11 @@ func TestE2E(t *testing.T) {
 	RunSpecs(t, "e2e suite", suiteConfig, reporterConfig)
 }
 
-// The suite deploys the manager once, after ECK. The ECK CRDs must be present
-// before the manager starts, because the ElasticsearchCluster controller
-// watches the ECK Elasticsearch kind.
+// The suite deploys the manager once, after ECK and the Keycloak Operator.
+// The CRDs of both must be present before the manager starts: the
+// ElasticsearchCluster controller watches the ECK Elasticsearch kind, and the
+// CamundaManagementCluster controller probes the Keycloak kind once at
+// startup.
 var _ = BeforeSuite(func() {
 	By("checking the image versions of the run")
 	for _, name := range versionEnv {
@@ -110,6 +118,7 @@ var _ = BeforeSuite(func() {
 
 	setupCertManager()
 	setupECK()
+	setupKeycloakOperator()
 	deployManager()
 	setupMinIO()
 })
@@ -117,6 +126,7 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	teardownMinIO()
 	undeployManager()
+	teardownKeycloakOperator()
 	teardownECK()
 	teardownCertManager()
 })
@@ -269,4 +279,53 @@ func teardownECK() {
 
 	By("uninstalling ECK")
 	utils.UninstallECK()
+}
+
+// setupKeycloakOperator installs the Keycloak Operator that the management
+// plane flow in the keycloak mode drives. Skips installation if
+// KEYCLOAK_OPERATOR_INSTALL_SKIP=true or if already present.
+//
+// The Keycloak Operator watches its own namespace and no other, so it runs in
+// the namespace of that flow. The namespace is created here rather than in
+// the flow, because the operator has to be there before the manager starts.
+func setupKeycloakOperator() {
+	if os.Getenv("KEYCLOAK_OPERATOR_INSTALL_SKIP") == "true" {
+		_, _ = fmt.Fprintf(
+			GinkgoWriter, "Skipping Keycloak Operator installation (KEYCLOAK_OPERATOR_INSTALL_SKIP=true)\n",
+		)
+		return
+	}
+
+	By("creating the namespace of the management plane flow")
+	Expect(apply(managementKeycloakNamespaceObject())).To(Succeed(), "Failed to create the namespace")
+
+	By("checking if the Keycloak Operator is already installed")
+	if utils.IsKeycloakOperatorInstalled(mcKeycloakNamespace) {
+		_, _ = fmt.Fprintf(GinkgoWriter, "The Keycloak Operator is already installed. Skipping installation.\n")
+		return
+	}
+
+	shouldCleanupKeycloakOperator = true
+
+	version, err := utils.KeycloakOperatorVersion()
+	Expect(err).NotTo(HaveOccurred(), "Failed to read the Keycloak Operator version")
+
+	By(fmt.Sprintf("installing the Keycloak Operator %s", version))
+	Expect(utils.InstallKeycloakOperator(mcKeycloakNamespace)).To(
+		Succeed(), "Failed to install the Keycloak Operator",
+	)
+}
+
+// teardownKeycloakOperator uninstalls the Keycloak Operator if it was
+// installed by setupKeycloakOperator.
+func teardownKeycloakOperator() {
+	if !shouldCleanupKeycloakOperator {
+		_, _ = fmt.Fprintf(
+			GinkgoWriter, "Skipping Keycloak Operator cleanup (not installed by this suite)\n",
+		)
+		return
+	}
+
+	By("uninstalling the Keycloak Operator")
+	utils.UninstallKeycloakOperator(mcKeycloakNamespace)
 }

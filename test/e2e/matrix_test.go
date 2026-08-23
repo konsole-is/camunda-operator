@@ -29,6 +29,10 @@ const (
 	envConnectorsVersion    = "CAMUNDA_CONNECTORS_VERSION"
 	envOptimizeVersion      = "CAMUNDA_OPTIMIZE_VERSION"
 	envElasticsearchVersion = "ELASTICSEARCH_VERSION"
+	envIdentityVersion      = "CAMUNDA_IDENTITY_VERSION"
+	envConsoleVersion       = "CAMUNDA_CONSOLE_VERSION"
+	envWebModelerVersion    = "CAMUNDA_WEB_MODELER_VERSION"
+	envKeycloakVersion      = "KEYCLOAK_VERSION"
 	envLabels               = "E2E_LABELS"
 )
 
@@ -38,6 +42,10 @@ var versionEnv = []string{
 	envConnectorsVersion,
 	envOptimizeVersion,
 	envElasticsearchVersion,
+	envIdentityVersion,
+	envConsoleVersion,
+	envWebModelerVersion,
+	envKeycloakVersion,
 }
 
 // The label of each top-level container of the suite. E2E_LABELS selects
@@ -51,6 +59,8 @@ const (
 	labelCamundaOptimize      = "camundaoptimize"
 	labelElasticsearchCluster = "elasticsearchcluster"
 	labelDatabase             = "database"
+	labelManagementKeycloak   = "management-keycloak"
+	labelManagementOIDC       = "management-oidc"
 )
 
 // allLabels is every label above. An E2E_LABELS entry outside it is an
@@ -63,4 +73,6 @@ var allLabels = []string{
 	labelCamundaOptimize,
 	labelElasticsearchCluster,
 	labelDatabase,
+	labelManagementKeycloak,
+	labelManagementOIDC,
 }
