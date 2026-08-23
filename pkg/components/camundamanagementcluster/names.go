@@ -40,6 +40,9 @@ const (
 	ComponentWebModelerWebsockets = "web-modeler-websockets"
 	// ComponentSecrets is the Secrets that the operator generates.
 	ComponentSecrets = "management-secrets"
+	// ComponentMirroredSecrets is the copies of the referenced Secrets that
+	// live outside the management namespace.
+	ComponentMirroredSecrets = "management-mirrored-secrets"
 	// ComponentManagementAuth is the ManagementAuthConfig that the management
 	// cluster writes. The contract is not a workload, so a selector on the
 	// owner and this value reaches the contract alone.
@@ -72,6 +75,26 @@ const (
 	AttachmentFieldManager = "camunda-operator/camundamanagementcluster-attachment"
 )
 
+// The keys of the Secrets that the operator generates and of the one the
+// Keycloak Operator writes.
+const (
+	// ClientSecretKey holds an identity provider client secret.
+	ClientSecretKey = "client-secret"
+	// PasswordKey holds the password of the first administrator.
+	PasswordKey = "password"
+	// KeycloakAdminUsernameKey and KeycloakAdminPasswordKey are the keys of
+	// the Secret that the Keycloak Operator writes for the first Keycloak
+	// administrator.
+	KeycloakAdminUsernameKey = "username"
+	KeycloakAdminPasswordKey = "password"
+)
+
+// KeycloakServicePort is the port that the Keycloak Operator publishes the
+// HTTP listener of a Keycloak on. The Service takes the port of the listener
+// while spec.http.serviceHttpPort names no other, and the operator sets the
+// Keycloak default.
+const KeycloakServicePort int32 = 8080
+
 // The ports of the Management Identity container. The HTTP port is the
 // default SERVER_PORT of the image, which IDENTITY_URL also defaults to, and
 // the management port serves /actuator
@@ -100,6 +123,8 @@ const (
 	optimizeClientSuffix        = "optimize-client"
 	identityAdminSuffix         = "identity-admin"
 	pusherSuffix                = "web-modeler-pusher"
+	keycloakServiceSuffix       = "-service"
+	keycloakInitialAdminSuffix  = "-initial-admin"
 	webModelerClusterUserPrefix = "web-modeler-cluster-"
 )
 
@@ -129,6 +154,21 @@ func WebModelerRestapiName(mc *v1.CamundaManagementCluster) string {
 // Deployment and Service.
 func WebModelerWebsocketsName(mc *v1.CamundaManagementCluster) string {
 	return suffixed(mc.Name, webModelerWebsocketsSuffix)
+}
+
+// KeycloakServiceName returns the name of the Service that the Keycloak
+// Operator creates for the Keycloak custom resource. The Keycloak Operator
+// names it after the resource, with a "-service" suffix.
+func KeycloakServiceName(mc *v1.CamundaManagementCluster) string {
+	return KeycloakName(mc) + keycloakServiceSuffix
+}
+
+// KeycloakInitialAdminSecretName returns the name of the Secret that the
+// Keycloak Operator writes with the first Keycloak administrator. Management
+// Identity signs in with it to create the realm, the clients, and the initial
+// administrator.
+func KeycloakInitialAdminSecretName(mc *v1.CamundaManagementCluster) string {
+	return KeycloakName(mc) + keycloakInitialAdminSuffix
 }
 
 // IdentityClientSecretName returns the name of the generated Secret that

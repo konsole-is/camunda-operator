@@ -87,7 +87,7 @@ func TestCheckDistinctDatabases(t *testing.T) {
 		{
 			name: "a database of its own for each component",
 			mutate: func(mc *v1.CamundaManagementCluster) {
-				mc.Spec.IdentityProvider = keycloakProvider("keycloak-db")
+				mc.Spec.IdentityProvider = managedKeycloak("keycloak-db")
 				mc.Spec.WebModeler = webModeler("web-modeler-db")
 			},
 		},
@@ -105,7 +105,7 @@ func TestCheckDistinctDatabases(t *testing.T) {
 		{
 			name: "Keycloak and Management Identity share one",
 			mutate: func(mc *v1.CamundaManagementCluster) {
-				mc.Spec.IdentityProvider = keycloakProvider(mc.Spec.Identity.DatabaseConfigRef)
+				mc.Spec.IdentityProvider = managedKeycloak(mc.Spec.Identity.DatabaseConfigRef)
 			},
 			want: []string{
 				"spec.identity.databaseConfigRef",
@@ -134,9 +134,9 @@ func TestCheckDistinctDatabases(t *testing.T) {
 	}
 }
 
-// keycloakProvider returns an operator-run Keycloak that stores its data in
+// managedKeycloak returns an operator-run Keycloak that stores its data in
 // the given DatabaseConfig.
-func keycloakProvider(databaseConfigRef string) v1.IdentityProviderSpec {
+func managedKeycloak(databaseConfigRef string) v1.IdentityProviderSpec {
 	return v1.IdentityProviderSpec{Keycloak: &v1.ManagedKeycloakSpec{
 		Version:           "26.1.0",
 		DatabaseConfigRef: databaseConfigRef,

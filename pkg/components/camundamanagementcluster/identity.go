@@ -234,8 +234,21 @@ func baseEnv(in Input) []corev1.EnvVar {
 	return env
 }
 
-// providerEnv renders the connection to the identity provider.
+// providerEnv renders the connection to the identity provider. The two modes
+// carry two settings: an external provider is bound by the oidc profile of
+// Management Identity, and a Keycloak by the keycloak profile, which also
+// bootstraps the realm.
 func providerEnv(in Input) []corev1.EnvVar {
+	if in.Provider.Mode != ModeOIDC {
+		return keycloakProviderEnv(in)
+	}
+
+	return oidcProviderEnv(in)
+}
+
+// oidcProviderEnv renders the connection to an identity provider that the
+// operator does not run.
+func oidcProviderEnv(in Input) []corev1.EnvVar {
 	provider := in.Provider
 	client := provider.Clients.Identity
 

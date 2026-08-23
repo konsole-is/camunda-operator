@@ -1,0 +1,42 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: keycloak
+    camunda.io/management-cluster: my-management
+  name: my-management-keycloak
+  namespace: camunda
+spec:
+  additionalOptions:
+  - name: http-relative-path
+    value: /auth
+  - name: proxy-headers
+    value: xforwarded
+  db:
+    passwordSecret:
+      key: password
+      name: keycloak-db-credentials
+    url: jdbc:aws-wrapper:postgresql://postgres.camunda.svc:5432/keycloak
+    usernameSecret:
+      key: username
+      name: keycloak-db-credentials
+    vendor: postgres
+  hostname:
+    hostname: https://keycloak.example.com/auth
+    strict: true
+  http:
+    httpEnabled: true
+    httpPort: 8080
+  image: camunda/keycloak:quay-optimized-26.4.1
+  ingress:
+    enabled: false
+  instances: 1
+  unsupported:
+    podTemplate:
+      metadata:
+        labels:
+          camunda.io/component: keycloak
+          camunda.io/management-cluster: my-management
+      spec:
+        containers: null

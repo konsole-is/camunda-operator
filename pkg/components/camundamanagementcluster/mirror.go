@@ -47,6 +47,8 @@ const (
 	MirrorPurposeLicense        MirrorPurpose = "license"
 	MirrorPurposeIdentityClient MirrorPurpose = "identity-client"
 	MirrorPurposeIdentityDB     MirrorPurpose = "identity-db"
+	MirrorPurposeKeycloakAdmin  MirrorPurpose = "keycloak-admin"
+	MirrorPurposeKeycloakDB     MirrorPurpose = "keycloak-db"
 )
 
 // MirrorPurposes is the closed set of purposes that the component renders, in
@@ -55,10 +57,9 @@ var MirrorPurposes = []MirrorPurpose{
 	MirrorPurposeLicense,
 	MirrorPurposeIdentityClient,
 	MirrorPurposeIdentityDB,
+	MirrorPurposeKeycloakAdmin,
+	MirrorPurposeKeycloakDB,
 }
-
-// mirroredComponentName is the ocf name of the mirrored Secrets component.
-const mirroredComponentName = "management-mirrored-secrets"
 
 // MirroredSecretName returns the name of the copy of a referenced Secret in
 // the management namespace: <name>-management-<purpose>.
@@ -94,17 +95,17 @@ func (p MirrorPurpose) Valid() bool {
 // purpose being present: without one it reads Disabled and stays out of Ready.
 // A purpose that is not in MirrorPurposes is an error, because nothing would
 // render its copy.
-func mirroredSecretComponent(in Input) (*component.Component, error) {
+func mirroredSecretComponent(in Input) ([]*component.Component, error) {
 	for purpose := range in.Mirrors {
 		if !purpose.Valid() {
 			return nil, fmt.Errorf(
-				"building %s component: purpose %q is not in MirrorPurposes", mirroredComponentName, purpose,
+				"building %s component: purpose %q is not in MirrorPurposes", ComponentMirroredSecrets, purpose,
 			)
 		}
 	}
 
 	builder := component.NewComponentBuilder().
-		WithName(mirroredComponentName).
+		WithName(ComponentMirroredSecrets).
 		WithConditionType(component.ConditionType(v1.ConditionMirroredSecretsReady)).
 		WithFeatureGate(feature.NewBooleanGate(len(in.Mirrors) > 0))
 
@@ -114,16 +115,21 @@ func mirroredSecretComponent(in Input) (*component.Component, error) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      MirroredSecretName(in.Cluster, purpose),
 				Namespace: in.Cluster.Namespace,
-				Labels:    managedLabels(in, mirroredComponentName),
+				Labels:    managedLabels(in, ComponentMirroredSecrets),
 			},
 			Type: corev1.SecretTypeOpaque,
 			Data: data,
 		}).Build()
 		if err != nil {
-			return nil, fmt.Errorf("building %s component: %w", mirroredComponentName, err)
+			return nil, fmt.Errorf("building %s component: %w", ComponentMirroredSecrets, err)
 		}
 		builder = builder.WithResource(mirrored, component.GatedBy(feature.NewBooleanGate(present)))
 	}
 
-	return builder.Build()
+	comp, err := builder.Build()
+	if err != nil {
+		return nil, err
+	}
+
+	return []*component.Component{comp}, nil
 }

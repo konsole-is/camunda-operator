@@ -32,10 +32,11 @@ type Built struct {
 }
 
 // builders render the components of the management plane, in reconcile order:
-// the generated Secrets first, because the workloads mount them, then one
-// entry per workload. Each entry renders nothing while the spec does not
-// deploy its component. This list is the extension point of the package.
+// the Secrets first, because the workloads mount them, then one entry per
+// workload. Each entry renders nothing while the spec does not deploy its
+// component. This list is the extension point of the package.
 var builders = []func(Input) ([]*component.Component, error){
+	mirroredSecretComponent,
 	secretsComponents,
 	identityComponents,
 	keycloakComponents,
@@ -43,35 +44,36 @@ var builders = []func(Input) ([]*component.Component, error){
 	webModelerComponents,
 }
 
-// Build renders every component of one management plane. The copies of
-// referenced Secrets come first, so a workload that mounts one finds it, and
-// the builders follow in their registered order.
+// Build renders every component of one management plane, in the order the
+// builders are registered.
 func Build(in Input) (Built, error) {
-	mirrored, err := mirroredSecretComponent(in)
-	if err != nil {
-		return Built{}, err
-	}
-
-	built := Built{Components: []*component.Component{mirrored}}
-	// A gated-off component reports True with the reason Disabled, and
-	// Disabled outranks Healthy in the aggregate, so a management cluster
-	// that copies nothing would read "Ready=True/Disabled". The copies
-	// component is built either way, so a reference that moved into the
-	// management namespace has its copy deleted.
-	if len(in.Mirrors) > 0 {
-		built.Ready = append(built.Ready, mirrored)
-	}
-
+	var built Built
 	for _, build := range builders {
 		comps, err := build(in)
 		if err != nil {
 			return Built{}, err
 		}
 		built.Components = append(built.Components, comps...)
-		built.Ready = append(built.Ready, comps...)
+		for _, comp := range comps {
+			if takesPartInReady(in, comp) {
+				built.Ready = append(built.Ready, comp)
+			}
+		}
 	}
 
 	return built, nil
+}
+
+// takesPartInReady reports whether the Ready condition aggregates over a
+// component.
+//
+// A gated-off component reports True with the reason Disabled, and Disabled
+// outranks Healthy in the aggregate, so a management cluster that copies no
+// Secret would read "Ready=True/Disabled". The copies component is built
+// either way, so a reference that moved into the management namespace has its
+// copy deleted; it only stays out of Ready while there is nothing to copy.
+func takesPartInReady(in Input, comp *component.Component) bool {
+	return comp.GetName() != ComponentMirroredSecrets || len(in.Mirrors) > 0
 }
 
 // managedLabels returns the labels of an object that the operator applies for

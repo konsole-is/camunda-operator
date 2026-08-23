@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -79,13 +80,13 @@ func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 
 	minimal, err := Build(fixtureMinimal(t))
 	require.NoError(t, err)
-	assert.Equal(t, []string{mirroredComponentName, ComponentIdentity}, componentNames(minimal.Components))
+	assert.Equal(t, []string{ComponentMirroredSecrets, ComponentIdentity}, componentNames(minimal.Components))
 	assert.Equal(t, []string{ComponentIdentity}, componentNames(minimal.Ready))
 
 	realistic, err := Build(fixtureRealistic(t))
 	require.NoError(t, err)
 	assert.Equal(
-		t, []string{mirroredComponentName, ComponentIdentity}, componentNames(realistic.Ready),
+		t, []string{ComponentMirroredSecrets, ComponentIdentity}, componentNames(realistic.Ready),
 	)
 }
 
@@ -121,6 +122,7 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
+	require.NoError(t, keycloak.AddToScheme(scheme))
 
 	return scheme
 }

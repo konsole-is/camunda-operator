@@ -1059,6 +1059,13 @@ spec:
                           Set it in the oidc mode.
                         minLength: 1
                         type: string
+                      email:
+                        description: |-
+                          Email is the email address of the first Keycloak user. Web Modeler
+                          needs an address for every person who signs in, so set it when you
+                          deploy Web Modeler in a Keycloak mode.
+                        minLength: 3
+                        type: string
                       passwordSecretRef:
                         description: |-
                           PasswordSecretRef names the Secret key that holds the password of the
@@ -2211,6 +2218,35 @@ spec:
                   CamundaOptimize reads it through its managementAuthRef. Empty means the
                   name of this resource.
                 type: string
+              optimize:
+                description: |-
+                  Optimize describes the Optimize that this management plane serves. Set
+                  it in the two Keycloak modes, where Management Identity creates the
+                  Optimize client and needs the URL of Optimize to register the redirect
+                  URI of that client. Leave it unset in the oidc mode, where the platform
+                  config declares the Optimize client.
+
+                  The operator deploys no Optimize from this block. A CamundaOptimize is
+                  its own resource, and it reads the ManagementAuthConfig that this
+                  management cluster writes.
+                properties:
+                  externalUrl:
+                    description: |-
+                      ExternalURL is the URL that browsers reach Optimize at. Management
+                      Identity registers the login callback under it as the redirect URI of
+                      the Optimize client.
+
+                      One management plane bootstraps one Optimize client with one URL. Run a
+                      second Optimize against this management plane only if you add its
+                      callback URL to the Optimize client in Keycloak yourself.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: externalUrl must be a valid http or https URL
+                      rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
+                        == 'https') && url(self).getHostname() != ''
+                required:
+                - externalUrl
+                type: object
               platformConfigRef:
                 description: |-
                   PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
@@ -4180,6 +4216,10 @@ spec:
             - message: identity.admin.passwordSecretRef applies to the keycloak modes
                 only
               rule: '!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)'
+            - message: set optimize in the keycloak modes, where Management Identity
+                creates the Optimize client; in the oidc mode the platform config
+                declares it
+              rule: has(self.identityProvider.oidc) != has(self.optimize)
           status:
             description: status defines the observed state of CamundaManagementCluster
             properties:

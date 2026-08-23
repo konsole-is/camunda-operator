@@ -30,14 +30,19 @@ import (
 const configHashLength = 16
 
 // ConfigHash hashes the rendered environment of one component (names, values,
-// and Secret references, never Secret data) together with in.HashInputs. It is
+// and Secret references, never Secret data) together with in.HashInputs and
+// the digest of every generated credential that the component reads. It is
 // stable across reconciles for the same input, so the pods roll only when a
-// value rendered for that component or a referenced object changes.
+// value rendered for that component or a credential it reads changes.
 //
 // The environment alone is not enough. Every credential arrives through a
 // Secret reference, and the reference does not change when the data behind it
-// does. HashInputs carries the resource version of every Secret the controller
-// read, so a rotated password rolls the pods.
+// does. HashInputs carries the resource version of every Secret the
+// controller read, and the digests carry the credentials that the operator
+// itself generates, which no reference records either.
+//
+// A generated credential enters the hash of the component that reads it and
+// of no other, so a rotation rolls that component alone.
 func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")
@@ -49,6 +54,10 @@ func ConfigHash(in Input, comp string) string {
 	slices.Sort(inputs)
 	for _, input := range inputs {
 		b.WriteString("input=" + input + "\n")
+	}
+
+	for _, digest := range componentCredentialHashes(in, comp) {
+		b.WriteString("credential=" + digest + "\n")
 	}
 
 	sum := sha256.Sum256([]byte(b.String()))
@@ -64,6 +73,39 @@ func componentEnv(in Input, comp string) []corev1.EnvVar {
 	}
 
 	return nil
+}
+
+// componentCredentialHashes returns the digest of every generated credential
+// that a component reads, in the order the Secrets are rendered. Management
+// Identity reads all of them: it creates the clients and the first user with
+// them on its first start.
+func componentCredentialHashes(in Input, comp string) []string {
+	if comp != ComponentIdentity {
+		return nil
+	}
+
+	var digests []string
+	for _, gen := range generatedSecrets(in) {
+		if digest := passwordHash(in.Secrets.Values[gen.name].Value); digest != "" {
+			digests = append(digests, digest)
+		}
+	}
+
+	return digests
+}
+
+// passwordHash returns the hash input of a credential: the first 64 bits of
+// its SHA-256 digest, hex encoded. An empty value returns "", so a management
+// cluster without the credential adds no input. The digest of a generated
+// password, which carries 191 bits of entropy, does not expose the password.
+func passwordHash(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	sum := sha256.Sum256([]byte(value))
+
+	return hex.EncodeToString(sum[:])[:configHashLength]
 }
 
 // envValue renders the value of an environment entry as a reference, never as
