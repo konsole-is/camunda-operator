@@ -22,7 +22,10 @@ limitations under the License.
 //
 // v2alpha1 is deprecated since Keycloak 26.7 in favor of v2beta1. It is the
 // only version that every supported 26.x Keycloak Operator serves.
-// +kubebuilder:object:generate=true
+//
+// Each type below carries the object:generate marker of its own. The marker
+// of the whole package would also reach the wrapper in this package, whose
+// mutation type names an ocf interface that controller-gen cannot copy.
 // +groupName=k8s.keycloak.org
 package keycloak
 
@@ -53,14 +56,20 @@ func addKnownTypes(s *runtime.Scheme) error {
 	return nil
 }
 
-// ConditionReady is the condition type that the Keycloak Operator reports when
-// the Keycloak instances serve requests.
-const ConditionReady = "Ready"
+// The condition types that the Keycloak Operator reports.
+const (
+	// ConditionReady holds while the Keycloak instances serve requests.
+	ConditionReady = "Ready"
+	// ConditionHasErrors holds while the Keycloak Operator cannot reconcile
+	// the resource, for example when the database is unreachable.
+	ConditionHasErrors = "HasErrors"
+)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
 // Keycloak is one Keycloak instance run by the Keycloak Operator.
+// +kubebuilder:object:generate=true
 type Keycloak struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
@@ -74,6 +83,7 @@ type Keycloak struct {
 
 // KeycloakSpec is the desired state of a Keycloak. It holds the fields that
 // this operator sets, not every field the Keycloak Operator accepts.
+// +kubebuilder:object:generate=true
 type KeycloakSpec struct {
 	// Instances is the number of Keycloak pods. The Keycloak Operator
 	// defaults it to 1.
@@ -112,10 +122,19 @@ type KeycloakSpec struct {
 }
 
 // KeycloakDBSpec is the database connection of a Keycloak.
+// +kubebuilder:object:generate=true
 type KeycloakDBSpec struct {
-	// Vendor is the database vendor, for example postgres.
+	// Vendor is the database vendor, for example postgres. Keycloak ignores
+	// it when URL is set.
 	// +optional
 	Vendor string `json:"vendor,omitempty"`
+	// URL is the whole JDBC URL. It replaces Vendor, Host, Port, and
+	// Database, which Keycloak only uses to build a default URL.
+	// +optional
+	URL string `json:"url,omitempty"`
+	// Schema is the database schema that Keycloak opens.
+	// +optional
+	Schema string `json:"schema,omitempty"`
 	// Host is the database host of the JDBC URL that Keycloak builds.
 	// +optional
 	Host string `json:"host,omitempty"`
@@ -134,6 +153,7 @@ type KeycloakDBSpec struct {
 }
 
 // KeycloakHTTPSpec configures the HTTP listener of a Keycloak.
+// +kubebuilder:object:generate=true
 type KeycloakHTTPSpec struct {
 	// HTTPEnabled turns the plain HTTP listener on. TLS between the ingress
 	// and Keycloak is out of scope of this operator.
@@ -145,6 +165,7 @@ type KeycloakHTTPSpec struct {
 }
 
 // KeycloakHostnameSpec is the address that Keycloak builds its URLs from.
+// +kubebuilder:object:generate=true
 type KeycloakHostnameSpec struct {
 	// Hostname is the URL that browsers reach Keycloak at, including the path.
 	// +optional
@@ -155,6 +176,7 @@ type KeycloakHostnameSpec struct {
 }
 
 // KeycloakIngressSpec configures the Ingress of a Keycloak.
+// +kubebuilder:object:generate=true
 type KeycloakIngressSpec struct {
 	// Enabled turns the Ingress of the Keycloak Operator on. The route to a
 	// Keycloak that this operator runs is yours, so it is off.
@@ -164,6 +186,7 @@ type KeycloakIngressSpec struct {
 
 // KeycloakValueOrSecret is one Keycloak server option. It carries a literal
 // value or a Secret key, never both.
+// +kubebuilder:object:generate=true
 type KeycloakValueOrSecret struct {
 	// Name is the option key.
 	Name string `json:"name"`
@@ -176,6 +199,7 @@ type KeycloakValueOrSecret struct {
 }
 
 // KeycloakUnsupportedSpec carries the pod template of a Keycloak.
+// +kubebuilder:object:generate=true
 type KeycloakUnsupportedSpec struct {
 	// PodTemplate is merged into the pod template that the Keycloak Operator
 	// builds.
@@ -184,6 +208,7 @@ type KeycloakUnsupportedSpec struct {
 }
 
 // KeycloakStatus is the observed state of a Keycloak.
+// +kubebuilder:object:generate=true
 type KeycloakStatus struct {
 	// Conditions are the conditions that the Keycloak Operator reports. Their
 	// status is the string "True", "False", or "Unknown", not a boolean.
@@ -202,6 +227,7 @@ type KeycloakStatus struct {
 }
 
 // KeycloakCondition is one condition of a Keycloak.
+// +kubebuilder:object:generate=true
 type KeycloakCondition struct {
 	// Type is the condition type, for example Ready.
 	// +optional
@@ -224,6 +250,7 @@ type KeycloakCondition struct {
 // +kubebuilder:object:root=true
 
 // KeycloakList is a list of Keycloak.
+// +kubebuilder:object:generate=true
 type KeycloakList struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
