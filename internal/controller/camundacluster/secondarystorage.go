@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,79 +31,89 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/secondarystorageconfig"
 )
 
-// resolveStorageHolder finds the CamundaCluster that holds the backend of
-// the storage binding, when it is not this cluster, and records it on
-// in.Storage.Holder. The oldest cluster holds the backend, with the name
-// breaking a tie. It needs res.storage from resolveStorage. An own backend
-// that does not resolve fails the pre-check with InvalidReference. One
-// CamundaCluster uses one backend, see components.Storage.Holder.
-func (res *resolver) resolveStorageHolder(ctx context.Context, in *components.Input) error {
-	backend, failure, err := secondarystorageconfig.ResolveBackend(ctx, res.reader, res.storage)
-	if err != nil {
-		return fmt.Errorf(
-			"resolving the backend of SecondaryStorageConfig %s: %w",
-			client.ObjectKeyFromObject(res.storage), err,
-		)
-	}
-	if failure != nil {
-		return failure
+// eventReasonStorageClaimed is recorded when the cluster takes the claim on
+// its storage contract.
+const eventReasonStorageClaimed = "StorageClaimed"
+
+// claimStorage gives this cluster the storage contract, or records the
+// cluster that holds it. The first CamundaCluster that claims a contract
+// holds it, through an annotation that the API server writes atomically, so
+// two clusters that claim one unclaimed contract at once cannot both win. A
+// claim whose holder is gone, or names another contract, is stale and is
+// taken over. Otherwise the holder lands on in.Storage.Holder and the
+// controller renders this cluster suspended. It needs res.storage from
+// resolveStorage. A conflict on the claim is a transient error.
+func (res *resolver) claimStorage(ctx context.Context, in *components.Input) error {
+	self := secondarystorageconfig.Holder{
+		Cluster: client.ObjectKeyFromObject(res.cluster),
+		UID:     res.cluster.UID,
 	}
 
-	holder, err := res.olderSibling(ctx, func(ctx context.Context, other *v1.CamundaCluster) (bool, error) {
-		return res.usesBackend(ctx, other, backend)
-	})
-	if err != nil {
-		return fmt.Errorf("finding the holder of %s: %w", backend, err)
-	}
-	if holder == nil {
+	holder, held := secondarystorageconfig.HolderOf(res.storage)
+	if held && holder == self {
 		return nil
 	}
+	if held {
+		stale, err := res.staleHolder(ctx, holder)
+		if err != nil {
+			return err
+		}
+		if !stale {
+			in.Storage.Holder = &components.StorageHolder{
+				Cluster:  holder.Cluster,
+				Contract: client.ObjectKeyFromObject(res.storage),
+			}
 
-	in.Storage.Holder = &components.StorageHolder{
-		Cluster: client.ObjectKeyFromObject(holder),
-		Backend: backend.String(),
+			return nil
+		}
 	}
+
+	if err := secondarystorageconfig.Claim(ctx, res.writer, res.storage, self); err != nil {
+		return err
+	}
+	res.recorder.Eventf(
+		res.cluster,
+		nil,
+		corev1.EventTypeNormal,
+		eventReasonStorageClaimed,
+		eventActionReconcile,
+		"Claimed SecondaryStorageConfig %q",
+		res.storage.Name,
+	)
 
 	return nil
 }
 
-// usesBackend reports whether other resolves to backend. A cluster whose
-// contract or chain does not resolve uses nothing yet. When its chain
-// resolves it holds the backend, because it is older, and this cluster yields
-// on its next reconcile.
-func (res *resolver) usesBackend(
-	ctx context.Context,
-	other *v1.CamundaCluster,
-	backend secondarystorageconfig.Backend,
-) (bool, error) {
-	var binding v1.SecondaryStorageConfig
-	key := client.ObjectKey{Namespace: other.Namespace, Name: other.Spec.StorageRef}
-	if err := res.reader.Get(ctx, key, &binding); err != nil {
+// staleHolder reports whether holder no longer uses the contract: it does
+// not exist, it is a later cluster with the same name, or its storageRef
+// names another contract. The read is live, so a holder that was just
+// repointed is seen as it is.
+func (res *resolver) staleHolder(ctx context.Context, holder secondarystorageconfig.Holder) (bool, error) {
+	var owner v1.CamundaCluster
+	if err := res.reader.Get(ctx, holder.Cluster, &owner); err != nil {
 		if apierrors.IsNotFound(err) {
-			return false, nil
+			return true, nil
 		}
 
-		return false, fmt.Errorf("reading SecondaryStorageConfig %s: %w", key, err)
+		return false, fmt.Errorf(
+			"reading the holder %s of SecondaryStorageConfig %s: %w",
+			holder.Cluster, client.ObjectKeyFromObject(res.storage), err,
+		)
 	}
 
-	theirs, failure, err := secondarystorageconfig.ResolveBackend(ctx, res.reader, &binding)
-	if err != nil {
-		return false, fmt.Errorf("resolving the backend of SecondaryStorageConfig %s: %w", key, err)
-	}
-
-	return failure == nil && theirs == backend, nil
+	return owner.UID != holder.UID || owner.Spec.StorageRef != res.storage.Name, nil
 }
 
-// storageHeld builds the Ready condition of a cluster whose backend another
-// cluster holds.
+// storageHeld builds the Ready condition of a cluster whose storage contract
+// another cluster holds.
 func storageHeld(cluster *v1.CamundaCluster, holder *components.StorageHolder) metav1.Condition {
 	return conditions.Ready(
 		metav1.ConditionFalse,
 		v1.ReasonStorageAlreadyAttached,
 		fmt.Sprintf(
-			"CamundaCluster %q already uses %s. One CamundaCluster uses one backend, "+
-				"so this cluster stays suspended until that one releases it",
-			objectPath(holder.Cluster), holder.Backend,
+			"CamundaCluster %q already holds SecondaryStorageConfig %q. One CamundaCluster uses one "+
+				"secondary storage contract, so this cluster stays suspended until that one releases it",
+			objectPath(holder.Cluster), objectPath(holder.Contract),
 		),
 		cluster.Generation,
 	)

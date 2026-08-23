@@ -64,11 +64,14 @@ type resolver struct {
 	// storage is the SecondaryStorageConfig that spec.storageRef names, set
 	// by resolveStorage for the steps after it.
 	storage *v1.SecondaryStorageConfig
+	// writer writes the claim on the storage contract. Every read stays on
+	// reader.
+	writer client.Client
 }
 
 // preCheck resolves every reference of cluster into the render input, in the
 // documented order: the preset and the merged spec, the platform config and
-// its Secrets, the storage binding and its chain, the holder of its backend,
+// its Secrets, the storage binding and its chain, the claim on the binding,
 // the object storage references. Every Secret is checked for its keys through
 // the uncached reader. A Secret outside the cluster namespace is copied into
 // the returned mirrors, and the input references the copy, so the renderer
@@ -84,6 +87,7 @@ func (r *CamundaClusterReconciler) preCheck(
 ) (components.Input, mirroredSecrets, error) {
 	res := &resolver{
 		reader:   r.APIReader,
+		writer:   r.Client,
 		scheme:   r.Scheme,
 		cluster:  cluster,
 		recorder: r.EventRecorder,
@@ -96,7 +100,7 @@ func (r *CamundaClusterReconciler) preCheck(
 		res.resolvePlatform,
 		res.resolveAuth,
 		res.resolveStorage,
-		res.resolveStorageHolder,
+		res.claimStorage,
 		res.warnReferencedJavaToolOptions,
 		res.resolveObjectStorage,
 	}
@@ -482,52 +486,4 @@ func (res *resolver) objectKind(obj client.Object) string {
 		return fmt.Sprintf("%T", obj)
 	}
 	return gvk.Kind
-}
-
-// olderSibling returns the oldest CamundaCluster other than res.cluster that
-// was created before it (ties break by name) and that matches, or nil. The
-// two guards that let the oldest cluster keep a resource only one cluster
-// can use call it. The list is read live: a cached list can miss a sibling
-// created a moment ago, and the rule exists to protect that sibling.
-func (res *resolver) olderSibling(
-	ctx context.Context,
-	matches func(context.Context, *v1.CamundaCluster) (bool, error),
-) (*v1.CamundaCluster, error) {
-	var clusters v1.CamundaClusterList
-	if err := res.reader.List(ctx, &clusters); err != nil {
-		return nil, fmt.Errorf("listing the clusters: %w", err)
-	}
-
-	var oldest *v1.CamundaCluster
-	for i := range clusters.Items {
-		other := &clusters.Items[i]
-		if other.UID == res.cluster.UID || !olderThan(other, res.cluster) {
-			continue
-		}
-		if oldest != nil && !olderThan(other, oldest) {
-			continue
-		}
-
-		ok, err := matches(ctx, other)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			oldest = other
-		}
-	}
-
-	return oldest, nil
-}
-
-// olderThan reports whether a was created before b, with the name and then
-// the namespace as the tie-break, so exactly one of two clusters ever yields.
-func olderThan(a, b *v1.CamundaCluster) bool {
-	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
-		return a.CreationTimestamp.Before(&b.CreationTimestamp)
-	}
-	if a.Name != b.Name {
-		return a.Name < b.Name
-	}
-	return a.Namespace < b.Namespace
 }

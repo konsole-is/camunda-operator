@@ -106,7 +106,7 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusterpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs,verbs=get;list;watch
@@ -123,8 +123,9 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // event and returns before anything is read or written, status included.
 // Otherwise the pre-checks resolve every reference into the render input; a
 // failed pre-check reports its Ready reason and stops. A cluster whose
-// backend an older cluster holds renders suspended and reports
-// StorageAlreadyAttached instead of the aggregate. The broker storage
+// storage contract another cluster holds renders suspended, reports
+// StorageAlreadyAttached instead of the aggregate, and looks again on a
+// timer. The broker storage
 // lifecycle then grows the bound broker claims in place and records an
 // ignored shrink; the claim template keeps its applied size, so the
 // StatefulSet is never recreated. The admin credential resolves next, and a
@@ -193,8 +194,9 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// A cluster whose backend another cluster holds renders suspended: every
-	// workload at zero and the volumes kept, until the holder releases it.
+	// A cluster whose storage contract another cluster holds renders
+	// suspended: every workload at zero and the volumes kept, until the
+	// holder releases it.
 	// The suspension also idles the admin rotation and clears the management
 	// binding, as a user suspension does.
 	if in.Storage.Holder != nil {
@@ -250,6 +252,12 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A failed rotation retries on a timer: no watch fires when the user API
 	// recovers or accepts the credentials again.
 	if cred.failure != nil && reconcileErr == nil {
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+	}
+
+	// A parked cluster takes a stale claim on a timer: nothing watches its
+	// holder for it, and nothing should.
+	if in.Storage.Holder != nil && reconcileErr == nil {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

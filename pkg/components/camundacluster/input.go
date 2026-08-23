@@ -34,21 +34,21 @@ type Storage struct {
 	Elasticsearch *v1.ElasticsearchStorage
 	// RDBMS is set when Type is rdbms.
 	RDBMS *RDBMSStorage
-	// Holder is set when another CamundaCluster, created earlier, uses the
-	// backend of this binding. One CamundaCluster uses one backend, so the
-	// controller renders a cluster with a Holder suspended and reports the
-	// holder on Ready. Nil when this cluster holds its backend.
+	// Holder is set when another CamundaCluster holds the
+	// SecondaryStorageConfig that spec.storageRef names. One CamundaCluster
+	// uses one contract, so the controller renders a cluster with a Holder
+	// suspended and reports the holder on Ready. Nil when this cluster holds
+	// its contract.
 	Holder *StorageHolder
 }
 
-// StorageHolder is the CamundaCluster that holds a secondary storage backend
-// that this cluster also names.
+// StorageHolder is the CamundaCluster that holds the storage contract this
+// cluster names.
 type StorageHolder struct {
 	// Cluster is the namespace and name of the holder.
 	Cluster types.NamespacedName
-	// Backend names the backend for the condition message, for example
-	// `Elasticsearch "https://es.example.com:9200"`.
-	Backend string
+	// Contract is the namespace and name of the held SecondaryStorageConfig.
+	Contract types.NamespacedName
 }
 
 // RDBMSStorage is the DatabaseConfig and DatabaseServerConfig chain of an
