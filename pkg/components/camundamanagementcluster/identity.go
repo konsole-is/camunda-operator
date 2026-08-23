@@ -297,8 +297,8 @@ func initialClaim(mc *v1.CamundaManagementCluster) (name, value string) {
 
 // SpecInitialClaim returns the initial administrator claim of the spec, in the
 // form the annotation records: "<claimName>=<claimValue>". The controller
-// records it once Management Identity is ready, and compares it against the
-// recorded one to find a change that Identity can no longer act on.
+// compares it against the recorded one to find a change that Identity can no
+// longer act on.
 func SpecInitialClaim(mc *v1.CamundaManagementCluster) string {
 	admin := mc.Spec.Identity.Admin
 
@@ -309,6 +309,80 @@ func SpecInitialClaim(mc *v1.CamundaManagementCluster) string {
 // Management Identity started with, or empty while it has not started yet.
 func RecordedInitialClaim(mc *v1.CamundaManagementCluster) string {
 	return mc.Annotations[InitialClaimAnnotation]
+}
+
+// StartedInitialClaim returns the initial administrator claim that Management
+// Identity started with, read from the environment of the Identity container
+// that started first among pods. It returns empty while none of them has run.
+//
+// Pass every pod of the Identity Deployment. A rollout runs two of them at
+// once, and the older one is the one whose claim Identity wrote into its
+// database.
+func StartedInitialClaim(pods []corev1.Pod) string {
+	var claim string
+	var first *metav1.Time
+
+	for i := range pods {
+		started := identityStartedAt(&pods[i])
+		if started == nil || (first != nil && first.Before(started)) {
+			continue
+		}
+		first, claim = started, identityClaimEnv(&pods[i])
+	}
+
+	return claim
+}
+
+// identityStartedAt returns when the Management Identity container of pod
+// began to run, or nil while it never ran.
+//
+// The started field of the container status is not the signal. The container
+// carries a startup probe, so the kubelet sets that field only after the probe
+// passes on the health endpoint, which is just before the pod is ready.
+// Identity reads the administrator claim as it boots, well before that.
+func identityStartedAt(pod *corev1.Pod) *metav1.Time {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name != identityContainer {
+			continue
+		}
+		if running := status.State.Running; running != nil {
+			return &running.StartedAt
+		}
+		if terminated := status.State.Terminated; terminated != nil {
+			return &terminated.StartedAt
+		}
+		// A container that crash-loops waits between its runs, and the run it
+		// already had is the one that reached the database.
+		if last := status.LastTerminationState.Terminated; last != nil {
+			return &last.StartedAt
+		}
+	}
+
+	return nil
+}
+
+// identityClaimEnv returns the initial administrator claim in the environment
+// of the Management Identity container of pod, or empty when it carries none.
+func identityClaimEnv(pod *corev1.Pod) string {
+	var name, value string
+	for _, container := range pod.Spec.Containers {
+		if container.Name != identityContainer {
+			continue
+		}
+		for _, env := range container.Env {
+			switch env.Name {
+			case identityEnvInitialClaimName:
+				name = env.Value
+			case identityEnvInitialClaimValue:
+				value = env.Value
+			}
+		}
+	}
+	if name == "" {
+		return ""
+	}
+
+	return name + initialClaimSeparator + value
 }
 
 // identityDatabaseEnv renders the connection to the Identity database.

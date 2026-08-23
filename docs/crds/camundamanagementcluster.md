@@ -231,14 +231,14 @@ There are two ways out, and the operator cannot do either for you.
 
 The recorded administrator is a real person. Put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant the rest in the Management Identity user interface.
 
-Nobody holds the recorded claim, so nobody can sign in. The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim` on this resource, and renders that recorded value from then on. Remove the annotation:
+Nobody holds the recorded claim, so nobody can sign in. The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim` on this resource, and renders that recorded value from then on. Put the claim you want on the annotation:
 
 ```bash
-kubectl annotate camundamanagementcluster my-management -n my-management-ns \
-  camunda.io/identity-initial-claim-
+kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \
+  camunda.io/identity-initial-claim=oid=41ab...77
 ```
 
-The claim of the spec then reaches Management Identity again. Management Identity itself reads that claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
+The operator renders what the annotation records, so that claim reaches Management Identity on its next start. Set the annotation to the pair that `spec.identity.admin` names, and both conditions clear. Management Identity itself reads the claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
 
 An empty database does the same. Point `spec.identity.databaseConfigRef` at one, and Management Identity starts over. It then loses the roles and the tenants it held. Your identity provider keeps every user and client, because they never lived in that database.
 

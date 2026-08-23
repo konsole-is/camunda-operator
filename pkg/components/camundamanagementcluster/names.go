@@ -247,6 +247,14 @@ const clusterUIDPrefixLength = 8
 // Service.
 func IdentityName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, identitySuffix) }
 
+// IdentityPodLabels returns the labels that select the pods of the Management
+// Identity Deployment. They are the labels of its pod template, so a reader
+// that lists by them in the namespace of the management cluster reads exactly
+// those pods.
+func IdentityPodLabels(mc *v1.CamundaManagementCluster) map[string]string {
+	return labels.Discovery(labels.ManagementCluster(mc.Name), ComponentIdentity)
+}
+
 // IdentityServiceURL returns the URL of Management Identity inside the
 // Kubernetes cluster. A component of the management plane calls the Identity
 // API over it, so it stays reachable while no browser can reach the external

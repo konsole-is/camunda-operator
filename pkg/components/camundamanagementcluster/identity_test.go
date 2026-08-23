@@ -18,10 +18,12 @@ package camundamanagementcluster
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // The environment of Management Identity in the oidc mode is the table of the
@@ -109,6 +111,71 @@ func TestIdentityKeepsTheRecordedInitialClaim(t *testing.T) {
 	assert.Equal(t, "first-admin", env["IDENTITY_INITIAL_CLAIM_VALUE"])
 	assert.Equal(t, "oid=second-admin", SpecInitialClaim(in.Cluster))
 	assert.Equal(t, "oid=first-admin", RecordedInitialClaim(in.Cluster))
+}
+
+// A rollout runs two Identity pods at once, and only the older one holds the
+// claim that Identity wrote into its database.
+func TestStartedInitialClaimReadsThePodThatStartedFirst(t *testing.T) {
+	t.Parallel()
+
+	first := metav1.NewTime(time.Now().Add(-time.Minute))
+	pods := []corev1.Pod{
+		startedIdentityPod("second-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+		}),
+		startedIdentityPod("first-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: first},
+		}),
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
+}
+
+// A container that crash-loops already reached the database, so the run it
+// had counts as a start.
+func TestStartedInitialClaimCountsAContainerThatRanAndStopped(t *testing.T) {
+	t.Parallel()
+
+	crashLooping := startedIdentityPod("first-admin", corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"},
+	})
+	crashLooping.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: metav1.Now()},
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{crashLooping}))
+}
+
+// A pod whose container never ran carries no claim. Its container is waiting
+// on an image or on a Secret, so Management Identity read nothing.
+func TestStartedInitialClaimIsEmptyWhileNoContainerRan(t *testing.T) {
+	t.Parallel()
+
+	pending := startedIdentityPod("first-admin", corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"},
+	})
+
+	assert.Empty(t, StartedInitialClaim([]corev1.Pod{pending}))
+	assert.Empty(t, StartedInitialClaim(nil))
+}
+
+// startedIdentityPod returns a pod of the Management Identity Deployment
+// whose container carries the given administrator claim value and is in the
+// given state.
+func startedIdentityPod(claimValue string, state corev1.ContainerState) corev1.Pod {
+	return corev1.Pod{
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: identityContainer,
+			Env: []corev1.EnvVar{
+				{Name: identityEnvInitialClaimName, Value: "oid"},
+				{Name: identityEnvInitialClaimValue, Value: claimValue},
+			},
+		}}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			Name:  identityContainer,
+			State: state,
+		}}},
+	}
 }
 
 // The Deployment carries the workload overrides of spec.identity, and its pod
