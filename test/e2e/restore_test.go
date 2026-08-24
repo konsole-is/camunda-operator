@@ -860,17 +860,23 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 			), restore.Status.FailureMessage)
 		}, databaseRecoveryTimeout, 5*time.Second).Should(Succeed())
 
+		// The restore moves on from the answer the server published on the
+		// contract. The server writes its own status at the end of that
+		// reconcile, so a look right after the move can miss it.
 		By("reading what the server recorded about the recovery")
-		var current v1.DatabaseServer
-		Expect(utils.Get(dsResource, server, cluster.Namespace, &current)).To(Succeed())
-		Expect(current.Status.Cluster).To(Equal(server + "-r1"))
-		Expect(current.Status.Recovery).NotTo(BeNil())
-		Expect(current.Status.Recovery.RequestID).To(Equal(requestID))
-		Expect(current.Status.Recovery.PreviousCluster).To(Equal(server))
-		Expect(current.Status.Recovery.Result).To(Equal(v1.RecoveryResultCompleted))
-		Expect(current.Status.Archive.History[0].To).NotTo(
-			BeNil(), "the archive of the superseded cluster is still open",
-		)
+		Eventually(func(g Gomega) {
+			var current v1.DatabaseServer
+			g.Expect(utils.Get(dsResource, server, cluster.Namespace, &current)).To(Succeed())
+			g.Expect(current.Status.Cluster).To(Equal(server + "-r1"))
+			g.Expect(current.Status.Recovery).NotTo(BeNil())
+			g.Expect(current.Status.Recovery.RequestID).To(Equal(requestID))
+			g.Expect(current.Status.Recovery.PreviousCluster).To(Equal(server))
+			g.Expect(current.Status.Recovery.Result).To(Equal(v1.RecoveryResultCompleted))
+			g.Expect(current.Status.Archive.History).NotTo(BeEmpty())
+			g.Expect(current.Status.Archive.History[0].To).NotTo(
+				BeNil(), "the archive of the superseded cluster is still open",
+			)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("reading the contract that now names the recovered cluster")
 		var contract v1.DatabaseServerConfig
