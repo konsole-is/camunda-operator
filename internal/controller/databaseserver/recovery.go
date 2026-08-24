@@ -253,18 +253,20 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 	contract *v1.DatabaseServerConfig,
 	published *v1.RecoveryOutcome,
 ) error {
+	request := v1.RecoveryRequest{
+		RequestID:   published.RequestID,
+		RequestedBy: published.RequestedBy,
+		TargetTime:  published.TargetTime,
+	}
+
 	var carry *v1.DatabaseServerRecoveryStatus
-	if recorded := server.Status.Recovery; recorded != nil && recorded.RequestID == published.RequestID {
-		carry = recorded
+	if recoveryMatches(server.Status.Recovery, request) {
+		carry = server.Status.Recovery
 	}
 
 	answered := answeredRecovery(
 		carry,
-		v1.RecoveryRequest{
-			RequestID:   published.RequestID,
-			RequestedBy: published.RequestedBy,
-			TargetTime:  published.TargetTime,
-		},
+		request,
 		contract.Name,
 		published.Result,
 		published.Message,
