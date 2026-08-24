@@ -118,29 +118,28 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
       password: change-me
     ```
 
-2. Create a `DatabaseServerConfig`. It is cluster-scoped and describes the server and the admin credentials.
+2. Create a `DatabaseServerConfig` in the namespace of the cluster. It describes the server and names the admin credentials Secret beside it.
 
     ```yaml
     apiVersion: core.camunda.io/v1
     kind: DatabaseServerConfig
     metadata:
       name: my-db-server
+      namespace: my-cluster-ns
     spec:
       engine: postgres
       host: "postgres.my-cluster-ns.svc"
       port: 5432
       adminCredentialsSecretRef:
         name: my-db-server-admin-credentials
-        namespace: my-cluster-ns
-        usernameKey: username
-        passwordKey: password
     ```
 
-3. Wait until the `DatabaseServerConfig` is `Ready` with reason `Healthy`. The operator connects to the server with the admin credentials and reports the major version:
+3. Wait until the `DatabaseServerConfig` is `Ready` with reason `Healthy`. The operator connects to the server with the admin credentials, and reports the major version and the identity of the instance:
 
     ```yaml
     status:
       serverVersion: "17"
+      systemIdentifier: "7412345678901234567"
       conditions:
         - type: Ready
           status: "True"
@@ -161,25 +160,27 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
 
     If the reason is `MissingSecret`, the Secret or one of its keys does not exist.
 
-4. Create a `Database`. Set `secondaryStorageConfig` to the name of the contract you want. Set `targetNamespace` to the namespace of the `CamundaCluster`, because the cluster resolves the contract in its own namespace.
+4. Create a `Database` in the namespace of the `CamundaCluster`. Set `secondaryStorageConfig` to the name of the contract you want. The `Database` resolves `serverRef` in its own namespace and publishes the contract there, where the cluster reads it.
 
     ```yaml
     apiVersion: core.camunda.io/v1
     kind: Database
     metadata:
       name: my-camunda-db
+      namespace: my-cluster-ns
     spec:
       serverRef: "my-db-server"
       databaseName: "camunda"
-      targetNamespace: "my-cluster-ns"
       secondaryStorageConfig: "my-storage-config"
     ```
 
 5. Wait until the `Database` is `Ready` with reason `Healthy`.
 
     ```bash
-    kubectl wait database/my-camunda-db --for=condition=Ready --timeout=5m
+    kubectl wait database/my-camunda-db -n my-cluster-ns --for=condition=Ready --timeout=5m
     ```
+
+    If the reason is `ServerIdentityUnknown`, the `DatabaseServerConfig` has not reached the server yet. Read its `Ready` condition.
 
 6. Make sure that the `DatabaseConfig` `my-camunda-db` and the `SecondaryStorageConfig` `my-storage-config` exist in `my-cluster-ns` and are `Ready` with reason `Healthy`. The `Database` created both. The `SecondaryStorageConfig` has `type: rdbms` and references the `DatabaseConfig`.
 
@@ -262,7 +263,7 @@ spec:
       key: ca.crt
 ```
 
-For PostgreSQL, write a `DatabaseServerConfig` for the server, a `DatabaseConfig` for the database, and a `SecondaryStorageConfig` with `type: rdbms`. Create the database, the application role, and the credentials Secret on your side first. The `DatabaseServerConfig` still needs admin credentials, because the operator validates it by a connection to the server.
+For PostgreSQL, write a `DatabaseServerConfig` for the server, a `DatabaseConfig` for the database, and a `SecondaryStorageConfig` with `type: rdbms`. All three live in the namespace of the cluster. Create the database, the application role, and the credentials Secret on your side first. The `DatabaseServerConfig` still needs admin credentials, because the operator validates it by a connection to the server.
 
 ```yaml
 apiVersion: core.camunda.io/v1
