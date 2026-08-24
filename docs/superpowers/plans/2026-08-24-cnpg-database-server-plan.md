@@ -508,6 +508,10 @@ Branch `ci/cnpg-database-server--e2e` off `feat/cnpg-database-server` after PR 4
 
 ---
 
+## PR 6: split the Camunda e2e job by storage backend (#243)
+
+Branch `ci/cnpg-database-server--split-e2e-by-backend` off `feat/cnpg-database-server` after PR 5 merged. One workflow matrix entry per backend, the #224 mechanism: `Camunda 8.9 elasticsearch` (`manager`, `camundacluster`, `camundacluster-oidc`, `elasticsearchcluster`, `camundaoptimize`; ECK only, `CNPG_INSTALL_SKIP=true`), `Camunda 8.9 postgres` (`camundacluster-rdbms`, `database`, `databaseserver`; CloudNativePG + plugin + cert-manager only, `ECK_INSTALL_SKIP=true`), `Camunda 8.9 management` unchanged. Every label in `allLabels` is claimed by exactly one job. No new flows.
+
 ## Checkpoint and hand-off
 
-After PR 5 merges into `feat/cnpg-database-server`: `feature-dev-workflow:reviewing-feature-progress` on the feature worktree, all gates on the merged branch, then the integration PR `feat/cnpg-database-server` → `main` with `Closes #127` is the user's to open and merge. The plan and the state file are deleted in the teardown commit; the spec stays.
+After PR 6 merges into `feat/cnpg-database-server`: `feature-dev-workflow:reviewing-feature-progress` on the feature worktree, all gates on the merged branch, then the integration PR `feat/cnpg-database-server` → `main` with `Closes #127` is the user's to open and merge. The plan and the state file are deleted in the teardown commit; the spec stays.

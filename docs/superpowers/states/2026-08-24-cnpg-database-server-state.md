@@ -22,6 +22,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 - **Phase 2** — `#235` (DatabaseServer kind)
 - **Phase 3** — `#236` (recovery through the contract)
 - **Phase 4** — `#237` (e2e + installation docs)
+- **Phase 5** — `#243` (split the Camunda e2e job by storage backend; filed 2026-08-24 at the user's request, runs after #237)
 
 ## PRs / worktrees
 
@@ -32,6 +33,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | #235 | feat/cnpg-database-server--database-server | .claude/worktrees/cnpg-database-server/.claude/worktrees/database-server | #241 → feat/cnpg-database-server | self-merged (3b6aef2) |
 | #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | #242 → feat/cnpg-database-server | ready |
 | #237 | ci/cnpg-database-server--e2e | .claude/worktrees/cnpg-database-server/.claude/worktrees/e2e | → feat/cnpg-database-server | not-started |
+| #243 | ci/cnpg-database-server--split-e2e-by-backend | .claude/worktrees/cnpg-database-server/.claude/worktrees/split-e2e-by-backend | → feat/cnpg-database-server | not-started |
 
 ## Contracts
 
@@ -55,7 +57,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 ## Pending snapshot
 
 1. Phase 1 done (#238 beee38d, #239 2d812a8; wave checkpoint clean at 690188a). #235 dispatched into `.claude/worktrees/database-server` on 2026-08-24; when it reports: Copilot loop to clean, spec pass then quality pass (opus reviewers, read-only), self-merge, `gh issue close 235`, remove the sub-worktree, update this table.
-2. Then #236 (`feat/cnpg-database-server--contract-recovery`), then #237 (`ci/cnpg-database-server--e2e`), each branched from the feature branch after the previous merge, same ripening.
+2. Then #236 (`feat/cnpg-database-server--contract-recovery`), then #237 (`ci/cnpg-database-server--e2e`), then #243 (`ci/cnpg-database-server--split-e2e-by-backend`), each branched from the feature branch after the previous merge, same ripening.
 3. `feature-dev-workflow:reviewing-feature-progress` on the feature worktree after #237, all gates, then report ready for the user's integration PR. Do not open or merge the integration PR.
 
 ## Resume checklist
