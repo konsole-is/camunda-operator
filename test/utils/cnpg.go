@@ -29,6 +29,8 @@ const (
 	// are vendored instead of resolved from the module cache the way the ECK
 	// ones are.
 	cnpgCRDDir = "internal/testenv/crds/cnpg"
+	// barmanCRDDir holds the ObjectStore CRD of the Barman Cloud plugin.
+	barmanCRDDir = "internal/testenv/crds/barmancloud"
 )
 
 // CNPGCRDPath returns the directory of the vendored CloudNativePG CRDs, for
@@ -36,6 +38,13 @@ const (
 // release they come from.
 func CNPGCRDPath() (string, error) {
 	return vendoredCRDPath(cnpgCRDDir)
+}
+
+// BarmanCRDPath returns the directory of the vendored ObjectStore CRD of the
+// Barman Cloud plugin, for envtest to install. The VERSION file beside it
+// names the plugin release it comes from.
+func BarmanCRDPath() (string, error) {
+	return vendoredCRDPath(barmanCRDDir)
 }
 
 // vendoredCRDPath resolves dir against the root of this module. It walks up

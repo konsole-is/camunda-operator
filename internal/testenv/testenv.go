@@ -47,6 +47,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/cacheopts"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
@@ -85,9 +86,10 @@ type Options struct {
 }
 
 // Start boots a control plane that carries the CRDs of the operator, of ECK,
-// of the Keycloak Operator, and of CloudNativePG, registers the reconcilers
-// of the caller through register, and starts the manager in the background.
-// register runs before the manager starts and must not block.
+// of the Keycloak Operator, of CloudNativePG, and of the Barman Cloud plugin,
+// registers the reconcilers of the caller through register, and starts the
+// manager in the background. register runs before the manager starts and must
+// not block.
 //
 // Start asserts through Gomega. Call it from a Ginkgo node that has a fail
 // handler installed, normally BeforeSuite.
@@ -106,6 +108,7 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	gomega.Expect(monitoringv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(keycloak.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(cnpgv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
+	gomega.Expect(barmanobjectstore.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 
 	root, err := moduleRoot()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -125,11 +128,16 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		crdPaths = append(crdPaths, filepath.Join(root, "internal", "testenv", "crds", "keycloak"))
 	}
 
-	// CloudNativePG publishes its Go types without the CRDs, so the schemas
-	// are vendored. CloudNativePG itself does not run in envtest.
+	// CloudNativePG publishes its Go types without the CRDs and the Barman
+	// Cloud plugin publishes no light module at all, so both schemas are
+	// vendored. Neither operator runs in envtest.
 	cnpgCRDPath, err := utils.CNPGCRDPath()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	crdPaths = append(crdPaths, cnpgCRDPath)
+
+	barmanCRDPath, err := utils.BarmanCRDPath()
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	crdPaths = append(crdPaths, barmanCRDPath)
 
 	ginkgo.By("bootstrapping test environment")
 	control := &envtest.Environment{

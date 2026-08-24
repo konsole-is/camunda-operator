@@ -57,6 +57,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 	// +kubebuilder:scaffold:imports
 )
@@ -74,6 +75,7 @@ func init() {
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(keycloak.AddToScheme(scheme))
 	utilruntime.Must(cnpgv1.AddToScheme(scheme))
+	utilruntime.Must(barmanobjectstore.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
