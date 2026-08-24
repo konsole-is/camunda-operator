@@ -87,10 +87,10 @@ The `pitr` block is a declaration. It states that the server archives WAL for th
 
 | Field | Meaning |
 | --- | --- |
-| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. |
-| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`, for example `"7412345678901234567"`. Two contracts that reach one instance publish one value. |
-| `status.probedAt` | When the operator last reached the server and read `serverVersion`. |
-| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. |
+| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. A spec change clears it. |
+| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`, for example `"7412345678901234567"`. Two contracts that reach one instance publish one value. It keeps the last known value while the server is unreachable. A spec change clears it. |
+| `status.probedAt` | When the operator last reached the server and read `serverVersion` and `systemIdentifier`. A spec change clears it. |
+| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A spec change clears it. |
 | `status.observedGeneration` | The last generation of the contract that the operator validated. |
 
 ## Spec reference

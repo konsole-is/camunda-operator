@@ -320,6 +320,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(got.Status.SystemIdentifier).To(BeEmpty())
 			g.Expect(got.Status.ServerVersion).To(BeEmpty())
 			g.Expect(got.Status.ProbedAt).To(BeNil())
+			g.Expect(got.Status.ProbedSecretVersion).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
 	})
 

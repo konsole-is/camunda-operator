@@ -129,11 +129,14 @@ func (r *DatabaseServerConfigReconciler) validate(
 	// A spec that changed since the last reconcile describes another server
 	// until the next probe says otherwise. The recorded version and identity
 	// belong to the endpoint the old spec named, and a consumer that keyed on
-	// the identity would place the database on a server nothing reached.
+	// the identity would place the database on a server nothing reached. The
+	// whole record of the probe goes, so status reads as no probe for this
+	// spec rather than a probe of a server this contract no longer describes.
 	if cfg.Status.ObservedGeneration != cfg.Generation {
 		cfg.Status.ServerVersion = ""
 		cfg.Status.SystemIdentifier = ""
 		cfg.Status.ProbedAt = nil
+		cfg.Status.ProbedSecretVersion = ""
 	}
 
 	ref := cfg.Spec.AdminCredentialsSecretRef
