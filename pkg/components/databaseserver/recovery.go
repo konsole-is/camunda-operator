@@ -76,18 +76,36 @@ func RecoveryClusterName(server *v1.DatabaseServer) string {
 }
 
 // recoveryName renders the name of the n-th recovery of a server, bounded so
-// that the Services CloudNativePG derives from it are still DNS labels.
+// that every Service CloudNativePG derives from it is still a DNS label.
 //
-// CloudNativePG appends -rw, -ro and -r to the cluster name, and a Service
-// name is a DNS label of 63 characters. The suffix of the recovery and the
-// longest of those are taken off the bound before the name of the server is
-// shortened, the same way every other derived name in this operator is
-// shortened: the head of the name, and a hash of the whole of it.
+// A Service name is a DNS label of 63 characters. The suffix of the recovery
+// and the longest suffix CloudNativePG appends are taken off the bound before
+// the name of the server is shortened, the same way every other derived name
+// in this operator is shortened: the head of the name, and a hash of the whole
+// of it.
 func recoveryName(server string, n int) string {
 	suffix := recoveryNameSeparator + strconv.Itoa(n)
-	room := validation.DNS1035LabelMaxLength - len(suffix) - len(readWriteServiceSuffix)
+	room := validation.DNS1035LabelMaxLength - len(suffix) - len(longestServiceSuffix())
 
 	return labels.BoundedName(server, room) + suffix
+}
+
+// longestServiceSuffix returns the longest suffix that CloudNativePG appends
+// to a cluster name for one of its Services.
+func longestServiceSuffix() string {
+	longest := ""
+	for _, suffix := range []string{
+		cnpgv1.ServiceAnySuffix,
+		cnpgv1.ServiceReadSuffix,
+		cnpgv1.ServiceReadOnlySuffix,
+		cnpgv1.ServiceReadWriteSuffix,
+	} {
+		if len(suffix) > len(longest) {
+			longest = suffix
+		}
+	}
+
+	return longest
 }
 
 // SelectArchive returns the archive of history that a recovery to target

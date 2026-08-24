@@ -102,7 +102,9 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 		return false, r.cleanUpAnsweredRecovery(ctx, server)
 
 	case request.AnsweredBy(published):
-		recordPublishedOutcome(server, contract, published)
+		if err := r.recordPublishedOutcome(ctx, server, contract, published); err != nil {
+			return false, err
+		}
 
 		return false, r.cleanUpAnsweredRecovery(ctx, server)
 	}
@@ -244,11 +246,12 @@ func publishedOutcome(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
 // recordPublishedOutcome writes the published answer into the record. The name
 // of the cluster the recovery built is kept when the record already names one:
 // it is the only place that holds it, and the cleanup reads it.
-func recordPublishedOutcome(
+func (r *DatabaseServerReconciler) recordPublishedOutcome(
+	ctx context.Context,
 	server *v1.DatabaseServer,
 	contract *v1.DatabaseServerConfig,
 	published *v1.RecoveryOutcome,
-) {
+) error {
 	recorded := server.Status.Recovery
 
 	cluster := ""
@@ -256,33 +259,91 @@ func recordPublishedOutcome(
 		cluster = recorded.Cluster
 	}
 
-	// The contract is the record of which cluster the server runs from. A
-	// recovery that finished and lost its status write left status.cluster
-	// naming a cluster that is gone, and the cleanup then reads the recovered
-	// cluster as the one to remove. The endpoint says otherwise, so the
-	// endpoint is what status is put back from.
 	if published.Result == v1.RecoveryResultCompleted {
-		if current := components.ClusterFromReadWriteHost(server, contract.Spec.Host); current != "" {
+		current, err := r.recoveredClusterOf(ctx, server, contract)
+		if err != nil {
+			return err
+		}
+		if current != "" {
 			server.Status.Cluster = current
 			cluster = current
 		}
 	}
 
 	completedAt := published.CompletedAt
-	server.Status.Recovery = &v1.DatabaseServerRecoveryStatus{
-		RequestID:   published.RequestID,
-		Contract:    contract.Name,
-		RequestedBy: published.RequestedBy,
-		TargetTime:  published.TargetTime,
-		Cluster:     cluster,
-		Result:      published.Result,
-		Message:     published.Message,
-		CompletedAt: &completedAt,
-	}
+	previous, archive := "", (*v1.RecoveryArchiveRef)(nil)
 	if recorded != nil && recorded.RequestID == published.RequestID {
-		server.Status.Recovery.PreviousCluster = recorded.PreviousCluster
-		server.Status.Recovery.Archive = recorded.Archive
+		previous, archive = recorded.PreviousCluster, recorded.Archive
 	}
+
+	server.Status.Recovery = &v1.DatabaseServerRecoveryStatus{
+		RequestID:       published.RequestID,
+		Contract:        contract.Name,
+		RequestedBy:     published.RequestedBy,
+		TargetTime:      published.TargetTime,
+		Cluster:         cluster,
+		PreviousCluster: previous,
+		Archive:         archive,
+		Result:          published.Result,
+		Message:         published.Message,
+		CompletedAt:     &completedAt,
+	}
+
+	return nil
+}
+
+// recoveredClusterOf returns the cluster of this server that the endpoint of
+// the contract names, or the empty string when the endpoint names none of
+// them.
+//
+// The contract is the record of which cluster the server runs from, and a
+// recovery that finished and lost its status write left status.cluster naming
+// a cluster that is gone. Reading the endpoint back is what puts that right.
+//
+// A name parsed out of an endpoint is not proof on its own. Two servers can
+// name one contract, and the one that loses the race reads the endpoint of the
+// other. Adopting that name makes this server delete its own live cluster as
+// the superseded one, so the name counts only when this server owns a cluster
+// of it.
+func (r *DatabaseServerReconciler) recoveredClusterOf(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	contract *v1.DatabaseServerConfig,
+) (string, error) {
+	name := components.ClusterFromReadWriteHost(server, contract.Spec.Host)
+	if name == "" || name == components.ClusterName(server) {
+		return "", nil
+	}
+
+	key := types.NamespacedName{Namespace: server.Namespace, Name: name}
+
+	var candidate cnpgv1.Cluster
+	if err := r.APIReader.Get(ctx, key, &candidate); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf(
+			"reading the cluster %s that DatabaseServerConfig %s names: %w",
+			key, client.ObjectKeyFromObject(contract), err,
+		)
+	}
+	if !ownedByServer(server, &candidate) {
+		r.EventRecorder.Eventf(
+			server,
+			nil,
+			corev1.EventTypeWarning,
+			eventReasonRecoveryRefused,
+			eventActionRecover,
+			"DatabaseServerConfig %s names the cluster %q, which this server does not own. The "+
+				"server keeps running from %q",
+			client.ObjectKeyFromObject(contract), name, components.ClusterName(server),
+		)
+
+		return "", nil
+	}
+
+	return name, nil
 }
 
 // recordedRequest returns the request that the record holds.
@@ -361,11 +422,7 @@ func (r *DatabaseServerReconciler) removeAbandonedRecoveryCluster(
 		return nil
 	}
 
-	// The precondition is what makes the delete name one object rather than
-	// one name. A cluster that goes and comes back under this name between the
-	// read and the delete is another cluster, and it holds a database.
-	err := r.Delete(ctx, &abandoned, client.Preconditions{UID: &abandoned.UID})
-	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+	if err := r.deleteOwned(ctx, &abandoned); err != nil {
 		return fmt.Errorf("deleting the abandoned recovery cluster %s: %w", key, err)
 	}
 
@@ -538,24 +595,25 @@ func (r *DatabaseServerReconciler) completeRecovery(
 
 	var recovered cnpgv1.Cluster
 	if err := r.APIReader.Get(ctx, key, &recovered); err != nil {
-		return false, fmt.Errorf("reading the recovery cluster %s: %w", key, err)
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("reading the recovery cluster %s: %w", key, err)
+		}
+
+		// Somebody removed it after the contract moved to it. The server has
+		// no cluster to run from under this name, and nothing here can build
+		// one: a recovery reads an archive, and the point it read is gone.
+		return false, r.abandonRecovery(
+			ctx, server, contract, request,
+			fmt.Sprintf("%s no longer exists", key),
+		)
 	}
 
 	// A cluster that turns unrecoverable after the contract moved to it takes
-	// the server with it. The contract goes back to the cluster it came from,
-	// which still holds the data and which nothing has removed yet, and the
-	// request is refused.
+	// the server with it.
 	if phase, failing := cnpgcluster.Failing(&recovered); failing {
-		previous := server.Status.Recovery.PreviousCluster
-		server.Status.Cluster = previous
-		server.Status.Recovery.Cluster = ""
-
-		return false, r.answerRecovery(
-			ctx, server, contract, request, v1.RecoveryResultFailed,
-			fmt.Sprintf(
-				"CloudNativePG reports %q for %s after the server moved to it. The server runs "+
-					"from %q again", phase, key, previous,
-			),
+		return false, r.abandonRecovery(
+			ctx, server, contract, request,
+			fmt.Sprintf("CloudNativePG reports %q for %s", phase, key),
 		)
 	}
 
@@ -584,6 +642,35 @@ func (r *DatabaseServerReconciler) completeRecovery(
 	}
 
 	return false, r.removeSupersededCluster(ctx, server)
+}
+
+// abandonRecovery refuses a request whose cluster the contract already moved
+// to and which cannot serve the server any more.
+//
+// The contract goes back to the cluster it came from. That cluster still holds
+// the data, and nothing has removed it: the removal runs after the answer, and
+// the answer is this refusal. A record that names no previous cluster leaves
+// status.cluster alone rather than emptying it, because an empty one reads as
+// the cluster of a server that has never recovered.
+func (r *DatabaseServerReconciler) abandonRecovery(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	contract *v1.DatabaseServerConfig,
+	request v1.RecoveryRequest,
+	cause string,
+) error {
+	previous := server.Status.Recovery.PreviousCluster
+	server.Status.Recovery.Cluster = ""
+
+	message := cause + " after the server moved to it. "
+	if previous == "" {
+		message += "The server records no cluster to go back to"
+	} else {
+		server.Status.Cluster = previous
+		message += fmt.Sprintf("The server runs from %q again", previous)
+	}
+
+	return r.answerRecovery(ctx, server, contract, request, v1.RecoveryResultFailed, message)
 }
 
 // applyRecoveryCluster applies the cluster that recovers the server to the
@@ -628,6 +715,12 @@ func (r *DatabaseServerReconciler) applyRecoveryCluster(
 //
 // Both loops delete what this server owns, not what carries its label. A label
 // is a value anybody can write, and the objects here hold whole databases.
+//
+// The lists are cached. Both kinds are watched, and every delete names the
+// object it read by uid, so a cached entry of an object that has gone deletes
+// nothing. This runs on every look that reads an answer back, and two
+// uncached lists per look are paid for by every server that has ever
+// recovered.
 func (r *DatabaseServerReconciler) removeSupersededCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -639,7 +732,7 @@ func (r *DatabaseServerReconciler) removeSupersededCluster(
 	}
 
 	var clusters cnpgv1.ClusterList
-	if err := r.APIReader.List(ctx, &clusters, scope...); err != nil {
+	if err := r.List(ctx, &clusters, scope...); err != nil {
 		return fmt.Errorf("listing the clusters of %q: %w", server.Name, err)
 	}
 	for i := range clusters.Items {
@@ -653,7 +746,7 @@ func (r *DatabaseServerReconciler) removeSupersededCluster(
 	}
 
 	var schedules cnpgv1.ScheduledBackupList
-	if err := r.APIReader.List(ctx, &schedules, scope...); err != nil {
+	if err := r.List(ctx, &schedules, scope...); err != nil {
 		return fmt.Errorf("listing the base backup schedules of %q: %w", server.Name, err)
 	}
 	for i := range schedules.Items {

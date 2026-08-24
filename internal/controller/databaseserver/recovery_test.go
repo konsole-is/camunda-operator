@@ -117,7 +117,7 @@ func probeContract(server *v1.DatabaseServer) {
 		var contract v1.DatabaseServerConfig
 		g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
 		g.Expect(contract.Spec.Host).To(Equal(recoveryHost(server)))
-		contract.Status.SystemIdentifier = "7000000000000000002"
+		contract.Status.SystemIdentifier = recoveredSystemIdentifier
 		contract.Status.ObservedGeneration = contract.Generation
 		g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
@@ -373,7 +373,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Eventually(func(g Gomega) {
 			latest := reconciledServer(server)
 			g.Expect(latest.Status.Cluster).To(Equal("camunda-r1"))
-			g.Expect(latest.Status.SystemIdentifier).To(Equal("7000000000000000002"))
+			g.Expect(latest.Status.SystemIdentifier).To(Equal(recoveredSystemIdentifier))
 			g.Expect(latest.Status.Recovery.CompletedAt).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
@@ -922,6 +922,91 @@ var _ = Describe("DatabaseServer recovery", func() {
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 			)
 		}, "2s", interval).Should(Succeed())
+	})
+
+	It("gives the server back when the cluster it moved to is removed", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// Somebody removed it after the contract moved to it. Reading a
+		// missing cluster as an error holds the request for ever.
+		var recovered cnpgv1.Cluster
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Expect(k8sClient.Get(ctx, key, &recovered)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &recovered)).To(Succeed())
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("no longer exists"))
+		Expect(outcome.Message).To(ContainSubstring("runs from \"camunda\" again"))
+
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda"))
+	})
+
+	It("keeps running from its own cluster when the contract names one it does not own", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		// Two servers can name one contract. The one that loses the race reads
+		// the endpoint of the other, and adopting that name makes it delete
+		// its own live cluster as the superseded one.
+		stranger := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r9", Namespace: server.Namespace},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            1,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "1Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, stranger)).To(Succeed())
+
+		// The contract stops being republished while the superuser Secret of
+		// the cluster it names is missing, which is what lets the endpoint of
+		// another server stand long enough to be read.
+		var superuser corev1.Secret
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{
+				Namespace: server.Namespace, Name: "camunda-r1-superuser",
+			}, &superuser,
+		)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &superuser)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
+			contract.Spec.Host = "camunda-r9-rw." + server.Namespace + ".svc"
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func() string {
+			return publishedContract(server).Spec.Host
+		}, "1s", interval).Should(Equal("camunda-r9-rw." + server.Namespace + ".svc"))
+
+		// The endpoint is read back only on a look that finds the record
+		// missing, so the record goes last, once that endpoint is the one
+		// every look reads.
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Recovery = nil
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(stranger), &cnpgv1.Cluster{})).
+				To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+			)).To(Succeed())
+		}, "3s", interval).Should(Succeed())
 	})
 
 	It("answers a request while the server is suspended and its bucket is gone", func() {
