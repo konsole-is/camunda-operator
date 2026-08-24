@@ -56,7 +56,7 @@ func (r *Reconciler) enterDatabaseRecovery(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 ) (restore.Outcome, error) {
-	resolved, failure, err := r.resolve(ctx, pitr)
+	resolved, failure, err := r.resolve(ctx, pitr, pinAcrossRecovery)
 	if err != nil {
 		return r.resolveFailed(pitr, err)
 	}
@@ -105,13 +105,23 @@ func operatorRecovers(server *v1.DatabaseServerConfig) bool {
 	return server.Spec.PITR != nil && server.Spec.PITR.Recovery == v1.RecoveryModeOperator
 }
 
-// recoveryRequest renders the request that this restore makes: the restore
-// itself, and spec.timestamp in RFC 3339 UTC. The zone is explicit, because
-// PostgreSQL reads a timestamp without one as the local time of the server.
+// recoveryRequest renders the request that this restore makes: the identity of
+// the restore, its namespace and name, and spec.timestamp in RFC 3339 UTC.
+//
+// The zone is explicit, because PostgreSQL reads a timestamp without one as
+// the local time of the server. The fraction is kept: a point rendered to the
+// whole second lies up to a second before the point the user asked for, and
+// the server rolls back to what the request says.
+//
+// The uid is what makes the request this restore's own. A restore that is
+// deleted and created again under one name asks for the same point on behalf
+// of the same name, and the answer to the first says nothing about the state
+// the second asks for.
 func recoveryRequest(pitr *v1.PointInTimeRestore) v1.RecoveryRequest {
 	return v1.RecoveryRequest{
+		RequestID:   string(pitr.UID),
 		RequestedBy: pitr.Namespace + "/" + pitr.Name,
-		TargetTime:  pitr.Spec.Timestamp.UTC().Format(time.RFC3339),
+		TargetTime:  pitr.Spec.Timestamp.UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -139,7 +149,11 @@ func (r *Reconciler) recoveryAnswered(
 		return restore.Outcome{}, nil
 	}
 
-	if !meta.IsStatusConditionTrue(contract.Status.Conditions, v1.ConditionReady) ||
+	// Ready alone is the answer to the spec that was probed, which can still be
+	// the spec from before the endpoint moved. The observed generation is what
+	// says that the record describes the endpoint the contract names now.
+	if contract.Status.ObservedGeneration != contract.Generation ||
+		!meta.IsStatusConditionTrue(contract.Status.Conditions, v1.ConditionReady) ||
 		contract.Status.SystemIdentifier == "" {
 		r.progressing(pitr, fmt.Sprintf(
 			"DatabaseServerConfig %s rolled its server back to %s. The restore waits for it to "+

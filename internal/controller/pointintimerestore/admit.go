@@ -50,6 +50,24 @@ type chain struct {
 	target   *restore.Target
 }
 
+// chainPin says how a look compares the storage chain it resolved against the
+// chain the restore pinned. The caller chooses it, because only the caller
+// knows whether the restore itself asked for the server to change.
+type chainPin int
+
+const (
+	// pinExact binds every field of the pinned chain. It also requires that
+	// the contract publishes an identity at all.
+	pinExact chainPin = iota
+	// pinAcrossRecovery binds every field except the endpoint and the system
+	// identifier. Those two are what a rollback of the server replaces, and
+	// the phase that asked for the rollback records the new pair itself. The
+	// contracts, their identities, and the logical database still bind: one
+	// that was deleted and created again under its name is another contract,
+	// mid-rollback as much as before it.
+	pinAcrossRecovery
+)
+
 // errClusterReplaced reports that the cluster of the restore is not the
 // cluster that the restore pinned. A cluster that was deleted and created
 // again under one name is another cluster with other primary storage, so the
@@ -74,7 +92,7 @@ func (r *Reconciler) admit(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 ) (restore.Outcome, error) {
-	resolved, failure, err := r.resolve(ctx, pitr)
+	resolved, failure, err := r.resolve(ctx, pitr, pinExact)
 	if err != nil {
 		return r.resolveFailed(pitr, err)
 	}
@@ -180,6 +198,10 @@ func (r *Reconciler) admit(
 // *conditions.PreCheckFailure whose message names what is wrong. The phase
 // decides how long such a failure holds the restore.
 //
+// pin says how the chain of this look is compared against the chain the
+// restore pinned. Only the phase that asked the server to roll itself back
+// passes pinAcrossRecovery; every other caller binds every field.
+//
 // The reads are live. A stale suspend flag or a stale storage reference lets
 // the restore delete the volumes of a cluster that moved on. The suspension
 // itself is not a rule of this function: admission writes it, and the phases
@@ -187,6 +209,7 @@ func (r *Reconciler) admit(
 func (r *Reconciler) resolve(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
+	pin chainPin,
 ) (*chain, *conditions.PreCheckFailure, error) {
 	namespace := pitr.Namespace
 	name := pitr.Spec.ClusterRef.Name
@@ -264,27 +287,19 @@ func (r *Reconciler) resolve(
 
 		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", serverKey, err)
 	}
-	// Both checks below read the identity that the contract publishes, and
-	// that identity is in flux for the whole of RestoringDatabase: the request
-	// of the restore and the endpoint that the producer repoints are both spec
-	// changes, and each of them clears the record of the probe. The phase that
-	// asked for the change reads the contract without them, and refreshes the
-	// pin itself once the answer arrives.
-	if !recoveringDatabase(pitr) {
-		if server.Status.SystemIdentifier == "" {
-			return nil, logicalbackup.InvalidReference(
-				"DatabaseServerConfig %s has not published its system identifier, so the operator "+
-					"cannot tell which PostgreSQL instance the endpoint reaches. Point-in-time "+
-					"recovery rolls back the whole instance, and the rule that protects every "+
-					"other database on it needs that identity. Wait until the DatabaseServerConfig "+
-					"reports Ready",
-				serverKey,
-			), nil
-		}
+	if pin == pinExact && server.Status.SystemIdentifier == "" {
+		return nil, logicalbackup.InvalidReference(
+			"DatabaseServerConfig %s has not published its system identifier, so the operator "+
+				"cannot tell which PostgreSQL instance the endpoint reaches. Point-in-time "+
+				"recovery rolls back the whole instance, and the rule that protects every "+
+				"other database on it needs that identity. Wait until the DatabaseServerConfig "+
+				"reports Ready",
+			serverKey,
+		), nil
+	}
 
-		if err := pinnedChainCurrent(pitr, &storage, &dbConfig, &server); err != nil {
-			return nil, nil, err
-		}
+	if err := pinnedChainCurrent(pitr, &storage, &dbConfig, &server, pin); err != nil {
+		return nil, nil, err
 	}
 
 	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, &cluster)
@@ -305,13 +320,6 @@ func (r *Reconciler) resolve(
 		server:   &server,
 		target:   target,
 	}, nil, nil
-}
-
-// recoveringDatabase reports whether the restore waits for the database server
-// to roll itself back. The identity that the contract publishes says nothing
-// while that runs, so resolve leaves it out of its rules for that phase alone.
-func recoveringDatabase(pitr *v1.PointInTimeRestore) bool {
-	return pitr.Status.Phase == v1.PointInTimeRestoreRestoringDatabase
 }
 
 // notSuspended reports the cluster that started running again. Suspension is
@@ -377,6 +385,7 @@ func pinnedChainCurrent(
 	storage *v1.SecondaryStorageConfig,
 	dbConfig *v1.DatabaseConfig,
 	server *v1.DatabaseServerConfig,
+	pin chainPin,
 ) error {
 	pinned := pitr.Status.Storage
 	if pinned == nil {
@@ -384,7 +393,7 @@ func pinnedChainCurrent(
 	}
 
 	current := pinnedChain(storage, dbConfig, server)
-	if *current == *pinned {
+	if chainsAgree(pinned, current, pin) {
 		return nil
 	}
 
@@ -393,6 +402,20 @@ func pinnedChainCurrent(
 			"database the cluster uses now",
 		errChainChanged, describeChain(pinned), describeChain(current),
 	)
+}
+
+// chainsAgree reports whether current is the chain that pinned records, under
+// the given pin. The volatile fields are cleared on both copies rather than
+// skipped, so a difference in any other field still answers false, and the
+// failure message still names the real values.
+func chainsAgree(pinned, current *v1.PointInTimeRestoreStorage, pin chainPin) bool {
+	a, b := *pinned, *current
+	if pin == pinAcrossRecovery {
+		a.Endpoint, b.Endpoint = "", ""
+		a.SystemIdentifier, b.SystemIdentifier = "", ""
+	}
+
+	return a == b
 }
 
 // describeChain names one storage chain in a failure message. It carries the

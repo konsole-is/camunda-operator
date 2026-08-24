@@ -73,6 +73,7 @@ func answerRecovery(w *world, result v1.RecoveryResult, message string) {
 		var contract v1.DatabaseServerConfig
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
 		contract.Spec.PITR.LastRecovery = &v1.RecoveryOutcome{
+			RequestID:   request.RequestID,
 			RequestedBy: request.RequestedBy,
 			TargetTime:  request.TargetTime,
 			CompletedAt: metav1.Now(),
@@ -105,12 +106,35 @@ func publishContractReady(w *world, identifier string) {
 		var contract v1.DatabaseServerConfig
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
 		contract.Status.SystemIdentifier = identifier
+		contract.Status.ObservedGeneration = contract.Generation
 		meta.SetStatusCondition(&contract.Status.Conditions, metav1.Condition{
 			Type:               v1.ConditionReady,
 			Status:             metav1.ConditionTrue,
 			Reason:             v1.ReasonHealthy,
 			Message:            "Reached the server",
 			ObservedGeneration: contract.Generation,
+		})
+		g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// publishStaleContractReady records a probe that answered for the spec of
+// before the last change, the way the contract reads between a repoint and the
+// probe that follows it.
+func publishStaleContractReady(w *world, identifier string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var contract v1.DatabaseServerConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+		contract.Status.SystemIdentifier = identifier
+		contract.Status.ObservedGeneration = contract.Generation - 1
+		meta.SetStatusCondition(&contract.Status.Conditions, metav1.Condition{
+			Type:               v1.ConditionReady,
+			Status:             metav1.ConditionTrue,
+			Reason:             v1.ReasonHealthy,
+			Message:            "Reached the server",
+			ObservedGeneration: contract.Generation - 1,
 		})
 		g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
@@ -161,8 +185,72 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		Expect(message).To(ContainSubstring(w.namespace + "/" + pitr.Name))
 
 		request := expectRecoveryRequest(w)
+		Expect(request.RequestID).To(Equal(string(readRestore(pitr).UID)))
 		Expect(request.RequestedBy).To(Equal(w.namespace + "/" + pitr.Name))
 		Expect(request.TargetTime).To(Equal(restorePoint().UTC().Format(time.RFC3339)))
+	})
+
+	It("asks for the point the cluster holds, to the precision the spec keeps", func() {
+		w := operatorRecoveryWorld()
+		fractional := metav1.NewTime(restorePoint().Add(1500 * time.Millisecond))
+		pitr := createRestore(w, func(p *v1.PointInTimeRestore) { p.Spec.Timestamp = fractional })
+
+		expectRecovering(pitr)
+
+		// A timestamp is stored to the second, so the point the restore asks
+		// for is the point the resource holds, whatever was written into it.
+		// Rendering a fraction that the spec does not carry asks for a point
+		// nobody chose.
+		stored := readRestore(pitr).Spec.Timestamp
+		request := expectRecoveryRequest(w)
+		Expect(request.TargetTime).To(Equal(stored.UTC().Format(time.RFC3339Nano)))
+	})
+
+	It("fails when the contract is replaced under its name while it waits", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+
+		// Only the endpoint and the identity of the server are allowed to
+		// move while the rollback runs. A contract that is deleted and created
+		// again under one name is another contract, and nothing of what the
+		// restore validated pairs with it.
+		Expect(k8sClient.Delete(ctx, w.server)).To(Succeed())
+		replacement := w.server.DeepCopy()
+		replacement.ObjectMeta = metav1.ObjectMeta{Name: w.server.Name, Namespace: w.namespace}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		message := expectFailed(pitr, v1.ReasonFailed)
+		Expect(message).To(ContainSubstring("storage chain of the cluster changed"))
+	})
+
+	It("asks again when a restore of its name and its point was answered before it", func() {
+		w := operatorRecoveryWorld()
+		first := createRestore(w)
+		expectRecovering(first)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		answered := expectRecoveryRequest(w)
+
+		// The same name and the same point, and a different resource. The
+		// standing answer belongs to the restore that is gone.
+		Expect(k8sClient.Delete(ctx, first)).To(Succeed())
+		second := &v1.PointInTimeRestore{
+			ObjectMeta: metav1.ObjectMeta{Name: first.Name, Namespace: w.namespace},
+			Spec:       first.Spec,
+		}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectRecovering(second)
+		Eventually(func(g Gomega) {
+			request := expectRecoveryRequest(w)
+			g.Expect(request.RequestID).NotTo(Equal(answered.RequestID))
+			g.Expect(request.RequestID).To(Equal(string(readRestore(second).UID)))
+			g.Expect(request.TargetTime).To(Equal(answered.TargetTime))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("reads the database once the contract answers and reaches its new server", func() {
@@ -171,8 +259,8 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		expectRecovering(pitr)
 
 		repointContract(w, "postgres-r1.databases.svc")
-		publishContractReady(w, recoveredIdentifier)
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
+		publishContractReady(w, recoveredIdentifier)
 
 		Eventually(func(g Gomega) {
 			current := readRestore(pitr)
@@ -194,6 +282,13 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		// about the new one, so the restore holds instead of pinning it.
 		repointContract(w, "postgres-r1.databases.svc")
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
+
+		// A Ready that answers the spec of before the endpoint moved says
+		// nothing about the server the contract names now.
+		publishStaleContractReady(w, worldSystemIdentifier)
+		Consistently(func() v1.PointInTimeRestorePhase {
+			return readRestore(pitr).Status.Phase
+		}, "2s", interval).Should(Equal(v1.PointInTimeRestoreRestoringDatabase))
 
 		Consistently(func() v1.PointInTimeRestorePhase {
 			return readRestore(pitr).Status.Phase

@@ -19,7 +19,9 @@ One resource is one restore. The spec is immutable, and the restore runs once. `
 
 With `external` the database must already hold the state of the requested timestamp when you create the resource. On a self-hosted server the database administrator runs standard PostgreSQL point-in-time recovery. On a managed service you use the point-in-time restore of the provider. Some providers, for example Amazon RDS, create a **new** instance for the restore. Then you update `host` on the `DatabaseServerConfig` before you create this resource.
 
-With `operator` the restore writes `spec.recovery` on the contract and waits in `RestoringDatabase` until `spec.pitr.lastRecovery` answers it. The endpoint on the contract can change while it waits, because a rollback usually replaces the server. The restore follows the contract to the new endpoint and goes on.
+With `operator` the restore writes `spec.recovery` on the contract and waits in `RestoringDatabase` until `spec.pitr.lastRecovery` answers it. The request carries the uid of the restore, so the answer to an earlier restore of the same name and the same point is never read as the answer to this one.
+
+The endpoint on the contract can change while it waits, because a rollback usually replaces the server. The restore follows the contract to the new endpoint once the contract reports `Ready` for it, and goes on. Everything else about the chain still binds: a contract that is deleted and created again under its name fails the restore, mid-rollback as much as before it.
 
 A restore that asks for a point the server never held ends in `Failed` with reason `PitrUnavailable`. A rollback that started and did not finish ends in `Failed` with reason `Failed`. `status.failureMessage` carries the message that the server reported.
 
