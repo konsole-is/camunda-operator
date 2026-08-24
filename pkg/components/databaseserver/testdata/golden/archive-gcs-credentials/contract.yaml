@@ -16,5 +16,6 @@ spec:
   host: my-cluster-db-rw.my-cluster-ns.svc
   pitr:
     enabled: true
+    recovery: operator
     retentionPeriodDays: 30
   port: 5432

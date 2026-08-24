@@ -35,6 +35,10 @@ import (
 // blocks while that Secret is absent. A contract that named a Secret before
 // CloudNativePG had written it would send every consumer to credentials that
 // do not exist.
+//
+// The component leaves spec.recovery and spec.pitr.lastRecovery alone. A
+// consumer writes the first and the server answers in the second, each under
+// a field manager of its own, so neither is removed by this apply.
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -76,14 +80,16 @@ func ContractComponent(
 
 // pitrCapability renders the point-in-time-recovery capability the server
 // publishes. A server with an archive declares the retention its bucket
-// enforces; a server without one declares that no restore can reach it.
+// enforces and that the operator rolls it back on request; a server without
+// one declares that no restore can reach it, and that nobody rolls it back.
 func pitrCapability(merged v1.DatabaseServerSpec) *v1.PITRCapability {
 	if merged.Archive == nil {
-		return &v1.PITRCapability{Enabled: false}
+		return &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
 	}
 
 	return &v1.PITRCapability{
 		Enabled:             true,
 		RetentionPeriodDays: new(merged.Archive.RetentionPeriodDays),
+		Recovery:            v1.RecoveryModeOperator,
 	}
 }

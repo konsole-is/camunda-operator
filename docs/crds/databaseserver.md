@@ -108,13 +108,42 @@ Remove `spec.archive` and the open record closes at that moment. The list itself
 
 Ask for an archive again and the server opens a record of its own, starting at the first base backup of the new archive. `ArchiveReady` stays `False` until that backup completes, because the backups of the archive the server wrote before reach no point in the new one. The window between the two records lies inside no interval, so no restore can reach a point in it.
 
-A [PointInTimeRestore](pointintimerestore.md) needs the database at the requested point before it runs. Recover the server from this archive with the CloudNativePG recovery procedure, then create the `PointInTimeRestore`.
+A [PointInTimeRestore](pointintimerestore.md) reaches any point inside a recorded interval. See [Recovery](#recovery).
 
 ### Base backups are not the backup model
 
 The base backups belong to the archive. They are physical copies of the whole server. [BackupSchedule](backupschedule.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) take logical dumps instead, coordinated with the Camunda backup API, and they never see these base backups. A base backup produces no `LogicalBackupRDBMS` and shows in no backup list. Only a point-in-time recovery of the server reads one.
 
 Run both on one cluster. The logical backups give you a restore of the Camunda data. The archive gives you a restore of the server to a timestamp.
+
+## Recovery
+
+The server rolls itself back to any point that one of its archives holds. Its contract declares this with `pitr.recovery: operator`, so a [PointInTimeRestore](pointintimerestore.md) asks for the rollback itself and you prepare nothing.
+
+Ask for it by hand by writing `spec.recovery` on the published contract:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  recovery:
+    requestedBy: my-cluster-ns/my-restore
+    targetTime: "2026-08-20T14:30:00Z"
+  # ... the rest of your contract
+```
+
+The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseServerConfig](databaseserverconfig.md) documents the request and the three results.
+
+A rollback replaces the server. The operator builds a second CloudNativePG cluster, `my-db-r1`, from the archive that holds `targetTime`. It points the contract at that cluster once CloudNativePG reports it healthy, and it then removes the old cluster and its data volumes. Every consumer of the contract reads the new `host` and the new superuser Secret, `my-db-r1-superuser`. A `CamundaCluster` rolls its pods to pick them up.
+
+The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback.
+
+**CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. Run one server per cluster.
+
+A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold.
 
 ## Authentication to the bucket
 
@@ -208,6 +237,11 @@ status:
     history:
       - serverName: my-db
         from: "2026-08-01T10:00:00Z"
+  recovery:
+    requestedBy: my-cluster-ns/my-restore
+    targetTime: "2026-08-20T14:30:00Z"
+    cluster: my-db-r1
+    completedAt: "2026-08-20T15:02:11Z"
   volumes:
     - name: my-db-1
       capacity: 256Gi
@@ -250,6 +284,8 @@ status:
 | `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |
 
 `status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
+
+`status.recovery` is the rollback request the server works on now, or the last one it answered. `cluster` is the CloudNativePG cluster it builds, and it is empty for a request the server refused. `completedAt` is unset while the rollback runs. The answer itself is on the contract, in `spec.pitr.lastRecovery`.
 
 ## Spec reference
 

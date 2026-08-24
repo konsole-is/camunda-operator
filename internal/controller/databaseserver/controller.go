@@ -93,8 +93,9 @@ func (c serverComponents) all() []*component.Component {
 // the namespace of the CR.
 type DatabaseServerReconciler struct {
 	client.Client
-	// APIReader reads without the cache. The bucket credentials Secret must be
-	// read live.
+	// APIReader reads without the cache. The server itself and the bucket
+	// credentials Secret are both read live: the recovery keys its steps on
+	// status.recovery, and the Secret is watched with metadata only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// EventRecorder publishes the component lifecycle events. SetupWithManager
@@ -144,8 +145,12 @@ type DatabaseServerReconciler struct {
 // persists them together with the observed cluster, identifier, archive
 // history, and volumes.
 func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+	// Live, not cached. A recovery is a state machine whose marker is
+	// status.recovery: each step reads it to tell what the last one did, and
+	// the steps create and delete CloudNativePG clusters. A stale read of that
+	// marker re-enters a step whose side effect already ran.
 	var server v1.DatabaseServer
-	if err := r.Get(ctx, req.NamespacedName, &server); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &server); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -180,6 +185,14 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// Before the hold below: a suspended server refuses a recovery request,
+	// and a request nobody answers holds whoever asked for good.
+	recovering, err := r.reconcileRecovery(ctx, &server, resolved)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if resolved.holdForSuspension {
 		return ctrl.Result{}, nil
 	}
@@ -217,8 +230,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Nothing reports that the superuser Secret appeared: CloudNativePG owns
 	// it, and this controller watches only what it owns itself. Every other
-	// condition of this CR is backed by a watch.
-	if !meta.IsStatusConditionTrue(server.Status.Conditions, components.ConditionContract) {
+	// condition of this CR is backed by a watch. A running recovery waits on
+	// that same Secret, one cluster further on.
+	if recovering || !meta.IsStatusConditionTrue(server.Status.Conditions, components.ConditionContract) {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

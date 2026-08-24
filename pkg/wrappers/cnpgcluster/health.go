@@ -53,14 +53,14 @@ var failingPhases = map[string]struct{}{
 func DefaultConvergingStatusHandler(
 	op concepts.ConvergingOperation, cluster *cnpgv1.Cluster,
 ) (concepts.AliveStatusWithReason, error) {
-	if _, failing := failingPhases[cluster.Status.Phase]; failing {
+	if phase, failing := Failing(cluster); failing {
 		return concepts.AliveStatusWithReason{
 			Status: concepts.AliveConvergingStatusFailing,
-			Reason: fmt.Sprintf("CloudNativePG reports %q", cluster.Status.Phase),
+			Reason: fmt.Sprintf("CloudNativePG reports %q", phase),
 		}, nil
 	}
 
-	if converged(cluster) {
+	if Converged(cluster) {
 		return concepts.AliveStatusWithReason{
 			Status: concepts.AliveConvergingStatusHealthy,
 			Reason: fmt.Sprintf("%d of %d instances are ready", cluster.Status.ReadyInstances, cluster.Spec.Instances),
@@ -83,14 +83,25 @@ func DefaultConvergingStatusHandler(
 	}, nil
 }
 
-// converged reports whether CloudNativePG holds the Cluster in the state the
+// Converged reports whether CloudNativePG holds the Cluster in the state the
 // spec asks for. The converging handler and the grace handler share it, so the
 // two can never disagree about which states are healthy. The count has to
 // match exactly, because a scale-down reports more ready pods than the spec
 // wants.
-func converged(cluster *cnpgv1.Cluster) bool {
+func Converged(cluster *cnpgv1.Cluster) bool {
 	return cluster.Status.Phase == cnpgv1.PhaseHealthy &&
 		cluster.Status.ReadyInstances == cluster.Spec.Instances
+}
+
+// Failing reports whether CloudNativePG holds the Cluster in a phase it no
+// longer converges out of on its own, and names that phase. A caller that
+// drives a Cluster outside a component, for example the one a recovery
+// builds, grades it with this and with Converged, so its reading of a phase
+// is the reading of the status handlers here.
+func Failing(cluster *cnpgv1.Cluster) (string, bool) {
+	_, failing := failingPhases[cluster.Status.Phase]
+
+	return cluster.Status.Phase, failing
 }
 
 // phaseText renders a phase for a status reason. An empty phase means
@@ -112,7 +123,7 @@ func DefaultGraceStatusHandler(cluster *cnpgv1.Cluster) (concepts.GraceStatusWit
 	ready := cluster.Status.ReadyInstances
 
 	switch {
-	case converged(cluster):
+	case Converged(cluster):
 		return concepts.GraceStatusWithReason{
 			Status: concepts.GraceStatusHealthy,
 			Reason: fmt.Sprintf("%d of %d instances are ready", ready, cluster.Spec.Instances),

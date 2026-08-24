@@ -272,7 +272,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		pitr, found, err := unstructured.NestedMap(raw.Object, "spec", "pitr")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
-		Expect(pitr).To(Equal(map[string]any{"enabled": false}))
+		Expect(pitr).To(Equal(map[string]any{"enabled": false, "recovery": "external"}))
 
 		// A server with no archive block has nothing to archive, so the
 		// condition reports the component as disabled rather than failing.
