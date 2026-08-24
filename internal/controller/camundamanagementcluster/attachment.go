@@ -69,19 +69,14 @@ func (r *Reconciler) attachedClusters(
 	clusters []v1.CamundaCluster,
 	namespaces map[string]bool,
 ) ([]components.AttachedCluster, []v1.AttachedClusterStatus, error) {
-	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
+	selected, err := selectedClusters(mc, clusters, namespaces)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading spec.clusterSelector: %w", err)
+		return nil, nil, err
 	}
 
 	var attached []components.AttachedCluster
 	var rows []v1.AttachedClusterStatus
-	for i := range clusters {
-		cluster := &clusters[i]
-		if !inNamespaces(cluster, namespaces) || !selector.Matches(k8slabels.Set(cluster.Labels)) {
-			continue
-		}
-
+	for _, cluster := range selected {
 		row, err := r.attach(ctx, mc, cluster, &attached)
 		if err != nil {
 			return nil, nil, err
@@ -90,6 +85,30 @@ func (r *Reconciler) attachedClusters(
 	}
 
 	return attached, rows, nil
+}
+
+// selectedClusters returns the clusters that spec.clusterSelector and the
+// namespace bound both match, in the order of clusters. The pointers address
+// clusters itself.
+func selectedClusters(
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+	namespaces map[string]bool,
+) ([]*v1.CamundaCluster, error) {
+	selector, err := metav1.LabelSelectorAsSelector(mc.Spec.ClusterSelector)
+	if err != nil {
+		return nil, fmt.Errorf("reading spec.clusterSelector: %w", err)
+	}
+
+	var selected []*v1.CamundaCluster
+	for i := range clusters {
+		cluster := &clusters[i]
+		if inNamespaces(cluster, namespaces) && selector.Matches(k8slabels.Set(cluster.Labels)) {
+			selected = append(selected, cluster)
+		}
+	}
+
+	return selected, nil
 }
 
 // releaseClaims withdraws the claim of mc from every cluster that the selector

@@ -11,16 +11,24 @@ concurrency:
 
 jobs:
   test-e2e:
-    name: Camunda ${{ matrix.minor }}
+    name: Camunda ${{ matrix.minor }}${{ matrix.suffix }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # One job per supported Camunda minor. Each entry names a file
-      # test/e2e/matrix/<minor>.env that holds the image versions of that
-      # minor and the spec flows that run for it. Adopting a new minor adds
-      # the file and the entry.
+      # Two jobs per supported Camunda minor, so the management plane flows
+      # and the rest of the suite get a verdict each. Both entries of a pair
+      # name the same file test/e2e/matrix/<minor>.env, which holds the image
+      # versions of the minor. Each entry holds the Ginkgo label filter that
+      # selects its flows. Adopting a new minor adds the file and a pair of
+      # entries.
       matrix:
-        minor: ["8.9"]
+        include:
+          - minor: "8.9"
+            suffix: ""
+            labels: "!management-keycloak && !management-oidc"
+          - minor: "8.9"
+            suffix: " management"
+            labels: "management-keycloak || management-oidc"
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
@@ -47,4 +55,4 @@ jobs:
       - name: Running Test e2e
         run: |
           make tidy
-          make test-e2e E2E_CAMUNDA_MINOR=${{ matrix.minor }}
+          make test-e2e E2E_CAMUNDA_MINOR=${{ matrix.minor }} E2E_LABEL_FILTER='${{ matrix.labels }}'

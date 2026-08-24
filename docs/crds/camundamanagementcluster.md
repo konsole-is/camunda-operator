@@ -88,7 +88,7 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`externalUrl` is the address a browser reaches Keycloak at, and it must carry the `/auth` path. Camunda publishes its Keycloak build under that path, and every token that the realm issues names this URL as its issuer. The Identity pods must reach it too.
+`externalUrl` is the address a browser reaches Keycloak at, and it must carry the `/auth` path. Camunda publishes its Keycloak build under that path, and every token that the realm issues names this URL as its issuer. The Identity pods must reach it too. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment.
 
 `version` is the Keycloak version. The operator supports `26.0.0` and later, and below `27.0.0`. Camunda 8.9 supports Keycloak 26 only, as its [supported environments](https://docs.camunda.io/docs/reference/supported-environments/) page states.
 
@@ -125,7 +125,9 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. `realm` defaults to `camunda-platform`.
+`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment.
+
+`realm` defaults to `camunda-platform`. The realm lands in the issuer, the token, and the JWKS path that Management Identity builds. It holds letters, digits, dots, hyphens, and underscores only, and it starts and ends with a letter or a digit.
 
 `adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret can live in any namespace. A pod reads a Secret of its own namespace only, so the operator copies it into the namespace of this resource.
 
@@ -208,11 +210,11 @@ Management Identity needs a PostgreSQL database of its own. Each component that 
 
 `spec.identity.admin` names the person who signs in first and grants the rest. Management Identity reads it on its first start only and stores the result in its database.
 
-In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you deploy Web Modeler, set `email` too, because Web Modeler needs an address for every person who signs in. `passwordSecretRef` names a password of your own. Without it the operator generates one into `my-management-identity-admin`.
+In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you also set `spec.webModeler`, `email` is required. Web Modeler needs an address for every person who signs in, and the API server refuses the resource without one. `passwordSecretRef` names a password of your own. Without it the operator generates one into `my-management-identity-admin`.
 
 A later change to `username` does not rename the first user. Management Identity creates a second one, and the first one keeps its access.
 
-In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. This pair is fixed once Management Identity has started. A later change reports `IdentityReady` and `Ready` with reason `ImmutableAfterStart`, and the message names the recorded value and the value you asked for:
+In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. The operator records the pair as `<claimName>=<claimValue>`, so `claimName` holds no equals sign. This pair is fixed once Management Identity has started. A later change reports `IdentityReady` and `Ready` with reason `ImmutableAfterStart`, and the message names the recorded value and the value you asked for:
 
 ```yaml
 status:
@@ -557,6 +559,7 @@ spec:
       # With Management Identity 8.9, stay below 26.7.0. See "The operator runs Keycloak".
       version: "26.6.4"
       # string. Required. The URL a browser reaches Keycloak at, including the /auth path. It is the issuer of every token.
+      # It carries no query and no fragment.
       externalUrl: "https://camunda.example.com/auth"
       # string. Required. Name of the DatabaseConfig of the Keycloak database, in this namespace.
       databaseConfigRef: "my-keycloak-db"
@@ -570,8 +573,10 @@ spec:
     # object. Optional. Connect to a Keycloak that you run.
     externalKeycloak:
       # string. Required. URL of Keycloak, including the /auth path when it has one. It must resolve from inside the Kubernetes cluster.
+      # It carries no query and no fragment.
       url: "https://keycloak.example.com/auth"
       # string. Optional, default: camunda-platform. The realm that Management Identity uses and creates.
+      # Letters, digits, dots, hyphens, and underscores only. It starts and ends with a letter or a digit.
       realm: "camunda-platform"
       # object. Required. Secret with the Keycloak administrator credentials.
       adminCredentialsSecretRef:
@@ -596,6 +601,7 @@ spec:
     # object. Required. The first administrator of the management plane. Read on the first start only.
     admin:
       # string. Required in the oidc mode, forbidden in the keycloak modes. Token claim that identifies the administrator.
+      # It holds no equals sign.
       claimName: "oid"
       # string. Required with claimName. The value the claim carries for the administrator.
       claimValue: "8f1c...e2"
@@ -606,7 +612,8 @@ spec:
         name: "my-identity-admin"
         namespace: "my-management-ns"
         key: "password"
-      # string. Optional. Email address of the first Keycloak user. Web Modeler needs one for every person who signs in.
+      # string. Optional, required with spec.webModeler in the keycloak modes. Email address of the first Keycloak user.
+      # Web Modeler needs one for every person who signs in.
       email: "admin@example.com"
     # integer. Optional, default: 1. Number of Management Identity replicas.
     replicas: 1
@@ -687,8 +694,12 @@ The API server refuses an apply that breaks one of these:
 - `spec.identity.admin` sets `claimName` and `claimValue` together, or `username`, never both pairs.
 - `spec.identity.admin.claimName` is required in the `oidc` mode. `spec.identity.admin.username` is required in the two Keycloak modes.
 - `spec.identity.admin.passwordSecretRef` is forbidden in the `oidc` mode.
+- `spec.identity.admin.email` is required when `spec.webModeler` is set in one of the two Keycloak modes.
+- `spec.identity.admin.claimName` holds no equals sign.
 - `spec.optimize` is required in the two Keycloak modes and forbidden in the `oidc` mode.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
+- `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
+- `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
 

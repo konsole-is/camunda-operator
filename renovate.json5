@@ -149,7 +149,7 @@
       // The Camunda images of the 8.9 line. Semver reads 8.10.0-alpha1 and
       // 8.9.9992-SNAPSHOT as prereleases, which ignoreUnstable drops. The
       // Docker versioning would not. A new supported minor gets a file
-      // test/e2e/matrix/<minor>.env, a matrix entry in
+      // test/e2e/matrix/<minor>.env, a pair of matrix entries in
       // .github/workflows/test-e2e.yml, and a rule like this one with its own
       // bound.
       matchFileNames: ["test/e2e/matrix/8.9.env"],
