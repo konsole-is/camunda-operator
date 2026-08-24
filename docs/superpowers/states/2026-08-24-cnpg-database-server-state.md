@@ -32,7 +32,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | #234 | chore/cnpg-database-server--cnpg-wrappers | .claude/worktrees/cnpg-database-server/.claude/worktrees/cnpg-wrappers | #238 → feat/cnpg-database-server | self-merged (beee38d) |
 | #235 | feat/cnpg-database-server--database-server | .claude/worktrees/cnpg-database-server/.claude/worktrees/database-server | #241 → feat/cnpg-database-server | self-merged (3b6aef2) |
 | #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | #242 → feat/cnpg-database-server | self-merged (6194813) |
-| #237 | ci/cnpg-database-server--e2e | .claude/worktrees/cnpg-database-server/.claude/worktrees/e2e | → feat/cnpg-database-server | in-progress |
+| #237 | ci/cnpg-database-server--e2e | .claude/worktrees/cnpg-database-server/.claude/worktrees/e2e | #244 → feat/cnpg-database-server | in-progress (head 6a4bcf3, E2E CI running) |
 | #243 | ci/cnpg-database-server--split-e2e-by-backend | .claude/worktrees/cnpg-database-server/.claude/worktrees/split-e2e-by-backend | → feat/cnpg-database-server | not-started |
 
 ## Contracts
@@ -57,9 +57,11 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 ## Pending snapshot
 
-1. Phase 1 done (#238 beee38d, #239 2d812a8; wave checkpoint clean at 690188a). #235 dispatched into `.claude/worktrees/database-server` on 2026-08-24; when it reports: Copilot loop to clean, spec pass then quality pass (opus reviewers, read-only), self-merge, `gh issue close 235`, remove the sub-worktree, update this table.
-2. Then #236 (`feat/cnpg-database-server--contract-recovery`), then #237 (`ci/cnpg-database-server--e2e`), then #243 (`ci/cnpg-database-server--split-e2e-by-backend`), each branched from the feature branch after the previous merge, same ripening.
-3. `feature-dev-workflow:reviewing-feature-progress` on the feature worktree after #237, all gates, then report ready for the user's integration PR. Do not open or merge the integration PR.
+Session ended 2026-08-24 ~17:45Z with #237 mid-CI. Nothing is waiting on a human except the integration PR at the very end.
+
+1. **#237 / PR #244** (`ci/cnpg-database-server--e2e`, worktree `.claude/worktrees/e2e`, head `6a4bcf3`, six commits, pushed). The implementer's fourth iteration is on CI: `E2E Tests` in progress on 6a4bcf3 (the run on b8542e8 failed its e2e; the fix-forward commits are `125e54f` "keep a part the spec switched off out of Ready" and `6a4bcf3` "keep CloudNativePG off the jobs that run no DatabaseServer"). Next: read the result of that run (`gh pr checks 244`; on failure read the `Camunda 8.9` job log and root-cause, never re-run to green); when green, the normal ripening — Copilot loop (request with a watermark; this repo does not auto-review on push; if Copilot goes silent for two 30-minute waits, stop and ask the user, who chose "merge on CI green" for #242 in that situation), spec pass then quality pass (opus, read-only, mutation-checked fixes), self-merge, `gh issue close 237`, remove the sub-worktree, update this table. Note `125e54f` touches the `databaseserver` controller (Ready aggregation of a switched-off part) — the spec pass must check it against #235's contract.
+2. **#243** (`ci/cnpg-database-server--split-e2e-by-backend`): branch after #237 merges; PR 6 in the plan. Labels per job are in the issue body; #244's `6a4bcf3` already keeps CNPG off jobs without a DatabaseServer, so read it before designing the split.
+3. `feature-dev-workflow:reviewing-feature-progress` on the feature worktree after #243 merges (all gates via the scratch `gates.sh` pattern: setup-envtest, make test, api test, lint, lint-renovate, manifests + clean porcelain, vet e2e, mkdocs), then report ready for the user's integration PR `feat/cnpg-database-server → main` with `Closes #127`. **Do not open or merge the integration PR; it is the user's.**
 
 ## Resume checklist
 
