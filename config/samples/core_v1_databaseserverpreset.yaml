@@ -1,0 +1,15 @@
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerPreset
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: databaseserverpreset-sample
+spec:
+  server:
+    version: "17"
+    instances: 2
+    storageSize: "20Gi"
+    monitoring:
+      podMonitor:
+        enabled: true

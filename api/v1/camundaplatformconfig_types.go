@@ -256,6 +256,12 @@ type ImagesSpec struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$`
 	// +optional
 	Keycloak string `json:"keycloak,omitempty"`
+	// Postgres is the image of the PostgreSQL that a DatabaseServer runs.
+	// Defaults to ghcr.io/cloudnative-pg/postgresql. The tag is the major
+	// version of the server, so a replacement must publish the same tags.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$`
+	// +optional
+	Postgres string `json:"postgres,omitempty"`
 }
 
 // Method returns the effective authentication method: basic when auth or its

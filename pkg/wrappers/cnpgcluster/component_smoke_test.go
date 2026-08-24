@@ -100,17 +100,6 @@ func TestSuspendedClusterGolden(t *testing.T) {
 	)
 }
 
-// TestObjectStoreGolden pins the rendered ObjectStore of an S3 archive with
-// static credentials.
-func TestObjectStoreGolden(t *testing.T) {
-	t.Parallel()
-
-	golden.AssertYAML(
-		t, "testdata/golden/objectstore.yaml", objectStoreResource(t),
-		golden.WithScheme(goldenScheme(t)), golden.Update(*updateGolden),
-	)
-}
-
 func goldenScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 

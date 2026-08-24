@@ -141,6 +141,7 @@ func TestResolveOverridePerImage(t *testing.T) {
 		{WebModelerRestapi, v1.ImagesSpec{WebModelerRestapi: "mirror.example.com/restapi"}},
 		{WebModelerWebsockets, v1.ImagesSpec{WebModelerWebsockets: "mirror.example.com/websockets"}},
 		{Keycloak, v1.ImagesSpec{Keycloak: "mirror.example.com/keycloak"}},
+		{Postgres, v1.ImagesSpec{Postgres: "mirror.example.com/postgresql"}},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.image), func(t *testing.T) {
@@ -165,7 +166,7 @@ func TestResolveOverrideTrailingSlash(t *testing.T) {
 func TestEveryImageHasARepository(t *testing.T) {
 	all := []Image{
 		Camunda, Connectors, Optimize, Identity,
-		Console, WebModelerRestapi, WebModelerWebsockets, Keycloak,
+		Console, WebModelerRestapi, WebModelerWebsockets, Keycloak, Postgres,
 	}
 	assert.Len(t, repositories, len(all))
 	for _, img := range all {

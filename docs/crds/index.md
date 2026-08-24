@@ -17,6 +17,8 @@ Each page opens with what the kind is and a minimal manifest, then covers one to
 | --- | --- | --- |
 | [ElasticsearchCluster](elasticsearchcluster.md) | Namespaced | An Elasticsearch cluster run by ECK, published as a `SecondaryStorageConfig`. |
 | [ElasticsearchClusterPreset](elasticsearchclusterpreset.md) | Cluster | A baseline spec that Elasticsearch clusters inherit. No controller. |
+| [DatabaseServer](databaseserver.md) | Namespaced | A PostgreSQL server run by CloudNativePG, archived to a bucket, published as a `DatabaseServerConfig`. |
+| [DatabaseServerPreset](databaseserverpreset.md) | Cluster | A baseline spec that database servers inherit. No controller. |
 | [Database](database.md) | Namespaced | A logical database and its users on an existing PostgreSQL server, published as a `DatabaseConfig`. |
 
 ## Contracts
@@ -69,6 +71,8 @@ graph LR
     PFC[CamundaPlatformConfig]
     ESCP[ElasticsearchClusterPreset]
     ESC[ElasticsearchCluster]
+    DBS[DatabaseServer]
+    DBSP[DatabaseServerPreset]
     DB[Database]
     DBSC[DatabaseServerConfig]
     DBC[DatabaseConfig]
@@ -87,6 +91,9 @@ graph LR
     ESC -.->|presetRef| ESCP
     ESC -->|creates| SSC
     ESC -.->|snapshotStorageRef| OSC
+    DBS -.->|presetRef| DBSP
+    DBS -.->|archive.objectStorageRef| OSC
+    DBS -->|creates| DBSC
     DB -->|creates| DBC
     DB -->|"creates (optional)"| SSC
     DB -.->|serverRef| DBSC

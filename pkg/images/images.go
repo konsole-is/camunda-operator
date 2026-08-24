@@ -48,6 +48,8 @@ const (
 	WebModelerWebsockets Image = "web-modeler-websockets"
 	// Keycloak is the Camunda build of Keycloak.
 	Keycloak Image = "keycloak"
+	// Postgres is the PostgreSQL that a DatabaseServer runs.
+	Postgres Image = "postgres"
 )
 
 // keycloakTagPrefix is what Camunda publishes its Keycloak build under. The
@@ -56,8 +58,9 @@ const (
 const keycloakTagPrefix = "quay-optimized-"
 
 // repositories holds the default repository of each image. The sources are
-// camunda.Dockerfile for the unified image and the values.yaml of the 8.9
-// Helm chart for the rest.
+// camunda.Dockerfile for the unified image, the values.yaml of the 8.9 Helm
+// chart for the other Camunda images, and the CloudNativePG image catalog for
+// PostgreSQL.
 var repositories = map[Image]string{
 	Camunda:              "camunda/camunda",
 	Connectors:           "camunda/connectors-bundle",
@@ -67,6 +70,7 @@ var repositories = map[Image]string{
 	WebModelerRestapi:    "camunda/web-modeler-restapi",
 	WebModelerWebsockets: "camunda/web-modeler-websockets",
 	Keycloak:             "camunda/keycloak",
+	Postgres:             "ghcr.io/cloudnative-pg/postgresql",
 }
 
 // hubRepositories holds the repository that replaces the default from 8.10
@@ -130,6 +134,8 @@ func override(p *v1.CamundaPlatformConfigSpec, img Image) string {
 		return p.Images.WebModelerWebsockets
 	case Keycloak:
 		return p.Images.Keycloak
+	case Postgres:
+		return p.Images.Postgres
 	}
 
 	return ""

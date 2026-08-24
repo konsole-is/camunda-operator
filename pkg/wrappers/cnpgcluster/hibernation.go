@@ -118,9 +118,10 @@ func DefaultSuspensionStatusHandler(cluster *cnpgv1.Cluster) (concepts.Suspensio
 
 // hibernationText says where the hibernation stands, for a status reason. It
 // carries the reason and the message of the condition, because a False
-// condition covers two different states: CloudNativePG is still deleting the
-// pods, and CloudNativePG has deferred the hibernation because the Cluster is
-// not healthy. Only its own words separate them.
+// condition covers several states: CloudNativePG has deferred the hibernation
+// until the Cluster is healthy (WaitingForHealthy), it is waiting for the pods
+// to go (WaitingPodsDeletion), or it is deleting them (DeletingPods). Only its
+// own words separate them.
 func hibernationText(condition *metav1.Condition) string {
 	if condition == nil {
 		return "CloudNativePG has not reported the hibernation condition yet"
