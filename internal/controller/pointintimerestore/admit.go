@@ -176,7 +176,7 @@ func (r *Reconciler) admit(
 	// A contract that rolls its own server back is asked to do so first. A
 	// contract that declares external is rolled back before the restore was
 	// created, and the database is read as it stands.
-	if operatorRecovers(resolved.server) {
+	if resolved.server.OperatorRecovers() {
 		pitr.Status.Phase = v1.PointInTimeRestoreRestoringDatabase
 		r.progressing(pitr, fmt.Sprintf(
 			"DatabaseServerConfig %s rolls its own server back. The restore asks it for %s",
@@ -200,7 +200,7 @@ func (r *Reconciler) admit(
 //
 // pin says how the chain of this look is compared against the chain the
 // restore pinned. Only the phase that asked the server to roll itself back
-// passes pinAcrossRecovery; every other caller binds every field.
+// passes pinAcrossRecovery. Every other caller binds every field.
 //
 // The reads are live. A stale suspend flag or a stale storage reference lets
 // the restore delete the volumes of a cluster that moved on. The suspension

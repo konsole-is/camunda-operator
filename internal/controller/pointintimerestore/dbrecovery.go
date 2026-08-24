@@ -71,7 +71,7 @@ func (r *Reconciler) enterDatabaseRecovery(
 	}
 
 	contract := resolved.server
-	if !operatorRecovers(contract) {
+	if !contract.OperatorRecovers() {
 		return r.holdRecovering(pitr, &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
@@ -99,19 +99,11 @@ func (r *Reconciler) enterDatabaseRecovery(
 	return restore.Outcome{Wait: r.opts.PollInterval}, nil
 }
 
-// operatorRecovers reports whether the contract declares that whoever
-// publishes it rolls the server back on request.
-func operatorRecovers(server *v1.DatabaseServerConfig) bool {
-	return server.Spec.PITR != nil && server.Spec.PITR.Recovery == v1.RecoveryModeOperator
-}
-
 // recoveryRequest renders the request that this restore makes: the identity of
 // the restore, its namespace and name, and spec.timestamp in RFC 3339 UTC.
 //
 // The zone is explicit, because PostgreSQL reads a timestamp without one as
-// the local time of the server. The fraction is kept: a point rendered to the
-// whole second lies up to a second before the point the user asked for, and
-// the server rolls back to what the request says.
+// the local time of the server.
 //
 // The uid is what makes the request this restore's own. A restore that is
 // deleted and created again under one name asks for the same point on behalf

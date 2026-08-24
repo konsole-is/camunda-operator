@@ -259,8 +259,8 @@ func recordPublishedOutcome(
 	// The contract is the record of which cluster the server runs from. A
 	// recovery that finished and lost its status write left status.cluster
 	// naming a cluster that is gone, and the cleanup then reads the recovered
-	// cluster as the one to remove. The endpoint says otherwise, so
-	// the endpoint is what status is put back from.
+	// cluster as the one to remove. The endpoint says otherwise, so the
+	// endpoint is what status is put back from.
 	if published.Result == v1.RecoveryResultCompleted {
 		if current := components.ClusterFromReadWriteHost(server, contract.Spec.Host); current != "" {
 			server.Status.Cluster = current

@@ -197,10 +197,8 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 
 		expectRecovering(pitr)
 
-		// A timestamp is stored to the second, so the point the restore asks
-		// for is the point the resource holds, whatever was written into it.
-		// Rendering a fraction that the spec does not carry asks for a point
-		// nobody chose.
+		// The request carries the point the resource holds, whatever was
+		// written into it.
 		stored := readRestore(pitr).Spec.Timestamp
 		request := expectRecoveryRequest(w)
 		Expect(request.TargetTime).To(Equal(stored.UTC().Format(time.RFC3339Nano)))
@@ -286,10 +284,6 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		// A Ready that answers the spec of before the endpoint moved says
 		// nothing about the server the contract names now.
 		publishStaleContractReady(w, worldSystemIdentifier)
-		Consistently(func() v1.PointInTimeRestorePhase {
-			return readRestore(pitr).Status.Phase
-		}, "2s", interval).Should(Equal(v1.PointInTimeRestoreRestoringDatabase))
-
 		Consistently(func() v1.PointInTimeRestorePhase {
 			return readRestore(pitr).Status.Phase
 		}, "2s", interval).Should(Equal(v1.PointInTimeRestoreRestoringDatabase))
