@@ -37,6 +37,10 @@ import (
 
 // updateGolden refreshes the golden manifests with the rendered output:
 // go test ./pkg/wrappers/cnpgcluster/ -run Golden -update-golden
+//
+// The Cluster snapshots carry the empty status sub-structs that the typed
+// object always serializes. They are not desired state, and a bump of
+// github.com/cloudnative-pg/api can churn them.
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
 // TestWrappersAssembleIntoComponent proves the four generated wrappers

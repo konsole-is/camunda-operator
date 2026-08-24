@@ -29,11 +29,14 @@ import (
 )
 
 const (
+	// keycloakCRDDir holds the vendored CRD of the Keycloak Operator. The
+	// project publishes no Go module for its CRDs.
+	keycloakCRDDir = "internal/testenv/crds/keycloak"
 	// keycloakCRDVersionFile holds the Keycloak Operator release that
 	// internal/testenv vendors the Keycloak CRD from. The e2e suite installs
 	// that release when the matrix names no Keycloak, so the envtest suites
 	// and the kind suite agree on the schema.
-	keycloakCRDVersionFile = "internal/testenv/crds/keycloak/VERSION"
+	keycloakCRDVersionFile = keycloakCRDDir + "/VERSION"
 	// envKeycloakVersion is the Keycloak release that the management plane
 	// flow runs, from the matrix entry of the run. The suite installs the
 	// Keycloak Operator of the same release: the operator supports the
@@ -73,6 +76,13 @@ var keycloakOperatorCRDs = []keycloakOperatorCRD{
 type keycloakOperatorCRD struct {
 	file     string
 	required bool
+}
+
+// KeycloakCRDPath returns the directory of the vendored Keycloak CRD, for
+// envtest to install. The VERSION file beside it names the Keycloak Operator
+// release it comes from.
+func KeycloakCRDPath() (string, error) {
+	return vendoredCRDPath(keycloakCRDDir)
 }
 
 // KeycloakOperatorVersion returns the Keycloak Operator release that the

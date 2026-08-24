@@ -46,7 +46,7 @@ func TestSchemeRecognizesEveryKindTheManagerReconciles(t *testing.T) {
 		keycloak.GroupVersion.WithKind("Keycloak"),
 		cnpgv1.SchemeGroupVersion.WithKind(cnpgv1.ClusterKind),
 		cnpgv1.SchemeGroupVersion.WithKind("ScheduledBackup"),
-		cnpgv1.SchemeGroupVersion.WithKind("Backup"),
+		cnpgv1.SchemeGroupVersion.WithKind(cnpgv1.BackupKind),
 		barmanobjectstore.GroupVersion.WithKind("ObjectStore"),
 	} {
 		assert.True(t, scheme.Recognizes(gvk), "scheme does not recognize %s", gvk)
