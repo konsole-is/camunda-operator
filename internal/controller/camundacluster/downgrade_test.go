@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -245,4 +246,106 @@ func TestRefuseDowngrade(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestRecordRefusedDowngrade(t *testing.T) {
+	t.Parallel()
+
+	refused := metav1.Condition{
+		Type:    v1.ConditionReady,
+		Status:  metav1.ConditionFalse,
+		Reason:  v1.ReasonVersionDowngradeRefused,
+		Message: "the effective version 8.9.8 is below the running version 8.9.9",
+	}
+	other := refused
+	other.Message = "the effective version 8.9.7 is below the running version 8.9.9"
+
+	tests := []struct {
+		name string
+		// record runs the refusals of the case against r and the clusters it
+		// builds. Every cluster it passes stands for the copy that one
+		// reconcile received.
+		record func(r *CamundaClusterReconciler)
+		// want is the number of events that must reach the recorder.
+		want int
+	}{
+		{
+			name: "the first refusal is recorded",
+			record: func(r *CamundaClusterReconciler) {
+				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+			},
+			want: 1,
+		},
+		{
+			name: "a reconcile that reads the cluster before the refusal lands records nothing",
+			record: func(r *CamundaClusterReconciler) {
+				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+			},
+			want: 1,
+		},
+		{
+			name: "the Ready condition stops a manager that starts with an empty memo",
+			record: func(r *CamundaClusterReconciler) {
+				r.recordRefusedDowngrade(refusedCluster(&refused), refused)
+			},
+			want: 0,
+		},
+		{
+			name: "another refusal of the same cluster is recorded",
+			record: func(r *CamundaClusterReconciler) {
+				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+				r.recordRefusedDowngrade(refusedCluster(nil), other)
+			},
+			want: 2,
+		},
+		{
+			name: "a cluster recreated under the same name is recorded",
+			record: func(r *CamundaClusterReconciler) {
+				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+				recreated := refusedCluster(nil)
+				recreated.UID = "second"
+				r.recordRefusedDowngrade(recreated, refused)
+			},
+			want: 2,
+		},
+		{
+			name: "a refusal that came back after the cluster ran is recorded",
+			record: func(r *CamundaClusterReconciler) {
+				cluster := refusedCluster(nil)
+				r.recordRefusedDowngrade(cluster, refused)
+				r.refusals.forget(client.ObjectKeyFromObject(cluster))
+				r.recordRefusedDowngrade(cluster, refused)
+			},
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := events.NewFakeRecorder(8)
+			r := &CamundaClusterReconciler{EventRecorder: recorder}
+
+			tt.record(r)
+
+			assert.Equal(t, tt.want, len(recorder.Events))
+		})
+	}
+}
+
+// refusedCluster returns the cluster that one reconcile received, with ready
+// as its Ready condition. A nil ready stands for a copy that does not carry
+// the refusal that the reconcile before it staged.
+func refusedCluster(ready *metav1.Condition) *v1.CamundaCluster {
+	cluster := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns", UID: "first"},
+	}
+	if ready != nil {
+		cluster.Status.Conditions = []metav1.Condition{*ready}
+	}
+
+	return cluster
 }

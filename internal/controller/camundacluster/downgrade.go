@@ -19,10 +19,12 @@ package camundacluster
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -39,6 +41,23 @@ const msgVersionDowngradeRefused = "the effective version %s is below the runnin
 	"the data of a backup taken with it, restore that backup after that: the restore sets the " +
 	"version itself, and it cannot start while this refusal stands. To downgrade on purpose over " +
 	"the data the brokers have, set the annotation %s=%q on the cluster"
+
+// refusalMemo remembers the downgrade refusal that the controller last
+// recorded an event for, one entry per cluster. The cluster that a reconcile
+// receives cannot answer that on its own. Its Ready condition comes from a
+// cache that can be older than the last status write.
+type refusalMemo struct {
+	mu      sync.Mutex
+	entries map[client.ObjectKey]refusalEntry
+}
+
+// refusalEntry is what the memo holds for one cluster. The UID is part of the
+// entry. A cluster recreated under the name of a deleted one therefore starts
+// with no recorded refusal.
+type refusalEntry struct {
+	uid     types.UID
+	message string
+}
 
 // consumeDowngradeSanction removes the downgrade annotation from cluster once
 // the brokers carry the version it names, and as soon as it names a version
@@ -97,13 +116,18 @@ func refuseDowngrade(
 	}
 }
 
-// recordRefusedDowngrade records the Warning event for refused unless the
-// Ready condition that cluster carries already holds this exact refusal. The
-// caller stages refused afterwards, so the next reconcile finds it and
-// records nothing.
+// recordRefusedDowngrade records the Warning event for refused, unless this
+// controller already recorded that refusal for cluster. The memo of the
+// recorded refusals answers that for one process. The Ready condition of
+// cluster answers it for the first reconcile after a restart, which begins
+// with an empty memo.
 func (r *CamundaClusterReconciler) recordRefusedDowngrade(cluster *v1.CamundaCluster, refused metav1.Condition) {
+	recorded := r.refusals.recorded(cluster, refused.Message)
+
 	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
-	if ready != nil && ready.Reason == refused.Reason && ready.Message == refused.Message {
+	stands := ready != nil && ready.Reason == refused.Reason && ready.Message == refused.Message
+
+	if recorded || stands {
 		return
 	}
 
@@ -116,4 +140,30 @@ func (r *CamundaClusterReconciler) recordRefusedDowngrade(cluster *v1.CamundaClu
 		"%s",
 		refused.Message,
 	)
+}
+
+// recorded stores message as the refusal of cluster and reports whether the
+// memo already held that exact message for it.
+func (m *refusalMemo) recorded(cluster *v1.CamundaCluster, message string) bool {
+	key := client.ObjectKeyFromObject(cluster)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.entries == nil {
+		m.entries = map[client.ObjectKey]refusalEntry{}
+	}
+
+	held := m.entries[key]
+	m.entries[key] = refusalEntry{uid: cluster.UID, message: message}
+
+	return held.uid == cluster.UID && held.message == message
+}
+
+// forget drops what the memo holds for key.
+func (m *refusalMemo) forget(key client.ObjectKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.entries, key)
 }

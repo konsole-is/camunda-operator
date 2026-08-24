@@ -79,6 +79,11 @@ type CamundaClusterReconciler struct {
 	// during a password rotation. Nil means components.RESTEndpoint; tests
 	// point it at a fake.
 	RESTEndpoint func(cluster *v1.CamundaCluster, e components.Effective) string
+
+	// refusals remembers the downgrade refusal that the controller recorded
+	// for each cluster, so it records the Warning once and not once per
+	// reconcile.
+	refusals refusalMemo
 }
 
 // concurrentReconciles bounds the parallel reconciles. A rotation and an
@@ -151,6 +156,18 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // persists them together.
 func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
+	// A reconcile that does not refuse drops the cluster out of the memo of
+	// the recorded refusals. A refusal that comes back is then recorded
+	// again, and a deleted cluster leaves nothing behind. The staged Ready
+	// condition cannot stand in for this flag: a flush that conflicts drops
+	// it.
+	refusing := false
+	defer func() {
+		if !refusing {
+			r.refusals.forget(req.NamespacedName)
+		}
+	}()
+
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -227,6 +244,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A refused downgrade re-enqueues through the watches on the cluster, the
 	// preset, and the owned StatefulSet, so no timer is needed.
 	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
+		refusing = true
 		refused := conditions.Failed(&cluster, failure)
 		r.recordRefusedDowngrade(&cluster, refused)
 		conditions.Stage(&cluster, refused)
