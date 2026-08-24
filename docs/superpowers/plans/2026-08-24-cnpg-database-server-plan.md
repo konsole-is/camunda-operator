@@ -122,7 +122,7 @@ type DatabaseServerConfigStatus struct {
 - Modify: `pkg/components/database/bindings.go` (`ResolveBindings` uses `db.Namespace`, not `TargetNamespace`)
 
 **Interfaces:**
-- Produces: `CollisionKey(systemIdentifier, databaseName string) string` returning `systemIdentifier + "/" + databaseName`; the field index name `database.status.serverDatabase` on `Database.status.collisionKey`.
+- Produces: `CollisionKey(systemIdentifier, databaseName string) string` returning `systemIdentifier + "/" + databaseName`; the field index name `database.status.collisionKey` on `Database.status.collisionKey`.
 - `DatabaseStatus` gains `CollisionKey string \`json:"collisionKey,omitempty"\`` so the index is served from what the controller resolved, not from spec.
 
 - [ ] **Step 1: Unit test** for `CollisionKey`: two calls with different contract names and one identifier produce one key; empty identifier is rejected by the caller (tested in the controller).
