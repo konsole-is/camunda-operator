@@ -188,7 +188,7 @@ kubectl exec -n my-cluster-ns my-cluster-zeebe-0 -- \
 
 `spec.timestamp` is the point you restored the database to. The operator holds the restore in `Pending` with reason `DatabaseNotRestored` while the database still holds state after that point. It allows one minute of slack for the two clocks.
 
-The operator passes the value to the restore application as `--to`. Zeebe then aligns the brokers to the marker checkpoint nearest that point. It writes one every `spec.backup.primaryStorage.checkpointInterval`, which defaults to `PT15M`, so the brokers come back near the point rather than exactly on it. The database holds the exact point, and Zeebe exports the difference again after the restore.
+The cluster comes back at the first checkpoint at or after that point, not at the point itself. Work recorded between the two is searchable again after the restore. `spec.backup.primaryStorage.checkpointInterval` sets how far apart those checkpoints are, and it defaults to `PT15M`. A shorter interval brings the cluster back closer to the point. Camunda documents the rule in [Point-in-time restore](https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/rdbms/rdbms-restore/#point-in-time-restore).
 
 ### If the point is outside the window
 
