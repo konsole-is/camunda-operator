@@ -15,26 +15,39 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Two jobs per supported Camunda minor, so the management plane flows
-      # and the rest of the suite get a verdict each. Both entries of a pair
-      # name the same file test/e2e/matrix/<minor>.env, which holds the image
-      # versions of the minor. Each entry holds the Ginkgo label filter that
-      # selects its flows. Adopting a new minor adds the file and a pair of
-      # entries.
+      # Three jobs per supported Camunda minor: one for each storage
+      # backend of the orchestration cluster, and one for the management
+      # plane. All three name the same file test/e2e/matrix/<minor>.env,
+      # which holds the image versions of the minor, and each holds the
+      # Ginkgo label filter that selects its flows. Adopting a new minor adds
+      # the file and three entries.
       #
-      # cnpgInstallSkip keeps CloudNativePG and the Barman Cloud plugin off a
-      # job that runs no DatabaseServer. One kind node carries the whole run,
-      # and the management plane job already fills it with Keycloak,
-      # Management Identity, Console, and two Web Modeler processes.
+      # The split keeps one storage operator off each job. One kind node
+      # carries a whole job, and no flow needs both ECK and CloudNativePG.
+      # eckInstallSkip and cnpgInstallSkip say which operator a job installs.
+      # The management plane job fills its node with Keycloak, Management
+      # Identity, Console, and two Web Modeler processes, so it installs
+      # neither CloudNativePG nor the Barman Cloud plugin.
+      #
+      # Every label of the suite belongs to exactly one entry. The test
+      # TestWorkflowJobsClaimEveryLabel in test/utils reads this file and
+      # fails when a label has no job, or more than one.
       matrix:
         include:
           - minor: "8.9"
-            suffix: ""
-            labels: "!management-keycloak && !management-oidc"
+            suffix: " elasticsearch"
+            labels: "manager || camundacluster || camundacluster-oidc || elasticsearchcluster || camundaoptimize"
+            eckInstallSkip: "false"
+            cnpgInstallSkip: "true"
+          - minor: "8.9"
+            suffix: " postgres"
+            labels: "camundacluster-rdbms || database || databaseserver"
+            eckInstallSkip: "true"
             cnpgInstallSkip: "false"
           - minor: "8.9"
             suffix: " management"
             labels: "management-keycloak || management-oidc"
+            eckInstallSkip: "false"
             cnpgInstallSkip: "true"
     steps:
       - name: Clone the code
@@ -61,6 +74,7 @@ jobs:
 
       - name: Running Test e2e
         env:
+          ECK_INSTALL_SKIP: ${{ matrix.eckInstallSkip }}
           CNPG_INSTALL_SKIP: ${{ matrix.cnpgInstallSkip }}
         run: |
           make tidy

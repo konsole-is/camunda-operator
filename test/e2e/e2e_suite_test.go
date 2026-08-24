@@ -86,13 +86,14 @@ func TestE2E(t *testing.T) {
 }
 
 // The suite deploys the manager once, after CloudNativePG, ECK, and the
-// Keycloak CRDs. The CRDs of all three must be present before the manager
-// starts: the DatabaseServer controller watches the CloudNativePG Cluster and
-// the ObjectStore kinds, the ElasticsearchCluster controller watches the ECK
-// Elasticsearch kind, and the CamundaManagementCluster controller probes the
-// Keycloak kind once at startup. The Keycloak Operator itself is installed by
-// the flow that creates a Keycloak, because it reserves CPU for as long as it
-// runs.
+// Keycloak CRDs. Each controller attaches its watch on the kind it finds at
+// startup: the DatabaseServer controller on the CloudNativePG Cluster and the
+// ObjectStore kinds, the ElasticsearchCluster controller on the ECK
+// Elasticsearch kind, and the CamundaManagementCluster controller on the
+// Keycloak kind. A run that skips one of these installs runs no flow of that
+// kind, and the controller reports the kind as not installed. The Keycloak
+// Operator itself is installed by the flow that creates a Keycloak, because
+// it reserves CPU for as long as it runs.
 var _ = BeforeSuite(func() {
 	By("checking the image versions of the run")
 	for _, name := range versionEnv {
