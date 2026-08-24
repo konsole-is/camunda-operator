@@ -114,10 +114,10 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 // ArchiveComponent builds the archive component: the Secret with the bucket
 // settings, the ObjectStore that describes the archive, and the ScheduledBackup
 // that takes the base backups. archiving says whether the server keeps an
-// archive at all, and it is the feature gate of the component: a component
-// built with false deletes its resources and reports Disabled. The caller
-// decides it, so the same answer also decides whether the component takes part
-// in Ready.
+// archive at all, and it is the feature gate of the component. Without an
+// archive the component deletes its resources and reports Disabled. The caller
+// decides archiving, so the same answer also decides whether the component
+// takes part in Ready.
 //
 // The component is never suspended. A suspended component applies no baseline,
 // so the suspension of the base backup schedule could never reach the cluster,

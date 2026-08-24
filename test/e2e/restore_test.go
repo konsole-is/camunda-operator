@@ -92,10 +92,9 @@ const (
 	// two runs ahead.
 	pitrClockGap = 10 * time.Second
 	// pitrBackupCoverage bounds the wait for a primary-storage backup that
-	// reaches past the point. The cluster of the flow takes one every two
-	// minutes, so the worst case is those two minutes, the minute of the
-	// checkpoint interval, and the duration of one backup. The bound leaves
-	// room above that.
+	// reaches past the point. The worst case is two minutes for the schedule
+	// of the flow, one for its checkpoint interval, and the duration of one
+	// backup. The bound leaves room above that.
 	pitrBackupCoverage = 6 * time.Minute
 	// databaseRecoveryTimeout bounds the database half of an operator-driven
 	// restore: CloudNativePG bootstraps a cluster from the archive, the
@@ -970,8 +969,8 @@ func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
 }
 
 // parseCheckpointTime reads a checkpoint timestamp of the runtime state
-// endpoint. The endpoint writes the zone as "Z" in one release and as "+0000"
-// in another, and only the first of those is RFC 3339.
+// endpoint. The endpoint writes the zone as "Z" or as "+0000", and only the
+// first of those two is RFC 3339.
 func parseCheckpointTime(value string) (time.Time, error) {
 	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z0700"} {
 		if parsed, err := time.Parse(layout, value); err == nil {

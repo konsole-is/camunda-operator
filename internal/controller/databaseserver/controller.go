@@ -606,7 +606,7 @@ func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.Databas
 
 // buildComponents builds the four components in dependency order: cluster,
 // archive, contract, monitoring, and records which of them take part in Ready.
-// Whether the server archives is decided once here, so the gate of the archive
+// It answers once whether the server archives, so the gate of the archive
 // component and its part in Ready can never disagree. The returned data cell
 // holds the PostgreSQL system identifier once the cluster component has
 // reconciled.
