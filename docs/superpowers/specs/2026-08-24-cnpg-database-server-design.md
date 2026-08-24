@@ -352,8 +352,10 @@ Conditions and components, one component per condition:
 `Ready` on the owner aggregates them. `ReasonCNPGNotInstalled` and
 `ReasonBarmanPluginNotInstalled` are pre-check failures on the owner, before any component runs.
 
-Suspend scales the `Cluster` to zero instances through the wrapper's suspend mutation, the
-scale-to-zero path from `ocf:custom-resource-wrappers`, so the volumes survive.
+Suspend hibernates the `Cluster`: the wrapper's suspend mutation sets the annotation
+`cnpg.io/hibernation: "on"`, CloudNativePG removes the pods and keeps the volumes, and the
+suspension status reads the `cnpg.io/hibernation` condition. `spec.instances` cannot be zero
+(the CRD declares `minimum: 1`), so scale-to-zero is not available on this kind.
 
 ### DatabaseServerPreset
 

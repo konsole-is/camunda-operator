@@ -43,7 +43,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 ## Bubble-up log
 
-- _No concerns yet._
+- 2026-08-24 — #234 spec review: the CNPG CRD declares `minimum: 1` on `spec.instances`, so the scale-to-zero suspend in the spec can never apply. Resolution: suspend through declarative hibernation (`cnpg.io/hibernation: "on"` annotation, status from the `cnpg.io/hibernation` condition). Propagated: spec and plan amended; fix routed to the #234 implementer; the #235 dispatch will carry it.
 
 ## Pending snapshot
 
