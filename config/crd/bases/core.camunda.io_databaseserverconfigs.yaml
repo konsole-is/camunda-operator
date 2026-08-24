@@ -198,9 +198,10 @@ spec:
               probedAt:
                 description: |-
                   ProbedAt is when the operator last reached the server and read
-                  ServerVersion. The operator probes the server again when this is older
-                  than the probe interval, when the spec changed, or when the admin
-                  credentials Secret changed. A reconcile in between leaves it untouched.
+                  ServerVersion and SystemIdentifier. The operator probes the server again
+                  when this is older than the probe interval, when the spec changed, or
+                  when the admin credentials Secret changed. A reconcile in between leaves
+                  it untouched.
                 format: date-time
                 type: string
               probedSecretVersion:

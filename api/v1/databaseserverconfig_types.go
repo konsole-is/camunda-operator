@@ -84,9 +84,10 @@ type DatabaseServerConfigStatus struct {
 	// +optional
 	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// ProbedAt is when the operator last reached the server and read
-	// ServerVersion. The operator probes the server again when this is older
-	// than the probe interval, when the spec changed, or when the admin
-	// credentials Secret changed. A reconcile in between leaves it untouched.
+	// ServerVersion and SystemIdentifier. The operator probes the server again
+	// when this is older than the probe interval, when the spec changed, or
+	// when the admin credentials Secret changed. A reconcile in between leaves
+	// it untouched.
 	// +optional
 	ProbedAt *metav1.Time `json:"probedAt,omitempty"`
 	// ProbedSecretVersion is the resourceVersion of the admin credentials
