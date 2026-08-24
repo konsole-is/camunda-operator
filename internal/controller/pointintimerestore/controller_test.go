@@ -962,6 +962,23 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 	})
 
+	// One Database on the instance is not enough. A hand-written
+	// DatabaseConfig names a logical database that no Database resource
+	// declares, and the single claimant on that instance is then somebody
+	// else's data.
+	It("holds a server whose one Database holds another logical database", func() {
+		w := createWorld(func(w *world) {
+			w.database.Spec.DatabaseName = "someone_elses_database"
+		})
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonInvalidReference)
+		Expect(message).To(ContainSubstring(w.namespace + "/" + w.database.Name))
+		Expect(message).To(ContainSubstring("someone_elses_database"))
+		Expect(message).To(ContainSubstring(w.dbConfig.Spec.DatabaseName))
+		expectClaimsUntouched(w)
+	})
+
 	// A Database of another namespace on another instance is no evidence
 	// about this instance. The rule counts identities, not references.
 	It("admits a server that another instance's Database does not share", func() {

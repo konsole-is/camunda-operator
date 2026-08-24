@@ -108,6 +108,8 @@ Exactly one `Database` must resolve to that PostgreSQL instance. Point-in-time r
 
 The count runs over the `Database` resources of every namespace, and it compares the system identifier that each one resolves to, not the name of the contract it references. Two `DatabaseServerConfig` objects of two namespaces that describe one instance are one server here, so a `Database` behind either of them counts. The message names each claimant as `<namespace>/<name>`.
 
+That one `Database` must also hold the logical database of the `DatabaseConfig`. A hand-written `DatabaseConfig` can name a database that no `Database` resource declares, and the single claimant on the instance is then somebody else's. Such a server holds the restore with reason `InvalidReference`, and the message names both database names.
+
 A `Database` the operator cannot place holds the restore too, with reason `InvalidReference`, and the message names it. That is a `Database` whose `DatabaseServerConfig` publishes no system identifier, or names one that does not exist. Recovery rolls back the whole server, so a database that cannot be ruled out is a database the restore can destroy. Wait until every `DatabaseServerConfig` reports `Ready`, or delete the `Database` resources whose server is gone.
 
 A server that **no** `Database` resolves to holds the restore too, with reason `InvalidReference`. The `Database` resources are the only evidence the operator has about the databases of a server. Without one it cannot tell whether the server holds one database or ten, and the restore deletes volumes. Declare the database of the cluster as a `Database` resource on a server of its own.

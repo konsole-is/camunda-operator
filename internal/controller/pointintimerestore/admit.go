@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	databasecomponents "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -98,7 +99,7 @@ func (r *Reconciler) admit(
 		return r.waiting(pitr, failure), nil
 	}
 
-	failure, err = r.dedicatedServer(ctx, resolved.server)
+	failure, err = r.dedicatedServer(ctx, resolved.server, resolved.dbConfig)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -440,19 +441,25 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 	return nil
 }
 
-// dedicatedServer reports that more than one Database lives on the server, or
-// nil when exactly one does. Point-in-time recovery on the engine rolls back
-// the whole PostgreSQL instance, not one logical database, so a shared
-// instance rolls back the database of another cluster too.
+// dedicatedServer reports that the server holds any logical database other
+// than the one of this cluster, or nil when it holds that one alone.
+// Point-in-time recovery on the engine rolls back the whole PostgreSQL
+// instance, not one logical database, so anything else on it is rolled back
+// too.
 //
 // The server is the instance, not the contract that describes it. The rule
-// therefore counts the Database resources of every namespace whose contract
+// therefore reads the Database resources of every namespace whose contract
 // reports the system identifier of this one. Two contracts that name one
 // instance under different hosts are one server here, and a Database whose
 // contract reports no identity at all cannot be placed on either side.
+//
+// The one Database that remains must hold the logical database of dbConfig. A
+// hand-written DatabaseConfig can name a database that no Database resource
+// declares, and the single claimant on the instance is then somebody else's.
 func (r *Reconciler) dedicatedServer(
 	ctx context.Context,
 	server *v1.DatabaseServerConfig,
+	dbConfig *v1.DatabaseConfig,
 ) (*conditions.PreCheckFailure, error) {
 	key := client.ObjectKeyFromObject(server)
 
@@ -476,20 +483,28 @@ func (r *Reconciler) dedicatedServer(
 		identities[client.ObjectKeyFromObject(&contracts.Items[i])] = contracts.Items[i].Status.SystemIdentifier
 	}
 
-	var names, unplaced []string
+	var placed []*v1.Database
+	var unplaced []string
 	for i := range databases.Items {
 		database := &databases.Items[i]
 		switch databaseIdentity(database, identities) {
 		case server.Status.SystemIdentifier:
-			names = append(names, database.Namespace+"/"+database.Name)
+			placed = append(placed, database)
 		case "":
 			unplaced = append(unplaced, database.Namespace+"/"+database.Name)
 		}
 	}
-	slices.Sort(names)
+	slices.SortFunc(placed, func(a, b *v1.Database) int {
+		return strings.Compare(a.Namespace+"/"+a.Name, b.Namespace+"/"+b.Name)
+	})
 	slices.Sort(unplaced)
 
-	if len(names) > 1 {
+	names := make([]string, 0, len(placed))
+	for _, database := range placed {
+		names = append(names, database.Namespace+"/"+database.Name)
+	}
+
+	if len(placed) > 1 {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonSharedServer,
 			Message: fmt.Sprintf(
@@ -520,13 +535,27 @@ func (r *Reconciler) dedicatedServer(
 	// evidence at all: the operator cannot tell whether it holds one database
 	// or ten, and point-in-time recovery rolls back all of them. On a path
 	// that deletes volumes, the absence of evidence holds the restore.
-	if len(names) == 0 {
+	if len(placed) == 0 {
 		return logicalbackup.InvalidReference(
 			"no Database resource resolves to the server that DatabaseServerConfig %s describes, "+
 				"so the operator cannot tell which databases the server holds. Point-in-time "+
 				"recovery rolls back the whole server. Declare the database of the cluster as a "+
 				"Database resource on a server of its own",
 			key,
+		), nil
+	}
+
+	// One Database on the instance is not enough: it has to be the one of this
+	// cluster. A hand-written DatabaseConfig names a logical database directly,
+	// and nothing so far has tied that name to the single claimant.
+	if only := placed[0]; only.Spec.DatabaseName != dbConfig.Spec.DatabaseName {
+		return logicalbackup.InvalidReference(
+			"the only Database resource on the server that DatabaseServerConfig %s describes is "+
+				"%s, which holds the logical database %q, and this cluster stores its records in "+
+				"%q. Point-in-time recovery rolls back the whole server, so it would roll back a "+
+				"database that this restore never validated. Declare the database of the cluster "+
+				"as a Database resource on a server of its own",
+			key, names[0], only.Spec.DatabaseName, dbConfig.Spec.DatabaseName,
 		), nil
 	}
 
@@ -544,9 +573,7 @@ func databaseIdentity(database *v1.Database, identities map[types.NamespacedName
 		return identity
 	}
 
-	identity, _, _ := strings.Cut(database.Status.CollisionKey, "/")
-
-	return identity
+	return databasecomponents.CollisionIdentity(database.Status.CollisionKey)
 }
 
 // credentials reads the application credentials of the logical database. They
