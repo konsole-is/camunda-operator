@@ -23,12 +23,11 @@ package testenv
 
 import (
 	"context"
-	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -41,11 +40,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/cacheopts"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
@@ -81,12 +80,17 @@ type Options struct {
 	// plane, so a suite can show what the operator does on a cluster where
 	// the Keycloak Operator is not installed.
 	WithoutKeycloak bool
+	// WithoutCNPG leaves the CloudNativePG and Barman Cloud CRDs out of the
+	// control plane, so a suite can show what the operator does on a cluster
+	// where CloudNativePG is not installed.
+	WithoutCNPG bool
 }
 
 // Start boots a control plane that carries the CRDs of the operator, of ECK,
-// and of the Keycloak Operator, registers the reconcilers of the caller
-// through register, and starts the manager in the background. register runs
-// before the manager starts and must not block.
+// of the Keycloak Operator, of CloudNativePG, and of the Barman Cloud plugin,
+// registers the reconcilers of the caller through register, and starts the
+// manager in the background. register runs before the manager starts and must
+// not block.
 //
 // Start asserts through Gomega. Call it from a Ginkgo node that has a fail
 // handler installed, normally BeforeSuite.
@@ -104,8 +108,10 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	gomega.Expect(esv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(monitoringv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(keycloak.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
+	gomega.Expect(cnpgv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
+	gomega.Expect(barmanobjectstore.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 
-	root, err := moduleRoot()
+	root, err := utils.ModuleRoot()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
 	crdPaths := []string{filepath.Join(root, "config", "crd", "bases")}
@@ -113,21 +119,25 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		// The ECK CRDs come from the resolved module, so the rendered
 		// Elasticsearch CR applies against the API server. ECK itself does
 		// not run in envtest.
-		eckCRDPath, err := utils.ECKCRDPath()
-		gomega.Expect(err).NotTo(gomega.HaveOccurred())
-		crdPaths = append(crdPaths, eckCRDPath)
+		crdPaths = append(crdPaths, crdPath(utils.ECKCRDPath))
 	}
 	if !opts.WithoutKeycloak {
 		// The Keycloak Operator publishes no Go module, so its CRD is
 		// vendored. The Keycloak Operator itself does not run in envtest.
-		crdPaths = append(crdPaths, filepath.Join(root, "internal", "testenv", "crds", "keycloak"))
+		crdPaths = append(crdPaths, crdPath(utils.KeycloakCRDPath))
+	}
+	if !opts.WithoutCNPG {
+		// The CloudNativePG and Barman Cloud Go modules ship no CRD
+		// manifests, so both schemas are vendored. Neither operator runs in
+		// envtest.
+		crdPaths = append(crdPaths, crdPath(utils.CNPGCRDPath), crdPath(utils.BarmanCRDPath))
 	}
 
 	ginkgo.By("bootstrapping test environment")
 	control := &envtest.Environment{
 		CRDDirectoryPaths:     crdPaths,
 		ErrorIfCRDPathMissing: true,
-		BinaryAssetsDirectory: firstEnvtestBinaryDir(filepath.Join(root, "bin", "k8s")),
+		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
 	}
 
 	cfg, err := control.Start()
@@ -176,47 +186,15 @@ func (e *Env) Stop() error {
 	return e.control.Stop()
 }
 
-// moduleRoot walks up from the working directory to the directory that holds
-// go.mod. Suites then resolve the same CRD and envtest binary directories at
-// any package depth.
-func moduleRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("resolving working directory: %w", err)
-	}
+// crdPath resolves one CRD directory through resolve and fails the suite when
+// it cannot, so a control plane never boots without a schema its specs need.
+func crdPath(resolve func() (string, error)) string {
+	ginkgo.GinkgoHelper()
 
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
+	path, err := resolve()
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("no go.mod found in or above the working directory")
-		}
-		dir = parent
-	}
-}
-
-// firstEnvtestBinaryDir returns the first versioned binary directory under
-// basePath. Suites can then run from an IDE without KUBEBUILDER_ASSETS set. It
-// returns an empty string when the directory is absent, and envtest then falls
-// back to KUBEBUILDER_ASSETS. Run 'make setup-envtest' to populate the
-// directory.
-func firstEnvtestBinaryDir(basePath string) string {
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-
-	return ""
+	return path
 }
 
 // PodOfJob returns the pod that the Job controller creates from the template

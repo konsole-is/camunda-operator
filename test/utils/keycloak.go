@@ -29,11 +29,14 @@ import (
 )
 
 const (
+	// keycloakCRDDir holds the vendored CRD of the Keycloak Operator. The
+	// project publishes no Go module for its CRDs.
+	keycloakCRDDir = "internal/testenv/crds/keycloak"
 	// keycloakCRDVersionFile holds the Keycloak Operator release that
 	// internal/testenv vendors the Keycloak CRD from. The e2e suite installs
 	// that release when the matrix names no Keycloak, so the envtest suites
 	// and the kind suite agree on the schema.
-	keycloakCRDVersionFile = "internal/testenv/crds/keycloak/VERSION"
+	keycloakCRDVersionFile = keycloakCRDDir + "/VERSION"
 	// envKeycloakVersion is the Keycloak release that the management plane
 	// flow runs, from the matrix entry of the run. The suite installs the
 	// Keycloak Operator of the same release: the operator supports the
@@ -75,6 +78,13 @@ type keycloakOperatorCRD struct {
 	required bool
 }
 
+// KeycloakCRDPath returns the directory of the vendored Keycloak CRD, for
+// envtest to install. The VERSION file beside it names the Keycloak Operator
+// release it comes from.
+func KeycloakCRDPath() (string, error) {
+	return vendoredCRDPath(keycloakCRDDir)
+}
+
 // KeycloakOperatorVersion returns the Keycloak Operator release that the
 // suite installs: the value of KEYCLOAK_OPERATOR_VERSION, else the Keycloak
 // release of the matrix entry (KEYCLOAK_VERSION), else the version of the CRD
@@ -86,12 +96,12 @@ func KeycloakOperatorVersion() (string, error) {
 		}
 	}
 
-	dir, err := GetProjectDir()
+	root, err := ModuleRoot()
 	if err != nil {
 		return "", err
 	}
 
-	path := filepath.Join(dir, keycloakCRDVersionFile)
+	path := filepath.Join(root, keycloakCRDVersionFile)
 	content, err := os.ReadFile(path) // nolint:gosec // a path of this repository
 	if err != nil {
 		return "", fmt.Errorf("reading the vendored Keycloak CRD version %q: %w", path, err)

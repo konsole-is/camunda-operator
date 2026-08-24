@@ -25,6 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,6 +57,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 	// +kubebuilder:scaffold:imports
 )
@@ -72,6 +74,8 @@ func init() {
 	utilruntime.Must(esv1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(keycloak.AddToScheme(scheme))
+	utilruntime.Must(cnpgv1.AddToScheme(scheme))
+	utilruntime.Must(barmanobjectstore.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

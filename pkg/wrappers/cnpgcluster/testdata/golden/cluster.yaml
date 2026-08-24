@@ -1,0 +1,31 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    cnpg.io/hibernation: "off"
+  name: my-server
+  namespace: my-server-ns
+spec:
+  affinity: {}
+  enableSuperuserAccess: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  instances: 1
+  plugins:
+  - isWALArchiver: true
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: my-archive
+      serverName: my-server
+  postgresql:
+    syncReplicaElectionConstraint:
+      enabled: false
+  resources: {}
+  storage:
+    size: 20Gi
+status:
+  certificates: {}
+  configMapResourceVersion: {}
+  managedRolesStatus: {}
+  secretsResourceVersion: {}
+  switchReplicaClusterStatus: {}
+  topology: {}
