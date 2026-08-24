@@ -37,7 +37,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
-| `namespaced-rdbms-kinds` | stub-on-producer-branch (PR 3 branches after PR 1 merges) | #128 sub-PR | pending |
+| `namespaced-rdbms-kinds` | stub-on-producer-branch (PR 3 branches after PR 1 merges) | #239 (2d812a8) | locked |
 | `cnpg-wrappers` | stub-on-producer-branch (PR 3 branches after PR 2 merges) | #238 (beee38d) | locked |
 | `contract-recovery-fields` | data-only (both writers in PR 4) | n/a | locked |
 

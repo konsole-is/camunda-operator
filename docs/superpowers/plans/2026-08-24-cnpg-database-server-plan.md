@@ -29,8 +29,8 @@
 
 | Name | Producer (issue) | Consumer (issue) | Shape | Realization |
 | --- | --- | --- | --- | --- |
-| `namespaced-rdbms-kinds` | #128 | #235, #236 | `DatabaseServerConfig` and `Database` carry no `scope=Cluster` marker; `Database.spec.targetNamespace` is gone; `DatabaseServerConfigSpec.AdminCredentialsSecretRef` is `LocalCredentialsSecretRef{Name, UsernameKey, PasswordKey}`; `DatabaseServerConfigStatus.SystemIdentifier string \`json:"systemIdentifier,omitempty"\`` | stub-on-producer-branch: PR 3 branches from the feature branch after PR 1 merges |
-| `cnpg-wrappers` | #234 | #235, #236 | `pkg/wrappers/cnpgcluster.NewBuilder(*cnpgv1.Cluster) *Builder`, `.WithMutation(...Mutation)`, `.Build() (*Resource, error)`; `pkg/wrappers/barmanobjectstore.NewBuilder(*barmanobjectstore.ObjectStore) *Builder`; `pkg/wrappers/cnpgscheduledbackup.NewBuilder(*cnpgv1.ScheduledBackup) *Builder`; `pkg/wrappers/podmonitor.NewBuilder(*monitoringv1.PodMonitor) *Builder`; `test/utils.CNPGCRDPath() string`, `test/utils.BarmanCRDPath() string` | stub-on-producer-branch: PR 3 branches after PR 2 merges |
+| `namespaced-rdbms-kinds` | #128 | #235, #236 | `DatabaseServerConfig` and `Database` carry no `scope=Cluster` marker; `Database.spec.targetNamespace` is gone; `DatabaseServerConfigSpec.AdminCredentialsSecretRef` is `LocalCredentialsSecretRef{Name, UsernameKey, PasswordKey}`; `DatabaseServerConfigStatus.SystemIdentifier string \`json:"systemIdentifier,omitempty"\``; `DatabaseStatus.CollisionKey`; `database.CollisionIdentity(key) string`; `v1.ReasonServerIdentityUnknown`; `PointInTimeRestoreStorage.SystemIdentifier` (required, compared by whole-struct equality in `pinnedChainCurrent`); a spec change on the contract clears `serverVersion`, `systemIdentifier`, `probedAt`, `probedSecretVersion` until the next probe | stub-on-producer-branch: PR 3 branches from the feature branch after PR 1 merges — **locked in #239 (2d812a8)** |
+| `cnpg-wrappers` | #234 | #235, #236 | `pkg/wrappers/cnpgcluster.NewBuilder(*cnpgv1.Cluster) *Builder`, `.WithMutation(...Mutation)`, `.Build() (*Resource, error)`; `pkg/wrappers/barmanobjectstore.NewBuilder(*barmanobjectstore.ObjectStore) *Builder`; `pkg/wrappers/cnpgscheduledbackup.NewBuilder(*cnpgv1.ScheduledBackup) *Builder`; `pkg/wrappers/podmonitor.NewBuilder(*monitoringv1.PodMonitor) *Builder`; `test/utils.CNPGCRDPath() (string, error)`, `test/utils.BarmanCRDPath() (string, error)`, `testenv.Options{WithoutCNPG}`; suspend is hibernation (`cnpg.io/hibernation` annotation and condition); `BarmanObjectStoreConfiguration` has no `ServerName`; `ObjectStoreSpec.RetentionPolicy` is `spec.retentionPolicy` | stub-on-producer-branch: PR 3 branches after PR 2 merges — **locked in #238 (beee38d)** |
 | `contract-recovery-fields` | #236 | #236 (both sides in one PR) | `PITRCapability.Recovery RecoveryMode` (`operator`/`external`), `PITRCapability.LastRecovery *RecoveryOutcome`, `DatabaseServerConfigSpec.Recovery *RecoveryRequest` | data-only: both writers ship in PR 4 |
 
 PR 1 and PR 2 share no symbol, so they need no contract between them.
@@ -167,17 +167,17 @@ Branch `chore/cnpg-database-server--cnpg-wrappers` off `feat/cnpg-database-serve
 - Modify: `go.mod` (`github.com/cloudnative-pg/api v1.30.0`), `go.sum`
 - Create: `pkg/wrappers/cnpgcluster/{builder.go,mutator.go,resource.go,health.go,builder_test.go,health_test.go,component_smoke_test.go}` via `ocf scaffold wrapper` (load `ocf:custom-resource-wrappers`; the type is `cnpgv1.Cluster` from `github.com/cloudnative-pg/api/pkg/api/v1`, category workload)
 - Create: `pkg/wrappers/cnpgcluster/applyclient.go` only if the envtest apply is rejected with "field not declared in schema"
-- Create: `test/utils/cnpg.go` with `CNPGCRDPath() string` resolving `crds` from the `github.com/cloudnative-pg/api` module cache the way `ECKCRDPath` does (the CRDs ship under `config/crd/bases` in that module; verify with `go list -m -f '{{.Dir}}' github.com/cloudnative-pg/api` and `find`)
+- Create: `test/utils/cnpg.go` with `CNPGCRDPath() (string, error)`; the api module ships no CRDs, so they are vendored under `internal/testenv/crds/cnpg` with a `VERSION` file (shipped this way in #238)
 
 **Interfaces:**
-- Produces: `cnpgcluster.NewBuilder(obj *cnpgv1.Cluster) *Builder`, `(*Builder).WithMutation(...Mutation)`, `(*Builder).Build() (*Resource, error)`, `type Mutation = feature.Mutation[*Mutator]`, `DefaultConvergingStatusHandler`, and the identity string `postgresql.cnpg.io/v1/Cluster/<ns>/<name>`.
-- Health: `status.phase == "Cluster in healthy state"` and `status.readyInstances == spec.instances` → Healthy; phase contains `"Failed"` or `"unrecoverable"` → Failing; first apply → Creating; else Updating. Read the phase constants from `cnpgv1` (`PhaseHealthy`, `PhaseFailed`, ...) instead of string literals.
+- Produces: `cnpgcluster.NewBuilder(obj *cnpgv1.Cluster) *Builder`, `(*Builder).WithMutation(...Mutation)`, `(*Builder).Build() (*Resource, error)`, `type Mutation feature.Mutation[*Mutator]` (defined type, as in every wrapper), `DefaultConvergingStatusHandler`, and the identity string `postgresql.cnpg.io/v1/Cluster/<ns>/<name>`.
+- Health: `PhaseHealthy` and `readyInstances == spec.instances` → Healthy (both converge and grace); an explicit `failingPhases` set (includes `PhaseWaitingForUser`, excludes `PhaseFailOver`) → Failing; first apply → Creating; else Updating.
 - Suspend: the suspend mutation sets the annotation `cnpg.io/hibernation: "on"` (declarative hibernation); CloudNativePG removes the pods and keeps the PVCs. `spec.instances` has `minimum: 1` in the CRD, so scale-to-zero is impossible. The suspension status reads the `cnpg.io/hibernation` condition, never `status.instances` (that counts PVC groups). The delete-on-suspend decision is never.
 
 - [ ] **Step 1:** `go get github.com/cloudnative-pg/api@v1.30.0`; `go mod tidy`; confirm `api/go.mod` is untouched.
 - [ ] **Step 2:** Scaffold; write `health_test.go` for the five cases above; run to fail; implement `health.go`; run to pass.
 - [ ] **Step 3:** `builder_test.go`: a builder with one mutation that sets `spec.instances` applies it; a missing name fails `Build`. `component_smoke_test.go`: register the resource in a component and preview it against the golden testdata.
-- [ ] **Step 4:** envtest in `pkg/wrappers/cnpgcluster/envtest_test.go`: start envtest with `CNPGCRDPath()` and apply a minimal `Cluster` through the wrapper. If the apply is rejected on schema, add `applyclient.go` the way `eckelasticsearch/applyclient.go` does.
+- [ ] **Step 4:** envtest in `pkg/wrappers/cnpgcluster/apply_test.go`: apply a `Cluster`, a suspended `Cluster`, an `ObjectStore`, and a `ScheduledBackup` through the wrappers against the vendored CRDs (shipped; no `applyclient.go` was needed).
 - [ ] **Step 5:** Register the scheme in `internal/testenv/testenv.go` (`cnpgv1.AddToScheme`) and in `cmd/main.go`; load the CRD path in `testenv.Start` (PR 3 adds the `WithoutCNPG` option; here it is always loaded).
 - [ ] **Step 6:** Gates; commit `chore(wrappers): wrap the CloudNativePG Cluster as an ocf primitive (#234)`.
 
@@ -185,7 +185,7 @@ Branch `chore/cnpg-database-server--cnpg-wrappers` off `feat/cnpg-database-serve
 
 **Files:**
 - Create: `pkg/wrappers/barmanobjectstore/{types.go,zz_generated.deepcopy.go,doc.go,builder.go,mutator.go,resource.go,builder_test.go}`
-- Create: `test/utils/crds/barmancloud.cnpg.io_objectstores.yaml` (copied from the plugin's `v0.14.0` release manifest; record the source URL in a comment at the top) and `test/utils.BarmanCRDPath() string`
+- Create: `internal/testenv/crds/barmancloud/objectstores.barmancloud.cnpg.io.yaml` + `VERSION` (copied from the plugin's `v0.14.0` release manifest) and `test/utils.BarmanCRDPath() (string, error)`
 
 **Interfaces:**
 - Produces:
@@ -332,7 +332,6 @@ const (
 	ConditionArchive    = "ArchiveReady"
 	ConditionContract   = "ContractReady"
 	ConditionMonitoring = "MonitoringReady"
-	LabelDatabaseServer = "camunda.io/database-server"
 	BarmanPluginName    = "barman-cloud.cloudnative-pg.io"
 )
 func MergePreset(server *v1.DatabaseServer, preset *v1.DatabaseServerPreset) (v1.DatabaseServerSpec, error)
@@ -344,7 +343,7 @@ func ObjectStoreName(server *v1.DatabaseServer) string // server.Name
 // ArchiveStorage is the ObjectStorageConfig resolved once (the activeBlock precedent).
 type ArchiveStorage struct { DestinationPath, EndpointURL string; Credentials *corev1.Secret; WorkloadIdentity bool; Provider v1.ObjectStorageType }
 func ResolveArchiveStorage(ctx context.Context, c client.Reader, spec v1.DatabaseServerArchiveSpec) (*ArchiveStorage, error)
-func ClusterComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, archive *ArchiveStorage, images images.Resolver) component.Component
+func ClusterComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, archive *ArchiveStorage, platform *v1.CamundaPlatformConfigSpec) component.Component // image via images.Resolve(platform, images.Postgres, version); images.Postgres needs a new field on api/v1.ImagesSpec
 func ArchiveComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, archive *ArchiveStorage) component.Component
 func ContractComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) component.Component
 func MonitoringComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, podMonitorSupported bool) component.Component
@@ -353,7 +352,7 @@ func MonitoringComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec
 - The `Cluster` baseline: `instances`, `imageName` from `pkg/images` (`ghcr.io/cloudnative-pg/postgresql:<version>`), `storage{size, storageClass}`, `walStorage` when set, `resources`, `affinity` from `Scheduling`, `enableSuperuserAccess: true`, `inheritedMetadata{labels: podLabels + LabelDatabaseServer, annotations: podAnnotations}`, `serviceAccountTemplate` with the workload-identity annotations of the `ObjectStorageConfig` when `archive` uses workload identity, and `plugins: [{name: BarmanPluginName, isWALArchiver: true, parameters: {barmanObjectName: ObjectStoreName, serverName: ClusterName}}]` when `archive` is set.
 - The `ObjectStore` baseline: `destinationPath` = the `ObjectStorageConfig` base path + `/databaseserver/<ns>/<name>/`, `endpointURL` for S3-compatible stores, the credentials block by provider (`s3Credentials` with `accessKeyId`/`secretAccessKey` from the resolved Secret, or `inheritFromIAMRole: true`; `azureCredentials`/`googleCredentials` likewise), `retentionPolicy: "<days>d"`, `wal.compression: gzip`, `data.compression: gzip`.
 - The `ScheduledBackup` baseline as in Task 2.3, `schedule` from `baseBackupSchedule`, `cluster.name: ClusterName`.
-- The contract baseline: `engine: postgres`, `host: ReadWriteHost`, `port: 5432`, `adminCredentialsSecretRef{name: SuperuserSecretName}`, `pitr{enabled: archive != nil, retentionPeriodDays, recovery: external}` (PR 4 flips it to `operator`); owner reference to the server; label `LabelDatabaseServer`.
+- The contract baseline: `engine: postgres`, `host: ReadWriteHost`, `port: 5432`, `adminCredentialsSecretRef{name: SuperuserSecretName}`, `pitr{enabled: archive != nil, retentionPeriodDays}` (`pitr.recovery` arrives in PR 4); owner reference to the server; labels from `pkg/labels` (`labels.DatabaseServer(name)`, `Managed`/`Discovery`), with `DatabaseServerKey = "camunda.io/database-server"` added to `pkg/labels` and the row added to `docs/architecture.md`.
 - `ArchiveReady` reads the `ScheduledBackup`'s last `Backup` (`status.lastScheduleTime` and the `Backup` list labelled `cnpg.io/cluster`) and is `True` when at least one `Backup` has `status.phase: completed` for the current `ClusterName`. Use a declared-data cell on the `ScheduledBackup` resource for the observation, the `ocf:building-components` way.
 
 - [ ] **Step 1:** `presetmerge_test.go` (mirror the ES test table) → `presetmerge.go`.
@@ -364,7 +363,7 @@ func MonitoringComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec
 ### Task 3.3: controller, without-CRD start, docs
 
 **Files:**
-- Modify: `internal/controller/databaseserver/controller.go` (scaffolded), `cmd/main.go` (register, pass `--camunda-operator-cli-image` not needed here), `internal/testenv/testenv.go` (`Options{WithoutECK, WithoutCNPG bool}`; CRD paths include `CNPGCRDPath()` and `BarmanCRDPath()` unless `WithoutCNPG`)
+- Modify: `internal/controller/databaseserver/controller.go` (scaffolded), `cmd/main.go` (register). `testenv.Options{WithoutCNPG}` already exists (#238).
 - Create: `internal/controller/databaseserver/{suite_test.go,controller_test.go,withoutcnpg/suite_test.go,withoutcnpg/cnpg_test.go}`
 - Create: `docs/crds/databaseserver.md`, `docs/crds/databaseserverpreset.md`; modify `docs/crds/index.md`, `mkdocs.yml` nav (Storage group), `docs/crds/databaseserverconfig.md` (producers table: `DatabaseServer`)
 
@@ -372,7 +371,7 @@ func MonitoringComponent(server *v1.DatabaseServer, merged v1.DatabaseServerSpec
 - Produces: `databaseserver.Reconciler{Client, Scheme, componentClient, restMapper, cnpgInstalled, barmanInstalled bool, retryInterval}`; RBAC markers for `postgresql.cnpg.io/clusters;scheduledbackups;backups`, `barmancloud.cnpg.io/objectstores`, `monitoring.coreos.com/podmonitors`, `core.camunda.io/databaseservers;databaseserverpresets;databaseserverconfigs;objectstorageconfigs`, Secrets get/list/watch.
 - Reconcile: `preCheck` (cnpgInstalled → presetRef → merge → validate → archive resolve with `barmanInstalled` when `archive` set) → build components → `Reconcile` each → `conditions.Aggregate` → `FlushStatus`. `status.cluster` is set to `server.Name` on first reconcile. `status.systemIdentifier` is copied from the `Cluster`'s `status.systemID` through a declared-data cell.
 
-- [ ] **Step 1:** Controller tests (envtest): (a) a server without a preset reaches `ClusterReady=True` once the test writes `status.phase: "Cluster in healthy state"` and `readyInstances` on the `Cluster`, and the contract exists with `host: <name>-rw.<ns>.svc` and `pitr.enabled: false`; (b) with an archive on an S3 `ObjectStorageConfig`, the `ObjectStore` and `ScheduledBackup` exist, `ArchiveReady=False` until the test creates a completed `Backup`, then `True`, and the contract says `pitr.enabled: true`; (c) `presetRef` to a missing preset → `InvalidReference`; (d) `suspend: true` sets the `cnpg.io/hibernation: "on"` annotation on the `Cluster`; (e) `status.systemIdentifier` mirrors the `Cluster`'s `status.systemID`.
+- [ ] **Step 1:** Controller tests (envtest): (a) a server without a preset reaches `ClusterReady=True` once the test writes `status.phase: "Cluster in healthy state"` and `readyInstances` on the `Cluster`, and the contract exists with `host: <name>-rw.<ns>.svc` and `pitr.enabled: false`; (b) with an archive on an S3 `ObjectStorageConfig`, the `ObjectStore` and `ScheduledBackup` exist, `ArchiveReady=False` until the test creates a completed `Backup`, then `True`, and the contract says `pitr.enabled: true`; (c) `presetRef` to a missing preset → `InvalidReference`; (d) `suspend: true` sets the `cnpg.io/hibernation: "on"` annotation on the `Cluster` (an unsuspended one carries `"off"`), and the server reports Suspended only after the test writes the `cnpg.io/hibernation` condition True; (e) `status.systemIdentifier` mirrors the `Cluster`'s `status.systemID`.
 - [ ] **Step 2:** Implement the controller from the `elasticsearchcluster` controller shape.
 - [ ] **Step 3:** `withoutcnpg` suite: `testenv.StartWith(Options{WithoutCNPG: true}, ...)`; a `DatabaseServer` reports `Ready=False`, reason `CNPGNotInstalled`, message `CloudNativePG is not installed on this cluster. Install it, then restart the operator`.
 - [ ] **Step 4:** Docs from `TEMPLATE.md` with `writing-operator-docs`: what the server gives you, the archive and base backups paragraph (from the spec's "base backups are not the backup model"), presets, monitoring, suspend, status, spec reference, validation rules, examples.
@@ -482,7 +481,7 @@ Branch `ci/cnpg-database-server--e2e` off `feat/cnpg-database-server` after PR 4
 ### Task 5.1: install CloudNativePG and the plugin in e2e
 
 **Files:**
-- Create: `test/utils/cnpginstall.go` (`CNPGVersion()`, `BarmanPluginVersion()`, `IsCNPGInstalled()`, `InstallCNPG()`, `InstallBarmanPlugin()`, `UninstallCNPG()`, mirror of `test/utils/eck.go`; manifests `https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-<major.minor>/releases/cnpg-<version>.yaml` and `https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v<version>/manifest.yaml`; rollout wait on `cnpg-system/cnpg-controller-manager` and `cnpg-system/barman-cloud`)
+- Modify: `test/utils/cnpg.go` (add `CNPGVersion()`, `BarmanPluginVersion()`, `IsCNPGInstalled()`, `InstallCNPG()`, `InstallBarmanPlugin()`, `UninstallCNPG()`, mirror of `test/utils/eck.go`; manifests `https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-<major.minor>/releases/cnpg-<version>.yaml` and `https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v<version>/manifest.yaml`; rollout wait on `cnpg-system/cnpg-controller-manager` and `cnpg-system/barman-cloud`)
 - Modify: `test/e2e/e2e_suite_test.go` (install after cert-manager, before ECK), `test/e2e/matrix/8.9.env` (`CNPG_VERSION=1.30.0 # renovate: datasource=github-releases depName=cloudnative-pg/cloudnative-pg`, `BARMAN_PLUGIN_VERSION=0.14.0 # renovate: datasource=github-releases depName=cloudnative-pg/plugin-barman-cloud`), `test/e2e/matrix_test.go:27-49` (required vars), `Makefile:100-157` (`CNPG_INSTALL_SKIP`, pass both vars), `renovate.json5` (minor bounds and the `separateMinorPatch` group, the `renovate-dry-run-technique` memory)
 
 - [ ] **Step 1:** Helpers, suite wiring, matrix vars; `make lint-renovate`; `go vet -tags=e2e ./test/e2e/`.

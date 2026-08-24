@@ -81,7 +81,7 @@ writes it.
 - The CloudNativePG Go types are published as their own module,
   `github.com/cloudnative-pg/api`, without the operator's dependencies.
 
-### This repository
+### This repository, as it stood before #128
 
 - `ElasticsearchCluster` is the template for a kind that runs a third-party operator's CR:
   `pkg/wrappers/eckelasticsearch` wraps the ECK CR through `pkg/generic`, the controller decides
@@ -164,7 +164,7 @@ backups, because a base backup is not the backup model here. The field is named
 in the backup list or confuses them with `BackupSchedule`.
 
 The published `pitr.retentionPeriodDays` equals `spec.archive.retentionPeriodDays`, which also
-sets `configuration.retentionPolicy` on the `ObjectStore`. The value the operator declares is the
+sets `spec.retentionPolicy` on the `ObjectStore`. The value the operator declares is the
 value it enforces.
 
 ### PointInTimeRestore asks through the contract, the producer acts
@@ -477,11 +477,11 @@ so; the restore fails and the user retries after unsuspending.
   (`ocf:testing-operators`); the archive selection rule; the RFC 3339 rendering; the collision
   key; `SystemIdentifier` against a testcontainers PostgreSQL, next to the `ServerVersion` test.
 - envtest: the `DatabaseServer` controller against the CloudNativePG and plugin CRDs read from
-  the Go module cache and a vendored copy respectively, with a fake Healthy status written by the
+  the copies vendored under `internal/testenv/crds/cnpg` and `internal/testenv/crds/barmancloud` (the published `github.com/cloudnative-pg/api` module ships types without CRDs), with a fake Healthy status written by the
   test; the `withoutcnpg` suite; the `Database` collision through two contracts that report one
   identifier; `PointInTimeRestore` entering `RestoringDatabase`, writing the request on the
   contract, and reading `lastRecovery` that the test writes as the producer.
-- e2e (CI only): `test/utils/cnpg.go` installs CloudNativePG and the plugin from pinned versions
+- e2e (CI only): `test/utils/cnpg.go`, which already holds the CRD path helpers, grows the install helpers for CloudNativePG and the plugin from pinned versions
   (`CNPG_VERSION`, `BARMAN_PLUGIN_VERSION` in `test/e2e/matrix/8.9.env` with renovate markers;
   cert-manager is already installed). A `databaseserver` flow brings a server up, sees the
   contract published with `pitr.enabled: true`, sees the first base backup in MinIO, and runs a
