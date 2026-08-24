@@ -64,6 +64,7 @@ const (
 	labelCamundaOptimize      = "camundaoptimize"
 	labelElasticsearchCluster = "elasticsearchcluster"
 	labelDatabase             = "database"
+	labelDatabaseServer       = "databaseserver"
 	labelManagementKeycloak   = "management-keycloak"
 	labelManagementOIDC       = "management-oidc"
 )
@@ -78,6 +79,7 @@ var allLabels = []string{
 	labelCamundaOptimize,
 	labelElasticsearchCluster,
 	labelDatabase,
+	labelDatabaseServer,
 	labelManagementKeycloak,
 	labelManagementOIDC,
 }

@@ -61,6 +61,9 @@ const (
 	pitrRefused   = "camunda-pitr-unrestored"
 	pitrCurrent   = "camunda-pitr-current"
 	pitrUncovered = "camunda-pitr-uncovered"
+	// pitrDatabaseServer asks a server that the operator runs to roll itself
+	// back, which is the whole flow a user gets from a DatabaseServer.
+	pitrDatabaseServer = "camunda-pitr-databaseserver"
 
 	lresResource    = "logicalrestoreelasticsearches.core.camunda.io"
 	lrrdbmsResource = "logicalrestorerdbmses.core.camunda.io"
@@ -81,6 +84,22 @@ const (
 	pitrRefusedAge = 24 * time.Hour
 	// pitrHold is how long the refusing restore must keep its hold.
 	pitrHold = 30 * time.Second
+	// pitrClockGap separates the point a restore asks for from the write that
+	// must not survive it. The suite and PostgreSQL read two clocks, and the
+	// gap keeps that write on the later side of the point whichever of the
+	// two runs ahead.
+	pitrClockGap = 10 * time.Second
+	// pitrBackupCoverage is how long a flow waits after the point before it
+	// creates the restore. The restore application aligns the brokers to the
+	// newest primary-storage checkpoint that the backups cover, and a point
+	// that no backup reached yet fails the restore after it erased the broker
+	// volumes.
+	pitrBackupCoverage = 3 * time.Minute
+	// databaseRecoveryTimeout bounds the database half of an operator-driven
+	// restore: CloudNativePG bootstraps a cluster from the archive, the
+	// contract moves to it, and the operator reaches the new endpoint before
+	// the restore goes on.
+	databaseRecoveryTimeout = 15 * time.Minute
 	// watchStopTimeout bounds how long a restore Job watch waits for its last
 	// look to land. One look is one kubectl call, so the bound only fires when
 	// that call hangs.
@@ -725,6 +744,145 @@ func itFailsAPointInTimeRestoreAheadOfEveryBackup(cluster *v1.CamundaCluster) {
 				"failure instead: %s",
 			terminal.Status.FailureMessage,
 		)
+	})
+}
+
+// itRunsAPointInTimeRestoreThroughTheDatabaseServer registers the specs of the
+// restore a user gets when a DatabaseServer runs the server: they create one
+// resource, and the operator rolls the database back, aligns the brokers, and
+// starts the cluster again.
+//
+// The specs write on both sides of one point. The instance that ran before it
+// is in the database the recovery restores; the instance that ran after it is
+// in neither the recovered database nor the restored Zeebe log, so it never
+// comes back. That is the whole guarantee of a point-in-time restore, read
+// through the API of the cluster.
+//
+// Nothing here suspends the cluster. The restore suspends it, recovers the
+// server under a new name, restores the broker volumes, and withdraws its own
+// suspension.
+func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluster, server string) {
+	var (
+		// at is the point the restore asks for.
+		at time.Time
+		// kept ran before at and survives the restore; lost ran after it and
+		// does not.
+		kept, lost string
+		// requestID is the uid of the restore, which is what it writes on the
+		// contract to tell its request from an earlier one.
+		requestID string
+	)
+
+	It("starts one process instance before the point and one after it", func() {
+		kept = startInstance(cluster)
+		expectInstanceExported(cluster, kept)
+
+		at = time.Now().UTC().Truncate(time.Second)
+		time.Sleep(pitrClockGap)
+
+		lost = startInstance(cluster)
+		expectInstanceExported(cluster, lost)
+	})
+
+	It("asks the server to roll itself back to the point", func() {
+		By("waiting until the primary-storage backups cover the point")
+		time.Sleep(pitrBackupCoverage)
+
+		By("creating the PointInTimeRestore")
+		Expect(apply(&v1.PointInTimeRestore{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "PointInTimeRestore",
+			},
+			ObjectMeta: metav1.ObjectMeta{Name: pitrDatabaseServer, Namespace: cluster.Namespace},
+			Spec: v1.PointInTimeRestoreSpec{
+				ClusterRef: v1.ClusterRef{Name: cluster.Name},
+				Timestamp:  metav1.NewTime(at),
+			},
+		})).To(Succeed())
+
+		By("reading the request that the restore wrote on the contract")
+		Eventually(func(g Gomega) {
+			expectPhase(
+				g, pitrResource, pitrDatabaseServer, cluster.Namespace,
+				string(v1.PointInTimeRestoreRestoringDatabase),
+			)
+
+			var restore v1.PointInTimeRestore
+			g.Expect(utils.Get(pitrResource, pitrDatabaseServer, cluster.Namespace, &restore)).To(Succeed())
+			requestID = string(restore.UID)
+
+			var contract v1.DatabaseServerConfig
+			g.Expect(utils.Get(dbServerResource, server, cluster.Namespace, &contract)).To(Succeed())
+			g.Expect(contract.Spec.Recovery).NotTo(BeNil())
+			g.Expect(contract.Spec.Recovery.RequestID).To(Equal(requestID))
+			g.Expect(contract.Spec.Recovery.RequestedBy).To(
+				Equal(cluster.Namespace + "/" + pitrDatabaseServer),
+			)
+			g.Expect(contract.Spec.Recovery.TargetTime).To(Equal(at.Format(time.RFC3339)))
+		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+	})
+
+	It("recovers the server into a new cluster and moves the contract to it", func() {
+		By("waiting for the restore to leave the database recovery")
+		Eventually(func(g Gomega) {
+			var restore v1.PointInTimeRestore
+			g.Expect(utils.Get(pitrResource, pitrDatabaseServer, cluster.Namespace, &restore)).To(Succeed())
+			g.Expect(restore.Status.Phase).To(BeElementOf(
+				v1.PointInTimeRestoreValidatingDatabaseState,
+				v1.PointInTimeRestoreRestoringPrimaryStorage,
+				v1.PointInTimeRestoreCompleted,
+			), restore.Status.FailureMessage)
+		}, databaseRecoveryTimeout, 5*time.Second).Should(Succeed())
+
+		By("reading what the server recorded about the recovery")
+		var current v1.DatabaseServer
+		Expect(utils.Get(dsResource, server, cluster.Namespace, &current)).To(Succeed())
+		Expect(current.Status.Cluster).To(Equal(server + "-r1"))
+		Expect(current.Status.Recovery).NotTo(BeNil())
+		Expect(current.Status.Recovery.RequestID).To(Equal(requestID))
+		Expect(current.Status.Recovery.PreviousCluster).To(Equal(server))
+		Expect(current.Status.Recovery.Result).To(Equal(v1.RecoveryResultCompleted))
+		Expect(current.Status.Archive.History[0].To).NotTo(
+			BeNil(), "the archive of the superseded cluster is still open",
+		)
+
+		By("reading the contract that now names the recovered cluster")
+		var contract v1.DatabaseServerConfig
+		Expect(utils.Get(dbServerResource, server, cluster.Namespace, &contract)).To(Succeed())
+		Expect(contract.Spec.Host).To(Equal(server + "-r1-rw." + cluster.Namespace + ".svc"))
+		Expect(contract.Spec.AdminCredentialsSecretRef.Name).To(Equal(server + "-r1-superuser"))
+		Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
+		Expect(contract.Spec.PITR.LastRecovery.RequestID).To(Equal(requestID))
+		Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(v1.RecoveryResultCompleted))
+	})
+
+	It("completes and leaves the cluster with the state of the point", func() {
+		expectRestoreCompleted(
+			pitrResource, pitrDatabaseServer, cluster.Namespace, string(v1.PointInTimeRestoreFailed),
+		)
+
+		expectUnsuspended(cluster)
+
+		By("searching the instance that ran before the point")
+		expectInstanceExported(cluster, kept)
+
+		By("checking that the instance that ran after the point does not come back")
+		Consistently(func(g Gomega) {
+			expectInstanceGone(g, cluster, lost)
+		}, pitrHold, 15*time.Second).Should(Succeed())
+	})
+
+	It("archives the recovered cluster and reports Ready Healthy again", func() {
+		Eventually(func(g Gomega) {
+			expectReady(g, dsResource, server, cluster.Namespace, v1.ReasonHealthy)
+
+			var current v1.DatabaseServer
+			g.Expect(utils.Get(dsResource, server, cluster.Namespace, &current)).To(Succeed())
+			g.Expect(current.Status.Archive.History).To(HaveLen(2))
+			g.Expect(current.Status.Archive.History[1].ServerName).To(Equal(server + "-r1"))
+			g.Expect(current.Status.Archive.History[1].To).To(BeNil())
+		}, dsReadyTimeout, 5*time.Second).Should(Succeed())
 	})
 }
 
