@@ -28,6 +28,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -156,20 +157,14 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // persists them together.
 func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
-	// A reconcile that does not refuse drops the cluster out of the memo of
-	// the recorded refusals. A refusal that comes back is then recorded
-	// again, and a deleted cluster leaves nothing behind. The staged Ready
-	// condition cannot stand in for this flag: a flush that conflicts drops
-	// it.
-	refusing := false
-	defer func() {
-		if !refusing {
-			r.refusals.forget(req.NamespacedName)
-		}
-	}()
-
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			r.refusals.forget(req.NamespacedName)
+
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	if cluster.Spec.Pause {
@@ -244,13 +239,18 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A refused downgrade re-enqueues through the watches on the cluster, the
 	// preset, and the owned StatefulSet, so no timer is needed.
 	if failure := refuseDowngrade(&cluster, in, storage); failure != nil {
-		refusing = true
 		refused := conditions.Failed(&cluster, failure)
 		r.recordRefusedDowngrade(&cluster, refused)
 		conditions.Stage(&cluster, refused)
 
 		return ctrl.Result{}, nil
 	}
+	// Only a reconcile that reached the check and found no downgrade drops
+	// the cluster out of the memo, so a refusal that comes back is recorded
+	// again. An earlier return leaves the memo as it is: the refusal may
+	// still stand, and the staged Ready condition cannot tell, because a
+	// flush that conflicts drops it.
+	r.refusals.forget(req.NamespacedName)
 
 	in.VolumeClaimSize = storage.volumeClaimSize()
 
