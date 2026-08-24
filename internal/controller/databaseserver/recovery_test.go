@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -282,6 +283,25 @@ func expectTerminating(server *v1.DatabaseServer, name string) {
 		g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
 		g.Expect(cluster.DeletionTimestamp.IsZero()).To(BeFalse())
 	}, timeout, interval).Should(Succeed())
+}
+
+// recoveryEventReasons lists the reasons of the events that the operator
+// recorded about the server.
+func recoveryEventReasons(server *v1.DatabaseServer) []string {
+	GinkgoHelper()
+
+	var events eventsv1.EventList
+	Expect(k8sClient.List(ctx, &events, client.InNamespace(server.Namespace))).To(Succeed())
+
+	reasons := make([]string, 0, len(events.Items))
+	for _, event := range events.Items {
+		if event.Regarding.Name != server.Name {
+			continue
+		}
+		reasons = append(reasons, event.Reason)
+	}
+
+	return reasons
 }
 
 // expectGone waits until obj no longer exists.
@@ -941,7 +961,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(k8sClient.Delete(ctx, &recovered)).To(Succeed())
 
 		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
-		Expect(outcome.Message).To(ContainSubstring("no longer exists"))
+		Expect(outcome.Message).To(ContainSubstring("was removed"))
 		Expect(outcome.Message).To(ContainSubstring("runs from \"camunda\" again"))
 
 		Eventually(func() string {
@@ -1007,6 +1027,13 @@ var _ = Describe("DatabaseServer recovery", func() {
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 			)).To(Succeed())
 		}, "3s", interval).Should(Succeed())
+
+		// The refusal is its own reason. A reader of kubectl describe learns
+		// that two servers are writing one contract, which is not what a
+		// refused rollback means.
+		Eventually(func() []string {
+			return recoveryEventReasons(server)
+		}, timeout, interval).Should(ContainElement("RecoveryClusterNotOwned"))
 	})
 
 	It("answers a request while the server is suspended and its bucket is gone", func() {
