@@ -185,10 +185,17 @@ the outcome:
   the producer when a request is done. `result` is `Completed`, `Failed`, or `Unavailable`.
 
 `DatabaseServer` owns the contract it publishes, so it already receives its events. A request
-newer than `lastRecovery` triggers the recovery; the producer applies the new `host` and
-`lastRecovery` in one apply. `PointInTimeRestore` writes a request only when the contract says
-`operator`, waits until `lastRecovery` matches its request, and reads `result`. The contract's
-status stays with its own status-only controller, which keeps publishing `systemIdentifier`.
+newer than `lastRecovery` triggers the recovery. `PointInTimeRestore` writes a request only when
+the contract says `operator`, waits until `lastRecovery` matches its request, and reads `result`.
+The contract's status stays with its own status-only controller, which keeps publishing
+`systemIdentifier`.
+
+The producer moves the endpoint and answers the request in two applies, under two field managers.
+The contract component republishes `host` from `status.cluster` under its own manager. The
+producer applies `lastRecovery` under `RecoveryFieldManager` only after the contract reports its
+own generation as observed, together with a `systemIdentifier` for the new endpoint. The two
+writers declare disjoint fields, so neither takes ownership from the other. The re-probe between
+the applies is what proves the answer describes the server the contract now names.
 
 `lastRecovery` is a producer-declared fact in spec next to a consumer-written request. It has
 the shape of `pitr` itself, a declaration; the alternative, an outcome in the contract's status,
@@ -323,9 +330,17 @@ status:
       - serverName: camunda-r1
         from: "2026-08-20T14:30:00Z"
   recovery:                        # the last request this server acted on
+    requestID: 6f1c…               # the restore's UID, as the contract carried it
+    contract: camunda              # the contract that carried the request
     requestedBy: camunda/pitr-1
     targetTime: "2026-08-20T14:30:00Z"
-    cluster: camunda-r1
+    cluster: camunda-r1            # the cluster the recovery builds
+    previousCluster: camunda       # where the contract goes back to if it fails
+    archive:                       # pinned when the request is recorded
+      serverName: camunda
+      objectStorageRef: backups
+    result: Completed              # unset while the recovery runs
+    message: ""
     completedAt: "2026-08-20T15:02:11Z"
   volumes: []
   conditions: []
@@ -335,10 +350,17 @@ Printcolumns: `Ready`, `Reason`, `Version`, `Age`. The image is
 `ghcr.io/cloudnative-pg/postgresql:<version>` by default, resolved through `pkg/images` so the
 platform config can override the repository.
 
-Validation: `databaseServerConfig` required; `storageSize` may not shrink; `archive` requires
-`retentionPeriodDays >= 1`;
-`version` matches `^\d+$` and is floored at the oldest major Camunda 8.9 supports (verified with
-the `camunda-docs` MCP during implementation).
+Validation: `databaseServerConfig` required; `storageSize` and `walStorageSize` may not shrink,
+one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matches `^\d+$` and is
+floored at the oldest major Camunda 8.9 supports (verified with the `camunda-docs` MCP during
+implementation).
+
+`monitoring.podMonitor` carries `labels` and `annotations` beside `enabled` and `interval`, so a
+Prometheus that selects the monitor on either one finds it.
+
+The archive credentials are not referenced where the user keeps them. The operator mirrors what
+the `ObjectStorageConfig` resolves into an operator-owned Secret `<server>-archive` in the
+server's namespace, and the `ObjectStore` points every credential at that Secret.
 
 Conditions and components, one component per condition:
 
@@ -420,9 +442,9 @@ Pending → RestoringDatabase → ValidatingDatabaseState → RestoringPrimarySt
 `pitr.recovery: operator`; otherwise it enters `ValidatingDatabaseState` as today. In
 `RestoringDatabase` the restore:
 
-1. Applies `spec.recovery {requestedBy, targetTime}` on the contract under its own field
-   manager. `requestedBy` is the restore's `namespace/name`; `targetTime` is `spec.timestamp`
-   rendered in RFC 3339 UTC.
+1. Applies `spec.recovery {requestID, requestedBy, targetTime}` on the contract under its own
+   field manager. `requestID` is the restore's UID. `requestedBy` is the restore's
+   `namespace/name`. `targetTime` is `spec.timestamp` rendered in RFC 3339 UTC.
 2. Polls the contract until `pitr.lastRecovery` matches the request and the contract's own
    `Ready` is `True`, then refreshes the `systemIdentifier` pin from the contract's status and
    moves on.
@@ -447,20 +469,39 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
 2. Applies `Cluster <name>-r<N>` with `bootstrap.recovery.source: source`,
    `recoveryTarget.targetTime`, an `externalClusters` entry that names the `ObjectStore` and the
    source `serverName`, and its own `plugins[]` entry with `serverName: <name>-r<N>`.
-3. Waits for the new `Cluster` to be Healthy. Applies the contract with the new `host` and
-   `lastRecovery {result: Completed}` in one apply, and `status.cluster` with the new name. A
-   `Cluster` that fails to bootstrap (the recovery Job fails, or the target is past the archive)
+3. Waits for the new `Cluster` to be Healthy, then puts `status.cluster` on it. The contract
+   component republishes `host` from `status.cluster` under its own field manager. Once the
+   contract reports its own generation as observed, with a `systemIdentifier` for the new
+   endpoint, the producer applies `lastRecovery {result: Completed}` under
+   `RecoveryFieldManager`. That is two applies under two field managers, sequenced by the
+   re-probe. A `Cluster` that fails to bootstrap (the recovery Job fails, or the target is past the archive)
    is deleted and `lastRecovery` is applied with `result: Failed` and the CloudNativePG message.
 4. Deletes the previous `Cluster` and its base-backup schedule. Closes the previous archive
    interval at the cutover, when the contract moves to the new cluster: the old archive's WAL
    ends when the old cluster goes away, so the record states what the archive holds. Points
    between the cutover and the new archive's first base backup are honestly unavailable. The
    new record opens at that first base backup. Applies a `ScheduledBackup` for the new cluster with `immediate: true`.
-5. Records `status.recovery {requestedBy, targetTime, cluster, completedAt}`.
+5. Records `status.recovery {requestID, contract, requestedBy, targetTime, cluster,
+   previousCluster, archive{serverName, objectStorageRef}, result, message, completedAt}`.
 
 Each step is idempotent and keyed on what exists, so a restart in the middle resumes. The
 previous `Cluster` is deleted only after the contract points at the new one, so a failure before
 step 4 leaves the old server intact and the restore reports `Failed` without data loss.
+
+While a request is unanswered, the server holds the two things the recovery reads. A spec that
+moves `spec.databaseServerConfig` or `spec.archive.objectStorageRef` puts
+`Ready=False/InvalidReference` on the server, and the merged spec stays pinned to the contract
+name and the bucket that `status.recovery` recorded. The components keep running on those
+recorded values, because a recovery that never gets its contract republished never finishes.
+
+A candidate that fails after the contract already moved to it rolls the contract back. The server
+puts `status.cluster` back on `status.recovery.previousCluster`, which still holds the data, and
+answers the request with `result: Failed`. A record that names no cluster to go back to is an
+error instead. The sweep of the next look reads `status.cluster`, and it would take the cluster
+that holds the data with it.
+
+`targetTime` is rendered in RFC 3339 UTC and keeps the fraction the restore asked for. A time
+truncated to the second renders the same either way.
 
 A request while `suspend` is true is answered with `result: Failed` and a message that says
 so; the restore fails and the user retries after unsuspending.
@@ -494,6 +535,23 @@ so; the restore fails and the user retries after unsuspending.
   contract published with `pitr.enabled: true`, sees the first base backup in MinIO, and runs a
   `Database` on it. The RDBMS cluster flow gains the case where a `PointInTimeRestore` recovers
   the server: write, note the time, write more, restore, and read only the first write.
+
+Four behaviors stay in envtest on purpose and never reach the e2e suite. Each e2e flow pays for
+a CloudNativePG bootstrap on every pull request, and none of the four needs a real PostgreSQL to
+be proved:
+
+- Suspension: `It("hibernates the cluster while spec.suspend is true")` in
+  `internal/controller/databaseserver/controller_test.go`.
+- The removal of what an answered recovery replaced, under the volume retention policy:
+  `It("keeps removing what an answered recovery replaced")` in
+  `internal/controller/databaseserver/recovery_test.go`.
+- Closing the archive record and opening a new one:
+  `It("closes the archive record when the archive block is removed")` and
+  `It("starts a new archive record when the archive comes back")` in
+  `internal/controller/databaseserver/controller_test.go`.
+- The shared-server refusal:
+  `It("holds a server that a Database of another namespace reaches through another contract")` in
+  `internal/controller/pointintimerestore/controller_test.go`.
 
 ## Docs
 
