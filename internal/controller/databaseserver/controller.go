@@ -85,10 +85,23 @@ type serverComponents struct {
 	monitoring *component.Component
 }
 
-// all returns the components in reconcile order. Ready aggregates every one of
-// them, and FlushStatus owns every one of their condition types.
+// all returns the components in reconcile order. FlushStatus owns every one of
+// their condition types.
 func (c serverComponents) all() []*component.Component {
 	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
+}
+
+// ready returns the components that take part in Ready: the cluster, the
+// contract, and the archive of a server that asks for one. Monitoring keeps
+// its own MonitoringReady condition, and an archive the spec does not ask for
+// keeps ArchiveReady, so Ready never reports Disabled.
+func (c serverComponents) ready(merged v1.DatabaseServerSpec) []*component.Component {
+	comps := []*component.Component{c.cluster, c.contract}
+	if merged.Archive != nil {
+		comps = append(comps, c.archive)
+	}
+
+	return comps
 }
 
 // DatabaseServerReconciler runs a PostgreSQL server through the external
@@ -226,7 +239,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	server.Status.Volumes = volumes
 
-	conditions.Stage(&server, conditions.Aggregate(&server, comps...))
+	conditions.Stage(&server, conditions.Aggregate(&server, built.ready(resolved.merged)...))
 
 	// The hold is the reason the reader acts on, so it wins over whatever the
 	// components report while the recovery finishes.

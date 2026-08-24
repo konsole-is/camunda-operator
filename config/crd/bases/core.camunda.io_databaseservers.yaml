@@ -943,9 +943,11 @@ spec:
                 description: |-
                   Conditions represent the current state. Ready carries a pre-check
                   reason (InvalidReference, MissingSecret, CNPGNotInstalled,
-                  BarmanPluginNotInstalled), or it is derived from the component
-                  conditions. The per-component conditions (ClusterReady, ArchiveReady,
-                  ContractReady, MonitoringReady) also appear here.
+                  BarmanPluginNotInstalled), or it is derived from the cluster, the
+                  contract, and the archive of a server that asks for one. The
+                  per-component conditions (ClusterReady, ArchiveReady, ContractReady,
+                  MonitoringReady) also appear here. MonitoringReady, and ArchiveReady
+                  without spec.archive, are reported on their own and never on Ready.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

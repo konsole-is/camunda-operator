@@ -277,6 +277,7 @@ status:
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | Every part of the server is in its desired state. | Nothing. |
+| `Ready` | `Blocked` | The archive that the server asks for holds no base backup yet, so no restore can reach the server. | Wait. |
 | `Ready` | `Suspended` | `spec.suspend` is true and the instances are gone. | Nothing. |
 | `Ready` | `CNPGNotInstalled` | The Kubernetes cluster did not serve the CloudNativePG kinds when the operator started. | Install CloudNativePG, then restart the operator. |
 | `Ready` | `BarmanPluginNotInstalled` | The server asks for an archive, and the Kubernetes cluster did not serve the Barman Cloud plugin when the operator started. | Install the plugin, then restart the operator. |
@@ -292,6 +293,8 @@ status:
 | `ContractReady` | `Healthy` | The contract is published. | Nothing. |
 | `MonitoringReady` | `Disabled` | Scraping is off. | Nothing. |
 | `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |
+
+A part that the spec switches off is reported on its own condition and never on `Ready`. `MonitoringReady` stays out of `Ready` always, and `ArchiveReady` stays out of it on a server with no `archive` block. A server that runs therefore reads `Ready: Healthy` whether or not it archives and whether or not it scrapes.
 
 `status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
 
