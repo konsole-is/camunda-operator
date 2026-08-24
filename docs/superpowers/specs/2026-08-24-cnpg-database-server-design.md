@@ -448,9 +448,10 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
    `Cluster` that fails to bootstrap (the recovery Job fails, or the target is past the archive)
    is deleted and `lastRecovery` is applied with `result: Failed` and the CloudNativePG message.
 4. Deletes the previous `Cluster` and its base-backup schedule. Closes the previous archive
-   interval at the start of the new archive (closing at `targetTime` would strand every point
-   between `targetTime` and the recovery that the old archive still holds) and appends the new
-   one. Applies a `ScheduledBackup` for the new cluster with `immediate: true`.
+   interval at the cutover, when the contract moves to the new cluster: the old archive's WAL
+   ends when the old cluster goes away, so the record states what the archive holds. Points
+   between the cutover and the new archive's first base backup are honestly unavailable. The
+   new record opens at that first base backup. Applies a `ScheduledBackup` for the new cluster with `immediate: true`.
 5. Records `status.recovery {requestedBy, targetTime, cluster, completedAt}`.
 
 Each step is idempotent and keyed on what exists, so a restart in the middle resumes. The
