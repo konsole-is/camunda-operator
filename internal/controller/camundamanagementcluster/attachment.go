@@ -291,15 +291,19 @@ func basicUserSecret(
 	return components.WebModelerClusterUserSecretName(mc, cluster.UID)
 }
 
-// readClusterConfig reads the platform config that cluster names. A dangling
-// reference is a message for the row of the cluster rather than an error: the
-// cluster's own controller reports the same reference, and one broken cluster
-// must not stop the management plane. Any other failure of the API is an
-// error.
+// readClusterConfig reads the platform config that cluster names. A missing
+// or dangling reference is a message for the row of the cluster rather than
+// an error: the cluster's own controller reports the same reference, and one
+// broken cluster must not stop the management plane. Any other failure of the
+// API is an error.
 func (r *Reconciler) readClusterConfig(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
 ) (*v1.CamundaPlatformConfig, string, error) {
+	if cluster.Spec.PlatformConfigRef == "" {
+		return nil, "this cluster names no CamundaPlatformConfig", nil
+	}
+
 	var cfg v1.CamundaPlatformConfig
 	key := client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}
 	if err := r.APIReader.Get(ctx, key, &cfg); err != nil {
