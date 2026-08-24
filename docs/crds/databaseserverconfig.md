@@ -77,6 +77,70 @@ A `Database` whose contract has not published this value yet waits with `Ready=F
 
 The `pitr` block is a declaration. It states that the server archives WAL for the given number of days. [PointInTimeRestore](pointintimerestore.md) reads it to decide whether the server can serve a requested point.
 
+`pitr.recovery` states who rolls the server back to a point in time. It defaults to `external`, which means that nobody does it for you. With `external` you roll the database back yourself before you create a [PointInTimeRestore](pointintimerestore.md).
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  pitr:
+    enabled: true
+    retentionPeriodDays: 7
+    recovery: operator
+  # ... the rest of your contract
+```
+
+`operator` means that whoever publishes the contract rolls the server back on request. It needs `pitr.enabled: true`. A [DatabaseServer](databaseserver.md) publishes `operator` on every contract of a server that archives.
+
+## Recovery request
+
+`spec.recovery` asks for the rollback. A [PointInTimeRestore](pointintimerestore.md) writes it on a contract that declares `pitr.recovery: operator`, and never on one that declares `external`. You can write it by hand against a contract that a `DatabaseServer` publishes.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  recovery:
+    requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+    requestedBy: my-cluster-ns/my-restore
+    targetTime: "2026-08-20T14:30:00Z"
+  # ... the rest of your contract
+```
+
+`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
+
+The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
+
+```yaml
+spec:
+  pitr:
+    lastRecovery:
+      requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+      requestedBy: my-cluster-ns/my-restore
+      targetTime: "2026-08-20T14:30:00Z"
+      completedAt: "2026-08-20T15:02:11Z"
+      result: Completed
+      message: ""
+```
+
+| `result` | Meaning | What to do |
+| --- | --- | --- |
+| `Completed` | The server holds the state of `targetTime`. `spec.host` now names it. | Nothing. Read `spec.host` again for the endpoint. |
+| `Unavailable` | The server holds no copy of `targetTime`. `message` names the windows it does hold. | Ask for a point inside one of those windows. |
+| `Failed` | The rollback started and did not finish. `message` says what stopped it. | Correct the cause, then ask again. |
+
+Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource: the new resource carries a new uid, and the server reads it as a new request even when the point is the same.
+
+A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, `status.probedSecretKeys`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
+
+Writing the request itself clears nothing. The operator clears the record of the probe when `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef` change, because only those name another server or another user on it. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
@@ -87,11 +151,16 @@ The `pitr` block is a declaration. It states that the server archives WAL for th
 
 | Field | Meaning |
 | --- | --- |
-| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. A spec change clears it. |
-| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`, for example `"7412345678901234567"`. Two contracts that reach one instance publish one value. It keeps the last known value while the server is unreachable. A spec change clears it. |
-| `status.probedAt` | When the operator last reached the server and read `serverVersion` and `systemIdentifier`. A spec change clears it. |
-| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A spec change clears it. |
+| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. A change of server clears it. |
+| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`, for example `"7412345678901234567"`. Two contracts that reach one instance publish one value. It keeps the last known value while the server is unreachable. A change of server clears it. |
+| `status.probedAt` | When the operator last reached the server and read `serverVersion` and `systemIdentifier`. A change of server clears it. |
+| `status.probedEndpoint` | The `host:port` that the last probe reached. It is what tells a change of server from any other spec change. |
+| `status.probedSecretName` | The admin credentials Secret that the last probe read. |
+| `status.probedSecretKeys` | The keys of that Secret that the last probe read, as `<usernameKey>/<passwordKey>`. Another key names another user. |
+| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A change of server clears it. |
 | `status.observedGeneration` | The last generation of the contract that the operator validated. |
+
+A change of server means a change to `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef`. Every other spec change, including a recovery request and its answer, leaves the record of the probe alone.
 
 ## Spec reference
 
@@ -124,6 +193,30 @@ spec:
     enabled: true
     # integer. Required when enabled is true, at least 1. How many days into the past a point-in-time restore can target.
     retentionPeriodDays: 7
+    # string enum: operator, external. Optional, default: external. Who rolls the server back to a point in time.
+    recovery: operator
+    # object. Optional. How the last recovery request ended. The producer of the contract writes it.
+    lastRecovery:
+      # string. Required. The requestID of the request this outcome answers.
+      requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+      # string. Required. The requestedBy of the request this outcome answers.
+      requestedBy: my-cluster-ns/my-restore
+      # string. Required. The targetTime of the request this outcome answers, RFC 3339 with a zone.
+      targetTime: "2026-08-20T14:30:00Z"
+      # string. Required. When the request ended, as RFC 3339.
+      completedAt: "2026-08-20T15:02:11Z"
+      # string enum: Completed, Failed, Unavailable. Required. How the request ended.
+      result: Completed
+      # string. Optional. What happened. Empty for a result of Completed.
+      message: ""
+  # object. Optional. Asks for a rollback to a point in time. A consumer writes it.
+  recovery:
+    # string. Required. A UUID that belongs to this request alone, usually the uid of the resource that asks.
+    requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+    # string. Required. The resource that asks, as <namespace>/<name>.
+    requestedBy: my-cluster-ns/my-restore
+    # string. Required. The point to roll back to, as RFC 3339 with a zone.
+    targetTime: "2026-08-20T14:30:00Z"
 ```
 
 ### Validation rules
@@ -133,6 +226,11 @@ spec:
 - `spec.adminCredentialsSecretRef.name` must not be empty.
 - `spec.port` must be from 1 to 65535.
 - If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and at least 1.
+- If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
+- `spec.recovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
+- `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.
+- `spec.recovery.requestID` and `spec.pitr.lastRecovery.requestID` must be a UUID.
+- `spec.pitr.lastRecovery.targetTime` must be RFC 3339 with a zone, like the request it answers.
 - No field is immutable.
 
 ### A production-shaped example

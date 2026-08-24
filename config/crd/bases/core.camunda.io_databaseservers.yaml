@@ -1009,6 +1009,89 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              recovery:
+                description: |-
+                  Recovery is the recovery request that the server works on now, or the
+                  last one it answered. The answer itself is published on the contract,
+                  in spec.pitr.lastRecovery.
+                properties:
+                  archive:
+                    description: |-
+                      Archive is the archive that the recovery reads. It is recorded before
+                      the recovery builds anything and read on every look after that, so a
+                      spec that names another bucket in the middle does not move a recovery
+                      that is already running.
+                    properties:
+                      objectStorageRef:
+                        description: |-
+                          ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
+                          archive lives in.
+                        type: string
+                      serverName:
+                        description: |-
+                          ServerName is the archive directory, equal to the name of the
+                          CloudNativePG cluster that wrote it.
+                        type: string
+                    required:
+                    - objectStorageRef
+                    - serverName
+                    type: object
+                  cluster:
+                    description: |-
+                      Cluster is the CloudNativePG cluster that the recovery builds. It is
+                      empty for a request that the server refused, whether or not it had built
+                      one by then.
+                    type: string
+                  completedAt:
+                    description: |-
+                      CompletedAt is when the server answered the request. It is unset while
+                      the recovery runs.
+                    format: date-time
+                    type: string
+                  contract:
+                    description: |-
+                      Contract is the DatabaseServerConfig that carried the request. The
+                      server answers on that contract, and it does not change the contract it
+                      publishes while the request is unanswered.
+                    type: string
+                  message:
+                    description: Message is the message the server published with
+                      Result.
+                    type: string
+                  previousCluster:
+                    description: |-
+                      PreviousCluster is the cluster that the contract pointed at before the
+                      recovery moved it. A recovery that fails after the move puts the
+                      contract back on it, because that cluster still holds the data.
+                    type: string
+                  requestID:
+                    description: RequestID is the requestID of the request, as the
+                      contract carries it.
+                    type: string
+                  requestedBy:
+                    description: |-
+                      RequestedBy is the requestedBy of the request, as the contract carries
+                      it.
+                    type: string
+                  result:
+                    description: |-
+                      Result is the result the server published for the request. It is unset
+                      while the recovery runs.
+                    enum:
+                    - Completed
+                    - Failed
+                    - Unavailable
+                    type: string
+                  targetTime:
+                    description: TargetTime is the targetTime of the request, as the
+                      contract carries it.
+                    type: string
+                required:
+                - contract
+                - requestID
+                - requestedBy
+                - targetTime
+                type: object
               systemIdentifier:
                 description: |-
                   SystemIdentifier is the identity of the PostgreSQL instance that runs

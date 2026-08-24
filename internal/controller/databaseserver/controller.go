@@ -69,6 +69,10 @@ type resolvedSpec struct {
 	// already down did not resolve. The reconcile then stops and leaves the
 	// conditions alone: see preCheck.
 	holdForSuspension bool
+	// holdForRecovery says that the spec moved the contract or the bucket that
+	// the running recovery depends on. The merged spec then keeps what the
+	// recovery recorded, and Ready reports why: see preCheck.
+	holdForRecovery *conditions.PreCheckFailure
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -93,8 +97,9 @@ func (c serverComponents) all() []*component.Component {
 // the namespace of the CR.
 type DatabaseServerReconciler struct {
 	client.Client
-	// APIReader reads without the cache. The bucket credentials Secret must be
-	// read live.
+	// APIReader reads without the cache. The server itself and the bucket
+	// credentials Secret are both read live: the recovery keys its steps on
+	// status.recovery, and the Secret is watched with metadata only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// EventRecorder publishes the component lifecycle events. SetupWithManager
@@ -144,8 +149,12 @@ type DatabaseServerReconciler struct {
 // persists them together with the observed cluster, identifier, archive
 // history, and volumes.
 func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+	// Live, not cached. A recovery is a state machine whose marker is
+	// status.recovery: each step reads it to tell what the last one did, and
+	// the steps create and delete CloudNativePG clusters. A stale read of that
+	// marker re-enters a step whose side effect already ran.
 	var server v1.DatabaseServer
-	if err := r.Get(ctx, req.NamespacedName, &server); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &server); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -180,6 +189,14 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// Before the hold below: a suspended server refuses a recovery request,
+	// and a request nobody answers holds whoever asked for good.
+	recovering, err := r.reconcileRecovery(ctx, &server, resolved)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if resolved.holdForSuspension {
 		return ctrl.Result{}, nil
 	}
@@ -211,14 +228,21 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	conditions.Stage(&server, conditions.Aggregate(&server, comps...))
 
+	// The hold is the reason the reader acts on, so it wins over whatever the
+	// components report while the recovery finishes.
+	if resolved.holdForRecovery != nil {
+		conditions.Stage(&server, conditions.Failed(&server, resolved.holdForRecovery))
+	}
+
 	if reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
 
 	// Nothing reports that the superuser Secret appeared: CloudNativePG owns
 	// it, and this controller watches only what it owns itself. Every other
-	// condition of this CR is backed by a watch.
-	if !meta.IsStatusConditionTrue(server.Status.Conditions, components.ConditionContract) {
+	// condition of this CR is backed by a watch. A running recovery waits on
+	// that same Secret, one cluster further on.
+	if recovering || !meta.IsStatusConditionTrue(server.Status.Conditions, components.ConditionContract) {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
@@ -271,6 +295,21 @@ func (r *DatabaseServerReconciler) preCheck(
 		}
 	}
 
+	// Not a failure: the server keeps the contract and the bucket that the
+	// running recovery depends on, and it reports why. The recovery needs the
+	// contract republished to finish, so holding the components instead holds
+	// the recovery that the hold exists to protect.
+	if hold := recoveryHoldsSpec(server, resolved.merged); hold != nil {
+		running := server.Status.Recovery
+		resolved.holdForRecovery = hold
+		resolved.merged.DatabaseServerConfig = running.Contract
+		if running.Archive != nil && resolved.merged.Archive != nil {
+			block := *resolved.merged.Archive
+			block.ObjectStorageRef = running.Archive.ObjectStorageRef
+			resolved.merged.Archive = &block
+		}
+	}
+
 	platform, err := r.resolvePlatform(ctx, resolved.merged)
 	if err != nil {
 		return resolved, err
@@ -312,6 +351,51 @@ func (r *DatabaseServerReconciler) preCheck(
 	}
 
 	return resolved, nil
+}
+
+// recoveryHoldsSpec reports that the spec moved something the running recovery
+// depends on, or nil when it did not.
+//
+// A recovery is a question that one contract asked, answered out of one
+// bucket. Publishing another contract while it runs leaves the cluster that is
+// building with nobody to answer, and pointing the archive at another bucket
+// takes away the copy it reads. The server therefore keeps both of them until
+// the request is answered.
+func recoveryHoldsSpec(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+) *conditions.PreCheckFailure {
+	running := server.Status.Recovery
+	if running == nil || running.CompletedAt != nil {
+		return nil
+	}
+
+	if running.Contract != "" && running.Contract != merged.DatabaseServerConfig {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"A rollback that %s asked for on DatabaseServerConfig %q is still running. Set "+
+					"spec.databaseServerConfig back to that name, or wait for the rollback to "+
+					"finish, before the server publishes another contract",
+				running.RequestedBy, running.Contract,
+			),
+		}
+	}
+
+	if running.Archive != nil && merged.Archive != nil &&
+		running.Archive.ObjectStorageRef != merged.Archive.ObjectStorageRef {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"A rollback that %s asked for reads the archive in ObjectStorageConfig %q, which "+
+					"is still running. Set spec.archive.objectStorageRef back to that name, or "+
+					"wait for the rollback to finish",
+				running.RequestedBy, running.Archive.ObjectStorageRef,
+			),
+		}
+	}
+
+	return nil
 }
 
 // instancesAreDown reports whether CloudNativePG has taken the instances of the
@@ -579,6 +663,11 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 // archives, and a server that archives again can recover from them. A server
 // that archives again opens a record of its own, so the window with no archive
 // stays outside every interval and no restore can ask for a point in it.
+//
+// A recovery closes the record of the cluster it replaces itself, at the
+// moment the contract moves. What is left here is the record of an archive
+// that another cluster of this server wrote and never closed, which only an
+// operator of an older version can leave behind.
 func reconcileArchiveHistory(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,

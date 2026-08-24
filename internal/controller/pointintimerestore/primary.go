@@ -38,7 +38,7 @@ func (r *Reconciler) restorePrimaryStorage(
 	ctx context.Context,
 	pitr *v1.PointInTimeRestore,
 ) (restore.Outcome, error) {
-	resolved, failure, err := r.resolve(ctx, pitr)
+	resolved, failure, err := r.resolve(ctx, pitr, pinExact)
 	if err != nil {
 		return r.resolveFailed(pitr, err)
 	}

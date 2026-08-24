@@ -1,0 +1,1063 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package databaseserver
+
+import (
+	"strings"
+	"time"
+
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
+	"github.com/google/uuid"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
+)
+
+// recoveredSystemIdentifier is the identity that CloudNativePG reports for a
+// cluster a recovery built. A recovery starts a new PostgreSQL instance, so it
+// is never the identity of the cluster it replaces.
+const recoveredSystemIdentifier = "7000000000000000002"
+
+// testHoldFinalizer keeps a CloudNativePG cluster terminating, so a spec can
+// show what the operator does while one is on its way out. envtest runs no
+// CloudNativePG, so nothing else holds a deleted cluster.
+const testHoldFinalizer = "camunda.io/test-hold"
+
+// archivingServer creates a server that archives to a bucket of its own,
+// brings its cluster up, and takes one base backup, so its archive is open and
+// a recovery has somewhere to start from. It returns the server and the point
+// that base backup completed at.
+func archivingServer() (*v1.DatabaseServer, metav1.Time) {
+	GinkgoHelper()
+
+	bucket := archiveBucket()
+	server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+		ObjectStorageRef:    bucket.Name,
+		RetentionPeriodDays: 30,
+	})
+	writeSuperuserSecret(server)
+	makeClusterHealthy(server, "7000000000000000001")
+
+	from := metav1.NewTime(time.Now().Add(-2 * time.Hour).Truncate(time.Second))
+	completeBaseBackup(server, "base-1", from)
+
+	Eventually(func() []v1.ArchiveRecord {
+		return archiveHistory(server)
+	}, timeout, interval).Should(HaveLen(1))
+
+	return server, from
+}
+
+// askForRecovery writes a recovery request on the contract of the server, the
+// way a PointInTimeRestore does. It returns the request it wrote.
+func askForRecovery(server *v1.DatabaseServer, target time.Time) v1.RecoveryRequest {
+	GinkgoHelper()
+
+	return askForRecoveryOn(server, contractKey(server), target)
+}
+
+// askForRecoveryOn writes a recovery request on the named contract.
+func askForRecoveryOn(
+	server *v1.DatabaseServer,
+	key client.ObjectKey,
+	target time.Time,
+) v1.RecoveryRequest {
+	GinkgoHelper()
+
+	request := v1.RecoveryRequest{
+		RequestID:   uuid.NewString(),
+		RequestedBy: server.Namespace + "/pitr-1",
+		TargetTime:  target.UTC().Format(time.RFC3339Nano),
+	}
+	Eventually(func(g Gomega) {
+		var contract v1.DatabaseServerConfig
+		g.Expect(k8sClient.Get(ctx, key, &contract)).To(Succeed())
+		contract.Spec.Recovery = &request
+		g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	return request
+}
+
+// probeContract records the probe that the DatabaseServerConfig controller
+// writes once it reached the server the contract names. That controller does
+// not run in this suite, and the server waits for the probe before it declares
+// a rollback complete.
+//
+// It waits for the contract to name the recovered server first. A probe
+// recorded against the endpoint of before the rollback says nothing about the
+// one after it, and the server reads the generation to tell the two apart.
+func probeContract(server *v1.DatabaseServer) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var contract v1.DatabaseServerConfig
+		g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
+		g.Expect(contract.Spec.Host).To(Equal(recoveryHost(server)))
+		contract.Status.SystemIdentifier = recoveredSystemIdentifier
+		contract.Status.ObservedGeneration = contract.Generation
+		g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// contractKey is the contract that the server publishes.
+func contractKey(server *v1.DatabaseServer) client.ObjectKey {
+	return client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+}
+
+// publishedContract reads the contract of the server.
+func publishedContract(server *v1.DatabaseServer) *v1.DatabaseServerConfig {
+	GinkgoHelper()
+
+	var contract v1.DatabaseServerConfig
+	Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
+
+	return &contract
+}
+
+// reconciledServer reads the server as the operator left it.
+func reconciledServer(server *v1.DatabaseServer) *v1.DatabaseServer {
+	GinkgoHelper()
+
+	var latest v1.DatabaseServer
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+
+	return &latest
+}
+
+// expectLastRecovery waits until the contract publishes an outcome with the
+// given result, and returns it.
+func expectLastRecovery(server *v1.DatabaseServer, result v1.RecoveryResult) *v1.RecoveryOutcome {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		contract := publishedContract(server)
+		g.Expect(contract.Spec.PITR).NotTo(BeNil())
+		g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
+		g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(result))
+	}, timeout, interval).Should(Succeed())
+
+	return publishedContract(server).Spec.PITR.LastRecovery
+}
+
+// recoveryCluster is the CloudNativePG cluster that the recorded recovery
+// builds.
+func recoveryCluster(server *v1.DatabaseServer) string {
+	GinkgoHelper()
+
+	var name string
+	Eventually(func(g Gomega) {
+		recovery := reconciledServer(server).Status.Recovery
+		g.Expect(recovery).NotTo(BeNil())
+		g.Expect(recovery.Cluster).NotTo(BeEmpty())
+		name = recovery.Cluster
+	}, timeout, interval).Should(Succeed())
+
+	return name
+}
+
+// recoveryHost is the endpoint of the cluster that the recorded recovery
+// builds.
+func recoveryHost(server *v1.DatabaseServer) string {
+	GinkgoHelper()
+
+	return recoveryCluster(server) + "-rw." + server.Namespace + ".svc"
+}
+
+// bringRecoveryClusterUp writes the Secret and the status that CloudNativePG
+// writes for a recovery cluster that finished its bootstrap.
+func bringRecoveryClusterUp(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	Expect(k8sClient.Create(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name + "-superuser", Namespace: server.Namespace},
+		Data:       map[string][]byte{"username": []byte("postgres"), "password": []byte("s3cret")},
+	})).To(Succeed())
+
+	setRecoveryClusterPhase(server, name, cnpgv1.PhaseHealthy, recoveredSystemIdentifier)
+}
+
+// recoverySucceeds brings the recovery cluster of the server up and records the
+// probe of the endpoint it moves the contract to.
+func recoverySucceeds(server *v1.DatabaseServer) {
+	GinkgoHelper()
+
+	bringRecoveryClusterUp(server, recoveryCluster(server))
+	probeContract(server)
+}
+
+// setRecoveryClusterPhase writes the phase that CloudNativePG reports for the
+// recovery cluster, once the operator has created it.
+func setRecoveryClusterPhase(server *v1.DatabaseServer, name, phase, systemID string) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: name}
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+		cluster.Status.Phase = phase
+		cluster.Status.ReadyInstances = cluster.Spec.Instances
+		cluster.Status.SystemID = systemID
+		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectRecoveryCluster waits until the operator built the cluster that the
+// recorded recovery names.
+func expectRecoveryCluster(server *v1.DatabaseServer) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: recoveryCluster(server)}
+	Eventually(func() error {
+		return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectAbsent asserts that no CloudNativePG cluster of the given name exists.
+func expectAbsent(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: name}
+	Expect(k8sClient.Get(ctx, key, &cnpgv1.Cluster{})).To(MatchError(apierrors.IsNotFound, "not found"))
+}
+
+// holdRecoveryCluster puts a finalizer on the recovery cluster, so a delete
+// leaves it terminating the way CloudNativePG does while it takes the
+// instances down.
+func holdRecoveryCluster(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: name}
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+		cluster.Finalizers = append(cluster.Finalizers, testHoldFinalizer)
+		g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// releaseRecoveryCluster takes the finalizer off, so the cluster goes.
+func releaseRecoveryCluster(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: name}
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+		cluster.Finalizers = nil
+		g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectTerminating waits until the named cluster carries a deletion stamp.
+func expectTerminating(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: name}
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+		g.Expect(cluster.DeletionTimestamp.IsZero()).To(BeFalse())
+	}, timeout, interval).Should(Succeed())
+}
+
+// recoveryEventReasons lists the reasons of the events that the operator
+// recorded about the server.
+func recoveryEventReasons(server *v1.DatabaseServer) []string {
+	GinkgoHelper()
+
+	var events eventsv1.EventList
+	Expect(k8sClient.List(ctx, &events, client.InNamespace(server.Namespace))).To(Succeed())
+
+	reasons := make([]string, 0, len(events.Items))
+	for _, event := range events.Items {
+		if event.Regarding.Name != server.Name {
+			continue
+		}
+		reasons = append(reasons, event.Reason)
+	}
+
+	return reasons
+}
+
+// expectGone waits until obj no longer exists.
+func expectGone(key client.ObjectKey, obj client.Object) {
+	GinkgoHelper()
+
+	Eventually(func() bool {
+		return apierrors.IsNotFound(k8sClient.Get(ctx, key, obj))
+	}, timeout, interval).Should(BeTrue())
+}
+
+var _ = Describe("DatabaseServer recovery", func() {
+	It("recovers the server to the requested point and repoints its contract", func() {
+		server, from := archivingServer()
+		target := from.Add(time.Hour)
+		request := askForRecovery(server, target)
+
+		By("recording the request before it builds anything")
+		Eventually(func(g Gomega) {
+			recovery := reconciledServer(server).Status.Recovery
+			g.Expect(recovery).NotTo(BeNil())
+			g.Expect(recovery.RequestID).To(Equal(request.RequestID))
+			g.Expect(recovery.RequestedBy).To(Equal(request.RequestedBy))
+			g.Expect(recovery.Contract).To(Equal("camunda"))
+			g.Expect(recovery.Cluster).To(Equal("camunda-r1"))
+			g.Expect(recovery.CompletedAt).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("building a cluster that recovers from the archive of the cluster it replaces")
+		var recovered cnpgv1.Cluster
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, key, &recovered)
+		}, timeout, interval).Should(Succeed())
+		Expect(recovered.Spec.Bootstrap.Recovery.Source).To(Equal("camunda"))
+		Expect(recovered.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime).
+			To(Equal(target.UTC().Format(time.RFC3339)))
+		Expect(recovered.Spec.Plugins[0].Parameters).To(HaveKeyWithValue("serverName", "camunda-r1"))
+		Expect(recovered.Spec.ExternalClusters[0].PluginConfiguration.Parameters).
+			To(HaveKeyWithValue("serverName", "camunda"))
+
+		By("waiting for CloudNativePG before it touches the contract")
+		Consistently(func() string {
+			return publishedContract(server).Spec.Host
+		}, "1s", interval).Should(Equal("camunda-rw." + server.Namespace + ".svc"))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+
+		By("pointing the contract at the recovered server")
+		Eventually(func(g Gomega) {
+			contract := publishedContract(server)
+			g.Expect(contract.Spec.Host).To(Equal("camunda-r1-rw." + server.Namespace + ".svc"))
+			g.Expect(contract.Spec.AdminCredentialsSecretRef.Name).To(Equal("camunda-r1-superuser"))
+		}, timeout, interval).Should(Succeed())
+
+		By("waiting for the contract to reach the server it names now")
+		Consistently(func() *v1.RecoveryOutcome {
+			contract := publishedContract(server)
+			if contract.Spec.PITR == nil {
+				return nil
+			}
+
+			return contract.Spec.PITR.LastRecovery
+		}, "1s", interval).Should(BeNil())
+
+		probeContract(server)
+
+		By("publishing the outcome")
+		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
+		Expect(outcome.RequestID).To(Equal(request.RequestID))
+		Expect(outcome.RequestedBy).To(Equal(request.RequestedBy))
+		Expect(outcome.TargetTime).To(Equal(request.TargetTime))
+
+		By("removing the cluster and the base backup schedule it replaced")
+		expectGone(client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{})
+		expectGone(
+			client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.ScheduledBackup{},
+		)
+
+		var schedule cnpgv1.ScheduledBackup
+		Eventually(func() error {
+			return k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &schedule,
+			)
+		}, timeout, interval).Should(Succeed())
+		Expect(schedule.Spec.Cluster.Name).To(Equal("camunda-r1"))
+
+		By("recording the answer, so the request is not answered twice")
+		Eventually(func(g Gomega) {
+			latest := reconciledServer(server)
+			g.Expect(latest.Status.Cluster).To(Equal("camunda-r1"))
+			g.Expect(latest.Status.SystemIdentifier).To(Equal(recoveredSystemIdentifier))
+			g.Expect(latest.Status.Recovery.CompletedAt).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		By("closing the archive it recovered from at the moment the contract moved")
+		var closedAt metav1.Time
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ServerName).To(Equal("camunda"))
+			g.Expect(history[0].To).NotTo(BeNil())
+			closedAt = *history[0].To
+		}, timeout, interval).Should(Succeed())
+
+		By("opening the archive it writes now at its first base backup")
+		firstBackup := metav1.NewTime(closedAt.Add(time.Minute).Truncate(time.Second))
+		completeBaseBackup(reconciledServer(server), "base-2", firstBackup)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
+			g.Expect(history[1].From.Time).To(BeTemporally("==", firstBackup.Time))
+		}, timeout, interval).Should(Succeed())
+
+		By("keeping the outcome and the request on the contract it republishes")
+		Consistently(func(g Gomega) {
+			contract := publishedContract(server)
+			g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
+			g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(v1.RecoveryResultCompleted))
+			g.Expect(contract.Spec.Recovery).NotTo(BeNil())
+		}, "2s", interval).Should(Succeed())
+
+		// The old cluster stopped writing at the cutover and the new archive
+		// reaches no point before its first base backup, so the window between
+		// the two lies in no interval.
+		gap := askForRecovery(server, closedAt.Add(30*time.Second))
+		Eventually(func(g Gomega) {
+			outcome := publishedContract(server).Spec.PITR.LastRecovery
+			g.Expect(outcome).NotTo(BeNil())
+			g.Expect(outcome.RequestID).To(Equal(gap.RequestID))
+			g.Expect(outcome.Result).To(Equal(v1.RecoveryResultUnavailable))
+		}, timeout, interval).Should(Succeed())
+
+	})
+
+	It("refuses a point that no archive of the server holds", func() {
+		server, from := archivingServer()
+
+		request := askForRecovery(server, from.Add(-time.Hour))
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		Expect(outcome.RequestID).To(Equal(request.RequestID))
+		Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
+
+		// Nothing was built, so nothing has to be cleaned up.
+		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+		)).To(MatchError(apierrors.IsNotFound, "not found"))
+	})
+
+	It("reports a recovery that CloudNativePG cannot finish, and removes what it built", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		setRecoveryClusterPhase(server, "camunda-r1", cnpgv1.PhaseUnrecoverable, "")
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring(cnpgv1.PhaseUnrecoverable))
+
+		expectGone(
+			client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+		)
+
+		// The server the restore started from is untouched.
+		var running cnpgv1.Cluster
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &running,
+		)).To(Succeed())
+		Expect(publishedContract(server).Spec.Host).To(Equal("camunda-rw." + server.Namespace + ".svc"))
+	})
+
+	It("takes no request from a contract that says nobody rolls the server back", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		expectCondition(server, components.ConditionContract, metav1.ConditionTrue)
+
+		// A server without an archive publishes pitr.recovery: external. A
+		// request on that contract was written against a server that never
+		// offered to roll itself back, so the server does not take it.
+		Expect(publishedContract(server).Spec.PITR.Recovery).To(Equal(v1.RecoveryModeExternal))
+		askForRecovery(server, time.Now().Add(-time.Hour))
+
+		Consistently(func(g Gomega) {
+			contract := publishedContract(server)
+			g.Expect(contract.Spec.PITR.LastRecovery).To(BeNil())
+			g.Expect(reconciledServer(server).Status.Recovery).To(BeNil())
+		}, "2s", interval).Should(Succeed())
+	})
+
+	It("refuses a running recovery whose archive the spec took away", func() {
+		server, from := archivingServer()
+		request := askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		setArchive(server, nil)
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		Expect(outcome.RequestID).To(Equal(request.RequestID))
+		Expect(outcome.Message).To(ContainSubstring("writes no archive"))
+	})
+
+	It("keeps building the cluster it recorded when the archive history moves", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		expectRecoveryCluster(server)
+
+		// The name of the recovery cluster is derived from the number of
+		// archives. A recovery that read it again after the history grew would
+		// build a second cluster and abandon the first.
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Archive.History = append(latest.Status.Archive.History, v1.ArchiveRecord{
+				ServerName: "camunda-x",
+				From:       from,
+				To:         &from,
+			})
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
+		expectAbsent(server, "camunda-r2")
+	})
+
+	It("keeps the answer of a refusal when its status write is lost", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		setRecoveryClusterPhase(server, "camunda-r1", cnpgv1.PhaseUnrecoverable, "")
+		expectLastRecovery(server, v1.RecoveryResultFailed)
+
+		By("losing the record of the answer")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Recovery.CompletedAt = nil
+			latest.Status.Recovery.Result = ""
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The answer is published before the cluster it abandons goes, so the
+		// look that finds the record incomplete finds the cluster too. It
+		// answers again rather than building a second one.
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Recovery.CompletedAt).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		Expect(expectLastRecovery(server, v1.RecoveryResultFailed).Message).
+			To(ContainSubstring(cnpgv1.PhaseUnrecoverable))
+
+		// The cluster of the refused recovery stays gone. A look that read the
+		// record as unanswered builds it again under the same name.
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Consistently(func() error {
+			return k8sClient.Get(ctx, key, &cnpgv1.Cluster{})
+		}, "2s", interval).ShouldNot(Succeed())
+	})
+
+	It("publishes the answer again on a contract that was replaced under its name", func() {
+		server, from := archivingServer()
+		request := askForRecovery(server, from.Add(-time.Hour))
+		expectLastRecovery(server, v1.RecoveryResultUnavailable)
+
+		By("losing the answer that the contract carried")
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
+			contract.Spec.PITR.LastRecovery = nil
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		Expect(outcome.RequestID).To(Equal(request.RequestID))
+		Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
+	})
+
+	It("finishes the recovery it started before it answers one that arrived later", func() {
+		server, from := archivingServer()
+		first := askForRecovery(server, from.Add(time.Hour))
+
+		expectRecoveryCluster(server)
+
+		By("asking for another point while the first recovery builds")
+		second := askForRecovery(server, from.Add(90*time.Minute))
+		Consistently(func() string {
+			return reconciledServer(server).Status.Recovery.RequestID
+		}, "1s", interval).Should(Equal(first.RequestID))
+
+		recoverySucceeds(server)
+
+		By("answering the first, then starting the second under a name of its own")
+		Eventually(func(g Gomega) {
+			outcome := publishedContract(server).Spec.PITR.LastRecovery
+			g.Expect(outcome).NotTo(BeNil())
+			g.Expect(outcome.RequestID).To(Equal(first.RequestID))
+			g.Expect(outcome.Result).To(Equal(v1.RecoveryResultCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		completeBaseBackup(reconciledServer(server), "base-2", metav1.Now())
+		Eventually(func(g Gomega) {
+			recovery := reconciledServer(server).Status.Recovery
+			g.Expect(recovery.RequestID).To(Equal(second.RequestID))
+			g.Expect(recovery.Cluster).NotTo(Equal("camunda-r1"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("refuses a recovery whose name is taken by a cluster it does not own", func() {
+		server, from := archivingServer()
+
+		// It carries the label of this server and no owner reference. A label
+		// is a value anybody can write, so it is not what says who owns a
+		// cluster that holds a database.
+		Expect(k8sClient.Create(ctx, &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-r1",
+				Namespace: server.Namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: server.Name},
+			},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            1,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "1Gi"},
+			},
+		})).To(Succeed())
+
+		askForRecovery(server, from.Add(time.Hour))
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("does not own it"))
+
+		// The occupant holds somebody else's data. It stays.
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+		)).To(Succeed())
+	})
+
+	It("holds the contract it publishes until the recovery on it is answered", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		expectRecoveryCluster(server)
+
+		By("naming another contract while the recovery runs")
+		renamed := "camunda-" + strings.ToLower(utilrand.String(5))
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.DatabaseServerConfig = renamed
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(ready.Message).To(ContainSubstring("Set spec.databaseServerConfig back"))
+
+		// Nothing is published under the new name while the rollback runs.
+		renamedKey := client.ObjectKey{Namespace: server.Namespace, Name: renamed}
+		Consistently(func() error {
+			return k8sClient.Get(ctx, renamedKey, &v1.DatabaseServerConfig{})
+		}, "1s", interval).ShouldNot(Succeed())
+
+		By("finishing the recovery on the contract that asked for it")
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		Eventually(func() error {
+			return k8sClient.Get(ctx, renamedKey, &v1.DatabaseServerConfig{})
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("leaves a cluster it does not own where it is when it cleans up", func() {
+		server, from := archivingServer()
+
+		// The label of this server, and no owner reference. The cleanup runs
+		// over a label selector, and a label is a value anybody can write.
+		stranger := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-stranger",
+				Namespace: server.Namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: server.Name},
+			},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            1,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "1Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, stranger)).To(Succeed())
+
+		askForRecovery(server, from.Add(time.Hour))
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		expectGone(client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{})
+		Consistently(func() error {
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(stranger), &cnpgv1.Cluster{})
+		}, "2s", interval).Should(Succeed())
+	})
+
+	It("waits for the cluster of a refused recovery to go before it builds again", func() {
+		server, from := archivingServer()
+		first := askForRecovery(server, from.Add(time.Hour))
+
+		// CloudNativePG holds its cluster while it takes the instances down.
+		// The name of the next recovery is the name this one is still using.
+		holdRecoveryCluster(server, "camunda-r1")
+		setRecoveryClusterPhase(server, "camunda-r1", cnpgv1.PhaseUnrecoverable, "")
+		Expect(expectLastRecovery(server, v1.RecoveryResultFailed).RequestID).To(Equal(first.RequestID))
+		expectTerminating(server, "camunda-r1")
+
+		By("asking again while the cluster of the refusal is still going")
+		second := askForRecovery(server, from.Add(90*time.Minute))
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Recovery.RequestID).To(Equal(second.RequestID))
+		}, timeout, interval).Should(Succeed())
+
+		// Grading the cluster that is going answers the new request from the
+		// state of the dead one, and it answers it at once.
+		Consistently(func() string {
+			return publishedContract(server).Spec.PITR.LastRecovery.RequestID
+		}, "2s", interval).Should(Equal(first.RequestID))
+
+		By("letting it go")
+		releaseRecoveryCluster(server, "camunda-r1")
+
+		Eventually(func(g Gomega) {
+			var rebuilt cnpgv1.Cluster
+			key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+			g.Expect(k8sClient.Get(ctx, key, &rebuilt)).To(Succeed())
+			g.Expect(rebuilt.DeletionTimestamp.IsZero()).To(BeTrue())
+			g.Expect(rebuilt.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime).
+				To(Equal(second.TargetTime))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("finishes a recovery that the spec suspends after the contract moved", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// Past the cutover the contract already names the recovered server and
+		// the old cluster is on its way out. Refusing here leaves the server
+		// on a cluster nothing points at.
+		suspend(server)
+
+		probeContract(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+		expectGone(client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{})
+	})
+
+	It("gives the server back to the cluster it came from when the new one fails", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// It broke after the contract moved to it. The cluster it replaced is
+		// still there and still holds the data, so that is where the server
+		// goes back to.
+		setRecoveryClusterPhase(server, "camunda-r1", cnpgv1.PhaseUnrecoverable, "")
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("runs from \"camunda\" again"))
+
+		Eventually(func(g Gomega) {
+			latest := reconciledServer(server)
+			g.Expect(latest.Status.Cluster).To(Equal("camunda"))
+			g.Expect(latest.Status.Recovery.Cluster).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func() string {
+			return publishedContract(server).Spec.Host
+		}, timeout, interval).Should(Equal("camunda-rw." + server.Namespace + ".svc"))
+
+		// The archive of the cluster the server runs from stays open: the
+		// contract never settled on the recovered one.
+		history := archiveHistory(server)
+		Expect(history).To(HaveLen(1))
+		Expect(history[0].To).To(BeNil())
+	})
+
+	It("names no cluster in the record when it refuses one it does not own", func() {
+		server, from := archivingServer()
+
+		Expect(k8sClient.Create(ctx, &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-r1",
+				Namespace: server.Namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: server.Name},
+			},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            1,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "1Gi"},
+			},
+		})).To(Succeed())
+
+		askForRecovery(server, from.Add(time.Hour))
+		expectLastRecovery(server, v1.RecoveryResultFailed)
+
+		// The cleanup reads that name. A refusal owns no cluster.
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		Consistently(func() error {
+			return k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+			)
+		}, "2s", interval).Should(Succeed())
+	})
+
+	It("keeps the archive of the cluster it replaces open until the contract moved", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// The pointer moved and nothing has reached the new server yet. A
+		// record closed here strands every point after it if the move never
+		// becomes visible.
+		Consistently(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).To(BeNil())
+		}, "2s", interval).Should(Succeed())
+
+		probeContract(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("keeps the bucket of a running recovery while the spec names another", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		recorded := reconciledServer(server).Status.Recovery.Archive
+		Expect(recorded).NotTo(BeNil())
+		Expect(recorded.ServerName).To(Equal("camunda"))
+
+		By("pointing the archive at another bucket while the recovery runs")
+		other := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    other.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(ready.Message).To(ContainSubstring("Set spec.archive.objectStorageRef back"))
+
+		var store barmanobjectstore.ObjectStore
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &store,
+			)).To(Succeed())
+			g.Expect(store.Spec.Configuration.DestinationPath).To(ContainSubstring("camunda-backups"))
+		}, "2s", interval).Should(Succeed())
+
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+	})
+
+	It("keeps removing what an answered recovery replaced", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+		expectGone(
+			client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.ScheduledBackup{},
+		)
+
+		// The delete of a superseded object can fail, and the answer is
+		// written before it runs. What is left of the cluster that went has to
+		// go on a later look, not only on the look that answered.
+		latest := reconciledServer(server)
+		Expect(k8sClient.Create(ctx, &cnpgv1.ScheduledBackup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda",
+				Namespace: server.Namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: server.Name},
+				OwnerReferences: []metav1.OwnerReference{
+					*metav1.NewControllerRef(latest, v1.GroupVersion.WithKind("DatabaseServer")),
+				},
+			},
+			Spec: cnpgv1.ScheduledBackupSpec{
+				Schedule: components.DefaultBaseBackupSchedule,
+				Cluster:  cnpgv1.LocalObjectReference{Name: "camunda"},
+			},
+		})).To(Succeed())
+
+		expectGone(
+			client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.ScheduledBackup{},
+		)
+	})
+
+	It("reads the cluster it runs from back off the contract when its record is lost", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		By("losing the whole record of the recovery")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Recovery = nil
+			latest.Status.Cluster = "camunda"
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The contract names the recovered server. Reading status back from
+		// the record alone calls the recovered cluster the one to remove.
+		Eventually(func(g Gomega) {
+			latest := reconciledServer(server)
+			g.Expect(latest.Status.Cluster).To(Equal("camunda-r1"))
+			g.Expect(latest.Status.Recovery).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func() error {
+			return k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+			)
+		}, "2s", interval).Should(Succeed())
+	})
+
+	It("gives the server back when the cluster it moved to is removed", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// Somebody removed it after the contract moved to it. Reading a
+		// missing cluster as an error holds the request for ever.
+		var recovered cnpgv1.Cluster
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Expect(k8sClient.Get(ctx, key, &recovered)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &recovered)).To(Succeed())
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("was removed"))
+		Expect(outcome.Message).To(ContainSubstring("runs from \"camunda\" again"))
+
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda"))
+	})
+
+	It("keeps running from its own cluster when the contract names one it does not own", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		// Two servers can name one contract. The one that loses the race reads
+		// the endpoint of the other, and adopting that name makes it delete
+		// its own live cluster as the superseded one.
+		stranger := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r9", Namespace: server.Namespace},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            1,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "1Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, stranger)).To(Succeed())
+
+		// The contract stops being republished while the superuser Secret of
+		// the cluster it names is missing, which is what lets the endpoint of
+		// another server stand long enough to be read.
+		var superuser corev1.Secret
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{
+				Namespace: server.Namespace, Name: "camunda-r1-superuser",
+			}, &superuser,
+		)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &superuser)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
+			contract.Spec.Host = "camunda-r9-rw." + server.Namespace + ".svc"
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func() string {
+			return publishedContract(server).Spec.Host
+		}, "1s", interval).Should(Equal("camunda-r9-rw." + server.Namespace + ".svc"))
+
+		// The endpoint is read back only on a look that finds the record
+		// missing, so the record goes last, once that endpoint is the one
+		// every look reads.
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Recovery = nil
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(stranger), &cnpgv1.Cluster{})).
+				To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+			)).To(Succeed())
+		}, "3s", interval).Should(Succeed())
+
+		// The refusal is its own reason. A reader of kubectl describe learns
+		// that two servers are writing one contract, which is not what a
+		// refused rollback means.
+		Eventually(func() []string {
+			return recoveryEventReasons(server)
+		}, timeout, interval).Should(ContainElement("RecoveryClusterNotOwned"))
+	})
+
+	It("answers a request while the server is suspended and its bucket is gone", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+		expectCondition(server, components.ConditionContract, metav1.ConditionTrue)
+
+		suspend(server)
+		hibernate(server)
+		expectCondition(server, components.ConditionCluster, metav1.ConditionTrue)
+
+		// A suspended server whose bucket stops resolving holds its whole
+		// reconcile. The answer to a request has to come out from in front of
+		// that hold, or whoever asked waits for ever.
+		Expect(k8sClient.Delete(ctx, bucket)).To(Succeed())
+
+		askForRecovery(server, time.Now())
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("suspended"))
+	})
+})

@@ -108,8 +108,8 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 	}
 
 	// expectSystemIdentifier polls until the published identity of the server
-	// is the one the container reports.
-	expectSystemIdentifier := func() {
+	// is the one the container reports, and returns it.
+	expectSystemIdentifier := func() string {
 		GinkgoHelper()
 		want, err := testPostgresSystemIdentifier()
 		Expect(err).NotTo(HaveOccurred())
@@ -119,6 +119,8 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
 			g.Expect(got.Status.SystemIdentifier).To(Equal(want))
 		}, timeout, interval).Should(Succeed())
+
+		return want
 	}
 
 	notFoundMessage := func() string {
@@ -236,7 +238,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 	// The status flush of a fresh probe writes nothing new, so it wakes no
 	// watch, and the interval sets the cadence. A spec change or a Secret
 	// change probes again.
-	It("probes once per interval, and again on a spec or Secret change", func() {
+	It("probes once per interval, and again when the spec names another server or user", func() {
 		pointAtServer()
 		secret := adminSecret("username", "password")
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -260,14 +262,66 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(probes.Load()).To(Equal(count))
 		}, "3s", interval).Should(Succeed())
 
-		By("probing again after a spec change")
+		By("leaving the probe alone for a spec change that names the same server")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
 			got.Spec.PITR = &v1.PITRCapability{Enabled: false}
 			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			var again v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &again)).To(Succeed())
+			g.Expect(again.Status.ProbedAt.Equal(probedAt)).To(BeTrue())
+			g.Expect(probes.Load()).To(Equal(count))
+		}, "2s", interval).Should(Succeed())
+
+		By("probing again when the spec names a Secret that holds two users")
+		twoUsers := adminSecret("username", "password")
+		twoUsers.Name = "admin-two-users"
+		twoUsers.Data["readonly-username"] = twoUsers.Data["username"]
+		twoUsers.Data["readonly-password"] = twoUsers.Data["password"]
+		Expect(k8sClient.Create(ctx, twoUsers)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, twoUsers) })
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			got.Spec.AdminCredentialsSecretRef.Name = twoUsers.Name
+			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(probes.Load()).To(Equal(count + 1))
+		}, timeout, interval).Should(Succeed())
+
+		By("probing again when the spec reads the other user of that Secret")
+		// The Secret does not move. The keys do, and they name the user.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			got.Spec.AdminCredentialsSecretRef.UsernameKey = "readonly-username"
+			got.Spec.AdminCredentialsSecretRef.PasswordKey = "readonly-password"
+			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(probes.Load()).To(Equal(count + 2))
+			var again v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &again)).To(Succeed())
+			g.Expect(again.Status.ProbedSecretKeys).To(Equal("readonly-username/readonly-password"))
+		}, timeout, interval).Should(Succeed())
+
+		By("probing again when the spec names another admin Secret")
+		copied := adminSecret("username", "password")
+		copied.Name = "admin-copy"
+		copied.Data["readonly-username"] = copied.Data["username"]
+		copied.Data["readonly-password"] = copied.Data["password"]
+		Expect(k8sClient.Create(ctx, copied)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, copied) })
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			got.Spec.AdminCredentialsSecretRef.Name = copied.Name
+			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(probes.Load()).To(Equal(count + 3))
 			var again v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &again)).To(Succeed())
 			g.Expect(again.Status.ProbedAt.After(probedAt.Time)).To(BeTrue())
@@ -276,7 +330,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		By("probing again after the credentials Secret changes")
 		Eventually(func(g Gomega) {
 			var current corev1.Secret
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), &current)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(copied), &current)).To(Succeed())
 			if current.Annotations == nil {
 				current.Annotations = map[string]string{}
 			}
@@ -284,7 +338,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(probes.Load()).To(Equal(count + 2))
+			g.Expect(probes.Load()).To(Equal(count + 4))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -320,8 +374,63 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(got.Status.SystemIdentifier).To(BeEmpty())
 			g.Expect(got.Status.ServerVersion).To(BeEmpty())
 			g.Expect(got.Status.ProbedAt).To(BeNil())
+			g.Expect(got.Status.ProbedEndpoint).To(BeEmpty())
+			g.Expect(got.Status.ProbedSecretName).To(BeEmpty())
 			g.Expect(got.Status.ProbedSecretVersion).To(BeEmpty())
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// A recovery request and its answer are written on the spec of a contract
+	// whose server is running, and they name no endpoint. Clearing the
+	// identity for them would take this contract, and every Database on it,
+	// out of Ready for a write that cannot move the server.
+	It("keeps the identity when a spec change names the same server", func() {
+		pointAtServer()
+		secret := adminSecret("username", "password")
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+		createServerConfig()
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "Reached the server; it runs major version 17")
+		identifier := expectSystemIdentifier()
+
+		var probed v1.DatabaseServerConfig
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &probed)).To(Succeed())
+		probedAt := probed.Status.ProbedAt.DeepCopy()
+
+		By("writing a recovery request on the contract")
+		Eventually(func(g Gomega) {
+			var current v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &current)).To(Succeed())
+			current.Spec.Recovery = &v1.RecoveryRequest{
+				RequestID:   "3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+				RequestedBy: current.Namespace + "/pitr-1",
+				TargetTime:  "2026-08-20T14:30:00Z",
+			}
+			g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var got v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			g.Expect(got.Status.ObservedGeneration).To(Equal(got.Generation))
+			cond := meta.FindStatusCondition(got.Status.Conditions, v1.ConditionReady)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(cond.ObservedGeneration).To(Equal(got.Generation))
+			g.Expect(got.Status.SystemIdentifier).To(Equal(identifier))
+			g.Expect(got.Status.ProbedAt).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		// The record of the probe is not cleared and taken again: it stands.
+		// A clear and a re-probe would take the contract, and every Database
+		// on it, out of Ready for as long as the probe takes.
+		Consistently(func(g Gomega) {
+			var got v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			g.Expect(got.Status.SystemIdentifier).To(Equal(identifier))
+			g.Expect(got.Status.ProbedAt.Equal(probedAt)).To(BeTrue())
+		}, "2s", interval).Should(Succeed())
 	})
 
 	It("catches status.observedGeneration up to metadata.generation after a spec update", func() {

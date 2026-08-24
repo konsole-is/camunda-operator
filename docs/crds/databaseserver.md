@@ -104,17 +104,53 @@ The archive lives under a prefix of the bucket that holds this server alone: `<b
 
 `status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
 
+A rollback closes the record of the archive it read at the moment the contract moves to the recovered server, and the recovered server opens a record of its own at its first base backup. The window between the two lies in no interval, so no restore can reach a point in it.
+
 Remove `spec.archive` and the open record closes at that moment. The list itself stays, and no new record is written. The bucket still holds those objects, so a restore can still reach a point inside a closed interval.
 
 Ask for an archive again and the server opens a record of its own, starting at the first base backup of the new archive. `ArchiveReady` stays `False` until that backup completes, because the backups of the archive the server wrote before reach no point in the new one. The window between the two records lies inside no interval, so no restore can reach a point in it.
 
-A [PointInTimeRestore](pointintimerestore.md) needs the database at the requested point before it runs. Recover the server from this archive with the CloudNativePG recovery procedure, then create the `PointInTimeRestore`.
+A [PointInTimeRestore](pointintimerestore.md) reaches any point inside a recorded interval. See [Recovery](#recovery).
 
 ### Base backups are not the backup model
 
 The base backups belong to the archive. They are physical copies of the whole server. [BackupSchedule](backupschedule.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) take logical dumps instead, coordinated with the Camunda backup API, and they never see these base backups. A base backup produces no `LogicalBackupRDBMS` and shows in no backup list. Only a point-in-time recovery of the server reads one.
 
 Run both on one cluster. The logical backups give you a restore of the Camunda data. The archive gives you a restore of the server to a timestamp.
+
+## Recovery
+
+The server rolls itself back to any point that one of its archives holds. Its contract declares this with `pitr.recovery: operator`, so a [PointInTimeRestore](pointintimerestore.md) asks for the rollback itself and you prepare nothing.
+
+Ask for it by hand by writing `spec.recovery` on the published contract:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  recovery:
+    requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+    requestedBy: my-cluster-ns/my-restore
+    targetTime: "2026-08-20T14:30:00Z"
+  # ... the rest of your contract
+```
+
+The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseServerConfig](databaseserverconfig.md) documents the request and the three results.
+
+A rollback replaces the server. The operator builds a second CloudNativePG cluster from the archive that holds `targetTime`. Its name is the name of the server, `-r`, and the number of archives the server has written, so the first rollback of a server that only ever wrote one archive builds `my-db-r1`. A server that stopped and started its archive counts those too and recovers into a higher number. `status.recovery.cluster` names the cluster the rollback builds, and `status.cluster` names the one the contract points at.
+
+The operator points the contract at the new cluster once CloudNativePG reports it healthy, and it then removes the old cluster and its data volumes. Every consumer of the contract reads the new `host` and the superuser Secret of the new cluster. A `CamundaCluster` rolls its pods to pick them up.
+
+The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends when the contract moves, and the new one starts at its first base backup, so no restore can reach a point between the two.
+
+The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked, and it publishes the new name once the answer is out.
+
+**CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. Run one server per cluster.
+
+A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold.
 
 ## Authentication to the bucket
 
@@ -208,6 +244,14 @@ status:
     history:
       - serverName: my-db
         from: "2026-08-01T10:00:00Z"
+  recovery:
+    requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+    contract: my-database-server
+    requestedBy: my-cluster-ns/my-restore
+    targetTime: "2026-08-20T14:30:00Z"
+    cluster: my-db-r1
+    result: Completed
+    completedAt: "2026-08-20T15:02:11Z"
   volumes:
     - name: my-db-1
       capacity: 256Gi
@@ -250,6 +294,8 @@ status:
 | `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |
 
 `status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
+
+`status.recovery` is the rollback request the server works on now, or the last one it answered. `contract` is the `DatabaseServerConfig` that asked. `cluster` is the CloudNativePG cluster it builds, and it is empty for a request the server refused before it built one. `completedAt` and `result` are unset while the rollback runs. The same answer is published on the contract, in `spec.pitr.lastRecovery`, and the server writes it there again if the contract loses it.
 
 ## Spec reference
 

@@ -126,16 +126,25 @@ func (r *DatabaseServerConfigReconciler) validate(
 	ctx context.Context,
 	cfg *v1.DatabaseServerConfig,
 ) (metav1.Condition, time.Duration, error) {
-	// A spec that changed since the last reconcile describes another server
-	// until the next probe says otherwise. The recorded version and identity
-	// belong to the endpoint the old spec named, and a consumer that keyed on
-	// the identity would place the database on a server nothing reached. The
-	// whole record of the probe goes, so status reads as no probe for this
-	// spec rather than a probe of a server this contract no longer describes.
-	if cfg.Status.ObservedGeneration != cfg.Generation {
+	// A spec that names another server describes another server until the next
+	// probe says otherwise. The recorded version and identity belong to the
+	// server the old spec named, and a consumer that keyed on the identity
+	// would place the database on a server nothing reached. The whole record
+	// of the probe goes, so status reads as no probe for this spec rather than
+	// a probe of a server this contract no longer describes.
+	//
+	// The test is the endpoint and the admin credentials, not the generation.
+	// Every field of this spec is writable, and the ones that carry a recovery
+	// request and its answer are written on a live contract while a rollback
+	// runs. Clearing the identity for those takes the contract, and every
+	// Database on it, out of Ready for a write that cannot move the server.
+	if probedAnotherServer(cfg) {
 		cfg.Status.ServerVersion = ""
 		cfg.Status.SystemIdentifier = ""
 		cfg.Status.ProbedAt = nil
+		cfg.Status.ProbedEndpoint = ""
+		cfg.Status.ProbedSecretName = ""
+		cfg.Status.ProbedSecretKeys = ""
 		cfg.Status.ProbedSecretVersion = ""
 	}
 
@@ -157,7 +166,14 @@ func (r *DatabaseServerConfigReconciler) validate(
 	}
 
 	if fresh, remaining := probeIsFresh(cfg, secret.ResourceVersion, time.Now()); fresh {
-		return *meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady), remaining, nil
+		// The recorded answer stands for this spec too, so it is re-stated for
+		// the generation of this spec. A consumer that waits on Ready reads
+		// the generation to tell an answer about the spec it holds from an
+		// answer about the one before it.
+		stands := *meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady)
+		stands.ObservedGeneration = cfg.Generation
+
+		return stands, remaining, nil
 	}
 
 	major, systemIdentifier, err := r.probeServer(
@@ -176,6 +192,9 @@ func (r *DatabaseServerConfigReconciler) validate(
 	cfg.Status.ServerVersion = major
 	cfg.Status.SystemIdentifier = systemIdentifier
 	cfg.Status.ProbedAt = &now
+	cfg.Status.ProbedEndpoint = probedEndpoint(cfg)
+	cfg.Status.ProbedSecretName = ref.Name
+	cfg.Status.ProbedSecretKeys = probedSecretKeys(cfg)
 	cfg.Status.ProbedSecretVersion = secret.ResourceVersion
 
 	return conditions.Ready(
@@ -186,19 +205,46 @@ func (r *DatabaseServerConfigReconciler) validate(
 	), probeInterval, nil
 }
 
+// probedAnotherServer reports whether the record of the last probe describes a
+// server, or a user on it, that this spec no longer names. A contract that has
+// never been probed has nothing to clear.
+func probedAnotherServer(cfg *v1.DatabaseServerConfig) bool {
+	if cfg.Status.ProbedAt == nil {
+		return false
+	}
+
+	return cfg.Status.ProbedEndpoint != probedEndpoint(cfg) ||
+		cfg.Status.ProbedSecretName != cfg.Spec.AdminCredentialsSecretRef.Name ||
+		cfg.Status.ProbedSecretKeys != probedSecretKeys(cfg)
+}
+
+// probedEndpoint renders the endpoint of the spec as status records it.
+func probedEndpoint(cfg *v1.DatabaseServerConfig) string {
+	return fmt.Sprintf("%s:%d", cfg.Spec.Host, cfg.Spec.Port)
+}
+
+// probedSecretKeys renders the credential keys of the spec as status records
+// them. One Secret can hold the credentials of more than one user, so a spec
+// that reads other keys of one Secret reads another user.
+func probedSecretKeys(cfg *v1.DatabaseServerConfig) string {
+	ref := cfg.Spec.AdminCredentialsSecretRef
+
+	return ref.UsernameKey + "/" + ref.PasswordKey
+}
+
 // probeIsFresh reports whether the recorded probe still stands for cfg as it
 // is now, and for how long. A probe stands when it succeeded within the
-// interval for the current spec generation and the current Secret. In every
-// other case the controller probes the server again. That is the case when
-// there is no probe yet, or the last probe failed (a failed probe records no
-// ProbedAt). It is also the case when the probe is stale, the spec changed
-// since the last reconcile (ObservedGeneration lags), or the Secret changed.
+// interval, against the endpoint and the Secret that the spec names now. In
+// every other case the controller probes the server again. That is the case
+// when there is no probe yet, or the last probe failed (a failed probe records
+// no ProbedAt). It is also the case when the probe is stale, the spec names
+// another server or another user, or the Secret changed.
 func probeIsFresh(cfg *v1.DatabaseServerConfig, secretVersion string, now time.Time) (bool, time.Duration) {
 	ready := meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady)
 	if cfg.Status.ProbedAt == nil || ready == nil || ready.Status != metav1.ConditionTrue {
 		return false, 0
 	}
-	if cfg.Status.ObservedGeneration != cfg.Generation || ready.ObservedGeneration != cfg.Generation {
+	if probedAnotherServer(cfg) {
 		return false, 0
 	}
 	if cfg.Status.ProbedSecretVersion != secretVersion {

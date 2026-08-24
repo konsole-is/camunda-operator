@@ -101,6 +101,65 @@ spec:
                     description: Enabled reports whether the server performs continuous
                       WAL archiving.
                     type: boolean
+                  lastRecovery:
+                    description: |-
+                      LastRecovery is how the last recovery request ended. It is unset until
+                      the first request is answered, and it is replaced by the answer to
+                      every later one.
+                    properties:
+                      completedAt:
+                        description: CompletedAt is when the request ended.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message says what happened. It is empty for a
+                          result of Completed.
+                        type: string
+                      requestID:
+                        description: RequestID is the requestID of the request this
+                          outcome answers.
+                        pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                        type: string
+                      requestedBy:
+                        description: RequestedBy is the requestedBy of the request
+                          this outcome answers.
+                        maxLength: 507
+                        pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                        type: string
+                      result:
+                        description: Result is how the request ended. See RecoveryResult
+                          for the values.
+                        enum:
+                        - Completed
+                        - Failed
+                        - Unavailable
+                        type: string
+                      targetTime:
+                        description: |-
+                          TargetTime is the targetTime of the request this outcome answers. It
+                          carries the shape of the request, so a consumer that compares the two
+                          as text compares two values of one form.
+                        format: date-time
+                        pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$
+                        type: string
+                    required:
+                    - completedAt
+                    - requestID
+                    - requestedBy
+                    - result
+                    - targetTime
+                    type: object
+                  recovery:
+                    default: external
+                    description: |-
+                      Recovery says who rolls the server back to a point in time. operator
+                      means that whoever publishes this contract answers spec.recovery, and
+                      it requires enabled: true. Defaults to external, which means that
+                      nobody does and the server is rolled back by hand.
+                    enum:
+                    - operator
+                    - external
+                    type: string
                   retentionPeriodDays:
                     description: |-
                       RetentionPeriodDays is how many days into the past a point-in-time
@@ -113,12 +172,53 @@ spec:
                     is true
                   rule: '!self.enabled || (has(self.retentionPeriodDays) && self.retentionPeriodDays
                     >= 1)'
+                - message: 'recovery: operator requires enabled: true'
+                  rule: self.recovery != 'operator' || self.enabled
               port:
                 description: Port the server listens on.
                 format: int32
                 maximum: 65535
                 minimum: 1
                 type: integer
+              recovery:
+                description: |-
+                  Recovery asks for the server to be rolled back to a point in time. A
+                  consumer writes it. It is answered in pitr.lastRecovery, and only when
+                  pitr.recovery is operator. It stays on the contract after the answer,
+                  as the record of the last request.
+                properties:
+                  requestID:
+                    description: |-
+                      RequestID identifies this request, and only this one. A controller sets
+                      the uid of the resource that asks. A request written by hand carries
+                      any UUID. It is what tells two requests apart that name one resource
+                      and one point: a resource that is deleted and created again under its
+                      name is another requester, and the answer to the request of the first
+                      says nothing about the state the second asks for.
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
+                  requestedBy:
+                    description: |-
+                      RequestedBy is the namespace and the name of the resource that asks, as
+                      "<namespace>/<name>". It comes back in pitr.lastRecovery, which is how
+                      the requester tells its own answer from somebody else's.
+                    maxLength: 507
+                    pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                    type: string
+                  targetTime:
+                    description: |-
+                      TargetTime is the point to roll back to, as RFC 3339 with a zone, for
+                      example 2026-08-20T14:30:00Z. A timestamp without a zone is rejected:
+                      PostgreSQL reads it as the local time of the server, so a request that
+                      means one point to the writer means another to the server.
+                    format: date-time
+                    pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$
+                    type: string
+                required:
+                - requestID
+                - requestedBy
+                - targetTime
+                type: object
             required:
             - adminCredentialsSecretRef
             - engine
@@ -201,10 +301,32 @@ spec:
                   ServerVersion and SystemIdentifier. The operator probes the server again
                   when this is older than the probe interval, or when the admin
                   credentials Secret changed. A reconcile in between leaves it untouched.
-                  A change to the spec clears it, together with ServerVersion,
-                  SystemIdentifier, and ProbedSecretVersion, because the whole record
-                  describes the endpoint the old spec named.
+                  A change to the endpoint or to the admin credentials clears it, together
+                  with ServerVersion, SystemIdentifier, ProbedEndpoint, ProbedSecretName,
+                  ProbedSecretKeys, and ProbedSecretVersion, because the whole record
+                  describes the server the old spec named. A change to any other field,
+                  for example a recovery request, leaves the record alone: it cannot move
+                  the server.
                 format: date-time
+                type: string
+              probedEndpoint:
+                description: |-
+                  ProbedEndpoint is the host and the port that the last probe reached, as
+                  "<host>:<port>". It is what tells a spec change that moves the server
+                  from one that does not.
+                type: string
+              probedSecretKeys:
+                description: |-
+                  ProbedSecretKeys are the keys of that Secret that the last probe read,
+                  as "<usernameKey>/<passwordKey>". One Secret can hold the credentials of
+                  more than one user, so the keys name the user the way the Secret names
+                  the credentials.
+                type: string
+              probedSecretName:
+                description: |-
+                  ProbedSecretName is the admin credentials Secret that the last probe
+                  read. A spec that names another Secret names other credentials, so the
+                  record of the probe goes with it.
                 type: string
               probedSecretVersion:
                 description: |-
@@ -225,7 +347,8 @@ spec:
                   endpoint, as the server reported it on the last probe. It names the
                   server itself, so two contracts that describe one server under
                   different hosts publish one value. The Database controller keys the
-                  uniqueness of a logical database on it.
+                  uniqueness of a logical database on it. A change to the endpoint or to
+                  the admin credentials clears it.
                 type: string
             type: object
         required:

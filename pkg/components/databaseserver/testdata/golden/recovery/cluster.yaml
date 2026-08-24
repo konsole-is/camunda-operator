@@ -1,0 +1,55 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    cnpg.io/hibernation: "off"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db-r1
+  namespace: my-cluster-ns
+spec:
+  affinity: {}
+  bootstrap:
+    recovery:
+      recoveryTarget:
+        targetTime: "2026-08-20T14:30:00Z"
+      source: my-cluster-db
+  enableSuperuserAccess: true
+  externalClusters:
+  - name: my-cluster-db
+    plugin:
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: my-cluster-db
+        serverName: my-cluster-db
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  inheritedMetadata:
+    labels:
+      camunda.io/component: postgres
+      camunda.io/database-server: my-cluster-db
+  instances: 2
+  plugins:
+  - isWALArchiver: true
+    name: barman-cloud.cloudnative-pg.io
+    parameters:
+      barmanObjectName: my-cluster-db
+      serverName: my-cluster-db-r1
+  postgresql:
+    syncReplicaElectionConstraint:
+      enabled: false
+  resources: {}
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/camunda
+  storage:
+    size: 64Gi
+status:
+  certificates: {}
+  configMapResourceVersion: {}
+  managedRolesStatus: {}
+  secretsResourceVersion: {}
+  switchReplicaClusterStatus: {}
+  topology: {}

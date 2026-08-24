@@ -14,5 +14,6 @@ spec:
     usernameKey: username
   engine: postgres
   host: my-cluster-db-rw.my-cluster-ns.svc
-  pitr: {}
+  pitr:
+    recovery: external
   port: 5432

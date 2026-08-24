@@ -228,6 +228,66 @@ type DatabaseServerArchiveStatus struct {
 	History []ArchiveRecord `json:"history,omitempty"`
 }
 
+// RecoveryArchiveRef names the archive that a recovery reads: the directory in
+// the bucket, and the bucket contract that holds it.
+type RecoveryArchiveRef struct {
+	// ServerName is the archive directory, equal to the name of the
+	// CloudNativePG cluster that wrote it.
+	ServerName string `json:"serverName"`
+	// ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
+	// archive lives in.
+	ObjectStorageRef string `json:"objectStorageRef"`
+}
+
+// DatabaseServerRecoveryStatus is the recovery request that the server works
+// on now, or the last one it answered. It is what makes a recovery resumable:
+// the steps read it to tell which cluster they build and whether the request
+// still needs an answer.
+//
+// It holds the whole answer, not a reference to it. The answer is published on
+// a contract that somebody can delete and create again, and the server has to
+// be able to publish it a second time from what it remembers.
+type DatabaseServerRecoveryStatus struct {
+	// RequestID is the requestID of the request, as the contract carries it.
+	RequestID string `json:"requestID"`
+	// Contract is the DatabaseServerConfig that carried the request. The
+	// server answers on that contract, and it does not change the contract it
+	// publishes while the request is unanswered.
+	Contract string `json:"contract"`
+	// RequestedBy is the requestedBy of the request, as the contract carries
+	// it.
+	RequestedBy string `json:"requestedBy"`
+	// TargetTime is the targetTime of the request, as the contract carries it.
+	TargetTime string `json:"targetTime"`
+	// Cluster is the CloudNativePG cluster that the recovery builds. It is
+	// empty for a request that the server refused, whether or not it had built
+	// one by then.
+	// +optional
+	Cluster string `json:"cluster,omitempty"`
+	// PreviousCluster is the cluster that the contract pointed at before the
+	// recovery moved it. A recovery that fails after the move puts the
+	// contract back on it, because that cluster still holds the data.
+	// +optional
+	PreviousCluster string `json:"previousCluster,omitempty"`
+	// Archive is the archive that the recovery reads. It is recorded before
+	// the recovery builds anything and read on every look after that, so a
+	// spec that names another bucket in the middle does not move a recovery
+	// that is already running.
+	// +optional
+	Archive *RecoveryArchiveRef `json:"archive,omitempty"`
+	// Result is the result the server published for the request. It is unset
+	// while the recovery runs.
+	// +optional
+	Result RecoveryResult `json:"result,omitempty"`
+	// Message is the message the server published with Result.
+	// +optional
+	Message string `json:"message,omitempty"`
+	// CompletedAt is when the server answered the request. It is unset while
+	// the recovery runs.
+	// +optional
+	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+}
+
 // DatabaseServerStatus is the observed state of a DatabaseServer.
 type DatabaseServerStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
@@ -248,6 +308,11 @@ type DatabaseServerStatus struct {
 	// server that archives again can recover from it.
 	// +optional
 	Archive *DatabaseServerArchiveStatus `json:"archive,omitempty"`
+	// Recovery is the recovery request that the server works on now, or the
+	// last one it answered. The answer itself is published on the contract,
+	// in spec.pitr.lastRecovery.
+	// +optional
+	Recovery *DatabaseServerRecoveryStatus `json:"recovery,omitempty"`
 	// Volumes lists the bound data PersistentVolumeClaims of the server and
 	// the capacity that each one reports, sorted by name.
 	// +listType=map

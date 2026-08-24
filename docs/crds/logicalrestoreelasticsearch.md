@@ -264,5 +264,5 @@ spec:
 - [SecondaryStorageConfig](secondarystorageconfig.md): resolved through the `storageRef` of the target. It must be `type: elasticsearch`, and it carries the endpoint and the credentials.
 - [ObjectStorageConfig](objectstorageconfig.md): resolved through the `backupStorageRef` of the target. It holds the snapshots and the partition backup.
 - [CamundaOptimize](camundaoptimize.md): an Optimize attached to the target suspends with it, so its import stops for the whole restore.
-- [PointInTimeRestore](pointintimerestore.md): the restore kind for a relational cluster that a database administrator already restored to a point in time.
+- [PointInTimeRestore](pointintimerestore.md): the restore kind that rolls a relational cluster back to a point in time.
 - [Backup guide](../guides/backup.md): how to set up backup storage and take a backup.

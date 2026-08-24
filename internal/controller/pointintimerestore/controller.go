@@ -16,12 +16,17 @@ limitations under the License.
 
 // Package pointintimerestore reconciles a PointInTimeRestore. One resource
 // aligns the primary storage of one suspended, relational-backed
-// CamundaCluster with a database that somebody else already restored to a
-// point in time. The operator never restores the database server.
+// CamundaCluster with a database at a point in time.
+//
+// The database reaches that point in one of two ways. A DatabaseServerConfig
+// that declares pitr.recovery: operator is rolled back by whoever publishes
+// it, and the restore asks for that through the contract. A contract that
+// declares external is rolled back before the restore is created.
 //
 // The files follow the phases. admit.go resolves the storage chain, checks
 // the rules of the server, takes the claim on the cluster, and suspends the
-// cluster. dbstate.go reads the exporter position of every partition and
+// cluster. dbrecovery.go asks the contract for the rollback and waits for the
+// answer. dbstate.go reads the exporter position of every partition and
 // refuses a database that is ahead of the requested point. primary.go runs the
 // shared primary-storage phase of pkg/restore, which recreates the broker data
 // volumes and runs the restore application on them. refusal.go reads the log
@@ -167,7 +172,11 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // field manager of its own, so patch is the only verb it needs on a
 // CamundaCluster.
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;patch
-// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;databaseconfigs;databaseserverconfigs;databases,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=secondarystorageconfigs;databaseconfigs;databases,verbs=get;list;watch
+// A contract that declares pitr.recovery: operator is asked to roll its own
+// server back. The restore applies spec.recovery on it under a field manager
+// of its own, and it has no permission on whoever publishes the contract.
+// +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
@@ -232,6 +241,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	switch pitr.Status.Phase {
 	case "", v1.PointInTimeRestorePending:
 		outcome, err = r.admit(ctx, &pitr)
+	case v1.PointInTimeRestoreRestoringDatabase:
+		outcome, err = r.enterDatabaseRecovery(ctx, &pitr)
 	case v1.PointInTimeRestoreValidatingDatabaseState:
 		outcome, err = r.enterDatabaseState(ctx, &pitr)
 	case v1.PointInTimeRestoreRestoringPrimaryStorage:
