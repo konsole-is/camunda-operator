@@ -126,6 +126,16 @@ func (r *DatabaseServerConfigReconciler) validate(
 	ctx context.Context,
 	cfg *v1.DatabaseServerConfig,
 ) (metav1.Condition, time.Duration, error) {
+	// A spec that changed since the last reconcile describes another server
+	// until the next probe says otherwise. The recorded version and identity
+	// belong to the endpoint the old spec named, and a consumer that keyed on
+	// the identity would place the database on a server nothing reached.
+	if cfg.Status.ObservedGeneration != cfg.Generation {
+		cfg.Status.ServerVersion = ""
+		cfg.Status.SystemIdentifier = ""
+		cfg.Status.ProbedAt = nil
+	}
+
 	ref := cfg.Spec.AdminCredentialsSecretRef
 
 	secret, msg, err := secretref.Get(

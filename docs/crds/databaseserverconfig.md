@@ -48,6 +48,8 @@ The operator creates no resources from this kind. It validates the contract, pro
 
 If the Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the server does not answer, `Ready` is `False` with reason `ConnectionFailed`, and the message names the host, the port, and the error. `status.serverVersion` and `status.systemIdentifier` keep their last known values while the server is unreachable.
 
+A change to the spec clears both, because they describe the endpoint the operator reached and the new spec can name another one. The contract publishes them again on the next successful probe, and a `Database` waits with `ServerIdentityUnknown` in between.
+
 ## Server probe
 
 A reachable server is probed again every 10 minutes. A major upgrade behind the same endpoint therefore reaches `status` without a change to the spec. An unreachable server is probed again every 30 seconds. Each probe times out after 30 seconds. A change to the spec or to the admin credentials Secret causes a new probe at once.

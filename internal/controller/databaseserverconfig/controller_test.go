@@ -122,7 +122,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 	}
 
 	notFoundMessage := func() string {
-		return fmt.Sprintf("Secret %q not found", namespace+"/"+serverConfig.Spec.AdminCredentialsSecretRef.Name)
+		return fmt.Sprintf("Secret %s not found", namespace+"/"+serverConfig.Spec.AdminCredentialsSecretRef.Name)
 	}
 
 	// A contract of one namespace never reaches the admin Secret of another.
@@ -226,7 +226,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		createServerConfig()
 
 		expectReady(metav1.ConditionFalse, v1.ReasonMissingSecret, fmt.Sprintf(
-			"Secret %q is missing key %q",
+			"Secret %s is missing key %q",
 			namespace+"/"+serverConfig.Spec.AdminCredentialsSecretRef.Name,
 			serverConfig.Spec.AdminCredentialsSecretRef.PasswordKey,
 		))
@@ -285,6 +285,41 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 		}, timeout, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(probes.Load()).To(Equal(count + 2))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The published identity belongs to the endpoint the operator reached. A
+	// spec that names another endpoint publishes nothing until the probe says
+	// what is behind it, so a consumer never keys on the identity of a server
+	// this contract no longer describes.
+	It("clears the version and the identity when the spec is repointed", func() {
+		pointAtServer()
+		secret := adminSecret("username", "password")
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+		createServerConfig()
+		expectReady(metav1.ConditionTrue, v1.ReasonHealthy, "Reached the server; it runs major version 17")
+		expectSystemIdentifier()
+
+		By("repointing the host at an address that answers nothing")
+		Eventually(func(g Gomega) {
+			var current v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &current)).To(Succeed())
+			current.Spec.Host = "127.0.0.1"
+			current.Spec.Port = 1
+			g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var got v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			cond := meta.FindStatusCondition(got.Status.Conditions, v1.ConditionReady)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal(v1.ReasonConnectionFailed))
+			g.Expect(got.Status.SystemIdentifier).To(BeEmpty())
+			g.Expect(got.Status.ServerVersion).To(BeEmpty())
+			g.Expect(got.Status.ProbedAt).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
 
