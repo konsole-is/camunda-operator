@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
@@ -194,19 +195,6 @@ func TestDatabaseServerGoldenRealistic(t *testing.T) {
 	assertDatabaseServerGoldens(t, "realistic", server, MergePreset(server.Spec, nil), nil)
 }
 
-// The suspended variant must render the same desired content as its
-// non-suspended baseline. Suspension is a runtime mutation (the wrapper writes
-// the hibernation annotation) and must never alter the declared state, in
-// particular the data volume of every instance.
-func TestDatabaseServerGoldenSuspended(t *testing.T) {
-	t.Parallel()
-
-	server, preset := goldenMinimalDatabaseServer()
-	server.Spec.Suspend = true
-
-	assertDatabaseServerGoldens(t, "suspended", server, MergePreset(server.Spec, preset), nil)
-}
-
 // goldenBucketName is the bucket contract that the archive cases reference.
 const goldenBucketName = "my-backup-config"
 
@@ -254,28 +242,6 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 
 	assertDatabaseServerGoldens(
 		t, "archive-workload-identity", server, MergePreset(server.Spec, preset), archive,
-	)
-}
-
-// Suspension must not take the archive off the cluster. The rendered content
-// of a suspended server with an archive is the content of the same server
-// running: the plugin entry, the ObjectStore, and the Secret the plugin reads
-// its bucket settings from all stay.
-func TestDatabaseServerGoldenArchiveSuspended(t *testing.T) {
-	t.Parallel()
-
-	server, preset := goldenMinimalDatabaseServer()
-	server.Spec.Archive = archiveSpec()
-	server.Spec.Suspend = true
-	archive := &ArchiveStorage{
-		Config: archiveBucket(v1.S3StorageAuth{
-			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
-			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::123456789012:role/camunda"},
-		}),
-	}
-
-	assertDatabaseServerGoldens(
-		t, "archive-suspended", server, MergePreset(server.Spec, preset), archive,
 	)
 }
 
@@ -370,6 +336,69 @@ func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 
 	assertDatabaseServerGoldens(
 		t, "archive-azure-workload-identity", server, MergePreset(server.Spec, preset), archive,
+	)
+}
+
+// renderComponent returns the YAML of comp, the same bytes a golden holds.
+func renderComponent(t *testing.T, comp *component.Component) string {
+	t.Helper()
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	out, err := golden.SerializeComponent(objects, goldenScheme(t))
+	require.NoError(t, err)
+
+	return string(out)
+}
+
+// Suspension is a runtime mutation: the wrapper writes the hibernation
+// annotation on the cluster, and the base backup schedule is suspended with
+// it. Nothing else about the declared state may move, so the two renders are
+// compared rather than pinned twice. The data volume of an instance and the
+// archive the server writes are what this protects.
+func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
+	t.Parallel()
+
+	archive := &ArchiveStorage{
+		Config: archiveBucket(v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::123456789012:role/camunda"},
+		}),
+	}
+
+	render := func(suspend bool) (cluster, contract, archived string) {
+		server, preset := goldenMinimalDatabaseServer()
+		server.Spec.Archive = archiveSpec()
+		server.Spec.Suspend = suspend
+		merged := MergePreset(server.Spec, preset)
+
+		clusterComp, _, err := ClusterComponent(server, merged, archive, nil)
+		require.NoError(t, err)
+		contractComp, err := ContractComponent(server, merged)
+		require.NoError(t, err)
+		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
+		require.NoError(t, err)
+
+		return renderComponent(t, clusterComp),
+			renderComponent(t, contractComp),
+			renderComponent(t, archiveComp)
+	}
+
+	runningCluster, runningContract, runningArchive := render(false)
+	suspendedCluster, suspendedContract, suspendedArchive := render(true)
+
+	assert.Equal(t, runningCluster, suspendedCluster, "the declared cluster must not move")
+	assert.Equal(t, runningContract, suspendedContract, "the published contract must not move")
+
+	// The one field suspension declares is the suspension of the schedule. A
+	// hibernated server has no instances, so every slot the schedule reached
+	// would start a backup that cannot run.
+	assert.Equal(
+		t,
+		strings.Replace(runningArchive, "suspend: false", "suspend: true", 1),
+		suspendedArchive,
+		"suspension must reach the base backup schedule and nothing else",
 	)
 }
 
