@@ -134,7 +134,9 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	if !opts.WithoutCNPG {
 		// The CloudNativePG and Barman Cloud Go modules ship no CRD
 		// manifests, so both schemas are vendored. Neither operator runs in
-		// envtest.
+		// envtest. WithoutCNPG leaves both out, because a cluster that does
+		// not serve CloudNativePG cannot serve its plugin either.
+		// WithoutBarmanPlugin leaves out the plugin alone.
 		crdPaths = append(crdPaths, crdPath(utils.CNPGCRDPath))
 		if !opts.WithoutBarmanPlugin {
 			crdPaths = append(crdPaths, crdPath(utils.BarmanCRDPath))
