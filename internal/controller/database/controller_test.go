@@ -405,7 +405,7 @@ var _ = Describe("Database controller", func() {
 
 		expectDatabaseReady(
 			db, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			fmt.Sprintf(`Secret "%s/%s" is missing key "password"`, namespace, secret.Name),
+			fmt.Sprintf("Secret %s/%s is missing key \"password\"", namespace, secret.Name),
 		)
 	})
 
@@ -645,6 +645,48 @@ var _ = Describe("Database controller", func() {
 				&v1.DatabaseConfig{},
 			)
 		}, "3s", interval).Should(MatchError(ContainSubstring("not found")))
+	})
+
+	// Two Databases of one namespace can name one DatabaseConfig explicitly.
+	// Only the one that owns it may delete it, so the loser withdraws its own
+	// Secrets and leaves the contract of the winner where it is.
+	It("leaves a binding it does not own in place when it withdraws", func() {
+		namespace := newDatabaseNamespace()
+		server := createDatabaseServer(namespace)
+		shared := "shared-config-" + utilrand.String(6)
+
+		holder := databaseFor(server, namespace)
+		holder.Name = "ownera-" + utilrand.String(8)
+		holder.Spec.DatabaseConfig = shared
+		createDatabase(holder)
+		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		sharedKey := types.NamespacedName{Namespace: namespace, Name: shared}
+		var owned v1.DatabaseConfig
+		Expect(k8sClient.Get(ctx, sharedKey, &owned)).To(Succeed())
+		Expect(metav1.GetControllerOf(&owned).Name).To(Equal(holder.Name))
+
+		By("creating a later Database that names the same DatabaseConfig and loses the claim")
+		loser := databaseFor(server, namespace)
+		loser.Name = "ownerz-" + utilrand.String(8)
+		loser.Spec.DatabaseName = holder.Spec.DatabaseName
+		loser.Spec.DatabaseConfig = shared
+		createDatabase(loser)
+
+		expectDatabaseReady(
+			loser, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			"These bindings belong to another Database and stay in place: "+sharedKey.String(),
+		)
+
+		By("keeping the DatabaseConfig of the holder, with its owner reference intact")
+		Consistently(func(g Gomega) {
+			var still v1.DatabaseConfig
+			g.Expect(k8sClient.Get(ctx, sharedKey, &still)).To(Succeed())
+			g.Expect(metav1.GetControllerOf(&still).Name).To(Equal(holder.Name))
+		}, "3s", interval).Should(Succeed())
+
+		By("keeping the holder Ready on its own bindings")
+		expectDatabaseReady(holder, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
 	})
 
 	It("deletes without a finalizer, leaving the SQL database and users intact", func() {

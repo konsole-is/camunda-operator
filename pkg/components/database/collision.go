@@ -17,6 +17,8 @@ limitations under the License.
 package database
 
 import (
+	"strings"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
@@ -26,6 +28,15 @@ import (
 // while that is empty.
 func CollisionKey(systemIdentifier, databaseName string) string {
 	return systemIdentifier + "/" + databaseName
+}
+
+// CollisionIdentity returns the system identifier that key was built from, or
+// the empty string for an empty key. It is the inverse of CollisionKey, for a
+// caller that holds a recorded claim and needs the server behind it.
+func CollisionIdentity(key string) string {
+	identifier, _, _ := strings.Cut(key, "/")
+
+	return identifier
 }
 
 // CollisionWinner picks the Database that owns a contested claim. The oldest

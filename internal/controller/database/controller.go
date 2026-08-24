@@ -24,11 +24,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
@@ -140,10 +142,20 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	bootstrapper, err := r.preCheck(ctx, &database)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		conditions.Stage(&database, conditions.Failed(&database, failure))
 		if errors.Is(err, errClaimLost) {
-			return ctrl.Result{}, r.withdrawBindings(ctx, rec, &database, &comps)
+			kept, withdrawErr := r.withdrawBindings(ctx, rec, &database, &comps)
+			if len(kept) > 0 {
+				failure.Message += fmt.Sprintf(
+					". These bindings belong to another Database and stay in place: %s",
+					strings.Join(kept, ", "),
+				)
+			}
+			conditions.Stage(&database, conditions.Failed(&database, failure))
+
+			return ctrl.Result{}, withdrawErr
 		}
+
+		conditions.Stage(&database, conditions.Failed(&database, failure))
 		if failure.Reason == v1.ReasonConnectionFailed {
 			return ctrl.Result{RequeueAfter: connectionRetryInterval}, nil
 		}
@@ -175,23 +187,101 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	return ctrl.Result{}, reconcileErr
 }
 
-// withdrawBindings deletes every binding that database published and appends
-// the component to comps, so the one status flush of this reconcile owns
+// withdrawBindings deletes the bindings that database owns and sets comps to
+// the component that did it, so the one status flush of this reconcile owns
 // BindingsReady and reports it as Disabled. A Database that lost its claim
 // keeps neither the contracts nor the credential Secrets it published.
+//
+// It returns the bindings it left in place. Two Databases can name one binding
+// explicitly, and only the one that owns it may delete it, so a loser that
+// names the winner's object withdraws everything else and reports that name.
 func (r *DatabaseReconciler) withdrawBindings(
 	ctx context.Context,
 	rec component.ReconcileContext,
 	database *v1.Database,
 	comps *[]*component.Component,
-) error {
-	comp, err := components.WithdrawnBindingsComponent(database)
+) ([]string, error) {
+	owned, kept, err := r.ownedBindings(ctx, database)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	comp, err := components.WithdrawnBindingsComponent(database, owned)
+	if err != nil {
+		return kept, err
 	}
 	*comps = []*component.Component{comp}
 
-	return comp.Reconcile(ctx, rec)
+	return kept, comp.Reconcile(ctx, rec)
+}
+
+// ownedBindings reports which published bindings of database carry a
+// controller owner reference to it, and names the ones that do not.
+func (r *DatabaseReconciler) ownedBindings(
+	ctx context.Context, database *v1.Database,
+) (components.OwnedBindings, []string, error) {
+	rb := components.ResolveBindings(database)
+
+	// One entry per binding the component can register, in the order it
+	// registers them.
+	type binding struct {
+		key   types.NamespacedName
+		obj   client.Object
+		owned *bool
+	}
+
+	var owned components.OwnedBindings
+	bindings := []binding{
+		{rb.AppSecret, &corev1.Secret{}, &owned.AppSecret},
+		{rb.BackupSecret, &corev1.Secret{}, &owned.BackupSecret},
+		{
+			types.NamespacedName{Namespace: database.Namespace, Name: rb.DatabaseConfigName},
+			&v1.DatabaseConfig{},
+			&owned.DatabaseConfig,
+		},
+	}
+	if database.Spec.SecondaryStorageConfig != "" {
+		bindings = append(bindings, binding{
+			types.NamespacedName{
+				Namespace: database.Namespace, Name: database.Spec.SecondaryStorageConfig,
+			},
+			&v1.SecondaryStorageConfig{},
+			&owned.SecondaryStorage,
+		})
+	}
+
+	var kept []string
+	for _, b := range bindings {
+		mine, err := r.ownsBinding(ctx, database, b.key, b.obj)
+		if err != nil {
+			return components.OwnedBindings{}, nil, err
+		}
+		*b.owned = mine
+		if !mine {
+			kept = append(kept, b.key.String())
+		}
+	}
+
+	return owned, kept, nil
+}
+
+// ownsBinding reports whether the live object at key carries a controller
+// owner reference to database. An object that does not exist is owned: there
+// is nothing of anybody else's to delete.
+func (r *DatabaseReconciler) ownsBinding(
+	ctx context.Context, database *v1.Database, key types.NamespacedName, obj client.Object,
+) (bool, error) {
+	if err := r.APIReader.Get(ctx, key, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+
+		return false, fmt.Errorf("reading the published binding %s: %w", key, err)
+	}
+
+	owner := metav1.GetControllerOf(obj)
+
+	return owner != nil && owner.UID == database.UID, nil
 }
 
 // resolvePasswords fills the role passwords of rb. It reuses the password of
@@ -329,7 +419,7 @@ func (r *DatabaseReconciler) adminCredentials(
 
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
-		return "", "", fmt.Errorf("reading admin credentials Secret %q: %w", key, err)
+		return "", "", fmt.Errorf("reading admin credentials Secret %s: %w", key, err)
 	}
 
 	return string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]), nil

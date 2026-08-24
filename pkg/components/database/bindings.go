@@ -163,25 +163,50 @@ func BackupUserName(databaseName string) string {
 // All children land in the namespace of the Database. Each of them carries an
 // owner reference to it.
 func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, error) {
-	return bindingsComponent(db, rb, true)
+	return bindingsComponent(db, rb, true, OwnedBindings{
+		AppSecret: true, BackupSecret: true, DatabaseConfig: true, SecondaryStorage: true,
+	})
+}
+
+// OwnedBindings selects which published bindings a Database may withdraw. The
+// controller sets a field only when the live object carries a controller owner
+// reference to that Database, so a Database that lost a contested claim never
+// deletes an object the winner owns. Two Databases can name one binding
+// explicitly, and only one of them ever owns it.
+type OwnedBindings struct {
+	// AppSecret is the application credentials Secret.
+	AppSecret bool
+	// BackupSecret is the backup credentials Secret.
+	BackupSecret bool
+	// DatabaseConfig is the published DatabaseConfig.
+	DatabaseConfig bool
+	// SecondaryStorage is the published SecondaryStorageConfig.
+	SecondaryStorage bool
 }
 
 // WithdrawnBindingsComponent assembles the bindings component with its feature
-// gate off. The component deletes every binding of db and reports
-// BindingsReady with reason Disabled. A Database that lost the claim to its
-// logical database uses it: the winner owns that database and rotates the role
-// passwords, so the credentials this one published open nothing.
+// gate off, holding only the bindings that owned marks. The component deletes
+// those and reports BindingsReady with reason Disabled. A Database that lost
+// the claim to its logical database uses it: the winner owns that database and
+// rotates the role passwords, so the credentials this one published open
+// nothing.
 //
 // It resolves the binding names from db alone. The passwords are not needed to
 // delete a Secret, and the winner holds the current ones anyway.
-func WithdrawnBindingsComponent(db *v1.Database) (*component.Component, error) {
-	return bindingsComponent(db, ResolveBindings(db), false)
+func WithdrawnBindingsComponent(db *v1.Database, owned OwnedBindings) (*component.Component, error) {
+	return bindingsComponent(db, ResolveBindings(db), false, owned)
 }
 
-// bindingsComponent builds the component behind both constructors. holds is
-// the component feature gate: false makes it withdraw every binding instead of
-// applying it.
-func bindingsComponent(db *v1.Database, rb Bindings, holds bool) (*component.Component, error) {
+// bindingsComponent builds the component behind both constructors. The holds
+// flag is the component feature gate: true applies the registered bindings,
+// and false withdraws them instead. A binding that owned leaves out is not
+// registered at all, so the component neither applies nor deletes it.
+func bindingsComponent(
+	db *v1.Database,
+	rb Bindings,
+	holds bool,
+	owned OwnedBindings,
+) (*component.Component, error) {
 	appSecret, err := secret.NewBuilder(
 		credentialSecret(db, rb.AppSecret, rb.AppUser, rb.AppPassword),
 	).Build()
@@ -215,16 +240,25 @@ func bindingsComponent(db *v1.Database, rb Bindings, holds bool) (*component.Com
 	builder := component.NewComponentBuilder().
 		WithName("bindings").
 		WithConditionType(ConditionBindings).
-		WithFeatureGate(feature.NewBooleanGate(holds)).
-		WithResource(appSecret).
-		WithResource(backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled))).
-		WithResource(dbConfig)
+		WithFeatureGate(feature.NewBooleanGate(holds))
+
+	if owned.AppSecret {
+		builder = builder.WithResource(appSecret)
+	}
+	if owned.BackupSecret {
+		builder = builder.WithResource(
+			backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled)),
+		)
+	}
+	if owned.DatabaseConfig {
+		builder = builder.WithResource(dbConfig)
+	}
 
 	// The SecondaryStorageConfig has no name when the field is unset, so it is
 	// omitted rather than gated. If the field is cleared, the existing contract
 	// stays in place until the Database is deleted and owner-reference garbage
 	// collection removes it.
-	if db.Spec.SecondaryStorageConfig != "" {
+	if db.Spec.SecondaryStorageConfig != "" && owned.SecondaryStorage {
 		ssc, err := secondarystorageconfig.NewBuilder(&v1.SecondaryStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      db.Spec.SecondaryStorageConfig,

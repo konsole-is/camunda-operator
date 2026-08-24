@@ -49,11 +49,6 @@ func TestCollisionKeyIsTheServerIdentity(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, "7000000000000000001/camunda", CollisionKey("7000000000000000001", "camunda"))
-	assert.Equal(
-		t,
-		CollisionKey("7000000000000000001", "camunda"),
-		CollisionKey("7000000000000000001", "camunda"),
-	)
 	assert.NotEqual(
 		t,
 		CollisionKey("7000000000000000001", "camunda"),

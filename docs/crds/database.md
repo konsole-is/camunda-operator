@@ -51,6 +51,8 @@ The claim therefore crosses namespaces. If a second `Database` of any namespace 
 
 A `Database` can also lose a claim it once held, when the contract of an older claimant reaches its server for the first time. The winner owns the logical database and resets the role passwords, so the credentials of the loser open nothing. The loser therefore withdraws what it published: the `DatabaseConfig`, the `SecondaryStorageConfig`, and both credential Secrets are deleted, and `BindingsReady` reads `Disabled`.
 
+It withdraws only what it owns. Two `Database` resources can name one `databaseConfig` or one credential Secret, and the loser leaves an object that belongs to the winner in place. The `Ready` message then names what stayed.
+
 `status.collisionKey` shows the claim of a `Database`, as the system identifier and the database name:
 
 ```yaml
