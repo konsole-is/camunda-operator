@@ -139,7 +139,7 @@ Both fields stay on the contract after the answer, as the record of the last req
 
 A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
 
-Writing the request itself clears nothing. The operator clears the record of the probe when `spec.host`, `spec.port`, or `spec.adminCredentialsSecretRef.name` changes, because only those name another server. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
+Writing the request itself clears nothing. The operator clears the record of the probe when `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef` change, because only those name another server or another user on it. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
 
 ## Status
 
@@ -156,10 +156,11 @@ Writing the request itself clears nothing. The operator clears the record of the
 | `status.probedAt` | When the operator last reached the server and read `serverVersion` and `systemIdentifier`. A change of server clears it. |
 | `status.probedEndpoint` | The `host:port` that the last probe reached. It is what tells a change of server from any other spec change. |
 | `status.probedSecretName` | The admin credentials Secret that the last probe read. |
+| `status.probedSecretKeys` | The keys of that Secret that the last probe read, as `<usernameKey>/<passwordKey>`. Another key names another user. |
 | `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A change of server clears it. |
-
-A change of server means a change to `spec.host`, `spec.port`, or `spec.adminCredentialsSecretRef.name`. Every other spec change, including a recovery request and its answer, leaves the record of the probe alone.
 | `status.observedGeneration` | The last generation of the contract that the operator validated. |
+
+A change of server means a change to `spec.host`, `spec.port`, or the name and the keys of `spec.adminCredentialsSecretRef`. Every other spec change, including a recovery request and its answer, leaves the record of the probe alone.
 
 ## Spec reference
 

@@ -301,9 +301,9 @@ spec:
                   ServerVersion and SystemIdentifier. The operator probes the server again
                   when this is older than the probe interval, or when the admin
                   credentials Secret changed. A reconcile in between leaves it untouched.
-                  A change to the endpoint or to the admin credentials Secret clears it,
-                  together with ServerVersion, SystemIdentifier, ProbedEndpoint,
-                  ProbedSecretName, and ProbedSecretVersion, because the whole record
+                  A change to the endpoint or to the admin credentials clears it, together
+                  with ServerVersion, SystemIdentifier, ProbedEndpoint, ProbedSecretName,
+                  ProbedSecretKeys, and ProbedSecretVersion, because the whole record
                   describes the server the old spec named. A change to any other field,
                   for example a recovery request, leaves the record alone: it cannot move
                   the server.
@@ -314,6 +314,13 @@ spec:
                   ProbedEndpoint is the host and the port that the last probe reached, as
                   "<host>:<port>". It is what tells a spec change that moves the server
                   from one that does not.
+                type: string
+              probedSecretKeys:
+                description: |-
+                  ProbedSecretKeys are the keys of that Secret that the last probe read,
+                  as "<usernameKey>/<passwordKey>". One Secret can hold the credentials of
+                  more than one user, so the keys name the user the way the Secret names
+                  the credentials.
                 type: string
               probedSecretName:
                 description: |-
@@ -341,7 +348,7 @@ spec:
                   server itself, so two contracts that describe one server under
                   different hosts publish one value. The Database controller keys the
                   uniqueness of a logical database on it. A change to the endpoint or to
-                  the admin credentials Secret clears it.
+                  the admin credentials clears it.
                 type: string
             type: object
         required:

@@ -275,9 +275,42 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(probes.Load()).To(Equal(count))
 		}, "2s", interval).Should(Succeed())
 
+		By("probing again when the spec reads another user of one Secret")
+		twoUsers := adminSecret("username", "password")
+		twoUsers.Name = "admin-two-users"
+		twoUsers.Data["readonly-username"] = twoUsers.Data["username"]
+		twoUsers.Data["readonly-password"] = twoUsers.Data["password"]
+		Expect(k8sClient.Create(ctx, twoUsers)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, twoUsers) })
+
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			got.Spec.AdminCredentialsSecretRef.Name = twoUsers.Name
+			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(probes.Load()).To(Equal(count + 1))
+		}, timeout, interval).Should(Succeed())
+
+		// The Secret does not move. The keys do, and they name the user.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())
+			got.Spec.AdminCredentialsSecretRef.UsernameKey = "readonly-username"
+			got.Spec.AdminCredentialsSecretRef.PasswordKey = "readonly-password"
+			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(probes.Load()).To(Equal(count + 2))
+			var again v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &again)).To(Succeed())
+			g.Expect(again.Status.ProbedSecretKeys).To(Equal("readonly-username/readonly-password"))
+		}, timeout, interval).Should(Succeed())
+
 		By("probing again when the spec names another admin Secret")
 		copied := adminSecret("username", "password")
 		copied.Name = "admin-copy"
+		copied.Data["readonly-username"] = copied.Data["username"]
+		copied.Data["readonly-password"] = copied.Data["password"]
 		Expect(k8sClient.Create(ctx, copied)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, copied) })
 
@@ -287,7 +320,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(k8sClient.Update(ctx, &got)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(probes.Load()).To(Equal(count + 1))
+			g.Expect(probes.Load()).To(Equal(count + 3))
 			var again v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &again)).To(Succeed())
 			g.Expect(again.Status.ProbedAt.After(probedAt.Time)).To(BeTrue())
@@ -304,7 +337,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(k8sClient.Update(ctx, &current)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 		Eventually(func(g Gomega) {
-			g.Expect(probes.Load()).To(Equal(count + 2))
+			g.Expect(probes.Load()).To(Equal(count + 4))
 		}, timeout, interval).Should(Succeed())
 	})
 

@@ -193,16 +193,16 @@ type DatabaseServerConfigStatus struct {
 	// server itself, so two contracts that describe one server under
 	// different hosts publish one value. The Database controller keys the
 	// uniqueness of a logical database on it. A change to the endpoint or to
-	// the admin credentials Secret clears it.
+	// the admin credentials clears it.
 	// +optional
 	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// ProbedAt is when the operator last reached the server and read
 	// ServerVersion and SystemIdentifier. The operator probes the server again
 	// when this is older than the probe interval, or when the admin
 	// credentials Secret changed. A reconcile in between leaves it untouched.
-	// A change to the endpoint or to the admin credentials Secret clears it,
-	// together with ServerVersion, SystemIdentifier, ProbedEndpoint,
-	// ProbedSecretName, and ProbedSecretVersion, because the whole record
+	// A change to the endpoint or to the admin credentials clears it, together
+	// with ServerVersion, SystemIdentifier, ProbedEndpoint, ProbedSecretName,
+	// ProbedSecretKeys, and ProbedSecretVersion, because the whole record
 	// describes the server the old spec named. A change to any other field,
 	// for example a recovery request, leaves the record alone: it cannot move
 	// the server.
@@ -218,6 +218,12 @@ type DatabaseServerConfigStatus struct {
 	// record of the probe goes with it.
 	// +optional
 	ProbedSecretName string `json:"probedSecretName,omitempty"`
+	// ProbedSecretKeys are the keys of that Secret that the last probe read,
+	// as "<usernameKey>/<passwordKey>". One Secret can hold the credentials of
+	// more than one user, so the keys name the user the way the Secret names
+	// the credentials.
+	// +optional
+	ProbedSecretKeys string `json:"probedSecretKeys,omitempty"`
 	// ProbedSecretVersion is the resourceVersion of the admin credentials
 	// Secret that the last probe used. The operator probes a changed Secret
 	// again before the interval, so it validates rotated credentials promptly.

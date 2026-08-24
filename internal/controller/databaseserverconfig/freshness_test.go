@@ -40,11 +40,14 @@ func TestProbeIsFresh(t *testing.T) {
 		cfg.Spec.Host = "postgres.databases.svc"
 		cfg.Spec.Port = 5432
 		cfg.Spec.AdminCredentialsSecretRef.Name = "admin"
+		cfg.Spec.AdminCredentialsSecretRef.UsernameKey = "username"
+		cfg.Spec.AdminCredentialsSecretRef.PasswordKey = "password"
 		cfg.Status.ServerVersion = "17"
 		at := metav1.NewTime(now.Add(-age))
 		cfg.Status.ProbedAt = &at
 		cfg.Status.ProbedEndpoint = "postgres.databases.svc:5432"
 		cfg.Status.ProbedSecretName = "admin"
+		cfg.Status.ProbedSecretKeys = "username/password"
 		cfg.Status.ProbedSecretVersion = secretVersion
 		cfg.Status.Conditions = []metav1.Condition{{
 			Type: v1.ConditionReady, Status: ready, Reason: v1.ReasonHealthy, ObservedGeneration: 3,
@@ -75,12 +78,17 @@ func TestProbeIsFresh(t *testing.T) {
 	movedSecret := probed(time.Minute, "rv-1", metav1.ConditionTrue)
 	movedSecret.Spec.AdminCredentialsSecretRef.Name = "admin-copy"
 
+	// One Secret can hold the credentials of more than one user.
+	movedKeys := probed(time.Minute, "rv-1", metav1.ConditionTrue)
+	movedKeys.Spec.AdminCredentialsSecretRef.UsernameKey = "readonly-username"
+
 	cases := map[string]*v1.DatabaseServerConfig{
 		"never probed":       {},
 		"stale":              probed(probeInterval, "rv-1", metav1.ConditionTrue),
 		"host moved":         movedHost,
 		"port moved":         movedPort,
 		"admin secret moved": movedSecret,
+		"admin keys moved":   movedKeys,
 		"secret changed":     probed(time.Minute, "rv-0", metav1.ConditionTrue),
 		"last probe failed":  probed(time.Minute, "rv-1", metav1.ConditionFalse),
 	}

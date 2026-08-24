@@ -133,8 +133,7 @@ func (r *DatabaseServerConfigReconciler) validate(
 	// of the probe goes, so status reads as no probe for this spec rather than
 	// a probe of a server this contract no longer describes.
 	//
-	// The test is the endpoint and the admin credentials Secret, not the
-	// generation. Every field of this spec is writable, and the ones that
+	// The test is the endpoint and the admin credentials, not the generation. Every field of this spec is writable, and the ones that
 	// carry a recovery request and its answer are written on a live contract
 	// while a rollback runs. Clearing the identity for those would take the
 	// contract, and every Database on it, out of Ready for a write that cannot
@@ -145,6 +144,7 @@ func (r *DatabaseServerConfigReconciler) validate(
 		cfg.Status.ProbedAt = nil
 		cfg.Status.ProbedEndpoint = ""
 		cfg.Status.ProbedSecretName = ""
+		cfg.Status.ProbedSecretKeys = ""
 		cfg.Status.ProbedSecretVersion = ""
 	}
 
@@ -194,6 +194,7 @@ func (r *DatabaseServerConfigReconciler) validate(
 	cfg.Status.ProbedAt = &now
 	cfg.Status.ProbedEndpoint = probedEndpoint(cfg)
 	cfg.Status.ProbedSecretName = ref.Name
+	cfg.Status.ProbedSecretKeys = probedSecretKeys(cfg)
 	cfg.Status.ProbedSecretVersion = secret.ResourceVersion
 
 	return conditions.Ready(
@@ -205,20 +206,30 @@ func (r *DatabaseServerConfigReconciler) validate(
 }
 
 // probedAnotherServer reports whether the record of the last probe describes a
-// server that this spec no longer names. A contract that has never been probed
-// has nothing to clear.
+// server, or a user on it, that this spec no longer names. A contract that has
+// never been probed has nothing to clear.
 func probedAnotherServer(cfg *v1.DatabaseServerConfig) bool {
 	if cfg.Status.ProbedAt == nil {
 		return false
 	}
 
 	return cfg.Status.ProbedEndpoint != probedEndpoint(cfg) ||
-		cfg.Status.ProbedSecretName != cfg.Spec.AdminCredentialsSecretRef.Name
+		cfg.Status.ProbedSecretName != cfg.Spec.AdminCredentialsSecretRef.Name ||
+		cfg.Status.ProbedSecretKeys != probedSecretKeys(cfg)
 }
 
 // probedEndpoint renders the endpoint of the spec as status records it.
 func probedEndpoint(cfg *v1.DatabaseServerConfig) string {
 	return fmt.Sprintf("%s:%d", cfg.Spec.Host, cfg.Spec.Port)
+}
+
+// probedSecretKeys renders the credential keys of the spec as status records
+// them. One Secret can hold the credentials of more than one user, so a spec
+// that reads other keys of one Secret reads another user.
+func probedSecretKeys(cfg *v1.DatabaseServerConfig) string {
+	ref := cfg.Spec.AdminCredentialsSecretRef
+
+	return ref.UsernameKey + "/" + ref.PasswordKey
 }
 
 // probeIsFresh reports whether the recorded probe still stands for cfg as it
@@ -227,7 +238,7 @@ func probedEndpoint(cfg *v1.DatabaseServerConfig) string {
 // every other case the controller probes the server again. That is the case
 // when there is no probe yet, or the last probe failed (a failed probe records
 // no ProbedAt). It is also the case when the probe is stale, the spec names
-// another server, or the Secret changed.
+// another server or another user, or the Secret changed.
 func probeIsFresh(cfg *v1.DatabaseServerConfig, secretVersion string, now time.Time) (bool, time.Duration) {
 	ready := meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady)
 	if cfg.Status.ProbedAt == nil || ready == nil || ready.Status != metav1.ConditionTrue {
