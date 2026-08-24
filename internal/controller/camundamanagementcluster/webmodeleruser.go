@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -48,6 +49,17 @@ const (
 	webModelerUserApplied = "true"
 )
 
+// authorizationSearchLimit bounds the authorizations of the Web Modeler user
+// that one converge reads. The user is granted two of them, so the bound is
+// only reached on a cluster where somebody else granted it hundreds more.
+const authorizationSearchLimit = 1000
+
+// defaultConvergeInterval is how long a cluster that holds the user is left
+// alone before the operator reads it again. The management plane reconciles on
+// every event of every selected cluster, so without a bound the check would
+// run several times a second on a busy Kubernetes cluster.
+const defaultConvergeInterval = 10 * time.Minute
+
 // The events that this file records.
 const (
 	// eventActionRemoveUser is the action of the events about the Web Modeler
@@ -57,6 +69,9 @@ const (
 	// remove the user. The management cluster is deleted either way, so an
 	// administrator has to remove it by hand.
 	eventReasonUserRemovalFailed = "WebModelerUserRemovalFailed"
+	// eventReasonUserLeftBehind is recorded when the operator stops trying to
+	// remove the user, because nothing on that cluster authenticates with it.
+	eventReasonUserLeftBehind = "WebModelerUserLeftBehind"
 )
 
 // webModelerAuthorizations are the permissions that the Web Modeler user
@@ -132,6 +147,33 @@ func (r *Reconciler) syncWebModelerUsers(
 	}
 
 	return errors.Join(append(errs, r.withdrawUnservedUsers(ctx, mc, clusters, served, false))...)
+}
+
+// convergesUsers reports whether the reconcile has a Web Modeler user to keep
+// converging. Nothing watches the user API of a cluster, so a user that
+// somebody removed there is found by the next read and by nothing else.
+func convergesUsers(mc *v1.CamundaManagementCluster, attached []components.AttachedCluster) bool {
+	if mc.Spec.WebModeler == nil {
+		return false
+	}
+
+	for _, cluster := range attached {
+		if cluster.AuthMethod == v1.AuthenticationMethodBasic {
+			return true
+		}
+	}
+
+	return false
+}
+
+// convergeInterval returns ConvergeInterval, or defaultConvergeInterval when
+// unset.
+func (r *Reconciler) convergeInterval() time.Duration {
+	if r.ConvergeInterval > 0 {
+		return r.ConvergeInterval
+	}
+
+	return defaultConvergeInterval
 }
 
 // withdrawWebModelerUsers removes the Web Modeler user from every
@@ -226,9 +268,14 @@ func (r *Reconciler) withdrawWebModelerUser(
 	return nil
 }
 
-// removeWebModelerUser removes the Web Modeler user from one cluster. It
-// records a failure as a warning event and returns it, so the caller decides
-// whether the failure holds the withdrawal: the sync path keeps the Secret and
+// removeWebModelerUser removes the Web Modeler user from one cluster.
+//
+// A cluster that no longer accepts basic authentication holds nothing to
+// remove: no credential of that cluster authenticates any more, so the user
+// row grants nobody anything and no call can delete it. Such a removal reports
+// a normal event and succeeds, which is what lets the claim of the cluster go
+// free. Every other failure is a warning event and an error, so the caller
+// decides whether it holds the withdrawal: the sync path keeps the Secret and
 // tries again, the finalizer lets the deletion go on.
 func (r *Reconciler) removeWebModelerUser(
 	ctx context.Context,
@@ -245,14 +292,36 @@ func (r *Reconciler) removeWebModelerUser(
 	}
 
 	users, failure, err := r.clusterUserClient(ctx, attached)
-	if err == nil && failure == "" {
-		err = users.DeleteUser(ctx, components.WebModelerClusterUsername)
-	}
-	if err == nil && failure == "" {
-		return nil
+	if err != nil {
+		return err
 	}
 	if failure == "" {
-		failure = err.Error()
+		if err := users.DeleteUser(ctx, components.WebModelerClusterUsername); err != nil {
+			failure = err.Error()
+		}
+	}
+	if failure == "" {
+		return nil
+	}
+
+	inert, why, err := r.basicAuthGone(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	name := cluster.Namespace + "/" + cluster.Name
+
+	if inert {
+		r.EventRecorder.Eventf(
+			mc,
+			nil,
+			corev1.EventTypeNormal,
+			eventReasonUserLeftBehind,
+			eventActionRemoveUser,
+			"The user %q stays on CamundaCluster %q, because %s. The removal reported: %s",
+			components.WebModelerClusterUsername, name, why, failure,
+		)
+
+		return nil
 	}
 
 	r.EventRecorder.Eventf(
@@ -262,13 +331,36 @@ func (r *Reconciler) removeWebModelerUser(
 		eventReasonUserRemovalFailed,
 		eventActionRemoveUser,
 		"Could not remove the user %q from CamundaCluster %q: %s",
-		components.WebModelerClusterUsername, cluster.Namespace+"/"+cluster.Name, failure,
+		components.WebModelerClusterUsername, name, failure,
 	)
 
 	return fmt.Errorf(
 		"removing the user %q from CamundaCluster %q: %s",
-		components.WebModelerClusterUsername, cluster.Namespace+"/"+cluster.Name, failure,
+		components.WebModelerClusterUsername, name, failure,
 	)
+}
+
+// basicAuthGone reports whether the Web Modeler user of a cluster
+// authenticates nobody any more, and names the state that the cluster is in. A
+// cluster that authenticates with oidc is such a state, and so is one whose
+// CamundaPlatformConfig is gone. Neither of them takes the password that the
+// operator published. It returns an error only for a failure of the Kubernetes
+// API.
+func (r *Reconciler) basicAuthGone(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (bool, string, error) {
+	method, failure, err := r.clusterAuthMethod(ctx, cluster)
+	switch {
+	case err != nil:
+		return false, "", err
+	case failure != "":
+		return true, failure, nil
+	case method != v1.AuthenticationMethodBasic:
+		return true, fmt.Sprintf("the cluster authenticates with %q and nobody signs in with the user", method), nil
+	default:
+		return false, "", nil
+	}
 }
 
 // clusterUserClient builds a client for the user API of one cluster,
@@ -314,10 +406,15 @@ func (r *Reconciler) clusterUserClient(
 // the row of that cluster when the cluster refused the work, and an error when
 // the Kubernetes API did.
 //
-// The password is published before the cluster is called and marked only once
-// the cluster holds it. A crash between the two therefore leaves a Secret
-// without the marker, and the next reconcile sets the password it already
-// published rather than a second one that nothing has seen.
+// Before the first success the password is published, then the cluster is
+// called, and the Secret is marked only once the cluster holds the user. A
+// crash between the two therefore leaves a Secret without the marker, and the
+// next reconcile sets the password it already published rather than a second
+// one that nothing has seen.
+//
+// A marked Secret is converged again once its converge interval has passed:
+// the cluster is read, and a user that is gone there is created again under
+// the published password.
 func (r *Reconciler) webModelerUser(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
@@ -332,12 +429,15 @@ func (r *Reconciler) webModelerUser(
 	if err != nil {
 		return "", err
 	}
-	if published.applied {
+	if published.applied && time.Since(published.convergedAt) < r.convergeInterval() {
 		return "", nil
 	}
 
 	password := published.password
+	applied := published.applied
 	if password.Value == "" {
+		// Nothing was ever published, so nothing on the cluster can hold it.
+		applied = false
 		if password, err = credentials.LookupOrNew(
 			ctx, r.APIReader, key, components.WebModelerClusterUserPasswordKey,
 		); err != nil {
@@ -345,8 +445,12 @@ func (r *Reconciler) webModelerUser(
 		}
 	}
 
-	if password, err = r.publishUserSecret(ctx, mc, cluster, key, password, false); err != nil {
-		return "", err
+	if !applied {
+		if password, err = r.publishUserSecret(
+			ctx, mc, cluster, key, password, time.Time{},
+		); err != nil {
+			return "", err
+		}
 	}
 
 	users, failure, err := r.clusterUserClient(ctx, cluster)
@@ -354,11 +458,11 @@ func (r *Reconciler) webModelerUser(
 		return failure, err
 	}
 
-	if failure := ensureClusterUser(ctx, users, password.Value); failure != "" {
+	if failure := convergeClusterUser(ctx, users, password.Value, applied); failure != "" {
 		return failure, nil
 	}
 
-	_, err = r.publishUserSecret(ctx, mc, cluster, key, password, true)
+	_, err = r.publishUserSecret(ctx, mc, cluster, key, password, time.Now())
 
 	return "", err
 }
@@ -369,9 +473,13 @@ type publishedUserSecret struct {
 	// password is the published password and the Secret it came from, so a
 	// republish can carry the apply precondition of a reused credential.
 	password credentials.Password
-	// applied reports that the cluster holds the user under that password,
-	// with its authorizations.
+	// applied reports that the cluster held the user under that password, with
+	// its authorizations, at least once.
 	applied bool
+	// convergedAt is when the cluster last answered that it holds the user. It
+	// is the zero time when the Secret carries no such stamp, which makes the
+	// next reconcile converge the cluster.
+	convergedAt time.Time
 }
 
 // publishedUser reads the user Secret at key. A Secret that is not there is
@@ -388,12 +496,19 @@ func (r *Reconciler) publishedUser(
 		return publishedUserSecret{}, fmt.Errorf("reading Secret %q: %w", key, err)
 	}
 
+	// A stamp that no reconcile of this operator wrote parses to the zero
+	// time, which converges the cluster. That is the safe answer.
+	convergedAt, _ := time.Parse(
+		time.RFC3339, found.Annotations[components.WebModelerClusterUserConvergedAnnotation],
+	)
+
 	return publishedUserSecret{
 		password: credentials.Password{
 			Value:     string(found.Data[components.WebModelerClusterUserPasswordKey]),
 			SourceUID: found.UID,
 		},
-		applied: string(found.Data[components.WebModelerClusterUserAppliedKey]) == webModelerUserApplied,
+		applied:     string(found.Data[components.WebModelerClusterUserAppliedKey]) == webModelerUserApplied,
+		convergedAt: convergedAt,
 	}, nil
 }
 
@@ -402,21 +517,29 @@ func (r *Reconciler) publishedUser(
 // holds, so that a later apply of the same Secret carries the rotation
 // precondition of the credential.
 //
-// applied writes the marker that says the cluster holds the user under this
-// password, with its authorizations.
+// converged is when the cluster answered that it holds the user under this
+// password, with its authorizations. It writes the applied marker and the
+// stamp that the next converge is due from. The zero time publishes the
+// password alone, which is what the operator does before it calls the cluster.
 func (r *Reconciler) publishUserSecret(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	cluster components.AttachedCluster,
 	key client.ObjectKey,
 	password credentials.Password,
-	applied bool,
+	converged time.Time,
 ) (credentials.Password, error) {
 	data := map[string][]byte{
 		components.WebModelerClusterUserPasswordKey: []byte(password.Value),
 	}
-	if applied {
+	annotations := password.PreconditionAnnotations()
+	if !converged.IsZero() {
 		data[components.WebModelerClusterUserAppliedKey] = []byte(webModelerUserApplied)
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		annotations[components.WebModelerClusterUserConvergedAnnotation] =
+			converged.UTC().Format(time.RFC3339)
 	}
 
 	secret := &corev1.Secret{
@@ -425,7 +548,7 @@ func (r *Reconciler) publishUserSecret(
 			Name:        key.Name,
 			Namespace:   key.Namespace,
 			Labels:      webModelerUserLabels(mc, cluster),
-			Annotations: password.PreconditionAnnotations(),
+			Annotations: annotations,
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: data,
@@ -463,21 +586,57 @@ func webModelerUserLabels(
 	return set
 }
 
-// ensureClusterUser creates the Web Modeler user with password and grants it
-// the authorizations it needs. A user that the cluster already holds takes the
-// new password and the same grants again. The caller reaches this function
-// only while the published Secret carries no applied marker, so a user that a
-// failed pass left without permissions, and one that was there before the
-// operator, both end up with them. A repeated grant adds an authorization row
-// and no access, because the endpoint creates rather than converges.
+// convergeClusterUser makes the cluster hold the Web Modeler user under
+// password, with the authorizations it needs. applied says that the cluster
+// answered the same thing before, which is what tells a first pass from a
+// repair.
 //
 // It returns the message of the row of the cluster, or an empty string when
 // the cluster holds the user.
-func ensureClusterUser(ctx context.Context, users *camundaadmin.UserClient, password string) string {
+func convergeClusterUser(
+	ctx context.Context,
+	users *camundaadmin.UserClient,
+	password string,
+	applied bool,
+) string {
 	user := camundaadmin.User{
 		Username: components.WebModelerClusterUsername,
 		Name:     components.WebModelerClusterUsername,
 		Email:    webModelerUserEmail,
+	}
+
+	if failure := clusterUser(ctx, users, user, password, applied); failure != "" {
+		return failure
+	}
+
+	return clusterAuthorizations(ctx, users, user.Username)
+}
+
+// clusterUser makes the cluster hold user under password.
+//
+// Until the cluster answered once, every pass sets the password. That takes
+// over a user of the same name that the cluster held before the operator did,
+// and one that a failed pass left behind. Afterwards the cluster already holds
+// the published password, so a pass reads, and creates the user again only
+// when the cluster lost it.
+func clusterUser(
+	ctx context.Context,
+	users *camundaadmin.UserClient,
+	user camundaadmin.User,
+	password string,
+	applied bool,
+) string {
+	if applied {
+		// The read is eventually consistent, so it can report a user absent
+		// that is there. The create below then reports the name as taken, and
+		// the password is set to the published one, which it already is.
+		_, exists, err := users.GetUser(ctx, user.Username)
+		if err != nil {
+			return fmt.Sprintf("Reading the user %q: %v", user.Username, err)
+		}
+		if exists {
+			return ""
+		}
 	}
 
 	switch err := users.CreateUser(ctx, user, password); {
@@ -489,12 +648,33 @@ func ensureClusterUser(ctx context.Context, users *camundaadmin.UserClient, pass
 		return fmt.Sprintf("Creating the user %q: %v", user.Username, err)
 	}
 
+	return ""
+}
+
+// clusterAuthorizations grants username the permissions of
+// webModelerAuthorizations that the cluster does not already hold. The grant
+// endpoint creates rather than converges, so a permission granted twice leaves
+// two rows and no more access. The search is what keeps the grants to the ones
+// that are missing.
+func clusterAuthorizations(ctx context.Context, users *camundaadmin.UserClient, username string) string {
+	granted, err := users.SearchAuthorizations(
+		ctx, camundaadmin.OwnerUser, username, authorizationSearchLimit,
+	)
+	if err != nil {
+		return fmt.Sprintf("Reading the authorizations of the user %q: %v", username, err)
+	}
+
+	desired := make([]camundaadmin.Authorization, 0, len(webModelerAuthorizations))
 	for _, authorization := range webModelerAuthorizations {
-		authorization.OwnerID = user.Username
-		if err := users.CreateAuthorization(ctx, authorization); err != nil {
+		authorization.OwnerID = username
+		desired = append(desired, authorization)
+	}
+
+	for _, missing := range camundaadmin.MissingAuthorizations(desired, granted) {
+		if err := users.CreateAuthorization(ctx, missing); err != nil {
 			return fmt.Sprintf(
 				"Granting %v on %s to the user %q: %v",
-				authorization.PermissionTypes, authorization.ResourceType, user.Username, err,
+				missing.PermissionTypes, missing.ResourceType, username, err,
 			)
 		}
 	}

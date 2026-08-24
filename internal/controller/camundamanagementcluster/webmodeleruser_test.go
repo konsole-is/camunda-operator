@@ -434,6 +434,107 @@ var _ = Describe("Web Modeler", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("creates the user again after the cluster lost it", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		var published string
+		Eventually(func(g Gomega) {
+			secret := readSecret(g, s.namespace, name)
+			g.Expect(string(secret.Data[components.WebModelerClusterUserAppliedKey])).To(Equal("true"))
+			published = string(secret.Data[components.WebModelerClusterUserPasswordKey])
+			g.Expect(published).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
+		// An administrator deleted the user, or the cluster came back from a
+		// backup that was taken before the operator created it.
+		api.RemoveUser(components.WebModelerClusterUsername)
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+			g.Expect(api.Password(components.WebModelerClusterUsername)).To(Equal(published))
+			row := rowOf(g, s.mc, cluster)
+			g.Expect(row.Attached).To(BeTrue())
+			g.Expect(row.Reason).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("grants an authorization again after the cluster lost it", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Authorizations()).To(ConsistOf(webModelerGrants()))
+		}, timeout, interval).Should(Succeed())
+
+		api.RemoveAuthorizations(components.WebModelerClusterUsername)
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Authorizations()).To(ConsistOf(webModelerGrants()))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("never grants an authorization the cluster already holds", func() {
+		// The grant endpoint creates rather than converges, so a second grant
+		// of the same permission leaves a second row and no more access.
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Authorizations()).To(ConsistOf(webModelerGrants()))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(api.Authorizations()).To(ConsistOf(webModelerGrants()))
+		}, 5*time.Second, interval).Should(Succeed())
+	})
+
+	It("leaves the user behind when the cluster stopped accepting basic credentials", func() {
+		// A cluster that moves to oidc deletes its administrator Secret, and
+		// the removal authenticates with it. Its user rows authenticate nobody
+		// there, so there is nothing left to remove and the claim goes free.
+		api := newClusterUserAPI()
+		s := newScenario(withWebModeler, withSelector(map[string]string{}))
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		name := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			readSecret(g, s.namespace, name)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Namespace: s.namespace, Name: clustercomponents.AdminSecretName(cluster),
+		}})).To(Succeed())
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			latest.Spec.PlatformConfigRef = s.mc.Spec.PlatformConfigRef
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			expectSecretGone(g, s.namespace, name)
+			g.Expect(readOrchestrationCluster(g, cluster).Annotations).NotTo(
+				HaveKey(components.ClaimAnnotation),
+			)
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("removes the user with the management cluster", func() {
 		api := newClusterUserAPI()
 		s := newScenario(withWebModeler, withSelector(map[string]string{}))

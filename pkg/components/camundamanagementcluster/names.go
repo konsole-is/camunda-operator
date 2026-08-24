@@ -192,12 +192,18 @@ const (
 	// WebModelerClusterUserPasswordKey holds the password of the Web Modeler
 	// user on one basic-auth orchestration cluster.
 	WebModelerClusterUserPasswordKey = "password"
-	// WebModelerClusterUserAppliedKey records that the cluster holds the user
-	// under the password beside it, with its authorizations. The controller
-	// writes it only after both calls succeed, so a Secret without it is a
-	// password that never reached the cluster.
+	// WebModelerClusterUserAppliedKey records that the cluster held the user
+	// under the password beside it, with its authorizations, at least once.
+	// The controller writes it only after the cluster answered, so a Secret
+	// without it is a password that never reached the cluster.
 	WebModelerClusterUserAppliedKey = "applied"
 )
+
+// WebModelerClusterUserConvergedAnnotation stamps a Web Modeler user Secret
+// with the RFC 3339 time at which the cluster last answered that it holds the
+// user. The controller reads the cluster again once its converge interval has
+// passed, so the stamp is what keeps that read off the reconcile hot path.
+const WebModelerClusterUserConvergedAnnotation = "camunda.io/user-converged-at"
 
 // WebModelerClusterUsername is the user that the operator creates on every
 // attached basic-auth orchestration cluster. A person deploying from Web
