@@ -150,8 +150,8 @@ func PingCollisions(cluster *v1.CamundaCluster, clusterVersion string) []PingCol
 			continue
 		}
 		collisions = append(collisions, PingCollision{
-			Index:   i,
-			Name:    entry.Name,
+			Index:    i,
+			Name:     entry.Name,
 			Managers: valueFromManagers(cluster.ManagedFields, entry.Name),
 		})
 	}
