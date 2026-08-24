@@ -20,8 +20,8 @@ limitations under the License.
 package e2e
 
 // The environment of one matrix entry: the file test/e2e/matrix/<minor>.env
-// that make test-e2e exports before it runs the suite. The image versions
-// are required, and the suite fails at start when one is unset. The label
+// that make test-e2e exports before it runs the suite. The versions are
+// required, and the suite fails at start when one is unset. The label
 // list is optional. It names the spec flows that run for the minor in the
 // syntax of utils.LabelFilter, and an empty or absent list runs them all.
 const (
@@ -33,10 +33,13 @@ const (
 	envConsoleVersion       = "CAMUNDA_CONSOLE_VERSION"
 	envWebModelerVersion    = "CAMUNDA_WEB_MODELER_VERSION"
 	envKeycloakVersion      = "KEYCLOAK_VERSION"
+	envCNPGVersion          = "CNPG_VERSION"
+	envBarmanPluginVersion  = "BARMAN_PLUGIN_VERSION"
 	envLabels               = "E2E_LABELS"
 )
 
-// versionEnv is every image version variable of a matrix entry.
+// versionEnv is every version variable of a matrix entry: the images of the
+// Camunda minor, and the third-party operator releases the suite installs.
 var versionEnv = []string{
 	envCamundaVersion,
 	envConnectorsVersion,
@@ -46,6 +49,8 @@ var versionEnv = []string{
 	envConsoleVersion,
 	envWebModelerVersion,
 	envKeycloakVersion,
+	envCNPGVersion,
+	envBarmanPluginVersion,
 }
 
 // The label of each top-level container of the suite. E2E_LABELS selects

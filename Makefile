@@ -97,9 +97,14 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager and the ECK operator are installed by default; skip with:
+# CertManager, CloudNativePG with the Barman Cloud plugin, and the ECK
+# operator are installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
+# - CNPG_INSTALL_SKIP=true
 # - ECK_INSTALL_SKIP=true
+# CNPG_VERSION and BARMAN_PLUGIN_VERSION pin the two CloudNativePG releases.
+# They live in test/e2e/matrix/<minor>.env, which the test-e2e recipe exports,
+# so they need no variable here.
 # The suite runs an Elasticsearch node through ECK. The node needs
 # vm.max_map_count of at least 262144 on the kind host.
 KIND_CLUSTER ?= camunda-operator-test-e2e
