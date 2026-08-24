@@ -760,7 +760,7 @@ func itFailsAPointInTimeRestoreAheadOfEveryBackup(cluster *v1.CamundaCluster) {
 // starts the cluster again.
 //
 // The specs write on both sides of one point. The instance that ran before it
-// is in the database the recovery restores; the instance that ran after it is
+// is in the database the recovery restores. The instance that ran after it is
 // in neither the recovered database nor the restored Zeebe log, so it never
 // comes back. That is the whole guarantee of a point-in-time restore, read
 // through the API of the cluster.
@@ -772,7 +772,7 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 	var (
 		// at is the point the restore asks for.
 		at time.Time
-		// kept ran before at and survives the restore; lost ran after it and
+		// kept ran before at and survives the restore. lost ran after it and
 		// does not.
 		kept, lost string
 		// requestID is the uid of the restore, which is what it writes on the

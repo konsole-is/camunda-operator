@@ -123,7 +123,7 @@ func IsCNPGInstalled() bool {
 // broker pod of an orchestration cluster is scheduled at all. The release asks
 // for 100m of a node that has none to spare, and the operator spends most of a
 // run idle. The limit of the release stays, so the change moves where the pod
-// is scheduled and not what it may use.
+// is scheduled and not what it can use.
 func InstallCNPG() error {
 	branch, err := cnpgReleaseBranch(CNPGVersion())
 	if err != nil {
@@ -199,10 +199,9 @@ func cnpgReleaseBranch(version string) (string, error) {
 	return "release-" + major + "." + minor, nil
 }
 
-// applyManifest applies url with server-side apply: both manifests carry a
-// CRD larger than the annotation that client-side apply records, and apply
-// also completes a partial install where create would stop with
-// AlreadyExists.
+// applyManifest applies url with server-side apply. Both manifests carry a
+// CRD larger than the annotation that client-side apply records. Apply also
+// completes a partial install, where create stops with AlreadyExists.
 func applyManifest(url string) error {
 	_, err := Run(exec.Command("kubectl", "apply", "--server-side", "-f", url))
 

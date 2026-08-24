@@ -95,8 +95,8 @@ func ArchiveSecretName(server *v1.DatabaseServer) string {
 }
 
 // Archiving reports whether the merged spec asks for an archive. It is the one
-// place that decides it, so the feature gate of the archive component and
-// every other reader of the rule always answer the same.
+// place that decides the question, so every reader of the rule answers the
+// same.
 func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
 
 // ValidateArchiveStorage reports why a bucket cannot hold the archive of a
