@@ -107,6 +107,15 @@ type DatabaseServerSpec struct {
 	// for that field wholesale.
 	// +optional
 	PresetRef string `json:"presetRef,omitempty"`
+	// PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
+	// its image settings are read: spec.imageRegistry and
+	// spec.images.postgres decide where the PostgreSQL image is pulled from,
+	// which is what an air-gapped cluster needs. Empty leaves the image at
+	// its default repository.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
 	// Version is the PostgreSQL major version to run, as a bare number such
 	// as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
 	// and later; the floor is enforced by the controller on the

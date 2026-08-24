@@ -31,6 +31,12 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/testenv"
 )
 
+// timeout and interval bound the Eventually polling of every envtest assertion.
+const (
+	timeout  = testenv.Timeout
+	interval = testenv.Interval
+)
+
 var (
 	env       *testenv.Env
 	ctx       context.Context
@@ -46,7 +52,16 @@ func TestDatabaseServerController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	env = testenv.Start(func(ctrl.Manager) error { return nil })
+	env = testenv.Start(func(mgr ctrl.Manager) error {
+		return (&DatabaseServerReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+			// Short, so the specs exercise the requeue that waits on the
+			// superuser Secret inside their timeout.
+			RetryInterval: 500 * time.Millisecond,
+		}).SetupWithManager(mgr)
+	})
 
 	ctx, k8sClient = env.Ctx, env.Client
 })

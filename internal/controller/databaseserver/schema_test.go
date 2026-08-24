@@ -20,10 +20,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -91,6 +93,40 @@ func realisticDatabaseServer() *v1.DatabaseServer {
 			},
 		},
 	}
+}
+
+// createdDatabaseServer creates the realistic example in the schema test
+// namespace and returns it.
+func createdDatabaseServer() *v1.DatabaseServer {
+	GinkgoHelper()
+
+	obj := realisticDatabaseServer()
+	obj.Namespace = fixtures.SchemaTestNamespace
+
+	Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+	return obj
+}
+
+// resize applies mutate to the latest revision of obj and returns what
+// admission answered. The controller writes the status of the same object, so
+// a conflict is retried: without that the update fails on the stale revision
+// rather than on the rule under test.
+func resize(obj *v1.DatabaseServer, mutate func(*v1.DatabaseServer)) error {
+	GinkgoHelper()
+
+	var err error
+	Eventually(func() bool {
+		var latest v1.DatabaseServer
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &latest)).To(Succeed())
+		mutate(&latest)
+		err = k8sClient.Update(ctx, &latest)
+
+		return !apierrors.IsConflict(err)
+	}, timeout, interval).Should(BeTrue(), "the update never got past a conflict")
+
+	return err
 }
 
 var _ = Describe("DatabaseServer schema", func() {
@@ -198,32 +234,28 @@ var _ = Describe("DatabaseServer schema", func() {
 	})
 
 	It("rejects shrinking storageSize on update and accepts growth", func() {
-		obj := realisticDatabaseServer()
-		obj.Namespace = fixtures.SchemaTestNamespace
+		obj := createdDatabaseServer()
 
-		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+		Expect(resize(obj, func(o *v1.DatabaseServer) {
+			o.Spec.StorageSize = new(resource.MustParse("64Gi"))
+		})).To(MatchError(ContainSubstring("storageSize")))
 
-		obj.Spec.StorageSize = new(resource.MustParse("64Gi"))
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("storageSize")))
-
-		obj.Spec.StorageSize = new(resource.MustParse("256Gi"))
-		Expect(k8sClient.Update(ctx, obj)).To(Succeed())
+		Expect(resize(obj, func(o *v1.DatabaseServer) {
+			o.Spec.StorageSize = new(resource.MustParse("256Gi"))
+		})).To(Succeed())
 	})
 
 	// The write-ahead log volume cannot shrink either, and it is a separate
 	// claim from the data volume, so it carries its own rule.
 	It("rejects shrinking walStorageSize on update", func() {
-		obj := realisticDatabaseServer()
-		obj.Namespace = fixtures.SchemaTestNamespace
+		obj := createdDatabaseServer()
 
-		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+		Expect(resize(obj, func(o *v1.DatabaseServer) {
+			o.Spec.WALStorageSize = new(resource.MustParse("8Gi"))
+		})).To(MatchError(ContainSubstring("walStorageSize")))
 
-		obj.Spec.WALStorageSize = new(resource.MustParse("8Gi"))
-		Expect(k8sClient.Update(ctx, obj)).To(MatchError(ContainSubstring("walStorageSize")))
-
-		obj.Spec.WALStorageSize = new(resource.MustParse("32Gi"))
-		Expect(k8sClient.Update(ctx, obj)).To(Succeed())
+		Expect(resize(obj, func(o *v1.DatabaseServer) {
+			o.Spec.WALStorageSize = new(resource.MustParse("32Gi"))
+		})).To(Succeed())
 	})
 })

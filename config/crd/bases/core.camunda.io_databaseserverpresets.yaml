@@ -135,6 +135,16 @@ spec:
                             type: object
                         type: object
                     type: object
+                  platformConfigRef:
+                    description: |-
+                      PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. Only
+                      its image settings are read: spec.imageRegistry and
+                      spec.images.postgres decide where the PostgreSQL image is pulled from,
+                      which is what an air-gapped cluster needs. Empty leaves the image at
+                      its default repository.
+                    maxLength: 253
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
                   podAnnotations:
                     additionalProperties:
                       type: string

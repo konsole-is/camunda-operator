@@ -84,6 +84,11 @@ type Options struct {
 	// control plane, so a suite can show what the operator does on a cluster
 	// where CloudNativePG is not installed.
 	WithoutCNPG bool
+	// WithoutBarmanPlugin leaves the Barman Cloud CRD out of the control
+	// plane and keeps the CloudNativePG ones, so a suite can show what the
+	// operator does on a cluster that runs CloudNativePG without the archive
+	// plugin.
+	WithoutBarmanPlugin bool
 }
 
 // Start boots a control plane that carries the CRDs of the operator, of ECK,
@@ -130,7 +135,10 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		// The CloudNativePG and Barman Cloud Go modules ship no CRD
 		// manifests, so both schemas are vendored. Neither operator runs in
 		// envtest.
-		crdPaths = append(crdPaths, crdPath(utils.CNPGCRDPath), crdPath(utils.BarmanCRDPath))
+		crdPaths = append(crdPaths, crdPath(utils.CNPGCRDPath))
+		if !opts.WithoutBarmanPlugin {
+			crdPaths = append(crdPaths, crdPath(utils.BarmanCRDPath))
+		}
 	}
 
 	ginkgo.By("bootstrapping test environment")

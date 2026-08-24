@@ -63,6 +63,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - barmancloud.cnpg.io
+  resources:
+  - objectstores
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - batch
   resources:
   - jobs
@@ -92,7 +104,7 @@ rules:
   - backupschedules
   - camundaclusterpresets
   - camundaplatformconfigs
-  - databaseserverconfigs
+  - databaseserverpresets
   - elasticsearchclusterpresets
   - objectstorageconfigs
   verbs:
@@ -110,6 +122,7 @@ rules:
   - databaseconfigs/status
   - databases/status
   - databaseserverconfigs/status
+  - databaseservers/status
   - elasticsearchclusters/status
   - logicalbackupelasticsearches/status
   - logicalbackuprdbmses/status
@@ -131,6 +144,8 @@ rules:
   - camundaoptimizes
   - databaseconfigs
   - databases
+  - databaseserverconfigs
+  - databaseservers
   - elasticsearchclusters
   - logicalbackupelasticsearches
   - logicalbackuprdbmses
@@ -154,6 +169,7 @@ rules:
   - camundamanagementclusters/finalizers
   - camundaoptimizes/finalizers
   - databases/finalizers
+  - databaseservers/finalizers
   - elasticsearchclusters/finalizers
   - logicalbackupelasticsearches/finalizers
   - logicalbackuprdbmses/finalizers
@@ -195,7 +211,29 @@ rules:
 - apiGroups:
   - monitoring.coreos.com
   resources:
+  - podmonitors
   - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - backups
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - clusters
+  - scheduledbackups
   verbs:
   - create
   - delete

@@ -50,6 +50,9 @@ func MergePreset(spec v1.DatabaseServerSpec, preset *v1.DatabaseServerPresetSpec
 
 	merged := *preset.Server.DeepCopy()
 
+	if spec.PlatformConfigRef != "" {
+		merged.PlatformConfigRef = spec.PlatformConfigRef
+	}
 	if spec.Version != "" {
 		merged.Version = spec.Version
 	}

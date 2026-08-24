@@ -8,7 +8,7 @@ A consumer resolves `serverRef` in its own namespace, so the whole relational ch
 
 | Role | Who |
 | --- | --- |
-| Producers | You, by hand, or another tool that provisions the server and creates the contract for you |
+| Producers | [DatabaseServer](databaseserver.md), which runs the server and publishes this contract, or you by hand, or another tool that provisions the server for you |
 | Consumers | [Database](database.md) (through `serverRef`, to create logical databases and users), [DatabaseConfig](databaseconfig.md) (through `serverRef`, to name the server of a logical database), [LogicalBackupRDBMS](logicalbackuprdbms.md) (reads `status.serverVersion` to pick the dump tools) |
 
 The smallest contract names the engine, the host, the port, and the admin credentials:
@@ -158,6 +158,7 @@ spec:
 
 ## Related
 
+- [DatabaseServer](databaseserver.md): runs a PostgreSQL server and publishes this contract.
 - [DatabaseConfig](databaseconfig.md): names this server through `serverRef` for one logical database.
 - [Database](database.md): creates logical databases and users on this server with the admin credentials.
 - [LogicalBackupRDBMS](logicalbackuprdbms.md): reads `status.serverVersion` to run dump tools of the same major version.
