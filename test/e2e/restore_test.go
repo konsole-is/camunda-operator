@@ -796,17 +796,24 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 		// primary-storage checkpoint that the backups cover. A point that no
 		// backup reached yet fails the restore after it erased the broker
 		// volumes.
+		// Zeebe numbers the partitions of a cluster from one.
+		partitions := int(components.NewEffective(cluster.Spec).Partitions())
+
 		By("waiting until every partition holds a backup past the point")
 		Eventually(func(g Gomega) {
 			backups, err := latestBackups(cluster)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(backups).NotTo(BeEmpty(), "no partition reported a primary-storage backup")
-			for partition, taken := range backups {
-				g.Expect(taken).To(
-					BeTemporally(">", at),
-					"partition %d holds no backup past the point", partition,
-				)
+
+			var behind []int
+			for partition := 1; partition <= partitions; partition++ {
+				if taken, ok := backups[partition]; !ok || !taken.After(at) {
+					behind = append(behind, partition)
+				}
 			}
+			g.Expect(behind).To(
+				BeEmpty(),
+				"of the %d partitions, %v hold no backup past the point", partitions, behind,
+			)
 		}, pitrBackupCoverage, 10*time.Second).Should(Succeed())
 
 		By("creating the PointInTimeRestore")
