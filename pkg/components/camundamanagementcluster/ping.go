@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"encoding/json"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -168,12 +169,9 @@ func (n pingEnvNames) holds(name string) bool {
 // valueFromManager returns the field manager that owns valueFrom of the
 // spec.extraEnv entry name.
 func valueFromManager(fields []metav1.ManagedFieldsEntry, name string) string {
-	encoded, err := json.Marshal(name)
-	if err != nil {
-		return ""
-	}
-	// The API server keys a merged list entry by its key fields, as JSON.
-	key := `k:{"name":` + string(encoded) + `}`
+	// The API server keys a merged list entry by its key fields, as JSON. An
+	// env name is a C identifier, which strconv.Quote and JSON quote alike.
+	key := `k:{"name":` + strconv.Quote(name) + `}`
 
 	for _, entry := range fields {
 		if entry.Subresource != "" {

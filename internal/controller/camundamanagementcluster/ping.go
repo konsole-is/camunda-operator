@@ -199,7 +199,7 @@ func (r *Reconciler) removePingCollisions(
 			eventReasonPingEntryRemoved,
 			eventActionReplacePing,
 			"Removed the spec.extraEnv entry %q of CamundaCluster %q. %s set it with valueFrom. "+
-				"The management plane owns the Console ping settings and writes its own value under that name",
+				"The management plane owns the ping settings and writes its own value under that name",
 			collision.Name, key, managerName(collision.Manager),
 		)
 	}
