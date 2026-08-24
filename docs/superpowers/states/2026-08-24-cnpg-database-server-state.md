@@ -30,7 +30,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | #128 | fix/cnpg-database-server--namespaced-chain | .claude/worktrees/cnpg-database-server/.claude/worktrees/namespaced-chain | #239 → feat/cnpg-database-server | self-merged (2d812a8) |
 | #234 | chore/cnpg-database-server--cnpg-wrappers | .claude/worktrees/cnpg-database-server/.claude/worktrees/cnpg-wrappers | #238 → feat/cnpg-database-server | self-merged (beee38d) |
 | #235 | feat/cnpg-database-server--database-server | .claude/worktrees/cnpg-database-server/.claude/worktrees/database-server | #241 → feat/cnpg-database-server | self-merged (3b6aef2) |
-| #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | → feat/cnpg-database-server | in-progress |
+| #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | #242 → feat/cnpg-database-server | ready |
 | #237 | ci/cnpg-database-server--e2e | .claude/worktrees/cnpg-database-server/.claude/worktrees/e2e | → feat/cnpg-database-server | not-started |
 
 ## Contracts
