@@ -37,8 +37,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -89,12 +91,12 @@ const (
 	// gap keeps that write on the later side of the point whichever of the
 	// two runs ahead.
 	pitrClockGap = 10 * time.Second
-	// pitrBackupCoverage is how long a flow waits after the point before it
-	// creates the restore. The restore application aligns the brokers to the
-	// newest primary-storage checkpoint that the backups cover, and a point
-	// that no backup reached yet fails the restore after it erased the broker
-	// volumes.
-	pitrBackupCoverage = 3 * time.Minute
+	// pitrBackupCoverage bounds the wait for a primary-storage backup that
+	// reaches past the point. The cluster of the flow takes one every two
+	// minutes, so the worst case is those two minutes, the minute of the
+	// checkpoint interval, and the duration of one backup. The bound leaves
+	// room above that.
+	pitrBackupCoverage = 6 * time.Minute
 	// databaseRecoveryTimeout bounds the database half of an operator-driven
 	// restore: CloudNativePG bootstraps a cluster from the archive, the
 	// contract moves to it, and the operator reaches the new endpoint before
@@ -785,8 +787,22 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 	})
 
 	It("asks the server to roll itself back to the point", func() {
-		By("waiting until the primary-storage backups cover the point")
-		time.Sleep(pitrBackupCoverage)
+		// The restore application aligns the brokers to the newest
+		// primary-storage checkpoint that the backups cover. A point that no
+		// backup reached yet fails the restore after it erased the broker
+		// volumes.
+		By("waiting until every partition holds a backup past the point")
+		Eventually(func(g Gomega) {
+			backups, err := latestBackups(cluster)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(backups).NotTo(BeEmpty(), "no partition reported a primary-storage backup")
+			for partition, taken := range backups {
+				g.Expect(taken).To(
+					BeTemporally(">", at),
+					"partition %d holds no backup past the point", partition,
+				)
+			}
+		}, pitrBackupCoverage, 10*time.Second).Should(Succeed())
 
 		By("creating the PointInTimeRestore")
 		Expect(apply(&v1.PointInTimeRestore{
@@ -884,6 +900,76 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 			g.Expect(current.Status.Archive.History[1].To).To(BeNil())
 		}, dsReadyTimeout, 5*time.Second).Should(Succeed())
 	})
+}
+
+// latestBackups returns the time of the newest primary-storage backup of each
+// partition that the brokers of cluster report, by partition id. Camunda
+// serves it on the runtime state endpoint of the broker management port:
+// https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state
+//
+// The partition set comes from the answer, so a cluster of any partition count
+// is read the same way. A partition that holds no backup yet is absent, and a
+// cluster that has taken none answers with an empty map.
+func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
+	url := fmt.Sprintf(
+		"http://%s.%s.svc:%d/actuator/backupRuntime/state",
+		components.WorkloadName(cluster, components.ComponentZeebe),
+		cluster.Namespace,
+		components.PortManagement,
+	)
+
+	out, err := utils.RunPod(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "curl-backup-state-" + utilrand.String(5),
+			Namespace: cluster.Namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:  "curl",
+				Image: utils.CurlImage,
+				Args:  []string{"-fsS", url},
+			}},
+		},
+	}, podTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	var state struct {
+		BackupStates []struct {
+			PartitionID int    `json:"partitionId"`
+			Timestamp   string `json:"checkpointTimestamp"`
+		} `json:"backupStates"`
+	}
+	if err := json.Unmarshal([]byte(out), &state); err != nil {
+		return nil, fmt.Errorf("decoding the backup state of %s/%s: %w", cluster.Namespace, cluster.Name, err)
+	}
+
+	backups := map[int]time.Time{}
+	for _, backup := range state.BackupStates {
+		taken, err := parseCheckpointTime(backup.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		if current, ok := backups[backup.PartitionID]; !ok || taken.After(current) {
+			backups[backup.PartitionID] = taken
+		}
+	}
+
+	return backups, nil
+}
+
+// parseCheckpointTime reads a checkpoint timestamp of the runtime state
+// endpoint. The endpoint writes the zone as "Z" in one release and as "+0000"
+// in another, and only the first of those is RFC 3339.
+func parseCheckpointTime(value string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z0700"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("reading the checkpoint timestamp %q", value)
 }
 
 // applicationCredentials returns the application credentials of the logical
