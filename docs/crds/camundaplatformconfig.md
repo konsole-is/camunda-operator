@@ -137,6 +137,8 @@ Three rules govern both fields:
 - A rename replaces both the default repository and the `imageRegistry` prefix for that image. The two never stack.
 - An image that `spec.images` does not name keeps its default repository, with the `imageRegistry` prefix in front of it.
 
+A `spec.images` value that names a registry with a port needs a path after the port, as in `registry:5000/camunda/optimize`. The tag goes on the end of the value, so the bare `registry:5000` becomes the image `registry:5000:8.9.9`, which no runtime accepts. `imageRegistry` takes a bare host with a port, because the default repository follows it.
+
 The tag of the Keycloak image is `quay-optimized-<version>`, not the bare version. Camunda publishes its Keycloak build under that tag, as [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment) states.
 
 The default repository of an image can change with the version. From Camunda 8.10 the two Web Modeler images become `camunda/hub` and `camunda/hub-websockets`, which the [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) names. A rename of your own always wins, so a mirror stays a mirror across that change.
@@ -247,6 +249,7 @@ spec:
   # string. Optional, default: the upstream Camunda registry. Registry prefix of every Camunda image, for example registry.example.com/camunda/camunda:8.9.9.
   imageRegistry: "registry.example.com"
   # object. Optional. Renames one image. The value is a repository without a tag or a digest, and it replaces both the default repository and the imageRegistry prefix for that image. The tag always comes from the version field of the resource that runs the image.
+  # A registry with a port needs a path after it, as in registry:5000/camunda/optimize.
   images:
     # string. Optional, default: camunda/camunda. The orchestration cluster processes.
     camunda: "mirror.example.com/camunda/camunda"
@@ -271,7 +274,7 @@ spec:
 - `spec.auth.oidc` is required when `spec.auth.method` is `oidc`, and forbidden when the method is `basic`.
 - In `spec.auth.oidc`, `issuerUrl`, `clientId`, and `clientSecretRef` are required.
 - `issuerUrl` must be an http or https URL. `jwksUrl`, `tokenUrl`, and `authUrl` must be empty or an http or https URL.
-- Each `spec.images` value is a lowercase repository name, with no tag and no digest. A registry host can carry a port, as in `registry:5000/camunda/optimize`.
+- Each `spec.images` value is a lowercase repository name, with no tag and no digest. A registry host can carry a port, as in `registry:5000/camunda/optimize`. A host that carries a port needs a path after it, so the bare `registry:5000` is refused.
 - The API server accepts this resource without the Secrets it names. The operator reports `Ready=False` with reason `MissingSecret` until each Secret exists, so you can create or rotate one later.
 
 ### A production-shaped example

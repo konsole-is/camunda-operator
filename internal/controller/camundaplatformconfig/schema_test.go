@@ -184,6 +184,18 @@ var _ = Describe("CamundaPlatformConfig schema", func() {
 			}, "",
 		),
 		Entry(
+			"rejects a bare registry with a port",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Optimize: "registry:5000"}
+			}, "spec.images.optimize",
+		),
+		Entry(
+			"rejects a registry with a port and an empty path",
+			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
+				o.Spec.Images = &v1.ImagesSpec{Optimize: "registry:5000/"}
+			}, "spec.images.optimize",
+		),
+		Entry(
 			"rejects an image override that is not a repository",
 			realisticPlatformConfig, func(o *v1.CamundaPlatformConfig) {
 				o.Spec.Images = &v1.ImagesSpec{Optimize: "not a repo"}

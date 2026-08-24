@@ -355,53 +355,56 @@ spec:
                   Images renames one image, for example to a mirror that keeps a
                   different repository path. The tag always comes from the version field
                   of the resource that runs the image. An entry here replaces both the
-                  repository and the imageRegistry prefix for that one image.
+                  repository and the imageRegistry prefix for that one image. A value
+                  that names a registry with a port needs a path after the port, as in
+                  registry:5000/camunda/optimize. The tag goes on the end of the value,
+                  so the bare registry:5000 becomes the image registry:5000:<version>.
                 properties:
                   camunda:
                     description: |-
                       Camunda is the image of the orchestration cluster processes. Defaults
                       to camunda/camunda.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   connectors:
                     description: |-
                       Connectors is the image of the connectors runtime. Defaults to
                       camunda/connectors-bundle.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   console:
                     description: Console is the image of Console. Defaults to camunda/console.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   identity:
                     description: |-
                       Identity is the image of Management Identity. Defaults to
                       camunda/identity.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   keycloak:
                     description: |-
                       Keycloak is the image of the Keycloak that the operator runs. Defaults
                       to camunda/keycloak.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   optimize:
                     description: Optimize is the image of Optimize. Defaults to camunda/optimize.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   webModelerRestapi:
                     description: |-
                       WebModelerRestapi is the image of the Web Modeler restapi process.
                       Defaults to camunda/web-modeler-restapi below 8.10, and to camunda/hub
                       from 8.10 on.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                   webModelerWebsockets:
                     description: |-
                       WebModelerWebsockets is the image of the Web Modeler websockets
                       process. Defaults to camunda/web-modeler-websockets below 8.10, and to
                       camunda/hub-websockets from 8.10 on.
-                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)*/?$
+                    pattern: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+(/[a-z0-9]+([._-][a-z0-9]+)*)+|(/[a-z0-9]+([._-][a-z0-9]+)*)*)/?$
                     type: string
                 type: object
               licenseSecretRef:
