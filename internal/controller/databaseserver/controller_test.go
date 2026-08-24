@@ -17,6 +17,8 @@ limitations under the License.
 package databaseserver
 
 import (
+	"time"
+
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -107,6 +109,19 @@ func completeBaseBackup(server *v1.DatabaseServer, at metav1.Time) {
 	backup.Status.Phase = cnpgv1.BackupPhaseCompleted
 	backup.Status.StoppedAt = &at
 	Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
+}
+
+// archiveHistory reads the archive history of the reconciled server.
+func archiveHistory(server *v1.DatabaseServer) []v1.ArchiveRecord {
+	GinkgoHelper()
+
+	var latest v1.DatabaseServer
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+	if latest.Status.Archive == nil {
+		return nil
+	}
+
+	return latest.Status.Archive.History
 }
 
 // conditionOf reads one condition of the reconciled server.
@@ -204,6 +219,10 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(archive.Reason).To(Equal("Disabled"))
 
 		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		// A server with no archive takes no base backups, so reading them
+		// every reconcile would be a cluster-wide read for nothing.
+		Expect(backupLists.countIn(server.Namespace)).To(BeZero())
 	})
 
 	It("mirrors the system identifier and the cluster CloudNativePG reports", func() {
@@ -298,6 +317,62 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(latest.Status.Archive.History[0].From.Time).To(BeTemporally("==", completedAt.Time))
 			g.Expect(latest.Status.Archive.History[0].To).To(BeNil())
 		}, timeout, interval).Should(Succeed())
+
+		Expect(backupLists.countIn(server.Namespace)).To(BeNumerically(">", 0))
+	})
+
+	It("closes the archive record when the archive block is removed", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000005")
+		completeBaseBackup(server, metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			g.Expect(latest.Status.Archive).NotTo(BeNil())
+			g.Expect(latest.Status.Archive.History).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.Archive = nil
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The record the server was writing closes, the list keeps it, and no
+		// record is written again: the bucket still holds what it wrote.
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			g.Expect(latest.Status.Archive).NotTo(BeNil())
+			g.Expect(latest.Status.Archive.History).To(HaveLen(1))
+			g.Expect(latest.Status.Archive.History[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		disabled := expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
+		Expect(disabled.Reason).To(Equal("Disabled"))
+
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &contract,
+			)).To(Succeed())
+			g.Expect(contract.Spec.PITR).NotTo(BeNil())
+			g.Expect(contract.Spec.PITR.Enabled).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
+
+		// A closed record stays closed, and nothing reopens it.
+		closed := archiveHistory(server)
+		Consistently(func(g Gomega) {
+			g.Expect(archiveHistory(server)).To(Equal(closed))
+		}, time.Second, interval).Should(Succeed())
 	})
 
 	It("reports InvalidReference for a preset that does not exist", func() {

@@ -18,9 +18,11 @@ package databaseserver
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,7 +43,44 @@ var (
 	env       *testenv.Env
 	ctx       context.Context
 	k8sClient client.Client
+
+	// backupLists counts the base backup reads of the reconciler, so a spec
+	// can show that a server without an archive pays for none.
+	backupLists *backupListCounter
 )
+
+// backupListCounter is the client of the manager with a counter over the
+// CloudNativePG backup reads, keyed by the namespace each read is scoped to.
+// Every spec runs in a namespace of its own, so the counts never cross.
+type backupListCounter struct {
+	client.Client
+
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+// List counts a read of the CloudNativePG backups and passes every read on.
+func (c *backupListCounter) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*cnpgv1.BackupList); ok {
+		options := &client.ListOptions{}
+		for _, opt := range opts {
+			opt.ApplyToList(options)
+		}
+		c.mu.Lock()
+		c.counts[options.Namespace]++
+		c.mu.Unlock()
+	}
+
+	return c.Client.List(ctx, list, opts...)
+}
+
+// countIn returns how often the reconciler has read the backups of namespace.
+func (c *backupListCounter) countIn(namespace string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.counts[namespace]
+}
 
 func TestDatabaseServerController(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -53,8 +92,10 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	env = testenv.Start(func(mgr ctrl.Manager) error {
+		backupLists = &backupListCounter{Client: mgr.GetClient(), counts: map[string]int{}}
+
 		return (&DatabaseServerReconciler{
-			Client:    mgr.GetClient(),
+			Client:    backupLists,
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
 			// Short, so the specs exercise the requeue that waits on the

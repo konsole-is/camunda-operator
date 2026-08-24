@@ -161,7 +161,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	firstBaseBackup, err := r.firstBaseBackup(ctx, &server)
+	firstBaseBackup, err := r.firstBaseBackup(ctx, &server, resolved.merged)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -176,7 +176,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
-	recordArchiveInterval(&server, comps[1], firstBaseBackup)
+	reconcileArchiveHistory(&server, resolved.merged, comps[1], firstBaseBackup, metav1.Now())
 
 	volumes, err := r.dataVolumes(ctx, &server)
 	if err != nil {
@@ -398,19 +398,31 @@ func (r *DatabaseServerReconciler) buildComponents(
 // firstBaseBackup returns when the earliest completed base backup of the
 // current cluster finished, or nil when none has completed. It is what tells
 // the archive component that the archive can be recovered from, and what opens
-// the interval of the current archive in status.
+// the interval of the current archive in status. A server that asks for no
+// archive takes no base backups, so it reads none.
 func (r *DatabaseServerReconciler) firstBaseBackup(
 	ctx context.Context,
 	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
 ) (*metav1.Time, error) {
+	if merged.Archive == nil {
+		return nil, nil
+	}
+
 	var backups cnpgv1.BackupList
-	if err := r.List(ctx, &backups, client.InNamespace(server.Namespace)); err != nil {
+	if err := r.List(
+		ctx, &backups,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{components.CNPGClusterNameLabel: components.ClusterName(server)},
+	); err != nil {
 		return nil, fmt.Errorf("listing base backups of %q: %w", components.ClusterName(server), err)
 	}
 
 	var earliest *metav1.Time
 	for i := range backups.Items {
 		backup := &backups.Items[i]
+		// The label scopes the read. The cluster the backup names is what
+		// decides, because this operator writes neither.
 		if backup.Spec.Cluster.Name != components.ClusterName(server) ||
 			backup.Status.Phase != cnpgv1.BackupPhaseCompleted ||
 			backup.Status.StoppedAt == nil {
@@ -424,19 +436,30 @@ func (r *DatabaseServerReconciler) firstBaseBackup(
 	return earliest, nil
 }
 
-// recordArchiveInterval opens the interval of the current archive in status
-// once the archive component reports ready. A recovery reaches only a point
-// inside a recorded interval, so the record must exist before the first
-// restore, and its start is when the first base backup completed: the archive
-// cannot be recovered to any point before that.
+// reconcileArchiveHistory keeps status.archive.history in step with the spec.
 //
-// The record is written once per cluster. A later reconcile finds it and
-// leaves it alone.
-func recordArchiveInterval(
+// While the server archives, the interval of the current archive opens once
+// the archive component reports ready. A recovery reaches only a point inside
+// a recorded interval, so the record must exist before the first restore, and
+// its start is when the first base backup completed: the archive cannot be
+// recovered to any point before that. The record is written once per cluster.
+// A later reconcile finds it and leaves it alone.
+//
+// When the spec drops the archive, the open record closes at now and no record
+// is written again. The closed records stay: the bucket still holds those
+// archives, and a server that archives again can recover from them.
+func reconcileArchiveHistory(
 	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
 	archiveComp *component.Component,
 	firstBaseBackup *metav1.Time,
+	now metav1.Time,
 ) {
+	if merged.Archive == nil {
+		closeArchiveRecord(server, now)
+		return
+	}
+
 	if firstBaseBackup == nil || archiveComp.GetCondition(server).Status != metav1.ConditionTrue {
 		return
 	}
@@ -455,6 +478,23 @@ func recordArchiveInterval(
 		ServerName: serverName,
 		From:       *firstBaseBackup,
 	})
+}
+
+// closeArchiveRecord ends the interval of the archive the server writes now.
+// The server writes one archive at a time, and a record opens only for a
+// cluster that has none, so at most one record is open.
+func closeArchiveRecord(server *v1.DatabaseServer, at metav1.Time) {
+	if server.Status.Archive == nil {
+		return
+	}
+
+	for i := range server.Status.Archive.History {
+		record := &server.Status.Archive.History[i]
+		if record.To == nil {
+			record.To = &at
+			return
+		}
+	}
 }
 
 // dataVolumes lists the data volumes of the current cluster, sorted by name.

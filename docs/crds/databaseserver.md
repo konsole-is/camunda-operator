@@ -76,7 +76,7 @@ Neither volume size can shrink. The API server rejects a lower value. Raise a si
 
 ## The archive
 
-Without `spec.archive` the server keeps no archive. Its contract publishes `pitr.enabled: false`, and no point-in-time restore can reach it.
+Without `spec.archive` the server keeps no archive. Its contract publishes `pitr.enabled: false`, and no point-in-time restore can reach it. Removing the block from a server that had one stops the archive at once and returns the contract to `pitr.enabled: false`. What the server already wrote stays, in the bucket and in [the archive history](#the-archive-history).
 
 With `spec.archive` the operator writes the write-ahead log of the server to the bucket that an [ObjectStorageConfig](objectstorageconfig.md) names, and takes base backups on a schedule. Both together are what a restore replays.
 
@@ -100,7 +100,11 @@ spec:
 
 The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>`. One bucket can serve a whole fleet.
 
-`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, and `from` is the earliest point a restore can reach in it.
+### The archive history
+
+`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
+
+Remove `spec.archive` and the open record closes at that moment. The list itself stays, and no new record is written. The bucket still holds those objects, so a server that archives again can recover from them.
 
 A [PointInTimeRestore](pointintimerestore.md) needs the database at the requested point before it runs. Recover the server from this archive with the CloudNativePG recovery procedure, then create the `PointInTimeRestore`.
 

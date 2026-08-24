@@ -219,7 +219,8 @@ type DatabaseServerArchiveStatus struct {
 	// History lists every archive the server has written, oldest first. A
 	// recovery picks the record whose interval holds the requested point.
 	// Records are never removed, so a restore can reach back across an
-	// earlier recovery for as long as the bucket keeps the objects.
+	// earlier recovery for as long as the bucket keeps the objects. Removing
+	// spec.archive closes the record that is open and keeps the list.
 	// +optional
 	History []ArchiveRecord `json:"history,omitempty"`
 }
@@ -239,7 +240,9 @@ type DatabaseServerStatus struct {
 	// +optional
 	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// Archive is the observed state of the continuous archive of the server.
-	// It is unset while the server has no archive block.
+	// It is unset until the server has written one. Removing spec.archive
+	// does not clear it: the bucket still holds what the server wrote, and a
+	// server that archives again can recover from it.
 	// +optional
 	Archive *DatabaseServerArchiveStatus `json:"archive,omitempty"`
 	// Volumes lists the bound data PersistentVolumeClaims of the server and
