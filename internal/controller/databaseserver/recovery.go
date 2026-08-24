@@ -36,13 +36,15 @@ import (
 )
 
 // The events of a recovery. A recovery replaces the server behind the
-// contract, so every step of it is worth a line in kubectl describe.
+// contract, so every step of it is worth a line in kubectl describe. Each
+// reason names the result it reports, and RecoveryFailed covers Unavailable
+// as well: neither result gives the requester the point it asked for.
 const (
-	eventReasonRecoveryStarted  = "RecoveryStarted"
-	eventReasonRecoveryFinished = "RecoveryFinished"
-	eventReasonRecoveryRefused  = "RecoveryRefused"
-	eventReasonClusterNotOwned  = "RecoveryClusterNotOwned"
-	eventActionRecover          = "Recover"
+	eventReasonRecoveryStarted         = "RecoveryStarted"
+	eventReasonRecoveryCompleted       = "RecoveryCompleted"
+	eventReasonRecoveryFailed          = "RecoveryFailed"
+	eventReasonRecoveryClusterNotOwned = "RecoveryClusterNotOwned"
+	eventActionRecover                 = "Recover"
 )
 
 // recoveryRefusal is the answer to a recovery request that the server does not
@@ -365,7 +367,7 @@ func (r *DatabaseServerReconciler) recoveredClusterOf(
 			server,
 			nil,
 			corev1.EventTypeWarning,
-			eventReasonClusterNotOwned,
+			eventReasonRecoveryClusterNotOwned,
 			eventActionRecover,
 			"DatabaseServerConfig %s names the cluster %q, which this server does not own. The "+
 				"server keeps running from %q",
@@ -892,7 +894,7 @@ func (r *DatabaseServerReconciler) recordRecoveryOutcome(
 			server,
 			nil,
 			corev1.EventTypeNormal,
-			eventReasonRecoveryFinished,
+			eventReasonRecoveryCompleted,
 			eventActionRecover,
 			"The server holds the state of %s and runs from %q",
 			request.TargetTime,
@@ -906,7 +908,7 @@ func (r *DatabaseServerReconciler) recordRecoveryOutcome(
 		server,
 		nil,
 		corev1.EventTypeWarning,
-		eventReasonRecoveryRefused,
+		eventReasonRecoveryFailed,
 		eventActionRecover,
 		"The rollback to %s that %s asked for ended as %s: %s",
 		request.TargetTime,
