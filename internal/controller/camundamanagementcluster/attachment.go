@@ -291,7 +291,7 @@ func basicUserSecret(
 	return components.WebModelerClusterUserSecretName(mc, cluster.UID)
 }
 
-// readClusterConfig reads the platform config that cluster names. A missing
+// readClusterConfig reads the platform config that the cluster names. A missing
 // or dangling reference is a message for the row of the cluster rather than
 // an error: the cluster's own controller reports the same reference, and one
 // broken cluster must not stop the management plane. Any other failure of the
@@ -301,7 +301,7 @@ func (r *Reconciler) readClusterConfig(
 	cluster *v1.CamundaCluster,
 ) (*v1.CamundaPlatformConfig, string, error) {
 	if cluster.Spec.PlatformConfigRef == "" {
-		return nil, "this cluster names no CamundaPlatformConfig", nil
+		return nil, "This cluster names no CamundaPlatformConfig", nil
 	}
 
 	var cfg v1.CamundaPlatformConfig
