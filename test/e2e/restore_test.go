@@ -91,6 +91,9 @@ const (
 	// gap keeps that write on the later side of the point whichever of the
 	// two runs ahead.
 	pitrClockGap = 10 * time.Second
+	// pitrCheckpointWait bounds the wait for a checkpoint past the point. The
+	// flow writes a marker every minute, so one interval and slack is enough.
+	pitrCheckpointWait = 3 * time.Minute
 	// pitrBackupCoverage bounds the wait for a primary-storage backup that
 	// reaches past the point. The worst case is two minutes for the schedule
 	// of the flow, one for its checkpoint interval, and the duration of one
@@ -759,11 +762,11 @@ func itFailsAPointInTimeRestoreAheadOfEveryBackup(cluster *v1.CamundaCluster) {
 // resource, and the operator rolls the database back, aligns the brokers, and
 // starts the cluster again.
 //
-// The specs write on both sides of one point. The instance that ran before it
-// is in the database the recovery restores. The instance that ran after it is
-// in neither the recovered database nor the restored Zeebe log, so it never
-// comes back. That is the whole guarantee of a point-in-time restore, read
-// through the API of the cluster.
+// The specs write on both sides of one point. A restore brings the cluster
+// back at the first checkpoint at or after that point, so the guarantee is the
+// state of that checkpoint. kept ran before the point and comes back. lost
+// starts after the checkpoint that follows the point. It is in neither the
+// recovered database nor the restored Zeebe log, so it never comes back.
 //
 // Nothing here suspends the cluster. The restore suspends it, recovers the
 // server under a new name, restores the broker volumes, and withdraws its own
@@ -785,6 +788,29 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 		expectInstanceExported(cluster, kept)
 
 		at = time.Now().UTC().Truncate(time.Second)
+
+		// The restore comes back at the first checkpoint at or after the
+		// point, and Zeebe re-exports every record up to it. An instance that
+		// starts before that checkpoint therefore comes back, so lost has to
+		// start after it.
+		By("waiting until every partition wrote a checkpoint past the point")
+		partitions := int(components.NewEffective(cluster.Spec).Partitions())
+		Eventually(func(g Gomega) {
+			checkpoints, _, err := backupRuntimeState(cluster)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			var behind []int
+			for partition := 1; partition <= partitions; partition++ {
+				if written, ok := checkpoints[partition]; !ok || !written.After(at) {
+					behind = append(behind, partition)
+				}
+			}
+			g.Expect(behind).To(
+				BeEmpty(),
+				"of the %d partitions, %v wrote no checkpoint past the point", partitions, behind,
+			)
+		}, pitrCheckpointWait, 5*time.Second).Should(Succeed())
+
 		time.Sleep(pitrClockGap)
 
 		lost = startInstance(cluster)
@@ -796,12 +822,11 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 		// primary-storage checkpoint that the backups cover. A point that no
 		// backup reached yet fails the restore after it erased the broker
 		// volumes.
-		// Zeebe numbers the partitions of a cluster from one.
 		partitions := int(components.NewEffective(cluster.Spec).Partitions())
 
 		By("waiting until every partition holds a backup past the point")
 		Eventually(func(g Gomega) {
-			backups, err := latestBackups(cluster)
+			_, backups, err := backupRuntimeState(cluster)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			var behind []int
@@ -924,15 +949,26 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 	})
 }
 
-// latestBackups returns the time of the newest primary-storage backup of each
-// partition that the brokers of cluster report, by partition id. Camunda
-// serves it on the runtime state endpoint of the broker management port:
+// partitionState is one entry of the checkpointStates or backupStates list of
+// the runtime state answer. Both lists carry the same two fields this reads.
+type partitionState struct {
+	PartitionID int    `json:"partitionId"`
+	Timestamp   string `json:"checkpointTimestamp"`
+}
+
+// backupRuntimeState returns the newest checkpoint each partition of cluster
+// wrote and the newest primary-storage backup each one holds, both by
+// partition id. Camunda serves the pair on the runtime state endpoint of the
+// broker management port:
 // https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state
 //
-// The partition set comes from the answer, so a cluster of any partition count
-// is read the same way. A partition that holds no backup yet is absent, and a
-// cluster that has taken none answers with an empty map.
-func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
+// Every checkpoint type counts as a checkpoint: the MARKER that the checkpoint
+// interval writes, and the SCHEDULED_BACKUP or MANUAL_BACKUP of a backup.
+//
+// Zeebe numbers the partitions from one. The ids come from the answer, so a
+// cluster of any partition count is read the same way, and a partition with
+// nothing to report is absent from the map.
+func backupRuntimeState(cluster *v1.CamundaCluster) (map[int]time.Time, map[int]time.Time, error) {
 	url := fmt.Sprintf(
 		"http://%s.%s.svc:%d/actuator/backupRuntime/state",
 		components.WorkloadName(cluster, components.ComponentZeebe),
@@ -954,31 +990,47 @@ func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
 		},
 	}, podTimeout)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var state struct {
-		BackupStates []struct {
-			PartitionID int    `json:"partitionId"`
-			Timestamp   string `json:"checkpointTimestamp"`
-		} `json:"backupStates"`
+		CheckpointStates []partitionState `json:"checkpointStates"`
+		BackupStates     []partitionState `json:"backupStates"`
 	}
 	if err := json.Unmarshal([]byte(out), &state); err != nil {
-		return nil, fmt.Errorf("decoding the backup state of %s/%s: %w", cluster.Namespace, cluster.Name, err)
+		return nil, nil, fmt.Errorf(
+			"decoding the backup state of %s/%s: %w", cluster.Namespace, cluster.Name, err,
+		)
 	}
 
-	backups := map[int]time.Time{}
-	for _, backup := range state.BackupStates {
-		taken, err := utils.ParseCheckpointTime(backup.Timestamp)
+	checkpoints, err := newestPerPartition(state.CheckpointStates)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	backups, err := newestPerPartition(state.BackupStates)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return checkpoints, backups, nil
+}
+
+// newestPerPartition reduces one list of the runtime state answer to the
+// latest timestamp of each partition.
+func newestPerPartition(entries []partitionState) (map[int]time.Time, error) {
+	latest := map[int]time.Time{}
+	for _, entry := range entries {
+		written, err := utils.ParseCheckpointTime(entry.Timestamp)
 		if err != nil {
 			return nil, err
 		}
-		if current, ok := backups[backup.PartitionID]; !ok || taken.After(current) {
-			backups[backup.PartitionID] = taken
+		if current, ok := latest[entry.PartitionID]; !ok || written.After(current) {
+			latest[entry.PartitionID] = written
 		}
 	}
 
-	return backups, nil
+	return latest, nil
 }
 
 // applicationCredentials returns the application credentials of the logical
