@@ -177,11 +177,11 @@ the outcome:
 - `spec.pitr.recovery: operator | external` (default `external`), a producer declaration.
   `DatabaseServer` publishes `operator`. A hand-written contract keeps `external`, and the
   restore keeps its prerequisite that the database is already recovered.
-- `spec.recovery {requestedBy, targetTime}`, written by the consumer. `PointInTimeRestore`
+- `spec.recovery {requestedBy, requestID, targetTime}`, written by the consumer; `requestID` is the restore's UID, so a restore recreated under the same name is a new request. `PointInTimeRestore`
   applies it through server-side apply under its own field manager, the way it writes the
   `CamundaCluster` suspend. The producer's apply of the contract never carries this field, so
   the two writers never conflict.
-- `spec.pitr.lastRecovery {requestedBy, targetTime, completedAt, result, message}`, written by
+- `spec.pitr.lastRecovery {requestedBy, requestID, targetTime, completedAt, result, message}`, written by
   the producer when a request is done. `result` is `Completed`, `Failed`, or `Unavailable`.
 
 `DatabaseServer` owns the contract it publishes, so it already receives its events. A request
@@ -383,12 +383,14 @@ spec:
     recovery: operator             # operator | external (default); producer-declared
     lastRecovery:                  # producer-written when a request is done
       requestedBy: camunda/pitr-1
+      requestID: 6f1c…             # the restore's UID, echoed from the request
       targetTime: "2026-08-20T14:30:00Z"
       completedAt: "2026-08-20T15:02:11Z"
       result: Completed            # Completed | Failed | Unavailable
       message: ""
   recovery:                        # consumer-written under its own field manager
     requestedBy: camunda/pitr-1
+    requestID: 6f1c…               # the restore's UID; a retry is a new restore
     targetTime: "2026-08-20T14:30:00Z"
 ```
 
