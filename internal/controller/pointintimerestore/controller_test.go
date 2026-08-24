@@ -48,6 +48,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
 
+// worldSystemIdentifier is the identity that the contract of a world reports.
+// A second contract that publishes it describes the same PostgreSQL instance.
+const worldSystemIdentifier = "7000000000000000001"
+
 // world is the resolved fixture set of one spec: a suspended relational
 // cluster, its whole storage chain, the one Database that owns the server, and
 // the live broker StatefulSet with its data volumes.
@@ -97,11 +101,6 @@ func newNamespace() string {
 // The exporter reader answers for the logical database of this world with
 // positions that lie behind the timestamp of a restore, so a world passes the
 // database-state check unless a spec says otherwise.
-// worldSystemIdentifier is the identity that the contract of a world reports.
-// It is the key of the dedicated-server rule, so a second contract that names
-// it describes the same PostgreSQL instance.
-const worldSystemIdentifier = "7000000000000000001"
-
 func createWorld(mutate ...func(*world)) *world {
 	GinkgoHelper()
 
@@ -186,6 +185,9 @@ func createWorldIn(namespace string, mutate ...func(*world)) *world {
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, w.server) })
 	publishSystemIdentifier(w.server, worldSystemIdentifier)
 	Expect(k8sClient.Create(ctx, w.database)).To(Succeed())
+	// The dedicated-server rule reads the Database resources of every
+	// namespace, so a claimant left behind reaches every later spec.
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, w.database) })
 	Expect(k8sClient.Create(ctx, w.dbConfig)).To(Succeed())
 	Expect(k8sClient.Create(ctx, w.storage)).To(Succeed())
 	Expect(k8sClient.Create(ctx, w.cluster)).To(Succeed())
@@ -213,7 +215,9 @@ func publishSystemIdentifier(server *v1.DatabaseServerConfig, identifier string)
 
 // createServerFor creates a second contract in namespace that describes the
 // server of the world under another host, and publishes identifier as its
-// identity. Two contracts that report one identifier are one server.
+// identity. Two contracts that report one identifier are one server. An empty
+// identifier leaves the contract unprobed, the way one that has never reached
+// its server reads.
 func createServerFor(namespace, host, identifier string) *v1.DatabaseServerConfig {
 	GinkgoHelper()
 	server := &v1.DatabaseServerConfig{
@@ -231,7 +235,9 @@ func createServerFor(namespace, host, identifier string) *v1.DatabaseServerConfi
 	}
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
-	publishSystemIdentifier(server, identifier)
+	if identifier != "" {
+		publishSystemIdentifier(server, identifier)
+	}
 
 	return server
 }
@@ -860,6 +866,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
 		pitr := createRestore(w)
 		expectHeld(pitr, v1.ReasonSharedServer)
 
@@ -901,10 +908,56 @@ var _ = Describe("PointInTimeRestore admission", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
 		pitr := createRestore(w)
 
 		message := expectHeld(pitr, v1.ReasonSharedServer)
 		Expect(message).To(ContainSubstring(w.namespace + "/" + w.database.Name))
+		Expect(message).To(ContainSubstring(other + "/" + second.Name))
+		expectClaimsUntouched(w)
+	})
+
+	// A Database whose contract publishes no identity can be on this server
+	// or on another one. The rule cannot rule it out, and recovery rolls back
+	// the whole server, so the restore waits rather than destroy it.
+	It("holds a Database whose contract publishes no identity", func() {
+		w := createWorld()
+		other := newNamespace()
+		otherServer := createServerFor(other, "postgres.unprobed.svc", "")
+		second := &v1.Database{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-" + w.database.Name, Namespace: other},
+			Spec: v1.DatabaseSpec{
+				ServerRef:    otherServer.Name,
+				DatabaseName: "other_database",
+			},
+		}
+		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonInvalidReference)
+		Expect(message).To(ContainSubstring(other + "/" + second.Name))
+		Expect(message).To(ContainSubstring("no system identifier"))
+		expectClaimsUntouched(w)
+	})
+
+	// A Database whose contract was deleted still names it. Nothing resolves
+	// that reference, so the Database cannot be placed either.
+	It("holds a Database whose contract is gone", func() {
+		w := createWorld()
+		other := newNamespace()
+		second := &v1.Database{
+			ObjectMeta: metav1.ObjectMeta{Name: "orphan-" + w.database.Name, Namespace: other},
+			Spec: v1.DatabaseSpec{
+				ServerRef:    "deleted-contract",
+				DatabaseName: "other_database",
+			},
+		}
+		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
+		pitr := createRestore(w)
+
+		message := expectHeld(pitr, v1.ReasonInvalidReference)
 		Expect(message).To(ContainSubstring(other + "/" + second.Name))
 		expectClaimsUntouched(w)
 	})
@@ -923,6 +976,7 @@ var _ = Describe("PointInTimeRestore admission", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, second)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, second) })
 		pitr := createRestore(w)
 
 		expectAdmitted(pitr, w)

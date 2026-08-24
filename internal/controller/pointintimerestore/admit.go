@@ -253,7 +253,8 @@ func (r *Reconciler) resolve(
 			"DatabaseServerConfig %s has not published its system identifier, so the operator "+
 				"cannot tell which PostgreSQL instance the endpoint reaches. Point-in-time "+
 				"recovery rolls back the whole instance, and the rule that protects every other "+
-				"database on it needs that identity",
+				"database on it needs that identity. Wait until the DatabaseServerConfig reports "+
+				"Ready",
 			serverKey,
 		), nil
 	}
@@ -405,7 +406,7 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
 				"DatabaseServerConfig %s declares no point-in-time recovery. Set spec.pitr.enabled "+
-					"to true once the server archives its write-ahead log", contractKey(server),
+					"to true once the server archives its write-ahead log", client.ObjectKeyFromObject(server),
 			),
 		}
 	}
@@ -431,17 +432,12 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 			Message: fmt.Sprintf(
 				"spec.timestamp %s is older than the retention period of DatabaseServerConfig %s, "+
 					"which is %d days. The server archives nothing of that point any more",
-				want.UTC().Format(time.RFC3339), contractKey(server), days,
+				want.UTC().Format(time.RFC3339), client.ObjectKeyFromObject(server), days,
 			),
 		}
 	}
 
 	return nil
-}
-
-// contractKey names a contract the way every message of this controller does.
-func contractKey(server *v1.DatabaseServerConfig) types.NamespacedName {
-	return types.NamespacedName{Namespace: server.Namespace, Name: server.Name}
 }
 
 // dedicatedServer reports that more than one Database lives on the server, or
@@ -452,36 +448,72 @@ func contractKey(server *v1.DatabaseServerConfig) types.NamespacedName {
 // The server is the instance, not the contract that describes it. The rule
 // therefore counts the Database resources of every namespace whose contract
 // reports the system identifier of this one. Two contracts that name one
-// instance under different hosts are one server here.
+// instance under different hosts are one server here, and a Database whose
+// contract reports no identity at all cannot be placed on either side.
 func (r *Reconciler) dedicatedServer(
 	ctx context.Context,
 	server *v1.DatabaseServerConfig,
 ) (*conditions.PreCheckFailure, error) {
-	// The read is live and unindexed, like every other read of this
+	key := client.ObjectKeyFromObject(server)
+
+	// Both reads are live and unindexed, like every other read of this
 	// controller. A cached list can miss the Database that a sibling cluster
 	// created a moment ago, and the rule exists to protect that sibling. The
-	// filter runs here because a cluster holds few Database resources, and an
-	// index of this field repeats what the Database controller already
-	// indexes, which one manager rejects.
+	// contracts are read as one list rather than one Get per Database, so the
+	// cost of the rule does not grow with the number of claimants.
 	var databases v1.DatabaseList
 	if err := r.APIReader.List(ctx, &databases); err != nil {
-		return nil, fmt.Errorf("listing the databases of DatabaseServerConfig %s: %w", contractKey(server), err)
+		return nil, fmt.Errorf("listing the databases of DatabaseServerConfig %s: %w", key, err)
 	}
 
-	names := make([]string, 0, 2)
-	identities := map[types.NamespacedName]string{}
+	var contracts v1.DatabaseServerConfigList
+	if err := r.APIReader.List(ctx, &contracts); err != nil {
+		return nil, fmt.Errorf("listing the database server contracts: %w", err)
+	}
+
+	identities := make(map[types.NamespacedName]string, len(contracts.Items))
+	for i := range contracts.Items {
+		identities[client.ObjectKeyFromObject(&contracts.Items[i])] = contracts.Items[i].Status.SystemIdentifier
+	}
+
+	var names, unplaced []string
 	for i := range databases.Items {
 		database := &databases.Items[i]
-		identity, err := r.serverIdentity(ctx, identities, types.NamespacedName{
-			Namespace: database.Namespace, Name: database.Spec.ServerRef,
-		})
-		if err != nil {
-			return nil, err
+		switch databaseIdentity(database, identities) {
+		case server.Status.SystemIdentifier:
+			names = append(names, database.Namespace+"/"+database.Name)
+		case "":
+			unplaced = append(unplaced, database.Namespace+"/"+database.Name)
 		}
-		if identity != server.Status.SystemIdentifier {
-			continue
-		}
-		names = append(names, database.Namespace+"/"+database.Name)
+	}
+	slices.Sort(names)
+	slices.Sort(unplaced)
+
+	if len(names) > 1 {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonSharedServer,
+			Message: fmt.Sprintf(
+				"the server that DatabaseServerConfig %s describes holds the databases %s. "+
+					"Point-in-time recovery rolls back the whole server, so it also rolls back a "+
+					"database that another cluster uses. Move the cluster to a server of its own",
+				key, strings.Join(names, ", "),
+			),
+		}, nil
+	}
+
+	// A Database whose contract publishes no identity can be on this server or
+	// on another one, and nothing here can tell which. Recovery rolls back the
+	// whole server, so a database that cannot be ruled out is a database this
+	// restore can destroy.
+	if len(unplaced) > 0 {
+		return logicalbackup.InvalidReference(
+			"the DatabaseServerConfig of the Database resources %s publishes no system identifier, "+
+				"so the operator cannot tell whether they live on the server that %s describes. "+
+				"Point-in-time recovery rolls back the whole server. Wait until every "+
+				"DatabaseServerConfig reports Ready, or remove the Database resources whose server "+
+				"no longer exists",
+			strings.Join(unplaced, ", "), key,
+		), nil
 	}
 
 	// Zero is not one. A server that no Database resource names carries no
@@ -494,49 +526,27 @@ func (r *Reconciler) dedicatedServer(
 				"so the operator cannot tell which databases the server holds. Point-in-time "+
 				"recovery rolls back the whole server. Declare the database of the cluster as a "+
 				"Database resource on a server of its own",
-			contractKey(server),
+			key,
 		), nil
 	}
 
-	if len(names) == 1 {
-		return nil, nil
-	}
-	slices.Sort(names)
-
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonSharedServer,
-		Message: fmt.Sprintf(
-			"the server that DatabaseServerConfig %s describes holds the databases %s. "+
-				"Point-in-time recovery rolls back the whole server, so it also rolls back a "+
-				"database that another cluster uses. Move the cluster to a server of its own",
-			contractKey(server), strings.Join(names, ", "),
-		),
-	}, nil
+	return nil, nil
 }
 
-// serverIdentity returns the system identifier that the contract at ref
-// publishes, memoised in seen. A contract that is gone, or that has published
-// no identity yet, resolves to the empty string: it names no instance this
-// rule can count.
-func (r *Reconciler) serverIdentity(
-	ctx context.Context,
-	seen map[types.NamespacedName]string,
-	ref types.NamespacedName,
-) (string, error) {
-	if identity, ok := seen[ref]; ok {
-		return identity, nil
+// databaseIdentity returns the PostgreSQL instance that database resolves to,
+// or the empty string when nothing places it. The contract answers while it is
+// probed. A contract that is momentarily unprobed falls back to the claim in
+// status.collisionKey, which the Database controller recorded the last time it
+// resolved the server and never clears.
+func databaseIdentity(database *v1.Database, identities map[types.NamespacedName]string) string {
+	ref := types.NamespacedName{Namespace: database.Namespace, Name: database.Spec.ServerRef}
+	if identity := identities[ref]; identity != "" {
+		return identity
 	}
 
-	var server v1.DatabaseServerConfig
-	if err := r.APIReader.Get(ctx, ref, &server); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return "", fmt.Errorf("reading DatabaseServerConfig %s: %w", ref, err)
-		}
-		server.Status.SystemIdentifier = ""
-	}
-	seen[ref] = server.Status.SystemIdentifier
+	identity, _, _ := strings.Cut(database.Status.CollisionKey, "/")
 
-	return server.Status.SystemIdentifier, nil
+	return identity
 }
 
 // credentials reads the application credentials of the logical database. They
