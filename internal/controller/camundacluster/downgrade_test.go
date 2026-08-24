@@ -277,7 +277,7 @@ func TestRecordRefusedDowngrade(t *testing.T) {
 			want: 1,
 		},
 		{
-			name: "a reconcile that reads the cluster before the refusal lands records nothing",
+			name: "a reconcile that reads the cluster before the refusal lands records no second event",
 			record: func(r *CamundaClusterReconciler) {
 				r.recordRefusedDowngrade(refusedCluster(nil), refused)
 				r.recordRefusedDowngrade(refusedCluster(nil), refused)
