@@ -224,6 +224,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		server := serverInNamespace(nil)
 
 		contract := expectCondition(server, components.ConditionContract, metav1.ConditionFalse)
+		Expect(contract.Reason).To(Equal("Blocked"))
 		Expect(contract.Message).To(ContainSubstring("camunda-superuser"))
 
 		var published v1.DatabaseServerConfig

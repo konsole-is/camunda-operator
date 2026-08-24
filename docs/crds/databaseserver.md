@@ -1,8 +1,8 @@
 # DatabaseServer
 
-`DatabaseServer` is a namespaced kind that runs one PostgreSQL server for one orchestration cluster. You create it. The operator creates a CloudNativePG cluster from it, archives that cluster to an object storage bucket, and publishes the connection details as a [DatabaseServerConfig](databaseserverconfig.md).
+`DatabaseServer` is a namespaced kind that runs one PostgreSQL server for one orchestration cluster. You create it. The operator runs the server through a CloudNativePG cluster and publishes its connection details as a [DatabaseServerConfig](databaseserverconfig.md). With `spec.archive` it also keeps a continuous archive of the server in an object storage bucket.
 
-The server is the relational secondary storage of a cluster. A [Database](database.md) creates the logical database and its users on the published contract, and a `CamundaCluster` reaches it from there. With an archive, the contract also declares that a [PointInTimeRestore](pointintimerestore.md) can roll the server back to a timestamp.
+The server is the relational secondary storage of a cluster. A [Database](database.md) creates the logical database and its users on the published contract, and a `CamundaCluster` reaches it from there. With an archive, the contract declares `pitr.enabled: true`, which a [PointInTimeRestore](pointintimerestore.md) requires.
 
 The operator needs the [CloudNativePG](https://cloudnative-pg.io/) operator on the Kubernetes cluster. An archive also needs the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/) and cert-manager. See [Installation](../installation.md).
 
@@ -100,11 +100,13 @@ spec:
 
 The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>`. One bucket can serve a whole fleet.
 
-`status.archive.history` records each archive the server has written and the earliest point it can be recovered to.
+`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, and `from` is the earliest point a restore can reach in it.
+
+A [PointInTimeRestore](pointintimerestore.md) needs the database at the requested point before it runs. Recover the server from this archive with the CloudNativePG recovery procedure, then create the `PointInTimeRestore`.
 
 ### Base backups are not the backup model
 
-The base backups belong to the archive. They are physical copies of the whole server. [BackupSchedule](backupschedule.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) take logical dumps instead, coordinated with the Camunda backup API, and they never see these base backups. A base backup produces no `LogicalBackupRDBMS` and shows in no backup list. Only a [PointInTimeRestore](pointintimerestore.md) uses one.
+The base backups belong to the archive. They are physical copies of the whole server. [BackupSchedule](backupschedule.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) take logical dumps instead, coordinated with the Camunda backup API, and they never see these base backups. A base backup produces no `LogicalBackupRDBMS` and shows in no backup list. Only a point-in-time recovery of the server reads one.
 
 Run both on one cluster. The logical backups give you a restore of the Camunda data. The archive gives you a restore of the server to a timestamp.
 
@@ -161,7 +163,23 @@ spec:
 
 ## Images
 
-The PostgreSQL image is `ghcr.io/cloudnative-pg/postgresql:<version>` by default. `spec.platformConfigRef` names a [CamundaPlatformConfig](camundaplatformconfig.md), and the operator then pulls the image from `spec.imageRegistry` or from `spec.images.postgres` of that config. An air-gapped cluster needs this.
+The PostgreSQL image is `ghcr.io/cloudnative-pg/postgresql:<version>` by default. `spec.platformConfigRef` names a [CamundaPlatformConfig](camundaplatformconfig.md), and the image then comes from that config. An air-gapped cluster needs this.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: my-platform-config
+spec:
+  # Put every default repository behind your mirror.
+  imageRegistry: "mirror.example.com"
+  images:
+    # Or name one repository for PostgreSQL alone. This wins over imageRegistry.
+    postgres: "mirror.example.com/postgresql"
+  # ... the rest of your platform config
+```
+
+The version of the server is the tag, so the repository you name must publish the same major version tags.
 
 ## Deletion
 
@@ -221,7 +239,7 @@ status:
 | `MonitoringReady` | `Disabled` | Scraping is off. | Nothing. |
 | `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |
 
-`status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it. `status.observedGeneration` is the last generation the operator reconciled.
+`status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
 
 ## Spec reference
 
@@ -324,6 +342,6 @@ spec:
 - [DatabaseServerConfig](databaseserverconfig.md): the contract this kind publishes.
 - [Database](database.md): creates the logical database and its users on the published contract.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that `spec.archive.objectStorageRef` names.
-- [PointInTimeRestore](pointintimerestore.md): rolls a server with an archive back to a timestamp.
+- [PointInTimeRestore](pointintimerestore.md): reads `pitr.enabled` and the retention period from the published contract.
 - [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect secondary storage.
 - [Installation](../installation.md): CloudNativePG, cert-manager, and the Barman Cloud plugin.
