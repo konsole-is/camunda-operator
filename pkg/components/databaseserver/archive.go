@@ -113,9 +113,11 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 
 // ArchiveComponent builds the archive component: the Secret with the bucket
 // settings, the ObjectStore that describes the archive, and the ScheduledBackup
-// that takes the base backups. The component is feature-gated on the server
-// having an archive at all; without one it deletes its resources and reports
-// Disabled.
+// that takes the base backups. archiving says whether the server keeps an
+// archive at all, and it is the feature gate of the component: a component
+// built with false deletes its resources and reports Disabled. The caller
+// decides it, so the same answer also decides whether the component takes part
+// in Ready.
 //
 // The component is never suspended. A suspended component applies no baseline,
 // so the suspension of the base backup schedule could never reach the cluster,
@@ -132,6 +134,7 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 func ArchiveComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
+	archiving bool,
 	archive *ArchiveStorage,
 	archiveStart *metav1.Time,
 ) (*component.Component, error) {
@@ -168,7 +171,7 @@ func ArchiveComponent(
 	return component.NewComponentBuilder().
 		WithName("archive").
 		WithConditionType(ConditionArchive).
-		WithFeatureGate(feature.NewBooleanGate(merged.Archive != nil)).
+		WithFeatureGate(feature.NewBooleanGate(archiving)).
 		WithResource(settings, component.GatedBy(feature.NewBooleanGate(len(archiveSecretData(resolved)) > 0))).
 		WithResource(store).
 		WithResource(baseBackup).

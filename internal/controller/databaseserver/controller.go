@@ -83,25 +83,17 @@ type serverComponents struct {
 	archive    *component.Component
 	contract   *component.Component
 	monitoring *component.Component
+	// ready are the components that take part in Ready: the cluster, the
+	// contract, and the archive of a server that asks for one. Monitoring
+	// keeps its own MonitoringReady condition, and an archive the spec does
+	// not ask for keeps ArchiveReady, so Ready never reports Disabled.
+	ready []*component.Component
 }
 
 // all returns the components in reconcile order. FlushStatus owns every one of
 // their condition types.
 func (c serverComponents) all() []*component.Component {
 	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
-}
-
-// ready returns the components that take part in Ready: the cluster, the
-// contract, and the archive of a server that asks for one. Monitoring keeps
-// its own MonitoringReady condition, and an archive the spec does not ask for
-// keeps ArchiveReady, so Ready never reports Disabled.
-func (c serverComponents) ready(merged v1.DatabaseServerSpec) []*component.Component {
-	comps := []*component.Component{c.cluster, c.contract}
-	if merged.Archive != nil {
-		comps = append(comps, c.archive)
-	}
-
-	return comps
 }
 
 // DatabaseServerReconciler runs a PostgreSQL server through the external
@@ -239,7 +231,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	server.Status.Volumes = volumes
 
-	conditions.Stage(&server, conditions.Aggregate(&server, built.ready(resolved.merged)...))
+	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
 
 	// The hold is the reason the reader acts on, so it wins over whatever the
 	// components report while the recovery finishes.
@@ -613,14 +605,18 @@ func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.Databas
 }
 
 // buildComponents builds the four components in dependency order: cluster,
-// archive, contract, monitoring. The returned data cell holds the PostgreSQL
-// system identifier once the cluster component has reconciled.
+// archive, contract, monitoring, and records which of them take part in Ready.
+// Whether the server archives is decided once here, so the gate of the archive
+// component and its part in Ready can never disagree. The returned data cell
+// holds the PostgreSQL system identifier once the cluster component has
+// reconciled.
 func (r *DatabaseServerReconciler) buildComponents(
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
 	archiveStart *metav1.Time,
 ) (serverComponents, *concepts.Data[string], error) {
 	merged := resolved.merged
+	archiving := merged.Archive != nil
 	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
@@ -631,7 +627,9 @@ func (r *DatabaseServerReconciler) buildComponents(
 	}
 	built.cluster = cluster
 
-	built.archive, err = components.ArchiveComponent(server, merged, resolved.archive, archiveStart)
+	built.archive, err = components.ArchiveComponent(
+		server, merged, archiving, resolved.archive, archiveStart,
+	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
@@ -644,6 +642,11 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.monitoring, err = components.MonitoringComponent(server, merged, r.podMonitorSupported())
 	if err != nil {
 		return built, nil, fmt.Errorf("building monitoring component: %w", err)
+	}
+
+	built.ready = []*component.Component{built.cluster, built.contract}
+	if archiving {
+		built.ready = append(built.ready, built.archive)
 	}
 
 	return built, systemIdentifier, nil

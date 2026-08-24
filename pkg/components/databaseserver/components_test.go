@@ -154,7 +154,7 @@ func assertDatabaseServerGoldens(
 	// so a server without an archive would pin an ObjectStore that the
 	// component only ever deletes.
 	if merged.Archive != nil {
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
+		archiveComp, err := ArchiveComponent(server, merged, true, archive, nil)
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "archive.yaml"), archiveComp,
@@ -377,7 +377,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 		require.NoError(t, err)
 		contractComp, err := ContractComponent(server, merged)
 		require.NoError(t, err)
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
+		archiveComp, err := ArchiveComponent(server, merged, merged.Archive != nil, archive, nil)
 		require.NoError(t, err)
 
 		return renderComponent(t, clusterComp),
