@@ -40,6 +40,8 @@ var implementedKindSamples = []string{
 	"core_v1_managementauthconfig.yaml",
 	"core_v1_elasticsearchcluster.yaml",
 	"core_v1_elasticsearchclusterpreset.yaml",
+	"core_v1_databaseserver.yaml",
+	"core_v1_databaseserverpreset.yaml",
 	"core_v1_database.yaml",
 	"core_v1_camundaplatformconfig.yaml",
 	"core_v1_camundacluster.yaml",

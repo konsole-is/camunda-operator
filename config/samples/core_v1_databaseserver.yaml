@@ -1,0 +1,12 @@
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: databaseserver-sample
+spec:
+  version: "17"
+  instances: 1
+  storageSize: "20Gi"
+  databaseServerConfig: databaseserver-sample
