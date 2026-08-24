@@ -36,9 +36,10 @@ import (
 )
 
 // The events of a recovery. A recovery replaces the server behind the
-// contract, so every step of it is worth a line in kubectl describe. Each
-// reason names the result it reports, and RecoveryFailed covers Unavailable
-// as well: neither result gives the requester the point it asked for.
+// contract, so every step of it is worth a line in kubectl describe.
+// RecoveryCompleted reports the Completed result. RecoveryFailed reports the
+// Failed and the Unavailable results: neither gives the requester the point
+// it asked for.
 const (
 	eventReasonRecoveryStarted         = "RecoveryStarted"
 	eventReasonRecoveryCompleted       = "RecoveryCompleted"
