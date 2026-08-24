@@ -91,12 +91,12 @@ func writeSuperuserSecret(server *v1.DatabaseServer) {
 
 // completeBaseBackup creates a completed Backup of the cluster, as the
 // CloudNativePG operator would after the ScheduledBackup fired.
-func completeBaseBackup(server *v1.DatabaseServer, at metav1.Time) {
+func completeBaseBackup(server *v1.DatabaseServer, name string, at metav1.Time) {
 	GinkgoHelper()
 
 	backup := &cnpgv1.Backup{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      components.ClusterName(server) + "-base",
+			Name:      components.ClusterName(server) + "-" + name,
 			Namespace: server.Namespace,
 			Labels:    map[string]string{components.CNPGClusterNameLabel: components.ClusterName(server)},
 		},
@@ -110,6 +110,18 @@ func completeBaseBackup(server *v1.DatabaseServer, at metav1.Time) {
 	backup.Status.Phase = cnpgv1.BackupPhaseCompleted
 	backup.Status.StoppedAt = &at
 	Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
+}
+
+// setArchive puts archive on the latest revision of the server.
+func setArchive(server *v1.DatabaseServer, archive *v1.DatabaseServerArchiveSpec) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.Archive = archive
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // archiveHistory reads the archive history of the reconciled server.
@@ -309,7 +321,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(blocked.Message).To(ContainSubstring("base backup"))
 
 		completedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
-		completeBaseBackup(server, completedAt)
+		completeBaseBackup(server, "base", completedAt)
 
 		expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
 
@@ -343,7 +355,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		})
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000005")
-		completeBaseBackup(server, metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+		completeBaseBackup(server, "base", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
 
 		expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
 		Eventually(func(g Gomega) {
@@ -432,6 +444,86 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(k8sClient.Get(ctx, archiveKey, &corev1.Secret{})).To(Succeed())
 			g.Expect(k8sClient.Get(ctx, clusterKey, &barmanobjectstore.ObjectStore{})).To(Succeed())
 		}, 2*time.Second, interval).Should(Succeed())
+
+		// The instances are gone, so a slot the schedule reaches would start a
+		// backup that cannot run.
+		Eventually(func(g Gomega) {
+			var schedule cnpgv1.ScheduledBackup
+			g.Expect(k8sClient.Get(ctx, clusterKey, &schedule)).To(Succeed())
+			g.Expect(schedule.Spec.Suspend).To(HaveValue(BeTrue()))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("starts a new archive record when the archive comes back", func() {
+		bucket := archiveBucket()
+		archive := &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		}
+		server := serverInNamespace(archive)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000007")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			g.Expect(archiveHistory(server)).To(HaveLen(1))
+		}, timeout, interval).Should(Succeed())
+
+		setArchive(server, nil)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		closedAt := *archiveHistory(server)[0].To
+
+		setArchive(server, archive)
+
+		// The backups of the archive the server wrote before reach no point in
+		// the new one, so the archive is not recoverable again until a base
+		// backup of the new one completes.
+		blocked := expectCondition(server, components.ConditionArchive, metav1.ConditionFalse)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+		Consistently(func(g Gomega) {
+			g.Expect(archiveHistory(server)).To(HaveLen(1))
+		}, time.Second, interval).Should(Succeed())
+
+		reopenedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
+		completeBaseBackup(server, "second", reopenedAt)
+
+		expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[0].To).NotTo(BeNil())
+			g.Expect(history[1].ServerName).To(Equal("camunda"))
+			g.Expect(history[1].From.Time).To(BeTemporally("==", reopenedAt.Time))
+			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// A server that never converged has no honest condition to keep, so a
+	// dangling reference under it must be reported rather than tolerated.
+	It("reports a dangling bucket on a server created suspended", func() {
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    "no-such-bucket",
+			RetentionPeriodDays: 30,
+		})
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.Suspend = true
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(ready.Message).To(ContainSubstring("no-such-bucket"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("reports InvalidReference for a preset that does not exist", func() {

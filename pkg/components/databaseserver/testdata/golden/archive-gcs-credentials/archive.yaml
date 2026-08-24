@@ -50,3 +50,4 @@ spec:
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
   schedule: 0 0 2 * * *
+  suspend: false

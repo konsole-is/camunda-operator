@@ -98,18 +98,12 @@ func ArchiveSecretName(server *v1.DatabaseServer) string {
 // server, in the form the Barman Cloud plugin addresses the provider. It is
 // empty when the bucket does not resolve.
 func ArchiveDestinationPath(server *v1.DatabaseServer, archive *ArchiveStorage) string {
-	resolved := archive.resolveOrNil(ArchiveSecretName(server))
+	resolved := archive.resolveOrNil(server)
 	if resolved == nil {
 		return ""
 	}
 
-	segments := []string{resolved.destinationRoot}
-	if base := archive.Config.BasePath(); base != "" {
-		segments = append(segments, base)
-	}
-	segments = append(segments, archivePathSegment, server.Namespace, server.Name)
-
-	return strings.Join(segments, "/")
+	return resolved.destinationPath
 }
 
 // ValidateArchiveStorage reports why a bucket cannot hold the archive of a
@@ -121,7 +115,10 @@ func ArchiveDestinationPath(server *v1.DatabaseServer, archive *ArchiveStorage) 
 // resolution the renderers use, so a bucket the pre-check accepts is one every
 // renderer can render.
 func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
-	_, err := (&ArchiveStorage{Config: config}).resolve("archive")
+	// The server only names the archive Secret and the object prefix, and
+	// neither can make a bucket unservable, so a nameless one answers the
+	// question.
+	_, err := (&ArchiveStorage{Config: config}).resolve(&v1.DatabaseServer{})
 
 	return err
 }
@@ -132,24 +129,32 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 // having an archive at all; without one it deletes its resources and reports
 // Disabled.
 //
-// firstBaseBackup is when the first base backup of the current cluster
-// completed, or nil when none has. Until then the component reports Blocked:
-// an archive that holds write-ahead log but no base backup cannot be recovered
-// to any point, so it is not ready however well the uploads run.
+// The component is never suspended. A suspended component applies no baseline,
+// so the suspension of the base backup schedule could never reach the cluster,
+// and the archive is not deactivated by a suspension anyway: the write-ahead
+// log of the last moments before the instances go still has to arrive. What
+// suspension reaches is the schedule alone, through its own spec field.
+//
+// archiveStart is when the earliest base backup of the archive the server
+// writes now completed, or nil when none has. Until then the component reports
+// Blocked: an archive that holds write-ahead log but no base backup cannot be
+// recovered to any point, so it is not ready however well the uploads run. An
+// archive the server re-enabled starts again from nil, because the backups of
+// the archive it wrote before reach no point in the new one.
 func ArchiveComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archive *ArchiveStorage,
-	firstBaseBackup *metav1.Time,
+	archiveStart *metav1.Time,
 ) (*component.Component, error) {
-	resolved := archive.resolveOrNil(ArchiveSecretName(server))
+	resolved := archive.resolveOrNil(server)
 
 	settings, err := secret.NewBuilder(archiveSecret(server, resolved)).Build()
 	if err != nil {
 		return nil, err
 	}
 
-	store, err := barmanobjectstore.NewBuilder(objectStore(server, merged, archive, resolved)).Build()
+	store, err := barmanobjectstore.NewBuilder(objectStore(server, merged, resolved)).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +171,7 @@ func ArchiveComponent(
 	recoverable, err := cnpgcluster.NewBuilder(&cnpgv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: ClusterName(server), Namespace: server.Namespace},
 	}).
-		WithGuard(baseBackupGuard(server, firstBaseBackup)).
+		WithGuard(baseBackupGuard(server, archiveStart)).
 		Build()
 	if err != nil {
 		return nil, err
@@ -180,30 +185,30 @@ func ArchiveComponent(
 		WithResource(store).
 		WithResource(baseBackup).
 		WithResource(recoverable, component.ReadOnly(), component.Auxiliary()).
-		Suspend(merged.Suspend).
 		Build()
 }
 
-// baseBackupGuard blocks the archive until the first base backup of the
-// current cluster has completed.
+// baseBackupGuard blocks the archive until a base backup of the archive the
+// server writes now has completed. archiveStart is when the earliest such
+// backup completed, or nil when none has.
 func baseBackupGuard(
 	server *v1.DatabaseServer,
-	firstBaseBackup *metav1.Time,
+	archiveStart *metav1.Time,
 ) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
 	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
-		if firstBaseBackup != nil {
+		if archiveStart != nil {
 			return concepts.GuardStatusWithReason{
 				Status: concepts.GuardStatusUnblocked,
 				Reason: fmt.Sprintf(
 					"the archive holds a base backup taken at %s",
-					firstBaseBackup.UTC().Format(time.RFC3339),
+					archiveStart.UTC().Format(time.RFC3339),
 				),
 			}, nil
 		}
 
 		return concepts.GuardStatusWithReason{
 			Status: concepts.GuardStatusBlocked,
-			Reason: fmt.Sprintf("the first base backup of %q has not completed yet", ClusterName(server)),
+			Reason: fmt.Sprintf("the first base backup of %q is not complete yet", ClusterName(server)),
 		}, nil
 	}
 }
@@ -240,7 +245,6 @@ func archiveSecretData(resolved *barmanArchive) map[string][]byte {
 func objectStore(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
-	archive *ArchiveStorage,
 	resolved *barmanArchive,
 ) *barmanobjectstore.ObjectStore {
 	store := &barmanobjectstore.ObjectStore{
@@ -251,7 +255,7 @@ func objectStore(
 		},
 		Spec: barmanobjectstore.ObjectStoreSpec{
 			Configuration: barmanobjectstore.BarmanObjectStoreConfiguration{
-				DestinationPath: ArchiveDestinationPath(server, archive),
+				DestinationPath: destinationPath(resolved),
 				Wal: &barmanobjectstore.WalBackupConfiguration{
 					Compression: barmanobjectstore.CompressionTypeGzip,
 				},
@@ -273,6 +277,16 @@ func objectStore(
 	return store
 }
 
+// destinationPath returns the bucket URL of the resolved archive, or the empty
+// string when the bucket did not resolve.
+func destinationPath(resolved *barmanArchive) string {
+	if resolved == nil {
+		return ""
+	}
+
+	return resolved.destinationPath
+}
+
 // retentionPolicy renders spec.archive.retentionPeriodDays as the barman
 // retention policy the plugin enforces. It is the same number the contract of
 // the server publishes, so what the operator declares is what it enforces.
@@ -289,6 +303,10 @@ func retentionPolicy(merged v1.DatabaseServerSpec) string {
 // the archive can be recovered from only after a base backup completes, so
 // waiting for the next scheduled slot would leave a window with no recovery
 // point at all.
+//
+// A suspended server carries a suspended schedule. Its instances are gone, so
+// every slot the schedule reaches would otherwise start a backup that cannot
+// run and fail it.
 func scheduledBackup(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *cnpgv1.ScheduledBackup {
 	schedule := DefaultBaseBackupSchedule
 	if merged.Archive != nil && merged.Archive.BaseBackupSchedule != "" {
@@ -303,6 +321,7 @@ func scheduledBackup(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *c
 		},
 		Spec: cnpgv1.ScheduledBackupSpec{
 			Schedule:            schedule,
+			Suspend:             new(merged.Suspend),
 			Immediate:           new(true),
 			Method:              cnpgv1.BackupMethodPlugin,
 			PluginConfiguration: &cnpgv1.BackupPluginConfiguration{Name: BarmanPluginName},
@@ -356,6 +375,10 @@ type barmanArchive struct {
 	// destinationRoot is the provider-addressing prefix of the archive URL,
 	// without the base path of the contract.
 	destinationRoot string
+	// destinationPath is the bucket URL that holds the archives of one
+	// server: destinationRoot, the base path of the contract, and the prefix
+	// of the server.
+	destinationPath string
 	// endpointURL addresses an S3-compatible store. It is empty for every
 	// other provider and for AWS S3 itself.
 	endpointURL string
@@ -370,20 +393,21 @@ type barmanArchive struct {
 }
 
 // resolve reduces the contract and its credentials to the archive that the
-// plugin writes, or reports why it cannot. secretName is the Secret the
-// rendered references point at.
+// plugin writes for server, or reports why it cannot.
 //
 // It is the one place that dispatches on the storage type, and it is also what
 // ValidateArchiveStorage answers with. A bucket the pre-check accepts is
 // therefore a bucket every renderer here can render, by construction rather
-// than by two switches agreeing.
-func (a *ArchiveStorage) resolve(secretName string) (*barmanArchive, error) {
+// than by two switches agreeing. Every renderer of one build shares one call,
+// so no two of them can disagree about the bucket either.
+func (a *ArchiveStorage) resolve(server *v1.DatabaseServer) (*barmanArchive, error) {
 	if a == nil || a.Config == nil {
 		return nil, errors.New("the server references no bucket")
 	}
 
 	spec := a.Config.Spec
 	resolved := &barmanArchive{secretData: map[string][]byte{}}
+	secretName := ArchiveSecretName(server)
 	ref := func(key string) *barmanobjectstore.SecretKeySelector {
 		return &barmanobjectstore.SecretKeySelector{Name: secretName, Key: key}
 	}
@@ -409,7 +433,7 @@ func (a *ArchiveStorage) resolve(secretName string) (*barmanArchive, error) {
 			resolved.s3Credentials.InheritFromIAMRole = true
 		}
 
-		return resolved, nil
+		return a.withDestinationPath(resolved, server), nil
 
 	case v1.ObjectStorageTypeGCS:
 		if spec.GCS == nil {
@@ -424,7 +448,7 @@ func (a *ArchiveStorage) resolve(secretName string) (*barmanArchive, error) {
 			resolved.googleCredentials.GKEEnvironment = true
 		}
 
-		return resolved, nil
+		return a.withDestinationPath(resolved, server), nil
 
 	case v1.ObjectStorageTypeAzureBlob:
 		if spec.AzureBlob == nil {
@@ -444,7 +468,7 @@ func (a *ArchiveStorage) resolve(secretName string) (*barmanArchive, error) {
 			resolved.azureCredentials.InheritFromAzureAD = true
 		}
 
-		return resolved, nil
+		return a.withDestinationPath(resolved, server), nil
 	}
 
 	return nil, fmt.Errorf(
@@ -453,11 +477,28 @@ func (a *ArchiveStorage) resolve(secretName string) (*barmanArchive, error) {
 	)
 }
 
+// withDestinationPath fills in the bucket URL of the archive of server: the
+// provider-addressing root of the resolved block, the base path of the
+// contract, and the prefix that holds this server alone.
+func (a *ArchiveStorage) withDestinationPath(
+	resolved *barmanArchive,
+	server *v1.DatabaseServer,
+) *barmanArchive {
+	segments := []string{resolved.destinationRoot}
+	if base := a.Config.BasePath(); base != "" {
+		segments = append(segments, base)
+	}
+	segments = append(segments, archivePathSegment, server.Namespace, server.Name)
+	resolved.destinationPath = strings.Join(segments, "/")
+
+	return resolved
+}
+
 // resolveOrNil resolves the bucket and drops the reason it could not. The
 // renderers use it: a bucket that does not resolve renders nothing, and the
 // pre-check has already reported why to the user.
-func (a *ArchiveStorage) resolveOrNil(secretName string) *barmanArchive {
-	resolved, err := a.resolve(secretName)
+func (a *ArchiveStorage) resolveOrNil(server *v1.DatabaseServer) *barmanArchive {
+	resolved, err := a.resolve(server)
 	if err != nil {
 		return nil
 	}

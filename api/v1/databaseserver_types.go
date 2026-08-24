@@ -220,7 +220,10 @@ type DatabaseServerArchiveStatus struct {
 	// recovery picks the record whose interval holds the requested point.
 	// Records are never removed, so a restore can reach back across an
 	// earlier recovery for as long as the bucket keeps the objects. Removing
-	// spec.archive closes the record that is open and keeps the list.
+	// spec.archive closes the record that is open and keeps the list, and
+	// asking for an archive again opens a record of its own. The window with
+	// no archive therefore lies inside no interval, and no restore can reach
+	// a point in it.
 	// +optional
 	History []ArchiveRecord `json:"history,omitempty"`
 }

@@ -65,9 +65,9 @@ type resolvedSpec struct {
 	merged   v1.DatabaseServerSpec
 	platform *v1.CamundaPlatformConfigSpec
 	archive  *components.ArchiveStorage
-	// holdForSuspension says that the archive of a suspended server did not
-	// resolve. The reconcile then stops without rendering anything: see
-	// preCheck.
+	// holdForSuspension says that the archive of a suspended server that
+	// already reports Ready did not resolve. The reconcile then stops and
+	// leaves the condition alone: see preCheck.
 	holdForSuspension bool
 }
 
@@ -184,12 +184,13 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	firstBaseBackup, err := r.firstBaseBackup(ctx, &server, resolved.merged)
+	archiveStart, err := r.archiveStart(ctx, &server, resolved.merged)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	clearReenabledArchiveCondition(&server, resolved.merged)
 
-	built, systemIdentifier, err := r.buildComponents(&server, resolved, firstBaseBackup)
+	built, systemIdentifier, err := r.buildComponents(&server, resolved, archiveStart)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -200,7 +201,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
-	reconcileArchiveHistory(&server, resolved.merged, built.archive, firstBaseBackup, metav1.Now())
+	reconcileArchiveHistory(&server, resolved.merged, built.archive, archiveStart, metav1.Now())
 
 	volumes, err := r.dataVolumes(ctx, &server)
 	if err != nil {
@@ -233,9 +234,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // plugin cannot address all report InvalidReference. Any other error is a
 // transient API failure.
 //
-// A bucket that stops resolving under a suspended server is neither: the
-// result carries holdForSuspension, and the caller stops the reconcile without
-// touching status or any resource.
+// A bucket that stops resolving under a suspended server that already reports
+// Ready is neither: the result carries holdForSuspension, and the caller stops
+// the reconcile so the server keeps the Suspended it honestly reached.
 func (r *DatabaseServerReconciler) preCheck(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -293,13 +294,15 @@ func (r *DatabaseServerReconciler) preCheck(
 	case err == nil:
 		resolved.archive = archive
 
-	// A suspended server runs no pods and takes no backups, so a bucket that
-	// stops resolving under it must not flap Ready, which reports Suspended by
-	// design. Rendering without the bucket is not the alternative: the desired
-	// state would then carry an empty archive, and applying it would take the
-	// bucket settings off the hibernated cluster. Both references are watched,
-	// so the reconcile comes back when one of them is fixed.
-	case resolved.merged.Suspend && errors.As(err, &failure):
+	// A suspended server that already reached its desired state keeps
+	// reporting Suspended when its bucket stops resolving. Its pods are gone
+	// and it takes no backups, so the reference matters again only when it is
+	// unsuspended, and flapping Ready in the meantime tells the reader
+	// nothing they can act on. A server that never reached Ready is the other
+	// case: it has no honest condition to keep, so it reports the failure.
+	// Both references are watched, so either way the reconcile comes back.
+	case resolved.merged.Suspend && errors.As(err, &failure) &&
+		meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionReady):
 		resolved.holdForSuspension = true
 
 	default:
@@ -397,49 +400,17 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 	return archive, nil
 }
 
-// buildComponents builds the four components in dependency order: cluster,
-// archive, contract, monitoring. The returned data cell holds the PostgreSQL
-// system identifier once the cluster component has reconciled.
-func (r *DatabaseServerReconciler) buildComponents(
-	server *v1.DatabaseServer,
-	resolved resolvedSpec,
-	firstBaseBackup *metav1.Time,
-) (serverComponents, *concepts.Data[string], error) {
-	merged := resolved.merged
-	var built serverComponents
-
-	cluster, systemIdentifier, err := components.ClusterComponent(
-		server, merged, resolved.archive, resolved.platform,
-	)
-	if err != nil {
-		return built, nil, fmt.Errorf("building cluster component: %w", err)
-	}
-	built.cluster = cluster
-
-	built.archive, err = components.ArchiveComponent(server, merged, resolved.archive, firstBaseBackup)
-	if err != nil {
-		return built, nil, fmt.Errorf("building archive component: %w", err)
-	}
-
-	built.contract, err = components.ContractComponent(server, merged)
-	if err != nil {
-		return built, nil, fmt.Errorf("building contract component: %w", err)
-	}
-
-	built.monitoring, err = components.MonitoringComponent(server, merged, r.podMonitorSupported())
-	if err != nil {
-		return built, nil, fmt.Errorf("building monitoring component: %w", err)
-	}
-
-	return built, systemIdentifier, nil
-}
-
-// firstBaseBackup returns when the earliest completed base backup of the
-// current cluster finished, or nil when none has completed. It is what tells
-// the archive component that the archive can be recovered from, and what opens
-// the interval of the current archive in status. A server that asks for no
-// archive takes no base backups, so it reads none.
-func (r *DatabaseServerReconciler) firstBaseBackup(
+// archiveStart returns when the earliest base backup of the archive the server
+// writes now completed, or nil when none has. It is what tells the archive
+// component that the archive can be recovered from, and what opens the
+// interval of that archive in status.
+//
+// A server that re-enabled its archive counts only the backups taken after the
+// interval it closed. The backups of the archive it wrote before reach no
+// point in the new one, so treating them as the start would declare a window
+// that no restore can reach. A server that asks for no archive takes no base
+// backups, so it reads none.
+func (r *DatabaseServerReconciler) archiveStart(
 	ctx context.Context,
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -447,6 +418,8 @@ func (r *DatabaseServerReconciler) firstBaseBackup(
 	if merged.Archive == nil {
 		return nil, nil
 	}
+
+	after := closedArchiveEnd(server)
 
 	var backups cnpgv1.BackupList
 	if err := r.List(
@@ -467,6 +440,9 @@ func (r *DatabaseServerReconciler) firstBaseBackup(
 			backup.Status.StoppedAt == nil {
 			continue
 		}
+		if after != nil && !backup.Status.StoppedAt.After(after.Time) {
+			continue
+		}
 		if earliest == nil || backup.Status.StoppedAt.Before(earliest) {
 			earliest = backup.Status.StoppedAt
 		}
@@ -475,63 +451,178 @@ func (r *DatabaseServerReconciler) firstBaseBackup(
 	return earliest, nil
 }
 
+// clearReenabledArchiveCondition drops ArchiveReady when a server that had no
+// archive asks for one again.
+//
+// ocf carries the condition status of the previous reconcile into a component
+// that is converging again, and a disabled component carries True. Without
+// this, an archive that comes back would keep reporting ready while its first
+// base backup is still missing, and it would never correct itself: every
+// following reconcile copies that True forward again. A condition that is
+// absent starts from Unknown instead, which ocf derives from the resources.
+func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) {
+	if merged.Archive == nil {
+		return
+	}
+
+	condition := meta.FindStatusCondition(server.Status.Conditions, components.ConditionArchive)
+	if condition == nil || condition.Reason != string(component.Disabled) {
+		return
+	}
+
+	meta.RemoveStatusCondition(&server.Status.Conditions, components.ConditionArchive)
+}
+
+// closedArchiveEnd returns when the archive of the current cluster last
+// closed, or nil when the server has never closed one for it. A closed
+// interval means the server stopped archiving and started again, so everything
+// the new archive holds comes after that point.
+func closedArchiveEnd(server *v1.DatabaseServer) *metav1.Time {
+	if server.Status.Archive == nil {
+		return nil
+	}
+
+	var end *metav1.Time
+	for i := range server.Status.Archive.History {
+		record := &server.Status.Archive.History[i]
+		if record.ServerName != components.ClusterName(server) || record.To == nil {
+			continue
+		}
+		if end == nil || record.To.After(end.Time) {
+			end = record.To
+		}
+	}
+
+	return end
+}
+
+// buildComponents builds the four components in dependency order: cluster,
+// archive, contract, monitoring. The returned data cell holds the PostgreSQL
+// system identifier once the cluster component has reconciled.
+func (r *DatabaseServerReconciler) buildComponents(
+	server *v1.DatabaseServer,
+	resolved resolvedSpec,
+	archiveStart *metav1.Time,
+) (serverComponents, *concepts.Data[string], error) {
+	merged := resolved.merged
+	var built serverComponents
+
+	cluster, systemIdentifier, err := components.ClusterComponent(
+		server, merged, resolved.archive, resolved.platform,
+	)
+	if err != nil {
+		return built, nil, fmt.Errorf("building cluster component: %w", err)
+	}
+	built.cluster = cluster
+
+	built.archive, err = components.ArchiveComponent(server, merged, resolved.archive, archiveStart)
+	if err != nil {
+		return built, nil, fmt.Errorf("building archive component: %w", err)
+	}
+
+	built.contract, err = components.ContractComponent(server, merged)
+	if err != nil {
+		return built, nil, fmt.Errorf("building contract component: %w", err)
+	}
+
+	built.monitoring, err = components.MonitoringComponent(server, merged, r.podMonitorSupported())
+	if err != nil {
+		return built, nil, fmt.Errorf("building monitoring component: %w", err)
+	}
+
+	return built, systemIdentifier, nil
+}
+
+// reconcileComponents reconciles comps in order. It continues past a failing
+// component, so one failure does not stall the rest, and returns the first
+// error.
+func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext, comps []*component.Component) error {
+	var firstErr error
+	for _, comp := range comps {
+		if err := comp.Reconcile(ctx, recCtx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
+}
+
 // reconcileArchiveHistory keeps status.archive.history in step with the spec.
 //
 // While the server archives, the interval of the current archive opens once
 // the archive component reports ready. A recovery reaches only a point inside
 // a recorded interval, so the record must exist before the first restore, and
-// its start is when the first base backup completed: the archive cannot be
-// recovered to any point before that. The record is written once per cluster.
-// A later reconcile finds it and leaves it alone.
+// its start is when the first base backup of that archive completed: the
+// archive cannot be recovered to any point before that.
 //
 // When the spec drops the archive, the open record closes at now and no record
 // is written again. The closed records stay: the bucket still holds those
-// archives, and a server that archives again can recover from them.
+// archives, and a server that archives again can recover from them. A server
+// that archives again opens a record of its own, so the window with no archive
+// stays outside every interval and no restore can ask for a point in it.
 func reconcileArchiveHistory(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archiveComp *component.Component,
-	firstBaseBackup *metav1.Time,
+	archiveStart *metav1.Time,
 	now metav1.Time,
 ) {
 	if merged.Archive == nil {
-		closeArchiveRecord(server, now)
+		closeArchiveRecords(server, now)
 		return
 	}
 
-	if firstBaseBackup == nil || archiveComp.GetCondition(server).Status != metav1.ConditionTrue {
+	if archiveStart == nil || archiveComp.GetCondition(server).Status != metav1.ConditionTrue {
 		return
 	}
 
-	serverName := components.ClusterName(server)
+	if open := openArchiveRecord(server); open != nil {
+		if open.ServerName == components.ClusterName(server) {
+			return
+		}
+		// The server writes one archive at a time, so an archive of another
+		// cluster that is still open ended where this one starts.
+		open.To = archiveStart
+	}
+
 	if server.Status.Archive == nil {
 		server.Status.Archive = &v1.DatabaseServerArchiveStatus{}
 	}
-	for _, record := range server.Status.Archive.History {
-		if record.ServerName == serverName {
-			return
-		}
-	}
-
 	server.Status.Archive.History = append(server.Status.Archive.History, v1.ArchiveRecord{
-		ServerName: serverName,
-		From:       *firstBaseBackup,
+		ServerName: components.ClusterName(server),
+		From:       *archiveStart,
 	})
 }
 
-// closeArchiveRecord ends the interval of the archive the server writes now.
-// The server writes one archive at a time, and a record opens only for a
-// cluster that has none, so at most one record is open.
-func closeArchiveRecord(server *v1.DatabaseServer, at metav1.Time) {
+// openArchiveRecord returns the archive the server writes now, or nil when it
+// writes none. At most one record is open: closeArchiveRecords closes every
+// one of them, and reconcileArchiveHistory closes the open record before it
+// appends.
+func openArchiveRecord(server *v1.DatabaseServer) *v1.ArchiveRecord {
+	if server.Status.Archive == nil {
+		return nil
+	}
+
+	for i := range server.Status.Archive.History {
+		if server.Status.Archive.History[i].To == nil {
+			return &server.Status.Archive.History[i]
+		}
+	}
+
+	return nil
+}
+
+// closeArchiveRecords ends the interval of every archive the server still has
+// open. One is open at most, and closing all of them is what keeps that true
+// whatever an earlier version of this operator left behind.
+func closeArchiveRecords(server *v1.DatabaseServer, at metav1.Time) {
 	if server.Status.Archive == nil {
 		return
 	}
 
 	for i := range server.Status.Archive.History {
-		record := &server.Status.Archive.History[i]
-		if record.To == nil {
-			record.To = &at
-			return
+		if server.Status.Archive.History[i].To == nil {
+			server.Status.Archive.History[i].To = &at
 		}
 	}
 }
@@ -561,20 +652,6 @@ func (r *DatabaseServerReconciler) dataVolumes(
 	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 
 	return volumes, nil
-}
-
-// reconcileComponents reconciles comps in order. It continues past a failing
-// component, so one failure does not stall the rest, and returns the first
-// error.
-func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext, comps []*component.Component) error {
-	var firstErr error
-	for _, comp := range comps {
-		if err := comp.Reconcile(ctx, recCtx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-
-	return firstErr
 }
 
 // retryInterval returns the wait before the superuser Secret is looked at

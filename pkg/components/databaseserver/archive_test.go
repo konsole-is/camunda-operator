@@ -150,7 +150,7 @@ func TestArchiveSecretCarriesTheRegionUnderWorkloadIdentity(t *testing.T) {
 		},
 	}}
 
-	resolved, err := archive.resolve("my-cluster-db-archive")
+	resolved, err := archive.resolve(archiveServer())
 	require.NoError(t, err)
 
 	assert.Equal(t, map[string][]byte{regionKey: []byte("eu-west-1")}, resolved.secretData)
@@ -181,7 +181,7 @@ func TestArchiveEndpointAndPlaceholderRegion(t *testing.T) {
 		Credentials: &objectstore.Credentials{AccessKeyID: "root", SecretAccessKey: "secret"},
 	}
 
-	resolved, err := archive.resolve("my-cluster-db-archive")
+	resolved, err := archive.resolve(archiveServer())
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://minio.example.com", resolved.endpointURL)
@@ -199,7 +199,7 @@ func TestBaseBackupGuardHoldsTheArchiveUntilTheFirstBackup(t *testing.T) {
 	status, err := guard(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusBlocked, status.Status)
-	assert.Contains(t, status.Reason, `the first base backup of "my-cluster-db" has not completed yet`)
+	assert.Contains(t, status.Reason, `the first base backup of "my-cluster-db" is not complete yet`)
 
 	completed := metav1.NewTime(time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC))
 	guard = baseBackupGuard(archiveServer(), &completed)
