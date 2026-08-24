@@ -22,6 +22,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -110,6 +111,40 @@ func completeBaseBackup(server *v1.DatabaseServer, name string, at metav1.Time) 
 	backup.Status.Phase = cnpgv1.BackupPhaseCompleted
 	backup.Status.StoppedAt = &at
 	Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
+}
+
+// suspend asks the server to stop. Its instances stay up until CloudNativePG
+// confirms the hibernation, which hibernate writes.
+func suspend(server *v1.DatabaseServer) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.Suspend = true
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// hibernate writes the hibernation condition that CloudNativePG reports once
+// every instance pod of the cluster is gone. It waits for the operator to ask
+// for the hibernation first.
+func hibernate(server *v1.DatabaseServer) {
+	GinkgoHelper()
+
+	key := client.ObjectKey{Namespace: server.Namespace, Name: components.ClusterName(server)}
+	Eventually(func(g Gomega) {
+		var cluster cnpgv1.Cluster
+		g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+		g.Expect(cluster.Annotations).To(HaveKeyWithValue("cnpg.io/hibernation", "on"))
+		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type:    "cnpg.io/hibernation",
+			Status:  metav1.ConditionTrue,
+			Reason:  "Hibernated",
+			Message: "Cluster hibernated",
+		})
+		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
 }
 
 // setArchive puts archive on the latest revision of the server.
@@ -420,12 +455,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(k8sClient.Get(ctx, archiveKey, &corev1.Secret{})).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Spec.Suspend = true
-			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		suspend(server)
 
 		Eventually(func(g Gomega) {
 			var cluster cnpgv1.Cluster
@@ -452,6 +482,71 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(k8sClient.Get(ctx, clusterKey, &schedule)).To(Succeed())
 			g.Expect(schedule.Spec.Suspend).To(HaveValue(BeTrue()))
 		}, timeout, interval).Should(Succeed())
+
+		// This server was suspended before its first base backup. That backup
+		// can never complete now, so waiting on it would hold the server at
+		// not ready for as long as the suspension lasts.
+		hibernate(server)
+		expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+		Expect(ready.Reason).To(Equal(string(component.Suspended)))
+	})
+
+	// The suspension a server reached is what makes its bucket stop mattering.
+	// The suspension it merely asks for does not: its instances are still up,
+	// and holding the reconcile there would leave them running under a Ready
+	// that claims otherwise.
+	It("reports a bucket that goes away before the instances are down", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000008")
+		expectCondition(server, components.ConditionCluster, metav1.ConditionTrue)
+
+		suspend(server)
+		Expect(k8sClient.Delete(ctx, bucket)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(ready.Message).To(ContainSubstring(bucket.Name))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("keeps Suspended when the bucket goes away after the instances are down", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000009")
+
+		suspend(server)
+		hibernate(server)
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+		Expect(ready.Reason).To(Equal(string(component.Suspended)))
+
+		Expect(k8sClient.Delete(ctx, bucket)).To(Succeed())
+
+		// The server runs nothing, so the bucket matters again only when it
+		// comes back. Nothing is rewritten in the meantime.
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			held := conditionOf(server, v1.ConditionReady)
+			g.Expect(held).NotTo(BeNil())
+			g.Expect(held.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(held.Reason).To(Equal(string(component.Suspended)))
+			g.Expect(k8sClient.Get(ctx, clusterKey, &barmanobjectstore.ObjectStore{})).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-archive"}, &corev1.Secret{},
+			)).To(Succeed())
+		}, 2*time.Second, interval).Should(Succeed())
 	})
 
 	It("starts a new archive record when the archive comes back", func() {
@@ -569,12 +664,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
 		Expect(cluster.Annotations).To(HaveKeyWithValue("cnpg.io/hibernation", "off"))
 
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Spec.Suspend = true
-			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		suspend(server)
 
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())

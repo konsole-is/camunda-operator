@@ -65,9 +65,9 @@ type resolvedSpec struct {
 	merged   v1.DatabaseServerSpec
 	platform *v1.CamundaPlatformConfigSpec
 	archive  *components.ArchiveStorage
-	// holdForSuspension says that the archive of a suspended server that
-	// already reports Ready did not resolve. The reconcile then stops and
-	// leaves the condition alone: see preCheck.
+	// holdForSuspension says that the archive of a server whose instances are
+	// already down did not resolve. The reconcile then stops and leaves the
+	// conditions alone: see preCheck.
 	holdForSuspension bool
 }
 
@@ -234,9 +234,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // plugin cannot address all report InvalidReference. Any other error is a
 // transient API failure.
 //
-// A bucket that stops resolving under a suspended server that already reports
-// Ready is neither: the result carries holdForSuspension, and the caller stops
-// the reconcile so the server keeps the Suspended it honestly reached.
+// A bucket that stops resolving under a server whose instances are already
+// down is neither: the result carries holdForSuspension, and the caller stops
+// the reconcile so the server keeps the Suspended it reached.
 func (r *DatabaseServerReconciler) preCheck(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -294,15 +294,17 @@ func (r *DatabaseServerReconciler) preCheck(
 	case err == nil:
 		resolved.archive = archive
 
-	// A suspended server that already reached its desired state keeps
-	// reporting Suspended when its bucket stops resolving. Its pods are gone
-	// and it takes no backups, so the reference matters again only when it is
-	// unsuspended, and flapping Ready in the meantime tells the reader
-	// nothing they can act on. A server that never reached Ready is the other
-	// case: it has no honest condition to keep, so it reports the failure.
-	// Both references are watched, so either way the reconcile comes back.
-	case resolved.merged.Suspend && errors.As(err, &failure) &&
-		meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionReady):
+	// A server whose instances are already down keeps reporting Suspended
+	// when its bucket stops resolving. It runs nothing and takes no backups,
+	// so the reference matters again only when it is unsuspended, and
+	// flapping Ready in the meantime tells the reader nothing they can act
+	// on. Both references are watched, so the reconcile comes back.
+	//
+	// The test is the suspension the server reached, never the suspension it
+	// asked for. A running server whose spec has just turned to suspend still
+	// has instances to take down, and holding it there would leave them
+	// running under a Ready that says otherwise.
+	case resolved.merged.Suspend && errors.As(err, &failure) && instancesAreDown(server):
 		resolved.holdForSuspension = true
 
 	default:
@@ -310,6 +312,16 @@ func (r *DatabaseServerReconciler) preCheck(
 	}
 
 	return resolved, nil
+}
+
+// instancesAreDown reports whether CloudNativePG has taken the instances of the
+// server down. The cluster component reports Suspended only once CloudNativePG
+// has confirmed the hibernation, so a server that asked for a suspension and
+// has not reached it yet is still running.
+func instancesAreDown(server *v1.DatabaseServer) bool {
+	condition := meta.FindStatusCondition(server.Status.Conditions, components.ConditionCluster)
+
+	return condition != nil && condition.Reason == string(component.Suspended)
 }
 
 // resolvePlatform reads the platform config that the merged spec names. Only
@@ -451,28 +463,6 @@ func (r *DatabaseServerReconciler) archiveStart(
 	return earliest, nil
 }
 
-// clearReenabledArchiveCondition drops ArchiveReady when a server that had no
-// archive asks for one again.
-//
-// ocf carries the condition status of the previous reconcile into a component
-// that is converging again, and a disabled component carries True. Without
-// this, an archive that comes back would keep reporting ready while its first
-// base backup is still missing, and it would never correct itself: every
-// following reconcile copies that True forward again. A condition that is
-// absent starts from Unknown instead, which ocf derives from the resources.
-func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) {
-	if merged.Archive == nil {
-		return
-	}
-
-	condition := meta.FindStatusCondition(server.Status.Conditions, components.ConditionArchive)
-	if condition == nil || condition.Reason != string(component.Disabled) {
-		return
-	}
-
-	meta.RemoveStatusCondition(&server.Status.Conditions, components.ConditionArchive)
-}
-
 // closedArchiveEnd returns when the archive of the current cluster last
 // closed, or nil when the server has never closed one for it. A closed
 // interval means the server stopped archiving and started again, so everything
@@ -494,6 +484,35 @@ func closedArchiveEnd(server *v1.DatabaseServer) *metav1.Time {
 	}
 
 	return end
+}
+
+// clearReenabledArchiveCondition drops ArchiveReady when a server that had no
+// archive asks for one again.
+//
+// ocf carries the condition status of the previous reconcile into a component
+// that is converging again, and a disabled component carries True
+// (sourcehawk/operator-component-framework#194). Without this, an archive that
+// comes back would keep reporting ready while its first base backup is still
+// missing, and it would never correct itself: every following reconcile copies
+// that True forward again. A condition that is absent starts from Unknown
+// instead, which ocf derives from the resources.
+//
+// The same carry-over reaches ClusterReady when a suspended server is
+// unsuspended: Suspended also carries True, so the cluster reports True while
+// CloudNativePG is still bringing the instances back. That one corrects itself
+// once the instances are ready, so it is left to the upstream fix rather than
+// widened here.
+func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) {
+	if merged.Archive == nil {
+		return
+	}
+
+	condition := meta.FindStatusCondition(server.Status.Conditions, components.ConditionArchive)
+	if condition == nil || condition.Reason != string(component.Disabled) {
+		return
+	}
+
+	meta.RemoveStatusCondition(&server.Status.Conditions, components.ConditionArchive)
 }
 
 // buildComponents builds the four components in dependency order: cluster,

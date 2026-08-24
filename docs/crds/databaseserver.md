@@ -150,6 +150,8 @@ The `PodMonitor` is named `my-db-metrics`. On a Kubernetes cluster that does not
 
 The base backup schedule is suspended with the server. The instances are gone, so every slot the schedule reached would otherwise start a backup that cannot run. The archive itself stays configured, and the write-ahead log of the last moments before the instances go still reaches the bucket.
 
+`ArchiveReady` stays `True` for as long as the suspension lasts, even on a server suspended before its first base backup completed. There is nothing left to wait for while the schedule is suspended. The condition takes the first base backup into account again when you unsuspend the server.
+
 The published contract stays. A consumer that reads it reaches a server that does not answer, so suspend a server only when the cluster that uses it is suspended too.
 
 Set the field back to `false` and the instances come back on the same volumes.
@@ -240,7 +242,7 @@ status:
 | `ClusterReady` | `Healthy` | Every instance the spec asks for is ready. | Nothing. |
 | `ClusterReady` | `AliveFailing` | CloudNativePG reports a phase it cannot leave on its own. The message names the phase. | Read the CloudNativePG cluster for the reason. |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
-| `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
+| `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. A suspended server never does. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
 | `ArchiveReady` | `Healthy` | The archive holds a base backup and takes the write-ahead log. | Nothing. |
 | `ContractReady` | `Blocked` | The superuser Secret does not exist yet. | Wait for the instances to start. |
 | `ContractReady` | `Healthy` | The contract is published. | Nothing. |

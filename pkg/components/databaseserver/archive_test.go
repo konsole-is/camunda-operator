@@ -40,7 +40,7 @@ func archiveServer() *v1.DatabaseServer {
 	}
 }
 
-func TestArchiveDestinationPath(t *testing.T) {
+func TestDestinationPath(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -108,7 +108,7 @@ func TestArchiveDestinationPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tt.want, ArchiveDestinationPath(archiveServer(), tt.archive))
+			assert.Equal(t, tt.want, destinationPath(tt.archive.resolveOrNil(archiveServer())))
 		})
 	}
 }
@@ -195,17 +195,25 @@ func TestArchiveEndpointAndPlaceholderRegion(t *testing.T) {
 func TestBaseBackupGuardHoldsTheArchiveUntilTheFirstBackup(t *testing.T) {
 	t.Parallel()
 
-	guard := baseBackupGuard(archiveServer(), nil)
+	guard := baseBackupGuard(archiveServer(), nil, false)
 	status, err := guard(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusBlocked, status.Status)
 	assert.Contains(t, status.Reason, `the first base backup of "my-cluster-db" is not complete yet`)
 
 	completed := metav1.NewTime(time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC))
-	guard = baseBackupGuard(archiveServer(), &completed)
+	guard = baseBackupGuard(archiveServer(), &completed, false)
 	status, err = guard(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusUnblocked, status.Status)
+
+	// A suspended server has nothing to wait on: its schedule is suspended
+	// with it, so no base backup can ever complete.
+	guard = baseBackupGuard(archiveServer(), nil, true)
+	status, err = guard(cnpgv1.Cluster{})
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GuardStatusUnblocked, status.Status)
+	assert.Contains(t, status.Reason, "suspended")
 }
 
 // The retention the operator enforces on the bucket is the number the contract

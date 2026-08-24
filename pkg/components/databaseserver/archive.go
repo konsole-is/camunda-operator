@@ -94,18 +94,6 @@ func ArchiveSecretName(server *v1.DatabaseServer) string {
 	return server.Name + archiveSecretSuffix
 }
 
-// ArchiveDestinationPath returns the bucket URL that holds the archives of the
-// server, in the form the Barman Cloud plugin addresses the provider. It is
-// empty when the bucket does not resolve.
-func ArchiveDestinationPath(server *v1.DatabaseServer, archive *ArchiveStorage) string {
-	resolved := archive.resolveOrNil(server)
-	if resolved == nil {
-		return ""
-	}
-
-	return resolved.destinationPath
-}
-
 // ValidateArchiveStorage reports why a bucket cannot hold the archive of a
 // server, or nil when it can. The caller turns the message into a pre-check
 // failure on the server.
@@ -171,7 +159,7 @@ func ArchiveComponent(
 	recoverable, err := cnpgcluster.NewBuilder(&cnpgv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: ClusterName(server), Namespace: server.Namespace},
 	}).
-		WithGuard(baseBackupGuard(server, archiveStart)).
+		WithGuard(baseBackupGuard(server, archiveStart, merged.Suspend)).
 		Build()
 	if err != nil {
 		return nil, err
@@ -191,12 +179,20 @@ func ArchiveComponent(
 // baseBackupGuard blocks the archive until a base backup of the archive the
 // server writes now has completed. archiveStart is when the earliest such
 // backup completed, or nil when none has.
+//
+// A suspended server is never blocked. Its schedule is suspended with it, so
+// no base backup can complete and there is nothing to wait on. Blocking there
+// would hold the archive of a server that was suspended before its first
+// backup at False for as long as the suspension lasts. The guard engages
+// again when the server comes back.
 func baseBackupGuard(
 	server *v1.DatabaseServer,
 	archiveStart *metav1.Time,
+	suspended bool,
 ) func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
 	return func(cnpgv1.Cluster) (concepts.GuardStatusWithReason, error) {
-		if archiveStart != nil {
+		switch {
+		case archiveStart != nil:
 			return concepts.GuardStatusWithReason{
 				Status: concepts.GuardStatusUnblocked,
 				Reason: fmt.Sprintf(
@@ -204,12 +200,19 @@ func baseBackupGuard(
 					archiveStart.UTC().Format(time.RFC3339),
 				),
 			}, nil
-		}
 
-		return concepts.GuardStatusWithReason{
-			Status: concepts.GuardStatusBlocked,
-			Reason: fmt.Sprintf("the first base backup of %q is not complete yet", ClusterName(server)),
-		}, nil
+		case suspended:
+			return concepts.GuardStatusWithReason{
+				Status: concepts.GuardStatusUnblocked,
+				Reason: "the server is suspended, so no base backup can complete",
+			}, nil
+
+		default:
+			return concepts.GuardStatusWithReason{
+				Status: concepts.GuardStatusBlocked,
+				Reason: fmt.Sprintf("the first base backup of %q is not complete yet", ClusterName(server)),
+			}, nil
+		}
 	}
 }
 
@@ -277,8 +280,9 @@ func objectStore(
 	return store
 }
 
-// destinationPath returns the bucket URL of the resolved archive, or the empty
-// string when the bucket did not resolve.
+// destinationPath returns the bucket URL that holds the archives of the
+// server, in the form the Barman Cloud plugin addresses the provider, or the
+// empty string when the bucket did not resolve.
 func destinationPath(resolved *barmanArchive) string {
 	if resolved == nil {
 		return ""
@@ -412,11 +416,13 @@ func (a *ArchiveStorage) resolve(server *v1.DatabaseServer) (*barmanArchive, err
 		return &barmanobjectstore.SecretKeySelector{Name: secretName, Key: key}
 	}
 
+	served := false
 	switch spec.Type {
 	case v1.ObjectStorageTypeS3:
 		if spec.S3 == nil {
 			break
 		}
+		served = true
 		resolved.destinationRoot = "s3://" + spec.S3.BucketName
 		resolved.endpointURL = strings.TrimRight(spec.S3.Endpoint, "/")
 		resolved.s3Credentials = &barmanobjectstore.S3Credentials{}
@@ -433,12 +439,11 @@ func (a *ArchiveStorage) resolve(server *v1.DatabaseServer) (*barmanArchive, err
 			resolved.s3Credentials.InheritFromIAMRole = true
 		}
 
-		return a.withDestinationPath(resolved, server), nil
-
 	case v1.ObjectStorageTypeGCS:
 		if spec.GCS == nil {
 			break
 		}
+		served = true
 		resolved.destinationRoot = "gs://" + spec.GCS.BucketName
 		resolved.googleCredentials = &barmanobjectstore.GoogleCredentials{}
 		if a.Credentials != nil {
@@ -448,12 +453,11 @@ func (a *ArchiveStorage) resolve(server *v1.DatabaseServer) (*barmanArchive, err
 			resolved.googleCredentials.GKEEnvironment = true
 		}
 
-		return a.withDestinationPath(resolved, server), nil
-
 	case v1.ObjectStorageTypeAzureBlob:
 		if spec.AzureBlob == nil {
 			break
 		}
+		served = true
 		// barman-cloud addresses a container through the service endpoint of
 		// the account, so a sovereign cloud and an emulator need no setting
 		// beyond the endpoint the contract already carries.
@@ -467,31 +471,33 @@ func (a *ArchiveStorage) resolve(server *v1.DatabaseServer) (*barmanArchive, err
 		} else {
 			resolved.azureCredentials.InheritFromAzureAD = true
 		}
-
-		return a.withDestinationPath(resolved, server), nil
 	}
 
-	return nil, fmt.Errorf(
-		"ObjectStorageConfig %q declares type %s without the matching block",
-		a.Config.Name, spec.Type,
-	)
+	if !served {
+		return nil, fmt.Errorf(
+			"ObjectStorageConfig %q declares type %s without the matching block",
+			a.Config.Name, spec.Type,
+		)
+	}
+
+	a.setDestinationPath(resolved, server)
+
+	return resolved, nil
 }
 
-// withDestinationPath fills in the bucket URL of the archive of server: the
-// provider-addressing root of the resolved block, the base path of the
+// setDestinationPath sets the bucket URL of the archive of server on resolved:
+// the provider-addressing root of the resolved block, the base path of the
 // contract, and the prefix that holds this server alone.
-func (a *ArchiveStorage) withDestinationPath(
+func (a *ArchiveStorage) setDestinationPath(
 	resolved *barmanArchive,
 	server *v1.DatabaseServer,
-) *barmanArchive {
+) {
 	segments := []string{resolved.destinationRoot}
 	if base := a.Config.BasePath(); base != "" {
 		segments = append(segments, base)
 	}
 	segments = append(segments, archivePathSegment, server.Namespace, server.Name)
 	resolved.destinationPath = strings.Join(segments, "/")
-
-	return resolved
 }
 
 // resolveOrNil resolves the bucket and drops the reason it could not. The
