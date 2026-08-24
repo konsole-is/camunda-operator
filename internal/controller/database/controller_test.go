@@ -647,6 +647,77 @@ var _ = Describe("Database controller", func() {
 		}, "3s", interval).Should(MatchError(ContainSubstring("not found")))
 	})
 
+	// First creation wins even when the older Database resolves its server
+	// last. Its claim reaches the index only with the flush that ends the
+	// reconcile which resolved the server, so on that reconcile it asks the
+	// index a question its own claim is missing from.
+	It("hands the claim to the older Database that resolved its server last", func() {
+		pg, err := testPostgres()
+		Expect(err).NotTo(HaveOccurred())
+
+		// The older namespace sorts first, so age and the tiebreak agree.
+		older := newDatabaseNamespacePrefixed("db-ns-a")
+		olderServer := unprobedServer(older, createAdminSecret(older), pg.Host)
+		olderDB := databaseFor(olderServer.Name, older)
+		olderDB.Name = "lateta-" + utilrand.String(8)
+		createDatabase(olderDB)
+		expectDatabaseReady(
+			olderDB, metav1.ConditionFalse, v1.ReasonServerIdentityUnknown, "system identifier",
+		)
+
+		By("letting the newer Database claim and record while the older one waits")
+		newer := newDatabaseNamespacePrefixed("db-ns-z")
+		newerServer := createDatabaseServerAt(newer, pg.Host)
+		newerDB := databaseFor(newerServer, newer)
+		newerDB.Name = "latetz-" + utilrand.String(8)
+		newerDB.Spec.DatabaseName = olderDB.Spec.DatabaseName
+		createDatabase(newerDB)
+		expectDatabaseReady(newerDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+
+		var recorded v1.Database
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(newerDB), &recorded)).To(Succeed())
+		Expect(recorded.Status.CollisionKey).NotTo(BeEmpty())
+
+		By("giving the older contract its identity")
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(olderServer), &contract)).To(Succeed())
+			contract.Status.SystemIdentifier = serverSystemIdentifier()
+			g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("handing the claim to the older Database")
+		expectDatabaseReady(olderDB, metav1.ConditionTrue, v1.ReasonHealthy, "bindings: Component is healthy.")
+		expectDatabaseReady(
+			newerDB, metav1.ConditionFalse, v1.ReasonInvalidReference,
+			fmt.Sprintf(
+				"Database %s/%s already claims database %q",
+				older, olderDB.Name, olderDB.Spec.DatabaseName,
+			),
+		)
+
+		By("withdrawing the bindings of the Database that lost")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: newer, Name: newerDB.Name,
+				}, &v1.DatabaseConfig{},
+			)).To(MatchError(ContainSubstring("not found")))
+			g.Expect(k8sClient.Get(
+				ctx, types.NamespacedName{
+					Namespace: newer, Name: newerDB.Name + "-credentials",
+				}, &corev1.Secret{},
+			)).To(MatchError(ContainSubstring("not found")))
+		}, timeout, interval).Should(Succeed())
+
+		By("keeping the bindings of the Database that won")
+		Expect(k8sClient.Get(
+			ctx, types.NamespacedName{
+				Namespace: older, Name: olderDB.Name,
+			}, &v1.DatabaseConfig{},
+		)).To(Succeed())
+	})
+
 	// Two Databases of one namespace can name one DatabaseConfig explicitly.
 	// Only the one that owns it may delete it, so the loser withdraws its own
 	// Secrets and leaves the contract of the winner where it is.

@@ -439,7 +439,7 @@ func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Da
 		return fmt.Errorf("listing databases claiming %q: %w", key, err)
 	}
 
-	winner := components.CollisionWinner(list.Items)
+	winner := components.CollisionWinner(withSelf(list.Items, database))
 	if winner == nil ||
 		(winner.Namespace == database.Namespace && winner.Name == database.Name) {
 		return nil
@@ -452,6 +452,23 @@ func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Da
 			client.ObjectKeyFromObject(winner), database.Spec.DatabaseName,
 		),
 	})
+}
+
+// withSelf adds database to the claimants of its own key, unless the list
+// already holds it. The index is served from status.collisionKey, so a
+// Database that resolved its server for the first time is not in the list it
+// just asked for: its claim is staged in memory and reaches the cluster only
+// with the flush at the end of this reconcile. Without it the winner rule sees
+// a single newer claimant, hands it the claim, and the older Database loses a
+// claim that first-creation-wins gives it.
+func withSelf(claimants []v1.Database, database *v1.Database) []v1.Database {
+	for i := range claimants {
+		if claimants[i].Namespace == database.Namespace && claimants[i].Name == database.Name {
+			return claimants
+		}
+	}
+
+	return append(claimants, *database)
 }
 
 // connect opens the admin connection to server and pings it. Any failure maps
