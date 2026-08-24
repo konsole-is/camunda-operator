@@ -114,16 +114,9 @@ func IsCNPGInstalled() bool {
 	return true
 }
 
-// InstallCNPG installs the CloudNativePG operator of CNPGVersion and waits
-// until its Deployment is rolled out. Its manifest creates the cnpg-system
-// namespace that InstallBarmanPlugin installs into.
-//
-// It lowers the CPU request of the operator on the way. One kind node carries
-// the whole run, and the sum of the requests on it is what decides whether the
-// broker pod of an orchestration cluster is scheduled at all. The release asks
-// for 100m of a node that has none to spare, and the operator spends most of a
-// run idle. The limit of the release stays, so the change moves where the pod
-// is scheduled and not what it can use.
+// InstallCNPG installs the CloudNativePG operator of CNPGVersion, lowers its
+// CPU request, and waits until its Deployment is rolled out. Its manifest
+// creates the cnpg-system namespace that InstallBarmanPlugin installs into.
 func InstallCNPG() error {
 	branch, err := cnpgReleaseBranch(CNPGVersion())
 	if err != nil {
@@ -134,6 +127,10 @@ func InstallCNPG() error {
 		return err
 	}
 
+	// One kind node carries the whole run, and the sum of the requests on it
+	// decides whether the broker pod of an orchestration cluster is scheduled
+	// at all. The release asks for 100m and the operator idles for most of a
+	// run. The limit of the release stays, so the pod keeps what it can use.
 	if _, err := Run(exec.Command(
 		"kubectl", "patch", "deployment", cnpgDeployment, "-n", cnpgNamespace, "--type=json",
 		"-p", `[{"op":"add","path":"/spec/template/spec/containers/0/resources/requests/cpu","value":"10m"}]`,
