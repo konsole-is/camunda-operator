@@ -38,12 +38,14 @@ const (
 )
 
 const (
-	// envCNPGVersion and envBarmanPluginVersion name the CloudNativePG
-	// release and the Barman Cloud plugin release that the e2e suite
-	// installs. The matrix entry of the run sets both, and the suite fails at
-	// start when one is unset.
-	envCNPGVersion         = "CNPG_VERSION"
-	envBarmanPluginVersion = "BARMAN_PLUGIN_VERSION"
+	// EnvCNPGVersion names the CloudNativePG release that the e2e suite
+	// installs. The matrix entry of the run sets it, and the suite fails at
+	// start when it is unset.
+	EnvCNPGVersion = "CNPG_VERSION"
+	// EnvBarmanPluginVersion names the Barman Cloud plugin release that the
+	// e2e suite installs. The matrix entry of the run sets it, and the suite
+	// fails at start when it is unset.
+	EnvBarmanPluginVersion = "BARMAN_PLUGIN_VERSION"
 	// cnpgManifestURLTmpl addresses the release manifest of CloudNativePG:
 	// the release branch of the minor, then the file of the patch.
 	cnpgManifestURLTmpl = "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/%s/releases/cnpg-%s.yaml"
@@ -80,11 +82,11 @@ func BarmanCRDPath() (string, error) {
 
 // CNPGVersion returns the CloudNativePG release that the suite installs, from
 // the matrix entry of the run.
-func CNPGVersion() string { return os.Getenv(envCNPGVersion) }
+func CNPGVersion() string { return os.Getenv(EnvCNPGVersion) }
 
 // BarmanPluginVersion returns the Barman Cloud plugin release that the suite
 // installs, from the matrix entry of the run.
-func BarmanPluginVersion() string { return os.Getenv(envBarmanPluginVersion) }
+func BarmanPluginVersion() string { return os.Getenv(EnvBarmanPluginVersion) }
 
 // IsCNPGInstalled reports whether the cluster serves both CloudNativePG and
 // the Barman Cloud plugin: the two CRDs this operator writes, and the two
@@ -150,7 +152,7 @@ func InstallCNPG() error {
 func InstallBarmanPlugin() error {
 	version := BarmanPluginVersion()
 	if version == "" {
-		return fmt.Errorf("%s is not set", envBarmanPluginVersion)
+		return fmt.Errorf("%s is not set", EnvBarmanPluginVersion)
 	}
 
 	if err := applyManifest(fmt.Sprintf(barmanPluginManifestURLTmpl, version)); err != nil {
@@ -166,7 +168,7 @@ func InstallBarmanPlugin() error {
 func UninstallCNPG() {
 	version := BarmanPluginVersion()
 	if version == "" {
-		warnError(fmt.Errorf("%s is not set", envBarmanPluginVersion))
+		warnError(fmt.Errorf("%s is not set", EnvBarmanPluginVersion))
 	} else {
 		deleteManifest(fmt.Sprintf(barmanPluginManifestURLTmpl, version))
 	}
@@ -186,12 +188,12 @@ func UninstallCNPG() {
 func cnpgReleaseBranch(version string) (string, error) {
 	major, rest, found := strings.Cut(version, ".")
 	if !found {
-		return "", fmt.Errorf("%s=%q names no CloudNativePG release", envCNPGVersion, version)
+		return "", fmt.Errorf("%s=%q names no CloudNativePG release", EnvCNPGVersion, version)
 	}
 
 	minor, _, found := strings.Cut(rest, ".")
 	if !found {
-		return "", fmt.Errorf("%s=%q names no CloudNativePG release", envCNPGVersion, version)
+		return "", fmt.Errorf("%s=%q names no CloudNativePG release", EnvCNPGVersion, version)
 	}
 
 	return "release-" + major + "." + minor, nil

@@ -19,6 +19,10 @@ limitations under the License.
 
 package e2e
 
+import (
+	"github.com/konsole-is/camunda-operator/test/utils"
+)
+
 // The environment of one matrix entry: the file test/e2e/matrix/<minor>.env
 // that make test-e2e exports before it runs the suite. The versions are
 // required, and the suite fails at start when one is unset. The label
@@ -33,8 +37,6 @@ const (
 	envConsoleVersion       = "CAMUNDA_CONSOLE_VERSION"
 	envWebModelerVersion    = "CAMUNDA_WEB_MODELER_VERSION"
 	envKeycloakVersion      = "KEYCLOAK_VERSION"
-	envCNPGVersion          = "CNPG_VERSION"
-	envBarmanPluginVersion  = "BARMAN_PLUGIN_VERSION"
 	envLabels               = "E2E_LABELS"
 )
 
@@ -49,8 +51,8 @@ var versionEnv = []string{
 	envConsoleVersion,
 	envWebModelerVersion,
 	envKeycloakVersion,
-	envCNPGVersion,
-	envBarmanPluginVersion,
+	utils.EnvCNPGVersion,
+	utils.EnvBarmanPluginVersion,
 }
 
 // The label of each top-level container of the suite. E2E_LABELS selects
