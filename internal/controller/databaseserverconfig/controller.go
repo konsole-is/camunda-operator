@@ -62,8 +62,8 @@ const (
 
 // DatabaseServerConfigReconciler validates DatabaseServerConfig contracts. It
 // checks the admin credentials Secret reference, reaches the server with those
-// credentials, and publishes the major version that the server reports. It
-// never provisions anything.
+// credentials, and publishes the major version and the system identifier that
+// the server reports. It never provisions anything.
 type DatabaseServerConfigReconciler struct {
 	client.Client
 	// APIReader reads directly from the API server and bypasses the cache.
@@ -71,9 +71,11 @@ type DatabaseServerConfigReconciler struct {
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 
-	// probe reaches the server and reads its major version. Nil means
-	// probeServer. The tests count and stub it.
-	probe func(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error)
+	// probe reaches the server and reads its major version and its system
+	// identifier. Nil means probeServer. The tests count and stub it.
+	probe func(
+		ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
+	) (version, systemIdentifier string, err error)
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverconfigs,verbs=get;list;watch
@@ -115,8 +117,8 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 // condition and the time until the next check. If the admin credentials do
 // not resolve, the reason is MissingSecret. If the server does not answer
 // them, the reason is ConnectionFailed and the next check is after
-// connectionRetryInterval. When the server reports its version, the reason
-// is Healthy and validate records the version on cfg. If the probe is still
+// connectionRetryInterval. When the server answers, the reason is Healthy and
+// validate records the version and the system identifier on cfg. If the probe is still
 // fresh for the current spec and Secret, validate does not repeat it. The
 // recorded Ready stands and the requeue is the remaining part of the
 // interval. It returns an error only for transient API failures.
@@ -129,7 +131,7 @@ func (r *DatabaseServerConfigReconciler) validate(
 	secret, msg, err := secretref.Get(
 		ctx, r.APIReader,
 		types.NamespacedName{
-			Namespace: ref.Namespace,
+			Namespace: cfg.Namespace,
 			Name:      ref.Name,
 		},
 		ref.UsernameKey, ref.PasswordKey,
@@ -145,7 +147,7 @@ func (r *DatabaseServerConfigReconciler) validate(
 		return *meta.FindStatusCondition(cfg.Status.Conditions, v1.ConditionReady), remaining, nil
 	}
 
-	major, err := r.probeServer(
+	major, systemIdentifier, err := r.probeServer(
 		ctx, cfg, string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]),
 	)
 	if err != nil {
@@ -159,6 +161,7 @@ func (r *DatabaseServerConfigReconciler) validate(
 
 	now := metav1.Now()
 	cfg.Status.ServerVersion = major
+	cfg.Status.SystemIdentifier = systemIdentifier
 	cfg.Status.ProbedAt = &now
 	cfg.Status.ProbedSecretVersion = secret.ResourceVersion
 
@@ -199,7 +202,7 @@ func probeIsFresh(cfg *v1.DatabaseServerConfig, secretVersion string, now time.T
 // probeServer reaches the server through the injected probe, or the default.
 func (r *DatabaseServerConfigReconciler) probeServer(
 	ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
-) (string, error) {
+) (version, systemIdentifier string, err error) {
 	if r.probe != nil {
 		return r.probe(ctx, cfg, user, password)
 	}
@@ -208,21 +211,23 @@ func (r *DatabaseServerConfigReconciler) probeServer(
 }
 
 // probe opens the admin connection to the server that cfg describes and reads
-// the major version that it reports. Any failure means that the server, as
-// declared, is not usable with these credentials. The whole probe ends
-// within probeTimeout.
-func probe(ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string) (string, error) {
+// the major version and the system identifier that it reports. Any failure
+// means that the server, as declared, is not usable with these credentials.
+// The whole probe ends within probeTimeout.
+func probe(
+	ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
+) (version, systemIdentifier string, err error) {
 	return probeWithin(ctx, probeTimeout, cfg, user, password)
 }
 
 // probeWithin is probe with an explicit deadline for the connection and the
-// query together.
+// queries together.
 func probeWithin(
 	ctx context.Context,
 	timeout time.Duration,
 	cfg *v1.DatabaseServerConfig,
 	user, password string,
-) (string, error) {
+) (version, systemIdentifier string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -233,11 +238,21 @@ func probeWithin(
 		Password: password,
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer admin.Close()
 
-	return admin.ServerVersion(ctx)
+	version, err = admin.ServerVersion(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	systemIdentifier, err = admin.SystemIdentifier(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	return version, systemIdentifier, nil
 }
 
 // SetupWithManager registers the controller, an index of CRs by referenced
@@ -246,8 +261,10 @@ func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseServerConfig{},
 		databaseServerConfigSecretRefsField, func(o client.Object) []string {
-			ref := o.(*v1.DatabaseServerConfig).Spec.AdminCredentialsSecretRef
-			return []string{refindex.NamespacedKey(ref.Namespace, ref.Name)}
+			cfg := o.(*v1.DatabaseServerConfig)
+			return []string{
+				refindex.NamespacedKey(cfg.Namespace, cfg.Spec.AdminCredentialsSecretRef.Name),
+			}
 		},
 	); err != nil {
 		return err

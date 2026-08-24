@@ -48,15 +48,17 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
 
-// databaseServerRefField indexes Database CRs by spec.serverRef. Events for a
+// databaseServerRefField indexes Database CRs by the DatabaseServerConfig
+// they reference, keyed as "<namespace>/<serverRef>". Events for a
 // DatabaseServerConfig or its admin Secret map back to the Databases that
 // reference it.
 const databaseServerRefField = "database.spec.serverRef"
 
-// databaseCollisionField indexes Database CRs by the server-scoped logical
-// database that they claim. The collision rule can then list all claimants
-// with one field-indexed query.
-const databaseCollisionField = "database.spec.serverDatabase"
+// databaseCollisionField indexes Database CRs by the claim they recorded in
+// status.collisionKey. The collision rule can then list every claimant of one
+// logical database on one PostgreSQL instance, across all namespaces, with
+// one field-indexed query.
+const databaseCollisionField = "database.status.serverDatabase"
 
 // connectionRetryInterval is the wait before the controller retries a server
 // whose connection pre-check failed. The controller cannot watch the external
@@ -66,7 +68,7 @@ const connectionRetryInterval = 30 * time.Second
 // DatabaseReconciler bootstraps a logical database and its users on an
 // existing PostgreSQL server over plain SQL. It publishes the credential
 // Secrets, the DatabaseConfig, and the optional SecondaryStorageConfig in the
-// target namespace of the CR.
+// namespace of the CR.
 type DatabaseReconciler struct {
 	client.Client
 	// APIReader reads without the cache. The admin Secret and the generated
@@ -93,10 +95,11 @@ type DatabaseReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
-// Reconcile converges a Database. The pre-checks resolve the server, its admin
-// credentials, the collision rule, and the connection. A failed pre-check
-// stops the reconcile and reports its documented Ready reason. The SQL
-// bootstrap then converges the logical database, the roles, and the grants.
+// Reconcile converges a Database. The pre-checks resolve the server, its
+// identity, its admin credentials, the collision rule, and the connection. A
+// failed pre-check stops the reconcile and reports its documented Ready
+// reason. The SQL bootstrap then converges the logical database, the roles,
+// and the grants.
 // This step always runs before the bindings component publishes the
 // credential Secrets. A published Secret then never names a password that the
 // server does not know.
@@ -214,16 +217,31 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 	return nil
 }
 
-// preCheck runs the documented pre-checks in order: server reference, admin
-// credentials Secret, collision rule, connection. It returns the connected
-// Bootstrapper, which the caller closes. A failed check returns a
-// *conditions.PreCheckFailure that carries its Ready reason. Any other error
-// is a transient API failure.
+// preCheck runs the documented pre-checks in order: server reference, server
+// identity, admin credentials Secret, collision rule, connection. It records
+// the claim of the Database in status.collisionKey as soon as the identity is
+// known, so the index that the collision rule lists over is served from what
+// the operator resolved. It returns the connected Bootstrapper, which the
+// caller closes. A failed check returns a *conditions.PreCheckFailure that
+// carries its Ready reason. Any other error is a transient API failure.
 func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database) (pgbootstrap.Bootstrapper, error) {
 	server, err := r.resolveServer(ctx, database)
 	if err != nil {
 		return nil, err
 	}
+
+	if server.Status.SystemIdentifier == "" {
+		return nil, &conditions.PreCheckFailure{
+			Reason: v1.ReasonServerIdentityUnknown,
+			Message: fmt.Sprintf(
+				"DatabaseServerConfig %s/%s has not published its system identifier yet",
+				server.Namespace, server.Name,
+			),
+		}
+	}
+	database.Status.CollisionKey = components.CollisionKey(
+		server.Status.SystemIdentifier, database.Spec.DatabaseName,
+	)
 
 	user, password, err := r.adminCredentials(ctx, server)
 	if err != nil {
@@ -237,17 +255,20 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 	return connect(ctx, server, user, password)
 }
 
-// resolveServer fetches the DatabaseServerConfig that spec.serverRef names. A
-// dangling reference maps to InvalidReference.
+// resolveServer fetches the DatabaseServerConfig that spec.serverRef names in
+// the namespace of the Database. A dangling reference maps to
+// InvalidReference.
 func (r *DatabaseReconciler) resolveServer(
 	ctx context.Context, database *v1.Database,
 ) (*v1.DatabaseServerConfig, error) {
+	key := types.NamespacedName{Namespace: database.Namespace, Name: database.Spec.ServerRef}
+
 	var server v1.DatabaseServerConfig
-	if err := r.Get(ctx, types.NamespacedName{Name: database.Spec.ServerRef}, &server); err != nil {
+	if err := r.Get(ctx, key, &server); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, &conditions.PreCheckFailure{
 				Reason:  v1.ReasonInvalidReference,
-				Message: fmt.Sprintf("DatabaseServerConfig %q not found", database.Spec.ServerRef),
+				Message: fmt.Sprintf("DatabaseServerConfig %q not found", key),
 			}
 		}
 		return nil, err
@@ -263,7 +284,7 @@ func (r *DatabaseReconciler) adminCredentials(
 	ctx context.Context, server *v1.DatabaseServerConfig,
 ) (user, password string, err error) {
 	ref := server.Spec.AdminCredentialsSecretRef
-	key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
+	key := types.NamespacedName{Namespace: server.Namespace, Name: ref.Name}
 
 	msg, err := secretref.CheckKeys(ctx, r.APIReader, key, ref.UsernameKey, ref.PasswordKey)
 	if err != nil {
@@ -282,28 +303,28 @@ func (r *DatabaseReconciler) adminCredentials(
 }
 
 // checkCollision applies the first-creation-wins rule to the logical database
-// that this CR claims. If an older Database claims the same serverRef and
-// databaseName, the failure names that winner.
+// that this CR claims. The claim belongs to the PostgreSQL instance, so the
+// list covers every namespace: an older Database that reaches the same
+// instance through another contract wins, and the failure names it.
 func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Database) error {
+	key := database.Status.CollisionKey
+
 	var list v1.DatabaseList
-	if err := r.List(
-		ctx,
-		&list,
-		client.MatchingFields{databaseCollisionField: components.CollisionKey(database)},
-	); err != nil {
-		return fmt.Errorf("listing databases claiming %q: %w", components.CollisionKey(database), err)
+	if err := r.List(ctx, &list, client.MatchingFields{databaseCollisionField: key}); err != nil {
+		return fmt.Errorf("listing databases claiming %q: %w", key, err)
 	}
 
 	winner := components.CollisionWinner(list.Items)
-	if winner == nil || winner.Name == database.Name {
+	if winner == nil ||
+		(winner.Namespace == database.Namespace && winner.Name == database.Name) {
 		return nil
 	}
 
 	return &conditions.PreCheckFailure{
 		Reason: v1.ReasonInvalidReference,
 		Message: fmt.Sprintf(
-			"Database %q already claims database %q on server %q",
-			winner.Name, database.Spec.DatabaseName, database.Spec.ServerRef,
+			"Database %s/%s already claims database %q on the same server",
+			winner.Namespace, winner.Name, database.Spec.DatabaseName,
 		),
 	}
 }
@@ -326,8 +347,10 @@ func connect(
 	}
 	if err != nil {
 		return nil, &conditions.PreCheckFailure{
-			Reason:  v1.ReasonConnectionFailed,
-			Message: fmt.Sprintf("Connecting to DatabaseServerConfig %q: %v", server.Name, err),
+			Reason: v1.ReasonConnectionFailed,
+			Message: fmt.Sprintf(
+				"Connecting to DatabaseServerConfig %s/%s: %v", server.Namespace, server.Name, err,
+			),
 		}
 	}
 
@@ -335,31 +358,35 @@ func connect(
 }
 
 // enqueueForAdminSecret maps a Secret event to every Database whose server
-// names that Secret as the admin credentials Secret. Server configs are few,
-// so the handler scans them directly. The affected Databases resolve through
-// the serverRef index.
+// names that Secret as the admin credentials Secret. A contract names a
+// Secret of its own namespace, so the scan covers the contracts of the
+// Secret's namespace only. The affected Databases resolve through the
+// serverRef index.
 func (r *DatabaseReconciler) enqueueForAdminSecret() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		var servers v1.DatabaseServerConfigList
-		if err := r.List(ctx, &servers); err != nil {
+		if err := r.List(ctx, &servers, client.InNamespace(o.GetNamespace())); err != nil {
 			logf.FromContext(ctx).Error(err, "listing database server configs for admin Secret enqueue")
 			return nil
 		}
 
 		var reqs []reconcile.Request
 		for _, server := range servers.Items {
-			ref := server.Spec.AdminCredentialsSecretRef
-			if ref.Namespace != o.GetNamespace() || ref.Name != o.GetName() {
+			if server.Spec.AdminCredentialsSecretRef.Name != o.GetName() {
 				continue
 			}
 
 			var databases v1.DatabaseList
-			if err := r.List(ctx, &databases, client.MatchingFields{databaseServerRefField: server.Name}); err != nil {
+			if err := r.List(ctx, &databases, client.MatchingFields{
+				databaseServerRefField: refindex.NamespacedKey(server.Namespace, server.Name),
+			}); err != nil {
 				logf.FromContext(ctx).Error(err, "listing databases for admin Secret enqueue", "server", server.Name)
 				continue
 			}
-			for _, database := range databases.Items {
-				reqs = append(reqs, reconcile.Request{NamespacedName: types.NamespacedName{Name: database.Name}})
+			for i := range databases.Items {
+				reqs = append(reqs, reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(&databases.Items[i]),
+				})
 			}
 		}
 		return reqs
@@ -393,7 +420,8 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.Database{},
 		databaseServerRefField, func(o client.Object) []string {
-			return []string{o.(*v1.Database).Spec.ServerRef}
+			db := o.(*v1.Database)
+			return []string{refindex.NamespacedKey(db.Namespace, db.Spec.ServerRef)}
 		},
 	); err != nil {
 		return err
@@ -402,7 +430,11 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.Database{},
 		databaseCollisionField, func(o client.Object) []string {
-			return []string{components.CollisionKey(o.(*v1.Database))}
+			key := o.(*v1.Database).Status.CollisionKey
+			if key == "" {
+				return nil
+			}
+			return []string{key}
 		},
 	); err != nil {
 		return err
@@ -417,7 +449,7 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&v1.DatabaseServerConfig{},
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.DatabaseList{},
-				databaseServerRefField, refindex.ObjectName,
+				databaseServerRefField, refindex.ObjectNamespacedName,
 			),
 		).
 		Watches(&corev1.Secret{}, r.enqueueForAdminSecret(), builder.OnlyMetadata).
@@ -426,7 +458,7 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			refindex.Enqueue(
 				mgr.GetClient(), &v1.DatabaseList{},
 				databaseCollisionField, func(o client.Object) string {
-					return components.CollisionKey(o.(*v1.Database))
+					return o.(*v1.Database).Status.CollisionKey
 				},
 			),
 		).

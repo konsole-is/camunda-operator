@@ -273,7 +273,8 @@ func (res *resolver) resolveRDBMSStorage(
 	}
 
 	var server v1.DatabaseServerConfig
-	if err := res.get(ctx, client.ObjectKey{Name: dbConfig.Spec.ServerRef}, &server); err != nil {
+	serverKey := client.ObjectKey{Namespace: dbConfig.Namespace, Name: dbConfig.Spec.ServerRef}
+	if err := res.get(ctx, serverKey, &server); err != nil {
 		return err
 	}
 

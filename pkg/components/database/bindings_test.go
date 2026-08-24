@@ -54,11 +54,10 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 // so the rendered bindings are stable golden input.
 func goldenDatabase() *v1.Database {
 	return &v1.Database{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-camunda-db"},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-camunda-db", Namespace: "my-cluster-ns"},
 		Spec: v1.DatabaseSpec{
-			ServerRef:       "my-db-server",
-			DatabaseName:    "camunda",
-			TargetNamespace: "my-cluster-ns",
+			ServerRef:    "my-db-server",
+			DatabaseName: "camunda",
 		},
 	}
 }
@@ -67,10 +66,7 @@ func goldenDatabase() *v1.Database {
 // name.
 func goldenFullDatabase() *v1.Database {
 	db := goldenDatabase()
-	db.Spec.ApplicationCredentials = &v1.CredentialsSpec{
-		SecretName:      "my-camunda-db-app",
-		SecretNamespace: "my-secret-ns",
-	}
+	db.Spec.ApplicationCredentials = &v1.CredentialsSpec{SecretName: "my-camunda-db-app"}
 	db.Spec.BackupCredentials = &v1.BackupCredentialsSpec{
 		CredentialsSpec: v1.CredentialsSpec{SecretName: "my-camunda-db-backup"},
 	}
@@ -80,7 +76,7 @@ func goldenFullDatabase() *v1.Database {
 }
 
 func TestResolveBindings(t *testing.T) {
-	t.Run("defaults derive from the CR name and targetNamespace", func(t *testing.T) {
+	t.Run("defaults derive from the CR name and its namespace", func(t *testing.T) {
 		rb := ResolveBindings(goldenDatabase())
 
 		assert.Equal(t, "my-camunda-db-credentials", rb.AppSecret.Name)
@@ -93,11 +89,11 @@ func TestResolveBindings(t *testing.T) {
 		assert.True(t, rb.BackupEnabled)
 	})
 
-	t.Run("explicit names and namespaces win over defaults", func(t *testing.T) {
+	t.Run("explicit names win over defaults, and every Secret stays local", func(t *testing.T) {
 		rb := ResolveBindings(goldenFullDatabase())
 
 		assert.Equal(t, "my-camunda-db-app", rb.AppSecret.Name)
-		assert.Equal(t, "my-secret-ns", rb.AppSecret.Namespace)
+		assert.Equal(t, "my-cluster-ns", rb.AppSecret.Namespace)
 		assert.Equal(t, "my-camunda-db-backup", rb.BackupSecret.Name)
 		assert.Equal(t, "my-cluster-ns", rb.BackupSecret.Namespace)
 		assert.Equal(t, "my-database-config", rb.DatabaseConfigName)

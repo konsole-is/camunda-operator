@@ -36,7 +36,12 @@ func TestDatabaseConfigValidate(t *testing.T) {
 	require.NoError(t, v1.AddToScheme(scheme))
 	require.NoError(t, corev1.AddToScheme(scheme))
 
-	server := &v1.DatabaseServerConfig{ObjectMeta: metav1.ObjectMeta{Name: "server"}}
+	server := &v1.DatabaseServerConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Namespace: "ns"},
+	}
+	otherNamespaceServer := &v1.DatabaseServerConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Namespace: "elsewhere"},
+	}
 	appSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "app-creds", Namespace: "ns"},
 		Data:       map[string][]byte{"username": []byte("u"), "password": []byte("p")},
@@ -64,7 +69,7 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonInvalidReference,
-			wantMessage: `DatabaseServerConfig "server" not found`,
+			wantMessage: `DatabaseServerConfig "ns/server" not found`,
 		},
 		{
 			name:        "app secret checked once the server exists",
@@ -94,6 +99,13 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			wantStatus:  metav1.ConditionTrue,
 			wantReason:  v1.ReasonHealthy,
 			wantMessage: "All checks passed",
+		},
+		{
+			name:        "a server of the same name in another namespace is not this server",
+			objects:     []client.Object{otherNamespaceServer, appSecret},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  v1.ReasonInvalidReference,
+			wantMessage: `DatabaseServerConfig "ns/server" not found`,
 		},
 		{
 			name:        "present but broken backup ref fails after the app check",

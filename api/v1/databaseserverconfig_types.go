@@ -56,8 +56,9 @@ type DatabaseServerConfigSpec struct {
 	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port"`
 	// AdminCredentialsSecretRef names an admin user with permission to create
-	// databases and roles; used by the Database controller to bootstrap.
-	AdminCredentialsSecretRef CredentialsSecretRef `json:"adminCredentialsSecretRef"`
+	// databases and roles; used by the Database controller to bootstrap. The
+	// Secret lives in the namespace of this contract.
+	AdminCredentialsSecretRef LocalCredentialsSecretRef `json:"adminCredentialsSecretRef"`
 	// PITR declares the server's point-in-time-recovery capability.
 	// +optional
 	PITR *PITRCapability `json:"pitr,omitempty"`
@@ -75,6 +76,13 @@ type DatabaseServerConfigStatus struct {
 	// the operator publishes it.
 	// +optional
 	ServerVersion string `json:"serverVersion,omitempty"`
+	// SystemIdentifier is the identity of the PostgreSQL instance behind this
+	// endpoint, as the server reported it on the last probe. It names the
+	// server itself, so two contracts that describe one server under
+	// different hosts publish one value. The Database controller keys the
+	// uniqueness of a logical database on it.
+	// +optional
+	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// ProbedAt is when the operator last reached the server and read
 	// ServerVersion. The operator probes the server again when this is older
 	// than the probe interval, when the spec changed, or when the admin
@@ -96,12 +104,17 @@ type DatabaseServerConfigStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.serverVersion`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // DatabaseServerConfig is the contract CRD that describes a database server —
 // engine, endpoint, admin credentials, and point-in-time-recovery capability —
 // for controllers that bootstrap databases on it or validate its declared
-// capabilities.
+// capabilities. A consumer resolves it in its own namespace, so the whole
+// RDBMS chain of a cluster lives with that cluster.
 type DatabaseServerConfig struct {
 	metav1.TypeMeta `json:",inline"`
 

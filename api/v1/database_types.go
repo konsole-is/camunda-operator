@@ -21,16 +21,13 @@ import (
 )
 
 // CredentialsSpec names the Secret a controller writes generated credentials
-// to (keys username and password).
+// to (keys username and password). The Secret lives in the namespace of the
+// CR.
 type CredentialsSpec struct {
 	// SecretName is the name of the credentials Secret. Each controller
 	// documents its kind-specific default derived from the CR name.
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
-	// SecretNamespace is the namespace for the credentials Secret. Defaults
-	// to the CR's target namespace.
-	// +optional
-	SecretNamespace string `json:"secretNamespace,omitempty"`
 }
 
 // BackupCredentialsSpec configures the backup credentials Secret, which is
@@ -45,26 +42,17 @@ type BackupCredentialsSpec struct {
 
 // DatabaseSpec defines the desired state of Database.
 type DatabaseSpec struct {
-	// ServerRef names the cluster-scoped DatabaseServerConfig describing the
-	// server to create the database in.
+	// ServerRef names the DatabaseServerConfig of this namespace describing
+	// the server to create the database in.
 	// +kubebuilder:validation:MinLength=1
 	ServerRef string `json:"serverRef"`
 	// DatabaseName is the name of the logical database to create, a valid
-	// PostgreSQL identifier. It must be unique per server: the controller
-	// rejects a Database whose serverRef and databaseName collide with an
-	// existing one.
+	// PostgreSQL identifier. It must be unique per server, and the server is
+	// the PostgreSQL instance that the contract reaches, not the contract:
+	// the controller rejects a Database whose databaseName collides with a
+	// Database of any namespace on the same instance.
 	// +kubebuilder:validation:Pattern=`^[a-z_][a-z0-9_]{0,62}$`
 	DatabaseName string `json:"databaseName"`
-	// TargetNamespace is the namespace where the created DatabaseConfig,
-	// SecondaryStorageConfig, and credential Secrets are placed (each
-	// Secret's namespace can be overridden per Secret). Set it to the
-	// consuming cluster's namespace, since consumers resolve the bindings by
-	// name in their own namespace; for that reason the field is required with
-	// no default.
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:MinLength=1
-	TargetNamespace string `json:"targetNamespace"`
 	// ApplicationCredentials configures the application credentials Secret,
 	// always created. The Secret name defaults to <CR name>-credentials.
 	// +optional
@@ -74,16 +62,16 @@ type DatabaseSpec struct {
 	// <CR name>-backup-credentials.
 	// +optional
 	BackupCredentials *BackupCredentialsSpec `json:"backupCredentials,omitempty"`
-	// DatabaseConfig names the DatabaseConfig the operator creates in
-	// targetNamespace. Defaults to the CR name.
+	// DatabaseConfig names the DatabaseConfig the operator creates in the
+	// namespace of this Database. Defaults to the CR name.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
 	DatabaseConfig string `json:"databaseConfig,omitempty"`
 	// SecondaryStorageConfig, when set, makes the operator also create a
-	// SecondaryStorageConfig of type rdbms with this name in targetNamespace,
-	// wired to the DatabaseConfig. Omit it for databases not used as Camunda
-	// secondary storage (Keycloak, Identity, Web Modeler).
+	// SecondaryStorageConfig of type rdbms with this name in the namespace of
+	// this Database, wired to the DatabaseConfig. Omit it for databases not
+	// used as Camunda secondary storage (Keycloak, Identity, Web Modeler).
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=253
 	// +optional
@@ -95,23 +83,38 @@ type DatabaseStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// CollisionKey is the claim that this Database won or contested: the
+	// system identifier of the server and the logical database name. The
+	// operator records it once it resolves the server, and the uniqueness
+	// rule runs over the recorded keys of every namespace.
+	// +optional
+	CollisionKey string `json:"collisionKey,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check
-	// reason (InvalidReference, MissingSecret, ConnectionFailed), or it takes
-	// the status and the reason of the BindingsReady component condition,
-	// which also appears here.
+	// reason (InvalidReference, MissingSecret, ServerIdentityUnknown,
+	// ConnectionFailed), or it takes the status and the reason of the
+	// BindingsReady component condition, which also appears here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// ReasonServerIdentityUnknown means that the DatabaseServerConfig of the
+// Database has not published status.systemIdentifier yet. Until it does, the
+// operator cannot tell which PostgreSQL instance the contract reaches, so it
+// cannot apply the uniqueness rule of the logical database name.
+const ReasonServerIdentityUnknown = "ServerIdentityUnknown"
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // Database bootstraps a logical database and its users on an existing
 // PostgreSQL server over plain SQL and publishes the result as a
-// DatabaseConfig — and optionally a SecondaryStorageConfig — in its target
+// DatabaseConfig — and optionally a SecondaryStorageConfig — in its own
 // namespace. Deletion garbage-collects the published bindings and Secrets
 // through owner references but never drops the logical database or the SQL
 // users.

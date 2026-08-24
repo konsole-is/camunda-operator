@@ -97,17 +97,17 @@ type Bindings struct {
 
 // ResolveBindings applies the documented defaults to the binding names of db.
 // The credential Secrets default to "<name>-credentials" and
-// "<name>-backup-credentials" in targetNamespace. The DatabaseConfig defaults
-// to the CR name. The SQL roles derive from the database name. Passwords stay
-// empty for the reconciler to fill.
+// "<name>-backup-credentials". The DatabaseConfig defaults to the CR name.
+// The SQL roles derive from the database name. Every binding lands in the
+// namespace of db. Passwords stay empty for the reconciler to fill.
 func ResolveBindings(db *v1.Database) Bindings {
 	rb := Bindings{
 		AppSecret: types.NamespacedName{
-			Namespace: db.Spec.TargetNamespace,
+			Namespace: db.Namespace,
 			Name:      db.Name + appSecretSuffix,
 		},
 		BackupSecret: types.NamespacedName{
-			Namespace: db.Spec.TargetNamespace,
+			Namespace: db.Namespace,
 			Name:      db.Name + backupSecretSuffix,
 		},
 		DatabaseConfigName: db.Name,
@@ -116,22 +116,14 @@ func ResolveBindings(db *v1.Database) Bindings {
 		BackupEnabled:      true,
 	}
 
-	if app := db.Spec.ApplicationCredentials; app != nil {
-		if app.SecretName != "" {
-			rb.AppSecret.Name = app.SecretName
-		}
-		if app.SecretNamespace != "" {
-			rb.AppSecret.Namespace = app.SecretNamespace
-		}
+	if app := db.Spec.ApplicationCredentials; app != nil && app.SecretName != "" {
+		rb.AppSecret.Name = app.SecretName
 	}
 
 	if backup := db.Spec.BackupCredentials; backup != nil {
 		rb.BackupEnabled = !backup.Disabled
 		if backup.SecretName != "" {
 			rb.BackupSecret.Name = backup.SecretName
-		}
-		if backup.SecretNamespace != "" {
-			rb.BackupSecret.Namespace = backup.SecretNamespace
 		}
 	}
 
@@ -167,8 +159,8 @@ func BackupUserName(databaseName string) string {
 // backup enabled), the DatabaseConfig, and the SecondaryStorageConfig. The
 // SecondaryStorageConfig is present only when spec.secondaryStorageConfig is
 // set. It registers the database as rdbms secondary storage. All children
-// land in spec.targetNamespace, and each Secret can override its namespace.
-// The framework gives each child an owner reference to the Database.
+// land in the namespace of the Database, which gives each of them an owner
+// reference to it.
 func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, error) {
 	appSecret, err := secret.NewBuilder(
 		credentialSecret(db, rb.AppSecret, rb.AppUser, rb.AppPassword),
@@ -187,7 +179,7 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 	dbConfig, err := databaseconfig.NewBuilder(&v1.DatabaseConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rb.DatabaseConfigName,
-			Namespace: db.Spec.TargetNamespace,
+			Namespace: db.Namespace,
 			Labels:    bindingLabels(db),
 		},
 		Spec: v1.DatabaseConfigSpec{
@@ -215,7 +207,7 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 		ssc, err := secondarystorageconfig.NewBuilder(&v1.SecondaryStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      db.Spec.SecondaryStorageConfig,
-				Namespace: db.Spec.TargetNamespace,
+				Namespace: db.Namespace,
 				Labels:    bindingLabels(db),
 			},
 			Spec: v1.SecondaryStorageConfigSpec{

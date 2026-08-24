@@ -419,7 +419,8 @@ func (res *resolver) resolveDatabase(
 	}
 
 	var server v1.DatabaseServerConfig
-	if err := res.get(ctx, client.ObjectKey{Name: cfg.Spec.ServerRef}, &server); err != nil {
+	serverKey := client.ObjectKey{Namespace: cfg.Namespace, Name: cfg.Spec.ServerRef}
+	if err := res.get(ctx, serverKey, &server); err != nil {
 		return components.Database{}, err
 	}
 

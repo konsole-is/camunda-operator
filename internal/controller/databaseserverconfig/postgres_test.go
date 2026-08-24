@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -80,4 +81,33 @@ func testPostgres() (testPostgresInfo, error) {
 	})
 
 	return testPostgresShared, testPostgresErr
+}
+
+// testPostgresSystemIdentifier reads the system identifier of the shared
+// container over a connection of its own, so an assertion on the published
+// value never goes through the code that published it.
+func testPostgresSystemIdentifier() (string, error) {
+	pg, err := testPostgres()
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/postgres?sslmode=disable",
+		pg.AdminUser, pg.AdminPassword, pg.Host, pg.Port,
+	))
+	if err != nil {
+		return "", fmt.Errorf("connecting to the shared container: %w", err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }()
+
+	var id string
+	if err := conn.QueryRow(ctx, "SELECT system_identifier::text FROM pg_control_system()").Scan(&id); err != nil {
+		return "", fmt.Errorf("reading the system identifier: %w", err)
+	}
+
+	return id, nil
 }

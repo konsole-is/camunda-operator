@@ -569,12 +569,16 @@ func createWebModelerDatabase(namespace string) string {
 	}
 
 	server := &v1.DatabaseServerConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "dbsc-modeler-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "dbsc-modeler-" + utilrand.String(8), Namespace: namespace,
+		},
 		Spec: v1.DatabaseServerConfigSpec{
-			Engine:                    v1.DatabaseEnginePostgres,
-			Host:                      "postgres." + namespace + ".svc",
-			Port:                      5432,
-			AdminCredentialsSecretRef: credentials,
+			Engine: v1.DatabaseEnginePostgres,
+			Host:   "postgres." + namespace + ".svc",
+			Port:   5432,
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name: credentials.Name, UsernameKey: "username", PasswordKey: "password",
+			},
 		},
 	}
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())

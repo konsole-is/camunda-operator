@@ -31,11 +31,13 @@ import (
 // validDatabase returns the minimal example of the CRD doc with a unique name.
 func validDatabase() *v1.Database {
 	return &v1.Database{
-		ObjectMeta: metav1.ObjectMeta{Name: "db-" + utilrand.String(8)},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "db-" + utilrand.String(8),
+			Namespace: fixtures.SchemaTestNamespace,
+		},
 		Spec: v1.DatabaseSpec{
-			ServerRef:       "my-db-server",
-			DatabaseName:    "camunda",
-			TargetNamespace: "my-cluster-ns",
+			ServerRef:    "my-db-server",
+			DatabaseName: "camunda",
 		},
 	}
 }
@@ -106,24 +108,6 @@ var _ = Describe("Database schema", func() {
 			validDatabase, func(o *v1.Database) {
 				o.Spec.ServerRef = ""
 			}, "serverRef",
-		),
-		Entry(
-			"rejects a missing targetNamespace",
-			validDatabase, func(o *v1.Database) {
-				o.Spec.TargetNamespace = ""
-			}, "targetNamespace",
-		),
-		Entry(
-			"rejects a non-DNS-1123 targetNamespace",
-			validDatabase, func(o *v1.Database) {
-				o.Spec.TargetNamespace = "My_Cluster_NS"
-			}, "targetNamespace",
-		),
-		Entry(
-			"rejects a 64-character targetNamespace",
-			validDatabase, func(o *v1.Database) {
-				o.Spec.TargetNamespace = "n" + strings.Repeat("s", 63)
-			}, "targetNamespace",
 		),
 		Entry(
 			"rejects a non-DNS-1123 databaseConfig name",
