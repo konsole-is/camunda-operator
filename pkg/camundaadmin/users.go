@@ -96,6 +96,39 @@ func NewUserClient(binding UserBinding) (*UserClient, error) {
 	return &UserClient{api: api}, nil
 }
 
+// GetUser reads user through GET /v2/users/{username}
+// (https://docs.camunda.io/docs/apis-tools/orchestration-cluster-api-rest/specifications/get-user/).
+// A username the cluster does not hold is reported by the second return
+// value, not by an error.
+//
+// The endpoint is eventually consistent: it reads what the exporter of the
+// cluster wrote, so a user that was created moments ago can still be reported
+// absent. A caller that acts on the absence must be safe against that answer.
+func (c *UserClient) GetUser(ctx context.Context, username string) (User, bool, error) {
+	body, status, err := c.api.Do(ctx, adminhttp.Request{
+		Method: http.MethodGet,
+		Path:   "/v2/users/" + url.PathEscape(username),
+		Accept: adminhttp.Status(http.StatusOK),
+	})
+	if status == http.StatusNotFound {
+		return User{}, false, nil
+	}
+	if err := classifyUserError(err, status); err != nil {
+		return User{}, false, err
+	}
+
+	var answer struct {
+		Username string `json:"username"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+	}
+	if err := json.Unmarshal(body, &answer); err != nil {
+		return User{}, false, fmt.Errorf("decoding the answer: %w", err)
+	}
+
+	return User{Username: answer.Username, Name: answer.Name, Email: answer.Email}, true, nil
+}
+
 // UpdateUserProfile sets the name and the email of user through PUT
 // /v2/users/{username} and leaves the password alone: the endpoint keeps the
 // current password when the request carries none. The errors are the ones of

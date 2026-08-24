@@ -184,3 +184,168 @@ func TestDeleteUserAcceptsAUserThatIsGone(t *testing.T) {
 
 	assert.NoError(t, client.DeleteUser(context.Background(), "web-modeler"))
 }
+
+func TestSearchAuthorizationsReturnsTheRowsOfTheOwner(t *testing.T) {
+	t.Parallel()
+
+	api, client := newAdminClient(t)
+	api.SetAuthorization("web-modeler", "USER", "RESOURCE", "*", "CREATE")
+	api.SetAuthorization("someone-else", "USER", "RESOURCE", "*", "CREATE")
+
+	found, err := client.SearchAuthorizations(
+		context.Background(), camundaadmin.OwnerUser, "web-modeler", 100,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(
+		t, []camundaadmin.Authorization{{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "RESOURCE",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE"},
+		}}, found,
+	)
+}
+
+func TestSearchAuthorizationsReturnsNothingForAnOwnerWithNoRows(t *testing.T) {
+	t.Parallel()
+
+	_, client := newAdminClient(t)
+
+	found, err := client.SearchAuthorizations(
+		context.Background(), camundaadmin.OwnerUser, "web-modeler", 100,
+	)
+
+	require.NoError(t, err)
+	assert.Empty(t, found)
+}
+
+func TestSearchAuthorizationsReportsARefusedCall(t *testing.T) {
+	t.Parallel()
+
+	api, client := newAdminClient(t)
+	api.FailNext("searchAuthorizations", 1)
+
+	_, err := client.SearchAuthorizations(
+		context.Background(), camundaadmin.OwnerUser, "web-modeler", 100,
+	)
+
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+}
+
+// The permissions of one owner. The desired set of the operator is two rows,
+// one per resource type.
+func desiredAuthorizations() []camundaadmin.Authorization {
+	return []camundaadmin.Authorization{
+		{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "RESOURCE",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE"},
+		},
+		{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "PROCESS_DEFINITION",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE_PROCESS_INSTANCE", "READ_PROCESS_DEFINITION"},
+		},
+	}
+}
+
+func TestMissingAuthorizationsFindsNothingWhenEveryPermissionIsGranted(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, camundaadmin.MissingAuthorizations(
+		desiredAuthorizations(), desiredAuthorizations(),
+	))
+}
+
+func TestMissingAuthorizationsReturnsEverythingWhenNothingIsGranted(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t, desiredAuthorizations(), camundaadmin.MissingAuthorizations(desiredAuthorizations(), nil),
+	)
+}
+
+func TestMissingAuthorizationsReturnsOnlyThePermissionsThatAreAbsent(t *testing.T) {
+	t.Parallel()
+
+	granted := []camundaadmin.Authorization{
+		{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "RESOURCE",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE"},
+		},
+		{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "PROCESS_DEFINITION",
+			ResourceID:      "*",
+			PermissionTypes: []string{"READ_PROCESS_DEFINITION"},
+		},
+	}
+
+	assert.Equal(
+		t, []camundaadmin.Authorization{{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "PROCESS_DEFINITION",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE_PROCESS_INSTANCE"},
+		}}, camundaadmin.MissingAuthorizations(desiredAuthorizations(), granted),
+	)
+}
+
+// The cluster holds one row per call, so the permissions of one resource can
+// sit on several rows. Together they are the granted set.
+func TestMissingAuthorizationsCountsPermissionsSplitAcrossRows(t *testing.T) {
+	t.Parallel()
+
+	granted := []camundaadmin.Authorization{
+		{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "RESOURCE",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE"},
+		},
+		{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "PROCESS_DEFINITION",
+			ResourceID:      "*",
+			PermissionTypes: []string{"CREATE_PROCESS_INSTANCE"},
+		},
+		{
+			OwnerID:         "web-modeler",
+			OwnerType:       camundaadmin.OwnerUser,
+			ResourceType:    "PROCESS_DEFINITION",
+			ResourceID:      "*",
+			PermissionTypes: []string{"READ_PROCESS_DEFINITION"},
+		},
+	}
+
+	assert.Empty(t, camundaadmin.MissingAuthorizations(desiredAuthorizations(), granted))
+}
+
+func TestMissingAuthorizationsIgnoresAnotherResource(t *testing.T) {
+	t.Parallel()
+
+	granted := []camundaadmin.Authorization{{
+		OwnerID:         "web-modeler",
+		OwnerType:       camundaadmin.OwnerUser,
+		ResourceType:    "RESOURCE",
+		ResourceID:      "some-process",
+		PermissionTypes: []string{"CREATE"},
+	}}
+
+	assert.Equal(
+		t, desiredAuthorizations(), camundaadmin.MissingAuthorizations(desiredAuthorizations(), granted),
+	)
+}
