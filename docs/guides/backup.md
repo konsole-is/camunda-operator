@@ -57,7 +57,7 @@ spec:
 This reference causes three things:
 
 - The operator configures the Zeebe backup store with the bucket. Zeebe writes its partition backups there.
-- On a PostgreSQL cluster, continuous primary-storage backups are on by default. Zeebe takes a backup every `PT1H`, writes a checkpoint every `PT15M`, and keeps backups for `P7D`. The checkpoint interval is the granularity of a [point-in-time restore](../crds/pointintimerestore.md#what-goes-in-spectimestamp). You change these values on the cluster:
+- On a PostgreSQL cluster, continuous primary-storage backups are on by default. Zeebe takes a backup every `PT1H`, writes a checkpoint every `PT15M`, and keeps backups for `P7D`. The schedule and the checkpoint interval together set the granularity of a [point-in-time restore](../crds/pointintimerestore.md#what-goes-in-spectimestamp). You change these values on the cluster:
 
     ```yaml
     spec:
