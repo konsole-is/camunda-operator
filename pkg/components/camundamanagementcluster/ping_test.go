@@ -163,6 +163,12 @@ func TestPingCollisionsNameTheFieldManagerOfValueFrom(t *testing.T) {
 					`{"f:spec":{"f:extraEnv":{"k:{\"name\":\"CAMUNDA_CONSOLE_PING_ENDPOINT\"}":{"f:valueFrom":{}}}}}`,
 				),
 			},
+			{
+				Manager: "argocd-controller",
+				FieldsV1: metav1.NewFieldsV1(
+					`{"f:spec":{"f:extraEnv":{"k:{\"name\":\"CAMUNDA_CONSOLE_PING_ENDPOINT\"}":{"f:valueFrom":{}}}}}`,
+				),
+			},
 		}},
 		Spec: v1.CamundaClusterSpec{ExtraEnv: []corev1.EnvVar{{
 			Name:      "CAMUNDA_CONSOLE_PING_ENDPOINT",
@@ -174,10 +180,13 @@ func TestPingCollisionsNameTheFieldManagerOfValueFrom(t *testing.T) {
 
 	// The entry of a subresource says nothing about spec.extraEnv, and the
 	// manager that owns another name is not the one that wrote this entry.
+	// Two managers that applied the same valueFrom both own it, in name order.
 	assert.Equal(
-		t, []PingCollision{
-			{Index: 0, Name: "CAMUNDA_CONSOLE_PING_ENDPOINT", Manager: "kubectl-client-side-apply"},
-		}, collisions,
+		t, []PingCollision{{
+			Index:    0,
+			Name:     "CAMUNDA_CONSOLE_PING_ENDPOINT",
+			Managers: []string{"argocd-controller", "kubectl-client-side-apply"},
+		}}, collisions,
 	)
 }
 

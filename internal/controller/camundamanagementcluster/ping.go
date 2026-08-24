@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,7 +85,7 @@ func (r *Reconciler) syncPing(
 			if live == nil {
 				// attached derives from clusters in this reconcile, so this
 				// only guards a broken invariant against a panic.
-				reportPingFailure(mc, key, fmt.Errorf("the cluster is not in the cluster list"))
+				reportPingFailure(mc, key, fmt.Errorf("CamundaCluster %q is not in the cluster list", key))
 				continue
 			}
 
@@ -228,20 +229,29 @@ func (r *Reconciler) removePingCollisions(
 			eventActionReplacePing,
 			"Removed the spec.extraEnv entry %q of CamundaCluster %q. %s set it with valueFrom. "+
 				"The management plane owns the ping settings and writes its own value under that name",
-			collision.Name, key, managerName(collision.Manager),
+			collision.Name, key, managerNames(collision.Managers),
 		)
 	}
 
 	return nil
 }
 
-// managerName names the field manager of a collision for an event note.
-func managerName(manager string) string {
-	if manager == "" {
+// managerNames names the field managers of a removed entry for an event,
+// or says that none claimed it.
+func managerNames(managers []string) string {
+	switch len(managers) {
+	case 0:
 		return "Another field manager"
-	}
+	case 1:
+		return fmt.Sprintf("The field manager %q", managers[0])
+	default:
+		quoted := make([]string, len(managers))
+		for i, manager := range managers {
+			quoted[i] = strconv.Quote(manager)
+		}
 
-	return fmt.Sprintf("The field manager %q", manager)
+		return "The field managers " + strings.Join(quoted, ", ")
+	}
 }
 
 // applyPing applies the minimal CamundaCluster object that carries env in the

@@ -18,6 +18,7 @@ package camundamanagementcluster
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -69,9 +70,10 @@ type PingCollision struct {
 	Index int
 	// Name is the ping setting that the entry holds.
 	Name string
-	// Manager is the field manager that set valueFrom, and is empty when no
-	// entry of metadata.managedFields claims that field.
-	Manager string
+	// Managers are the field managers that own valueFrom, sorted, and empty
+	// when no entry of metadata.managedFields claims that field. More than
+	// one manager owns it when each applied the same value.
+	Managers []string
 }
 
 // PingEnv returns the environment entries that make the orchestration cluster
@@ -150,7 +152,7 @@ func PingCollisions(cluster *v1.CamundaCluster, clusterVersion string) []PingCol
 		collisions = append(collisions, PingCollision{
 			Index:   i,
 			Name:    entry.Name,
-			Manager: valueFromManager(cluster.ManagedFields, entry.Name),
+			Managers: valueFromManagers(cluster.ManagedFields, entry.Name),
 		})
 	}
 
@@ -162,13 +164,14 @@ func (n pingEnvNames) holds(name string) bool {
 	return name == n.enabled || name == n.endpoint || name == n.clusterName || name == n.pingPeriod
 }
 
-// valueFromManager returns the field manager that owns valueFrom of the
-// spec.extraEnv entry name.
-func valueFromManager(fields []metav1.ManagedFieldsEntry, name string) string {
+// valueFromManagers returns the field managers that own valueFrom of the
+// spec.extraEnv entry name, sorted.
+func valueFromManagers(fields []metav1.ManagedFieldsEntry, name string) []string {
 	// The API server keys a merged list entry by its key fields, as JSON. An
 	// env name is a C identifier, which strconv.Quote and JSON quote alike.
 	key := `k:{"name":` + strconv.Quote(name) + `}`
 
+	var managers []string
 	for _, entry := range fields {
 		if entry.Subresource != "" {
 			continue
@@ -181,9 +184,10 @@ func valueFromManager(fields []metav1.ManagedFieldsEntry, name string) string {
 			owned, _ = owned[step].(map[string]any)
 		}
 		if _, ok := owned["f:valueFrom"]; ok {
-			return entry.Manager
+			managers = append(managers, entry.Manager)
 		}
 	}
+	slices.Sort(managers)
 
-	return ""
+	return managers
 }
