@@ -232,7 +232,17 @@ type DatabaseServerArchiveStatus struct {
 // on now, or the last one it answered. It is what makes a recovery resumable:
 // the steps read it to tell which cluster they build and whether the request
 // still needs an answer.
+//
+// It holds the whole answer, not a reference to it. The answer is published on
+// a contract that somebody can delete and create again, and the server has to
+// be able to publish it a second time from what it remembers.
 type DatabaseServerRecoveryStatus struct {
+	// RequestID is the requestID of the request, as the contract carries it.
+	RequestID string `json:"requestID"`
+	// Contract is the DatabaseServerConfig that carried the request. The
+	// server answers on that contract, and it does not change the contract it
+	// publishes while the request is unanswered.
+	Contract string `json:"contract"`
 	// RequestedBy is the requestedBy of the request, as the contract carries
 	// it.
 	RequestedBy string `json:"requestedBy"`
@@ -242,6 +252,13 @@ type DatabaseServerRecoveryStatus struct {
 	// empty for a request that was refused before one was built.
 	// +optional
 	Cluster string `json:"cluster,omitempty"`
+	// Result is the result the server published for the request. It is unset
+	// while the recovery runs.
+	// +optional
+	Result RecoveryResult `json:"result,omitempty"`
+	// Message is the message the server published with Result.
+	// +optional
+	Message string `json:"message,omitempty"`
 	// CompletedAt is when the server answered the request. It is unset while
 	// the recovery runs.
 	// +optional

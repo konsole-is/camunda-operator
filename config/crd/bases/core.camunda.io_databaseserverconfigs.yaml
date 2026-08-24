@@ -115,6 +115,11 @@ spec:
                         description: Message says what happened. It is empty for a
                           result of Completed.
                         type: string
+                      requestID:
+                        description: RequestID is the requestID of the request this
+                          outcome answers.
+                        pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                        type: string
                       requestedBy:
                         description: RequestedBy is the requestedBy of the request
                           this outcome answers.
@@ -128,11 +133,16 @@ spec:
                         - Unavailable
                         type: string
                       targetTime:
-                        description: TargetTime is the targetTime of the request this
-                          outcome answers.
+                        description: |-
+                          TargetTime is the targetTime of the request this outcome answers. It
+                          carries the shape of the request, so a consumer that compares the two
+                          as text compares two values of one form.
+                        format: date-time
+                        pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$
                         type: string
                     required:
                     - completedAt
+                    - requestID
                     - requestedBy
                     - result
                     - targetTime
@@ -171,10 +181,20 @@ spec:
               recovery:
                 description: |-
                   Recovery asks for the server to be rolled back to a point in time. A
-                  consumer writes it; it is answered in pitr.lastRecovery, and only when
+                  consumer writes it. It is answered in pitr.lastRecovery, and only when
                   pitr.recovery is operator. It stays on the contract after the answer,
                   as the record of the last request.
                 properties:
+                  requestID:
+                    description: |-
+                      RequestID identifies this request, and only this one. A controller sets
+                      the uid of the resource that asks. A request written by hand carries
+                      any UUID. It is what tells two requests apart that name one resource
+                      and one point: a resource that is deleted and created again under its
+                      name is another requester, and the answer to the request of the first
+                      says nothing about the state the second asks for.
+                    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                    type: string
                   requestedBy:
                     description: |-
                       RequestedBy is the namespace and the name of the resource that asks, as
@@ -193,6 +213,7 @@ spec:
                     pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$
                     type: string
                 required:
+                - requestID
                 - requestedBy
                 - targetTime
                 type: object

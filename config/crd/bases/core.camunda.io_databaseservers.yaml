@@ -1026,16 +1026,41 @@ spec:
                       the recovery runs.
                     format: date-time
                     type: string
+                  contract:
+                    description: |-
+                      Contract is the DatabaseServerConfig that carried the request. The
+                      server answers on that contract, and it does not change the contract it
+                      publishes while the request is unanswered.
+                    type: string
+                  message:
+                    description: Message is the message the server published with
+                      Result.
+                    type: string
+                  requestID:
+                    description: RequestID is the requestID of the request, as the
+                      contract carries it.
+                    type: string
                   requestedBy:
                     description: |-
                       RequestedBy is the requestedBy of the request, as the contract carries
                       it.
+                    type: string
+                  result:
+                    description: |-
+                      Result is the result the server published for the request. It is unset
+                      while the recovery runs.
+                    enum:
+                    - Completed
+                    - Failed
+                    - Unavailable
                     type: string
                   targetTime:
                     description: TargetTime is the targetTime of the request, as the
                       contract carries it.
                     type: string
                 required:
+                - contract
+                - requestID
                 - requestedBy
                 - targetTime
                 type: object

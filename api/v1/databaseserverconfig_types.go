@@ -62,6 +62,14 @@ const (
 // and the publisher of the contract never carries the field, so the two
 // writers never meet on it.
 type RecoveryRequest struct {
+	// RequestID identifies this request, and only this one. A controller sets
+	// the uid of the resource that asks. A request written by hand carries
+	// any UUID. It is what tells two requests apart that name one resource
+	// and one point: a resource that is deleted and created again under its
+	// name is another requester, and the answer to the request of the first
+	// says nothing about the state the second asks for.
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+	RequestID string `json:"requestID"`
 	// RequestedBy is the namespace and the name of the resource that asks, as
 	// "<namespace>/<name>". It comes back in pitr.lastRecovery, which is how
 	// the requester tells its own answer from somebody else's.
@@ -81,9 +89,16 @@ type RecoveryRequest struct {
 // answers, so a consumer knows whether the answer is the answer to its own
 // request.
 type RecoveryOutcome struct {
+	// RequestID is the requestID of the request this outcome answers.
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+	RequestID string `json:"requestID"`
 	// RequestedBy is the requestedBy of the request this outcome answers.
 	RequestedBy string `json:"requestedBy"`
-	// TargetTime is the targetTime of the request this outcome answers.
+	// TargetTime is the targetTime of the request this outcome answers. It
+	// carries the shape of the request, so a consumer that compares the two
+	// as text compares two values of one form.
+	// +kubebuilder:validation:Format=date-time
+	// +kubebuilder:validation:Pattern=`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$`
 	TargetTime string `json:"targetTime"`
 	// CompletedAt is when the request ended.
 	CompletedAt metav1.Time `json:"completedAt"`
@@ -94,9 +109,12 @@ type RecoveryOutcome struct {
 	Message string `json:"message,omitempty"`
 }
 
-// AnsweredBy reports whether outcome answers this request.
+// AnsweredBy reports whether outcome answers this request. It compares the
+// whole request, requestID included, so the answer to an earlier request of
+// the same resource and the same point is not read as the answer to this one.
 func (r RecoveryRequest) AnsweredBy(outcome *RecoveryOutcome) bool {
 	return outcome != nil &&
+		outcome.RequestID == r.RequestID &&
 		outcome.RequestedBy == r.RequestedBy &&
 		outcome.TargetTime == r.TargetTime
 }
