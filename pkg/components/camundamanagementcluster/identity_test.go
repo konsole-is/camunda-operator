@@ -18,10 +18,12 @@ package camundamanagementcluster
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // The environment of Management Identity in the oidc mode is the table of the
@@ -109,6 +111,163 @@ func TestIdentityKeepsTheRecordedInitialClaim(t *testing.T) {
 	assert.Equal(t, "first-admin", env["IDENTITY_INITIAL_CLAIM_VALUE"])
 	assert.Equal(t, "oid=second-admin", SpecInitialClaim(in.Cluster))
 	assert.Equal(t, "oid=first-admin", RecordedInitialClaim(in.Cluster))
+}
+
+// A rollout runs two Identity pods at once, and only the older one holds the
+// claim that Identity wrote into its database.
+func TestStartedInitialClaimReadsThePodThatStartedFirst(t *testing.T) {
+	t.Parallel()
+
+	first := metav1.NewTime(time.Now().Add(-time.Minute))
+	pods := []corev1.Pod{
+		startedIdentityPod("second-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+		}),
+		startedIdentityPod("first-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: first},
+		}),
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
+}
+
+// A container that crash-loops already reached the database, so the run it
+// had counts as a start.
+func TestStartedInitialClaimCountsAContainerThatRanAndStopped(t *testing.T) {
+	t.Parallel()
+
+	crashLooping := startedIdentityPod("first-admin", corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"},
+	})
+	crashLooping.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: metav1.Now()},
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{crashLooping}))
+}
+
+// A container that restarted runs again with a later start time. Its first
+// run is the one that reached the database, so a restarted older pod still
+// wins over a newer pod.
+func TestStartedInitialClaimUsesTheFirstRunOfARestartedContainer(t *testing.T) {
+	t.Parallel()
+
+	firstRun := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+	newer := metav1.NewTime(time.Now().Add(-time.Minute))
+	restarted := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+	})
+	restarted.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: firstRun},
+	}
+	pods := []corev1.Pod{
+		startedIdentityPod("second-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: newer},
+		}),
+		restarted,
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
+}
+
+// A container that restarted twice has lost its first run, so the start time
+// of the pod, which is older than every run, orders the pods instead. A pod
+// that still holds its first run is ordered by that run.
+func TestStartedInitialClaimOrdersByPodStartTimeAfterRestarts(t *testing.T) {
+	t.Parallel()
+
+	podStart := metav1.NewTime(time.Now().Add(-3 * time.Minute))
+	newer := metav1.NewTime(time.Now().Add(-time.Minute))
+	restarted := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+	})
+	restarted.Status.StartTime = &podStart
+	restarted.Status.ContainerStatuses[0].RestartCount = 2
+	restarted.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: metav1.Now()},
+	}
+	pods := []corev1.Pod{
+		startedIdentityPod("second-admin", corev1.ContainerState{
+			Running: &corev1.ContainerStateRunning{StartedAt: newer},
+		}),
+		restarted,
+	}
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim(pods))
+
+	// A pod that restarted once still holds its first run, and a pod admitted
+	// early whose container ran late does not win on its admission time.
+	admittedEarly := startedIdentityPod("second-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()},
+	})
+	admittedEarly.Status.StartTime = &podStart
+	admittedEarly.Status.ContainerStatuses[0].RestartCount = 1
+	admittedEarly.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{StartedAt: metav1.Now()},
+	}
+	ranFirst := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: newer},
+	})
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{admittedEarly, ranFirst}))
+
+	// A pod that never ran its container has no start to order by, whatever
+	// its start time says.
+	pending := startedIdentityPod("third-admin", corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"},
+	})
+	pending.Status.StartTime = &podStart
+	assert.Empty(t, StartedInitialClaim([]corev1.Pod{pending}))
+}
+
+// The kubelet records a start in seconds, so two pods of a rollout can share
+// one. The name breaks the tie in either list order.
+func TestStartedInitialClaimBreaksATieByPodName(t *testing.T) {
+	t.Parallel()
+
+	at := metav1.NewTime(time.Now().Truncate(time.Second))
+	a := startedIdentityPod("first-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: at},
+	})
+	a.Name = "identity-a"
+	b := startedIdentityPod("second-admin", corev1.ContainerState{
+		Running: &corev1.ContainerStateRunning{StartedAt: at},
+	})
+	b.Name = "identity-b"
+
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{a, b}))
+	assert.Equal(t, "oid=first-admin", StartedInitialClaim([]corev1.Pod{b, a}))
+}
+
+// A pod whose container never ran carries no claim. Its container is waiting
+// on an image or on a Secret, so Management Identity read nothing.
+func TestStartedInitialClaimIsEmptyWhileNoContainerRan(t *testing.T) {
+	t.Parallel()
+
+	pending := startedIdentityPod("first-admin", corev1.ContainerState{
+		Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"},
+	})
+
+	assert.Empty(t, StartedInitialClaim([]corev1.Pod{pending}))
+	assert.Empty(t, StartedInitialClaim(nil))
+}
+
+// startedIdentityPod returns a pod of the Management Identity Deployment
+// whose container carries the given administrator claim value and is in the
+// given state.
+func startedIdentityPod(claimValue string, state corev1.ContainerState) corev1.Pod {
+	return corev1.Pod{
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: identityContainer,
+			Env: []corev1.EnvVar{
+				{Name: identityEnvInitialClaimName, Value: "oid"},
+				{Name: identityEnvInitialClaimValue, Value: claimValue},
+			},
+		}}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			Name:  identityContainer,
+			State: state,
+		}}},
+	}
 }
 
 // The Deployment carries the workload overrides of spec.identity, and its pod

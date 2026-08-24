@@ -54,6 +54,19 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			Expect(contract.Spec.ClientSecretRef.Namespace).To(Equal(s.namespace))
 			Expect(contract.Labels).To(HaveKeyWithValue(labels.ManagementClusterKey, s.mc.Name))
 			Expect(contract.Labels).To(HaveKeyWithValue(labels.ManagementClusterNamespaceKey, s.namespace))
+		})
+
+		It("records the administrator claim that the Identity pod started with", func() {
+			s := newScenario()
+
+			key := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+			Eventually(func(g Gomega) {
+				var workload appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+			startIdentityPod(key)
+
+			expectReadyWhileStamping(s.mc, key)
 
 			Eventually(func(g Gomega) {
 				g.Expect(readManagementCluster(g, s.mc).Annotations).To(
@@ -62,11 +75,35 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			}, timeout, interval).Should(Succeed())
 		})
 
-		It("reports ImmutableAfterStart when the administrator claim changes after the start", func() {
+		// A management plane whose Identity never ran holds no administrator
+		// in its database. A wrong claim that the user corrects before the
+		// first start must leave no record behind.
+		It("records no administrator claim while no Identity pod has started", func() {
 			s := newScenario()
 
 			key := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
 			expectReadyWhileStamping(s.mc, key)
+
+			Consistently(func(g Gomega) {
+				g.Expect(readManagementCluster(g, s.mc).Annotations).NotTo(
+					HaveKey(components.InitialClaimAnnotation),
+				)
+			}, "2s", interval).Should(Succeed())
+		})
+
+		// Management Identity reads the administrator claim as it boots and
+		// stores it in its database, which is before the pod is ready. A
+		// change in that window records the claim the pod started with, not
+		// the one the spec now asks for.
+		It("reports ImmutableAfterStart when the administrator claim changes after the start", func() {
+			s := newScenario()
+
+			key := client.ObjectKey{Namespace: s.namespace, Name: components.IdentityName(s.mc)}
+			Eventually(func(g Gomega) {
+				var workload appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+			startIdentityPod(key)
 
 			Eventually(func(g Gomega) {
 				latest := readManagementCluster(g, s.mc)
@@ -75,7 +112,10 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			}, timeout, interval).Should(Succeed())
 
 			Eventually(func(g Gomega) {
-				stampDeploymentReady(g, key)
+				g.Expect(readManagementCluster(g, s.mc).Annotations).To(
+					HaveKeyWithValue(components.InitialClaimAnnotation, "oid=admin-oid"),
+				)
+
 				identity := conditionOf(g, s.mc, v1.ConditionIdentityReady)
 				g.Expect(identity.Status).To(Equal(metav1.ConditionFalse))
 				g.Expect(identity.Reason).To(Equal(v1.ReasonImmutableAfterStart))
@@ -85,11 +125,13 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 				g.Expect(ready.Reason).To(Equal(v1.ReasonImmutableAfterStart))
 			}, timeout, interval).Should(Succeed())
 
-			var workload appsv1.Deployment
-			Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
-			Expect(workload.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
-				corev1.EnvVar{Name: "IDENTITY_INITIAL_CLAIM_VALUE", Value: "admin-oid"},
-			))
+			Eventually(func(g Gomega) {
+				var workload appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+				g.Expect(workload.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+					corev1.EnvVar{Name: "IDENTITY_INITIAL_CLAIM_VALUE", Value: "admin-oid"},
+				))
+			}, timeout, interval).Should(Succeed())
 		})
 
 		It("refuses a platform config that authenticates with basic", func() {
@@ -247,7 +289,10 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 
 // The identities that every scenario shares.
 const (
-	issuerURL           = "https://login.example.com"
+	issuerURL = "https://login.example.com"
+	// otherIssuerURL is an identity provider that the management plane does
+	// not sign anybody in to.
+	otherIssuerURL      = "https://login.elsewhere.example.com"
 	identityExternalURL = "https://identity.example.com"
 	// keycloakAdminSecret holds the administrator of a Keycloak that the user
 	// runs.
@@ -527,6 +572,37 @@ func expectReadyWhileStamping(mc *v1.CamundaManagementCluster, keys ...client.Ob
 		g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 		g.Expect(ready.Reason).To(Equal(v1.ReasonHealthy))
 	}, timeout, interval).Should(Succeed())
+}
+
+// startIdentityPod creates the pod that the Management Identity Deployment
+// describes and reports its container as running. Envtest runs no Deployment
+// controller and no kubelet, so a spec that needs a started Identity is what
+// puts the pod behind the Deployment.
+func startIdentityPod(key client.ObjectKey) {
+	GinkgoHelper()
+
+	var workload appsv1.Deployment
+	Expect(k8sClient.Get(ctx, key, &workload)).To(Succeed())
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      key.Name + "-" + utilrand.String(5),
+			Namespace: key.Namespace,
+			Labels:    workload.Spec.Template.Labels,
+		},
+		Spec: workload.Spec.Template.Spec,
+	}
+	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+	// A pod that no kubelet removes stays terminating for its whole grace
+	// period, and the next list would still read it.
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0)) })
+
+	pod.Status.Phase = corev1.PodRunning
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:  pod.Spec.Containers[0].Name,
+		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: metav1.Now()}},
+	}}
+	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 }
 
 // stampDeploymentReady writes the status that a running Deployment controller
