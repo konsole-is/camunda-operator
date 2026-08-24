@@ -165,8 +165,7 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 		),
 		Entry(
 			"rejects an outcome that answers no identity", func(o *v1.DatabaseServerConfig) {
-				out := pitrWithOutcome(func(out *v1.RecoveryOutcome) { out.RequestID = "" })
-				o.Spec.PITR = out
+				o.Spec.PITR = pitrWithOutcome(func(out *v1.RecoveryOutcome) { out.RequestID = "" })
 			}, "spec.pitr.lastRecovery.requestID",
 		),
 	)

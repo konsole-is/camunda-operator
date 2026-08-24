@@ -93,6 +93,8 @@ type RecoveryOutcome struct {
 	// +kubebuilder:validation:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
 	RequestID string `json:"requestID"`
 	// RequestedBy is the requestedBy of the request this outcome answers.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=507
 	RequestedBy string `json:"requestedBy"`
 	// TargetTime is the targetTime of the request this outcome answers. It
 	// carries the shape of the request, so a consumer that compares the two
@@ -190,18 +192,32 @@ type DatabaseServerConfigStatus struct {
 	// endpoint, as the server reported it on the last probe. It names the
 	// server itself, so two contracts that describe one server under
 	// different hosts publish one value. The Database controller keys the
-	// uniqueness of a logical database on it.
+	// uniqueness of a logical database on it. A change to the endpoint or to
+	// the admin credentials Secret clears it.
 	// +optional
 	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// ProbedAt is when the operator last reached the server and read
 	// ServerVersion and SystemIdentifier. The operator probes the server again
 	// when this is older than the probe interval, or when the admin
 	// credentials Secret changed. A reconcile in between leaves it untouched.
-	// A change to the spec clears it, together with ServerVersion,
-	// SystemIdentifier, and ProbedSecretVersion, because the whole record
-	// describes the endpoint the old spec named.
+	// A change to the endpoint or to the admin credentials Secret clears it,
+	// together with ServerVersion, SystemIdentifier, ProbedEndpoint,
+	// ProbedSecretName, and ProbedSecretVersion, because the whole record
+	// describes the server the old spec named. A change to any other field,
+	// for example a recovery request, leaves the record alone: it cannot move
+	// the server.
 	// +optional
 	ProbedAt *metav1.Time `json:"probedAt,omitempty"`
+	// ProbedEndpoint is the host and the port that the last probe reached, as
+	// "<host>:<port>". It is what tells a spec change that moves the server
+	// from one that does not.
+	// +optional
+	ProbedEndpoint string `json:"probedEndpoint,omitempty"`
+	// ProbedSecretName is the admin credentials Secret that the last probe
+	// read. A spec that names another Secret names other credentials, so the
+	// record of the probe goes with it.
+	// +optional
+	ProbedSecretName string `json:"probedSecretName,omitempty"`
 	// ProbedSecretVersion is the resourceVersion of the admin credentials
 	// Secret that the last probe used. The operator probes a changed Secret
 	// again before the interval, so it validates rotated credentials promptly.
@@ -242,6 +258,13 @@ type DatabaseServerConfig struct {
 	// status defines the observed state of DatabaseServerConfig
 	// +optional
 	Status DatabaseServerConfigStatus `json:"status,omitzero"`
+}
+
+// OperatorRecovers reports whether the contract declares that whoever
+// publishes it rolls the server back on request. A consumer reads it before it
+// writes spec.recovery, and the producer reads it before it takes one.
+func (in *DatabaseServerConfig) OperatorRecovers() bool {
+	return in.Spec.PITR != nil && in.Spec.PITR.Recovery == RecoveryModeOperator
 }
 
 // GetStatusConditions returns a pointer to the status conditions. The

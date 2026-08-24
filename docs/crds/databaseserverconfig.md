@@ -137,7 +137,9 @@ spec:
 
 Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource: the new resource carries a new uid, and the server reads it as a new request even when the point is the same.
 
-A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
+A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
+
+Writing the request itself clears nothing. The operator clears the record of the probe when `spec.host`, `spec.port`, or `spec.adminCredentialsSecretRef.name` changes, because only those name another server. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
 
 ## Status
 
@@ -149,10 +151,14 @@ A rollback replaces the server behind `spec.host`. `status.serverVersion`, `stat
 
 | Field | Meaning |
 | --- | --- |
-| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. A spec change clears it. |
-| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`, for example `"7412345678901234567"`. Two contracts that reach one instance publish one value. It keeps the last known value while the server is unreachable. A spec change clears it. |
-| `status.probedAt` | When the operator last reached the server and read `serverVersion` and `systemIdentifier`. A spec change clears it. |
-| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A spec change clears it. |
+| `status.serverVersion` | The major version the server reported the last time the operator reached it, for example `"17"`. It keeps the last known value while the server is unreachable. A change of server clears it. |
+| `status.systemIdentifier` | The identity of the PostgreSQL instance behind `spec.host`, for example `"7412345678901234567"`. Two contracts that reach one instance publish one value. It keeps the last known value while the server is unreachable. A change of server clears it. |
+| `status.probedAt` | When the operator last reached the server and read `serverVersion` and `systemIdentifier`. A change of server clears it. |
+| `status.probedEndpoint` | The `host:port` that the last probe reached. It is what tells a change of server from any other spec change. |
+| `status.probedSecretName` | The admin credentials Secret that the last probe read. |
+| `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A change of server clears it. |
+
+A change of server means a change to `spec.host`, `spec.port`, or `spec.adminCredentialsSecretRef.name`. Every other spec change, including a recovery request and its answer, leaves the record of the probe alone.
 | `status.observedGeneration` | The last generation of the contract that the operator validated. |
 
 ## Spec reference

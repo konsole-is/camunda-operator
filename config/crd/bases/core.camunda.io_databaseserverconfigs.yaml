@@ -123,6 +123,8 @@ spec:
                       requestedBy:
                         description: RequestedBy is the requestedBy of the request
                           this outcome answers.
+                        maxLength: 507
+                        pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
                         type: string
                       result:
                         description: Result is how the request ended. See RecoveryResult
@@ -299,10 +301,25 @@ spec:
                   ServerVersion and SystemIdentifier. The operator probes the server again
                   when this is older than the probe interval, or when the admin
                   credentials Secret changed. A reconcile in between leaves it untouched.
-                  A change to the spec clears it, together with ServerVersion,
-                  SystemIdentifier, and ProbedSecretVersion, because the whole record
-                  describes the endpoint the old spec named.
+                  A change to the endpoint or to the admin credentials Secret clears it,
+                  together with ServerVersion, SystemIdentifier, ProbedEndpoint,
+                  ProbedSecretName, and ProbedSecretVersion, because the whole record
+                  describes the server the old spec named. A change to any other field,
+                  for example a recovery request, leaves the record alone: it cannot move
+                  the server.
                 format: date-time
+                type: string
+              probedEndpoint:
+                description: |-
+                  ProbedEndpoint is the host and the port that the last probe reached, as
+                  "<host>:<port>". It is what tells a spec change that moves the server
+                  from one that does not.
+                type: string
+              probedSecretName:
+                description: |-
+                  ProbedSecretName is the admin credentials Secret that the last probe
+                  read. A spec that names another Secret names other credentials, so the
+                  record of the probe goes with it.
                 type: string
               probedSecretVersion:
                 description: |-
@@ -323,7 +340,8 @@ spec:
                   endpoint, as the server reported it on the last probe. It names the
                   server itself, so two contracts that describe one server under
                   different hosts publish one value. The Database controller keys the
-                  uniqueness of a logical database on it.
+                  uniqueness of a logical database on it. A change to the endpoint or to
+                  the admin credentials Secret clears it.
                 type: string
             type: object
         required:
