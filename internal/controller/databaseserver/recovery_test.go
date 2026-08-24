@@ -395,6 +395,10 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(latest.Status.Cluster).To(Equal("camunda-r1"))
 			g.Expect(latest.Status.SystemIdentifier).To(Equal(recoveredSystemIdentifier))
 			g.Expect(latest.Status.Recovery.CompletedAt).NotTo(BeNil())
+			// The answer keeps the whole record: nothing else holds the
+			// cluster the server came from or the archive it read.
+			g.Expect(latest.Status.Recovery.PreviousCluster).To(Equal("camunda"))
+			g.Expect(latest.Status.Recovery.Archive).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		By("closing the archive it recovered from at the moment the contract moved")
