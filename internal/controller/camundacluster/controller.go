@@ -55,7 +55,12 @@ const eventActionReconcile = "Reconcile"
 type CamundaClusterReconciler struct {
 	client.Client
 	// APIReader reads without the cache. Secrets are watched metadata-only,
-	// so their data and every referenced CR are read live.
+	// so their data and every referenced CR are read live, and so is the
+	// cluster itself: the reconcile reports from the status it wrote last,
+	// and an informer copy that lags that write makes the next status write
+	// conflict. FlushStatus resolves such a conflict from the server for
+	// every condition type it does not own, Ready among them, so a staged
+	// pre-check failure is dropped and reported again on the reconcile after.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// EventRecorder publishes the component lifecycle events and the events of
@@ -151,7 +156,7 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 // persists them together.
 func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
-	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
