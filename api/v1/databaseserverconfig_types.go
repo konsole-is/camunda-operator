@@ -28,9 +28,83 @@ type DatabaseEngine string
 // the Database controller can bootstrap against.
 const DatabaseEnginePostgres DatabaseEngine = "postgres"
 
+// RecoveryMode says who rolls the server back to a point in time.
+// +kubebuilder:validation:Enum=operator;external
+type RecoveryMode string
+
+const (
+	// RecoveryModeOperator means that whoever publishes this contract rolls
+	// the server back when spec.recovery asks for it.
+	RecoveryModeOperator RecoveryMode = "operator"
+	// RecoveryModeExternal means that nobody answers spec.recovery. The
+	// server is rolled back by hand, before the restore starts.
+	RecoveryModeExternal RecoveryMode = "external"
+)
+
+// RecoveryResult is how a recovery request ended.
+// +kubebuilder:validation:Enum=Completed;Failed;Unavailable
+type RecoveryResult string
+
+const (
+	// RecoveryResultCompleted means that the server now holds the state of
+	// the requested point.
+	RecoveryResultCompleted RecoveryResult = "Completed"
+	// RecoveryResultFailed means that the recovery started and did not
+	// finish.
+	RecoveryResultFailed RecoveryResult = "Failed"
+	// RecoveryResultUnavailable means that the server holds no copy of the
+	// requested point, so it attempted no recovery.
+	RecoveryResultUnavailable RecoveryResult = "Unavailable"
+)
+
+// RecoveryRequest asks whoever publishes this contract to roll the server back
+// to a point in time. A consumer writes it under a field manager of its own,
+// and the publisher of the contract never carries the field, so the two
+// writers never meet on it.
+type RecoveryRequest struct {
+	// RequestedBy is the namespace and the name of the resource that asks, as
+	// "<namespace>/<name>". It comes back in pitr.lastRecovery, which is how
+	// the requester tells its own answer from somebody else's.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=507
+	RequestedBy string `json:"requestedBy"`
+	// TargetTime is the point to roll back to, as RFC 3339 with a zone, for
+	// example 2026-08-20T14:30:00Z. A timestamp without a zone is rejected:
+	// PostgreSQL reads it as the local time of the server, so a request that
+	// means one point to the writer means another to the server.
+	// +kubebuilder:validation:Format=date-time
+	// +kubebuilder:validation:Pattern=`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$`
+	TargetTime string `json:"targetTime"`
+}
+
+// RecoveryOutcome is how a recovery request ended. It repeats the request it
+// answers, so a consumer knows whether the answer is the answer to its own
+// request.
+type RecoveryOutcome struct {
+	// RequestedBy is the requestedBy of the request this outcome answers.
+	RequestedBy string `json:"requestedBy"`
+	// TargetTime is the targetTime of the request this outcome answers.
+	TargetTime string `json:"targetTime"`
+	// CompletedAt is when the request ended.
+	CompletedAt metav1.Time `json:"completedAt"`
+	// Result is how the request ended. See RecoveryResult for the values.
+	Result RecoveryResult `json:"result"`
+	// Message says what happened. It is empty for a result of Completed.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// AnsweredBy reports whether outcome answers this request.
+func (r RecoveryRequest) AnsweredBy(outcome *RecoveryOutcome) bool {
+	return outcome != nil &&
+		outcome.RequestedBy == r.RequestedBy &&
+		outcome.TargetTime == r.TargetTime
+}
+
 // PITRCapability declares a server's point-in-time-recovery capability: that it
 // performs continuous WAL archiving with the given retention.
 // +kubebuilder:validation:XValidation:rule="!self.enabled || (has(self.retentionPeriodDays) && self.retentionPeriodDays >= 1)",message="retentionPeriodDays of at least 1 is required when enabled is true"
+// +kubebuilder:validation:XValidation:rule="self.recovery != 'operator' || self.enabled",message="recovery: operator requires enabled: true"
 type PITRCapability struct {
 	// Enabled reports whether the server performs continuous WAL archiving.
 	// +kubebuilder:default=false
@@ -40,6 +114,18 @@ type PITRCapability struct {
 	// restore can target. Required when enabled is true.
 	// +optional
 	RetentionPeriodDays *int32 `json:"retentionPeriodDays,omitempty"`
+	// Recovery says who rolls the server back to a point in time. operator
+	// means that whoever publishes this contract answers spec.recovery, and
+	// it requires enabled: true. Defaults to external, which means that
+	// nobody does and the server is rolled back by hand.
+	// +kubebuilder:default=external
+	// +optional
+	Recovery RecoveryMode `json:"recovery,omitempty"`
+	// LastRecovery is how the last recovery request ended. It is unset until
+	// the first request is answered, and it is replaced by the answer to
+	// every later one.
+	// +optional
+	LastRecovery *RecoveryOutcome `json:"lastRecovery,omitempty"`
 }
 
 // DatabaseServerConfigSpec describes a database server: engine, endpoint,
@@ -62,6 +148,12 @@ type DatabaseServerConfigSpec struct {
 	// PITR declares the server's point-in-time-recovery capability.
 	// +optional
 	PITR *PITRCapability `json:"pitr,omitempty"`
+	// Recovery asks for the server to be rolled back to a point in time. A
+	// consumer writes it. It is answered in pitr.lastRecovery, and only when
+	// pitr.recovery is operator. It stays on the contract after the answer,
+	// as the record of the last request.
+	// +optional
+	Recovery *RecoveryRequest `json:"recovery,omitempty"`
 }
 
 // DatabaseServerConfigStatus is the observed validation state of the contract.

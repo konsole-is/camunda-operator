@@ -228,6 +228,26 @@ type DatabaseServerArchiveStatus struct {
 	History []ArchiveRecord `json:"history,omitempty"`
 }
 
+// DatabaseServerRecoveryStatus is the recovery request that the server works
+// on now, or the last one it answered. It is what makes a recovery resumable:
+// the steps read it to tell which cluster they build and whether the request
+// still needs an answer.
+type DatabaseServerRecoveryStatus struct {
+	// RequestedBy is the requestedBy of the request, as the contract carries
+	// it.
+	RequestedBy string `json:"requestedBy"`
+	// TargetTime is the targetTime of the request, as the contract carries it.
+	TargetTime string `json:"targetTime"`
+	// Cluster is the CloudNativePG cluster that the recovery builds. It is
+	// empty for a request that was refused before one was built.
+	// +optional
+	Cluster string `json:"cluster,omitempty"`
+	// CompletedAt is when the server answered the request. It is unset while
+	// the recovery runs.
+	// +optional
+	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+}
+
 // DatabaseServerStatus is the observed state of a DatabaseServer.
 type DatabaseServerStatus struct {
 	// ObservedGeneration is the last generation reconciled by the operator.
@@ -248,6 +268,11 @@ type DatabaseServerStatus struct {
 	// server that archives again can recover from it.
 	// +optional
 	Archive *DatabaseServerArchiveStatus `json:"archive,omitempty"`
+	// Recovery is the recovery request that the server works on now, or the
+	// last one it answered. The answer itself is published on the contract,
+	// in spec.pitr.lastRecovery.
+	// +optional
+	Recovery *DatabaseServerRecoveryStatus `json:"recovery,omitempty"`
 	// Volumes lists the bound data PersistentVolumeClaims of the server and
 	// the capacity that each one reports, sorted by name.
 	// +listType=map

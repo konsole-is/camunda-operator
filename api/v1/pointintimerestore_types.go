@@ -46,7 +46,7 @@ const (
 
 // PointInTimeRestorePhase tracks the one-shot restore. Completed and Failed
 // are terminal. A retry is a new resource.
-// +kubebuilder:validation:Enum=Pending;ValidatingDatabaseState;RestoringPrimaryStorage;Completed;Failed
+// +kubebuilder:validation:Enum=Pending;RestoringDatabase;ValidatingDatabaseState;RestoringPrimaryStorage;Completed;Failed
 type PointInTimeRestorePhase string
 
 // The phases of a point-in-time restore, in order.
@@ -55,6 +55,13 @@ const (
 	// work. A pre-check still holds it: the cluster runs, the storage chain
 	// does not resolve, or the database is ahead of spec.timestamp.
 	PointInTimeRestorePending PointInTimeRestorePhase = "Pending"
+	// PointInTimeRestoreRestoringDatabase means that the operator asked the
+	// database server to roll itself back to spec.timestamp and waits for the
+	// answer. The restore reaches this phase only when the
+	// DatabaseServerConfig declares pitr.recovery: operator. A server that
+	// declares external is rolled back before the restore is created, and the
+	// restore goes straight to ValidatingDatabaseState.
+	PointInTimeRestoreRestoringDatabase PointInTimeRestorePhase = "RestoringDatabase"
 	// PointInTimeRestoreValidatingDatabaseState means that the operator reads
 	// the exporter position of every partition from the restored database.
 	// It runs before the operator touches a volume.
@@ -181,11 +188,17 @@ type PointInTimeRestoreStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // PointInTimeRestore aligns the primary storage of a suspended,
-// relational-backed CamundaCluster with a database that was already restored
-// to a point in time. The operator never restores the database server. It
-// reads the exporter position of every partition from the restored database,
-// deletes and creates the broker data volumes again, and runs the Camunda
-// restore application with the requested point once per broker.
+// relational-backed CamundaCluster with a database at a point in time. It
+// reads the exporter position of every partition from that database, deletes
+// and creates the broker data volumes again, and runs the Camunda restore
+// application with the requested point once per broker.
+//
+// The database reaches that point in one of two ways. A DatabaseServerConfig
+// that declares pitr.recovery: operator is rolled back by whoever publishes
+// it: the restore writes the request on the contract and waits for the
+// answer. A contract that declares external, the default, is rolled back
+// before the restore is created, and the restore reads the database as it
+// finds it.
 //
 // The restore prepares the cluster itself. It suspends the cluster and waits
 // for its brokers to stop. It withdraws the suspension when it completes, and

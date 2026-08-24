@@ -64,7 +64,61 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 				o.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(0))}
 			}, "retentionPeriodDays",
 		),
+		Entry(
+			"accepts operator recovery on a server that archives", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{
+					Enabled:             true,
+					RetentionPeriodDays: new(int32(7)),
+					Recovery:            v1.RecoveryModeOperator,
+				}
+			}, "",
+		),
+		Entry(
+			"rejects operator recovery on a server that archives nothing",
+			func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{Recovery: v1.RecoveryModeOperator}
+			}, "recovery: operator requires enabled: true",
+		),
+		Entry(
+			"rejects an unknown recovery mode", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{
+					Enabled: true, RetentionPeriodDays: new(int32(7)), Recovery: "provider",
+				}
+			}, "spec.pitr.recovery",
+		),
+		Entry(
+			"accepts a recovery request with a zone", func(o *v1.DatabaseServerConfig) {
+				o.Spec.Recovery = &v1.RecoveryRequest{
+					RequestedBy: "camunda/pitr-1", TargetTime: "2026-08-20T14:30:00Z",
+				}
+			}, "",
+		),
+		Entry(
+			"rejects a recovery target without a zone", func(o *v1.DatabaseServerConfig) {
+				o.Spec.Recovery = &v1.RecoveryRequest{
+					RequestedBy: "camunda/pitr-1", TargetTime: "2026-08-20T14:30:00",
+				}
+			}, "spec.recovery.targetTime",
+		),
+		Entry(
+			"rejects a requester that names no namespace", func(o *v1.DatabaseServerConfig) {
+				o.Spec.Recovery = &v1.RecoveryRequest{
+					RequestedBy: "pitr-1", TargetTime: "2026-08-20T14:30:00Z",
+				}
+			}, "spec.recovery.requestedBy",
+		),
 	)
+
+	It("defaults the recovery mode to external", func() {
+		obj := fixtures.DatabaseServerConfig(fixtures.SchemaTestNamespace)
+		obj.Spec.PITR = &v1.PITRCapability{Enabled: true, RetentionPeriodDays: new(int32(7))}
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		var got v1.DatabaseServerConfig
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &got)).To(Succeed())
+		Expect(got.Spec.PITR.Recovery).To(Equal(v1.RecoveryModeExternal))
+	})
 
 	It("defaults the admin credential keys to username and password", func() {
 		obj := fixtures.DatabaseServerConfig(fixtures.SchemaTestNamespace)

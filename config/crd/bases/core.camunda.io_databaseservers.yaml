@@ -1009,6 +1009,36 @@ spec:
                   by the operator.
                 format: int64
                 type: integer
+              recovery:
+                description: |-
+                  Recovery is the recovery request that the server works on now, or the
+                  last one it answered. The answer itself is published on the contract,
+                  in spec.pitr.lastRecovery.
+                properties:
+                  cluster:
+                    description: |-
+                      Cluster is the CloudNativePG cluster that the recovery builds. It is
+                      empty for a request that was refused before one was built.
+                    type: string
+                  completedAt:
+                    description: |-
+                      CompletedAt is when the server answered the request. It is unset while
+                      the recovery runs.
+                    format: date-time
+                    type: string
+                  requestedBy:
+                    description: |-
+                      RequestedBy is the requestedBy of the request, as the contract carries
+                      it.
+                    type: string
+                  targetTime:
+                    description: TargetTime is the targetTime of the request, as the
+                      contract carries it.
+                    type: string
+                required:
+                - requestedBy
+                - targetTime
+                type: object
               systemIdentifier:
                 description: |-
                   SystemIdentifier is the identity of the PostgreSQL instance that runs

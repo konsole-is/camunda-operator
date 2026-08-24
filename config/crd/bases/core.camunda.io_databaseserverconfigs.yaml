@@ -101,6 +101,53 @@ spec:
                     description: Enabled reports whether the server performs continuous
                       WAL archiving.
                     type: boolean
+                  lastRecovery:
+                    description: |-
+                      LastRecovery is how the last recovery request ended. It is unset until
+                      the first request is answered, and it is replaced by the answer to
+                      every later one.
+                    properties:
+                      completedAt:
+                        description: CompletedAt is when the request ended.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message says what happened. It is empty for a
+                          result of Completed.
+                        type: string
+                      requestedBy:
+                        description: RequestedBy is the requestedBy of the request
+                          this outcome answers.
+                        type: string
+                      result:
+                        description: Result is how the request ended. See RecoveryResult
+                          for the values.
+                        enum:
+                        - Completed
+                        - Failed
+                        - Unavailable
+                        type: string
+                      targetTime:
+                        description: TargetTime is the targetTime of the request this
+                          outcome answers.
+                        type: string
+                    required:
+                    - completedAt
+                    - requestedBy
+                    - result
+                    - targetTime
+                    type: object
+                  recovery:
+                    default: external
+                    description: |-
+                      Recovery says who rolls the server back to a point in time. operator
+                      means that whoever publishes this contract answers spec.recovery, and
+                      it requires enabled: true. Defaults to external, which means that
+                      nobody does and the server is rolled back by hand.
+                    enum:
+                    - operator
+                    - external
+                    type: string
                   retentionPeriodDays:
                     description: |-
                       RetentionPeriodDays is how many days into the past a point-in-time
@@ -113,12 +160,42 @@ spec:
                     is true
                   rule: '!self.enabled || (has(self.retentionPeriodDays) && self.retentionPeriodDays
                     >= 1)'
+                - message: 'recovery: operator requires enabled: true'
+                  rule: self.recovery != 'operator' || self.enabled
               port:
                 description: Port the server listens on.
                 format: int32
                 maximum: 65535
                 minimum: 1
                 type: integer
+              recovery:
+                description: |-
+                  Recovery asks for the server to be rolled back to a point in time. A
+                  consumer writes it; it is answered in pitr.lastRecovery, and only when
+                  pitr.recovery is operator. It stays on the contract after the answer,
+                  as the record of the last request.
+                properties:
+                  requestedBy:
+                    description: |-
+                      RequestedBy is the namespace and the name of the resource that asks, as
+                      "<namespace>/<name>". It comes back in pitr.lastRecovery, which is how
+                      the requester tells its own answer from somebody else's.
+                    maxLength: 507
+                    pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                    type: string
+                  targetTime:
+                    description: |-
+                      TargetTime is the point to roll back to, as RFC 3339 with a zone, for
+                      example 2026-08-20T14:30:00Z. A timestamp without a zone is rejected:
+                      PostgreSQL reads it as the local time of the server, so a request that
+                      means one point to the writer means another to the server.
+                    format: date-time
+                    pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$
+                    type: string
+                required:
+                - requestedBy
+                - targetTime
+                type: object
             required:
             - adminCredentialsSecretRef
             - engine

@@ -77,6 +77,66 @@ A `Database` whose contract has not published this value yet waits with `Ready=F
 
 The `pitr` block is a declaration. It states that the server archives WAL for the given number of days. [PointInTimeRestore](pointintimerestore.md) reads it to decide whether the server can serve a requested point.
 
+`pitr.recovery` states who rolls the server back to a point in time. It defaults to `external`, which means that nobody does it for you. With `external` you roll the database back yourself before you create a [PointInTimeRestore](pointintimerestore.md).
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  pitr:
+    enabled: true
+    retentionPeriodDays: 7
+    recovery: operator
+  # ... the rest of your contract
+```
+
+`operator` means that whoever publishes the contract rolls the server back on request. It needs `pitr.enabled: true`. A [DatabaseServer](databaseserver.md) publishes `operator` on every contract of a server that archives.
+
+## Recovery request
+
+`spec.recovery` asks for the rollback. A [PointInTimeRestore](pointintimerestore.md) writes it on a contract that declares `pitr.recovery: operator`, and never on one that declares `external`. You can write it by hand against a contract that a `DatabaseServer` publishes.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  recovery:
+    requestedBy: my-cluster-ns/my-restore
+    targetTime: "2026-08-20T14:30:00Z"
+  # ... the rest of your contract
+```
+
+`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `requestedBy` names the resource that asks, as `<namespace>/<name>`.
+
+The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
+
+```yaml
+spec:
+  pitr:
+    lastRecovery:
+      requestedBy: my-cluster-ns/my-restore
+      targetTime: "2026-08-20T14:30:00Z"
+      completedAt: "2026-08-20T15:02:11Z"
+      result: Completed
+      message: ""
+```
+
+| `result` | Meaning | What to do |
+| --- | --- | --- |
+| `Completed` | The server holds the state of `targetTime`. `spec.host` now names it. | Nothing. Read `spec.host` again for the endpoint. |
+| `Unavailable` | The server holds no copy of `targetTime`. `message` names the windows it does hold. | Ask for a point inside one of those windows. |
+| `Failed` | The rollback started and did not finish. `message` says what stopped it. | Correct the cause, then ask again. |
+
+Both fields stay on the contract after the answer, as the record of the last request. A request with a new `targetTime` starts a new rollback.
+
+A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
@@ -124,6 +184,26 @@ spec:
     enabled: true
     # integer. Required when enabled is true, at least 1. How many days into the past a point-in-time restore can target.
     retentionPeriodDays: 7
+    # string enum: operator, external. Optional, default: external. Who rolls the server back to a point in time.
+    recovery: operator
+    # object. Optional. How the last recovery request ended. The producer of the contract writes it.
+    lastRecovery:
+      # string. Required. The requestedBy of the request this outcome answers.
+      requestedBy: my-cluster-ns/my-restore
+      # string. Required. The targetTime of the request this outcome answers.
+      targetTime: "2026-08-20T14:30:00Z"
+      # string. Required. When the request ended, as RFC 3339.
+      completedAt: "2026-08-20T15:02:11Z"
+      # string enum: Completed, Failed, Unavailable. Required. How the request ended.
+      result: Completed
+      # string. Optional. What happened. Empty for a result of Completed.
+      message: ""
+  # object. Optional. Asks for a rollback to a point in time. A consumer writes it.
+  recovery:
+    # string. Required. The resource that asks, as <namespace>/<name>.
+    requestedBy: my-cluster-ns/my-restore
+    # string. Required. The point to roll back to, as RFC 3339 with a zone.
+    targetTime: "2026-08-20T14:30:00Z"
 ```
 
 ### Validation rules
@@ -133,6 +213,9 @@ spec:
 - `spec.adminCredentialsSecretRef.name` must not be empty.
 - `spec.port` must be from 1 to 65535.
 - If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and at least 1.
+- If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
+- `spec.recovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
+- `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.
 - No field is immutable.
 
 ### A production-shaped example
