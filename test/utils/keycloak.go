@@ -96,12 +96,12 @@ func KeycloakOperatorVersion() (string, error) {
 		}
 	}
 
-	dir, err := GetProjectDir()
+	root, err := ModuleRoot()
 	if err != nil {
 		return "", err
 	}
 
-	path := filepath.Join(dir, keycloakCRDVersionFile)
+	path := filepath.Join(root, keycloakCRDVersionFile)
 	content, err := os.ReadFile(path) // nolint:gosec // a path of this repository
 	if err != nil {
 		return "", fmt.Errorf("reading the vendored Keycloak CRD version %q: %w", path, err)

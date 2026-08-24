@@ -20,8 +20,7 @@ const (
 	// cnpgCRDDir holds the CloudNativePG CRDs the envtest suites need. This
 	// operator writes two of them, Cluster and ScheduledBackup. The third,
 	// Backup, is vendored because a ScheduledBackup produces Backup objects
-	// and the DatabaseServer controller reads them to decide whether the
-	// archive holds a base backup.
+	// and a later controller reads them.
 	//
 	// The published Go module github.com/cloudnative-pg/api carries the types
 	// alone, so the schemas are vendored instead of resolved from the module

@@ -18,7 +18,7 @@ limitations under the License.
 // resource of the Barman Cloud plugin for CloudNativePG,
 // barmancloud.cnpg.io/v1, and the ocf primitive that reconciles it.
 //
-// The plugin does publish a Go module, but importing it would add the whole
+// The plugin publishes a Go module, but importing it would add the whole
 // CloudNativePG operator, cert-manager, cnpg-i, and grpc to this operator's
 // dependencies, so the types here are copied from the CRD instead. The schema
 // they follow is vendored in internal/testenv/crds/barmancloud.

@@ -127,10 +127,9 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		crdPaths = append(crdPaths, crdPath(utils.KeycloakCRDPath))
 	}
 	if !opts.WithoutCNPG {
-		// CloudNativePG publishes a Go module for its API types and no CRDs,
-		// and the Barman Cloud plugin publishes its API types together with
-		// the CloudNativePG operator, so both schemas are vendored. Neither
-		// operator runs in envtest.
+		// The CloudNativePG and Barman Cloud Go modules ship no CRD
+		// manifests, so both schemas are vendored. Neither operator runs in
+		// envtest.
 		crdPaths = append(crdPaths, crdPath(utils.CNPGCRDPath), crdPath(utils.BarmanCRDPath))
 	}
 
