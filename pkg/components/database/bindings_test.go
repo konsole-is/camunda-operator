@@ -18,9 +18,11 @@ package database
 
 import (
 	"flag"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,6 +107,81 @@ func TestResolveBindings(t *testing.T) {
 
 		assert.False(t, ResolveBindings(db).BackupEnabled)
 	})
+}
+
+// previewNames renders the component and returns "<kind>/<name>" for every
+// resource it registered.
+func previewNames(t *testing.T, comp *component.Component) []string {
+	t.Helper()
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	// Preview returns typed objects, whose TypeMeta the API server would have
+	// filled in, so the kind comes from the Go type.
+	names := make([]string, 0, len(objects))
+	for _, obj := range objects {
+		names = append(names, reflect.TypeOf(obj).Elem().Name()+"/"+obj.GetName())
+	}
+
+	return names
+}
+
+// TestWithdrawnBindingsComponentRegistersOnlyOwnedBindings pins which bindings
+// the withdrawal touches. A binding it does not own must not be registered at
+// all, because the component would otherwise delete an object that belongs to
+// the Database that won the claim.
+func TestWithdrawnBindingsComponentRegistersOnlyOwnedBindings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		owned OwnedBindings
+		want  []string
+	}{
+		{
+			name: "every binding owned",
+			owned: OwnedBindings{
+				AppSecret: true, BackupSecret: true, DatabaseConfig: true, SecondaryStorage: true,
+			},
+			want: []string{
+				"DatabaseConfig/my-database-config",
+				"Secret/my-camunda-db-app",
+				"Secret/my-camunda-db-backup",
+				"SecondaryStorageConfig/" + goldenStorageConfigName,
+			},
+		},
+		{
+			name:  "no binding owned",
+			owned: OwnedBindings{},
+			want:  []string{},
+		},
+		{
+			name:  "only the application Secret owned",
+			owned: OwnedBindings{AppSecret: true},
+			want:  []string{"Secret/my-camunda-db-app"},
+		},
+		{
+			name:  "the contract of another Database is left out",
+			owned: OwnedBindings{AppSecret: true, BackupSecret: true, SecondaryStorage: true},
+			want: []string{
+				"Secret/my-camunda-db-app",
+				"Secret/my-camunda-db-backup",
+				"SecondaryStorageConfig/" + goldenStorageConfigName,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			comp, err := WithdrawnBindingsComponent(goldenFullDatabase(), tt.owned)
+			require.NoError(t, err)
+
+			assert.ElementsMatch(t, tt.want, previewNames(t, comp))
+		})
+	}
 }
 
 func TestBackupUserName(t *testing.T) {

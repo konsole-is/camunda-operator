@@ -61,6 +61,56 @@ func TestCollisionKeyIsTheServerIdentity(t *testing.T) {
 	)
 }
 
+// TestCollisionIdentity pins the inverse of CollisionKey. A caller holds a
+// recorded claim and needs the server behind it.
+func TestCollisionIdentity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{name: "empty key names no server", key: "", want: ""},
+		{
+			name: "a recorded claim names its server",
+			key:  "7000000000000000001/camunda",
+			want: "7000000000000000001",
+		},
+		{
+			name: "a key without a separator is all identifier",
+			key:  "7000000000000000001",
+			want: "7000000000000000001",
+		},
+		{
+			name: "only the first separator counts",
+			key:  "7000000000000000001/camunda/extra",
+			want: "7000000000000000001",
+		},
+		{name: "a key that opens with the separator names no server", key: "/camunda", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, CollisionIdentity(tt.key))
+		})
+	}
+}
+
+// TestCollisionIdentityInvertsCollisionKey pins the pair, so a change to the
+// key format cannot leave the two out of step.
+func TestCollisionIdentityInvertsCollisionKey(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		"7000000000000000001",
+		CollisionIdentity(CollisionKey("7000000000000000001", "camunda")),
+	)
+}
+
 func TestCollisionWinner(t *testing.T) {
 	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 
