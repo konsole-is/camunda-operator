@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: consumer-wave
+status: review
 ---
 
 # DatabaseServer on CloudNativePG — orchestration state
@@ -34,7 +34,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | #242 → feat/cnpg-database-server | self-merged (6194813) |
 | #237 | ci/cnpg-database-server--e2e | (removed) | #244 → feat/cnpg-database-server | self-merged (c6366c5) |
 | #243 | ci/cnpg-database-server--split-e2e-by-backend | (removed) | #246 → feat/cnpg-database-server | self-merged (bccf012) |
-| checkpoint | refactor/cnpg-database-server--converge | .claude/worktrees/cnpg-database-server/.claude/worktrees/converge | #247 → feat/cnpg-database-server | in-progress (head pushed, round 1 + CI running) |
+| checkpoint | refactor/cnpg-database-server--converge | (removed) | #247 → feat/cnpg-database-server | self-merged (c6afb8f) |
 
 ## Contracts
 
@@ -67,11 +67,11 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 ## Pending snapshot
 
-Session burst ended 2026-08-24 ~23:05Z with the checkpoint's convergence PR #247 open; every planned sub-PR is merged.
+Session burst ended 2026-08-25 ~00:00Z with every sub-PR merged and the feature branch at `c6afb8f`. Nothing is in flight. One thing waits on a human: the integration PR.
 
-1. **PR #247** (`refactor/cnpg-database-server--converge`, sub-worktree `.claude/worktrees/converge`, five commits 9e1c95b..9a345a6, pushed 23:02Z). Waiting on Copilot round 1 (requested 23:03:00Z, watermark in the session scratchpad) and the six checks (Lint/Tests/Chart + the three e2e jobs, ~30 min). Then: fold findings, one more round if code changed, list the reviews once more, self-merge (squash), remove the sub-worktree and both branches, update this table.
-2. After #247 merges: `git pull --ff-only` in the feature worktree, run `gates.sh` once more (the scratchpad pattern: setup-envtest, `go test ./...`, api test, lint, lint-renovate, manifests + clean porcelain, vet e2e, mkdocs), then report the branch ready for the user's integration PR `feat/cnpg-database-server → main` with `Closes #127`. **Do not open or merge the integration PR; it is the user's.** Teardown (delete this state file and the plan, keep the spec) happens in the integration PR or right after it merges, per the superpowers convention.
-3. Already done at the checkpoint: nine gates green on bccf012; all seven issue bodies reconciled with decision comments (#127, #128, #234, #235, #236, #237, #243); the plan at `docs/superpowers/plans/...` still names the old condition-type identifiers at ~331-334 and is left alone because it is deleted at teardown.
+1. **The user opens and merges the integration PR** `feat/cnpg-database-server → main` with `Closes #127`. A ready body is drafted at the session scratchpad (`integration-pr-body.md`) and pasted into the final chat report; a fresh session can rebuild it from the epic body, the spec, and the seven merged sub-PRs (#239, #238, #241, #242, #244, #246, #247). **Do not open or merge it without the user.** The `copilot-auto-review` ruleset reviews PRs into `main` on its own, so no `--add-reviewer` there.
+2. Before the merge, or right after it: the teardown commit per the superpowers convention deletes this state file and `docs/superpowers/plans/2026-08-24-cnpg-database-server-plan.md`, keeps the spec. Run `make api-version` only if a release follows (see AGENTS.md).
+3. After the merge: delete the feature worktree (`chmod -R u+w .claude/worktrees/cnpg-database-server/bin` first) and the remote branch, close nothing else (#127 closes on merge).
 
 ## Resume checklist
 
