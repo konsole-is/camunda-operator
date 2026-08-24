@@ -173,7 +173,7 @@ func newOptimize() *v1.CamundaOptimize {
 	}
 }
 
-var _ = Describe("CamundaOptimize", Ordered, Label(labelCamundaOptimize), func() {
+var _ = Describe("CamundaOptimize", Ordered, Label(utils.LabelCamundaOptimize), func() {
 	var (
 		cluster  = newCluster(optimizeNamespace, optimizePlatform, optimizeStorage, "", false)
 		optimize = newOptimize()

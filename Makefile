@@ -118,14 +118,15 @@ ECK_VERSION ?= 3.5.0
 # E2E_CAMUNDA_MINOR selects the Camunda minor the suite runs against. Each
 # supported minor has a file test/e2e/matrix/<minor>.env with the image
 # versions of that minor and the list of spec flows that run for it. The
-# recipe exports the file to the suite. The e2e workflow runs two jobs per
+# recipe exports the file to the suite. The e2e workflow runs three jobs per
 # file, each with an E2E_LABEL_FILTER of its own.
 E2E_CAMUNDA_MINOR ?= 8.9
 
 # E2E_LABEL_FILTER is a Ginkgo label filter for one run of the suite. It wins
 # over the E2E_LABELS list of the matrix entry. The e2e workflow runs each
-# minor as two jobs with a filter each: one for the management plane flows,
-# one for the rest. Empty runs the flows that the matrix entry names.
+# minor as three jobs with a filter each. The filters select the
+# Elasticsearch flows, the Postgres flows, and the management plane flows.
+# Empty runs the flows that the matrix entry names.
 E2E_LABEL_FILTER ?=
 
 # E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the

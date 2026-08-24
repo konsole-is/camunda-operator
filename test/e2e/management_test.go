@@ -158,7 +158,7 @@ func managementKeycloakNamespaceObject() *corev1.Namespace {
 	}
 }
 
-var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelManagementKeycloak), func() {
+var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(utils.LabelManagementKeycloak), func() {
 	var (
 		mc            = keycloakManagementCluster()
 		elasticsearch = &v1.ElasticsearchCluster{
@@ -432,7 +432,7 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelM
 	})
 })
 
-var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(labelManagementOIDC), func() {
+var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(utils.LabelManagementOIDC), func() {
 	var (
 		mc      = oidcManagementCluster()
 		cluster = newCluster(mcOIDCNamespace, mcOIDCClusterPlatform, mcOIDCStorage, "", false)

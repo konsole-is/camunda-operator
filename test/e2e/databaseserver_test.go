@@ -66,7 +66,7 @@ const (
 	dsReadyTimeout = 10 * time.Minute
 )
 
-var _ = Describe("DatabaseServer", Ordered, Label(labelDatabaseServer), func() {
+var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), func() {
 	var (
 		server = &v1.DatabaseServer{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServer"},
