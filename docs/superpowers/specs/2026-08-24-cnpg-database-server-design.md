@@ -355,8 +355,9 @@ one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matc
 floored at the oldest major Camunda 8.9 supports (verified with the `camunda-docs` MCP during
 implementation).
 
-`monitoring.podMonitor` carries `labels` and `annotations` beside `enabled` and `interval`, so a
-Prometheus that selects the monitor on either one finds it.
+`monitoring.podMonitor` carries `labels` and `annotations` beside `enabled` and `interval`. The
+labels are what a Prometheus selects the monitor by. The annotations carry metadata for other
+tools.
 
 The archive credentials are not referenced where the user keeps them. The operator mirrors what
 the `ObjectStorageConfig` resolves into an operator-owned Secret `<server>-archive` in the
