@@ -222,8 +222,8 @@ func (r *DatabaseReconciler) ownedBindings(
 ) (components.OwnedBindings, []string, error) {
 	rb := components.ResolveBindings(database)
 
-	// One entry per binding the component can register, in the order it
-	// registers them.
+	// One entry per binding the component can register. The order decides
+	// only the order of the names in the message.
 	type binding struct {
 		key   types.NamespacedName
 		obj   client.Object
@@ -276,7 +276,7 @@ func (r *DatabaseReconciler) ownsBinding(
 			return true, nil
 		}
 
-		return false, fmt.Errorf("reading the published binding %s: %w", key, err)
+		return false, fmt.Errorf("reading the published binding %q: %w", key, err)
 	}
 
 	owner := metav1.GetControllerOf(obj)
@@ -419,7 +419,7 @@ func (r *DatabaseReconciler) adminCredentials(
 
 	var secret corev1.Secret
 	if err := r.APIReader.Get(ctx, key, &secret); err != nil {
-		return "", "", fmt.Errorf("reading admin credentials Secret %s: %w", key, err)
+		return "", "", fmt.Errorf("reading admin credentials Secret %q: %w", key, err)
 	}
 
 	return string(secret.Data[ref.UsernameKey]), string(secret.Data[ref.PasswordKey]), nil

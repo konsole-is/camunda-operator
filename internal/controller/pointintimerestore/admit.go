@@ -499,12 +499,12 @@ func (r *Reconciler) dedicatedServer(
 	})
 	slices.Sort(unplaced)
 
-	names := make([]string, 0, len(placed))
-	for _, database := range placed {
-		names = append(names, database.Namespace+"/"+database.Name)
-	}
-
 	if len(placed) > 1 {
+		names := make([]string, 0, len(placed))
+		for _, database := range placed {
+			names = append(names, database.Namespace+"/"+database.Name)
+		}
+
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonSharedServer,
 			Message: fmt.Sprintf(
@@ -555,7 +555,10 @@ func (r *Reconciler) dedicatedServer(
 				"%q. Point-in-time recovery rolls back the whole server, so it would roll back a "+
 				"database that this restore never validated. Declare the database of the cluster "+
 				"as a Database resource on a server of its own",
-			key, names[0], only.Spec.DatabaseName, dbConfig.Spec.DatabaseName,
+			key,
+			only.Namespace+"/"+only.Name,
+			only.Spec.DatabaseName,
+			dbConfig.Spec.DatabaseName,
 		), nil
 	}
 
