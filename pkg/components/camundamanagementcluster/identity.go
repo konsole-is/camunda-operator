@@ -338,19 +338,11 @@ func StartedInitialClaim(pods []corev1.Pod) string {
 	return claim
 }
 
-// identityStartedAt returns when the pod of the Management Identity container
-// began, or nil while the container never ran.
-//
-// The started field of the container status is not the signal. The container
-// carries a startup probe, so the kubelet sets that field only after the probe
-// passes on the health endpoint, which is just before the pod is ready.
-// Identity reads the administrator claim as it boots, well before that.
-//
-// The container states hold the latest run and the one before it only, so a
-// container that restarted twice or more has lost its first run. Only then
-// does the start time of the pod order it: that time is when the pod was
-// admitted, which can be long before the container ran, so it is a fallback
-// and not the first choice.
+// identityStartedAt returns when the Management Identity container of pod
+// first ran, or nil while it never ran. It reads the container states, not
+// the started flag: the startup probe sets that flag just before readiness,
+// and Identity reads the claim as it boots. A container that restarted twice
+// lost its first run, so the start time of the pod stands in for it.
 func identityStartedAt(pod *corev1.Pod) *metav1.Time {
 	for _, status := range pod.Status.ContainerStatuses {
 		if status.Name != identityContainer {
