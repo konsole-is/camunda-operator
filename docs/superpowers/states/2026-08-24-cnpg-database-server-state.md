@@ -29,7 +29,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | --- | --- | --- | --- | --- |
 | #128 | fix/cnpg-database-server--namespaced-chain | .claude/worktrees/cnpg-database-server/.claude/worktrees/namespaced-chain | #239 → feat/cnpg-database-server | self-merged (2d812a8) |
 | #234 | chore/cnpg-database-server--cnpg-wrappers | .claude/worktrees/cnpg-database-server/.claude/worktrees/cnpg-wrappers | #238 → feat/cnpg-database-server | self-merged (beee38d) |
-| #235 | feat/cnpg-database-server--database-server | .claude/worktrees/cnpg-database-server/.claude/worktrees/database-server | → feat/cnpg-database-server | not-started |
+| #235 | feat/cnpg-database-server--database-server | .claude/worktrees/cnpg-database-server/.claude/worktrees/database-server | → feat/cnpg-database-server | in-progress |
 | #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | → feat/cnpg-database-server | not-started |
 | #237 | ci/cnpg-database-server--e2e | .claude/worktrees/cnpg-database-server/.claude/worktrees/e2e | → feat/cnpg-database-server | not-started |
 
@@ -49,10 +49,9 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 ## Pending snapshot
 
-1. Create the two Phase 1 sub-worktrees off `feat/cnpg-database-server` (nested under the feature worktree, see the `nested-sub-worktrees-under-pin` memory) and dispatch #128 and #234 in parallel (`feature-dev-workflow:fanning-out-with-worktrees`).
-2. At each ripening: `feature-dev-workflow:copilot-review-loop` to clean, `review` pass, self-merge into `feat/cnpg-database-server`, `gh issue close <n>`, update this table.
-3. Phase 2 → 3 → 4 sequentially, each branched from the feature branch after the previous merge.
-4. `feature-dev-workflow:reviewing-feature-progress`, then report ready for the user's integration PR. Do not open or merge the integration PR.
+1. Phase 1 done (#238 beee38d, #239 2d812a8; wave checkpoint clean at 690188a). #235 dispatched into `.claude/worktrees/database-server` on 2026-08-24; when it reports: Copilot loop to clean, spec pass then quality pass (opus reviewers, read-only), self-merge, `gh issue close 235`, remove the sub-worktree, update this table.
+2. Then #236 (`feat/cnpg-database-server--contract-recovery`), then #237 (`ci/cnpg-database-server--e2e`), each branched from the feature branch after the previous merge, same ripening.
+3. `feature-dev-workflow:reviewing-feature-progress` on the feature worktree after #237, all gates, then report ready for the user's integration PR. Do not open or merge the integration PR.
 
 ## Resume checklist
 
