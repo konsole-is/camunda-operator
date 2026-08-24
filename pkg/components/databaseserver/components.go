@@ -249,8 +249,11 @@ func clusterMutations(
 			},
 		},
 		{
+			// The gate reads the spec, not the resolved bucket. The entry
+			// needs neither, and a bucket that stops resolving under a
+			// suspended server must not take the archive off the cluster.
 			Name:    "ContinuousArchive",
-			Feature: feature.NewBooleanGate(archive != nil),
+			Feature: feature.NewBooleanGate(merged.Archive != nil),
 			Mutate: func(m *cnpgcluster.Mutator) error {
 				m.Edit(func(c *cnpgv1.Cluster) error {
 					c.Spec.Plugins = []cnpgv1.PluginConfiguration{archivePlugin(server)}

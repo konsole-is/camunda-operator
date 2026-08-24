@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -213,6 +214,19 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(contract.Spec.PITR).NotTo(BeNil())
 		Expect(contract.Spec.PITR.Enabled).To(BeFalse())
 
+		// The typed read cannot tell an absent enabled from a false one, and
+		// the CRD doc promises the published contract reads
+		// pitr.enabled: false. The schema default is what puts it there.
+		var raw unstructured.Unstructured
+		raw.SetGroupVersionKind(v1.GroupVersion.WithKind("DatabaseServerConfig"))
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &raw,
+		)).To(Succeed())
+		pitr, found, err := unstructured.NestedMap(raw.Object, "spec", "pitr")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(pitr).To(Equal(map[string]any{"enabled": false}))
+
 		// A server with no archive block has nothing to archive, so the
 		// condition reports the component as disabled rather than failing.
 		archive := expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
@@ -373,6 +387,51 @@ var _ = Describe("DatabaseServer controller", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(archiveHistory(server)).To(Equal(closed))
 		}, time.Second, interval).Should(Succeed())
+	})
+
+	It("keeps the archive on the cluster while the server is suspended", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000006")
+
+		archiveKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-archive"}
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Plugins).To(HaveLen(1))
+			g.Expect(k8sClient.Get(ctx, archiveKey, &corev1.Secret{})).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.Suspend = true
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Annotations).To(HaveKeyWithValue("cnpg.io/hibernation", "on"))
+		}, timeout, interval).Should(Succeed())
+
+		// The last write-ahead log segments archive while the instances go
+		// away, so the plugin entry, the bucket settings, and the ObjectStore
+		// all have to outlive the suspension.
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Plugins).To(HaveLen(1))
+			g.Expect(cluster.Spec.Plugins[0].Parameters).To(HaveKeyWithValue("serverName", "camunda"))
+			g.Expect(k8sClient.Get(ctx, archiveKey, &corev1.Secret{})).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, clusterKey, &barmanobjectstore.ObjectStore{})).To(Succeed())
+		}, 2*time.Second, interval).Should(Succeed())
 	})
 
 	It("reports InvalidReference for a preset that does not exist", func() {

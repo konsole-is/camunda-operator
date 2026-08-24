@@ -257,6 +257,28 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 	)
 }
 
+// Suspension must not take the archive off the cluster. The rendered content
+// of a suspended server with an archive is the content of the same server
+// running: the plugin entry, the ObjectStore, and the Secret the plugin reads
+// its bucket settings from all stay.
+func TestDatabaseServerGoldenArchiveSuspended(t *testing.T) {
+	t.Parallel()
+
+	server, preset := goldenMinimalDatabaseServer()
+	server.Spec.Archive = archiveSpec()
+	server.Spec.Suspend = true
+	archive := &ArchiveStorage{
+		Config: archiveBucket(v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::123456789012:role/camunda"},
+		}),
+	}
+
+	assertDatabaseServerGoldens(
+		t, "archive-suspended", server, MergePreset(server.Spec, preset), archive,
+	)
+}
+
 // A server whose bucket holds static keys gets them in the archive Secret, and
 // the ObjectStore points every credential at that Secret.
 func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {

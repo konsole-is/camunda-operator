@@ -65,6 +65,26 @@ type resolvedSpec struct {
 	merged   v1.DatabaseServerSpec
 	platform *v1.CamundaPlatformConfigSpec
 	archive  *components.ArchiveStorage
+	// holdForSuspension says that the archive of a suspended server did not
+	// resolve. The reconcile then stops without rendering anything: see
+	// preCheck.
+	holdForSuspension bool
+}
+
+// serverComponents are the components of one reconcile, in the order they
+// reconcile in. They are named rather than indexed, so a reorder cannot
+// silently hand one of them to the wrong caller.
+type serverComponents struct {
+	cluster    *component.Component
+	archive    *component.Component
+	contract   *component.Component
+	monitoring *component.Component
+}
+
+// all returns the components in reconcile order. Ready aggregates every one of
+// them, and FlushStatus owns every one of their condition types.
+func (c serverComponents) all() []*component.Component {
+	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
 }
 
 // DatabaseServerReconciler runs a PostgreSQL server through the external
@@ -160,23 +180,27 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if resolved.holdForSuspension {
+		return ctrl.Result{}, nil
+	}
 
 	firstBaseBackup, err := r.firstBaseBackup(ctx, &server, resolved.merged)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	comps, systemIdentifier, err := r.buildComponents(&server, resolved, firstBaseBackup)
+	built, systemIdentifier, err := r.buildComponents(&server, resolved, firstBaseBackup)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	comps = built.all()
 
 	reconcileErr := reconcileComponents(ctx, recCtx, comps)
 
 	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
-	reconcileArchiveHistory(&server, resolved.merged, comps[1], firstBaseBackup, metav1.Now())
+	reconcileArchiveHistory(&server, resolved.merged, built.archive, firstBaseBackup, metav1.Now())
 
 	volumes, err := r.dataVolumes(ctx, &server)
 	if err != nil {
@@ -208,6 +232,10 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // presetRef, an incomplete merge, a version below the floor, and a bucket the
 // plugin cannot address all report InvalidReference. Any other error is a
 // transient API failure.
+//
+// A bucket that stops resolving under a suspended server is neither: the
+// result carries holdForSuspension, and the caller stops the reconcile without
+// touching status or any resource.
 func (r *DatabaseServerReconciler) preCheck(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -248,18 +276,35 @@ func (r *DatabaseServerReconciler) preCheck(
 	}
 	resolved.platform = platform
 
-	// A suspended server takes no backups and runs no pods, so the bucket is
-	// not consulted: a Secret deleted during suspension must not flap Ready,
-	// which reports Suspended by design.
-	if resolved.merged.Suspend {
-		return resolved, nil
+	// The plugin check stands outside the suspension tolerance below. Nothing
+	// reports that the plugin arrived, so a server held on it would sit with
+	// no reason on its Ready condition until something else wrote the status.
+	if resolved.merged.Archive != nil && !r.barmanInstalled {
+		return resolved, &conditions.PreCheckFailure{
+			Reason: v1.ReasonBarmanPluginNotInstalled,
+			Message: "The Barman Cloud plugin is not installed on this cluster. " +
+				"Install it, then restart the operator",
+		}
 	}
 
 	archive, err := r.resolveArchiveStorage(ctx, resolved.merged)
-	if err != nil {
+	var failure *conditions.PreCheckFailure
+	switch {
+	case err == nil:
+		resolved.archive = archive
+
+	// A suspended server runs no pods and takes no backups, so a bucket that
+	// stops resolving under it must not flap Ready, which reports Suspended by
+	// design. Rendering without the bucket is not the alternative: the desired
+	// state would then carry an empty archive, and applying it would take the
+	// bucket settings off the hibernated cluster. Both references are watched,
+	// so the reconcile comes back when one of them is fixed.
+	case resolved.merged.Suspend && errors.As(err, &failure):
+		resolved.holdForSuspension = true
+
+	default:
 		return resolved, err
 	}
-	resolved.archive = archive
 
 	return resolved, nil
 }
@@ -303,14 +348,6 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 ) (*components.ArchiveStorage, error) {
 	if merged.Archive == nil {
 		return nil, nil
-	}
-
-	if !r.barmanInstalled {
-		return nil, &conditions.PreCheckFailure{
-			Reason: v1.ReasonBarmanPluginNotInstalled,
-			Message: "The Barman Cloud plugin is not installed on this cluster. " +
-				"Install it, then restart the operator",
-		}
 	}
 
 	// The cached client: the type is watched, so the cache is current, and
@@ -367,32 +404,34 @@ func (r *DatabaseServerReconciler) buildComponents(
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
 	firstBaseBackup *metav1.Time,
-) ([]*component.Component, *concepts.Data[string], error) {
+) (serverComponents, *concepts.Data[string], error) {
 	merged := resolved.merged
+	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
 		server, merged, resolved.archive, resolved.platform,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building cluster component: %w", err)
+		return built, nil, fmt.Errorf("building cluster component: %w", err)
 	}
+	built.cluster = cluster
 
-	archiveComp, err := components.ArchiveComponent(server, merged, resolved.archive, firstBaseBackup)
+	built.archive, err = components.ArchiveComponent(server, merged, resolved.archive, firstBaseBackup)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building archive component: %w", err)
+		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
 
-	contract, err := components.ContractComponent(server, merged)
+	built.contract, err = components.ContractComponent(server, merged)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building contract component: %w", err)
+		return built, nil, fmt.Errorf("building contract component: %w", err)
 	}
 
-	monitoring, err := components.MonitoringComponent(server, merged, r.podMonitorSupported())
+	built.monitoring, err = components.MonitoringComponent(server, merged, r.podMonitorSupported())
 	if err != nil {
-		return nil, nil, fmt.Errorf("building monitoring component: %w", err)
+		return built, nil, fmt.Errorf("building monitoring component: %w", err)
 	}
 
-	return []*component.Component{cluster, archiveComp, contract, monitoring}, systemIdentifier, nil
+	return built, systemIdentifier, nil
 }
 
 // firstBaseBackup returns when the earliest completed base backup of the
