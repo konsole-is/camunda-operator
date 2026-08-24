@@ -1,6 +1,8 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
+  annotations:
+    cnpg.io/hibernation: "off"
   name: my-server
   namespace: my-server-ns
 spec:

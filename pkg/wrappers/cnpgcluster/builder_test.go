@@ -86,7 +86,9 @@ func TestMutationAppliesThroughMutator(t *testing.T) {
 		}).
 		Build()
 	require.NoError(t, err)
-	assert.Equal(t, []string{"scaffolded-label"}, res.RegisteredMutations())
+	// The builder registers the hibernation default first, so a suspension
+	// applied after every feature mutation still wins.
+	assert.Equal(t, []string{hibernationMutationName, "scaffolded-label"}, res.RegisteredMutations())
 
 	current := testObject()
 	require.NoError(t, res.Mutate(current))

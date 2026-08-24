@@ -26,6 +26,9 @@ type Builder struct {
 //
 // The provided Cluster must have a Name set and a Namespace set, which is
 // validated during the Build() call.
+//
+// Every Cluster carries the hibernation annotation, off unless the component
+// is suspended, so a hibernation set by hand cannot outlive a reconcile.
 func NewBuilder(obj *cnpgv1.Cluster) *Builder {
 	identityFunc := func(o *cnpgv1.Cluster) string {
 		return fmt.Sprintf("postgresql.cnpg.io/v1/Cluster/%s/%s", o.Namespace, o.Name)
@@ -44,9 +47,10 @@ func NewBuilder(obj *cnpgv1.Cluster) *Builder {
 		WithCustomSuspendMutation(DefaultSuspendMutationHandler).
 		WithCustomSuspendDeletionDecision(DefaultDeleteOnSuspendHandler)
 
-	return &Builder{
-		base: base,
-	}
+	builder := &Builder{base: base}
+	builder.WithMutation(hibernationOffMutation())
+
+	return builder
 }
 
 // WithMutation registers one or more feature-based mutations for the Cluster.

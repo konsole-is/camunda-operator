@@ -17,15 +17,13 @@ limitations under the License.
 package cnpgcluster_test
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
@@ -48,7 +46,7 @@ const fieldManager = "cnpgcluster-apply-test"
 // appears on a real cluster.
 func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 	ctx := t.Context()
-	apiClient := startControlPlane(t)
+	apiClient, testScheme := startControlPlane(t)
 
 	cluster, err := cnpgcluster.NewBuilder(clusterFixture("apply-server")).Build()
 	require.NoError(t, err)
@@ -107,7 +105,7 @@ func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 
 			// The framework stamps the kind on the object before it patches,
 			// because server-side apply reads it from the body.
-			gvks, _, err := scheme.Scheme.ObjectKinds(desired)
+			gvks, _, err := testScheme.ObjectKinds(desired)
 			require.NoError(t, err)
 			require.NotEmpty(t, gvks)
 			desired.GetObjectKind().SetGroupVersionKind(gvks[0])
@@ -123,12 +121,24 @@ func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 		})
 	}
 
-	var stored cnpgv1.Cluster
+	var suspendedStored cnpgv1.Cluster
 	require.NoError(t, apiClient.Get(
-		ctx, client.ObjectKey{Namespace: "default", Name: "apply-server-suspended"}, &stored,
+		ctx, client.ObjectKey{Namespace: "default", Name: "apply-server-suspended"}, &suspendedStored,
 	))
-	assert.Equal(t, cnpgcluster.HibernationOn, stored.Annotations[cnpgcluster.HibernationAnnotation])
-	assert.Equal(t, 1, stored.Spec.Instances, "suspension leaves the instance count alone")
+	assert.Equal(
+		t, cnpgcluster.HibernationOn, suspendedStored.Annotations[cnpgcluster.HibernationAnnotation],
+	)
+	assert.Equal(t, 1, suspendedStored.Spec.Instances, "suspension leaves the instance count alone")
+
+	// The running Cluster declares the annotation too, which is what lets a
+	// later apply take a hand-set hibernation back.
+	var runningStored cnpgv1.Cluster
+	require.NoError(t, apiClient.Get(
+		ctx, client.ObjectKey{Namespace: "default", Name: "apply-server"}, &runningStored,
+	))
+	assert.Equal(
+		t, cnpgcluster.HibernationOff, runningStored.Annotations[cnpgcluster.HibernationAnnotation],
+	)
 }
 
 // clusterFixture returns a Cluster that archives through the Barman Cloud
@@ -153,22 +163,15 @@ func clusterFixture(name string) *cnpgv1.Cluster {
 }
 
 // startControlPlane boots an envtest control plane that serves the vendored
-// CloudNativePG and Barman Cloud CRDs, and returns a client against it.
-func startControlPlane(t *testing.T) client.Client {
+// CloudNativePG and Barman Cloud CRDs, and returns a client against it and
+// the scheme that client reads through.
+func startControlPlane(t *testing.T) (client.Client, *runtime.Scheme) {
 	t.Helper()
 
-	require.NoError(t, cnpgv1.AddToScheme(scheme.Scheme))
-	require.NoError(t, barmanobjectstore.AddToScheme(scheme.Scheme))
-
-	cnpgCRDPath, err := utils.CNPGCRDPath()
-	require.NoError(t, err)
-	barmanCRDPath, err := utils.BarmanCRDPath()
-	require.NoError(t, err)
-
 	control := &envtest.Environment{
-		CRDDirectoryPaths:     []string{cnpgCRDPath, barmanCRDPath},
+		CRDDirectoryPaths:     []string{crdPath(t, utils.CNPGCRDPath), crdPath(t, utils.BarmanCRDPath)},
 		ErrorIfCRDPathMissing: true,
-		BinaryAssetsDirectory: envtestBinaryDir(),
+		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
 	}
 
 	cfg, err := control.Start()
@@ -177,29 +180,23 @@ func startControlPlane(t *testing.T) client.Client {
 		assert.NoError(t, control.Stop())
 	})
 
-	apiClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	// The scheme is private to this package. Registering into the global
+	// scheme.Scheme would leak the kinds into every other test binary that
+	// shares it.
+	testScheme := goldenScheme(t)
+
+	apiClient, err := client.New(cfg, client.Options{Scheme: testScheme})
 	require.NoError(t, err)
 
-	return apiClient
+	return apiClient, testScheme
 }
 
-// envtestBinaryDir returns the first versioned binary directory under bin/k8s
-// of this module, so the test runs from an IDE without KUBEBUILDER_ASSETS
-// set. An empty string leaves envtest with KUBEBUILDER_ASSETS, which
-// 'make setup-envtest' writes.
-func envtestBinaryDir() string {
-	base := filepath.Join("..", "..", "..", "bin", "k8s")
+// crdPath resolves one vendored CRD directory.
+func crdPath(t *testing.T, resolve func() (string, error)) string {
+	t.Helper()
 
-	entries, err := os.ReadDir(base)
-	if err != nil {
-		return ""
-	}
+	path, err := resolve()
+	require.NoError(t, err)
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(base, entry.Name())
-		}
-	}
-
-	return ""
+	return path
 }

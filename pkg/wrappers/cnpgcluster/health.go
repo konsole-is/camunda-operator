@@ -18,6 +18,7 @@ package cnpgcluster
 
 import (
 	"fmt"
+	"strconv"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
@@ -78,21 +79,39 @@ func DefaultConvergingStatusHandler(
 	return concepts.AliveStatusWithReason{
 		Status: concepts.AliveConvergingStatusUpdating,
 		Reason: fmt.Sprintf(
-			"CloudNativePG reports %q with %d of %d instances ready",
-			cluster.Status.Phase, cluster.Status.ReadyInstances, cluster.Spec.Instances,
+			"CloudNativePG reports %s with %d of %d instances ready",
+			phaseText(cluster.Status.Phase), cluster.Status.ReadyInstances, cluster.Spec.Instances,
 		),
 	}, nil
 }
 
+// phaseText renders a phase for a status reason. An empty phase means
+// CloudNativePG has not written one, which reads better as words than as a
+// pair of empty quotes.
+func phaseText(phase string) string {
+	if phase == "" {
+		return "no phase yet"
+	}
+
+	return strconv.Quote(phase)
+}
+
 // DefaultGraceStatusHandler grades a Cluster that is still not converged when
-// the grace period of the component expires: every instance ready is Healthy,
-// at least one ready instance is Degraded, because PostgreSQL still serves
-// through the read-write service, and no ready instance is Down.
+// the grace period of the component expires: a healthy phase with every
+// instance ready is Healthy, at least one ready instance is Degraded, because
+// PostgreSQL still serves through the read-write service, and no ready
+// instance is Down.
+//
+// The phase is part of the Healthy test because the framework calls this
+// handler only for a state DefaultConvergingStatusHandler did not call
+// Healthy. Reading the ready count alone would call a Cluster in a failing
+// phase healthy, which contradicts convergence and makes the component log an
+// inconsistency on every reconcile.
 func DefaultGraceStatusHandler(cluster *cnpgv1.Cluster) (concepts.GraceStatusWithReason, error) {
 	ready := cluster.Status.ReadyInstances
 
 	switch {
-	case ready >= cluster.Spec.Instances:
+	case cluster.Status.Phase == cnpgv1.PhaseHealthy && ready >= cluster.Spec.Instances:
 		return concepts.GraceStatusWithReason{
 			Status: concepts.GraceStatusHealthy,
 			Reason: fmt.Sprintf("%d of %d instances are ready", ready, cluster.Spec.Instances),
@@ -100,12 +119,17 @@ func DefaultGraceStatusHandler(cluster *cnpgv1.Cluster) (concepts.GraceStatusWit
 	case ready > 0:
 		return concepts.GraceStatusWithReason{
 			Status: concepts.GraceStatusDegraded,
-			Reason: fmt.Sprintf("%d of %d instances are ready", ready, cluster.Spec.Instances),
+			Reason: fmt.Sprintf(
+				"%d of %d instances are ready; CloudNativePG reports %s",
+				ready, cluster.Spec.Instances, phaseText(cluster.Status.Phase),
+			),
 		}, nil
 	default:
 		return concepts.GraceStatusWithReason{
 			Status: concepts.GraceStatusDown,
-			Reason: fmt.Sprintf("no instance is ready; CloudNativePG reports %q", cluster.Status.Phase),
+			Reason: fmt.Sprintf(
+				"no instance is ready; CloudNativePG reports %s", phaseText(cluster.Status.Phase),
+			),
 		}, nil
 	}
 }
@@ -144,7 +168,10 @@ func DefaultSuspensionStatusHandler(cluster *cnpgv1.Cluster) (concepts.Suspensio
 	default:
 		return concepts.SuspensionStatusWithReason{
 			Status: concepts.SuspensionStatusSuspending,
-			Reason: fmt.Sprintf("%d instances of the Cluster are still ready", cluster.Status.ReadyInstances),
+			Reason: fmt.Sprintf(
+				"CloudNativePG is deleting the instance pods; %d of %d are still ready",
+				cluster.Status.ReadyInstances, cluster.Spec.Instances,
+			),
 		}, nil
 	}
 }

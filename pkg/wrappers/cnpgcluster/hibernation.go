@@ -34,16 +34,33 @@ const (
 	HibernationCondition = "cnpg.io/hibernation"
 	// HibernationConditionReason is the reason of that condition.
 	HibernationConditionReason = "Hibernated"
+	// hibernationMutationName is the mutation NewBuilder registers to keep
+	// the annotation owned by this operator. It is the first mutation of
+	// every Cluster, so a suspension applied afterwards wins.
+	hibernationMutationName = "hibernation-off"
 )
+
+// hibernationOffMutation writes the off value on every Cluster this operator
+// applies, so the annotation is a field it owns. Without it a hibernation
+// somebody set by hand would keep the server down forever: the operator never
+// declared the field, so server-side apply leaves it alone and no suspension
+// state of the component contradicts it.
+//
+// The ocf suspender runs after every feature mutation, so a suspended
+// component still ends with the on value.
+func hibernationOffMutation() Mutation {
+	return Mutation{
+		Name: hibernationMutationName,
+		Mutate: func(m *Mutator) error {
+			m.SetHibernation(false)
+			return nil
+		},
+	}
+}
 
 // SetHibernation records the hibernation annotation of the Cluster.
 // CloudNativePG removes every instance pod while it is on and keeps the
 // volume claims, so the data of the server outlives the suspension.
-//
-// A resume needs no call: the resumed object no longer declares the
-// annotation, and server-side apply removes a field this operator applied
-// before. Pass false only to overwrite an annotation that somebody set by
-// hand.
 //
 // Scaling to zero is not the alternative it looks like: the CloudNativePG
 // schema puts a minimum of 1 on spec.instances, so the API server rejects

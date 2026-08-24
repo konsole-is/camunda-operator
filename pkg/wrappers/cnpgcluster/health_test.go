@@ -142,6 +142,11 @@ func TestDefaultGraceStatusHandler(t *testing.T) {
 			expected: concepts.GraceStatusHealthy,
 		},
 		{
+			name:     "waiting for a user action while every instance is ready",
+			cluster:  clusterWith(3, cnpgv1.PhaseWaitingForUser, 3, 3),
+			expected: concepts.GraceStatusDegraded,
+		},
+		{
 			name:     "some instances ready",
 			cluster:  clusterWith(3, cnpgv1.PhaseCreatingReplica, 1, 1),
 			expected: concepts.GraceStatusDegraded,
@@ -222,6 +227,10 @@ func TestDefaultSuspendMutationHandlerHibernates(t *testing.T) {
 	cluster := clusterWith(3, cnpgv1.PhaseHealthy, 3, 3)
 	mutator := NewMutator(cluster)
 
+	// The framework records the default mutations first and the suspender
+	// last, so the order here is the order of a suspended reconcile.
+	require.NoError(t, hibernationOffMutation().Mutate(mutator))
+	mutator.NextFeature()
 	require.NoError(t, DefaultSuspendMutationHandler(mutator))
 	require.NoError(t, mutator.Apply())
 
@@ -229,18 +238,22 @@ func TestDefaultSuspendMutationHandlerHibernates(t *testing.T) {
 	assert.Equal(t, 3, cluster.Spec.Instances)
 }
 
-// TestSetHibernationOffWritesTheOffValue proves that the resume value is
-// available for a caller that has to overwrite a hand-set annotation.
-func TestSetHibernationOffWritesTheOffValue(t *testing.T) {
+// TestBuilderOverwritesAHandSetHibernation proves that a hibernation
+// somebody set by hand does not outlive a reconcile. The builder declares the
+// annotation on every Cluster, so server-side apply owns the field and can
+// take it back.
+func TestBuilderOverwritesAHandSetHibernation(t *testing.T) {
 	t.Parallel()
 
-	cluster := clusterWith(3, cnpgv1.PhaseHealthy, 3, 3)
-	mutator := NewMutator(cluster)
+	res, err := NewBuilder(clusterWith(3, cnpgv1.PhaseHealthy, 3, 3)).Build()
+	require.NoError(t, err)
+	assert.Contains(t, res.RegisteredMutations(), hibernationMutationName)
 
-	mutator.SetHibernation(false)
-	require.NoError(t, mutator.Apply())
+	current := clusterWith(3, cnpgv1.PhaseHealthy, 3, 3)
+	current.Annotations = map[string]string{HibernationAnnotation: HibernationOn}
 
-	assert.Equal(t, HibernationOff, cluster.Annotations[HibernationAnnotation])
+	require.NoError(t, res.Mutate(current))
+	assert.Equal(t, HibernationOff, current.Annotations[HibernationAnnotation])
 }
 
 // TestDefaultDeleteOnSuspendHandlerKeepsTheCluster proves that suspension
