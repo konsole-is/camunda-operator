@@ -94,6 +94,11 @@ func ArchiveSecretName(server *v1.DatabaseServer) string {
 	return server.Name + archiveSecretSuffix
 }
 
+// Archiving reports whether the merged spec asks for an archive. It is the one
+// place that decides it, so the feature gate of the archive component and
+// every other reader of the rule always answer the same.
+func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
+
 // ValidateArchiveStorage reports why a bucket cannot hold the archive of a
 // server, or nil when it can. The caller turns the message into a pre-check
 // failure on the server.
@@ -113,11 +118,8 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 
 // ArchiveComponent builds the archive component: the Secret with the bucket
 // settings, the ObjectStore that describes the archive, and the ScheduledBackup
-// that takes the base backups. archiving says whether the server keeps an
-// archive at all, and it is the feature gate of the component. Without an
-// archive the component deletes its resources and reports Disabled. The caller
-// decides archiving, so the same answer also decides whether the component
-// takes part in Ready.
+// that takes the base backups. Archiving is the feature gate of the component.
+// Without an archive the component deletes its resources and reports Disabled.
 //
 // The component is never suspended. A suspended component applies no baseline,
 // so the suspension of the base backup schedule could never reach the cluster,
@@ -134,7 +136,6 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 func ArchiveComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
-	archiving bool,
 	archive *ArchiveStorage,
 	archiveStart *metav1.Time,
 ) (*component.Component, error) {
@@ -171,7 +172,7 @@ func ArchiveComponent(
 	return component.NewComponentBuilder().
 		WithName("archive").
 		WithConditionType(ConditionArchive).
-		WithFeatureGate(feature.NewBooleanGate(archiving)).
+		WithFeatureGate(feature.NewBooleanGate(Archiving(merged))).
 		WithResource(settings, component.GatedBy(feature.NewBooleanGate(len(archiveSecretData(resolved)) > 0))).
 		WithResource(store).
 		WithResource(baseBackup).

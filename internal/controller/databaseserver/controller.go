@@ -606,8 +606,8 @@ func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.Databas
 
 // buildComponents builds the four components in dependency order: cluster,
 // archive, contract, monitoring, and records which of them take part in Ready.
-// It answers once whether the server archives, so the gate of the archive
-// component and its part in Ready can never disagree. The returned data cell
+// components.Archiving decides both the gate of the archive component and its
+// part in Ready, so the two can never disagree. The returned data cell
 // holds the PostgreSQL system identifier once the cluster component has
 // reconciled.
 func (r *DatabaseServerReconciler) buildComponents(
@@ -616,7 +616,6 @@ func (r *DatabaseServerReconciler) buildComponents(
 	archiveStart *metav1.Time,
 ) (serverComponents, *concepts.Data[string], error) {
 	merged := resolved.merged
-	archiving := merged.Archive != nil
 	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
@@ -627,9 +626,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	}
 	built.cluster = cluster
 
-	built.archive, err = components.ArchiveComponent(
-		server, merged, archiving, resolved.archive, archiveStart,
-	)
+	built.archive, err = components.ArchiveComponent(server, merged, resolved.archive, archiveStart)
 	if err != nil {
 		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
@@ -645,7 +642,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	}
 
 	built.ready = []*component.Component{built.cluster, built.contract}
-	if archiving {
+	if components.Archiving(merged) {
 		built.ready = append(built.ready, built.archive)
 	}
 
