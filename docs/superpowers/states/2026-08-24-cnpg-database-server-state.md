@@ -43,6 +43,8 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 ## Bubble-up log
 
+- 2026-08-24 — #128 round 2: the dedicated-server rule now holds a restore for a `Database` it cannot place. The strict form (hold whenever any contract in the cluster is unprobed) lets one tenant stall every restore, so `databaseIdentity` falls back to the identity recorded in `status.collisionKey` when the contract is unprobed; only a `Database` that never resolved is unplaceable. Accepted; the retention rule (collisionKey never cleared) is what makes the fallback sound. The strict rule also exposed a `Database` leak in the PITR test fixture (41 failures until `DeferCleanup` was added). Propagated: #236 dispatch prompt must keep this fallback when it adds the operator-recovery exception to the pin check.
+- 2026-08-24 — #234 round 4: a Cluster is Suspended only when the `cnpg.io/hibernation` condition is True (no readyInstances fallback). #235 must not wait on Suspended for anything time-critical; DeleteOnSuspend is false so nothing destructive is gated on it.
 - 2026-08-24 — #234 spec review: the CNPG CRD declares `minimum: 1` on `spec.instances`, so the scale-to-zero suspend in the spec can never apply. Resolution: suspend through declarative hibernation (`cnpg.io/hibernation: "on"` annotation, status from the `cnpg.io/hibernation` condition). Propagated: spec and plan amended; fix routed to the #234 implementer; the #235 dispatch will carry it.
 
 ## Pending snapshot
