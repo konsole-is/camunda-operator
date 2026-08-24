@@ -31,6 +31,7 @@ import (
 
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/cnpgcluster"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/cnpgscheduledbackup"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
@@ -38,7 +39,7 @@ import (
 // the framework names the component that owns a resource.
 const fieldManager = "cnpgcluster-apply-test"
 
-// TestWrappersApplyAgainstTheCRDs applies the rendered objects of the
+// TestWrappersApplyAgainstTheCRDs applies the rendered objects of the three
 // CloudNativePG and Barman Cloud wrappers with server-side apply, against the
 // schemas the two operators serve. The API server types a server-side apply
 // patch against the schema of the target before it merges anything, so a Go
@@ -90,10 +91,22 @@ func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 	}).Build()
 	require.NoError(t, err)
 
+	backup, err := cnpgscheduledbackup.NewBuilder(&cnpgv1.ScheduledBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "apply-base-backup", Namespace: "default"},
+		Spec: cnpgv1.ScheduledBackupSpec{
+			Schedule:            "0 0 2 * * *",
+			Immediate:           new(true),
+			Method:              cnpgv1.BackupMethodPlugin,
+			PluginConfiguration: &cnpgv1.BackupPluginConfiguration{Name: "barman-cloud.cloudnative-pg.io"},
+			Cluster:             cnpgv1.LocalObjectReference{Name: "apply-server"},
+		},
+	}).Build()
+	require.NoError(t, err)
+
 	for _, res := range []interface {
 		Identity() string
 		Preview() (client.Object, error)
-	}{cluster, store} {
+	}{cluster, store, backup} {
 		t.Run(res.Identity(), func(t *testing.T) {
 			desired, err := res.Preview()
 			require.NoError(t, err)
