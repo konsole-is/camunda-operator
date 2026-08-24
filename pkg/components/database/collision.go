@@ -21,12 +21,9 @@ import (
 )
 
 // CollisionKey returns the index key of a logical database claim:
-// "<systemIdentifier>/<databaseName>". Database names are unique per server,
-// and systemIdentifier names the PostgreSQL instance rather than the contract
-// that describes it, so two contracts that reach one instance under different
-// hosts produce one key. The caller passes the identifier that the contract
-// published in status.systemIdentifier, and holds the claim back while that
-// is empty.
+// "<systemIdentifier>/<databaseName>". The caller passes the identifier that
+// the contract published in status.systemIdentifier, and holds the claim back
+// while that is empty.
 func CollisionKey(systemIdentifier, databaseName string) string {
 	return systemIdentifier + "/" + databaseName
 }

@@ -86,7 +86,10 @@ type DatabaseStatus struct {
 	// CollisionKey is the claim that this Database won or contested: the
 	// system identifier of the server and the logical database name. The
 	// operator records it once it resolves the server, and the uniqueness
-	// rule runs over the recorded keys of every namespace.
+	// rule runs over the recorded keys of every namespace. The operator never
+	// clears it, so a Database whose server or contract is gone keeps its
+	// claim and goes on contesting the name. Delete such a Database to
+	// release it.
 	// +optional
 	CollisionKey string `json:"collisionKey,omitempty"`
 	// Conditions represent the current state. Ready carries a pre-check

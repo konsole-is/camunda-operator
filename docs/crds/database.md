@@ -47,7 +47,9 @@ If `spec.serverRef` names no `DatabaseServerConfig` in this namespace, `Ready` i
 
 One `Database` owns one logical database name on one PostgreSQL server. The server is the instance that the contract reaches, not the contract itself: two `DatabaseServerConfig` objects that describe one instance under different hosts are one server here. The operator reads the identity of the instance from `status.systemIdentifier` of the contract.
 
-The claim therefore crosses namespaces. If a second `Database` of any namespace claims the same logical database name on the same instance, the oldest one wins. On an equal creation timestamp, the smaller `<namespace>/<name>` wins. The loser reports `InvalidReference`, names the winner, runs no SQL, and publishes nothing.
+The claim therefore crosses namespaces. If a second `Database` of any namespace claims the same logical database name on the same instance, the oldest one wins. On an equal creation timestamp, the smaller `<namespace>/<name>` wins. The loser reports `InvalidReference`, names the winner, and runs no SQL.
+
+A `Database` can also lose a claim it once held, when the contract of an older claimant reaches its server for the first time. The winner owns the logical database and resets the role passwords, so the credentials of the loser open nothing. The loser therefore withdraws what it published: the `DatabaseConfig`, the `SecondaryStorageConfig`, and both credential Secrets are deleted, and `BindingsReady` reads `Disabled`.
 
 `status.collisionKey` shows the claim of a `Database`, as the system identifier and the database name:
 
@@ -55,6 +57,8 @@ The claim therefore crosses namespaces. If a second `Database` of any namespace 
 status:
   collisionKey: 7412345678901234567/camunda
 ```
+
+The operator never clears this field. A `Database` whose server or contract is gone keeps its claim and goes on contesting the name. Delete the `Database` to release it.
 
 ## Changes
 
@@ -69,15 +73,15 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `InvalidReference` | `spec.serverRef` names no `DatabaseServerConfig` in this namespace. Or another `Database`, named in the message as `<namespace>/<name>`, already claims the same logical database name on the same server. | Create the `DatabaseServerConfig`, or change `databaseName`, or delete the duplicate. |
-| `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` yet. The operator cannot tell which server the contract reaches, so it claims nothing. | Wait, and read the `Ready` condition of the `DatabaseServerConfig`. It publishes the identity as soon as it reaches the server. |
+| `Ready` | `ServerIdentityUnknown` | The `DatabaseServerConfig` has not published `status.systemIdentifier` yet. The operator cannot tell which server the contract reaches, so it claims nothing and runs no SQL. | Wait until the `DatabaseServerConfig` reports `Ready`. It publishes the identity as soon as it reaches the server. |
 | `Ready` | `MissingSecret` | The admin credentials Secret of the server is missing or lacks a key. | Create the Secret with the keys that the `DatabaseServerConfig` names. |
 | `Ready` | `ConnectionFailed` | The server does not answer, or it rejects the admin credentials. The operator retries every 30 seconds. | Make sure that the operator can reach the server and that the admin credentials are correct. |
 | `Ready` | component status | The pre-checks passed. `Ready` takes the status and reason of `BindingsReady`, for example `Healthy`, `Creating`, `Updating`, `Failing`, or `Error`. | Wait while the reason is `Creating` or `Updating`. For other reasons, read the message of `BindingsReady`. |
-| `BindingsReady` | component status | The detail of the published Secrets, `DatabaseConfig`, and `SecondaryStorageConfig`. | Read the message when it is not `True`. |
+| `BindingsReady` | component status | The detail of the published Secrets, `DatabaseConfig`, and `SecondaryStorageConfig`. `Disabled` means this `Database` lost its claim and withdrew them. | Read the message when it is not `True`. |
 
 | Field | Meaning |
 | --- | --- |
-| `status.collisionKey` | The claim of this `Database`: the system identifier of the server and the logical database name. |
+| `status.collisionKey` | The claim of this `Database`: the system identifier of the server and the logical database name. The operator never clears it. |
 | `status.observedGeneration` | The last generation that the operator reconciled. |
 
 ## Spec reference

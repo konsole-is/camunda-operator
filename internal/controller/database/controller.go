@@ -58,12 +58,20 @@ const databaseServerRefField = "database.spec.serverRef"
 // status.collisionKey. The collision rule can then list every claimant of one
 // logical database on one PostgreSQL instance, across all namespaces, with
 // one field-indexed query.
-const databaseCollisionField = "database.status.serverDatabase"
+const databaseCollisionField = "database.status.collisionKey"
 
 // connectionRetryInterval is the wait before the controller retries a server
 // whose connection pre-check failed. The controller cannot watch the external
 // server, so a timed requeue is the only trigger.
 const connectionRetryInterval = 30 * time.Second
+
+// errClaimLost reports that another Database holds the claim to the logical
+// database of this one. It is the single pre-check failure that withdraws the
+// bindings: every other one leaves a server unreachable or a reference
+// unresolved, and the published bindings stay valid. A lost claim does not.
+// The winner owns the logical database and rotates the role passwords, so the
+// credentials of the loser open nothing.
+var errClaimLost = errors.New("another Database holds the claim")
 
 // DatabaseReconciler bootstraps a logical database and its users on an
 // existing PostgreSQL server over plain SQL. It publishes the credential
@@ -133,6 +141,9 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&database, conditions.Failed(&database, failure))
+		if errors.Is(err, errClaimLost) {
+			return ctrl.Result{}, r.withdrawBindings(ctx, rec, &database, &comps)
+		}
 		if failure.Reason == v1.ReasonConnectionFailed {
 			return ctrl.Result{RequeueAfter: connectionRetryInterval}, nil
 		}
@@ -162,6 +173,25 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	conditions.Stage(&database, conditions.Aggregate(&database, comp))
 
 	return ctrl.Result{}, reconcileErr
+}
+
+// withdrawBindings deletes every binding that database published and appends
+// the component to comps, so the one status flush of this reconcile owns
+// BindingsReady and reports it as Disabled. A Database that lost its claim
+// keeps neither the contracts nor the credential Secrets it published.
+func (r *DatabaseReconciler) withdrawBindings(
+	ctx context.Context,
+	rec component.ReconcileContext,
+	database *v1.Database,
+	comps *[]*component.Component,
+) error {
+	comp, err := components.WithdrawnBindingsComponent(database)
+	if err != nil {
+		return err
+	}
+	*comps = []*component.Component{comp}
+
+	return comp.Reconcile(ctx, rec)
 }
 
 // resolvePasswords fills the role passwords of rb. It reuses the password of
@@ -222,8 +252,11 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 // the claim of the Database in status.collisionKey as soon as the identity is
 // known, so the index that the collision rule lists over is served from what
 // the operator resolved. It returns the connected Bootstrapper, which the
-// caller closes. A failed check returns a *conditions.PreCheckFailure that
-// carries its Ready reason. Any other error is a transient API failure.
+// caller closes.
+//
+// A failed check returns an error carrying a *conditions.PreCheckFailure with
+// its Ready reason, and a lost claim wraps errClaimLost beside it. Any other
+// error is a transient API failure.
 func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database) (pgbootstrap.Bootstrapper, error) {
 	server, err := r.resolveServer(ctx, database)
 	if err != nil {
@@ -234,8 +267,8 @@ func (r *DatabaseReconciler) preCheck(ctx context.Context, database *v1.Database
 		return nil, &conditions.PreCheckFailure{
 			Reason: v1.ReasonServerIdentityUnknown,
 			Message: fmt.Sprintf(
-				"DatabaseServerConfig %s/%s has not published its system identifier yet",
-				server.Namespace, server.Name,
+				"DatabaseServerConfig %s has not published its system identifier yet. Wait until "+
+					"it reports Ready", client.ObjectKeyFromObject(server),
 			),
 		}
 	}
@@ -268,7 +301,7 @@ func (r *DatabaseReconciler) resolveServer(
 		if apierrors.IsNotFound(err) {
 			return nil, &conditions.PreCheckFailure{
 				Reason:  v1.ReasonInvalidReference,
-				Message: fmt.Sprintf("DatabaseServerConfig %q not found", key),
+				Message: fmt.Sprintf("DatabaseServerConfig %s not found", key),
 			}
 		}
 		return nil, err
@@ -305,7 +338,9 @@ func (r *DatabaseReconciler) adminCredentials(
 // checkCollision applies the first-creation-wins rule to the logical database
 // that this CR claims. The claim belongs to the PostgreSQL instance, so the
 // list covers every namespace: an older Database that reaches the same
-// instance through another contract wins, and the failure names it.
+// instance through another contract wins, and the failure names it. A lost
+// claim wraps errClaimLost, which the reconcile answers by withdrawing the
+// bindings.
 func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Database) error {
 	key := database.Status.CollisionKey
 
@@ -320,13 +355,13 @@ func (r *DatabaseReconciler) checkCollision(ctx context.Context, database *v1.Da
 		return nil
 	}
 
-	return &conditions.PreCheckFailure{
+	return fmt.Errorf("%w: %w", errClaimLost, &conditions.PreCheckFailure{
 		Reason: v1.ReasonInvalidReference,
 		Message: fmt.Sprintf(
-			"Database %s/%s already claims database %q on the same server",
-			winner.Namespace, winner.Name, database.Spec.DatabaseName,
+			"Database %s already claims database %q on the same server",
+			client.ObjectKeyFromObject(winner), database.Spec.DatabaseName,
 		),
-	}
+	})
 }
 
 // connect opens the admin connection to server and pings it. Any failure maps
@@ -349,7 +384,7 @@ func connect(
 		return nil, &conditions.PreCheckFailure{
 			Reason: v1.ReasonConnectionFailed,
 			Message: fmt.Sprintf(
-				"Connecting to DatabaseServerConfig %s/%s: %v", server.Namespace, server.Name, err,
+				"Connecting to DatabaseServerConfig %s: %v", client.ObjectKeyFromObject(server), err,
 			),
 		}
 	}

@@ -44,8 +44,7 @@ func collidingDatabase(name string, created time.Time) v1.Database {
 }
 
 // TestCollisionKeyIsTheServerIdentity pins that the claim belongs to the
-// PostgreSQL instance, not to the contract that describes it. Two contracts
-// of two namespaces that reach one instance produce one key.
+// PostgreSQL instance, not to the contract that describes it.
 func TestCollisionKeyIsTheServerIdentity(t *testing.T) {
 	t.Parallel()
 

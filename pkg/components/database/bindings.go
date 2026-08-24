@@ -154,14 +154,34 @@ func BackupUserName(databaseName string) string {
 	return prefix + "_" + hash + backupUserSuffix
 }
 
-// BindingsComponent assembles the single bindings component. It holds
-// the application credentials Secret, the backup credentials Secret (gated on
+// BindingsComponent assembles the single bindings component. It holds the
+// application credentials Secret, the backup credentials Secret (gated on
 // backup enabled), the DatabaseConfig, and the SecondaryStorageConfig. The
 // SecondaryStorageConfig is present only when spec.secondaryStorageConfig is
-// set. It registers the database as rdbms secondary storage. All children
-// land in the namespace of the Database, which gives each of them an owner
-// reference to it.
+// set. It registers the database as rdbms secondary storage.
+//
+// All children land in the namespace of the Database. Each of them carries an
+// owner reference to it.
 func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, error) {
+	return bindingsComponent(db, rb, true)
+}
+
+// WithdrawnBindingsComponent assembles the bindings component with its feature
+// gate off. The component deletes every binding of db and reports
+// BindingsReady with reason Disabled. A Database that lost the claim to its
+// logical database uses it: the winner owns that database and rotates the role
+// passwords, so the credentials this one published open nothing.
+//
+// It resolves the binding names from db alone. The passwords are not needed to
+// delete a Secret, and the winner holds the current ones anyway.
+func WithdrawnBindingsComponent(db *v1.Database) (*component.Component, error) {
+	return bindingsComponent(db, ResolveBindings(db), false)
+}
+
+// bindingsComponent builds the component behind both constructors. holds is
+// the component feature gate: false makes it withdraw every binding instead of
+// applying it.
+func bindingsComponent(db *v1.Database, rb Bindings, holds bool) (*component.Component, error) {
 	appSecret, err := secret.NewBuilder(
 		credentialSecret(db, rb.AppSecret, rb.AppUser, rb.AppPassword),
 	).Build()
@@ -195,6 +215,7 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 	builder := component.NewComponentBuilder().
 		WithName("bindings").
 		WithConditionType(ConditionBindings).
+		WithFeatureGate(feature.NewBooleanGate(holds)).
 		WithResource(appSecret).
 		WithResource(backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled))).
 		WithResource(dbConfig)
