@@ -1,0 +1,54 @@
+apiVersion: v1
+data:
+  region: ZXUtd2VzdC0x
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db-archive
+  namespace: my-cluster-ns
+type: Opaque
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db
+  namespace: my-cluster-ns
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://camunda-backups/clusters/databaseserver/my-cluster-ns/my-cluster-db
+    s3Credentials:
+      inheritFromIAMRole: true
+      region:
+        key: region
+        name: my-cluster-db-archive
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db
+  namespace: my-cluster-ns
+spec:
+  cluster:
+    name: my-cluster-db
+  immediate: true
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 0 2 * * *
+  suspend: true
