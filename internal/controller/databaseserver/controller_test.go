@@ -363,7 +363,8 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		// An archive the spec asks for takes part in Ready, so a server that
 		// cannot be recovered to any point yet is not ready.
-		expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		held := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(held.Reason).To(Equal(string(component.GuardBlocked)), held.Message)
 
 		completedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
 		completeBaseBackup(server, "base", completedAt)

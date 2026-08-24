@@ -969,7 +969,7 @@ func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
 
 	backups := map[int]time.Time{}
 	for _, backup := range state.BackupStates {
-		taken, err := parseCheckpointTime(backup.Timestamp)
+		taken, err := utils.ParseCheckpointTime(backup.Timestamp)
 		if err != nil {
 			return nil, err
 		}
@@ -979,19 +979,6 @@ func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
 	}
 
 	return backups, nil
-}
-
-// parseCheckpointTime reads a checkpoint timestamp of the runtime state
-// endpoint. The endpoint writes the zone as "Z" or as "+0000", and only the
-// first of those two is RFC 3339.
-func parseCheckpointTime(value string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z0700"} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed, nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("reading the checkpoint timestamp %q", value)
 }
 
 // applicationCredentials returns the application credentials of the logical
