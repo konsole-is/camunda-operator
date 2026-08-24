@@ -216,7 +216,7 @@ spec:
   # ... the rest of your cluster
 ```
 
-On Camunda 8.10 and later the four names are `CAMUNDA_HUB_PING_*` instead. The management plane owns these names and replaces what you set under one of them. It removes an entry that sets `valueFrom` under one of them, because one entry cannot hold `value` and `valueFrom` together. The `CamundaManagementCluster` then records the Warning event `ConsolePingEntryRemoved`, which names the entry, and the field manager that wrote it when `metadata.managedFields` holds one. To keep an entry of your own, give it a name that the management plane does not own.
+On Camunda 8.10 and later the four names are `CAMUNDA_HUB_PING_*` instead. The management plane owns these names and replaces what you set under one of them. It removes an entry that sets `valueFrom` under one of them, because one entry cannot hold `value` and `valueFrom` together. The `CamundaManagementCluster` then records the Warning event `ConsolePingEntryRemoved`, which names the entry, and every field manager that owns its `valueFrom` when `metadata.managedFields` holds one. To keep an entry of your own, give it a name that the management plane does not own.
 
 The entries change `spec`, so the pods roll once when they arrive and once when they go. After that they stay as they are.
 

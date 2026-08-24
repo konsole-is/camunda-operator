@@ -134,7 +134,8 @@ func PingsConsole(env []corev1.EnvVar, consoleURL string) bool {
 
 // PingCollisions returns the entries of spec.extraEnv that set valueFrom
 // under a ping name of the key set that clusterVersion reads, from the last
-// of the list to the first, each with the field manager that wrote it. Give
+// of the list to the first, each with every field manager that owns its
+// valueFrom. Give
 // it the version that PingEnv gets, so both read one key set.
 func PingCollisions(cluster *v1.CamundaCluster, clusterVersion string) []PingCollision {
 	// Server-side apply merges per field inside one entry, so the value the
@@ -187,7 +188,9 @@ func valueFromManagers(fields []metav1.ManagedFieldsEntry, name string) []string
 			managers = append(managers, entry.Manager)
 		}
 	}
+	// One manager can hold an Apply record and an Update record that both
+	// claim the field, so the sorted list is compacted.
 	slices.Sort(managers)
 
-	return managers
+	return slices.Compact(managers)
 }

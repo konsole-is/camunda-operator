@@ -164,6 +164,13 @@ func TestPingCollisionsNameTheFieldManagerOfValueFrom(t *testing.T) {
 				),
 			},
 			{
+				Manager:   "argocd-controller",
+				Operation: metav1.ManagedFieldsOperationUpdate,
+				FieldsV1: metav1.NewFieldsV1(
+					`{"f:spec":{"f:extraEnv":{"k:{\"name\":\"CAMUNDA_CONSOLE_PING_ENDPOINT\"}":{"f:valueFrom":{}}}}}`,
+				),
+			},
+			{
 				Manager: "argocd-controller",
 				FieldsV1: metav1.NewFieldsV1(
 					`{"f:spec":{"f:extraEnv":{"k:{\"name\":\"CAMUNDA_CONSOLE_PING_ENDPOINT\"}":{"f:valueFrom":{}}}}}`,
@@ -180,7 +187,8 @@ func TestPingCollisionsNameTheFieldManagerOfValueFrom(t *testing.T) {
 
 	// The entry of a subresource says nothing about spec.extraEnv, and the
 	// manager that owns another name is not the one that wrote this entry.
-	// Two managers that applied the same valueFrom both own it, in name order.
+	// Two managers that applied the same valueFrom both own it, in name order,
+	// and a manager with an Apply and an Update record is named once.
 	assert.Equal(
 		t, []PingCollision{{
 			Index:    0,
