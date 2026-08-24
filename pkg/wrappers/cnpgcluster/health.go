@@ -149,36 +149,55 @@ func DefaultSuspendMutationHandler(m *Mutator) error {
 	return nil
 }
 
-// DefaultSuspensionStatusHandler reports Suspended once CloudNativePG has
-// hibernated the Cluster: the hibernation condition is True, or, before
-// CloudNativePG writes that condition, no instance is ready. Anything else is
-// Suspending.
+// DefaultSuspensionStatusHandler reports Suspended only once CloudNativePG
+// reports the hibernation condition True. Anything else is Suspending.
 //
-// The count of status.instances is not part of the answer. It counts the
+// Neither instance count answers the question. status.instances counts the
 // volume claim groups of the server, which hibernation keeps on purpose, so
-// it never drains.
+// it never drains. status.readyInstances reaching zero says the pods stopped
+// passing their probes, not that they are gone, and CloudNativePG also defers
+// hibernation while the Cluster is unhealthy. Only the condition states that
+// the pods are actually down.
 func DefaultSuspensionStatusHandler(cluster *cnpgv1.Cluster) (concepts.SuspensionStatusWithReason, error) {
 	condition := meta.FindStatusCondition(cluster.Status.Conditions, HibernationCondition)
 
-	switch {
-	case condition != nil && condition.Status == metav1.ConditionTrue:
+	if condition != nil && condition.Status == metav1.ConditionTrue {
 		return concepts.SuspensionStatusWithReason{
 			Status: concepts.SuspensionStatusSuspended,
 			Reason: "CloudNativePG reports the Cluster as hibernated",
 		}, nil
-	case condition == nil && cluster.Status.ReadyInstances == 0:
-		return concepts.SuspensionStatusWithReason{
-			Status: concepts.SuspensionStatusSuspended,
-			Reason: "no instance of the Cluster is ready",
-		}, nil
+	}
+
+	return concepts.SuspensionStatusWithReason{
+		Status: concepts.SuspensionStatusSuspending,
+		Reason: fmt.Sprintf(
+			"%s; %d of %d instances are still ready",
+			hibernationText(condition), cluster.Status.ReadyInstances, cluster.Spec.Instances,
+		),
+	}, nil
+}
+
+// hibernationText says where the hibernation stands, for a status reason. It
+// carries the reason and the message of the condition, because a False
+// condition covers two different states: CloudNativePG is still deleting the
+// pods, and CloudNativePG has deferred the hibernation because the Cluster is
+// not healthy. Only its own words separate them.
+func hibernationText(condition *metav1.Condition) string {
+	if condition == nil {
+		return "CloudNativePG has not reported the hibernation condition yet"
+	}
+
+	const prefix = "CloudNativePG has not hibernated the Cluster yet"
+
+	switch {
+	case condition.Reason != "" && condition.Message != "":
+		return fmt.Sprintf("%s (%s: %s)", prefix, condition.Reason, condition.Message)
+	case condition.Reason != "":
+		return fmt.Sprintf("%s (%s)", prefix, condition.Reason)
+	case condition.Message != "":
+		return fmt.Sprintf("%s (%s)", prefix, condition.Message)
 	default:
-		return concepts.SuspensionStatusWithReason{
-			Status: concepts.SuspensionStatusSuspending,
-			Reason: fmt.Sprintf(
-				"CloudNativePG is deleting the instance pods; %d of %d are still ready",
-				cluster.Status.ReadyInstances, cluster.Spec.Instances,
-			),
-		}, nil
+		return prefix
 	}
 }
 
