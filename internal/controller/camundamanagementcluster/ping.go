@@ -80,8 +80,16 @@ func (r *Reconciler) syncPing(
 			key := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name}
 			served[key] = true
 
+			live := byKey[key]
+			if live == nil {
+				// attached derives from clusters in this reconcile, so this
+				// only guards a broken invariant against a panic.
+				reportPingFailure(mc, key, fmt.Errorf("the cluster is not in the cluster list"))
+				continue
+			}
+
 			env := components.PingEnv(consoleURL, cluster.Name, cluster.Version)
-			err := r.replacePing(ctx, mc, byKey[key], cluster.Version, env)
+			err := r.replacePing(ctx, mc, live, cluster.Version, env)
 			if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
 				reportPingFailure(mc, key, err)
 				continue
