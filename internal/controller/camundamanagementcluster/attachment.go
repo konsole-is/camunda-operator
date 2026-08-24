@@ -291,25 +291,38 @@ func basicUserSecret(
 	return components.WebModelerClusterUserSecretName(mc, cluster.UID)
 }
 
-// clusterAuthMethod reads how a cluster authenticates its users and clients,
-// from the platform config that the cluster names. It returns the
-// authentication method, or a message for the row of that cluster when the
-// config cannot be read.
-//
-// A dangling reference is a message rather than an error: the cluster's own
-// controller reports the same reference, and one broken cluster must not stop
-// the management plane.
-func (r *Reconciler) clusterAuthMethod(
+// readClusterConfig reads the platform config that cluster names. A dangling
+// reference is a message for the row of the cluster rather than an error: the
+// cluster's own controller reports the same reference, and one broken cluster
+// must not stop the management plane. Any other failure of the API is an
+// error.
+func (r *Reconciler) readClusterConfig(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
-) (v1.AuthenticationMethod, string, error) {
+) (*v1.CamundaPlatformConfig, string, error) {
 	var cfg v1.CamundaPlatformConfig
 	key := client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}
 	if err := r.APIReader.Get(ctx, key, &cfg); err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", fmt.Sprintf("CamundaPlatformConfig %q of this cluster not found", key.Name), nil
+			return nil, fmt.Sprintf("CamundaPlatformConfig %q of this cluster not found", key.Name), nil
 		}
-		return "", "", fmt.Errorf("reading CamundaPlatformConfig %q: %w", key.Name, err)
+		return nil, "", fmt.Errorf("reading CamundaPlatformConfig %q: %w", key.Name, err)
+	}
+
+	return &cfg, "", nil
+}
+
+// clusterAuthMethod reads how a cluster authenticates its users and clients,
+// from the platform config that the cluster names. It returns the
+// authentication method, or the row message of readClusterConfig when that
+// config is gone.
+func (r *Reconciler) clusterAuthMethod(
+	ctx context.Context,
+	cluster *v1.CamundaCluster,
+) (v1.AuthenticationMethod, string, error) {
+	cfg, failure, err := r.readClusterConfig(ctx, cluster)
+	if err != nil || failure != "" {
+		return "", failure, err
 	}
 
 	return cfg.Spec.Method(), "", nil
@@ -327,27 +340,23 @@ func (r *Reconciler) clusterAuth(
 	cluster *v1.CamundaCluster,
 	provider components.IdentityProvider,
 ) (v1.AuthenticationMethod, string, error) {
-	method, failure, err := r.clusterAuthMethod(ctx, cluster)
-	if err != nil || failure != "" || method != v1.AuthenticationMethodOIDC {
-		return method, failure, err
+	cfg, failure, err := r.readClusterConfig(ctx, cluster)
+	if err != nil || failure != "" {
+		return "", failure, err
 	}
 
-	var cfg v1.CamundaPlatformConfig
-	key := client.ObjectKey{Name: cluster.Spec.PlatformConfigRef}
-	if err := r.APIReader.Get(ctx, key, &cfg); err != nil {
-		return "", "", fmt.Errorf("reading CamundaPlatformConfig %q: %w", key.Name, err)
-	}
+	method := cfg.Spec.Method()
 	// The CRD admits no oidc method without the oidc block. The nil check
 	// keeps an object that reached the API server before that rule from
 	// stopping the manager.
-	if cfg.Spec.Auth.OIDC == nil {
+	if method != v1.AuthenticationMethodOIDC || cfg.Spec.Auth.OIDC == nil {
 		return method, "", nil
 	}
 
 	issuer := cfg.Spec.Auth.OIDC.IssuerURL
 	if issuer == "" {
 		return method, fmt.Sprintf(
-			"CamundaPlatformConfig %q of this cluster sets no spec.auth.oidc.issuerUrl", key.Name,
+			"CamundaPlatformConfig %q of this cluster sets no spec.auth.oidc.issuerUrl", cfg.Name,
 		), nil
 	}
 	if !trustsIssuer(issuer, provider) {
