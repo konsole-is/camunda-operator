@@ -501,14 +501,13 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRD
 	var (
 		server = &v1.DatabaseServerConfig{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServerConfig"},
-			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSServer},
+			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSServer, Namespace: ccRDBMSNamespace},
 			Spec: v1.DatabaseServerConfigSpec{
 				Engine: v1.DatabaseEnginePostgres,
 				Host:   postgresService + "." + ccRDBMSNamespace + ".svc",
 				Port:   5432,
-				AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 					Name:        postgresAdminSecret,
-					Namespace:   ccRDBMSNamespace,
 					UsernameKey: "username",
 					PasswordKey: "password",
 				},
@@ -516,11 +515,10 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRD
 		}
 		database = &v1.Database{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "Database"},
-			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSDatabase},
+			ObjectMeta: metav1.ObjectMeta{Name: ccRDBMSDatabase, Namespace: ccRDBMSNamespace},
 			Spec: v1.DatabaseSpec{
 				ServerRef:              ccRDBMSServer,
 				DatabaseName:           dbDatabaseName,
-				TargetNamespace:        ccRDBMSNamespace,
 				SecondaryStorageConfig: ccRDBMSStorageConfig,
 			},
 		}
@@ -544,7 +542,7 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRD
 		Expect(apply(server)).To(Succeed())
 		Expect(apply(database)).To(Succeed())
 		Eventually(func(g Gomega) {
-			expectReady(g, dbResource, ccRDBMSDatabase, "", v1.ReasonHealthy)
+			expectReady(g, dbResource, ccRDBMSDatabase, ccRDBMSNamespace, v1.ReasonHealthy)
 			expectReady(g, sscResource, ccRDBMSStorageConfig, ccRDBMSNamespace, v1.ReasonHealthy)
 		}, 3*time.Minute).Should(Succeed())
 
@@ -571,8 +569,12 @@ var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRD
 			"-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false",
 		)
 		_, _ = utils.Kubectl("delete", ccResource, ccName, "-n", ccRDBMSNamespace, "--ignore-not-found", "--wait=false")
-		_, _ = utils.Kubectl("delete", dbResource, ccRDBMSDatabase, "--ignore-not-found")
-		_, _ = utils.Kubectl("delete", dbServerResource, ccRDBMSServer, "--ignore-not-found")
+		_, _ = utils.Kubectl(
+			"delete", dbResource, ccRDBMSDatabase, "-n", ccRDBMSNamespace, "--ignore-not-found",
+		)
+		_, _ = utils.Kubectl(
+			"delete", dbServerResource, ccRDBMSServer, "-n", ccRDBMSNamespace, "--ignore-not-found",
+		)
 		_, _ = utils.Kubectl("delete", ccPlatformResource, ccRDBMSPlatform, "--ignore-not-found")
 		_, _ = utils.Kubectl("delete", "ns", ccRDBMSNamespace, "--wait=false")
 	})
