@@ -116,7 +116,7 @@ The chain has two halves. The first half is the server, and you get it in one of
 
 Give every orchestration cluster a PostgreSQL server of its own. Two clusters can share one server with a database each, and the operator allows it. A shared server gives up two things.
 
-A point-in-time restore rolls back the whole server, not one database. Every database on it goes back to the same point. A restore for one cluster therefore erases the recent data of every other cluster on that server. A `PointInTimeRestore` refuses to start when more than one `Database` uses the server. Its `Ready` condition reads `False` with reason `SharedServer`.
+A point-in-time restore rolls back the whole server, not one database. Every database on it goes back to the same point. A restore for one cluster therefore erases the recent data of every other cluster on that server. A `PointInTimeRestore` holds in `Pending` while more than one `Database` uses the server. Its `Ready` condition reads `False` with reason `SharedServer`. The hold lifts when one `Database` is left.
 
 Sizing, restarts, and version upgrades are shared too. One `DatabaseServer` carries one instance count, one volume size, and one PostgreSQL major version. A resize or an upgrade of the server stops every cluster on it at the same time.
 

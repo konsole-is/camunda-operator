@@ -136,7 +136,7 @@ func InstallCNPG() error {
 
 	if _, err := Run(exec.Command(
 		"kubectl", "patch", "deployment", cnpgDeployment, "-n", cnpgNamespace, "--type=json",
-		"-p", `[{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/cpu","value":"10m"}]`,
+		"-p", `[{"op":"add","path":"/spec/template/spec/containers/0/resources/requests/cpu","value":"10m"}]`,
 	)); err != nil {
 		return err
 	}

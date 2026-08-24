@@ -101,6 +101,12 @@ const (
 	// restore: CloudNativePG bootstraps a cluster from the archive, the
 	// contract moves to it, and the operator reaches the new endpoint before
 	// the restore goes on.
+	//
+	// The bound is shorter than two probe cycles of the contract, which run
+	// ten minutes apart. It holds because the recovery moves the host and the
+	// admin Secret of the contract, and probedAnotherServer answers true on
+	// either. The recorded probe is stale from that moment, so the reconcile
+	// that the move triggers probes the new endpoint at once.
 	databaseRecoveryTimeout = 15 * time.Minute
 	// watchStopTimeout bounds how long a restore Job watch waits for its last
 	// look to land. One look is one kubectl call, so the bound only fires when
@@ -819,13 +825,17 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 
 		By("reading the request that the restore wrote on the contract")
 		Eventually(func(g Gomega) {
-			expectPhase(
-				g, pitrResource, pitrDatabaseServer, cluster.Namespace,
-				string(v1.PointInTimeRestoreRestoringDatabase),
-			)
-
 			var restore v1.PointInTimeRestore
 			g.Expect(utils.Get(pitrResource, pitrDatabaseServer, cluster.Namespace, &restore)).To(Succeed())
+			// The request stays on the contract, but RestoringDatabase does
+			// not: a recovery that finishes between two polls has already
+			// left it.
+			g.Expect(restore.Status.Phase).To(BeElementOf(
+				v1.PointInTimeRestoreRestoringDatabase,
+				v1.PointInTimeRestoreValidatingDatabaseState,
+				v1.PointInTimeRestoreRestoringPrimaryStorage,
+				v1.PointInTimeRestoreCompleted,
+			), restore.Status.FailureMessage)
 			requestID = string(restore.UID)
 
 			var contract v1.DatabaseServerConfig
