@@ -92,7 +92,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 		expectDatabaseConfigReady(
 			dbConfig, metav1.ConditionFalse, v1.ReasonInvalidReference,
-			fmt.Sprintf("DatabaseServerConfig \"%s/%s\" not found", ns, dbConfig.Spec.ServerRef),
+			fmt.Sprintf("DatabaseServerConfig %s/%s not found", ns, dbConfig.Spec.ServerRef),
 		)
 	})
 
@@ -100,7 +100,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 		expectDatabaseConfigReady(
 			dbConfig, metav1.ConditionFalse, v1.ReasonInvalidReference,
-			fmt.Sprintf("DatabaseServerConfig \"%s/%s\" not found", ns, dbConfig.Spec.ServerRef),
+			fmt.Sprintf("DatabaseServerConfig %s/%s not found", ns, dbConfig.Spec.ServerRef),
 		)
 
 		create(server)
@@ -147,7 +147,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 		expectDatabaseConfigReady(
 			dbConfig, metav1.ConditionFalse, v1.ReasonInvalidReference,
-			fmt.Sprintf("DatabaseServerConfig \"%s/%s\" not found", ns, dbConfig.Spec.ServerRef),
+			fmt.Sprintf("DatabaseServerConfig %s/%s not found", ns, dbConfig.Spec.ServerRef),
 		)
 	})
 

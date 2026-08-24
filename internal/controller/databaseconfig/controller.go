@@ -93,7 +93,7 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 	var server v1.DatabaseServerConfig
 	if err := r.Get(ctx, serverKey, &server); err != nil {
 		if apierrors.IsNotFound(err) {
-			msg := fmt.Sprintf("DatabaseServerConfig %q not found", serverKey)
+			msg := fmt.Sprintf("DatabaseServerConfig %s not found", serverKey)
 			return conditions.Ready(metav1.ConditionFalse, v1.ReasonInvalidReference, msg, cfg.Generation), nil
 		}
 		return metav1.Condition{}, err
