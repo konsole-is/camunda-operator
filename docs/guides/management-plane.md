@@ -260,7 +260,7 @@ spec:
 
 There is no `spec.optimize` in this mode. The platform config declares the Optimize client, and you registered its redirect URI at your provider.
 
-`identity.admin` names a token claim instead of a user. Sign in to your provider once and decode the access token. Then read the value of the claim you want to use. Camunda explains how in [JWT token claims](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/jwt-token-claims/).
+`spec.identity.admin` names a token claim instead of a user. Sign in to your provider once and decode the access token. Then read the value of the claim you want to use. Camunda explains how in [JWT token claims](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/authentication-and-authorization/jwt-token-claims/).
 
 Get this pair right the first time. Management Identity reads it on its first start only and stores the result in its database. A later change has no effect, and the operator says so with `IdentityReady` and the reason `ImmutableAfterStart`:
 
@@ -277,14 +277,14 @@ If it happens anyway, the operator cannot correct it for you. Two ways out are o
 
 The first works while the recorded claim belongs to a real person. Put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant the rest in the Management Identity user interface.
 
-The second is for a claim that nobody holds. The operator records the claim that Management Identity started with, and renders that recorded value from then on. Remove the annotation that carries it:
+The second is for a claim that nobody holds. The operator records the claim that Management Identity started with, and renders that recorded value from then on. Put the claim you want on the annotation that carries it:
 
 ```bash
-kubectl annotate camundamanagementcluster my-management -n my-management-ns \
-  camunda.io/identity-initial-claim-
+kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \
+  camunda.io/identity-initial-claim=oid=41ab...77
 ```
 
-The claim of the spec then reaches Management Identity again. Management Identity itself reads that claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
+The operator renders what the annotation records, so that claim reaches Management Identity on its next start. Set the annotation to the pair that `spec.identity.admin` names, and the condition clears. Management Identity itself reads the claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
 
 An empty database does the same. Point `spec.identity.databaseConfigRef` at one, and Management Identity starts over. It then loses the roles and the tenants it held, and your provider keeps every user.
 
