@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -84,9 +85,9 @@ type Options struct {
 }
 
 // Start boots a control plane that carries the CRDs of the operator, of ECK,
-// and of the Keycloak Operator, registers the reconcilers of the caller
-// through register, and starts the manager in the background. register runs
-// before the manager starts and must not block.
+// of the Keycloak Operator, and of CloudNativePG, registers the reconcilers
+// of the caller through register, and starts the manager in the background.
+// register runs before the manager starts and must not block.
 //
 // Start asserts through Gomega. Call it from a Ginkgo node that has a fail
 // handler installed, normally BeforeSuite.
@@ -104,6 +105,7 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	gomega.Expect(esv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(monitoringv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 	gomega.Expect(keycloak.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
+	gomega.Expect(cnpgv1.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 
 	root, err := moduleRoot()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -122,6 +124,12 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 		// vendored. The Keycloak Operator itself does not run in envtest.
 		crdPaths = append(crdPaths, filepath.Join(root, "internal", "testenv", "crds", "keycloak"))
 	}
+
+	// CloudNativePG publishes its Go types without the CRDs, so the schemas
+	// are vendored. CloudNativePG itself does not run in envtest.
+	cnpgCRDPath, err := utils.CNPGCRDPath()
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	crdPaths = append(crdPaths, cnpgCRDPath)
 
 	ginkgo.By("bootstrapping test environment")
 	control := &envtest.Environment{
