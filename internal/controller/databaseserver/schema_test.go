@@ -83,9 +83,6 @@ func realisticDatabaseServer() *v1.DatabaseServer {
 					Interval: "30s",
 				},
 			},
-			PersistentVolumeClaimRetentionPolicy: &v1.PersistentVolumeClaimRetentionPolicy{
-				WhenDeleted: v1.RetainPersistentVolumeClaimRetentionPolicyType,
-			},
 			DatabaseServerConfig: "my-database-server",
 			Archive: &v1.DatabaseServerArchiveSpec{
 				ObjectStorageRef:    "my-backup-config",
@@ -166,12 +163,6 @@ var _ = Describe("DatabaseServer schema", func() {
 			realisticDatabaseServer, func(o *v1.DatabaseServer) {
 				o.Spec.Monitoring.PodMonitor.Interval = "every 30 seconds"
 			}, "interval",
-		),
-		Entry(
-			"rejects an unknown retention policy",
-			realisticDatabaseServer, func(o *v1.DatabaseServer) {
-				o.Spec.PersistentVolumeClaimRetentionPolicy.WhenDeleted = "Keep"
-			}, "whenDeleted",
 		),
 	)
 

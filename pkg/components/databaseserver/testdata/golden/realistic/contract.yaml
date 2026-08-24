@@ -1,0 +1,18 @@
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-database-server
+  namespace: my-cluster-ns
+spec:
+  adminCredentialsSecretRef:
+    name: my-cluster-db-superuser
+    passwordKey: password
+    usernameKey: username
+  engine: postgres
+  host: my-cluster-db-rw.my-cluster-ns.svc
+  pitr: {}
+  port: 5432

@@ -156,11 +156,6 @@ type DatabaseServerSpec struct {
 	// Monitoring configures the Prometheus scraping integration.
 	// +optional
 	Monitoring *DatabaseServerMonitoringSpec `json:"monitoring,omitempty"`
-	// PersistentVolumeClaimRetentionPolicy says what happens to the data
-	// volumes when the DatabaseServer is deleted. Suspension always keeps
-	// them.
-	// +optional
-	PersistentVolumeClaimRetentionPolicy *PersistentVolumeClaimRetentionPolicy `json:"persistentVolumeClaimRetentionPolicy,omitempty"`
 	// DatabaseServerConfig names the DatabaseServerConfig the operator
 	// publishes in this CR's own namespace with the endpoint, the admin
 	// credentials, and the point-in-time-recovery capability of the server.

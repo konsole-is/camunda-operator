@@ -1,0 +1,33 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    cnpg.io/hibernation: "off"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db
+  namespace: my-cluster-ns
+spec:
+  affinity: {}
+  enableSuperuserAccess: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  inheritedMetadata:
+    labels:
+      camunda.io/component: postgres
+      camunda.io/database-server: my-cluster-db
+  instances: 2
+  postgresql:
+    syncReplicaElectionConstraint:
+      enabled: false
+  resources: {}
+  storage:
+    size: 64Gi
+status:
+  certificates: {}
+  configMapResourceVersion: {}
+  managedRolesStatus: {}
+  secretsResourceVersion: {}
+  switchReplicaClusterStatus: {}
+  topology: {}

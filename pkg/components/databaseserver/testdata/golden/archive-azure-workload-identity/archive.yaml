@@ -1,0 +1,37 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db
+  namespace: my-cluster-ns
+spec:
+  configuration:
+    azureCredentials:
+      inheritFromAzureAD: true
+    data:
+      compression: gzip
+    destinationPath: https://camundabackups.blob.core.windows.net/archive/clusters/databaseserver/my-cluster-ns/my-cluster-db
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: postgres
+    camunda.io/database-server: my-cluster-db
+  name: my-cluster-db
+  namespace: my-cluster-ns
+spec:
+  cluster:
+    name: my-cluster-db
+  immediate: true
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 0 2 * * *

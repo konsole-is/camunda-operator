@@ -1696,11 +1696,6 @@ func (in *DatabaseServerSpec) DeepCopyInto(out *DatabaseServerSpec) {
 		*out = new(DatabaseServerMonitoringSpec)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.PersistentVolumeClaimRetentionPolicy != nil {
-		in, out := &in.PersistentVolumeClaimRetentionPolicy, &out.PersistentVolumeClaimRetentionPolicy
-		*out = new(PersistentVolumeClaimRetentionPolicy)
-		**out = **in
-	}
 	if in.Archive != nil {
 		in, out := &in.Archive, &out.Archive
 		*out = new(DatabaseServerArchiveSpec)

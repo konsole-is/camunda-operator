@@ -21,9 +21,10 @@ limitations under the License.
 //
 // Each owning kind has its own key: camunda.io/cluster names a
 // CamundaCluster, camunda.io/elasticsearch-cluster an ElasticsearchCluster,
-// camunda.io/database a Database. One key per kind keeps two owners of
-// different kinds with the same name apart, and lets an extension select the
-// resources of one kind without knowing the component vocabulary of the other.
+// camunda.io/database-server a DatabaseServer, camunda.io/database a
+// Database. One key per kind keeps two owners of different kinds with the same
+// name apart, and lets an extension select the resources of one kind without
+// knowing the component vocabulary of the other.
 package labels
 
 import (
@@ -54,6 +55,8 @@ const (
 	ClusterUIDKey = "camunda.io/cluster-uid"
 	// ElasticsearchClusterKey names the owning ElasticsearchCluster.
 	ElasticsearchClusterKey = "camunda.io/elasticsearch-cluster"
+	// DatabaseServerKey names the owning DatabaseServer.
+	DatabaseServerKey = "camunda.io/database-server"
 	// DatabaseKey names the owning Database.
 	DatabaseKey = "camunda.io/database"
 	// LogicalBackupElasticsearchKey names the owning
@@ -136,6 +139,12 @@ func Cluster(name string) Owner { return Owner{Key: ClusterKey, Name: OwnerName(
 // ElasticsearchCluster with the given name renders.
 func ElasticsearchCluster(name string) Owner {
 	return Owner{Key: ElasticsearchClusterKey, Name: OwnerName(name)}
+}
+
+// DatabaseServer returns the Owner of resources that a DatabaseServer with the
+// given name renders.
+func DatabaseServer(name string) Owner {
+	return Owner{Key: DatabaseServerKey, Name: OwnerName(name)}
 }
 
 // Database returns the Owner of resources that a Database with the given name

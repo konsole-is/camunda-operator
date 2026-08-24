@@ -1,0 +1,237 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package databaseserver
+
+import (
+	"testing"
+	"time"
+
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/objectstore"
+)
+
+// recoveredClusterName is the cluster a server runs after one recovery.
+const recoveredClusterName = "my-cluster-db-r1"
+
+// archiveServer is the server that the archive cases render for.
+func archiveServer() *v1.DatabaseServer {
+	return &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-db", Namespace: "my-cluster-ns"},
+	}
+}
+
+func TestArchiveDestinationPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		archive *ArchiveStorage
+		want    string
+	}{
+		{
+			name: "s3 under a base path",
+			archive: &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+				Spec: v1.ObjectStorageConfigSpec{
+					Type: v1.ObjectStorageTypeS3,
+					S3:   &v1.S3Storage{BucketName: "backups", BasePath: "clusters", Region: "eu-west-1"},
+				},
+			}},
+			want: "s3://backups/clusters/databaseserver/my-cluster-ns/my-cluster-db",
+		},
+		{
+			name: "s3 at the bucket root",
+			archive: &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+				Spec: v1.ObjectStorageConfigSpec{
+					Type: v1.ObjectStorageTypeS3,
+					S3:   &v1.S3Storage{BucketName: "backups", Region: "eu-west-1"},
+				},
+			}},
+			want: "s3://backups/databaseserver/my-cluster-ns/my-cluster-db",
+		},
+		{
+			name: "gcs",
+			archive: &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+				Spec: v1.ObjectStorageConfigSpec{
+					Type: v1.ObjectStorageTypeGCS,
+					GCS:  &v1.GCSStorage{BucketName: "backups", BasePath: "clusters"},
+				},
+			}},
+			want: "gs://backups/clusters/databaseserver/my-cluster-ns/my-cluster-db",
+		},
+		{
+			name: "azure through the service endpoint of the account",
+			archive: &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+				Spec: v1.ObjectStorageConfigSpec{
+					Type: v1.ObjectStorageTypeAzureBlob,
+					AzureBlob: &v1.AzureBlobStorage{
+						AccountName: "backups", Container: "archive", BasePath: "clusters",
+					},
+				},
+			}},
+			want: "https://backups.blob.core.windows.net/archive/clusters/databaseserver/my-cluster-ns/my-cluster-db",
+		},
+		{
+			name:    "no bucket",
+			archive: nil,
+			want:    "",
+		},
+		{
+			name: "a type without its block",
+			archive: &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+				Spec: v1.ObjectStorageConfigSpec{Type: v1.ObjectStorageTypeS3},
+			}},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, ArchiveDestinationPath(archiveServer(), tt.archive))
+		})
+	}
+}
+
+// The pre-check answers with the same resolution the renderers use, so a
+// bucket it accepts is one every renderer can render.
+func TestValidateArchiveStorage(t *testing.T) {
+	t.Parallel()
+
+	valid := &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "backups"},
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3:   &v1.S3Storage{BucketName: "backups", Region: "eu-west-1"},
+		},
+	}
+	require.NoError(t, ValidateArchiveStorage(valid))
+
+	mismatched := &v1.ObjectStorageConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "backups"},
+		Spec:       v1.ObjectStorageConfigSpec{Type: v1.ObjectStorageTypeGCS},
+	}
+	assert.ErrorContains(t, ValidateArchiveStorage(mismatched), `declares type GCS without the matching block`)
+}
+
+// The plugin reads the region of an S3 bucket from a Secret key whatever
+// authenticates the upload, so the Secret exists for workload identity too.
+func TestArchiveSecretCarriesTheRegionUnderWorkloadIdentity(t *testing.T) {
+	t.Parallel()
+
+	archive := &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+		Spec: v1.ObjectStorageConfigSpec{
+			Type: v1.ObjectStorageTypeS3,
+			S3: &v1.S3Storage{
+				BucketName: "backups",
+				Region:     "eu-west-1",
+				Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity},
+			},
+		},
+	}}
+
+	resolved, err := archive.resolve("my-cluster-db-archive")
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string][]byte{regionKey: []byte("eu-west-1")}, resolved.secretData)
+	require.NotNil(t, resolved.s3Credentials)
+	assert.True(t, resolved.s3Credentials.InheritFromIAMRole)
+	assert.Nil(t, resolved.s3Credentials.AccessKeyID)
+	require.NotNil(t, resolved.s3Credentials.Region)
+	assert.Equal(t, "my-cluster-db-archive", resolved.s3Credentials.Region.Name)
+}
+
+// A bucket addressed by endpoint has no region of its own, and every consumer
+// signs for the same placeholder. Trailing slashes never reach the plugin: a
+// doubled separator turns a valid endpoint into a signature failure.
+func TestArchiveEndpointAndPlaceholderRegion(t *testing.T) {
+	t.Parallel()
+
+	archive := &ArchiveStorage{
+		Config: &v1.ObjectStorageConfig{
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeS3,
+				S3: &v1.S3Storage{
+					BucketName: "backups",
+					Endpoint:   "https://minio.example.com/",
+					Auth:       v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeCredentials},
+				},
+			},
+		},
+		Credentials: &objectstore.Credentials{AccessKeyID: "root", SecretAccessKey: "secret"},
+	}
+
+	resolved, err := archive.resolve("my-cluster-db-archive")
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://minio.example.com", resolved.endpointURL)
+	assert.Equal(t, []byte(v1.PlaceholderS3Region), resolved.secretData[regionKey])
+	assert.Equal(t, []byte("root"), resolved.secretData[accessKeyIDKey])
+	assert.Equal(t, []byte("secret"), resolved.secretData[secretAccessKeyKey])
+}
+
+// A base backup is what a recovery starts from, so an archive without one
+// cannot be recovered to any point however well the uploads run.
+func TestBaseBackupGuardHoldsTheArchiveUntilTheFirstBackup(t *testing.T) {
+	t.Parallel()
+
+	guard := baseBackupGuard(archiveServer(), nil)
+	status, err := guard(cnpgv1.Cluster{})
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GuardStatusBlocked, status.Status)
+	assert.Contains(t, status.Reason, `the first base backup of "my-cluster-db" has not completed yet`)
+
+	completed := metav1.NewTime(time.Date(2026, 8, 24, 10, 0, 0, 0, time.UTC))
+	guard = baseBackupGuard(archiveServer(), &completed)
+	status, err = guard(cnpgv1.Cluster{})
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GuardStatusUnblocked, status.Status)
+}
+
+// The retention the operator enforces on the bucket is the number the contract
+// publishes, so the declared window and the enforced window are one.
+func TestRetentionPolicyMatchesTheDeclaredWindow(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, retentionPolicy(v1.DatabaseServerSpec{}))
+	assert.Equal(t, "30d", retentionPolicy(v1.DatabaseServerSpec{
+		Archive: &v1.DatabaseServerArchiveSpec{RetentionPeriodDays: 30},
+	}))
+}
+
+// A recovered cluster must archive under its own serverName, or it overwrites
+// the archive it recovered from.
+func TestArchivePluginNamesTheClusterAsTheArchiveServer(t *testing.T) {
+	t.Parallel()
+
+	server := archiveServer()
+	server.Status.Cluster = recoveredClusterName
+
+	plugin := archivePlugin(server)
+
+	assert.Equal(t, BarmanPluginName, plugin.Name)
+	require.NotNil(t, plugin.IsWALArchiver)
+	assert.True(t, *plugin.IsWALArchiver)
+	assert.Equal(t, "my-cluster-db", plugin.Parameters["barmanObjectName"])
+	assert.Equal(t, recoveredClusterName, plugin.Parameters["serverName"])
+}
