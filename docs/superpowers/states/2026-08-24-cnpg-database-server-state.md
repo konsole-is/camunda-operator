@@ -34,7 +34,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | #242 → feat/cnpg-database-server | self-merged (6194813) |
 | #237 | ci/cnpg-database-server--e2e | (removed) | #244 → feat/cnpg-database-server | self-merged (c6366c5) |
 | #243 | ci/cnpg-database-server--split-e2e-by-backend | (removed) | #246 → feat/cnpg-database-server | self-merged (bccf012) |
-| checkpoint | refactor/cnpg-database-server--converge | .claude/worktrees/cnpg-database-server/.claude/worktrees/converge | → feat/cnpg-database-server | in-progress (dispatched 2026-08-24 ~23:05Z; PR to open when pushed) |
+| checkpoint | refactor/cnpg-database-server--converge | .claude/worktrees/cnpg-database-server/.claude/worktrees/converge | #247 → feat/cnpg-database-server | in-progress (head pushed, round 1 + CI running) |
 
 ## Contracts
 
@@ -67,10 +67,11 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 ## Pending snapshot
 
-Session burst ended 2026-08-24 ~22:10Z with #244 merged and #246 (issue #243) open.
+Session burst ended 2026-08-24 ~23:05Z with the checkpoint's convergence PR #247 open; every planned sub-PR is merged.
 
-1. **#243 / PR #246** (`ci/cnpg-database-server--split-e2e-by-backend`, sub-worktree `.claude/worktrees/split-e2e-by-backend`, head `d7554ba`, two commits replayed onto c6366c5, pushed). Waiting on: (a) Copilot round 1, requested ~22:08Z (watermark in the session scratchpad; sub-PRs into the feature branch get no auto review, request once per round); (b) the `E2E Tests` run with three jobs `Camunda 8.9 elasticsearch|postgres|management` — on green, confirm the logs show `Skipping CloudNativePG installation` on the elasticsearch job and `Skipping ECK installation` on the postgres job, and note the longest job's wall-clock against the ~50 min single job; on red, root-cause, never re-run. Then: Copilot loop to clean, list the reviews once more before merging, self-merge (squash), `gh issue close 243`, remove the sub-worktree, update this table.
-2. `feature-dev-workflow:reviewing-feature-progress` on the feature worktree after #246 merges (all gates via the scratch `gates.sh` pattern: setup-envtest, make test, api test, lint, lint-renovate, manifests + clean porcelain, vet e2e, mkdocs), then report ready for the user's integration PR `feat/cnpg-database-server → main` with `Closes #127`. **Do not open or merge the integration PR; it is the user's.** The plan and this state file are deleted in the teardown commit; the spec stays.
+1. **PR #247** (`refactor/cnpg-database-server--converge`, sub-worktree `.claude/worktrees/converge`, five commits 9e1c95b..9a345a6, pushed 23:02Z). Waiting on Copilot round 1 (requested 23:03:00Z, watermark in the session scratchpad) and the six checks (Lint/Tests/Chart + the three e2e jobs, ~30 min). Then: fold findings, one more round if code changed, list the reviews once more, self-merge (squash), remove the sub-worktree and both branches, update this table.
+2. After #247 merges: `git pull --ff-only` in the feature worktree, run `gates.sh` once more (the scratchpad pattern: setup-envtest, `go test ./...`, api test, lint, lint-renovate, manifests + clean porcelain, vet e2e, mkdocs), then report the branch ready for the user's integration PR `feat/cnpg-database-server → main` with `Closes #127`. **Do not open or merge the integration PR; it is the user's.** Teardown (delete this state file and the plan, keep the spec) happens in the integration PR or right after it merges, per the superpowers convention.
+3. Already done at the checkpoint: nine gates green on bccf012; all seven issue bodies reconciled with decision comments (#127, #128, #234, #235, #236, #237, #243); the plan at `docs/superpowers/plans/...` still names the old condition-type identifiers at ~331-334 and is left alone because it is deleted at teardown.
 
 ## Resume checklist
 
