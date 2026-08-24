@@ -21,6 +21,8 @@ Each page opens with what the kind is and a minimal manifest, then covers one to
 | [DatabaseServerPreset](databaseserverpreset.md) | Cluster | A baseline spec that database servers inherit. No controller. |
 | [Database](database.md) | Namespaced | A logical database and its users on an existing PostgreSQL server, published as a `DatabaseConfig`. |
 
+Each backend kind needs an operator that this operator does not install. `ElasticsearchCluster` needs the ECK operator. `DatabaseServer` needs the CloudNativePG operator, and `spec.archive` also needs the Barman Cloud plugin and cert-manager. Install what you use, then restart the manager. See [Installation](../installation.md#requirements).
+
 ## Contracts
 
 A contract carries connection details and credential references. The operator validates it and reports `Ready`. It provisions nothing from it. You can write a contract by hand or let a resource above write it.

@@ -30,6 +30,8 @@ kubectl apply --server-side -f https://download.elastic.co/downloads/eck/3.5.0/o
 
 Use `--server-side`: the ECK CRD manifest is larger than the annotation that client-side apply writes.
 
+This guide uses Elasticsearch. For PostgreSQL secondary storage, install the [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/) instead of ECK, and run the server with a [DatabaseServer](crds/databaseserver.md). A continuous archive of that server also needs the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/) and [cert-manager](https://cert-manager.io/docs/installation/). [Installation](installation.md#install-cloudnativepg-and-the-barman-cloud-plugin) has the commands, and the [secondary storage guide](guides/secondary-storage.md#postgresql) has the resources.
+
 ## 2. Install the operator
 
 ```bash

@@ -153,4 +153,4 @@ The CRD types under `api/` are the Go module `github.com/konsole-is/camunda-oper
 
 - **Camunda 8.9 and later.** The operator targets the unified orchestration cluster that Camunda 8.9 introduced. It does not render earlier topologies.
 - **Minor releases are the test matrix.** The operator is tested against Camunda minor releases. A feature that lands in a patch release is treated as part of the next minor.
-- **Elasticsearch through ECK, PostgreSQL for databases.** `ElasticsearchCluster` requires the ECK operator. `Database` bootstraps PostgreSQL servers.
+- **Elasticsearch through ECK, PostgreSQL through CloudNativePG.** `ElasticsearchCluster` requires the ECK operator. `DatabaseServer` requires the CloudNativePG operator, and its archive also requires the Barman Cloud plugin and cert-manager. `Database` bootstraps a logical database on any PostgreSQL server, whether a `DatabaseServer` runs it or you do.

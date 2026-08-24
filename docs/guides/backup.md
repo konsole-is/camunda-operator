@@ -4,6 +4,12 @@ A backup of an orchestration cluster is one consistent set: the secondary storag
 
 A completed relational backup is restored with a [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md). A completed Elasticsearch backup is restored with a [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md). Each kind restores a cluster from its own backup. The ids and names that a completed backup records in its status are what a restore needs.
 
+## The base backups of a DatabaseServer are not backups of a cluster
+
+A [DatabaseServer](../crds/databaseserver.md) with `spec.archive` writes base backups of the whole PostgreSQL server into a bucket, beside the write-ahead log. Those two together are what a [PointInTimeRestore](../crds/pointintimerestore.md) replays to reach a timestamp. They are not part of the backup model on this page. A base backup produces no `LogicalBackupRDBMS`, appears in no backup list, and no restore kind of this page reads one.
+
+Run both on a cluster that has an archived server. The logical backups give you a restore of the Camunda data from a named backup. The archive gives you a rollback of the server to any timestamp inside its retention period.
+
 ## Set up once
 
 ### The bucket
@@ -381,3 +387,4 @@ A `Failed` backup holds no artifacts that a restore can use. Delete it to remove
 - [ElasticsearchCluster](../crds/elasticsearchcluster.md): `spec.snapshotStorageRef` and the snapshot repository.
 - [CamundaCluster](../crds/camundacluster.md): `spec.backupStorageRef`, `spec.backup`, and `status.management`.
 - [Secondary storage](./secondary-storage.md): how a cluster gets its Elasticsearch or PostgreSQL backend.
+- [DatabaseServer](../crds/databaseserver.md): the continuous archive of a PostgreSQL server, which is separate from the backups on this page.

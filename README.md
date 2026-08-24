@@ -3,7 +3,7 @@
 A Kubernetes operator that runs [Camunda 8.9+](https://docs.camunda.io/) orchestration clusters.
 You describe a cluster in one resource. The operator creates the workloads, wires the storage, and keeps the cluster healthy.
 
-The operator also manages what a cluster needs around it: an Elasticsearch cluster through [ECK](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html), a logical database on a PostgreSQL server you provide, and backups to a bucket.
+The operator also manages what a cluster needs around it: an Elasticsearch cluster through [ECK](https://www.elastic.co/guide/en/cloud-on-k8s/current/index.html), a PostgreSQL server through [CloudNativePG](https://cloudnative-pg.io/), and backups to a bucket.
 
 > The operator is in early development. The API group is `core.camunda.io/v1`, but the API can still change before the first stable release.
 
@@ -15,7 +15,8 @@ The operator also manages what a cluster needs around it: an Elasticsearch clust
 | `CamundaPlatformConfig` | Settings that all clusters in an environment share: authentication, license, image registry. |
 | `CamundaClusterPreset` | A reusable baseline (sizing, topology) that clusters inherit. |
 | `ElasticsearchCluster` | An Elasticsearch cluster run by ECK, with a generated user, ready to be used as secondary storage. |
-| `Database` | A logical database and its users on an existing PostgreSQL server. |
+| `DatabaseServer` | A PostgreSQL server run by CloudNativePG, with a continuous archive in a bucket that a point-in-time restore replays. |
+| `Database` | A logical database and its users on a PostgreSQL server. |
 | `LogicalBackupElasticsearch`, `LogicalBackupRDBMS` | One backup of a cluster, written to a bucket. |
 | `SecondaryStorageConfig`, `ObjectStorageConfig`, `DatabaseServerConfig`, `DatabaseConfig` | Contracts that carry connection details, so the resource that provides a backend and the resource that uses it stay independent. |
 
@@ -25,7 +26,8 @@ The [CRD reference](docs/crds/index.md) lists every kind with every field.
 
 - Kubernetes 1.30 or later.
 - The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), if you use `ElasticsearchCluster`. The operator looks for the ECK CRDs when it starts. Install ECK before you create an `ElasticsearchCluster`, then restart the operator. The operator does not install ECK.
-- A PostgreSQL server, if you use `Database`. The operator does not run PostgreSQL.
+- The [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/), if you use `DatabaseServer`. An archive also needs the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/) and [cert-manager](https://cert-manager.io/docs/installation/). The operator looks for their CRDs when it starts. Install them first, then restart the operator. The operator installs none of them.
+- A PostgreSQL server, if you use `Database` without a `DatabaseServer`.
 
 ## Install
 
@@ -74,7 +76,7 @@ root module.
 make test           # unit and envtest suites (needs Docker for the PostgreSQL testcontainer)
 make lint           # golangci-lint
 make all            # generate manifests and deepcopy, fmt, vet, build
-make test-e2e       # kind cluster with ECK, PostgreSQL, and MinIO (needs Docker and kind)
+make test-e2e       # kind cluster with ECK, CloudNativePG, PostgreSQL, and MinIO (needs Docker and kind)
 make helm-generate  # regenerate dist/chart/ from config/
 make docs-serve     # preview the documentation site
 ```
