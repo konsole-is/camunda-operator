@@ -27,13 +27,28 @@ import (
 )
 
 // clusterWith returns a Cluster that asks for instances and reports phase
-// with ready instances ready.
-func clusterWith(instances int, phase string, ready int) *cnpgv1.Cluster {
+// with groups volume claim groups and ready ready instance pods. The two
+// counts differ while the Cluster is hibernated: CloudNativePG keeps the
+// claims and removes the pods.
+func clusterWith(instances int, phase string, groups, ready int) *cnpgv1.Cluster {
 	return &cnpgv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-object", Namespace: "test-ns"},
 		Spec:       cnpgv1.ClusterSpec{Instances: instances},
-		Status:     cnpgv1.ClusterStatus{Phase: phase, Instances: ready, ReadyInstances: ready},
+		Status:     cnpgv1.ClusterStatus{Phase: phase, Instances: groups, ReadyInstances: ready},
 	}
+}
+
+// hibernated returns cluster with the hibernation condition CloudNativePG
+// writes once every instance pod is gone.
+func hibernated(cluster *cnpgv1.Cluster, status metav1.ConditionStatus) *cnpgv1.Cluster {
+	cluster.Status.Conditions = append(cluster.Status.Conditions, metav1.Condition{
+		Type:    HibernationCondition,
+		Status:  status,
+		Reason:  HibernationConditionReason,
+		Message: "Cluster has been hibernated",
+	})
+
+	return cluster
 }
 
 func TestDefaultConvergingStatusHandler(t *testing.T) {
@@ -48,49 +63,55 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 		{
 			name:     "healthy phase with every instance ready",
 			op:       concepts.ConvergingOperationUpdated,
-			cluster:  clusterWith(3, cnpgv1.PhaseHealthy, 3),
+			cluster:  clusterWith(3, cnpgv1.PhaseHealthy, 3, 3),
 			expected: concepts.AliveConvergingStatusHealthy,
 		},
 		{
 			name:     "healthy phase while an instance is still missing",
 			op:       concepts.ConvergingOperationUpdated,
-			cluster:  clusterWith(3, cnpgv1.PhaseHealthy, 2),
+			cluster:  clusterWith(3, cnpgv1.PhaseHealthy, 2, 2),
 			expected: concepts.AliveConvergingStatusUpdating,
 		},
 		{
 			name:     "unrecoverable cluster",
 			op:       concepts.ConvergingOperationUpdated,
-			cluster:  clusterWith(3, cnpgv1.PhaseUnrecoverable, 0),
+			cluster:  clusterWith(3, cnpgv1.PhaseUnrecoverable, 0, 0),
 			expected: concepts.AliveConvergingStatusFailing,
 		},
 		{
 			name:     "invalid definition",
 			op:       concepts.ConvergingOperationCreated,
-			cluster:  clusterWith(3, cnpgv1.PhaseDefinitionInvalid, 0),
+			cluster:  clusterWith(3, cnpgv1.PhaseDefinitionInvalid, 0, 0),
+			expected: concepts.AliveConvergingStatusFailing,
+		},
+		{
+			name:     "waiting for a user action",
+			op:       concepts.ConvergingOperationUpdated,
+			cluster:  clusterWith(3, cnpgv1.PhaseWaitingForUser, 3, 3),
 			expected: concepts.AliveConvergingStatusFailing,
 		},
 		{
 			name:     "failover in progress is not a failure",
 			op:       concepts.ConvergingOperationUpdated,
-			cluster:  clusterWith(3, cnpgv1.PhaseFailOver, 2),
+			cluster:  clusterWith(3, cnpgv1.PhaseFailOver, 2, 2),
 			expected: concepts.AliveConvergingStatusUpdating,
 		},
 		{
 			name:     "no phase on the first apply",
 			op:       concepts.ConvergingOperationCreated,
-			cluster:  clusterWith(3, "", 0),
+			cluster:  clusterWith(3, "", 0, 0),
 			expected: concepts.AliveConvergingStatusCreating,
 		},
 		{
 			name:     "no phase past the first apply",
 			op:       concepts.ConvergingOperationUpdated,
-			cluster:  clusterWith(3, "", 0),
+			cluster:  clusterWith(3, "", 0, 0),
 			expected: concepts.AliveConvergingStatusUpdating,
 		},
 		{
 			name:     "creating a replica",
 			op:       concepts.ConvergingOperationCreated,
-			cluster:  clusterWith(3, cnpgv1.PhaseCreatingReplica, 1),
+			cluster:  clusterWith(3, cnpgv1.PhaseCreatingReplica, 1, 1),
 			expected: concepts.AliveConvergingStatusUpdating,
 		},
 	}
@@ -117,17 +138,17 @@ func TestDefaultGraceStatusHandler(t *testing.T) {
 	}{
 		{
 			name:     "every instance ready",
-			cluster:  clusterWith(3, cnpgv1.PhaseHealthy, 3),
+			cluster:  clusterWith(3, cnpgv1.PhaseHealthy, 3, 3),
 			expected: concepts.GraceStatusHealthy,
 		},
 		{
 			name:     "some instances ready",
-			cluster:  clusterWith(3, cnpgv1.PhaseCreatingReplica, 1),
+			cluster:  clusterWith(3, cnpgv1.PhaseCreatingReplica, 1, 1),
 			expected: concepts.GraceStatusDegraded,
 		},
 		{
 			name:     "no instance ready",
-			cluster:  clusterWith(3, cnpgv1.PhaseUnrecoverable, 0),
+			cluster:  clusterWith(3, cnpgv1.PhaseUnrecoverable, 0, 0),
 			expected: concepts.GraceStatusDown,
 		},
 	}
@@ -153,14 +174,29 @@ func TestDefaultSuspensionStatusHandler(t *testing.T) {
 		expected concepts.SuspensionStatus
 	}{
 		{
-			name:     "instances still running",
-			cluster:  clusterWith(0, cnpgv1.PhaseHealthy, 2),
+			name:     "pods still ready and no hibernation condition yet",
+			cluster:  clusterWith(2, cnpgv1.PhaseHealthy, 2, 2),
 			expected: concepts.SuspensionStatusSuspending,
 		},
 		{
-			name:     "scaled to zero",
-			cluster:  clusterWith(0, cnpgv1.PhaseHealthy, 0),
+			name:     "no hibernation condition yet and no ready pod",
+			cluster:  clusterWith(2, cnpgv1.PhaseHealthy, 2, 0),
 			expected: concepts.SuspensionStatusSuspended,
+		},
+		{
+			name:     "volume claim groups remain, no ready pod, hibernation True",
+			cluster:  hibernated(clusterWith(2, cnpgv1.PhaseHealthy, 2, 0), metav1.ConditionTrue),
+			expected: concepts.SuspensionStatusSuspended,
+		},
+		{
+			name:     "hibernation False while every pod is ready",
+			cluster:  hibernated(clusterWith(2, cnpgv1.PhaseHealthy, 2, 2), metav1.ConditionFalse),
+			expected: concepts.SuspensionStatusSuspending,
+		},
+		{
+			name:     "hibernation False while the last pod drains",
+			cluster:  hibernated(clusterWith(2, cnpgv1.PhaseHealthy, 2, 1), metav1.ConditionFalse),
+			expected: concepts.SuspensionStatusSuspending,
 		},
 	}
 
@@ -176,19 +212,35 @@ func TestDefaultSuspensionStatusHandler(t *testing.T) {
 	}
 }
 
-// TestDefaultSuspendMutationHandlerScalesToZero proves that suspension asks
-// CloudNativePG for zero instances, which removes the pods and keeps the
-// volume claims.
-func TestDefaultSuspendMutationHandlerScalesToZero(t *testing.T) {
+// TestDefaultSuspendMutationHandlerHibernates proves that suspension asks
+// CloudNativePG to hibernate, which removes the pods and keeps the volume
+// claims. It must not touch spec.instances: the schema puts a minimum of 1 on
+// that field, so a zero would be rejected by the API server.
+func TestDefaultSuspendMutationHandlerHibernates(t *testing.T) {
 	t.Parallel()
 
-	cluster := clusterWith(3, cnpgv1.PhaseHealthy, 3)
+	cluster := clusterWith(3, cnpgv1.PhaseHealthy, 3, 3)
 	mutator := NewMutator(cluster)
 
 	require.NoError(t, DefaultSuspendMutationHandler(mutator))
 	require.NoError(t, mutator.Apply())
 
-	assert.Equal(t, 0, cluster.Spec.Instances)
+	assert.Equal(t, HibernationOn, cluster.Annotations[HibernationAnnotation])
+	assert.Equal(t, 3, cluster.Spec.Instances)
+}
+
+// TestSetHibernationOffWritesTheOffValue proves that the resume value is
+// available for a caller that has to overwrite a hand-set annotation.
+func TestSetHibernationOffWritesTheOffValue(t *testing.T) {
+	t.Parallel()
+
+	cluster := clusterWith(3, cnpgv1.PhaseHealthy, 3, 3)
+	mutator := NewMutator(cluster)
+
+	mutator.SetHibernation(false)
+	require.NoError(t, mutator.Apply())
+
+	assert.Equal(t, HibernationOff, cluster.Annotations[HibernationAnnotation])
 }
 
 // TestDefaultDeleteOnSuspendHandlerKeepsTheCluster proves that suspension
@@ -196,5 +248,5 @@ func TestDefaultSuspendMutationHandlerScalesToZero(t *testing.T) {
 func TestDefaultDeleteOnSuspendHandlerKeepsTheCluster(t *testing.T) {
 	t.Parallel()
 
-	assert.False(t, DefaultDeleteOnSuspendHandler(clusterWith(3, cnpgv1.PhaseHealthy, 3)))
+	assert.False(t, DefaultDeleteOnSuspendHandler(clusterWith(3, cnpgv1.PhaseHealthy, 3, 3)))
 }

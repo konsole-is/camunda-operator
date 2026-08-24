@@ -93,16 +93,16 @@ func TestMutationAppliesThroughMutator(t *testing.T) {
 	assert.Equal(t, "ocf", current.Labels["scaffolded-by"])
 }
 
-// TestSetInstancesMutation proves that a feature mutation reaches the spec of
-// the Cluster through the same mutator helper the suspension handler uses.
-func TestSetInstancesMutation(t *testing.T) {
+// TestSetHibernationMutation proves that a feature mutation reaches the
+// Cluster through the same mutator helper the suspension handler uses.
+func TestSetHibernationMutation(t *testing.T) {
 	t.Parallel()
 
 	res, err := NewBuilder(testObject()).
 		WithMutation(Mutation{
-			Name: "instances",
+			Name: "hibernation",
 			Mutate: func(m *Mutator) error {
-				m.SetInstances(3)
+				m.SetHibernation(true)
 				return nil
 			},
 		}).
@@ -111,7 +111,7 @@ func TestSetInstancesMutation(t *testing.T) {
 
 	current := testObject()
 	require.NoError(t, res.Mutate(current))
-	assert.Equal(t, 3, current.Spec.Instances)
+	assert.Equal(t, HibernationOn, current.Annotations[HibernationAnnotation])
 }
 
 func TestExtractIntoDeclaredExtraction(t *testing.T) {

@@ -50,24 +50,18 @@ func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 	ctx := t.Context()
 	apiClient := startControlPlane(t)
 
-	cluster, err := cnpgcluster.NewBuilder(&cnpgv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "apply-server", Namespace: "default"},
-		Spec: cnpgv1.ClusterSpec{
-			Instances: 1,
-			ImageName: "ghcr.io/cloudnative-pg/postgresql:17",
-			StorageConfiguration: cnpgv1.StorageConfiguration{
-				Size: "1Gi",
-			},
-			Plugins: []cnpgv1.PluginConfiguration{{
-				Name:          "barman-cloud.cloudnative-pg.io",
-				IsWALArchiver: new(true),
-				Parameters: map[string]string{
-					"barmanObjectName": "apply-archive",
-					"serverName":       "apply-server",
-				},
-			}},
-		},
-	}).Build()
+	cluster, err := cnpgcluster.NewBuilder(clusterFixture("apply-server")).Build()
+	require.NoError(t, err)
+
+	// The suspended Cluster goes through the same apply. CloudNativePG puts a
+	// minimum of 1 on spec.instances, so a suspension that scaled to zero
+	// would be rejected here and nowhere else.
+	suspended, err := cnpgcluster.NewBuilder(clusterFixture("apply-server-suspended")).
+		WithMutation(cnpgcluster.Mutation{
+			Name:   "suspend",
+			Mutate: cnpgcluster.DefaultSuspendMutationHandler,
+		}).
+		Build()
 	require.NoError(t, err)
 
 	store, err := barmanobjectstore.NewBuilder(&barmanobjectstore.ObjectStore{
@@ -106,7 +100,7 @@ func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 	for _, res := range []interface {
 		Identity() string
 		Preview() (client.Object, error)
-	}{cluster, store, backup} {
+	}{cluster, suspended, store, backup} {
 		t.Run(res.Identity(), func(t *testing.T) {
 			desired, err := res.Preview()
 			require.NoError(t, err)
@@ -127,6 +121,34 @@ func TestWrappersApplyAgainstTheCRDs(t *testing.T) {
 			))
 			assert.NotEmpty(t, desired.GetUID(), "the API server accepted the apply and returned the object")
 		})
+	}
+
+	var stored cnpgv1.Cluster
+	require.NoError(t, apiClient.Get(
+		ctx, client.ObjectKey{Namespace: "default", Name: "apply-server-suspended"}, &stored,
+	))
+	assert.Equal(t, cnpgcluster.HibernationOn, stored.Annotations[cnpgcluster.HibernationAnnotation])
+	assert.Equal(t, 1, stored.Spec.Instances, "suspension leaves the instance count alone")
+}
+
+// clusterFixture returns a Cluster that archives through the Barman Cloud
+// plugin, the shape a database server applies.
+func clusterFixture(name string) *cnpgv1.Cluster {
+	return &cnpgv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec: cnpgv1.ClusterSpec{
+			Instances:            1,
+			ImageName:            "ghcr.io/cloudnative-pg/postgresql:17",
+			StorageConfiguration: cnpgv1.StorageConfiguration{Size: "1Gi"},
+			Plugins: []cnpgv1.PluginConfiguration{{
+				Name:          "barman-cloud.cloudnative-pg.io",
+				IsWALArchiver: new(true),
+				Parameters: map[string]string{
+					"barmanObjectName": "apply-archive",
+					"serverName":       name,
+				},
+			}},
+		},
 	}
 }
 

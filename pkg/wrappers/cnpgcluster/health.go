@@ -21,6 +21,8 @@ import (
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // The handlers in this file are the kind-specific status logic NewBuilder
@@ -41,6 +43,7 @@ var failingPhases = map[string]struct{}{
 	cnpgv1.PhaseCannotCreateClusterObjects: {},
 	cnpgv1.PhaseDefinitionInvalid:          {},
 	cnpgv1.PhaseArchitectureBinaryMissing:  {},
+	cnpgv1.PhaseWaitingForUser:             {},
 }
 
 // DefaultConvergingStatusHandler maps the phase CloudNativePG reports to the
@@ -107,30 +110,43 @@ func DefaultGraceStatusHandler(cluster *cnpgv1.Cluster) (concepts.GraceStatusWit
 	}
 }
 
-// DefaultSuspendMutationHandler scales the Cluster to zero instances.
-// CloudNativePG removes the pods and keeps the PersistentVolumeClaims, so the
-// data of the server survives the suspension and the instances come back on
-// the claims they had.
+// DefaultSuspendMutationHandler hibernates the Cluster. CloudNativePG
+// removes the instance pods and keeps the volume claims, so the data of the
+// server survives the suspension and the instances come back on the claims
+// they had.
 func DefaultSuspendMutationHandler(m *Mutator) error {
-	m.SetInstances(0)
+	m.SetHibernation(true)
 	return nil
 }
 
 // DefaultSuspensionStatusHandler reports Suspended once CloudNativePG has
-// scaled the Cluster to zero instances, and Suspending while any instance is
-// still counted.
+// hibernated the Cluster: the hibernation condition is True, or, before
+// CloudNativePG writes that condition, no instance is ready. Anything else is
+// Suspending.
+//
+// The count of status.instances is not part of the answer. It counts the
+// volume claim groups of the server, which hibernation keeps on purpose, so
+// it never drains.
 func DefaultSuspensionStatusHandler(cluster *cnpgv1.Cluster) (concepts.SuspensionStatusWithReason, error) {
-	if cluster.Status.Instances > 0 || cluster.Status.ReadyInstances > 0 {
+	condition := meta.FindStatusCondition(cluster.Status.Conditions, HibernationCondition)
+
+	switch {
+	case condition != nil && condition.Status == metav1.ConditionTrue:
+		return concepts.SuspensionStatusWithReason{
+			Status: concepts.SuspensionStatusSuspended,
+			Reason: "CloudNativePG reports the Cluster as hibernated",
+		}, nil
+	case condition == nil && cluster.Status.ReadyInstances == 0:
+		return concepts.SuspensionStatusWithReason{
+			Status: concepts.SuspensionStatusSuspended,
+			Reason: "no instance of the Cluster is ready",
+		}, nil
+	default:
 		return concepts.SuspensionStatusWithReason{
 			Status: concepts.SuspensionStatusSuspending,
-			Reason: fmt.Sprintf("%d instances are still running", cluster.Status.Instances),
+			Reason: fmt.Sprintf("%d instances of the Cluster are still ready", cluster.Status.ReadyInstances),
 		}, nil
 	}
-
-	return concepts.SuspensionStatusWithReason{
-		Status: concepts.SuspensionStatusSuspended,
-		Reason: "the Cluster is scaled to zero instances",
-	}, nil
 }
 
 // DefaultDeleteOnSuspendHandler keeps the Cluster on suspension. Deleting it
