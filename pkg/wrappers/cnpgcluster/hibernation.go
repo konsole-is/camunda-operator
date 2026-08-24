@@ -16,7 +16,15 @@ limitations under the License.
 
 package cnpgcluster
 
-import "github.com/sourcehawk/operator-component-framework/pkg/mutation/editors"
+import (
+	"fmt"
+
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
+	"github.com/sourcehawk/operator-component-framework/pkg/mutation/editors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // The declarative hibernation surface of CloudNativePG. The published api
 // module declares no constant for any of them, so they are taken from
@@ -32,11 +40,8 @@ const (
 	// HibernationCondition is the condition CloudNativePG reports on a
 	// Cluster it has hibernated. It turns True once every pod is gone.
 	HibernationCondition = "cnpg.io/hibernation"
-	// HibernationConditionReason is the reason of that condition.
-	HibernationConditionReason = "Hibernated"
 	// hibernationMutationName is the mutation NewBuilder registers to keep
-	// the annotation owned by this operator. It is the first mutation of
-	// every Cluster, so a suspension applied afterwards wins.
+	// the annotation owned by this operator.
 	hibernationMutationName = "hibernation-off"
 )
 
@@ -46,8 +51,10 @@ const (
 // declared the field, so server-side apply leaves it alone and no suspension
 // state of the component contradicts it.
 //
-// The ocf suspender runs after every feature mutation, so a suspended
-// component still ends with the on value.
+// NewBuilder registers it before anything a consumer adds, so a consumer that
+// wants to drive the annotation itself can register a mutation that overrides
+// it. Suspension does not need that: the ocf suspender runs after every
+// feature mutation whatever their order.
 func hibernationOffMutation() Mutation {
 	return Mutation{
 		Name: hibernationMutationName,
@@ -75,4 +82,67 @@ func (m *Mutator) SetHibernation(on bool) {
 		e.EnsureAnnotation(HibernationAnnotation, value)
 		return nil
 	})
+}
+
+// DefaultSuspendMutationHandler hibernates the Cluster. CloudNativePG
+// removes the instance pods and keeps the volume claims, so the data of the
+// server survives the suspension and the instances come back on the claims
+// they had.
+func DefaultSuspendMutationHandler(m *Mutator) error {
+	m.SetHibernation(true)
+	return nil
+}
+
+// DefaultSuspensionStatusHandler reports Suspended only once CloudNativePG
+// reports the hibernation condition True. Anything else is Suspending.
+// Neither instance count answers the question: hibernation keeps the volume
+// claim groups on purpose, and a pod that fails its probes is still running.
+func DefaultSuspensionStatusHandler(cluster *cnpgv1.Cluster) (concepts.SuspensionStatusWithReason, error) {
+	condition := meta.FindStatusCondition(cluster.Status.Conditions, HibernationCondition)
+
+	if condition != nil && condition.Status == metav1.ConditionTrue {
+		return concepts.SuspensionStatusWithReason{
+			Status: concepts.SuspensionStatusSuspended,
+			Reason: "CloudNativePG reports the Cluster as hibernated",
+		}, nil
+	}
+
+	return concepts.SuspensionStatusWithReason{
+		Status: concepts.SuspensionStatusSuspending,
+		Reason: fmt.Sprintf(
+			"%s; %d of %d instances are still ready",
+			hibernationText(condition), cluster.Status.ReadyInstances, cluster.Spec.Instances,
+		),
+	}, nil
+}
+
+// hibernationText says where the hibernation stands, for a status reason. It
+// carries the reason and the message of the condition, because a False
+// condition covers two different states: CloudNativePG is still deleting the
+// pods, and CloudNativePG has deferred the hibernation because the Cluster is
+// not healthy. Only its own words separate them.
+func hibernationText(condition *metav1.Condition) string {
+	if condition == nil {
+		return "CloudNativePG has not reported the hibernation condition yet"
+	}
+
+	const prefix = "CloudNativePG has not hibernated the Cluster yet"
+
+	switch {
+	case condition.Reason != "" && condition.Message != "":
+		return fmt.Sprintf("%s (%s: %s)", prefix, condition.Reason, condition.Message)
+	case condition.Reason != "":
+		return fmt.Sprintf("%s (%s)", prefix, condition.Reason)
+	case condition.Message != "":
+		return fmt.Sprintf("%s (%s)", prefix, condition.Message)
+	default:
+		return prefix
+	}
+}
+
+// DefaultDeleteOnSuspendHandler keeps the Cluster on suspension. Deleting it
+// would hand the volumes of the server to the reclaim policy of their storage
+// class, and suspension exists to keep the data.
+func DefaultDeleteOnSuspendHandler(_ *cnpgv1.Cluster) bool {
+	return false
 }

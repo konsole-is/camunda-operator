@@ -22,15 +22,13 @@ import (
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// The handlers in this file are the kind-specific status logic NewBuilder
-// registers by default; they replace the scaffolded defaults the ocf
-// generator writes into builder.go. After regenerating the wrapper with
-// --force, delete the scaffolded Default* handlers from builder.go again so
-// these implementations take their place.
+// The handlers in this file and in hibernation.go are the kind-specific
+// status logic NewBuilder registers by default; they replace the scaffolded
+// defaults the ocf generator writes into builder.go. After regenerating the
+// wrapper with --force, delete the scaffolded Default* handlers from
+// builder.go again so these implementations take their place.
 
 // failingPhases are the phases CloudNativePG reports for a Cluster that no
 // longer converges on its own. Every other phase is a step of a reconcile
@@ -86,13 +84,10 @@ func DefaultConvergingStatusHandler(
 }
 
 // converged reports whether CloudNativePG holds the Cluster in the state the
-// spec asks for. The count has to match exactly: during a scale-down
-// CloudNativePG reports more ready pods than the spec wants, which is a
-// Cluster still converging, not one that has arrived.
-//
-// DefaultConvergingStatusHandler and DefaultGraceStatusHandler share this
-// test. A grace handler that answered Healthy for a state convergence did not
-// would make the component log an inconsistency on every reconcile.
+// spec asks for. The converging handler and the grace handler share it, so the
+// two can never disagree about which states are healthy. The count has to
+// match exactly, because a scale-down reports more ready pods than the spec
+// wants.
 func converged(cluster *cnpgv1.Cluster) bool {
 	return cluster.Status.Phase == cnpgv1.PhaseHealthy &&
 		cluster.Status.ReadyInstances == cluster.Spec.Instances
@@ -138,72 +133,4 @@ func DefaultGraceStatusHandler(cluster *cnpgv1.Cluster) (concepts.GraceStatusWit
 			),
 		}, nil
 	}
-}
-
-// DefaultSuspendMutationHandler hibernates the Cluster. CloudNativePG
-// removes the instance pods and keeps the volume claims, so the data of the
-// server survives the suspension and the instances come back on the claims
-// they had.
-func DefaultSuspendMutationHandler(m *Mutator) error {
-	m.SetHibernation(true)
-	return nil
-}
-
-// DefaultSuspensionStatusHandler reports Suspended only once CloudNativePG
-// reports the hibernation condition True. Anything else is Suspending.
-//
-// Neither instance count answers the question. status.instances counts the
-// volume claim groups of the server, which hibernation keeps on purpose, so
-// it never drains. status.readyInstances reaching zero says the pods stopped
-// passing their probes, not that they are gone, and CloudNativePG also defers
-// hibernation while the Cluster is unhealthy. Only the condition states that
-// the pods are actually down.
-func DefaultSuspensionStatusHandler(cluster *cnpgv1.Cluster) (concepts.SuspensionStatusWithReason, error) {
-	condition := meta.FindStatusCondition(cluster.Status.Conditions, HibernationCondition)
-
-	if condition != nil && condition.Status == metav1.ConditionTrue {
-		return concepts.SuspensionStatusWithReason{
-			Status: concepts.SuspensionStatusSuspended,
-			Reason: "CloudNativePG reports the Cluster as hibernated",
-		}, nil
-	}
-
-	return concepts.SuspensionStatusWithReason{
-		Status: concepts.SuspensionStatusSuspending,
-		Reason: fmt.Sprintf(
-			"%s; %d of %d instances are still ready",
-			hibernationText(condition), cluster.Status.ReadyInstances, cluster.Spec.Instances,
-		),
-	}, nil
-}
-
-// hibernationText says where the hibernation stands, for a status reason. It
-// carries the reason and the message of the condition, because a False
-// condition covers two different states: CloudNativePG is still deleting the
-// pods, and CloudNativePG has deferred the hibernation because the Cluster is
-// not healthy. Only its own words separate them.
-func hibernationText(condition *metav1.Condition) string {
-	if condition == nil {
-		return "CloudNativePG has not reported the hibernation condition yet"
-	}
-
-	const prefix = "CloudNativePG has not hibernated the Cluster yet"
-
-	switch {
-	case condition.Reason != "" && condition.Message != "":
-		return fmt.Sprintf("%s (%s: %s)", prefix, condition.Reason, condition.Message)
-	case condition.Reason != "":
-		return fmt.Sprintf("%s (%s)", prefix, condition.Reason)
-	case condition.Message != "":
-		return fmt.Sprintf("%s (%s)", prefix, condition.Message)
-	default:
-		return prefix
-	}
-}
-
-// DefaultDeleteOnSuspendHandler keeps the Cluster on suspension. Deleting it
-// would hand the volumes of the server to the reclaim policy of their storage
-// class, and suspension exists to keep the data.
-func DefaultDeleteOnSuspendHandler(_ *cnpgv1.Cluster) bool {
-	return false
 }
