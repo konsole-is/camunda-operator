@@ -428,8 +428,9 @@ type AttachedClusterStatus struct {
 	// of five values. Four of them say why the cluster is not attached:
 	// ClaimedElsewhere, another management plane holds it; NotReady, it
 	// publishes no gateway endpoints or it changed while the operator claimed
-	// it; InvalidReference, its platform config cannot be read;
-	// WriteFailed, the Console ping settings were refused. The fifth,
+	// it; InvalidReference, its platform config cannot be read, or the cluster
+	// authenticates with OIDC and names another issuer than the management
+	// plane; WriteFailed, the Console ping settings were refused. The fifth,
 	// BasicAuthUserFailed, accompanies an attached row: the management plane
 	// serves the cluster, and only the Web Modeler user on it is missing.
 	// +optional

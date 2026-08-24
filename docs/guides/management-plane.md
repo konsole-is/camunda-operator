@@ -363,6 +363,8 @@ status:
 
 A cluster is attached once it publishes `status.gateway`. Every cluster publishes that block unless `spec.suspend` is true, so a suspended cluster stays `NotReady`.
 
+An OIDC cluster must also validate the tokens of the identity provider that this management plane signs people in to. Console and Web Modeler call the cluster with the token of the person who is signed in. A cluster whose platform config names another issuer stays `attached: false` with the reason `InvalidReference`, and the message names both issuers. Set `spec.auth.oidc.issuerUrl` on the platform config of that cluster to the issuer of the management plane. [Clusters](../crds/camundamanagementcluster.md#an-oidc-cluster-must-name-the-same-issuer) names that issuer for each identity provider mode.
+
 One cluster answers to one management plane. A cluster that another one already serves stays `ClaimedElsewhere`, and the message names the holder. To move it, take it out of the selector of the management plane that holds it. The claim is withdrawn, and the next management plane that selects the cluster takes it.
 
 A cluster the operator attached carries the annotation `camunda.io/management-cluster`. While the management plane sets `spec.console`, it also carries four `CAMUNDA_CONSOLE_PING_*` entries in `spec.extraEnv`. The entries are what makes it appear in Console. See [Management plane](../crds/camundacluster.md#management-plane) on the cluster page.
