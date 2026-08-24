@@ -104,7 +104,7 @@ For all fields, see [ElasticsearchCluster](../crds/elasticsearchcluster.md) and 
 
 Prerequisites: a PostgreSQL server that the operator can reach over the network, and an admin user that can create databases and roles. The operator never creates the server. The steps below use a server at `postgres.my-cluster-ns.svc` on port `5432` and an admin user `postgres`.
 
-1. Create a Secret with the admin credentials. It can live in any namespace. The `DatabaseServerConfig` names the namespace.
+1. Create a Secret with the admin credentials in the namespace of the `CamundaCluster`. The `DatabaseServerConfig` names it by name, and reads it from its own namespace.
 
     ```yaml
     apiVersion: v1
@@ -160,7 +160,7 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
 
     If the reason is `MissingSecret`, the Secret or one of its keys does not exist.
 
-4. Create a `Database` in the namespace of the `CamundaCluster`. Set `secondaryStorageConfig` to the name of the contract you want. The `Database` resolves `serverRef` in its own namespace and publishes the contract there, where the cluster reads it.
+4. Create a `Database` in the namespace of the `CamundaCluster`. Set `secondaryStorageConfig` to the name of the contract you want. The `Database` resolves `serverRef` in its own namespace. It publishes the `DatabaseConfig` and the `SecondaryStorageConfig` there, where the cluster reads them.
 
     ```yaml
     apiVersion: core.camunda.io/v1

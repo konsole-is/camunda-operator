@@ -4,7 +4,7 @@
 
 An orchestration cluster with a relational database as secondary storage needs to connect to one logical database. This kind carries the coordinates and the credentials of that database. The thing that created the database and the thing that connects to it do not need to know each other. The operator only validates the contract and reports the result on `Ready`. It never provisions anything from it.
 
-The contract lives in the namespace of the consumer. A `SecondaryStorageConfig` finds it by name in its own namespace. The contract does not repeat the host and the port. Consumers read them from the `DatabaseServerConfig` named in `serverRef` and combine them with `databaseName` and the credentials.
+The contract lives in the namespace of the consumer. A `SecondaryStorageConfig` finds it by name in its own namespace. The contract does not repeat the host and the port. Consumers read them from the `DatabaseServerConfig` that `serverRef` names in this namespace, and combine them with `databaseName` and the credentials.
 
 | Role | Who |
 | --- | --- |
@@ -43,7 +43,7 @@ graph LR
 
 The operator creates no resources from this kind. It validates the contract and writes the result to `status`.
 
-- The operator makes sure that the [DatabaseServerConfig](databaseserverconfig.md) named in `serverRef` exists.
+- The operator makes sure that the [DatabaseServerConfig](databaseserverconfig.md) named in `serverRef` exists in the namespace of this contract.
 - The operator makes sure that the Secret in `credentialsSecretRef` exists and holds `usernameKey` and `passwordKey`. If `backupCredentialsSecretRef` is set, it makes sure that this Secret exists and holds the same keys.
 
 If the `DatabaseServerConfig` is missing, `Ready` is `False` with reason `InvalidReference`. If a Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. The message names the missing object.
@@ -61,7 +61,7 @@ A `LogicalBackupRDBMS` dumps the database with the user in `backupCredentialsSec
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Healthy` | The `DatabaseServerConfig` and all referenced Secrets exist and hold the required keys. | Nothing. |
-| `Ready` | `InvalidReference` | The `DatabaseServerConfig` named by `serverRef` does not exist. | Create the `DatabaseServerConfig`, or fix the name. |
+| `Ready` | `InvalidReference` | The `DatabaseServerConfig` named by `serverRef` does not exist in the namespace of this contract. | Create the `DatabaseServerConfig` in this namespace, or fix the name. |
 | `Ready` | `MissingSecret` | A Secret named by `credentialsSecretRef` or `backupCredentialsSecretRef` is missing, or it lacks a configured key. | Create the Secret, or add the key. The message names the Secret and the key. |
 
 `status.observedGeneration` is the last generation of the contract that the operator validated.
@@ -77,7 +77,7 @@ metadata:
   name: my-camunda-db
   namespace: my-cluster-ns
 spec:
-  # string. Required. Name of the DatabaseServerConfig that describes the server of this database.
+  # string. Required. Name of the DatabaseServerConfig of this namespace that describes the server of this database.
   serverRef: my-db-server
   # string. Required. Name of the logical database on the server.
   databaseName: camunda

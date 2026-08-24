@@ -80,7 +80,7 @@ type Bindings struct {
 	AppSecret types.NamespacedName
 	// BackupSecret locates the backup credentials Secret.
 	BackupSecret types.NamespacedName
-	// DatabaseConfigName names the DatabaseConfig in targetNamespace.
+	// DatabaseConfigName names the DatabaseConfig in the namespace of the Database.
 	DatabaseConfigName string
 	// AppUser is the application SQL role. It has the name of the logical
 	// database.

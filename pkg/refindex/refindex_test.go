@@ -52,8 +52,9 @@ func TestObjectName(t *testing.T) {
 	assert.Equal(t, "server", ObjectName(cfg))
 }
 
-// databaseServerConfigReferencing returns a CR of namespace whose admin
-// credentials Secret is name beside it.
+// databaseServerConfigReferencing returns a DatabaseServerConfig named crName
+// in namespace, whose admin credentials Secret reference is name in that same
+// namespace.
 func databaseServerConfigReferencing(crName, namespace, name string) *v1.DatabaseServerConfig {
 	return &v1.DatabaseServerConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: namespace},
