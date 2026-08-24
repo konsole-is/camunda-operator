@@ -137,7 +137,7 @@ spec:
 
 Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource: the new resource carries a new uid, and the server reads it as a new request even when the point is the same.
 
-A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
+A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, `status.probedSecretKeys`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
 
 Writing the request itself clears nothing. The operator clears the record of the probe when `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef` change, because only those name another server or another user on it. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
 
@@ -160,7 +160,7 @@ Writing the request itself clears nothing. The operator clears the record of the
 | `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe used. A change of server clears it. |
 | `status.observedGeneration` | The last generation of the contract that the operator validated. |
 
-A change of server means a change to `spec.host`, `spec.port`, or the name and the keys of `spec.adminCredentialsSecretRef`. Every other spec change, including a recovery request and its answer, leaves the record of the probe alone.
+A change of server means a change to `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef`. Every other spec change, including a recovery request and its answer, leaves the record of the probe alone.
 
 ## Spec reference
 

@@ -238,7 +238,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 	// The status flush of a fresh probe writes nothing new, so it wakes no
 	// watch, and the interval sets the cadence. A spec change or a Secret
 	// change probes again.
-	It("probes once per interval, and again when the spec names another server", func() {
+	It("probes once per interval, and again when the spec names another server or user", func() {
 		pointAtServer()
 		secret := adminSecret("username", "password")
 		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -275,7 +275,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(probes.Load()).To(Equal(count))
 		}, "2s", interval).Should(Succeed())
 
-		By("probing again when the spec reads another user of one Secret")
+		By("probing again when the spec names a Secret that holds two users")
 		twoUsers := adminSecret("username", "password")
 		twoUsers.Name = "admin-two-users"
 		twoUsers.Data["readonly-username"] = twoUsers.Data["username"]
@@ -292,6 +292,7 @@ var _ = Describe("DatabaseServerConfig controller", func() {
 			g.Expect(probes.Load()).To(Equal(count + 1))
 		}, timeout, interval).Should(Succeed())
 
+		By("probing again when the spec reads the other user of that Secret")
 		// The Secret does not move. The keys do, and they name the user.
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(serverConfig), &got)).To(Succeed())

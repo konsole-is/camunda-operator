@@ -133,11 +133,11 @@ func (r *DatabaseServerConfigReconciler) validate(
 	// of the probe goes, so status reads as no probe for this spec rather than
 	// a probe of a server this contract no longer describes.
 	//
-	// The test is the endpoint and the admin credentials, not the generation. Every field of this spec is writable, and the ones that
-	// carry a recovery request and its answer are written on a live contract
-	// while a rollback runs. Clearing the identity for those would take the
-	// contract, and every Database on it, out of Ready for a write that cannot
-	// move the server.
+	// The test is the endpoint and the admin credentials, not the generation.
+	// Every field of this spec is writable, and the ones that carry a recovery
+	// request and its answer are written on a live contract while a rollback
+	// runs. Clearing the identity for those takes the contract, and every
+	// Database on it, out of Ready for a write that cannot move the server.
 	if probedAnotherServer(cfg) {
 		cfg.Status.ServerVersion = ""
 		cfg.Status.SystemIdentifier = ""
