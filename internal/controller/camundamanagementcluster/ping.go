@@ -169,8 +169,9 @@ func (r *Reconciler) replacePing(
 
 // removePingCollisions deletes every entry of spec.extraEnv of cluster that
 // holds a ping setting of the key set that version reads, with valueFrom, in
-// one JSON patch, and records each removal as an event on mc. A cluster that carries no such entry is left
-// alone, so the reconcile after a replacement patches nothing.
+// one JSON patch, and records each removal as an event on mc. A cluster that
+// carries no such entry is left alone, so the reconcile after a replacement
+// patches nothing.
 //
 // The patch tests the UID of the cluster and the name at every index it
 // deletes. A cluster that went, and a list that moved between the read and
