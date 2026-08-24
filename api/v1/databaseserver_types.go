@@ -325,7 +325,9 @@ type DatabaseServerStatus struct {
 	// contract, and the archive of a server that asks for one. The
 	// per-component conditions (ClusterReady, ArchiveReady, ContractReady,
 	// MonitoringReady) also appear here. MonitoringReady, and ArchiveReady
-	// without spec.archive, are reported on their own and never on Ready.
+	// without spec.archive, are reported on their own and never on Ready. A
+	// PodMonitor observes the server rather than runs it, so a broken one
+	// never makes the server not ready.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

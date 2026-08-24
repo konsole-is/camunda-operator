@@ -87,6 +87,9 @@ type serverComponents struct {
 	// contract, and the archive of a server that asks for one. Monitoring
 	// keeps its own MonitoringReady condition, and an archive the spec does
 	// not ask for keeps ArchiveReady, so Ready never reports Disabled.
+	// Monitoring stays out whether or not it is enabled, because a PodMonitor
+	// observes the server rather than runs it. ElasticsearchCluster keeps its
+	// metrics exporter out of Ready for the same reason.
 	ready []*component.Component
 }
 
