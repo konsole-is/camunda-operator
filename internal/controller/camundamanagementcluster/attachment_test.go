@@ -19,6 +19,7 @@ package camundamanagementcluster
 import (
 	"context"
 	"errors"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -122,6 +123,92 @@ var _ = Describe("Orchestration cluster attachment", func() {
 		}, timeout, interval).Should(Succeed())
 
 		expectClaimWithdrawn(cluster)
+	})
+
+	// A claim that waits for a reference of the management cluster keeps
+	// another management plane from taking the cluster, and the withdrawal
+	// reads none of those references.
+	It("releases a deselected cluster while a reference of the management cluster is broken", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withSelector(map[string]string{}), withConsole, withWebModeler)
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		password := components.WebModelerClusterUserSecretName(s.mc, cluster.UID)
+		Eventually(func(g Gomega) {
+			g.Expect(pingOf(g, cluster)).NotTo(BeEmpty())
+			readSecret(g, s.namespace, password)
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		By("removing the platform config that the management cluster names")
+		Expect(k8sClient.Delete(ctx, &v1.CamundaPlatformConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: s.mc.Spec.PlatformConfigRef},
+		})).To(Succeed())
+		expectReadyReason(s.mc, v1.ReasonInvalidReference)
+
+		By("unsetting the selector while the reference is still broken")
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			expectSecretGone(g, s.namespace, password)
+			g.Expect(pingOf(g, cluster)).To(BeEmpty())
+			g.Expect(readOrchestrationCluster(g, cluster).Annotations).NotTo(
+				HaveKey(components.ClaimAnnotation),
+			)
+		}, timeout, interval).Should(Succeed())
+
+		ready := conditionOf(Default, s.mc, v1.ConditionReady)
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+	})
+
+	// The claim goes last on this path too: a claim that went first would let
+	// another management plane adopt the web-modeler user that this one still
+	// has to remove.
+	It("holds the claim of a deselected cluster whose user it could not remove", func() {
+		api := newClusterUserAPI()
+		s := newScenario(withSelector(map[string]string{}), withWebModeler)
+		cluster := createBasicCluster(s, api.URL())
+
+		expectAttached(s.mc, cluster)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		By("removing the platform config that the management cluster names")
+		Expect(k8sClient.Delete(ctx, &v1.CamundaPlatformConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: s.mc.Spec.PlatformConfigRef},
+		})).To(Succeed())
+		expectReadyReason(s.mc, v1.ReasonInvalidReference)
+
+		By("unsetting the selector while the cluster refuses every removal")
+		api.FailNext("deleteUser", failureBudget)
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.ClusterSelector = nil
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeTrue())
+			g.Expect(readOrchestrationCluster(g, cluster).Annotations).To(
+				HaveKeyWithValue(components.ClaimAnnotation, ClaimValue(s.mc)),
+			)
+		}, 5*time.Second, interval).Should(Succeed())
+
+		api.FailNext("deleteUser", 0)
+		Eventually(func(g Gomega) {
+			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
+			g.Expect(readOrchestrationCluster(g, cluster).Annotations).NotTo(
+				HaveKey(components.ClaimAnnotation),
+			)
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// A refused claim concerns one cluster: the cluster changed while the
