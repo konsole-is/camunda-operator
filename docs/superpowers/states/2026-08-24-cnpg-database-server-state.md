@@ -9,7 +9,7 @@ sub_pr_approval: autonomous
 sub_pr_review_loop: on
 sub_pr_target: feature-branch
 integration_pr:
-status: foundational-wave
+status: consumer-wave
 ---
 
 # DatabaseServer on CloudNativePG — orchestration state
@@ -27,7 +27,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
-| #128 | fix/cnpg-database-server--namespaced-chain | .claude/worktrees/cnpg-database-server/.claude/worktrees/namespaced-chain | #239 → feat/cnpg-database-server | ready |
+| #128 | fix/cnpg-database-server--namespaced-chain | .claude/worktrees/cnpg-database-server/.claude/worktrees/namespaced-chain | #239 → feat/cnpg-database-server | self-merged (2d812a8) |
 | #234 | chore/cnpg-database-server--cnpg-wrappers | .claude/worktrees/cnpg-database-server/.claude/worktrees/cnpg-wrappers | #238 → feat/cnpg-database-server | self-merged (beee38d) |
 | #235 | feat/cnpg-database-server--database-server | .claude/worktrees/cnpg-database-server/.claude/worktrees/database-server | → feat/cnpg-database-server | not-started |
 | #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | → feat/cnpg-database-server | not-started |
