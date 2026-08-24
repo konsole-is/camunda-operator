@@ -1300,6 +1300,29 @@ var _ = Describe("PointInTimeRestore storage identity", func() {
 		Expect(jobsOf(pitr)).To(BeEmpty())
 	})
 
+	// The endpoint of a server can start reaching another PostgreSQL instance,
+	// through a repointed Service or a server rebuilt in place. The restore
+	// read the rules of the instance it pinned, so an endpoint that reports
+	// another identity ends it.
+	It("fails when the endpoint of the server reports another instance", func() {
+		w := createWorld()
+		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(-2 * time.Minute)})
+		pitr := createRestore(w)
+		expectHeld(pitr, v1.ReasonDatabaseNotRestored)
+
+		const replacement = "7000000000000000042"
+		publishSystemIdentifier(w.server, replacement)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(worldSystemIdentifier))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(replacement))
+		}, timeout, interval).Should(Succeed())
+		expectClaimsUntouched(w)
+		Expect(jobsOf(pitr)).To(BeEmpty())
+	})
+
 	It("pins what it validated", func() {
 		w := createWorld()
 		pitr := createRestore(w)

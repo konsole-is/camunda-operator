@@ -357,12 +357,23 @@ func pinnedChainCurrent(
 	}
 
 	return fmt.Errorf(
-		"%w: the restore validated %s of DatabaseConfig %s on %s at %s, and the cluster now uses %s "+
-			"of DatabaseConfig %s on %s at %s. Create a new restore for the database the cluster "+
-			"uses now",
-		errChainChanged,
-		pinned.SecondaryStorageConfig, pinned.DatabaseConfig, pinned.DatabaseName, pinned.Endpoint,
-		current.SecondaryStorageConfig, current.DatabaseConfig, current.DatabaseName, current.Endpoint,
+		"%w: the restore validated %s, and the cluster now uses %s. Create a new restore for the "+
+			"database the cluster uses now",
+		errChainChanged, describeChain(pinned), describeChain(current),
+	)
+}
+
+// describeChain names one storage chain in a failure message. It carries the
+// system identifier, because an endpoint that is repointed at another
+// PostgreSQL instance reads the same in every other field.
+func describeChain(chain *v1.PointInTimeRestoreStorage) string {
+	return fmt.Sprintf(
+		"%s of DatabaseConfig %s on %s at %s, system identifier %s",
+		chain.SecondaryStorageConfig,
+		chain.DatabaseConfig,
+		chain.DatabaseName,
+		chain.Endpoint,
+		chain.SystemIdentifier,
 	)
 }
 
