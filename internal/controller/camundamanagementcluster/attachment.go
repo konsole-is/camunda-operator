@@ -318,8 +318,8 @@ func (r *Reconciler) readClusterConfig(
 
 // clusterAuthMethod reads how a cluster authenticates its users and clients,
 // from the platform config that the cluster names. It returns the
-// authentication method, or the row message of readClusterConfig when that
-// config is gone.
+// authentication method, or the row message of readClusterConfig when the
+// cluster names no config or names one that is gone.
 func (r *Reconciler) clusterAuthMethod(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,
