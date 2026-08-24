@@ -12,16 +12,30 @@ spec:
     listKind: DatabaseServerConfigList
     plural: databaseserverconfigs
     singular: databaseserverconfig
-  scope: Cluster
+  scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      type: string
+    - jsonPath: .status.serverVersion
+      name: Version
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: |-
           DatabaseServerConfig is the contract CRD that describes a database server —
           engine, endpoint, admin credentials, and point-in-time-recovery capability —
           for controllers that bootstrap databases on it or validate its declared
-          capabilities.
+          capabilities. A consumer resolves it in its own namespace, so the whole
+          RDBMS chain of a cluster lives with that cluster.
         properties:
           apiVersion:
             description: |-
@@ -46,31 +60,27 @@ spec:
               adminCredentialsSecretRef:
                 description: |-
                   AdminCredentialsSecretRef names an admin user with permission to create
-                  databases and roles; used by the Database controller to bootstrap.
+                  databases and roles; used by the Database controller to bootstrap. The
+                  Secret lives in the namespace of this contract.
                 properties:
                   name:
                     description: Name of the Secret holding the credentials.
                     minLength: 1
                     type: string
-                  namespace:
-                    description: Namespace of the Secret.
-                    minLength: 1
-                    type: string
                   passwordKey:
+                    default: password
                     description: PasswordKey is the key in the Secret holding the
                       plaintext password.
                     minLength: 1
                     type: string
                   usernameKey:
+                    default: username
                     description: UsernameKey is the key in the Secret holding the
                       plaintext username.
                     minLength: 1
                     type: string
                 required:
                 - name
-                - namespace
-                - passwordKey
-                - usernameKey
                 type: object
               engine:
                 description: |-
@@ -188,9 +198,12 @@ spec:
               probedAt:
                 description: |-
                   ProbedAt is when the operator last reached the server and read
-                  ServerVersion. The operator probes the server again when this is older
-                  than the probe interval, when the spec changed, or when the admin
+                  ServerVersion and SystemIdentifier. The operator probes the server again
+                  when this is older than the probe interval, or when the admin
                   credentials Secret changed. A reconcile in between leaves it untouched.
+                  A change to the spec clears it, together with ServerVersion,
+                  SystemIdentifier, and ProbedSecretVersion, because the whole record
+                  describes the endpoint the old spec named.
                 format: date-time
                 type: string
               probedSecretVersion:
@@ -205,6 +218,14 @@ spec:
                   time the operator reached it, for example "17". A dump of a database on
                   this server runs client tools of this major, so a backup waits until
                   the operator publishes it.
+                type: string
+              systemIdentifier:
+                description: |-
+                  SystemIdentifier is the identity of the PostgreSQL instance behind this
+                  endpoint, as the server reported it on the last probe. It names the
+                  server itself, so two contracts that describe one server under
+                  different hosts publish one value. The Database controller keys the
+                  uniqueness of a logical database on it.
                 type: string
             type: object
         required:

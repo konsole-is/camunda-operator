@@ -36,7 +36,12 @@ func TestDatabaseConfigValidate(t *testing.T) {
 	require.NoError(t, v1.AddToScheme(scheme))
 	require.NoError(t, corev1.AddToScheme(scheme))
 
-	server := &v1.DatabaseServerConfig{ObjectMeta: metav1.ObjectMeta{Name: "server"}}
+	server := &v1.DatabaseServerConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Namespace: "ns"},
+	}
+	otherNamespaceServer := &v1.DatabaseServerConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Namespace: "elsewhere"},
+	}
 	appSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "app-creds", Namespace: "ns"},
 		Data:       map[string][]byte{"username": []byte("u"), "password": []byte("p")},
@@ -64,14 +69,14 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonInvalidReference,
-			wantMessage: `DatabaseServerConfig "server" not found`,
+			wantMessage: "DatabaseServerConfig ns/server not found",
 		},
 		{
 			name:        "app secret checked once the server exists",
 			objects:     []client.Object{server},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/app-creds" not found`,
+			wantMessage: `Secret ns/app-creds not found`,
 		},
 		{
 			name:        "broken app secret wins over broken backup secret",
@@ -79,14 +84,14 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/app-creds" not found`,
+			wantMessage: `Secret ns/app-creds not found`,
 		},
 		{
 			name:        "missing key names the secret and key",
 			objects:     []client.Object{server, appSecretNoPassword},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/app-creds" is missing key "password"`,
+			wantMessage: `Secret ns/app-creds is missing key "password"`,
 		},
 		{
 			name:        "absent backup ref skips the backup check",
@@ -96,12 +101,19 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			wantMessage: "All checks passed",
 		},
 		{
+			name:        "a server of the same name in another namespace is not this server",
+			objects:     []client.Object{otherNamespaceServer, appSecret},
+			wantStatus:  metav1.ConditionFalse,
+			wantReason:  v1.ReasonInvalidReference,
+			wantMessage: "DatabaseServerConfig ns/server not found",
+		},
+		{
 			name:        "present but broken backup ref fails after the app check",
 			objects:     []client.Object{server, appSecret},
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/backup-creds" not found`,
+			wantMessage: `Secret ns/backup-creds not found`,
 		},
 	}
 

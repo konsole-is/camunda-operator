@@ -38,6 +38,26 @@ type CredentialsSecretRef struct {
 	PasswordKey string `json:"passwordKey"`
 }
 
+// LocalCredentialsSecretRef references a username/password pair stored in a
+// Secret of the namespace of the object that holds the reference. A namespaced
+// kind whose Secret belongs to its own tenant uses it, so a reference can
+// never reach the credentials of another namespace.
+type LocalCredentialsSecretRef struct {
+	// Name of the Secret holding the credentials.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// UsernameKey is the key in the Secret holding the plaintext username.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:default=username
+	// +optional
+	UsernameKey string `json:"usernameKey,omitempty"`
+	// PasswordKey is the key in the Secret holding the plaintext password.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:default=password
+	// +optional
+	PasswordKey string `json:"passwordKey,omitempty"`
+}
+
 // SecretKeyRef references a single value inside a Secret.
 // Namespace is required so that references stay uniform and explicit across
 // all contract kinds, cluster-scoped and namespaced alike. The reference may

@@ -81,7 +81,7 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 	}
 
 	notFoundMessage := func() string {
-		return fmt.Sprintf("Secret %q not found", namespace+"/"+authConfig.Spec.ClientSecretRef.Name)
+		return fmt.Sprintf("Secret %s not found", namespace+"/"+authConfig.Spec.ClientSecretRef.Name)
 	}
 
 	It("reports MissingSecret when the referenced Secret does not exist", func() {
@@ -107,7 +107,7 @@ var _ = Describe("ManagementAuthConfig controller", func() {
 			metav1.ConditionFalse,
 			v1.ReasonMissingSecret,
 			fmt.Sprintf(
-				"Secret %q is missing key %q",
+				"Secret %s is missing key %q",
 				namespace+"/"+authConfig.Spec.ClientSecretRef.Name, authConfig.Spec.ClientSecretRef.Key,
 			),
 		)

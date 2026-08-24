@@ -19,6 +19,7 @@ package databaseserverconfig
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
@@ -28,7 +29,7 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 	DescribeTable(
 		"admission",
 		func(mutate func(*v1.DatabaseServerConfig), wantErr string) {
-			obj := fixtures.DatabaseServerConfig()
+			obj := fixtures.DatabaseServerConfig(fixtures.SchemaTestNamespace)
 			mutate(obj)
 			err := k8sClient.Create(ctx, obj)
 			if wantErr == "" {
@@ -49,9 +50,9 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 		Entry("rejects port above 65535", func(o *v1.DatabaseServerConfig) { o.Spec.Port = 70000 }, "spec.port"),
 		Entry("rejects empty host", func(o *v1.DatabaseServerConfig) { o.Spec.Host = "" }, "spec.host"),
 		Entry(
-			"rejects missing secret namespace", func(o *v1.DatabaseServerConfig) {
-				o.Spec.AdminCredentialsSecretRef.Namespace = ""
-			}, "namespace",
+			"rejects an empty admin secret name", func(o *v1.DatabaseServerConfig) {
+				o.Spec.AdminCredentialsSecretRef.Name = ""
+			}, "spec.adminCredentialsSecretRef.name",
 		),
 		Entry(
 			"rejects pitr enabled without retention", func(o *v1.DatabaseServerConfig) {
@@ -64,4 +65,17 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 			}, "retentionPeriodDays",
 		),
 	)
+
+	It("defaults the admin credential keys to username and password", func() {
+		obj := fixtures.DatabaseServerConfig(fixtures.SchemaTestNamespace)
+		obj.Spec.AdminCredentialsSecretRef.UsernameKey = ""
+		obj.Spec.AdminCredentialsSecretRef.PasswordKey = ""
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		var got v1.DatabaseServerConfig
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &got)).To(Succeed())
+		Expect(got.Spec.AdminCredentialsSecretRef.UsernameKey).To(Equal("username"))
+		Expect(got.Spec.AdminCredentialsSecretRef.PasswordKey).To(Equal("password"))
+	})
 })

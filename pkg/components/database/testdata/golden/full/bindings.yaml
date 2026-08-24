@@ -9,7 +9,7 @@ metadata:
     camunda.io/component: database
     camunda.io/database: my-camunda-db
   name: my-camunda-db-app
-  namespace: my-secret-ns
+  namespace: my-cluster-ns
 type: Opaque
 ---
 apiVersion: v1
@@ -43,7 +43,7 @@ spec:
     usernameKey: username
   credentialsSecretRef:
     name: my-camunda-db-app
-    namespace: my-secret-ns
+    namespace: my-cluster-ns
     passwordKey: password
     usernameKey: username
   databaseName: camunda

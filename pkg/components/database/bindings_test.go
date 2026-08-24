@@ -18,9 +18,11 @@ package database
 
 import (
 	"flag"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,11 +56,10 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 // so the rendered bindings are stable golden input.
 func goldenDatabase() *v1.Database {
 	return &v1.Database{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-camunda-db"},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-camunda-db", Namespace: "my-cluster-ns"},
 		Spec: v1.DatabaseSpec{
-			ServerRef:       "my-db-server",
-			DatabaseName:    "camunda",
-			TargetNamespace: "my-cluster-ns",
+			ServerRef:    "my-db-server",
+			DatabaseName: "camunda",
 		},
 	}
 }
@@ -67,10 +68,7 @@ func goldenDatabase() *v1.Database {
 // name.
 func goldenFullDatabase() *v1.Database {
 	db := goldenDatabase()
-	db.Spec.ApplicationCredentials = &v1.CredentialsSpec{
-		SecretName:      "my-camunda-db-app",
-		SecretNamespace: "my-secret-ns",
-	}
+	db.Spec.ApplicationCredentials = &v1.CredentialsSpec{SecretName: "my-camunda-db-app"}
 	db.Spec.BackupCredentials = &v1.BackupCredentialsSpec{
 		CredentialsSpec: v1.CredentialsSpec{SecretName: "my-camunda-db-backup"},
 	}
@@ -80,7 +78,7 @@ func goldenFullDatabase() *v1.Database {
 }
 
 func TestResolveBindings(t *testing.T) {
-	t.Run("defaults derive from the CR name and targetNamespace", func(t *testing.T) {
+	t.Run("defaults derive from the CR name and its namespace", func(t *testing.T) {
 		rb := ResolveBindings(goldenDatabase())
 
 		assert.Equal(t, "my-camunda-db-credentials", rb.AppSecret.Name)
@@ -93,11 +91,11 @@ func TestResolveBindings(t *testing.T) {
 		assert.True(t, rb.BackupEnabled)
 	})
 
-	t.Run("explicit names and namespaces win over defaults", func(t *testing.T) {
+	t.Run("explicit names win over defaults, and every Secret stays local", func(t *testing.T) {
 		rb := ResolveBindings(goldenFullDatabase())
 
 		assert.Equal(t, "my-camunda-db-app", rb.AppSecret.Name)
-		assert.Equal(t, "my-secret-ns", rb.AppSecret.Namespace)
+		assert.Equal(t, "my-cluster-ns", rb.AppSecret.Namespace)
 		assert.Equal(t, "my-camunda-db-backup", rb.BackupSecret.Name)
 		assert.Equal(t, "my-cluster-ns", rb.BackupSecret.Namespace)
 		assert.Equal(t, "my-database-config", rb.DatabaseConfigName)
@@ -109,6 +107,81 @@ func TestResolveBindings(t *testing.T) {
 
 		assert.False(t, ResolveBindings(db).BackupEnabled)
 	})
+}
+
+// previewNames renders the component and returns "<kind>/<name>" for every
+// resource it registered.
+func previewNames(t *testing.T, comp *component.Component) []string {
+	t.Helper()
+
+	objects, err := comp.Preview()
+	require.NoError(t, err)
+
+	// Preview returns typed objects, whose TypeMeta the API server would have
+	// filled in, so the kind comes from the Go type.
+	names := make([]string, 0, len(objects))
+	for _, obj := range objects {
+		names = append(names, reflect.TypeOf(obj).Elem().Name()+"/"+obj.GetName())
+	}
+
+	return names
+}
+
+// TestWithdrawnBindingsComponentRegistersOnlyOwnedBindings pins which bindings
+// the withdrawal touches. A binding it does not own must not be registered at
+// all, because the component would otherwise delete an object that belongs to
+// the Database that won the claim.
+func TestWithdrawnBindingsComponentRegistersOnlyOwnedBindings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		owned OwnedBindings
+		want  []string
+	}{
+		{
+			name: "every binding owned",
+			owned: OwnedBindings{
+				AppSecret: true, BackupSecret: true, DatabaseConfig: true, SecondaryStorage: true,
+			},
+			want: []string{
+				"DatabaseConfig/my-database-config",
+				"Secret/my-camunda-db-app",
+				"Secret/my-camunda-db-backup",
+				"SecondaryStorageConfig/" + goldenStorageConfigName,
+			},
+		},
+		{
+			name:  "no binding owned",
+			owned: OwnedBindings{},
+			want:  []string{},
+		},
+		{
+			name:  "only the application Secret owned",
+			owned: OwnedBindings{AppSecret: true},
+			want:  []string{"Secret/my-camunda-db-app"},
+		},
+		{
+			name:  "the contract of another Database is left out",
+			owned: OwnedBindings{AppSecret: true, BackupSecret: true, SecondaryStorage: true},
+			want: []string{
+				"Secret/my-camunda-db-app",
+				"Secret/my-camunda-db-backup",
+				"SecondaryStorageConfig/" + goldenStorageConfigName,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			comp, err := WithdrawnBindingsComponent(goldenFullDatabase(), tt.owned)
+			require.NoError(t, err)
+
+			assert.ElementsMatch(t, tt.want, previewNames(t, comp))
+		})
+	}
 }
 
 func TestBackupUserName(t *testing.T) {

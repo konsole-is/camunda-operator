@@ -17,19 +17,31 @@ limitations under the License.
 package database
 
 import (
+	"strings"
+
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// CollisionKey returns the index key of the logical database that db claims:
-// "<serverRef>/<databaseName>". Database names are unique per server, so the
-// pair identifies the claim.
-func CollisionKey(db *v1.Database) string {
-	return db.Spec.ServerRef + "/" + db.Spec.DatabaseName
+// CollisionKey returns the index key of a logical database claim:
+// "<systemIdentifier>/<databaseName>". The caller passes the identifier that
+// the contract published in status.systemIdentifier, and holds the claim back
+// while that is empty.
+func CollisionKey(systemIdentifier, databaseName string) string {
+	return systemIdentifier + "/" + databaseName
 }
 
-// CollisionWinner picks the Database that owns a contested serverRef and
-// databaseName claim. The oldest creationTimestamp wins. The lexicographically
-// smaller name is the tiebreaker. It returns nil for an empty claimant list.
+// CollisionIdentity returns the system identifier that key was built from, or
+// the empty string for an empty key. It is the inverse of CollisionKey, for a
+// caller that holds a recorded claim and needs the server behind it.
+func CollisionIdentity(key string) string {
+	identifier, _, _ := strings.Cut(key, "/")
+
+	return identifier
+}
+
+// CollisionWinner picks the Database that owns a contested claim. The oldest
+// creationTimestamp wins. The lexicographically smaller "<namespace>/<name>"
+// is the tiebreaker. It returns nil for an empty claimant list.
 func CollisionWinner(items []v1.Database) *v1.Database {
 	var winner *v1.Database
 	for i := range items {
@@ -43,7 +55,7 @@ func CollisionWinner(items []v1.Database) *v1.Database {
 		case candidate.CreationTimestamp.Time.Before(winner.CreationTimestamp.Time):
 			winner = candidate
 		case winner.CreationTimestamp.Time.Before(candidate.CreationTimestamp.Time):
-		case candidate.Name < winner.Name:
+		case candidate.Namespace+"/"+candidate.Name < winner.Namespace+"/"+winner.Name:
 			winner = candidate
 		}
 	}

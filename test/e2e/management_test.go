@@ -218,7 +218,7 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelM
 		}
 		Eventually(func(g Gomega) {
 			for _, name := range []string{mcKeycloakDatabase, mcKeycloakIdentityDB, mcKeycloakWebModelerDB} {
-				expectReady(g, dbResource, name, "", v1.ReasonHealthy)
+				expectReady(g, dbResource, name, mcKeycloakNamespace, v1.ReasonHealthy)
 				expectReady(g, dbConfigResource, name, mcKeycloakNamespace, v1.ReasonHealthy)
 			}
 		}, 5*time.Minute, 5*time.Second).Should(Succeed())
@@ -261,9 +261,11 @@ var _ = Describe("CamundaManagementCluster with Keycloak", Ordered, Label(labelM
 		)
 		_, _ = utils.Kubectl(
 			"delete", dbResource, mcKeycloakDatabase, mcKeycloakIdentityDB, mcKeycloakWebModelerDB,
-			"--ignore-not-found", "--wait=false",
+			"-n", mcKeycloakNamespace, "--ignore-not-found", "--wait=false",
 		)
-		_, _ = utils.Kubectl("delete", dbServerResource, mcKeycloakServer, "--ignore-not-found")
+		_, _ = utils.Kubectl(
+			"delete", dbServerResource, mcKeycloakServer, "-n", mcKeycloakNamespace, "--ignore-not-found",
+		)
 
 		// A Keycloak Operator that this flow installed goes with the
 		// namespace. One that was there before the flow keeps its namespace,
@@ -463,7 +465,7 @@ var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(labelManag
 		}
 		Eventually(func(g Gomega) {
 			for _, name := range []string{mcOIDCIdentityDB, mcOIDCWebModelerDB, mcOIDCClusterDB} {
-				expectReady(g, dbResource, name, "", v1.ReasonHealthy)
+				expectReady(g, dbResource, name, mcOIDCNamespace, v1.ReasonHealthy)
 				expectReady(g, dbConfigResource, name, mcOIDCNamespace, v1.ReasonHealthy)
 			}
 			expectReady(g, sscResource, mcOIDCStorage, mcOIDCNamespace, v1.ReasonHealthy)
@@ -495,9 +497,11 @@ var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(labelManag
 		)
 		_, _ = utils.Kubectl(
 			"delete", dbResource, mcOIDCIdentityDB, mcOIDCWebModelerDB, mcOIDCClusterDB,
-			"--ignore-not-found", "--wait=false",
+			"-n", mcOIDCNamespace, "--ignore-not-found", "--wait=false",
 		)
-		_, _ = utils.Kubectl("delete", dbServerResource, mcOIDCServer, "--ignore-not-found")
+		_, _ = utils.Kubectl(
+			"delete", dbServerResource, mcOIDCServer, "-n", mcOIDCNamespace, "--ignore-not-found",
+		)
 		_, _ = utils.Kubectl(
 			"delete", "secret", mcOIDCClientSecretName, "-n", namespace, "--ignore-not-found",
 		)
@@ -750,14 +754,13 @@ func managementOptimize() *v1.CamundaOptimize {
 func databaseServer(name, namespace string) *v1.DatabaseServerConfig {
 	return &v1.DatabaseServerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServerConfig"},
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: v1.DatabaseServerConfigSpec{
 			Engine: v1.DatabaseEnginePostgres,
 			Host:   postgresService + "." + namespace + ".svc",
 			Port:   5432,
-			AdminCredentialsSecretRef: v1.CredentialsSecretRef{
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
 				Name:        postgresAdminSecret,
-				Namespace:   namespace,
 				UsernameKey: "username",
 				PasswordKey: "password",
 			},
@@ -771,11 +774,10 @@ func databaseServer(name, namespace string) *v1.DatabaseServerConfig {
 func managementDatabase(name, serverRef, namespace, databaseName, storageRef string) *v1.Database {
 	return &v1.Database{
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "Database"},
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: v1.DatabaseSpec{
 			ServerRef:              serverRef,
 			DatabaseName:           databaseName,
-			TargetNamespace:        namespace,
 			SecondaryStorageConfig: storageRef,
 		},
 	}

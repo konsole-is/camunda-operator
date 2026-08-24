@@ -96,17 +96,25 @@ A cluster that another backup or another restore holds keeps this restore in `Pe
 
 ## The storage chain
 
-The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, which must be `type: rdbms`, then its `DatabaseConfig`, then its `serverRef` to a `DatabaseServerConfig`. A cluster on Elasticsearch is rejected with reason `InvalidReference`. Point-in-time restore does not exist for it.
+The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, which must be `type: rdbms`, then its `DatabaseConfig`, then its `serverRef` to a `DatabaseServerConfig` of the same namespace. A cluster on Elasticsearch is rejected with reason `InvalidReference`. Point-in-time restore does not exist for it.
+
+The `DatabaseServerConfig` must also publish `status.systemIdentifier`. That value names the PostgreSQL instance behind its endpoint, and the rule below counts by it. A contract without it holds the restore with reason `InvalidReference`.
 
 The cluster must also name a `backupStorageRef`. Without it, Zeebe writes no primary-storage backup, so no restore point exists. Such a cluster holds the restore with reason `InvalidReference`.
 
 The `DatabaseServerConfig` must declare `pitr.enabled: true`, and `spec.timestamp` must lie within the retention period it declares. Otherwise the restore holds with reason `PitrUnavailable`. The role of the `DatabaseServerConfig` here is the capability declaration only. This operator never uses its `adminCredentialsSecretRef`.
 
-Exactly one `Database` must reference that `DatabaseServerConfig`. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it holds the restore with reason `SharedServer`.
+Exactly one `Database` must resolve to that PostgreSQL instance. Point-in-time recovery on the engine rolls back the whole server, not one logical database. A shared server therefore rolls back unrelated databases too, and it holds the restore with reason `SharedServer`.
 
-A server that **no** `Database` references holds the restore too, with reason `InvalidReference`. The `Database` resources are the only evidence the operator has about the databases of a server. Without one it cannot tell whether the server holds one database or ten, and the restore deletes volumes. Declare the database of the cluster as a `Database` resource on a server of its own.
+The count runs over the `Database` resources of every namespace, and it compares the system identifier that each one resolves to, not the name of the contract it references. Two `DatabaseServerConfig` objects of two namespaces that describe one instance are one server here, so a `Database` behind either of them counts. The message names each claimant as `<namespace>/<name>`.
 
-The operator records the chain it validated in `status.storage`: the two contracts, the server, the logical database, and the endpoint. It checks the record on every later look. A cluster that is repointed at another database after the check fails the restore, because the rules of the server and the state of the database were read against the first chain. Create a new restore for the database the cluster uses now.
+That one `Database` must also hold the logical database of the `DatabaseConfig`. A hand-written `DatabaseConfig` can name a database that no `Database` resource declares, and the single claimant on the instance is then somebody else's. Such a server holds the restore with reason `InvalidReference`, and the message names both database names.
+
+A `Database` the operator cannot place holds the restore too, with reason `InvalidReference`, and the message names it. That is a `Database` whose `DatabaseServerConfig` publishes no system identifier, or names one that does not exist. Recovery rolls back the whole server, so a database that cannot be ruled out is a database the restore can destroy. Wait until every `DatabaseServerConfig` reports `Ready`, or delete the `Database` resources whose server is gone.
+
+A server that **no** `Database` resolves to holds the restore too, with reason `InvalidReference`. The `Database` resources are the only evidence the operator has about the databases of a server. Without one it cannot tell whether the server holds one database or ten, and the restore deletes volumes. Declare the database of the cluster as a `Database` resource on a server of its own.
+
+The operator records the chain it validated in `status.storage`: the two contracts, the server, the logical database, the endpoint, and the system identifier behind that endpoint. It checks the record on every later look. A cluster that is repointed at another database after the check fails the restore, because the rules of the server and the state of the database were read against the first chain. Create a new restore for the database the cluster uses now.
 
 Every rule of this section holds the restore in `Pending`. Nothing is deleted while a rule does not hold, so you correct the cause and the same resource continues. You do not create a new one.
 
@@ -209,9 +217,9 @@ A cluster that the restore suspended stays suspended. That is deliberate. Unsusp
 | `Ready` | `Completed` | The restore finished, and it gives back the suspension it applied, so the cluster starts again a moment later. `Ready` is `True`. | Nothing. Unsuspend the cluster yourself only when you suspended it yourself. |
 | `Ready` | `ClusterNotSuspended` | The cluster started running again while the restore ran. | Suspend the cluster again. A restore that already erased something fails ten minutes after the first outage. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster. The message names it. | Wait. The restore starts when that operation finishes. |
-| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, no `Database` names the server, or the broker StatefulSet is gone. | Correct the reference that the message names. |
+| `Ready` | `InvalidReference` | The cluster or a link in its storage chain does not exist, the storage is not relational, the cluster names no backup storage, the `DatabaseServerConfig` publishes no system identifier, a `Database` cannot be placed on a server, no `Database` resolves to the server, or the broker StatefulSet is gone. | Correct the reference that the message names. |
 | `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, `spec.timestamp` lies outside its retention period, `spec.timestamp` lies in the future, or the brokers of the cluster do not run in UTC. | Enable `pitr` on the server, restore to a point within retention, or run the brokers in UTC. |
-| `Ready` | `SharedServer` | More than one `Database` references the server. | Move the cluster to a dedicated server. |
+| `Ready` | `SharedServer` | More than one `Database` resolves to the server, counted across all namespaces. The message names each one. | Move the cluster to a dedicated server. |
 | `Ready` | `DatabaseNotRestored` | The database is ahead of `spec.timestamp`, or it reports no position for a partition. The operator touched no volume. | Restore the database to the requested point, then wait. |
 | `Ready` | `ExporterPositionNotCovered` | The point you chose lies outside the window that the primary-storage backups cover. The broker volumes are already erased. | Choose an earlier point, restore the database to it, and create a new restore. See "Choosing the point to restore to". |
 | `Ready` | `MissingSecret` | A credentials Secret of the cluster is missing or lacks a key. | Create the Secret that the message names. |
@@ -223,7 +231,7 @@ A restore that already started keeps a broken dependency for ten minutes. After 
 The status also records what the restore pinned and what it did:
 
 - `status.targetClusterUID` pins the identity of the cluster, from the first look onwards. A cluster that is deleted and created again under one name fails the restore.
-- `status.storage` pins the storage chain that the restore validated.
+- `status.storage` pins the storage chain that the restore validated, down to the system identifier of the server.
 - `status.clusterSuspended` records that this restore suspended the cluster. The restore withdraws that suspension when it completes.
 - `status.brokers` is the broker count that the operator read off the broker StatefulSet.
 - `status.observedPositions` holds the `LAST_UPDATED` value that the check read for each partition.

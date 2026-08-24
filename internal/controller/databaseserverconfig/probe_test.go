@@ -55,7 +55,7 @@ func TestProbeEndsWithinItsDeadline(t *testing.T) {
 	}}
 
 	started := time.Now()
-	_, err = probeWithin(context.Background(), 300*time.Millisecond, cfg, "admin", "secret")
+	_, _, err = probeWithin(context.Background(), 300*time.Millisecond, cfg, "admin", "secret")
 	require.Error(t, err)
 	assert.Less(t, time.Since(started), 3*time.Second, "the deadline of the probe ends it, not connect_timeout")
 }

@@ -141,6 +141,11 @@ type PointInTimeRestoreStorage struct {
 	// Endpoint is the host and port of the server, as the pre-check reached
 	// it. A server that is repointed in place is another server.
 	Endpoint string `json:"endpoint"`
+	// SystemIdentifier is the identity of the PostgreSQL instance behind that
+	// endpoint, as the contract published it. It is what the dedicated-server
+	// rule counted, and an endpoint that starts reporting another identity
+	// holds another instance.
+	SystemIdentifier string `json:"systemIdentifier"`
 }
 
 // PointInTimeRestoreStatus tracks the restore to a terminal phase.

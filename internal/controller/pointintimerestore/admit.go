@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	databasecomponents "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -98,7 +99,7 @@ func (r *Reconciler) admit(
 		return r.waiting(pitr, failure), nil
 	}
 
-	failure, err = r.dedicatedServer(ctx, resolved.server)
+	failure, err = r.dedicatedServer(ctx, resolved.server, resolved.dbConfig)
 	if err != nil {
 		return restore.Outcome{}, err
 	}
@@ -240,13 +241,23 @@ func (r *Reconciler) resolve(
 	}
 
 	var server v1.DatabaseServerConfig
-	serverKey := types.NamespacedName{Name: dbConfig.Spec.ServerRef}
+	serverKey := types.NamespacedName{Namespace: namespace, Name: dbConfig.Spec.ServerRef}
 	if err := r.APIReader.Get(ctx, serverKey, &server); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, logicalbackup.InvalidReference("DatabaseServerConfig %q does not exist", serverKey.Name), nil
+			return nil, logicalbackup.InvalidReference("DatabaseServerConfig %s does not exist", serverKey), nil
 		}
 
-		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %q: %w", serverKey.Name, err)
+		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", serverKey, err)
+	}
+	if server.Status.SystemIdentifier == "" {
+		return nil, logicalbackup.InvalidReference(
+			"DatabaseServerConfig %s has not published its system identifier, so the operator "+
+				"cannot tell which PostgreSQL instance the endpoint reaches. Point-in-time "+
+				"recovery rolls back the whole instance, and the rule that protects every other "+
+				"database on it needs that identity. Wait until the DatabaseServerConfig reports "+
+				"Ready",
+			serverKey,
+		), nil
 	}
 
 	if err := pinnedChainCurrent(pitr, &storage, &dbConfig, &server); err != nil {
@@ -318,6 +329,7 @@ func pinnedChain(
 		DatabaseServerConfigUID:   server.UID,
 		DatabaseName:              dbConfig.Spec.DatabaseName,
 		Endpoint:                  fmt.Sprintf("%s:%d", server.Spec.Host, server.Spec.Port),
+		SystemIdentifier:          server.Status.SystemIdentifier,
 	}
 }
 
@@ -347,12 +359,23 @@ func pinnedChainCurrent(
 	}
 
 	return fmt.Errorf(
-		"%w: the restore validated %s of DatabaseConfig %s on %s at %s, and the cluster now uses %s "+
-			"of DatabaseConfig %s on %s at %s. Create a new restore for the database the cluster "+
-			"uses now",
-		errChainChanged,
-		pinned.SecondaryStorageConfig, pinned.DatabaseConfig, pinned.DatabaseName, pinned.Endpoint,
-		current.SecondaryStorageConfig, current.DatabaseConfig, current.DatabaseName, current.Endpoint,
+		"%w: the restore validated %s, and the cluster now uses %s. Create a new restore for the "+
+			"database the cluster uses now",
+		errChainChanged, describeChain(pinned), describeChain(current),
+	)
+}
+
+// describeChain names one storage chain in a failure message. It carries the
+// system identifier, because an endpoint that is repointed at another
+// PostgreSQL instance reads the same in every other field.
+func describeChain(chain *v1.PointInTimeRestoreStorage) string {
+	return fmt.Sprintf(
+		"%s of DatabaseConfig %s on %s at %s, system identifier %s",
+		chain.SecondaryStorageConfig,
+		chain.DatabaseConfig,
+		chain.DatabaseName,
+		chain.Endpoint,
+		chain.SystemIdentifier,
 	)
 }
 
@@ -383,8 +406,8 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
-				"DatabaseServerConfig %q declares no point-in-time recovery. Set spec.pitr.enabled "+
-					"to true once the server archives its write-ahead log", server.Name,
+				"DatabaseServerConfig %s declares no point-in-time recovery. Set spec.pitr.enabled "+
+					"to true once the server archives its write-ahead log", client.ObjectKeyFromObject(server),
 			),
 		}
 	}
@@ -408,9 +431,9 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
-				"spec.timestamp %s is older than the retention period of DatabaseServerConfig %q, "+
+				"spec.timestamp %s is older than the retention period of DatabaseServerConfig %s, "+
 					"which is %d days. The server archives nothing of that point any more",
-				want.UTC().Format(time.RFC3339), server.Name, days,
+				want.UTC().Format(time.RFC3339), client.ObjectKeyFromObject(server), days,
 			),
 		}
 	}
@@ -418,63 +441,142 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 	return nil
 }
 
-// dedicatedServer reports that more than one Database lives on the server, or
-// nil when exactly one does. Point-in-time recovery on the engine rolls back
-// the whole server, not one logical database, so a shared server rolls back
-// the database of another cluster too.
+// dedicatedServer reports that the server holds any logical database other
+// than the one of this cluster, or nil when it holds that one alone.
+// Point-in-time recovery on the engine rolls back the whole PostgreSQL
+// instance, not one logical database, so anything else on it is rolled back
+// too.
 //
-// A DatabaseServerConfig is cluster-scoped, so the rule counts the Database
-// resources of every namespace.
+// The server is the instance, not the contract that describes it. The rule
+// therefore reads the Database resources of every namespace whose contract
+// reports the system identifier of this one. Two contracts that name one
+// instance under different hosts are one server here, and a Database whose
+// contract reports no identity at all cannot be placed on either side.
+//
+// The one Database that remains must hold the logical database of dbConfig. A
+// hand-written DatabaseConfig can name a database that no Database resource
+// declares, and the single claimant on the instance is then somebody else's.
 func (r *Reconciler) dedicatedServer(
 	ctx context.Context,
 	server *v1.DatabaseServerConfig,
+	dbConfig *v1.DatabaseConfig,
 ) (*conditions.PreCheckFailure, error) {
-	// The read is live and unindexed, like every other read of this
+	key := client.ObjectKeyFromObject(server)
+
+	// Both reads are live and unindexed, like every other read of this
 	// controller. A cached list can miss the Database that a sibling cluster
 	// created a moment ago, and the rule exists to protect that sibling. The
-	// filter runs here because a cluster holds few Database resources, and an
-	// index of this field repeats what the Database controller already
-	// indexes, which one manager rejects.
+	// contracts are read as one list rather than one Get per Database, so the
+	// cost of the rule does not grow with the number of claimants.
 	var databases v1.DatabaseList
 	if err := r.APIReader.List(ctx, &databases); err != nil {
-		return nil, fmt.Errorf("listing the databases of DatabaseServerConfig %q: %w", server.Name, err)
+		return nil, fmt.Errorf("listing the databases of DatabaseServerConfig %s: %w", key, err)
 	}
 
-	names := make([]string, 0, 2)
+	var contracts v1.DatabaseServerConfigList
+	if err := r.APIReader.List(ctx, &contracts); err != nil {
+		return nil, fmt.Errorf("listing the database server contracts: %w", err)
+	}
+
+	identities := make(map[types.NamespacedName]string, len(contracts.Items))
+	for i := range contracts.Items {
+		identities[client.ObjectKeyFromObject(&contracts.Items[i])] = contracts.Items[i].Status.SystemIdentifier
+	}
+
+	var placed []*v1.Database
+	var unplaced []string
 	for i := range databases.Items {
-		if databases.Items[i].Spec.ServerRef != server.Name {
-			continue
+		database := &databases.Items[i]
+		switch databaseIdentity(database, identities) {
+		case server.Status.SystemIdentifier:
+			placed = append(placed, database)
+		case "":
+			unplaced = append(unplaced, database.Namespace+"/"+database.Name)
 		}
-		names = append(names, databases.Items[i].Namespace+"/"+databases.Items[i].Name)
+	}
+	slices.SortFunc(placed, func(a, b *v1.Database) int {
+		return strings.Compare(a.Namespace+"/"+a.Name, b.Namespace+"/"+b.Name)
+	})
+	slices.Sort(unplaced)
+
+	if len(placed) > 1 {
+		names := make([]string, 0, len(placed))
+		for _, database := range placed {
+			names = append(names, database.Namespace+"/"+database.Name)
+		}
+
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonSharedServer,
+			Message: fmt.Sprintf(
+				"the server that DatabaseServerConfig %s describes holds the databases %s. "+
+					"Point-in-time recovery rolls back the whole server, so it also rolls back a "+
+					"database that another cluster uses. Move the cluster to a server of its own",
+				key, strings.Join(names, ", "),
+			),
+		}, nil
+	}
+
+	// A Database whose contract publishes no identity can be on this server or
+	// on another one, and nothing here can tell which. Recovery rolls back the
+	// whole server, so a database that cannot be ruled out is a database this
+	// restore can destroy.
+	if len(unplaced) > 0 {
+		return logicalbackup.InvalidReference(
+			"the DatabaseServerConfig of the Database resources %s publishes no system identifier, "+
+				"so the operator cannot tell whether they live on the server that %s describes. "+
+				"Point-in-time recovery rolls back the whole server. Wait until every "+
+				"DatabaseServerConfig reports Ready, or remove the Database resources whose server "+
+				"no longer exists",
+			strings.Join(unplaced, ", "), key,
+		), nil
 	}
 
 	// Zero is not one. A server that no Database resource names carries no
 	// evidence at all: the operator cannot tell whether it holds one database
 	// or ten, and point-in-time recovery rolls back all of them. On a path
 	// that deletes volumes, the absence of evidence holds the restore.
-	if len(names) == 0 {
+	if len(placed) == 0 {
 		return logicalbackup.InvalidReference(
-			"no Database resource names DatabaseServerConfig %q, so the operator cannot tell which "+
-				"databases the server holds. Point-in-time recovery rolls back the whole server. "+
-				"Declare the database of the cluster as a Database resource on a server of its own",
-			server.Name,
+			"no Database resource resolves to the server that DatabaseServerConfig %s describes, "+
+				"so the operator cannot tell which databases the server holds. Point-in-time "+
+				"recovery rolls back the whole server. Declare the database of the cluster as a "+
+				"Database resource on a server of its own",
+			key,
 		), nil
 	}
 
-	if len(names) == 1 {
-		return nil, nil
+	// One Database on the instance is not enough: it has to be the one of this
+	// cluster. A hand-written DatabaseConfig names a logical database directly,
+	// and nothing so far has tied that name to the single claimant.
+	if only := placed[0]; only.Spec.DatabaseName != dbConfig.Spec.DatabaseName {
+		return logicalbackup.InvalidReference(
+			"the only Database resource on the server that DatabaseServerConfig %s describes is "+
+				"%s, which holds the logical database %q, and this cluster stores its records in "+
+				"%q. Point-in-time recovery rolls back the whole server, so it would roll back a "+
+				"database that this restore never validated. Declare the database of the cluster "+
+				"as a Database resource on a server of its own",
+			key,
+			only.Namespace+"/"+only.Name,
+			only.Spec.DatabaseName,
+			dbConfig.Spec.DatabaseName,
+		), nil
 	}
-	slices.Sort(names)
 
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonSharedServer,
-		Message: fmt.Sprintf(
-			"DatabaseServerConfig %q holds the databases %s. Point-in-time recovery rolls back the "+
-				"whole server, so it also rolls back a database that another cluster uses. Move the "+
-				"cluster to a server of its own",
-			server.Name, strings.Join(names, ", "),
-		),
-	}, nil
+	return nil, nil
+}
+
+// databaseIdentity returns the PostgreSQL instance that database resolves to,
+// or the empty string when nothing places it. The contract answers while it is
+// probed. A contract that is momentarily unprobed falls back to the claim in
+// status.collisionKey, which the Database controller recorded the last time it
+// resolved the server and never clears.
+func databaseIdentity(database *v1.Database, identities map[types.NamespacedName]string) string {
+	ref := types.NamespacedName{Namespace: database.Namespace, Name: database.Spec.ServerRef}
+	if identity := identities[ref]; identity != "" {
+		return identity
+	}
+
+	return databasecomponents.CollisionIdentity(database.Status.CollisionKey)
 }
 
 // credentials reads the application credentials of the logical database. They

@@ -242,7 +242,7 @@ func (r *Reconciler) enqueueForDatabaseServer() handler.EventHandler {
 
 		set := requestSet{}
 		for _, cfg := range configs.Items {
-			if cfg.Spec.ServerRef != o.GetName() {
+			if cfg.Namespace != o.GetNamespace() || cfg.Spec.ServerRef != o.GetName() {
 				continue
 			}
 			set.addList(ctx, r.Client, client.MatchingFields{

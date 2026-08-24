@@ -66,7 +66,7 @@ var _ = BeforeSuite(func() {
 			// not repeat a fresh probe on every reconcile.
 			probe: func(
 				ctx context.Context, cfg *v1.DatabaseServerConfig, user, password string,
-			) (string, error) {
+			) (version, systemIdentifier string, err error) {
 				probes.Add(1)
 
 				return probe(ctx, cfg, user, password)

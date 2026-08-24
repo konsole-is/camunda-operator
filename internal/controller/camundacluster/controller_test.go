@@ -892,7 +892,7 @@ var _ = Describe("CamundaCluster controller", func() {
 
 	It("rolls an RDBMS cluster when its DatabaseServerConfig or DatabaseConfig changes", func() {
 		ns := newNamespace()
-		server := fixtures.DatabaseServerConfig()
+		server := fixtures.DatabaseServerConfig(ns)
 		Expect(k8sClient.Create(ctx, server)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, server) })
 		dbConfig := fixtures.DatabaseConfig()

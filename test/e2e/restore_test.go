@@ -448,7 +448,7 @@ func itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster *v1.CamundaClust
 	It("declares point-in-time recovery on the database server", func() {
 		By("setting spec.pitr on the DatabaseServerConfig")
 		_, err := utils.Kubectl(
-			"patch", dbServerResource, ccRDBMSServer, "--type=merge",
+			"patch", dbServerResource, ccRDBMSServer, "-n", ccRDBMSNamespace, "--type=merge",
 			"-p", fmt.Sprintf(
 				`{"spec":{"pitr":{"enabled":true,"retentionPeriodDays":%d}}}`, pitrRetentionDays,
 			),
@@ -461,10 +461,10 @@ func itRefusesAPointInTimeRestoreOfAnUnrestoredDatabase(cluster *v1.CamundaClust
 		By("waiting for the server to report the new spec as Ready Healthy")
 		Eventually(func(g Gomega) {
 			var server v1.DatabaseServerConfig
-			g.Expect(utils.Get(dbServerResource, ccRDBMSServer, "", &server)).To(Succeed())
+			g.Expect(utils.Get(dbServerResource, ccRDBMSServer, ccRDBMSNamespace, &server)).To(Succeed())
 			g.Expect(server.Spec.PITR).NotTo(BeNil())
 			g.Expect(server.Status.ObservedGeneration).To(Equal(server.Generation))
-			expectReady(g, dbServerResource, ccRDBMSServer, "", v1.ReasonHealthy)
+			expectReady(g, dbServerResource, ccRDBMSServer, ccRDBMSNamespace, v1.ReasonHealthy)
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
 	})
 

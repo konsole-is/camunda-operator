@@ -97,7 +97,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			spec:        elasticsearch,
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "camunda/es-credentials" not found`,
+			wantMessage: `Secret camunda/es-credentials not found`,
 		},
 		{
 			name:        "elasticsearch with secret lacking a key names the key",
@@ -105,7 +105,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			objects:     []client.Object{partialSecret},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "camunda/es-credentials" is missing key "password"`,
+			wantMessage: `Secret camunda/es-credentials is missing key "password"`,
 		},
 		{
 			name:        "elasticsearch with credentials and CA secrets is healthy",
@@ -121,7 +121,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			objects:     []client.Object{credentialsSecret},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "camunda/es-ca" not found`,
+			wantMessage: `Secret camunda/es-ca not found`,
 		},
 		{
 			name:        "elasticsearch with CA secret lacking the key names the key",
@@ -129,7 +129,7 @@ func TestSecondaryStorageConfigValidate(t *testing.T) {
 			objects:     []client.Object{credentialsSecret, caSecretNoKey},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "camunda/es-ca" is missing key "ca.crt"`,
+			wantMessage: `Secret camunda/es-ca is missing key "ca.crt"`,
 		},
 		{
 			name:        "rdbms with a same-namespace DatabaseConfig is healthy",

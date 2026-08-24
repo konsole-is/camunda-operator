@@ -53,14 +53,14 @@ func TestCheckKeys(t *testing.T) {
 			name: "secret absent",
 			ref:  types.NamespacedName{Namespace: "ns", Name: "name"},
 			keys: []string{"username", "password"},
-			want: `Secret "ns/name" not found`,
+			want: "Secret ns/name not found",
 		},
 		{
 			name:    "secret present but key absent",
 			objects: []*corev1.Secret{secret("username")},
 			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
 			keys:    []string{"username", "password"},
-			want:    `Secret "ns/name" is missing key "password"`,
+			want:    `Secret ns/name is missing key "password"`,
 		},
 		{
 			name:    "all keys present",
@@ -74,7 +74,7 @@ func TestCheckKeys(t *testing.T) {
 			objects: []*corev1.Secret{secret("c")},
 			ref:     types.NamespacedName{Namespace: "ns", Name: "name"},
 			keys:    []string{"a", "b", "c"},
-			want:    `Secret "ns/name" is missing key "a"`,
+			want:    `Secret ns/name is missing key "a"`,
 		},
 		{
 			name:    "no keys requested",
@@ -111,7 +111,7 @@ func TestGet(t *testing.T) {
 		got, msg, err := Get(context.Background(), fake.NewClientBuilder().Build(), ref, "username")
 		require.NoError(t, err)
 		assert.Nil(t, got)
-		assert.Equal(t, `Secret "ns/name" not found`, msg)
+		assert.Equal(t, "Secret ns/name not found", msg)
 	})
 
 	t.Run("key absent", func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestGet(t *testing.T) {
 		got, msg, err := Get(context.Background(), reader, ref, "username", "password")
 		require.NoError(t, err)
 		assert.Nil(t, got)
-		assert.Equal(t, `Secret "ns/name" is missing key "password"`, msg)
+		assert.Equal(t, `Secret ns/name is missing key "password"`, msg)
 	})
 
 	t.Run("all keys present", func(t *testing.T) {

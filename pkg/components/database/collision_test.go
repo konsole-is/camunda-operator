@@ -33,19 +33,82 @@ func collidingDatabase(name string, created time.Time) v1.Database {
 	return v1.Database{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              name,
+			Namespace:         "default",
 			CreationTimestamp: metav1.NewTime(created),
 		},
 		Spec: v1.DatabaseSpec{
-			ServerRef:       "shared-server",
-			DatabaseName:    "camunda",
-			TargetNamespace: "default",
+			ServerRef:    "shared-server",
+			DatabaseName: "camunda",
 		},
 	}
 }
 
-func TestCollisionKey(t *testing.T) {
-	db := collidingDatabase("a", time.Now())
-	assert.Equal(t, "shared-server/camunda", CollisionKey(&db))
+// TestCollisionKeyIsTheServerIdentity pins that the claim belongs to the
+// PostgreSQL instance, not to the contract that describes it.
+func TestCollisionKeyIsTheServerIdentity(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "7000000000000000001/camunda", CollisionKey("7000000000000000001", "camunda"))
+	assert.NotEqual(
+		t,
+		CollisionKey("7000000000000000001", "camunda"),
+		CollisionKey("7000000000000000002", "camunda"),
+	)
+	assert.NotEqual(
+		t,
+		CollisionKey("7000000000000000001", "camunda"),
+		CollisionKey("7000000000000000001", "identity"),
+	)
+}
+
+// TestCollisionIdentity pins the inverse of CollisionKey. A caller holds a
+// recorded claim and needs the server behind it.
+func TestCollisionIdentity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{name: "empty key names no server", key: "", want: ""},
+		{
+			name: "a recorded claim names its server",
+			key:  "7000000000000000001/camunda",
+			want: "7000000000000000001",
+		},
+		{
+			name: "a key without a separator is all identifier",
+			key:  "7000000000000000001",
+			want: "7000000000000000001",
+		},
+		{
+			name: "only the first separator counts",
+			key:  "7000000000000000001/camunda/extra",
+			want: "7000000000000000001",
+		},
+		{name: "a key that opens with the separator names no server", key: "/camunda", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, CollisionIdentity(tt.key))
+		})
+	}
+}
+
+// TestCollisionIdentityInvertsCollisionKey pins the pair, so a change to the
+// key format cannot leave the two out of step.
+func TestCollisionIdentityInvertsCollisionKey(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		"7000000000000000001",
+		CollisionIdentity(CollisionKey("7000000000000000001", "camunda")),
+	)
 }
 
 func TestCollisionWinner(t *testing.T) {
@@ -76,6 +139,22 @@ func TestCollisionWinner(t *testing.T) {
 				collidingDatabase("aaa", base),
 			},
 			want: "aaa",
+		},
+		{
+			name: "the older claimant of another namespace still wins",
+			items: []v1.Database{
+				func() v1.Database {
+					db := collidingDatabase("aaa", base.Add(time.Hour))
+					db.Namespace = "alpha"
+					return db
+				}(),
+				func() v1.Database {
+					db := collidingDatabase("zzz", base)
+					db.Namespace = "omega"
+					return db
+				}(),
+			},
+			want: "zzz",
 		},
 		{
 			name: "three claimants",
