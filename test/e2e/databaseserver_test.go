@@ -97,10 +97,10 @@ var _ = Describe("DatabaseServer", Ordered, Label(labelDatabaseServer), func() {
 
 	BeforeAll(func() {
 		// Zeebe takes a primary-storage backup every schedule and writes a
-		// marker checkpoint every checkpointInterval. The restore application
-		// aligns the brokers to the newest checkpoint the backups cover. The
-		// defaults of one hour and fifteen minutes leave the point of this
-		// flow, minutes old, outside every backup.
+		// marker checkpoint every checkpointInterval. A restore comes back at
+		// a checkpoint that a backup carries, so the point of this flow needs
+		// a backup taken after it. The defaults of one hour and fifteen
+		// minutes leave that point, minutes old, outside every backup.
 		cluster.Spec.Backup = &v1.ClusterBackupSpec{
 			PrimaryStorage: &v1.PrimaryStorageBackupSpec{
 				Schedule:           "PT2M",
