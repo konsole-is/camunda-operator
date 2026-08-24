@@ -49,7 +49,7 @@ writes it.
 - The plugin serves `barmancloud.cnpg.io/v1 ObjectStore`, a namespaced kind. Its spec carries
   `configuration.destinationPath`, `configuration.endpointURL`, one credentials block
   (`s3Credentials`, `azureCredentials`, `googleCredentials`), `configuration.wal.compression`,
-  `configuration.data.compression`, and `configuration.retentionPolicy`. A `Cluster` archives
+  `configuration.data.compression`, and `spec.retentionPolicy` (the retention policy sits beside `configuration`, not inside it). A `Cluster` archives
   through `spec.plugins[]` with `name: barman-cloud.cloudnative-pg.io`, `isWALArchiver: true`,
   `parameters.barmanObjectName`, and `parameters.serverName`. `Backup` and `ScheduledBackup` use
   `method: plugin` with `pluginConfiguration.name`.
