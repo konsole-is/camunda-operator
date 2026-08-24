@@ -49,14 +49,14 @@ func Get(
 	var secret corev1.Secret
 	if err := reader.Get(ctx, ref, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, fmt.Sprintf("Secret %q not found", ref), nil
+			return nil, fmt.Sprintf("Secret %s not found", ref), nil
 		}
 		return nil, "", err
 	}
 
 	for _, key := range keys {
 		if _, ok := secret.Data[key]; !ok {
-			return nil, fmt.Sprintf("Secret %q is missing key %q", ref, key), nil
+			return nil, fmt.Sprintf("Secret %s is missing key %q", ref, key), nil
 		}
 	}
 

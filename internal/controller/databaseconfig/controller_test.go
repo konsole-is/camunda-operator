@@ -107,7 +107,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 		expectDatabaseConfigReady(
 			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			fmt.Sprintf("Secret %q not found", ns+"/app-creds"),
+			fmt.Sprintf("Secret %s not found", ns+"/app-creds"),
 		)
 	})
 
@@ -116,7 +116,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 		create(dbConfig)
 		expectDatabaseConfigReady(
 			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			fmt.Sprintf("Secret %q not found", ns+"/app-creds"),
+			fmt.Sprintf("Secret %s not found", ns+"/app-creds"),
 		)
 
 		create(databaseConfigSecret(dbConfig.Spec.CredentialsSecretRef, "username", "password"))
@@ -158,7 +158,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 		expectDatabaseConfigReady(
 			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			fmt.Sprintf("Secret %q is missing key %q", ns+"/app-creds", "password"),
+			fmt.Sprintf("Secret %s is missing key %q", ns+"/app-creds", "password"),
 		)
 	})
 
@@ -173,7 +173,7 @@ var _ = Describe("DatabaseConfig controller", func() {
 
 		expectDatabaseConfigReady(
 			dbConfig, metav1.ConditionFalse, v1.ReasonMissingSecret,
-			fmt.Sprintf("Secret %q not found", ns+"/backup-creds"),
+			fmt.Sprintf("Secret %s not found", ns+"/backup-creds"),
 		)
 	})
 

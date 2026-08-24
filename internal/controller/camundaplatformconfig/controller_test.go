@@ -84,12 +84,12 @@ func expectReady(
 
 // notFoundMessage is the condition message for a Secret that does not exist.
 func notFoundMessage(path string, ref v1.SecretKeyRef) string {
-	return fmt.Sprintf("%s: Secret \"%s/%s\" not found", path, ref.Namespace, ref.Name)
+	return fmt.Sprintf("%s: Secret %s/%s not found", path, ref.Namespace, ref.Name)
 }
 
 // missingKeyMessage is the condition message for a Secret without the key.
 func missingKeyMessage(path string, ref v1.SecretKeyRef) string {
-	return fmt.Sprintf("%s: Secret \"%s/%s\" is missing key %q", path, ref.Namespace, ref.Name, ref.Key)
+	return fmt.Sprintf("%s: Secret %s/%s is missing key %q", path, ref.Namespace, ref.Name, ref.Key)
 }
 
 var _ = Describe("CamundaPlatformConfig controller", func() {

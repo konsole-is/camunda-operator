@@ -76,7 +76,7 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			objects:     []client.Object{server},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/app-creds" not found`,
+			wantMessage: `Secret ns/app-creds not found`,
 		},
 		{
 			name:        "broken app secret wins over broken backup secret",
@@ -84,14 +84,14 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/app-creds" not found`,
+			wantMessage: `Secret ns/app-creds not found`,
 		},
 		{
 			name:        "missing key names the secret and key",
 			objects:     []client.Object{server, appSecretNoPassword},
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/app-creds" is missing key "password"`,
+			wantMessage: `Secret ns/app-creds is missing key "password"`,
 		},
 		{
 			name:        "absent backup ref skips the backup check",
@@ -113,7 +113,7 @@ func TestDatabaseConfigValidate(t *testing.T) {
 			backupRef:   backupRef,
 			wantStatus:  metav1.ConditionFalse,
 			wantReason:  v1.ReasonMissingSecret,
-			wantMessage: `Secret "ns/backup-creds" not found`,
+			wantMessage: `Secret ns/backup-creds not found`,
 		},
 	}
 
