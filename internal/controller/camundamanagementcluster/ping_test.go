@@ -149,7 +149,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 		}
 		latest := readOrchestrationCluster(Default, cluster)
 
-		Expect(r.removePingCollisions(ctx, s.mc, latest)).To(Succeed())
+		Expect(r.removePingCollisions(ctx, s.mc, latest, clusterVersion(latest))).To(Succeed())
 
 		Expect(readOrchestrationCluster(Default, cluster).Spec.ExtraEnv).To(ConsistOf(userEnv))
 		Expect(recorder.Events).To(Receive(And(
@@ -159,7 +159,7 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 
 		// A cluster that carries no colliding entry is left alone, so the
 		// next reconcile removes nothing and reports nothing.
-		Expect(r.removePingCollisions(ctx, s.mc, readOrchestrationCluster(Default, cluster))).To(Succeed())
+		Expect(r.removePingCollisions(ctx, s.mc, readOrchestrationCluster(Default, cluster), "8.9.9")).To(Succeed())
 		Expect(recorder.Events).NotTo(Receive())
 	})
 

@@ -108,7 +108,7 @@ func TestPingCollisionsReadsTheEntriesUnderAPingName(t *testing.T) {
 		{Name: "CAMUNDA_CONSOLE_PING_PINGPERIOD", ValueFrom: fromConfigMap},
 		{Name: "CAMUNDA_HUB_PING_CLUSTERNAME", ValueFrom: fromConfigMap},
 	}
-	cluster := &v1.CamundaCluster{Spec: v1.CamundaClusterSpec{Version: "8.9.9", ExtraEnv: extraEnv}}
+	cluster := &v1.CamundaCluster{Spec: v1.CamundaClusterSpec{ExtraEnv: extraEnv}}
 
 	// The last entry comes first, so a caller that removes them in this order
 	// keeps the index of the entries it has not reached yet. The Hub entry is
@@ -117,13 +117,12 @@ func TestPingCollisionsReadsTheEntriesUnderAPingName(t *testing.T) {
 		t, []PingCollision{
 			{Index: 3, Name: "CAMUNDA_CONSOLE_PING_PINGPERIOD"},
 			{Index: 2, Name: "CAMUNDA_CONSOLE_PING_ENDPOINT"},
-		}, PingCollisions(cluster),
+		}, PingCollisions(cluster, "8.9.9"),
 	)
 
 	// An 8.10 cluster reads the Hub key set, and the Console entries stay.
-	cluster.Spec.Version = "8.10.0"
 	assert.Equal(
-		t, []PingCollision{{Index: 4, Name: "CAMUNDA_HUB_PING_CLUSTERNAME"}}, PingCollisions(cluster),
+		t, []PingCollision{{Index: 4, Name: "CAMUNDA_HUB_PING_CLUSTERNAME"}}, PingCollisions(cluster, "8.10.0"),
 	)
 }
 
@@ -134,8 +133,8 @@ func TestPingCollisionsOfAClusterWithoutOne(t *testing.T) {
 		"http://console.camunda.svc:80", "production", "8.9.9",
 	)}}
 
-	assert.Empty(t, PingCollisions(cluster))
-	assert.Empty(t, PingCollisions(&v1.CamundaCluster{}))
+	assert.Empty(t, PingCollisions(cluster, "8.9.9"))
+	assert.Empty(t, PingCollisions(&v1.CamundaCluster{}, "8.9.9"))
 }
 
 // The entry is gone once the management plane replaces it, so the field
@@ -171,7 +170,7 @@ func TestPingCollisionsNameTheFieldManagerOfValueFrom(t *testing.T) {
 		}}},
 	}
 
-	collisions := PingCollisions(cluster)
+	collisions := PingCollisions(cluster, "8.9.9")
 
 	// The entry of a subresource says nothing about spec.extraEnv, and the
 	// manager that owns another name is not the one that wrote this entry.
@@ -193,7 +192,7 @@ func TestPingCollisionsWithoutAFieldManager(t *testing.T) {
 			{Manager: "broken", FieldsV1: metav1.NewFieldsV1("not json")},
 			{Manager: "empty"},
 		}},
-		Spec: v1.CamundaClusterSpec{Version: "8.10.0", ExtraEnv: []corev1.EnvVar{{
+		Spec: v1.CamundaClusterSpec{ExtraEnv: []corev1.EnvVar{{
 			Name:      "CAMUNDA_HUB_PING_PINGPERIOD",
 			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"}},
 		}}},
@@ -202,6 +201,6 @@ func TestPingCollisionsWithoutAFieldManager(t *testing.T) {
 	assert.Equal(
 		t,
 		[]PingCollision{{Index: 0, Name: "CAMUNDA_HUB_PING_PINGPERIOD"}},
-		PingCollisions(cluster),
+		PingCollisions(cluster, "8.10.0"),
 	)
 }

@@ -93,7 +93,7 @@ func (r *Reconciler) syncPing(
 		}
 
 		env := components.PingEnv(consoleURL, cluster.Name, version)
-		err := r.replacePing(ctx, mc, cluster, env)
+		err := r.replacePing(ctx, mc, cluster, version, env)
 		if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
 			reportPingFailure(mc, key, err)
 			continue
@@ -138,9 +138,10 @@ func (r *Reconciler) replacePing(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	cluster *v1.CamundaCluster,
+	version string,
 	env []corev1.EnvVar,
 ) error {
-	if err := r.removePingCollisions(ctx, mc, cluster); err != nil {
+	if err := r.removePingCollisions(ctx, mc, cluster, version); err != nil {
 		return err
 	}
 
@@ -148,8 +149,8 @@ func (r *Reconciler) replacePing(
 }
 
 // removePingCollisions deletes every entry of spec.extraEnv of cluster that
-// holds a ping setting with valueFrom, in one JSON patch, and records each
-// removal as an event on mc. A cluster that carries no such entry is left
+// holds a ping setting of the key set that version reads, with valueFrom, in
+// one JSON patch, and records each removal as an event on mc. A cluster that carries no such entry is left
 // alone, so the reconcile after a replacement patches nothing.
 //
 // The patch tests the UID of the cluster and the name at every index it
@@ -160,8 +161,9 @@ func (r *Reconciler) removePingCollisions(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	cluster *v1.CamundaCluster,
+	version string,
 ) error {
-	collisions := components.PingCollisions(cluster)
+	collisions := components.PingCollisions(cluster, version)
 	if len(collisions) == 0 {
 		return nil
 	}

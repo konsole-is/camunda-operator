@@ -130,9 +130,10 @@ func PingsConsole(env []corev1.EnvVar, consoleURL string) bool {
 }
 
 // PingCollisions returns the entries of spec.extraEnv that hold a ping setting
-// of the key set the cluster's version reads, with valueFrom, from the last of
+// of the key set that clusterVersion reads, with valueFrom, from the last of
 // the list to the first. An entry under the other key set stays: the
-// management plane never writes it for this cluster. A caller that
+// management plane never writes it for this cluster. Pass the version that
+// PingEnv gets, so both read one key set. A caller that
 // removes them in that order keeps the index of every entry it has not
 // reached yet.
 //
@@ -141,8 +142,8 @@ func PingsConsole(env []corev1.EnvVar, consoleURL string) bool {
 // another manager where it is, and the API server refuses an entry that
 // carries value and valueFrom together. Such an entry has to go before the
 // apply.
-func PingCollisions(cluster *v1.CamundaCluster) []PingCollision {
-	names := pingEnvNamesFor(cluster.Spec.Version)
+func PingCollisions(cluster *v1.CamundaCluster, clusterVersion string) []PingCollision {
+	names := pingEnvNamesFor(clusterVersion)
 	var collisions []PingCollision
 	for i := len(cluster.Spec.ExtraEnv) - 1; i >= 0; i-- {
 		entry := cluster.Spec.ExtraEnv[i]
