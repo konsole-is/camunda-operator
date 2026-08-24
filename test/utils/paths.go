@@ -22,9 +22,14 @@ import (
 	"path/filepath"
 )
 
-// envtestBinaryDir holds the control plane binaries that 'make setup-envtest'
-// downloads, one directory per Kubernetes version.
-const envtestBinaryDir = "bin/k8s"
+const (
+	// envtestBinaryDir holds the control plane binaries that
+	// 'make setup-envtest' downloads, one directory per Kubernetes version.
+	envtestBinaryDir = "bin/k8s"
+	// envKubebuilderAssets names the control plane binaries directly.
+	// 'make setup-envtest' writes it and envtest itself reads it.
+	envKubebuilderAssets = "KUBEBUILDER_ASSETS"
+)
 
 // ModuleRoot walks up from the working directory to the directory that holds
 // go.mod, so a package at any depth resolves the same paths.
@@ -50,13 +55,20 @@ func ModuleRoot() (string, error) {
 	}
 }
 
-// EnvtestBinaryDir returns the first versioned control plane directory under
-// bin/k8s, so a suite runs from an IDE without KUBEBUILDER_ASSETS set.
+// EnvtestBinaryDir returns the control plane binaries a suite boots against.
 //
-// It returns an empty string when the directory is absent, which is the usual
-// case in CI: envtest then falls back to KUBEBUILDER_ASSETS, which
-// 'make setup-envtest' writes.
+// KUBEBUILDER_ASSETS wins when it is set, because that is the version
+// 'make test' selected, and bin/k8s can hold an older one beside it. Without
+// it the first versioned directory under bin/k8s answers, so a suite runs
+// from an IDE that sets no environment.
+//
+// An empty string means neither is available. envtest then reports the
+// missing binaries itself.
 func EnvtestBinaryDir() string {
+	if assets := os.Getenv(envKubebuilderAssets); assets != "" {
+		return assets
+	}
+
 	root, err := ModuleRoot()
 	if err != nil {
 		return ""

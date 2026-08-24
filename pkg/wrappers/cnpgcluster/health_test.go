@@ -73,6 +73,12 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 			expected: concepts.AliveConvergingStatusUpdating,
 		},
 		{
+			name:     "more ready instances than the spec wants during a scale-down",
+			op:       concepts.ConvergingOperationUpdated,
+			cluster:  clusterWith(2, cnpgv1.PhaseHealthy, 3, 3),
+			expected: concepts.AliveConvergingStatusUpdating,
+		},
+		{
 			name:     "unrecoverable cluster",
 			op:       concepts.ConvergingOperationUpdated,
 			cluster:  clusterWith(3, cnpgv1.PhaseUnrecoverable, 0, 0),
@@ -140,6 +146,11 @@ func TestDefaultGraceStatusHandler(t *testing.T) {
 			name:     "every instance ready",
 			cluster:  clusterWith(3, cnpgv1.PhaseHealthy, 3, 3),
 			expected: concepts.GraceStatusHealthy,
+		},
+		{
+			name:     "more ready instances than the spec wants during a scale-down",
+			cluster:  clusterWith(2, cnpgv1.PhaseHealthy, 3, 3),
+			expected: concepts.GraceStatusDegraded,
 		},
 		{
 			name:     "waiting for a user action while every instance is ready",

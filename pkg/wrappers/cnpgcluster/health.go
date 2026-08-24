@@ -62,7 +62,7 @@ func DefaultConvergingStatusHandler(
 		}, nil
 	}
 
-	if cluster.Status.Phase == cnpgv1.PhaseHealthy && cluster.Status.ReadyInstances == cluster.Spec.Instances {
+	if converged(cluster) {
 		return concepts.AliveStatusWithReason{
 			Status: concepts.AliveConvergingStatusHealthy,
 			Reason: fmt.Sprintf("%d of %d instances are ready", cluster.Status.ReadyInstances, cluster.Spec.Instances),
@@ -85,6 +85,19 @@ func DefaultConvergingStatusHandler(
 	}, nil
 }
 
+// converged reports whether CloudNativePG holds the Cluster in the state the
+// spec asks for. The count has to match exactly: during a scale-down
+// CloudNativePG reports more ready pods than the spec wants, which is a
+// Cluster still converging, not one that has arrived.
+//
+// DefaultConvergingStatusHandler and DefaultGraceStatusHandler share this
+// test. A grace handler that answered Healthy for a state convergence did not
+// would make the component log an inconsistency on every reconcile.
+func converged(cluster *cnpgv1.Cluster) bool {
+	return cluster.Status.Phase == cnpgv1.PhaseHealthy &&
+		cluster.Status.ReadyInstances == cluster.Spec.Instances
+}
+
 // phaseText renders a phase for a status reason. An empty phase means
 // CloudNativePG has not written one, which reads better as words than as a
 // pair of empty quotes.
@@ -97,21 +110,14 @@ func phaseText(phase string) string {
 }
 
 // DefaultGraceStatusHandler grades a Cluster that is still not converged when
-// the grace period of the component expires: a healthy phase with every
-// instance ready is Healthy, at least one ready instance is Degraded, because
-// PostgreSQL still serves through the read-write service, and no ready
-// instance is Down.
-//
-// The phase is part of the Healthy test because the framework calls this
-// handler only for a state DefaultConvergingStatusHandler did not call
-// Healthy. Reading the ready count alone would call a Cluster in a failing
-// phase healthy, which contradicts convergence and makes the component log an
-// inconsistency on every reconcile.
+// the grace period of the component expires: a converged Cluster is Healthy,
+// at least one ready instance is Degraded, because PostgreSQL still serves
+// through the read-write service, and no ready instance is Down.
 func DefaultGraceStatusHandler(cluster *cnpgv1.Cluster) (concepts.GraceStatusWithReason, error) {
 	ready := cluster.Status.ReadyInstances
 
 	switch {
-	case cluster.Status.Phase == cnpgv1.PhaseHealthy && ready >= cluster.Spec.Instances:
+	case converged(cluster):
 		return concepts.GraceStatusWithReason{
 			Status: concepts.GraceStatusHealthy,
 			Reason: fmt.Sprintf("%d of %d instances are ready", ready, cluster.Spec.Instances),
