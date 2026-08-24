@@ -143,7 +143,8 @@ func (r *CamundaClusterReconciler) recordRefusedDowngrade(cluster *v1.CamundaClu
 }
 
 // recorded stores message as the refusal of cluster and reports whether the
-// memo already held that exact message for it.
+// memo already held that exact message for it. The entry carries the UID of
+// the cluster, so a cluster created again under the same name counts as new.
 func (m *refusalMemo) recorded(cluster *v1.CamundaCluster, message string) bool {
 	key := client.ObjectKeyFromObject(cluster)
 
