@@ -28,7 +28,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | --- | --- | --- | --- | --- |
 | #128 | fix/cnpg-database-server--namespaced-chain | .claude/worktrees/cnpg-database-server/.claude/worktrees/namespaced-chain | #239 → feat/cnpg-database-server | ready |
-| #234 | chore/cnpg-database-server--cnpg-wrappers | .claude/worktrees/cnpg-database-server/.claude/worktrees/cnpg-wrappers | #238 → feat/cnpg-database-server | ready |
+| #234 | chore/cnpg-database-server--cnpg-wrappers | .claude/worktrees/cnpg-database-server/.claude/worktrees/cnpg-wrappers | #238 → feat/cnpg-database-server | self-merged (beee38d) |
 | #235 | feat/cnpg-database-server--database-server | .claude/worktrees/cnpg-database-server/.claude/worktrees/database-server | → feat/cnpg-database-server | not-started |
 | #236 | feat/cnpg-database-server--contract-recovery | .claude/worktrees/cnpg-database-server/.claude/worktrees/contract-recovery | → feat/cnpg-database-server | not-started |
 | #237 | ci/cnpg-database-server--e2e | .claude/worktrees/cnpg-database-server/.claude/worktrees/e2e | → feat/cnpg-database-server | not-started |
@@ -38,7 +38,7 @@ The user's standing instruction for this feature (2026-08-24): full autonomy thr
 | Name | Realization | Realized in | Status |
 | --- | --- | --- | --- |
 | `namespaced-rdbms-kinds` | stub-on-producer-branch (PR 3 branches after PR 1 merges) | #128 sub-PR | pending |
-| `cnpg-wrappers` | stub-on-producer-branch (PR 3 branches after PR 2 merges) | #234 sub-PR | pending |
+| `cnpg-wrappers` | stub-on-producer-branch (PR 3 branches after PR 2 merges) | #238 (beee38d) | locked |
 | `contract-recovery-fields` | data-only (both writers in PR 4) | n/a | locked |
 
 ## Bubble-up log
