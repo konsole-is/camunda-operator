@@ -154,6 +154,21 @@ func (r *Reconciler) admit(
 	// goes in before the database is read, so every later look is measured
 	// against the chain that the read used.
 	pitr.Status.Storage = pinnedChain(resolved.storage, resolved.dbConfig, resolved.server)
+
+	// A contract that rolls its own server back is asked to do so first. A
+	// contract that declares external is rolled back before the restore was
+	// created, and the database is read as it stands.
+	if operatorRecovers(resolved.server) {
+		pitr.Status.Phase = v1.PointInTimeRestoreRestoringDatabase
+		r.progressing(pitr, fmt.Sprintf(
+			"DatabaseServerConfig %s rolls its own server back. The restore asks it for %s",
+			client.ObjectKeyFromObject(resolved.server),
+			pitr.Spec.Timestamp.UTC().Format(time.RFC3339),
+		))
+
+		return restore.Outcome{Wait: restore.Shortly}, nil
+	}
+
 	pitr.Status.Phase = v1.PointInTimeRestoreValidatingDatabaseState
 
 	return r.validateDatabaseState(ctx, pitr, resolved)
@@ -249,19 +264,27 @@ func (r *Reconciler) resolve(
 
 		return nil, nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", serverKey, err)
 	}
-	if server.Status.SystemIdentifier == "" {
-		return nil, logicalbackup.InvalidReference(
-			"DatabaseServerConfig %s has not published its system identifier, so the operator "+
-				"cannot tell which PostgreSQL instance the endpoint reaches. Point-in-time "+
-				"recovery rolls back the whole instance, and the rule that protects every other "+
-				"database on it needs that identity. Wait until the DatabaseServerConfig reports "+
-				"Ready",
-			serverKey,
-		), nil
-	}
+	// Both checks below read the identity that the contract publishes, and
+	// that identity is in flux for the whole of RestoringDatabase: the request
+	// of the restore and the endpoint that the producer repoints are both spec
+	// changes, and each of them clears the record of the probe. The phase that
+	// asked for the change reads the contract without them, and refreshes the
+	// pin itself once the answer arrives.
+	if !recoveringDatabase(pitr) {
+		if server.Status.SystemIdentifier == "" {
+			return nil, logicalbackup.InvalidReference(
+				"DatabaseServerConfig %s has not published its system identifier, so the operator "+
+					"cannot tell which PostgreSQL instance the endpoint reaches. Point-in-time "+
+					"recovery rolls back the whole instance, and the rule that protects every "+
+					"other database on it needs that identity. Wait until the DatabaseServerConfig "+
+					"reports Ready",
+				serverKey,
+			), nil
+		}
 
-	if err := pinnedChainCurrent(pitr, &storage, &dbConfig, &server); err != nil {
-		return nil, nil, err
+		if err := pinnedChainCurrent(pitr, &storage, &dbConfig, &server); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	target, failure, err := restore.ResolveTarget(ctx, r.APIReader, &cluster)
@@ -282,6 +305,13 @@ func (r *Reconciler) resolve(
 		server:   &server,
 		target:   target,
 	}, nil, nil
+}
+
+// recoveringDatabase reports whether the restore waits for the database server
+// to roll itself back. The identity that the contract publishes says nothing
+// while that runs, so resolve leaves it out of its rules for that phase alone.
+func recoveringDatabase(pitr *v1.PointInTimeRestore) bool {
+	return pitr.Status.Phase == v1.PointInTimeRestoreRestoringDatabase
 }
 
 // notSuspended reports the cluster that started running again. Suspension is
