@@ -395,6 +395,10 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(latest.Status.Cluster).To(Equal("camunda-r1"))
 			g.Expect(latest.Status.SystemIdentifier).To(Equal(recoveredSystemIdentifier))
 			g.Expect(latest.Status.Recovery.CompletedAt).NotTo(BeNil())
+			// The answer keeps the whole record: nothing else holds the
+			// cluster the server came from or the archive it read.
+			g.Expect(latest.Status.Recovery.PreviousCluster).To(Equal("camunda"))
+			g.Expect(latest.Status.Recovery.Archive).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		By("closing the archive it recovered from at the moment the contract moved")
@@ -452,6 +456,43 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(MatchError(apierrors.IsNotFound, "not found"))
+	})
+
+	It("keeps waiting while CloudNativePG reports a plugin phase it retries", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		// CloudNativePG registers this phase on a plugin error and requeues
+		// in seconds. A recovery cluster that is seconds old reports it while
+		// the plugin loads, so grading it as a failure answers the request
+		// from a state the operator recovers from on its own.
+		By("reporting a plugin error on the cluster the recovery built")
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Eventually(func(g Gomega) {
+			var recovered cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &recovered)).To(Succeed())
+			recovered.Status.Phase = cnpgv1.PhaseFailurePlugin
+			recovered.Status.ReadyInstances = 0
+			g.Expect(k8sClient.Status().Update(ctx, &recovered)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("answering nothing and keeping the cluster")
+		Consistently(func(g Gomega) {
+			contract := publishedContract(server)
+			if contract.Spec.PITR != nil {
+				g.Expect(contract.Spec.PITR.LastRecovery).To(BeNil())
+			}
+			g.Expect(k8sClient.Get(ctx, key, &cnpgv1.Cluster{})).To(Succeed())
+		}, "2s", interval).Should(Succeed())
+
+		By("completing once the plugin loads and the instances are ready")
+		recoverySucceeds(server)
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
+		Expect(outcome.Result).To(Equal(v1.RecoveryResultCompleted))
+		Expect(publishedContract(server).Spec.Host).
+			To(Equal("camunda-r1-rw." + server.Namespace + ".svc"))
 	})
 
 	It("reports a recovery that CloudNativePG cannot finish, and removes what it built", func() {

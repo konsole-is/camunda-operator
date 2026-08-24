@@ -735,6 +735,27 @@ func expectInstanceExported(cluster *v1.CamundaCluster, key string) {
 	}, ccAPITimeout).Should(Succeed())
 }
 
+// expectInstanceGone asserts that the process instance search returns no
+// instance with key. It is written for Eventually and for Consistently: an
+// instance that a point-in-time restore left on the far side of the point has
+// to stay gone while the exporter works through the log again.
+func expectInstanceGone(g Gomega, cluster *v1.CamundaCluster, key string) {
+	var result struct {
+		Items []struct {
+			ProcessInstanceKey string `json:"processInstanceKey"`
+		} `json:"items"`
+	}
+
+	resp, err := camundaREST(
+		cluster, "search-gone", http.MethodPost, pathInstanceSearch, nil,
+		"-H", "Content-Type: application/json", "-d", `{"filter":{"processInstanceKey":"`+key+`"}}`,
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(resp.Status).To(Equal(http.StatusOK), resp.Body)
+	g.Expect(json.Unmarshal([]byte(resp.Body), &result)).To(Succeed(), resp.Body)
+	g.Expect(result.Items).To(BeEmpty(), resp.Body)
+}
+
 // camundaREST calls path on the gateway Service of cluster with the
 // credentials of the admin Secret. files are uploaded into /tmp of the helper
 // pod; args are extra curl arguments.

@@ -89,6 +89,22 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 			reasonContains: cnpgv1.PhaseWaitingForUser,
 		},
 		{
+			// CloudNativePG requeues on both plugin phases in seconds, so a
+			// Cluster that reports one is still converging.
+			name:           "an error while interacting with plugins is not a failure",
+			op:             concepts.ConvergingOperationCreated,
+			cluster:        clusterWith(3, cnpgv1.PhaseFailurePlugin, 0),
+			expected:       concepts.AliveConvergingStatusUpdating,
+			reasonContains: cnpgv1.PhaseFailurePlugin,
+		},
+		{
+			name:           "an unknown plugin is not a failure",
+			op:             concepts.ConvergingOperationCreated,
+			cluster:        clusterWith(3, cnpgv1.PhaseUnknownPlugin, 0),
+			expected:       concepts.AliveConvergingStatusUpdating,
+			reasonContains: cnpgv1.PhaseUnknownPlugin,
+		},
+		{
 			name:           "failover in progress is not a failure",
 			op:             concepts.ConvergingOperationUpdated,
 			cluster:        clusterWith(3, cnpgv1.PhaseFailOver, 2),

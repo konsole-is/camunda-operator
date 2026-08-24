@@ -349,7 +349,9 @@ Conditions and components, one component per condition:
 | `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract) |
 | `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
 
-`Ready` on the owner aggregates them. `ReasonCNPGNotInstalled` and
+`Ready` on the owner aggregates `ClusterReady`, `ContractReady`, and, on a server that asks for an
+archive, `ArchiveReady`. `MonitoringReady` always stands on its own, and so does `ArchiveReady` on
+a server with no `archive` block, so `Ready` never reports `Disabled`. `ReasonCNPGNotInstalled` and
 `ReasonBarmanPluginNotInstalled` are pre-check failures on the owner, before any component runs.
 
 Suspend hibernates the `Cluster`: the wrapper's suspend mutation sets the annotation

@@ -30,14 +30,22 @@ import (
 // wrapper with --force, delete the scaffolded Default* handlers from
 // builder.go again so these implementations take their place.
 
-// failingPhases are the phases CloudNativePG reports for a Cluster that no
-// longer converges on its own. Every other phase is a step of a reconcile
-// that still runs, including "Failing over", which is a failover in progress
-// rather than a failure.
+// failingPhases are the phases CloudNativePG stops retrying. Every other phase
+// is a step of a reconcile that still runs, including "Failing over", which is
+// a failover in progress rather than a failure.
+//
+// PhaseFailurePlugin and PhaseUnknownPlugin are not here. CloudNativePG
+// registers either one and requeues in seconds, so both come and go while a
+// Cluster starts. Its own code says the phase oscillates between Healthy and
+// the error phase across reconciles. See
+// internal/controller/cluster_controller.go and internal/controller/plugins.go
+// on the release-1.30 branch of cloudnative-pg/cloudnative-pg.
+//
+// A plugin that is absent for good is caught before any Cluster exists. The
+// DatabaseServer pre-check reports BarmanPluginNotInstalled when the Kubernetes
+// cluster does not serve the ObjectStore kind.
 var failingPhases = map[string]struct{}{
 	cnpgv1.PhaseUnrecoverable:              {},
-	cnpgv1.PhaseUnknownPlugin:              {},
-	cnpgv1.PhaseFailurePlugin:              {},
 	cnpgv1.PhaseImageCatalogError:          {},
 	cnpgv1.PhaseCannotCreateClusterObjects: {},
 	cnpgv1.PhaseDefinitionInvalid:          {},
@@ -93,8 +101,8 @@ func Converged(cluster *cnpgv1.Cluster) bool {
 		cluster.Status.ReadyInstances == cluster.Spec.Instances
 }
 
-// Failing reports whether CloudNativePG holds the Cluster in a phase it no
-// longer converges out of on its own, and names that phase. A caller that
+// Failing reports whether CloudNativePG holds the Cluster in a phase it stops
+// retrying, and names that phase. A caller that
 // drives a Cluster outside a component, for example the one a recovery
 // builds, grades it with this and with Converged, so its reading of a phase
 // is the reading of the status handlers here.

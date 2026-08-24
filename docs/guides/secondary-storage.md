@@ -1,6 +1,6 @@
 # Secondary storage
 
-Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported process, decision, and task data that Operate, Tasklist, and the search API read. The operator supports two secondary storage backends: Elasticsearch, which it runs through the ECK operator, and PostgreSQL, which you run and the operator prepares. A `CamundaCluster` never sees the backend. It only references a `SecondaryStorageConfig` by name, through `spec.storageRef`.
+Camunda keeps its data in two places. Primary storage is the Zeebe log and state on the broker volumes. Secondary storage holds the exported process, decision, and task data that Operate, Tasklist, and the search API read. The operator supports two secondary storage backends: Elasticsearch and PostgreSQL. It runs Elasticsearch through the ECK operator. It runs PostgreSQL through the CloudNativePG operator, or it prepares a database on a server you run. A `CamundaCluster` never sees the backend. It only references a `SecondaryStorageConfig` by name, through `spec.storageRef`.
 
 This guide tells you which backend to pick, which resources to create for each backend, and in which order.
 
@@ -8,9 +8,9 @@ This guide tells you which backend to pick, which resources to create for each b
 
 | | Elasticsearch | PostgreSQL |
 | --- | --- | --- |
-| Who runs the backend | The ECK operator, in your Kubernetes cluster. You install ECK first. | You. The PostgreSQL server can run in the cluster or outside it, for example as a managed service. |
-| What you create | One `ElasticsearchCluster`. | One Secret with the admin credentials, one `DatabaseServerConfig`, and one `Database`. |
-| What the operator creates | The ECK `Elasticsearch` resource, a user Secret, and the `SecondaryStorageConfig`. | A logical database, two SQL roles, two credential Secrets, a `DatabaseConfig`, and the `SecondaryStorageConfig`. |
+| Who runs the backend | The ECK operator, in your Kubernetes cluster. You install ECK first. | The CloudNativePG operator, or you. See [PostgreSQL](#postgresql). |
+| What you create | One `ElasticsearchCluster`. | One `DatabaseServer` and one `Database`, or a `DatabaseServerConfig` for your own server and one `Database`. |
+| What the operator creates | The ECK `Elasticsearch` resource, a user Secret, and the `SecondaryStorageConfig`. | A logical database, two SQL roles, two credential Secrets, a `DatabaseConfig`, and the `SecondaryStorageConfig`. With a `DatabaseServer`, the PostgreSQL instances and their archive as well. |
 | Camunda 8.9 support | Elasticsearch 8.19+ and 9.2+. | RDBMS secondary storage is available since Camunda 8.9. The operator prepares PostgreSQL servers only. |
 | Backup | Elasticsearch snapshots, through [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md). | A `pg_dump` of the database plus a Zeebe backup of primary storage, through [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md). |
 | Optimize | Supported. | Not supported. Camunda Optimize needs Elasticsearch or OpenSearch. |
@@ -102,7 +102,79 @@ For all fields, see [ElasticsearchCluster](../crds/elasticsearchcluster.md) and 
 
 ## PostgreSQL
 
-Prerequisites: a PostgreSQL server that the operator can reach over the network, and an admin user that can create databases and roles. The operator never creates the server. The steps below use a server at `postgres.my-cluster-ns.svc` on port `5432` and an admin user `postgres`.
+The chain has two halves. The first half is the server, and you get it in one of two ways. The second half is the logical database on that server, and it is the same either way.
+
+| | A `DatabaseServer` | A server you run |
+| --- | --- | --- |
+| Who runs PostgreSQL | The CloudNativePG operator, in your Kubernetes cluster. | You. The server can run in the cluster or outside it, for example as a managed service. |
+| What you create | One `DatabaseServer`. | One Secret with the admin credentials and one `DatabaseServerConfig`. |
+| Admin credentials | CloudNativePG writes them into a Secret. | You write them. |
+| Point-in-time restore | `spec.archive` gives the server a continuous archive, and a [PointInTimeRestore](../crds/pointintimerestore.md) rolls the server back for you. | Only if you archive the server yourself and roll it back before you create the restore. |
+| Prerequisite | The CloudNativePG operator. An archive also needs the Barman Cloud plugin and cert-manager. | Nothing on the Kubernetes cluster. |
+
+### One server per orchestration cluster
+
+Give every orchestration cluster a PostgreSQL server of its own. Two clusters can share one server with a database each, and the operator allows it. A shared server gives up two things.
+
+A point-in-time restore rolls back the whole server, not one database. Every database on it goes back to the same point. A restore for one cluster therefore erases the recent data of every other cluster on that server. A `PointInTimeRestore` holds in `Pending` while more than one `Database` uses the server. Its `Ready` condition reads `False` with reason `SharedServer`. The hold lifts when one `Database` is left.
+
+Sizing, restarts, and version upgrades are shared too. One `DatabaseServer` carries one instance count, one volume size, and one PostgreSQL major version. A resize or an upgrade of the server stops every cluster on it at the same time.
+
+A shared server is cheaper, and it fits a fleet of small clusters that never needs a point-in-time restore. Choose it only when you accept both losses above.
+
+### Run the server with a DatabaseServer
+
+Prerequisites: the CloudNativePG operator is installed in the Kubernetes cluster, and the camunda-operator started after its CRDs were installed. An archive also needs the Barman Cloud plugin and cert-manager. See [Installation](../installation.md#install-cloudnativepg-and-the-barman-cloud-plugin).
+
+1. Create a `DatabaseServer`. The sizes below are for production. Leave out `archive` when you do not need a point-in-time restore.
+
+    ```yaml
+    apiVersion: core.camunda.io/v1
+    kind: DatabaseServer
+    metadata:
+      name: my-db
+      namespace: my-cluster-ns
+    spec:
+      version: "17"
+      instances: 2
+      storageSize: "64Gi"
+      resources:
+        requests: { cpu: "1", memory: "2Gi" }
+      databaseServerConfig: my-db-server
+      archive:
+        objectStorageRef: my-backup-bucket
+        retentionPeriodDays: 30
+    ```
+
+    `objectStorageRef` names an [ObjectStorageConfig](../crds/objectstorageconfig.md). The [backup guide](./backup.md#the-bucket) creates one.
+
+2. Wait until the `DatabaseServer` is `Ready` with reason `Healthy`.
+
+    ```bash
+    kubectl wait databaseserver/my-db -n my-cluster-ns --for=condition=Ready --timeout=15m
+    ```
+
+    The first start pulls the PostgreSQL image, bootstraps the instances, and takes the first base backup of the archive. When it is done, the status reads:
+
+    ```yaml
+    status:
+      cluster: my-db
+      systemIdentifier: "7412345678901234567"
+      conditions:
+        - type: Ready
+          status: "True"
+          reason: Healthy
+    ```
+
+    The server publishes the `DatabaseServerConfig` `my-db-server` in the same namespace, with the host `my-db-rw.my-cluster-ns.svc`, port 5432, and the Secret `my-db-superuser` as its admin credentials. With an archive it also carries `pitr.enabled: true` and `pitr.recovery: operator`.
+
+    [DatabaseServer](../crds/databaseserver.md) covers sizing, the archive, monitoring, presets, and the rollback in full.
+
+3. Continue with [The logical database](#the-logical-database). Use `serverRef: my-db-server`.
+
+### Use a server that you run
+
+Prerequisites: a PostgreSQL server that the operator can reach over the network, and an admin user that can create databases and roles. The steps below use a server at `postgres.my-cluster-ns.svc` on port `5432` and an admin user `postgres`.
 
 1. Create a Secret with the admin credentials in the namespace of the `CamundaCluster`. The `DatabaseServerConfig` names it by name, and reads it from its own namespace.
 
@@ -160,7 +232,11 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
 
     If the reason is `MissingSecret`, the Secret or one of its keys does not exist.
 
-4. Create a `Database` in the namespace of the `CamundaCluster`. Set `secondaryStorageConfig` to the name of the contract you want. The `Database` resolves `serverRef` in its own namespace. It publishes the `DatabaseConfig` and the `SecondaryStorageConfig` there, where the cluster reads them.
+### The logical database
+
+Both paths above end with a `DatabaseServerConfig` in the namespace of the cluster. The steps below turn it into secondary storage. They use the contract `my-db-server`.
+
+1. Create a `Database` in the namespace of the `CamundaCluster`. Set `secondaryStorageConfig` to the name of the contract you want. The `Database` resolves `serverRef` in its own namespace. It publishes the `DatabaseConfig` and the `SecondaryStorageConfig` there, where the cluster reads them.
 
     ```yaml
     apiVersion: core.camunda.io/v1
@@ -174,7 +250,7 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
       secondaryStorageConfig: "my-storage-config"
     ```
 
-5. Wait until the `Database` is `Ready` with reason `Healthy`.
+2. Wait until the `Database` is `Ready` with reason `Healthy`.
 
     ```bash
     kubectl wait database/my-camunda-db -n my-cluster-ns --for=condition=Ready --timeout=5m
@@ -182,13 +258,13 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
 
     If the reason is `ServerIdentityUnknown`, the `DatabaseServerConfig` has not reached the server yet. Read its `Ready` condition.
 
-6. Make sure that the `DatabaseConfig` `my-camunda-db` and the `SecondaryStorageConfig` `my-storage-config` exist in `my-cluster-ns` and are `Ready` with reason `Healthy`. The `Database` created both. The `SecondaryStorageConfig` has `type: rdbms` and references the `DatabaseConfig`.
+3. Make sure that the `DatabaseConfig` `my-camunda-db` and the `SecondaryStorageConfig` `my-storage-config` exist in `my-cluster-ns` and are `Ready` with reason `Healthy`. The `Database` created both. The `SecondaryStorageConfig` has `type: rdbms` and references the `DatabaseConfig`.
 
     ```bash
     kubectl get databaseconfig,secondarystorageconfig -n my-cluster-ns
     ```
 
-7. Point the `CamundaCluster` at the contract, as in step 4 of the Elasticsearch procedure:
+4. Point the `CamundaCluster` at the contract, as in step 4 of the Elasticsearch procedure:
 
     ```yaml
     apiVersion: core.camunda.io/v1
@@ -203,9 +279,10 @@ Prerequisites: a PostgreSQL server that the operator can reach over the network,
 
 ```mermaid
 graph LR
+    DBS[DatabaseServer] -->|publishes| DBSC
     DB[Database] -.->|serverRef| DBSC[DatabaseServerConfig]
-    DBSC -.->|adminCredentialsSecretRef| ADM["Secret my-db-server-admin-credentials"]
-    DB -->|"SQL: CREATE DATABASE, CREATE ROLE"| PG["PostgreSQL server (external)"]
+    DBSC -.->|adminCredentialsSecretRef| ADM["Secret with the admin credentials"]
+    DB -->|"SQL: CREATE DATABASE, CREATE ROLE"| PG["PostgreSQL server"]
     DB -->|creates| DBC[DatabaseConfig]
     DB -->|creates| SSC["SecondaryStorageConfig (rdbms)"]
     SSC -.->|databaseConfigRef| DBC
@@ -299,6 +376,7 @@ The reference pages list every field: [SecondaryStorageConfig](../crds/secondary
 - [Backup](./backup.md): how backups work on each backend, and which bucket both sides must share.
 - [SecondaryStorageConfig](../crds/secondarystorageconfig.md): the contract that a `CamundaCluster` references through `storageRef`.
 - [ElasticsearchCluster](../crds/elasticsearchcluster.md): the kind that runs Elasticsearch through ECK and creates the contract.
+- [DatabaseServer](../crds/databaseserver.md): the kind that runs PostgreSQL through CloudNativePG, archives it, and creates the contract.
 - [DatabaseServerConfig](../crds/databaseserverconfig.md): the contract that describes a PostgreSQL server and its admin credentials.
 - [Database](../crds/database.md): the kind that prepares a logical database and creates the contracts.
 - [DatabaseConfig](../crds/databaseconfig.md): the contract that describes one logical database and its credentials.

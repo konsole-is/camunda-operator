@@ -221,7 +221,23 @@ CAUTION: A merge patch of `spec.suspend` takes the field from the restore that o
 
 The restore pages hold the rules: [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md), [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md), and [PointInTimeRestore](../crds/pointintimerestore.md).
 
+### A point-in-time restore restarts the cluster on a new server
+
+A point-in-time restore on a [DatabaseServer](../crds/databaseserver.md) rolls the server back to the point you asked for. The rollback replaces the PostgreSQL server with a new one built from the archive, under a new name. The published `DatabaseServerConfig` moves to it, so the address of the database changes, and every `CamundaCluster` that reads that contract rolls its pods. Plan the restore as a restart of the whole cluster, not of the database alone.
+
+Read the new address from the server and the contract when the restore is done:
+
+```bash
+kubectl get databaseserver my-db -n my-cluster-ns \
+  -o custom-columns='CLUSTER:.status.cluster,IDENTIFIER:.status.systemIdentifier'
+kubectl get databaseserverconfig my-db-server -n my-cluster-ns -o jsonpath='{.spec.host}'
+```
+
+The archive the rollback read stays in the bucket, next to the archive the new server writes. Nothing removes it, and `status.archive.history` on the `DatabaseServer` keeps its record with an end time. A later restore can therefore reach a point from before the rollback, for as long as `retentionPeriodDays` keeps the objects. No restore can reach the window between the two archives, because the archive of the new server starts at its first base backup.
+
 An `ElasticsearchCluster` suspends the same way. The operator deletes the ECK `Elasticsearch` resource and keeps the data volumes. `Ready` is `True` with reason `Suspended`, and `MetricsReady` reports `Suspended` too. On resume the operator recreates the resource, and ECK attaches the same volumes with the data intact.
+
+A `DatabaseServer` suspends the same way. The instance pods go, the data volumes stay, and the instances come back on those volumes on resume. A suspended server refuses a rollback request, so unsuspend it before you create a point-in-time restore.
 
 `pause: true` is different:
 
@@ -393,11 +409,14 @@ spec:
 
 A restore of the cluster that reached `Failed` **after it started the restore application** keeps its per-broker Jobs, and the pods of those Jobs hold the broker volumes. The delete of the cluster then waits on a volume that never terminates. Delete that restore first. `status.primaryJobNames` on the restore tells you which case you are in: a restore that failed in an earlier phase names no Job there and holds nothing, and a restore that reached `Completed` already removed the Jobs it names, together with their pods.
 
-The `ElasticsearchCluster` and the `Database` are separate resources with their own lifecycle. Deleting the `CamundaCluster` leaves them in place. Deleting an `ElasticsearchCluster` removes the ECK resource, its Secrets, and its `SecondaryStorageConfig`, and its data volumes follow its own `persistentVolumeClaimRetentionPolicy`. Deleting a `Database` removes its `DatabaseConfig`, its `SecondaryStorageConfig`, and its credential Secrets, but it never drops the logical database or the SQL roles. Data removal on the server is a manual act.
+The `ElasticsearchCluster`, the `DatabaseServer`, and the `Database` are separate resources with their own lifecycle. Deleting the `CamundaCluster` leaves them in place. Deleting an `ElasticsearchCluster` removes the ECK resource, its Secrets, and its `SecondaryStorageConfig`, and its data volumes follow its own `persistentVolumeClaimRetentionPolicy`. Deleting a `Database` removes its `DatabaseConfig`, its `SecondaryStorageConfig`, and its credential Secrets, but it never drops the logical database or the SQL roles. Data removal on the server is a manual act.
+
+**CAUTION: Deleting a `DatabaseServer` removes its PostgreSQL instances and their data volumes.** The archive in the bucket stays, and nothing reads it once the server is gone. Take a [logical backup](./backup.md) before you delete a server whose data you still need.
 
 ## Related
 
 - [CamundaCluster](../crds/camundacluster.md): every field, condition, and validation rule of the orchestration cluster.
 - [ElasticsearchCluster](../crds/elasticsearchcluster.md): the Elasticsearch secondary storage, its conditions, and its snapshot repository.
+- [DatabaseServer](../crds/databaseserver.md): the PostgreSQL server, its archive, and the rollback it performs.
 - [Database](../crds/database.md): the logical database and its credential Secrets.
 - [CamundaClusterPreset](../crds/camundaclusterpreset.md): the baseline that a cluster inherits, and how a preset change reaches every cluster.

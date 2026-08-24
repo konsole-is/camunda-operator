@@ -94,6 +94,11 @@ func ArchiveSecretName(server *v1.DatabaseServer) string {
 	return server.Name + archiveSecretSuffix
 }
 
+// Archiving reports whether the merged spec asks for an archive. It is the one
+// place that decides the question, so every reader of the rule answers the
+// same.
+func Archiving(merged v1.DatabaseServerSpec) bool { return merged.Archive != nil }
+
 // ValidateArchiveStorage reports why a bucket cannot hold the archive of a
 // server, or nil when it can. The caller turns the message into a pre-check
 // failure on the server.
@@ -113,9 +118,8 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 
 // ArchiveComponent builds the archive component: the Secret with the bucket
 // settings, the ObjectStore that describes the archive, and the ScheduledBackup
-// that takes the base backups. The component is feature-gated on the server
-// having an archive at all; without one it deletes its resources and reports
-// Disabled.
+// that takes the base backups. Archiving is the feature gate of the component.
+// Without an archive the component deletes its resources and reports Disabled.
 //
 // The component is never suspended. A suspended component applies no baseline,
 // so the suspension of the base backup schedule could never reach the cluster,
@@ -168,7 +172,7 @@ func ArchiveComponent(
 	return component.NewComponentBuilder().
 		WithName("archive").
 		WithConditionType(ConditionArchive).
-		WithFeatureGate(feature.NewBooleanGate(merged.Archive != nil)).
+		WithFeatureGate(feature.NewBooleanGate(Archiving(merged))).
 		WithResource(settings, component.GatedBy(feature.NewBooleanGate(len(archiveSecretData(resolved)) > 0))).
 		WithResource(store).
 		WithResource(baseBackup).

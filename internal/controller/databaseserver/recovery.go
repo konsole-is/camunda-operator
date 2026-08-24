@@ -253,12 +253,25 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 	contract *v1.DatabaseServerConfig,
 	published *v1.RecoveryOutcome,
 ) error {
-	recorded := server.Status.Recovery
-
-	cluster := ""
-	if recorded != nil && recorded.RequestID == published.RequestID {
-		cluster = recorded.Cluster
+	request := v1.RecoveryRequest{
+		RequestID:   published.RequestID,
+		RequestedBy: published.RequestedBy,
+		TargetTime:  published.TargetTime,
 	}
+
+	var carry *v1.DatabaseServerRecoveryStatus
+	if recoveryMatches(server.Status.Recovery, request) {
+		carry = server.Status.Recovery
+	}
+
+	answered := answeredRecovery(
+		carry,
+		request,
+		contract.Name,
+		published.Result,
+		published.Message,
+		published.CompletedAt,
+	)
 
 	if published.Result == v1.RecoveryResultCompleted {
 		current, err := r.recoveredClusterOf(ctx, server, contract)
@@ -267,30 +280,48 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 		}
 		if current != "" {
 			server.Status.Cluster = current
-			cluster = current
+			answered.Cluster = current
 		}
 	}
 
-	completedAt := published.CompletedAt
-	previous, archive := "", (*v1.RecoveryArchiveRef)(nil)
-	if recorded != nil && recorded.RequestID == published.RequestID {
-		previous, archive = recorded.PreviousCluster, recorded.Archive
-	}
-
-	server.Status.Recovery = &v1.DatabaseServerRecoveryStatus{
-		RequestID:       published.RequestID,
-		Contract:        contract.Name,
-		RequestedBy:     published.RequestedBy,
-		TargetTime:      published.TargetTime,
-		Cluster:         cluster,
-		PreviousCluster: previous,
-		Archive:         archive,
-		Result:          published.Result,
-		Message:         published.Message,
-		CompletedAt:     &completedAt,
-	}
+	server.Status.Recovery = answered
 
 	return nil
+}
+
+// answeredRecovery builds the record of an answered recovery. The request and
+// the outcome carry every part but three. Those three live only in the record
+// of the running recovery. They are the cluster it built, the cluster it came
+// from, and the archive it read. carry is that record when it belongs to this
+// request, and nil when it belongs to another one.
+//
+// Both writers of status.recovery build the record here, so neither of them
+// can drop a part that the other keeps.
+func answeredRecovery(
+	carry *v1.DatabaseServerRecoveryStatus,
+	request v1.RecoveryRequest,
+	contract string,
+	result v1.RecoveryResult,
+	message string,
+	completedAt metav1.Time,
+) *v1.DatabaseServerRecoveryStatus {
+	answered := &v1.DatabaseServerRecoveryStatus{
+		RequestID:   request.RequestID,
+		Contract:    contract,
+		RequestedBy: request.RequestedBy,
+		TargetTime:  request.TargetTime,
+		Result:      result,
+		Message:     message,
+		CompletedAt: &completedAt,
+	}
+
+	if carry != nil {
+		answered.Cluster = carry.Cluster
+		answered.PreviousCluster = carry.PreviousCluster
+		answered.Archive = carry.Archive
+	}
+
+	return answered
 }
 
 // recoveredClusterOf returns the cluster of this server that the endpoint of
@@ -810,20 +841,13 @@ func (r *DatabaseServerReconciler) answerRecovery(
 		return err
 	}
 
-	cluster := ""
+	var carry *v1.DatabaseServerRecoveryStatus
 	if recoveryMatches(server.Status.Recovery, request) {
-		cluster = server.Status.Recovery.Cluster
+		carry = server.Status.Recovery
 	}
-	server.Status.Recovery = &v1.DatabaseServerRecoveryStatus{
-		RequestID:   request.RequestID,
-		Contract:    contract.Name,
-		RequestedBy: request.RequestedBy,
-		TargetTime:  request.TargetTime,
-		Cluster:     cluster,
-		Result:      result,
-		Message:     message,
-		CompletedAt: &now,
-	}
+	server.Status.Recovery = answeredRecovery(
+		carry, request, contract.Name, result, message, now,
+	)
 
 	r.recordRecoveryOutcome(server, request, result, message)
 

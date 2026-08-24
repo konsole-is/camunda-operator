@@ -21,14 +21,21 @@ jobs:
       # versions of the minor. Each entry holds the Ginkgo label filter that
       # selects its flows. Adopting a new minor adds the file and a pair of
       # entries.
+      #
+      # cnpgInstallSkip keeps CloudNativePG and the Barman Cloud plugin off a
+      # job that runs no DatabaseServer. One kind node carries the whole run,
+      # and the management plane job already fills it with Keycloak,
+      # Management Identity, Console, and two Web Modeler processes.
       matrix:
         include:
           - minor: "8.9"
             suffix: ""
             labels: "!management-keycloak && !management-oidc"
+            cnpgInstallSkip: "false"
           - minor: "8.9"
             suffix: " management"
             labels: "management-keycloak || management-oidc"
+            cnpgInstallSkip: "true"
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
@@ -53,6 +60,8 @@ jobs:
         run: sudo sysctl -w vm.max_map_count=262144
 
       - name: Running Test e2e
+        env:
+          CNPG_INSTALL_SKIP: ${{ matrix.cnpgInstallSkip }}
         run: |
           make tidy
           make test-e2e E2E_CAMUNDA_MINOR=${{ matrix.minor }} E2E_LABEL_FILTER='${{ matrix.labels }}'

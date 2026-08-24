@@ -279,7 +279,13 @@ var _ = Describe("DatabaseServer controller", func() {
 		archive := expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
 		Expect(archive.Reason).To(Equal("Disabled"))
 
-		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+		// A part the spec switched off is reported on its own condition and
+		// never on Ready. The reason a reader sees for a server that runs is
+		// Healthy, whether or not it archives and whether or not it scrapes.
+		monitoring := expectCondition(server, components.ConditionMonitoring, metav1.ConditionTrue)
+		Expect(monitoring.Reason).To(Equal("Disabled"))
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+		Expect(ready.Reason).To(Equal(v1.ReasonHealthy), ready.Message)
 
 		// A server with no archive takes no base backups, so reading them
 		// every reconcile would be a cluster-wide read for nothing.
@@ -355,10 +361,20 @@ var _ = Describe("DatabaseServer controller", func() {
 		blocked := expectCondition(server, components.ConditionArchive, metav1.ConditionFalse)
 		Expect(blocked.Message).To(ContainSubstring("base backup"))
 
+		// An archive the spec asks for takes part in Ready, so a server that
+		// cannot be recovered to any point yet is not ready.
+		held := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(held.Reason).To(Equal(string(component.GuardBlocked)), held.Message)
+
 		completedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
 		completeBaseBackup(server, "base", completedAt)
 
 		expectCondition(server, components.ConditionArchive, metav1.ConditionTrue)
+
+		// Scraping is off here, and a part the spec switched off is reported
+		// on its own condition and never on Ready.
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+		Expect(ready.Reason).To(Equal(v1.ReasonHealthy), ready.Message)
 
 		var contract v1.DatabaseServerConfig
 		Expect(k8sClient.Get(

@@ -146,6 +146,26 @@
       enabled: true,
     },
     {
+      // CloudNativePG stays on the minor that internal/testenv/crds/cnpg
+      // vendors the CRDs from: a new minor changes the schema the envtest
+      // suites check against, and 1.31 removes the in-tree Barman Cloud
+      // support that the plugin replaces. Adopting one re-vendors the CRDs.
+      matchFileNames: ["test/e2e/matrix/8.9.env"],
+      matchDepNames: ["cloudnative-pg/cloudnative-pg"],
+      versioning: "semver",
+      allowedVersions: "<1.31.0",
+    },
+    {
+      // The Barman Cloud plugin stays on the minor that
+      // internal/testenv/crds/barmancloud vendors the ObjectStore CRD from,
+      // for the same reason. It is below 1.0, so a minor of it can change
+      // the schema.
+      matchFileNames: ["test/e2e/matrix/8.9.env"],
+      matchDepNames: ["cloudnative-pg/plugin-barman-cloud"],
+      versioning: "semver",
+      allowedVersions: "<0.15.0",
+    },
+    {
       // The Camunda images of the 8.9 line. Semver reads 8.10.0-alpha1 and
       // 8.9.9992-SNAPSHOT as prereleases, which ignoreUnstable drops. The
       // Docker versioning would not. A new supported minor gets a file

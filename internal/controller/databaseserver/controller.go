@@ -83,10 +83,18 @@ type serverComponents struct {
 	archive    *component.Component
 	contract   *component.Component
 	monitoring *component.Component
+	// ready are the components that take part in Ready: the cluster, the
+	// contract, and the archive of a server that asks for one. Monitoring
+	// keeps its own MonitoringReady condition, and an archive the spec does
+	// not ask for keeps ArchiveReady, so Ready never reports Disabled.
+	// Monitoring stays out whether or not it is enabled, because a PodMonitor
+	// observes the server rather than runs it. ElasticsearchCluster keeps its
+	// metrics exporter out of Ready for the same reason.
+	ready []*component.Component
 }
 
-// all returns the components in reconcile order. Ready aggregates every one of
-// them, and FlushStatus owns every one of their condition types.
+// all returns the components in reconcile order. FlushStatus owns every one of
+// their condition types.
 func (c serverComponents) all() []*component.Component {
 	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
 }
@@ -226,7 +234,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	server.Status.Volumes = volumes
 
-	conditions.Stage(&server, conditions.Aggregate(&server, comps...))
+	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
 
 	// The hold is the reason the reader acts on, so it wins over whatever the
 	// components report while the recovery finishes.
@@ -600,8 +608,11 @@ func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.Databas
 }
 
 // buildComponents builds the four components in dependency order: cluster,
-// archive, contract, monitoring. The returned data cell holds the PostgreSQL
-// system identifier once the cluster component has reconciled.
+// archive, contract, monitoring, and records which of them take part in Ready.
+// components.Archiving decides both the gate of the archive component and its
+// part in Ready, so the two can never disagree. The returned data cell
+// holds the PostgreSQL system identifier once the cluster component has
+// reconciled.
 func (r *DatabaseServerReconciler) buildComponents(
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
@@ -631,6 +642,11 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.monitoring, err = components.MonitoringComponent(server, merged, r.podMonitorSupported())
 	if err != nil {
 		return built, nil, fmt.Errorf("building monitoring component: %w", err)
+	}
+
+	built.ready = []*component.Component{built.cluster, built.contract}
+	if components.Archiving(merged) {
+		built.ready = append(built.ready, built.archive)
 	}
 
 	return built, systemIdentifier, nil

@@ -19,9 +19,13 @@ limitations under the License.
 
 package e2e
 
+import (
+	"github.com/konsole-is/camunda-operator/test/utils"
+)
+
 // The environment of one matrix entry: the file test/e2e/matrix/<minor>.env
-// that make test-e2e exports before it runs the suite. The image versions
-// are required, and the suite fails at start when one is unset. The label
+// that make test-e2e exports before it runs the suite. The versions are
+// required, and the suite fails at start when one is unset. The label
 // list is optional. It names the spec flows that run for the minor in the
 // syntax of utils.LabelFilter, and an empty or absent list runs them all.
 const (
@@ -36,7 +40,8 @@ const (
 	envLabels               = "E2E_LABELS"
 )
 
-// versionEnv is every image version variable of a matrix entry.
+// versionEnv is every version variable of a matrix entry: the images of the
+// Camunda minor, and the third-party operator releases the suite installs.
 var versionEnv = []string{
 	envCamundaVersion,
 	envConnectorsVersion,
@@ -46,6 +51,8 @@ var versionEnv = []string{
 	envConsoleVersion,
 	envWebModelerVersion,
 	envKeycloakVersion,
+	utils.EnvCNPGVersion,
+	utils.EnvBarmanPluginVersion,
 }
 
 // The label of each top-level container of the suite. E2E_LABELS selects
@@ -59,6 +66,7 @@ const (
 	labelCamundaOptimize      = "camundaoptimize"
 	labelElasticsearchCluster = "elasticsearchcluster"
 	labelDatabase             = "database"
+	labelDatabaseServer       = "databaseserver"
 	labelManagementKeycloak   = "management-keycloak"
 	labelManagementOIDC       = "management-oidc"
 )
@@ -73,6 +81,7 @@ var allLabels = []string{
 	labelCamundaOptimize,
 	labelElasticsearchCluster,
 	labelDatabase,
+	labelDatabaseServer,
 	labelManagementKeycloak,
 	labelManagementOIDC,
 }
