@@ -185,6 +185,26 @@ type DatabaseServerSpec struct {
 	Suspend bool `json:"suspend,omitempty"`
 }
 
+// The per-component conditions of a DatabaseServer. Ready is derived from
+// ClusterReady, ContractReady, and, on a server that asks for an archive,
+// ArchiveReady. MonitoringReady always stands on its own, and so does
+// ArchiveReady on a server with no archive.
+const (
+	// ConditionClusterReady reports whether the CloudNativePG cluster that the
+	// published contract points at is healthy.
+	ConditionClusterReady = "ClusterReady"
+	// ConditionArchiveReady reports whether the archive the server writes now
+	// can be recovered from, which it can once its first base backup
+	// completed. It reads Disabled on a server with no spec.archive.
+	ConditionArchiveReady = "ArchiveReady"
+	// ConditionContractReady reports whether the DatabaseServerConfig of the
+	// server is published and the superuser Secret behind it exists.
+	ConditionContractReady = "ContractReady"
+	// ConditionMonitoringReady reports whether the PodMonitor over the
+	// instance pods is applied. It reads Disabled when scraping is off.
+	ConditionMonitoringReady = "MonitoringReady"
+)
+
 // ReasonCNPGNotInstalled is the Ready reason of a DatabaseServer on a cluster
 // that did not serve the CloudNativePG Cluster kind when the operator
 // started. The operator decides at start whether it watches CloudNativePG

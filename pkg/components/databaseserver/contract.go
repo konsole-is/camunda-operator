@@ -72,7 +72,7 @@ func ContractComponent(
 
 	return component.NewComponentBuilder().
 		WithName("contract").
-		WithConditionType(ConditionContract).
+		WithConditionType(v1.ConditionContractReady).
 		WithResource(superuser, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
 		WithResource(contract).
 		Build()
