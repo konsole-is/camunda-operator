@@ -69,6 +69,10 @@ type resolvedSpec struct {
 	// already down did not resolve. The reconcile then stops and leaves the
 	// conditions alone: see preCheck.
 	holdForSuspension bool
+	// holdForRecovery says that the spec names another contract than the one
+	// the running recovery is answered on. The merged spec then keeps the
+	// contract of the recovery, and Ready reports why: see preCheck.
+	holdForRecovery *conditions.PreCheckFailure
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -224,6 +228,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	conditions.Stage(&server, conditions.Aggregate(&server, comps...))
 
+	// The hold is the reason the reader acts on, so it wins over whatever the
+	// components report while the recovery finishes.
+	if resolved.holdForRecovery != nil {
+		conditions.Stage(&server, conditions.Failed(&server, resolved.holdForRecovery))
+	}
+
 	if reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
@@ -285,6 +295,15 @@ func (r *DatabaseServerReconciler) preCheck(
 		}
 	}
 
+	// Not a failure: the server keeps publishing the contract that the running
+	// recovery is answered on, and it reports why. The recovery needs that
+	// contract republished to finish, so holding the components instead holds
+	// the recovery that the hold exists to protect.
+	if hold := recoveryHoldsContract(server, resolved.merged); hold != nil {
+		resolved.holdForRecovery = hold
+		resolved.merged.DatabaseServerConfig = server.Status.Recovery.Contract
+	}
+
 	platform, err := r.resolvePlatform(ctx, resolved.merged)
 	if err != nil {
 		return resolved, err
@@ -326,6 +345,34 @@ func (r *DatabaseServerReconciler) preCheck(
 	}
 
 	return resolved, nil
+}
+
+// recoveryHoldsContract reports that the spec names another contract than the
+// one the running recovery is answered on, or nil when it does not.
+//
+// A recovery is a question that one contract asked. Publishing another
+// contract while it runs leaves the cluster that is building with nobody to
+// answer, and whoever asked waits for ever. The server therefore keeps the
+// contract of the record until the request on it is answered.
+func recoveryHoldsContract(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+) *conditions.PreCheckFailure {
+	running := server.Status.Recovery
+	if running == nil || running.CompletedAt != nil ||
+		running.Contract == "" || running.Contract == merged.DatabaseServerConfig {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonInvalidReference,
+		Message: fmt.Sprintf(
+			"A rollback that %s asked for on DatabaseServerConfig %q is still running. Set "+
+				"spec.databaseServerConfig back to that name, or wait for the rollback to finish, "+
+				"before the server publishes another contract",
+			running.RequestedBy, running.Contract,
+		),
+	}
 }
 
 // instancesAreDown reports whether CloudNativePG has taken the instances of the
@@ -593,6 +640,11 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 // archives, and a server that archives again can recover from them. A server
 // that archives again opens a record of its own, so the window with no archive
 // stays outside every interval and no restore can ask for a point in it.
+//
+// A recovery closes the record of the cluster it replaces itself, at the
+// moment the contract moves. What is left here is the record of an archive
+// that another cluster of this server wrote and never closed, which only an
+// operator of an older version could leave behind.
 func reconcileArchiveHistory(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,

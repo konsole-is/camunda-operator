@@ -253,6 +253,7 @@ func RecoveryOutcomeFor(
 	now metav1.Time,
 ) v1.RecoveryOutcome {
 	return v1.RecoveryOutcome{
+		RequestID:   request.RequestID,
 		RequestedBy: request.RequestedBy,
 		TargetTime:  request.TargetTime,
 		CompletedAt: now,

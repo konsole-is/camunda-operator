@@ -200,6 +200,8 @@ func recoveryServer() (*v1.DatabaseServer, *v1.DatabaseServerPresetSpec, *Archiv
 		},
 	}
 	server.Status.Recovery = &v1.DatabaseServerRecoveryStatus{
+		RequestID:   "3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+		Contract:    "my-database-server",
 		RequestedBy: "my-cluster-ns/pitr-1",
 		TargetTime:  "2026-08-20T14:30:00Z",
 		Cluster:     RecoveryClusterName(server),
@@ -292,7 +294,11 @@ func TestRecoveryOutcomePatchStatesOneField(t *testing.T) {
 	t.Parallel()
 
 	outcome := RecoveryOutcomeFor(
-		v1.RecoveryRequest{RequestedBy: "camunda/pitr-1", TargetTime: "2026-08-20T14:30:00Z"},
+		v1.RecoveryRequest{
+			RequestID:   "3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+			RequestedBy: "camunda/pitr-1",
+			TargetTime:  "2026-08-20T14:30:00Z",
+		},
 		v1.RecoveryResultCompleted,
 		"",
 		atTime("2026-08-20T15:02:11Z"),
@@ -314,6 +320,7 @@ func TestRecoveryOutcomePatchStatesOneField(t *testing.T) {
 	assert.Equal(
 		t, map[string]any{
 			"lastRecovery": map[string]any{
+				"requestID":   "3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
 				"requestedBy": "camunda/pitr-1",
 				"targetTime":  "2026-08-20T14:30:00Z",
 				"completedAt": "2026-08-20T15:02:11Z",
