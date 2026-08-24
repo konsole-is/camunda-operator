@@ -1,0 +1,21 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: my-archive
+  namespace: my-server-ns
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://my-bucket/databaseserver/my-server-ns/my-server/
+    endpointURL: https://s3.eu-west-1.amazonaws.com
+    s3Credentials:
+      accessKeyId:
+        key: accessKeyId
+        name: my-archive
+      secretAccessKey:
+        key: secretAccessKey
+        name: my-archive
+    wal:
+      compression: gzip
+  retentionPolicy: 30d

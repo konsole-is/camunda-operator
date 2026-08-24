@@ -23,11 +23,15 @@ import (
 )
 
 const (
-	// cnpgCRDDir holds the CloudNativePG CRDs that this operator writes:
-	// Cluster, ScheduledBackup, and Backup. The published Go module
-	// github.com/cloudnative-pg/api carries the types alone, so the schemas
-	// are vendored instead of resolved from the module cache the way the ECK
-	// ones are.
+	// cnpgCRDDir holds the CloudNativePG CRDs the envtest suites need. This
+	// operator writes two of them, Cluster and ScheduledBackup. The third,
+	// Backup, is vendored because a ScheduledBackup produces Backup objects
+	// and the DatabaseServer controller reads them to decide whether the
+	// archive holds a base backup.
+	//
+	// The published Go module github.com/cloudnative-pg/api carries the types
+	// alone, so the schemas are vendored instead of resolved from the module
+	// cache the way the ECK ones are.
 	cnpgCRDDir = "internal/testenv/crds/cnpg"
 	// barmanCRDDir holds the ObjectStore CRD of the Barman Cloud plugin.
 	barmanCRDDir = "internal/testenv/crds/barmancloud"
@@ -65,7 +69,10 @@ func vendoredCRDPath(dir string) (string, error) {
 }
 
 // moduleRoot walks up from the working directory to the directory that holds
-// go.mod.
+// go.mod. GetProjectDir answers the same question by cutting "/test/e2e" off
+// the working directory, which only holds for a caller in that one package;
+// the envtest suites that read a vendored CRD run at any depth, so they need
+// this one.
 func moduleRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

@@ -83,7 +83,6 @@ const (
 )
 
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
 
 // ObjectStore is one object storage location that the Barman Cloud plugin
 // writes the WAL archive and the base backups of a Cluster to.
@@ -129,6 +128,10 @@ type ObjectStoreSpec struct {
 
 // BarmanObjectStoreConfiguration is the barman-cloud configuration of one
 // object storage location.
+//
+// It carries no server name. The CRD forbids the serverName field of the
+// upstream barman-cloud configuration, and the Cluster names its archive
+// directory through plugins[].parameters.serverName instead.
 // +kubebuilder:object:generate=true
 type BarmanObjectStoreConfiguration struct {
 	// GoogleCredentials authenticate against Google Cloud Storage.
@@ -151,10 +154,6 @@ type BarmanObjectStoreConfiguration struct {
 	// DestinationPath is the bucket URL that holds the archive, such as
 	// "s3://bucket/path".
 	DestinationPath string `json:"destinationPath"`
-	// ServerName is the directory of the archive inside DestinationPath. An
-	// empty name uses the name of the Cluster.
-	// +optional
-	ServerName string `json:"serverName,omitempty"`
 	// Wal shapes the upload of the WAL files.
 	// +optional
 	Wal *WalBackupConfiguration `json:"wal,omitempty"`
