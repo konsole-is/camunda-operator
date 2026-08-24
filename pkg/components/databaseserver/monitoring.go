@@ -66,7 +66,7 @@ func MonitoringComponent(
 	// removes every instance, and a delete against a missing kind fails.
 	return component.NewComponentBuilder().
 		WithName("monitoring").
-		WithConditionType(ConditionMonitoring).
+		WithConditionType(v1.ConditionMonitoringReady).
 		WithFeatureGate(feature.NewBooleanGate(MonitoringEnabled(merged))).
 		IncludeWhen(podMonitorSupported, func() component.Resource { return monitor }).
 		Suspend(merged.Suspend).

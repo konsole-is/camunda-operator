@@ -171,7 +171,7 @@ func ArchiveComponent(
 
 	return component.NewComponentBuilder().
 		WithName("archive").
-		WithConditionType(ConditionArchive).
+		WithConditionType(v1.ConditionArchiveReady).
 		WithFeatureGate(feature.NewBooleanGate(Archiving(merged))).
 		WithResource(settings, component.GatedBy(feature.NewBooleanGate(len(archiveSecretData(resolved)) > 0))).
 		WithResource(store).

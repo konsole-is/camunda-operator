@@ -250,7 +250,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// it, and this controller watches only what it owns itself. Every other
 	// condition of this CR is backed by a watch. A running recovery waits on
 	// that same Secret, one cluster further on.
-	if recovering || !meta.IsStatusConditionTrue(server.Status.Conditions, components.ConditionContract) {
+	if recovering || !meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
@@ -411,7 +411,7 @@ func recoveryHoldsSpec(
 // has confirmed the hibernation, so a server that asked for a suspension and
 // has not reached it yet is still running.
 func instancesAreDown(server *v1.DatabaseServer) bool {
-	condition := meta.FindStatusCondition(server.Status.Conditions, components.ConditionCluster)
+	condition := meta.FindStatusCondition(server.Status.Conditions, v1.ConditionClusterReady)
 
 	return condition != nil && condition.Reason == string(component.Suspended)
 }
@@ -599,12 +599,12 @@ func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.Databas
 		return
 	}
 
-	condition := meta.FindStatusCondition(server.Status.Conditions, components.ConditionArchive)
+	condition := meta.FindStatusCondition(server.Status.Conditions, v1.ConditionArchiveReady)
 	if condition == nil || condition.Reason != string(component.Disabled) {
 		return
 	}
 
-	meta.RemoveStatusCondition(&server.Status.Conditions, components.ConditionArchive)
+	meta.RemoveStatusCondition(&server.Status.Conditions, v1.ConditionArchiveReady)
 }
 
 // buildComponents builds the four components in dependency order: cluster,

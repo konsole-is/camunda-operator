@@ -88,6 +88,11 @@ type DatabaseServerConfigReconciler struct {
 // new. The status update is then a no-op on the server and wakes no watch.
 // The requeue sets the probe cadence, not a status-write loop.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// Cached, not live. The freshness of the last probe is the one thing this
+	// controller reads back from its own status write, and a stale copy only
+	// costs a probe it could have skipped. Nothing terminal hangs on it, a
+	// lost status write is taken again on the probe timer, and the controller
+	// records no event that a second look repeats.
 	var cfg v1.DatabaseServerConfig
 	if err := r.Get(ctx, req.NamespacedName, &cfg); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)

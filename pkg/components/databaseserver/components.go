@@ -40,17 +40,6 @@ import (
 )
 
 const (
-	// ConditionCluster is the condition type of the cluster component.
-	ConditionCluster = "ClusterReady"
-	// ConditionArchive is the condition type of the archive component.
-	ConditionArchive = "ArchiveReady"
-	// ConditionContract is the condition type of the contract component.
-	ConditionContract = "ContractReady"
-	// ConditionMonitoring is the condition type of the monitoring component.
-	ConditionMonitoring = "MonitoringReady"
-)
-
-const (
 	// BarmanPluginName is the CNPG-I plugin that writes the archive. The
 	// in-tree spec.backup.barmanObjectStore is deprecated and goes away in
 	// CloudNativePG 1.31, so the operator never uses it.
@@ -154,7 +143,7 @@ func ClusterComponent(
 
 	comp, err := component.NewComponentBuilder().
 		WithName("cluster").
-		WithConditionType(ConditionCluster).
+		WithConditionType(v1.ConditionClusterReady).
 		WithResource(postgres).
 		Suspend(merged.Suspend).
 		Build()

@@ -118,6 +118,11 @@ type DatabaseReconciler struct {
 // stage conditions on the in-memory Database, and the deferred FlushStatus persists
 // them together.
 func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+	// Cached, not live. No step here is keyed on the last status write of
+	// this controller: the collision key is derived again from the identity
+	// the contract reports, and the bootstrap converges what the server
+	// holds. A status write this reconcile loses is written again on the next
+	// look, and the controller records no event that a second look repeats.
 	var database v1.Database
 	if err := r.Get(ctx, req.NamespacedName, &database); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)

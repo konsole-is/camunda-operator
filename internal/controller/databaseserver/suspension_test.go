@@ -24,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 )
 
 // The tolerance that holds a reconcile when the bucket of a suspended server
@@ -47,21 +46,21 @@ func TestInstancesAreDown(t *testing.T) {
 		{
 			name: "running and healthy",
 			condition: &metav1.Condition{
-				Type: components.ConditionCluster, Status: metav1.ConditionTrue,
+				Type: v1.ConditionClusterReady, Status: metav1.ConditionTrue,
 				Reason: string(component.Healthy),
 			},
 		},
 		{
 			name: "asked for the suspension, instances still up",
 			condition: &metav1.Condition{
-				Type: components.ConditionCluster, Status: metav1.ConditionFalse,
+				Type: v1.ConditionClusterReady, Status: metav1.ConditionFalse,
 				Reason: string(component.Suspending),
 			},
 		},
 		{
 			name: "instances down",
 			condition: &metav1.Condition{
-				Type: components.ConditionCluster, Status: metav1.ConditionTrue,
+				Type: v1.ConditionClusterReady, Status: metav1.ConditionTrue,
 				Reason: string(component.Suspended),
 			},
 			want: true,

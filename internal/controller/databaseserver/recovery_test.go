@@ -520,7 +520,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 		server := serverInNamespace(nil)
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000001")
-		expectCondition(server, components.ConditionContract, metav1.ConditionTrue)
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
 
 		// A server without an archive publishes pitr.recovery: external. A
 		// request on that contract was written against a server that never
@@ -1085,11 +1085,11 @@ var _ = Describe("DatabaseServer recovery", func() {
 		})
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000001")
-		expectCondition(server, components.ConditionContract, metav1.ConditionTrue)
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
 
 		suspend(server)
 		hibernate(server)
-		expectCondition(server, components.ConditionCluster, metav1.ConditionTrue)
+		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
 
 		// A suspended server whose bucket stops resolving holds its whole
 		// reconcile. The answer to a request has to come out from in front of

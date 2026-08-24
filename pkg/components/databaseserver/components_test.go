@@ -339,6 +339,30 @@ func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 	)
 }
 
+// The base backup schedule is the one part of the declared state that a
+// suspension moves. The hibernation of the cluster is a runtime mutation the
+// wrapper writes when the framework suspends the component, so the annotation
+// this golden holds is the off value that every applied Cluster carries.
+//
+// TestSuspensionKeepsTheDeclaredState guards the rest of the rendering against
+// a future field that moves with the suspension. This case is what a reader
+// opens to see what a suspended server asks for.
+func TestDatabaseServerGoldenSuspended(t *testing.T) {
+	t.Parallel()
+
+	server := goldenRealisticDatabaseServer()
+	server.Spec.Archive = archiveSpec()
+	server.Spec.Suspend = true
+	archive := &ArchiveStorage{
+		Config: archiveBucket(v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: "arn:aws:iam::123456789012:role/camunda"},
+		}),
+	}
+
+	assertDatabaseServerGoldens(t, "suspended", server, MergePreset(server.Spec, nil), archive)
+}
+
 // renderComponent returns the YAML of comp, the same bytes a golden holds.
 func renderComponent(t *testing.T, comp *component.Component) string {
 	t.Helper()

@@ -113,7 +113,9 @@ func recoveryRequest(pitr *v1.PointInTimeRestore) v1.RecoveryRequest {
 	return v1.RecoveryRequest{
 		RequestID:   string(pitr.UID),
 		RequestedBy: pitr.Namespace + "/" + pitr.Name,
-		TargetTime:  pitr.Spec.Timestamp.UTC().Format(time.RFC3339Nano),
+		// RFC3339Nano keeps the fraction that the restore asked for on the
+		// wire. A time truncated to the second renders the same as RFC 3339.
+		TargetTime: pitr.Spec.Timestamp.UTC().Format(time.RFC3339Nano),
 	}
 }
 
