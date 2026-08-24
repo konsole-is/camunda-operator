@@ -74,7 +74,7 @@ var _ = Describe("DatabaseServer", Ordered, Label(labelDatabaseServer), func() {
 			Spec: v1.DatabaseServerSpec{
 				Version:              dsVersion,
 				Instances:            new(int32(1)),
-				Resources:            requests("500m", "512Mi"),
+				Resources:            requests("250m", "512Mi"),
 				StorageSize:          new(resource.MustParse("2Gi")),
 				DatabaseServerConfig: dsServer,
 				Archive: &v1.DatabaseServerArchiveSpec{
