@@ -28,9 +28,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/cnpgcluster"
 )
 
@@ -65,12 +67,27 @@ func RecoveryClusterName(server *v1.DatabaseServer) string {
 		archives = len(server.Status.Archive.History)
 	}
 
-	name := server.Name + recoveryNameSeparator + strconv.Itoa(archives)
+	name := recoveryName(server.Name, archives)
 	if name == ClusterName(server) {
-		return server.Name + recoveryNameSeparator + strconv.Itoa(archives+1)
+		return recoveryName(server.Name, archives+1)
 	}
 
 	return name
+}
+
+// recoveryName renders the name of the n-th recovery of a server, bounded so
+// that the Services CloudNativePG derives from it are still DNS labels.
+//
+// CloudNativePG appends -rw, -ro and -r to the cluster name, and a Service
+// name is a DNS label of 63 characters. The suffix of the recovery and the
+// longest of those are taken off the bound before the name of the server is
+// shortened, the same way every other derived name in this operator is
+// shortened: the head of the name, and a hash of the whole of it.
+func recoveryName(server string, n int) string {
+	suffix := recoveryNameSeparator + strconv.Itoa(n)
+	room := validation.DNS1035LabelMaxLength - len(suffix) - len(readWriteServiceSuffix)
+
+	return labels.BoundedName(server, room) + suffix
 }
 
 // SelectArchive returns the archive of history that a recovery to target

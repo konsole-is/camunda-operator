@@ -228,6 +228,17 @@ type DatabaseServerArchiveStatus struct {
 	History []ArchiveRecord `json:"history,omitempty"`
 }
 
+// RecoveryArchiveRef names the archive that a recovery reads: the directory in
+// the bucket, and the bucket contract that holds it.
+type RecoveryArchiveRef struct {
+	// ServerName is the archive directory, equal to the name of the
+	// CloudNativePG cluster that wrote it.
+	ServerName string `json:"serverName"`
+	// ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
+	// archive lives in.
+	ObjectStorageRef string `json:"objectStorageRef"`
+}
+
 // DatabaseServerRecoveryStatus is the recovery request that the server works
 // on now, or the last one it answered. It is what makes a recovery resumable:
 // the steps read it to tell which cluster they build and whether the request
@@ -249,9 +260,21 @@ type DatabaseServerRecoveryStatus struct {
 	// TargetTime is the targetTime of the request, as the contract carries it.
 	TargetTime string `json:"targetTime"`
 	// Cluster is the CloudNativePG cluster that the recovery builds. It is
-	// empty for a request that was refused before one was built.
+	// empty for a request that the server refused, whether or not it had built
+	// one by then.
 	// +optional
 	Cluster string `json:"cluster,omitempty"`
+	// PreviousCluster is the cluster that the contract pointed at before the
+	// recovery moved it. A recovery that fails after the move puts the
+	// contract back on it, because that cluster still holds the data.
+	// +optional
+	PreviousCluster string `json:"previousCluster,omitempty"`
+	// Archive is the archive that the recovery reads. It is recorded before
+	// the recovery builds anything and read on every look after that, so a
+	// spec that names another bucket in the middle does not move a recovery
+	// that is already running.
+	// +optional
+	Archive *RecoveryArchiveRef `json:"archive,omitempty"`
 	// Result is the result the server published for the request. It is unset
 	// while the recovery runs.
 	// +optional

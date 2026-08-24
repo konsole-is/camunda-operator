@@ -80,7 +80,7 @@ func ContractComponent(
 
 // pitrCapability renders the point-in-time-recovery capability the server
 // publishes. A server with an archive declares the retention its bucket
-// enforces and that the operator rolls it back on request; a server without
+// enforces, and that the operator rolls it back on request. A server without
 // one declares that no restore can reach it, and that nobody rolls it back.
 func pitrCapability(merged v1.DatabaseServerSpec) *v1.PITRCapability {
 	if merged.Archive == nil {

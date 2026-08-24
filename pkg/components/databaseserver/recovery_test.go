@@ -18,6 +18,7 @@ package databaseserver
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -185,6 +187,33 @@ func TestRecoveryClusterName(t *testing.T) {
 			assert.Equal(t, tt.want, RecoveryClusterName(server))
 		})
 	}
+}
+
+// The Services that CloudNativePG derives from a cluster name are DNS labels,
+// so the name of a recovery has to leave room for the longest suffix it adds.
+func TestRecoveryClusterNameFitsAService(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("a", 60)
+	server := &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{Name: long, Namespace: "my-cluster-ns"},
+		Status: v1.DatabaseServerStatus{
+			Cluster: long,
+			Archive: &v1.DatabaseServerArchiveStatus{
+				History: []v1.ArchiveRecord{archiveAt(long, "2026-08-01T00:00:00Z", nil)},
+			},
+		},
+	}
+
+	name := RecoveryClusterName(server)
+	assert.LessOrEqual(t, len(name+"-rw"), validation.DNS1035LabelMaxLength)
+	assert.Empty(t, validation.IsDNS1035Label(name))
+	assert.True(t, strings.HasSuffix(name, "-r1"), name)
+
+	// The bound is on the name of the server, so the number of the recovery
+	// survives it and two recoveries of one server never share a name.
+	server.Status.Cluster = name
+	assert.NotEqual(t, name, RecoveryClusterName(server))
 }
 
 // recoveryServer is the server of the recovery cases: it archives to a bucket

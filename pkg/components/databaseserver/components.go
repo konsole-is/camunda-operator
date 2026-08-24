@@ -24,6 +24,7 @@ package databaseserver
 
 import (
 	"maps"
+	"strings"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -101,6 +102,21 @@ func ClusterName(server *v1.DatabaseServer) string {
 // host that the published contract carries.
 func ReadWriteHost(server *v1.DatabaseServer) string {
 	return ClusterName(server) + readWriteServiceSuffix + "." + server.Namespace + ".svc"
+}
+
+// ClusterFromReadWriteHost returns the CloudNativePG cluster that host names,
+// or the empty string when host is not an address of this server. It is the
+// inverse of ReadWriteHost: the published contract is the record of which
+// cluster the server runs from, so a server whose status was lost reads it
+// back from the contract it published.
+func ClusterFromReadWriteHost(server *v1.DatabaseServer, host string) string {
+	suffix := readWriteServiceSuffix + "." + server.Namespace + ".svc"
+	name, found := strings.CutSuffix(host, suffix)
+	if !found {
+		return ""
+	}
+
+	return name
 }
 
 // SuperuserSecretName returns the Secret that CloudNativePG writes the
