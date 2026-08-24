@@ -54,34 +54,3 @@ var versionEnv = []string{
 	utils.EnvCNPGVersion,
 	utils.EnvBarmanPluginVersion,
 }
-
-// The label of each top-level container of the suite. E2E_LABELS selects
-// flows by these names. A container without one never runs under a label
-// filter, which the report check of the suite catches.
-const (
-	labelManager              = "manager"
-	labelCamundaCluster       = "camundacluster"
-	labelCamundaClusterRDBMS  = "camundacluster-rdbms"
-	labelCamundaClusterOIDC   = "camundacluster-oidc"
-	labelCamundaOptimize      = "camundaoptimize"
-	labelElasticsearchCluster = "elasticsearchcluster"
-	labelDatabase             = "database"
-	labelDatabaseServer       = "databaseserver"
-	labelManagementKeycloak   = "management-keycloak"
-	labelManagementOIDC       = "management-oidc"
-)
-
-// allLabels is every label above. An E2E_LABELS entry outside it is an
-// error.
-var allLabels = []string{
-	labelManager,
-	labelCamundaCluster,
-	labelCamundaClusterRDBMS,
-	labelCamundaClusterOIDC,
-	labelCamundaOptimize,
-	labelElasticsearchCluster,
-	labelDatabase,
-	labelDatabaseServer,
-	labelManagementKeycloak,
-	labelManagementOIDC,
-}

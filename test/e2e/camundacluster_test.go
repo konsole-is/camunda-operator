@@ -158,7 +158,7 @@ func basicPlatform(name string) *v1.CamundaPlatformConfig {
 	}
 }
 
-var _ = Describe("CamundaCluster", Ordered, Label(labelCamundaCluster), func() {
+var _ = Describe("CamundaCluster", Ordered, Label(utils.LabelCamundaCluster), func() {
 	var (
 		elasticsearch = &v1.ElasticsearchCluster{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "ElasticsearchCluster"},
@@ -497,7 +497,7 @@ var _ = Describe("CamundaCluster", Ordered, Label(labelCamundaCluster), func() {
 	})
 })
 
-var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(labelCamundaClusterRDBMS), func() {
+var _ = Describe("CamundaCluster on RDBMS", Ordered, Label(utils.LabelCamundaClusterRDBMS), func() {
 	var (
 		server = &v1.DatabaseServerConfig{
 			TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "DatabaseServerConfig"},

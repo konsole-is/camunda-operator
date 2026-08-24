@@ -77,7 +77,7 @@ func TestE2E(t *testing.T) {
 	// matrix entry.
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	if suiteConfig.LabelFilter == "" {
-		filter, err := utils.LabelFilter(os.Getenv(envLabels), allLabels)
+		filter, err := utils.LabelFilter(os.Getenv(envLabels), utils.AllLabels)
 		require.NoError(t, err, envLabels)
 		suiteConfig.LabelFilter = filter
 	}

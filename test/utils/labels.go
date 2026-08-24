@@ -22,6 +22,36 @@ import (
 	"strings"
 )
 
+// The Ginkgo label of each top-level container of the e2e suite. A label
+// filter selects flows by these names, and every container carries one.
+const (
+	LabelManager              = "manager"
+	LabelCamundaCluster       = "camundacluster"
+	LabelCamundaClusterRDBMS  = "camundacluster-rdbms"
+	LabelCamundaClusterOIDC   = "camundacluster-oidc"
+	LabelCamundaOptimize      = "camundaoptimize"
+	LabelElasticsearchCluster = "elasticsearchcluster"
+	LabelDatabase             = "database"
+	LabelDatabaseServer       = "databaseserver"
+	LabelManagementKeycloak   = "management-keycloak"
+	LabelManagementOIDC       = "management-oidc"
+)
+
+// AllLabels is every label above. A name outside it names no flow, and both
+// the label list of a matrix entry and the e2e workflow are read against it.
+var AllLabels = []string{
+	LabelManager,
+	LabelCamundaCluster,
+	LabelCamundaClusterRDBMS,
+	LabelCamundaClusterOIDC,
+	LabelCamundaOptimize,
+	LabelElasticsearchCluster,
+	LabelDatabase,
+	LabelDatabaseServer,
+	LabelManagementKeycloak,
+	LabelManagementOIDC,
+}
+
 // LabelFilter turns a comma-separated list of Ginkgo labels into a label
 // filter. A plain entry selects the specs of its label, a "!" prefix excludes
 // them, and an empty list selects every spec. An exclusion applies on top of
