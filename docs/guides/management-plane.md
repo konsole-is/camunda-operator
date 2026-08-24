@@ -317,7 +317,7 @@ spec:
 
 Route both URLs. `externalUrl` goes to `my-management-web-modeler-restapi` and `websocketsExternalUrl` to `my-management-web-modeler-websockets`. A browser opens both.
 
-The mode examples above set `identity.admin.email` already. Web Modeler is the reason: in the two Keycloak modes it needs an address for every person who signs in.
+The mode examples above set `identity.admin.email` already. Web Modeler is the reason: in the two Keycloak modes it needs an address for every person who signs in. In these two modes the API server refuses a `spec.webModeler` block without that address.
 
 In the `oidc` mode, Web Modeler needs two clients on the platform config: `webModeler` for the user interface, and `webModelerApi` for the API behind it. Declare both before you deploy it. See [The clients of the management plane](../crds/camundaplatformconfig.md#the-clients-of-the-management-plane).
 
