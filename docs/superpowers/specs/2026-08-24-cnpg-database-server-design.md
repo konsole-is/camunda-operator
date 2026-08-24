@@ -296,15 +296,15 @@ spec:
   storageSize: 20Gi                # may not shrink (CEL)
   storageClassName: ""
   walStorageSize: 5Gi              # optional separate WAL volume
-  serviceAccount: {}
+  serviceAccount:
+    annotations: {}                # CloudNativePG names the ServiceAccount; only annotations pass through
   scheduling: {}
   podLabels: {}
   podAnnotations: {}
   monitoring:
     podMonitor:
       enabled: true
-  persistentVolumeClaimRetentionPolicy:
-    whenDeleted: Retain
+  platformConfigRef: platform      # CamundaPlatformConfig, for the image repository
   databaseServerConfig: camunda    # name of the contract this server publishes, required
   archive:                         # optional; without it the contract says pitr.enabled=false
     objectStorageRef: backups      # ObjectStorageConfig, cluster-scoped
@@ -346,7 +346,7 @@ Conditions and components, one component per condition:
 | --- | --- | --- |
 | `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy |
 | `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed |
-| `ContractReady` | `DatabaseServerConfig` | the contract exists and its own Ready is True |
+| `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract) |
 | `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
 
 `Ready` on the owner aggregates them. `ReasonCNPGNotInstalled` and
