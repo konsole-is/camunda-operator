@@ -241,7 +241,7 @@ func (r *Reconciler) removePingCollisions(
 func managerNames(managers []string) string {
 	switch len(managers) {
 	case 0:
-		return "Another field manager"
+		return "A writer that metadata.managedFields does not name"
 	case 1:
 		return fmt.Sprintf("The field manager %q", managers[0])
 	default:
