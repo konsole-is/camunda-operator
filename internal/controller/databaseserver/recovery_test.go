@@ -710,23 +710,21 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("finishing the recovery on the contract that asked for it")
 		recoverySucceeds(server)
-		Eventually(func(g Gomega) {
-			recovery := reconciledServer(server).Status.Recovery
-			g.Expect(recovery).NotTo(BeNil())
-			g.Expect(recovery.Contract).To(Equal("camunda"))
-			g.Expect(recovery.Result).To(Equal(v1.RecoveryResultCompleted))
-			g.Expect(recovery.CompletedAt).NotTo(BeNil())
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		By("publishing the new name")
+		Eventually(func() error {
+			return k8sClient.Get(ctx, renamedKey, &v1.DatabaseServerConfig{})
 		}, timeout, interval).Should(Succeed())
 
-		// The answer goes on the contract that asked, and the rename takes
-		// effect on the look after it: the new name is published and the name
-		// before it goes. A consumer that pinned the old contract sees it
-		// disappear and ends its own restore.
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, renamedKey, &v1.DatabaseServerConfig{})).To(Succeed())
-			g.Expect(k8sClient.Get(ctx, contractKey(server), &v1.DatabaseServerConfig{})).
-				To(MatchError(apierrors.IsNotFound, "not found"))
-		}, timeout, interval).Should(Succeed())
+		// The contract that asked is the only place the answer is published,
+		// so the rename leaves it where it is. Whoever asked reads the result
+		// there, however long they take to look.
+		Consistently(func(g Gomega) {
+			contract := publishedContract(server)
+			g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
+			g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(v1.RecoveryResultCompleted))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	It("leaves a cluster it does not own where it is when it cleans up", func() {

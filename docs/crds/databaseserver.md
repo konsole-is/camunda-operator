@@ -36,7 +36,7 @@ The published contract carries everything a consumer needs. Its `host` is the re
 
 The contract appears only after that Secret exists. Until then `ContractReady` is `False` and the message names the Secret. This keeps a consumer from reading credentials that are not there yet.
 
-Change `spec.databaseServerConfig` and the server publishes the new name and removes the contract of the name before it. A `Database` that still names the old one reports `Ready` `False` with reason `InvalidReference`. Point it at the new name, or rename the contract back. A rollback holds the name while it runs: see [Recovery](#recovery).
+Change `spec.databaseServerConfig` and the server publishes the new name and removes the contract of the name before it. A `Database` that still names the old one reports `Ready` `False` with reason `InvalidReference`. Point it at the new name, or rename the contract back. Two contracts of the server outlive a rename: one that carries the answer of the last rollback, and one that a rollback still runs on. See [Recovery](#recovery).
 
 Give the contract to a `Database` in the same namespace:
 
@@ -150,7 +150,9 @@ The operator points the contract at the new cluster once CloudNativePG reports i
 
 The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends when the contract moves, and the new one starts at its first base backup, so no restore can reach a point between the two.
 
-The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked. Once the answer is out, it publishes the new name and removes the contract that asked. Read the answer before you rename, or wait for the rollback to finish first.
+The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked. Once the answer is out, it publishes the new name as well.
+
+The contract that asked stays. It is the only place the answer is published, so whoever asked can still read `spec.pitr.lastRecovery` on it. It goes when the next rollback answers on another contract.
 
 **CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. Run one server per cluster.
 

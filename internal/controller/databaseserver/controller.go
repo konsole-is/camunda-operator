@@ -854,20 +854,25 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 // that this controller never reads again. That restore waits for an answer
 // that never comes.
 //
-// A recovery that is still unanswered keeps the name: the answer is published
-// on the contract that the record names, whatever the spec says by then, and a
-// sweep here would take away the object that carries the request.
+// The contract that status.recovery names is never swept. It carries the
+// request while the recovery runs, and it carries the answer afterwards:
+// spec.pitr.lastRecovery on that object is the only place a PointInTimeRestore
+// reads the result from. Sweeping it the moment the answer lands fails a
+// rollback that succeeded. It goes when the next recovery answers on another
+// contract, and status.recovery names that one instead.
 //
-// The list is cached: the contract is owned and watched. The delete names the
-// object it read by uid, so a cached entry of an object that has gone deletes
-// nothing.
+// The list is cached: the contract is owned and watched.
 func (r *DatabaseServerReconciler) removeSupersededContracts(
 	ctx context.Context,
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 ) error {
-	if running := server.Status.Recovery; running != nil && running.CompletedAt == nil {
-		return nil
+	answering := ""
+	if running := server.Status.Recovery; running != nil {
+		if running.CompletedAt == nil {
+			return nil
+		}
+		answering = running.Contract
 	}
 
 	var contracts v1.DatabaseServerConfigList
@@ -881,7 +886,8 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 
 	for i := range contracts.Items {
 		superseded := &contracts.Items[i]
-		if superseded.Name == merged.DatabaseServerConfig || !ownedByServer(server, superseded) {
+		if superseded.Name == merged.DatabaseServerConfig || superseded.Name == answering ||
+			!ownedByServer(server, superseded) {
 			continue
 		}
 		if err := r.deleteOwned(ctx, superseded); err != nil {
