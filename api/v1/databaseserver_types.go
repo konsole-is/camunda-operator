@@ -120,6 +120,13 @@ type DatabaseServerSpec struct {
 	// as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
 	// and later; the floor is enforced by the controller on the
 	// preset-merged result. Required unless the resolved preset provides it.
+	//
+	// The major of a running server cannot change. A value that names another
+	// major, higher or lower, is refused on the Ready condition with reason
+	// VersionChangeRefused, and the operator applies nothing while the
+	// refusal stands. A preset can raise it the same way and is refused the
+	// same way. To run another major, create a server on it and move the data
+	// over.
 	// +kubebuilder:validation:Pattern=`^\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -218,6 +225,13 @@ const ReasonCNPGNotInstalled = "CNPGNotInstalled"
 // the Barman Cloud plugin when the operator started. A server without an
 // archive block is unaffected.
 const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
+
+// ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
+// merged version names a PostgreSQL major other than the one its data
+// directory runs. The operator applies nothing while the refusal stands, so
+// the server keeps the major it has. A major change needs a new server, and
+// there is no annotation that lets it through.
+const ReasonVersionChangeRefused = "VersionChangeRefused"
 
 // ArchiveRecord is one continuous archive that a server has written. A
 // recovery replays it from a base backup up to the requested point, so only a

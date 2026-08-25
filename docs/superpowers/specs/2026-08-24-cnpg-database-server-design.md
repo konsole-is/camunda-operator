@@ -606,8 +606,13 @@ be proved:
 - The endpoint changes on every recovery. `CamundaCluster` rolls its pods; the docs state that a
   point-in-time restore restarts the orchestration cluster, which the existing suspend already
   implies.
-- Major version upgrades of PostgreSQL are the user's operation. Raising `spec.version` across a
-  major is refused until a later epic defines the path.
+- Major version upgrades of PostgreSQL are the user's operation. A `spec.version` whose major is
+  not the one `status.pgDataImageInfo.majorVersion` reports on the applied cluster is refused, in
+  either direction, until a later epic defines the path. The controller stages `Ready=False` with
+  reason `VersionChangeRefused`, records one Warning event of that name, and applies nothing that
+  reconcile, so the cluster keeps its image. There is no annotation escape hatch: CloudNativePG
+  performs an offline in-place `pg_upgrade`, PITR does not cross a major, and the Barman plugin
+  needs a new `serverName` per major, which the operator does not give it.
 - CloudNativePG serves its own `Database` kind in `postgresql.cnpg.io`. The docs name the group
   whenever both could be meant.
 

@@ -210,6 +210,18 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// Before anything renders. A refused major change applies nothing, so the
+	// cluster keeps the image it runs and the data directory is left alone.
+	refused, err := r.refuseMajorVersionChange(ctx, &server, resolved.merged)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if refused != nil {
+		r.recordRefusedVersionChange(&server, refused)
+		conditions.Stage(&server, conditions.Failed(&server, refused))
+		return ctrl.Result{}, nil
+	}
+
 	// Read once and used twice: the clamp below, and status.Volumes further
 	// down. Nothing this reconcile applies creates a claim, so the second
 	// reader loses nothing by taking the same answer.

@@ -213,6 +213,28 @@ spec:
   databaseServerConfig: my-db-server
 ```
 
+## The PostgreSQL version
+
+`spec.version` is a bare PostgreSQL major, such as `17`. It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and later.
+
+The major of a running server cannot change. A `spec.version` that names another major, higher or lower, is refused. `Ready` goes `False` with reason `VersionChangeRefused`, the server records a Warning event of the same name, and the operator applies nothing. The instances keep the major they run on.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  name: my-db
+  namespace: my-cluster-ns
+spec:
+  # A bare major. It cannot change once the server runs.
+  version: "17"
+  # ... the rest of your server
+```
+
+A preset carries the version too, so a new `spec.server.version` on a [DatabaseServerPreset](databaseserverpreset.md) reaches every server that reads it. Set the version back, on the server or on the preset, and the refusal clears. No annotation lets the change through.
+
+To run a later major, create a `DatabaseServer` on that version and move the data to it. A point-in-time restore is no help here: only the major that wrote an archive can read it back.
+
 ## Images
 
 The PostgreSQL image is `ghcr.io/cloudnative-pg/postgresql:<version>` by default. `spec.platformConfigRef` names a [CamundaPlatformConfig](camundaplatformconfig.md), and the image then comes from that config. An air-gapped cluster needs this.
@@ -292,6 +314,7 @@ status:
 | `Ready` | `BarmanPluginNotInstalled` | The server asks for an archive, and the Kubernetes cluster did not serve the Barman Cloud plugin when the operator started. | Install the plugin, then restart the operator. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec lacks a field. The message names it. | Create the resource, or fix the spec. |
 | `Ready` | `MissingSecret` | The credentials Secret of the bucket is missing or lacks a key. The message names it. | Create the Secret, or fix its keys. |
+| `Ready` | `VersionChangeRefused` | `version` names a PostgreSQL major other than the one the server runs. The message names both. | Set the version back to the major the server runs. See [The PostgreSQL version](#the-postgresql-version). |
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is converging the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance the spec asks for is ready. | Nothing. |
 | `ClusterReady` | `AliveFailing` | CloudNativePG reports a phase it cannot leave on its own. The message names the phase. | Read the CloudNativePG cluster for the reason. |
@@ -325,6 +348,7 @@ spec:
   # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
   platformConfigRef: "my-platform-config"
   # string. Required, unless the preset provides it. PostgreSQL major version, 14 or later.
+  # It cannot move to another major once the server runs.
   version: "17"
   # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
   instances: 3
@@ -384,6 +408,7 @@ spec:
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
 - `storageSize` and `walStorageSize` cannot shrink. Admission rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
+- `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
 - `archive.retentionPeriodDays` must be at least 1.
 - `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.
 

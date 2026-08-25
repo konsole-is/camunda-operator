@@ -17,6 +17,8 @@ limitations under the License.
 package databaseserver
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
@@ -159,7 +161,26 @@ func makeClusterHealthy(server *v1.DatabaseServer, systemID string) {
 	cluster.Status.Phase = cnpgv1.PhaseHealthy
 	cluster.Status.ReadyInstances = cluster.Spec.Instances
 	cluster.Status.SystemID = systemID
+	cluster.Status.PGDataImageInfo = &cnpgv1.ImageInfo{
+		Image:        cluster.Spec.ImageName,
+		MajorVersion: imageMajorVersion(cluster.Spec.ImageName),
+	}
 	Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+}
+
+// imageMajorVersion reads the PostgreSQL major off the tag of a CloudNativePG
+// image, which is what the operator reports for the data directory the
+// instances run on.
+func imageMajorVersion(image string) int {
+	GinkgoHelper()
+
+	_, tag, found := strings.Cut(image, ":")
+	Expect(found).To(BeTrue(), image)
+
+	major, err := strconv.Atoi(tag)
+	Expect(err).NotTo(HaveOccurred(), image)
+
+	return major
 }
 
 // writeSuperuserSecret creates the Secret that CloudNativePG writes for the
@@ -995,6 +1016,47 @@ var _ = Describe("DatabaseServer controller", func() {
 		ready := conditionOf(server, v1.ConditionReady)
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+	})
+
+	// Admission cannot catch this either: a preset can raise the version, and
+	// the major the data directory runs is on the CloudNativePG cluster rather
+	// than on the spec.
+	It("refuses a major version change and keeps the image the server runs", func() {
+		server, preset := serverOnPreset("10Gi", "")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000014")
+
+		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.Version = "18"
+		})
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+			g.Expect(ready.Message).To(ContainSubstring("18"))
+			g.Expect(ready.Message).To(ContainSubstring("17"))
+		}, timeout, interval).Should(Succeed())
+
+		// CloudNativePG stops every instance to upgrade the data directory in
+		// place, so the refused server must apply nothing at all.
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		var recorded corev1.EventList
+		Expect(k8sClient.List(ctx, &recorded, client.InNamespace(server.Namespace))).To(Succeed())
+		Expect(recorded.Items).To(ContainElement(SatisfyAll(
+			HaveField("Reason", v1.ReasonVersionChangeRefused),
+			HaveField("InvolvedObject.Name", server.Name),
+			HaveField("Type", corev1.EventTypeWarning),
+		)))
 	})
 
 	It("reports InvalidReference for a bucket that does not exist", func() {

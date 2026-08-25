@@ -39,6 +39,8 @@ A preset can set `archive` and `platformConfigRef`. One bucket then serves every
 
 An edit of a preset reaches every `DatabaseServer` that references it on its next reconcile. A lower `storageSize` or `walStorageSize` in the preset does not shrink a running server. That server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new server uses the new baseline.
 
+A new `version` in the preset does not move a running server to another PostgreSQL major. That server reports `Ready` `False` with reason `VersionChangeRefused` until the preset names its major again. A new server uses the new baseline. See [The PostgreSQL version](databaseserver.md#the-postgresql-version).
+
 ## Deletion
 
 Deleting a preset removes no server. Each `DatabaseServer` that references it reports `Ready` `False` with reason `InvalidReference` on its next reconcile.
@@ -64,6 +66,7 @@ spec:
     # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
     platformConfigRef: "my-platform-config"
     # string. Optional. PostgreSQL major version, 14 or later.
+    # A new value does not move a server that already runs another major.
     version: "17"
     # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
     instances: 2
