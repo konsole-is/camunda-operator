@@ -270,7 +270,11 @@ The recovered cluster is given one `ObjectStore`,
 the one of the location the spec resolves to now, so a target inside a record of an earlier
 location is refused with `result: Unavailable` and a message that names the bucket contract and
 the location of each. `SelectArchive` compares the location, and `status.recovery.archive` pins it,
-so an `ObjectStorageConfig` edited under a running recovery does not move it. A second `ObjectStore`
+so an `ObjectStorageConfig` edited under a running recovery does not move it. `recoveryHoldsSpec`
+pins the contract by name, and `recoveryHoldsLocation` covers the edit that keeps the name: while
+the resolved location differs from `status.recovery.archive.location`, `Ready` reports
+`InvalidReference` and the archive component does not reconcile, so the one `ObjectStore` keeps
+describing the archive the recovery asked for. A second `ObjectStore`
 for the source would reach it and is a follow-up.
 
 The alternative, only the current archive, is simpler but cannot correct a recovery to the wrong

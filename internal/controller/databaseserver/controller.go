@@ -97,6 +97,11 @@ type resolvedSpec struct {
 	// the running recovery depends on. The merged spec then keeps what the
 	// recovery recorded, and Ready reports why: see preCheck.
 	holdForRecovery *conditions.PreCheckFailure
+	// holdArchive says that the archive moved under a recovery that still
+	// reads it. The archive component then does not reconcile, so the
+	// ObjectStore keeps describing the archive the recovery asked for: see
+	// recoveryHoldsLocation.
+	holdArchive bool
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -121,6 +126,18 @@ type serverComponents struct {
 // their condition types.
 func (c serverComponents) all() []*component.Component {
 	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
+}
+
+// applying returns the components to reconcile, in the same order. It leaves
+// the archive out while the server holds it: the ObjectStore is one object,
+// and rewriting it while a recovery reads the archive it describes points the
+// cluster that is recovering somewhere that archive is not.
+func (c serverComponents) applying(holdArchive bool) []*component.Component {
+	if !holdArchive {
+		return c.all()
+	}
+
+	return []*component.Component{c.cluster, c.contract, c.monitoring}
 }
 
 // DatabaseServerReconciler runs a PostgreSQL server through the external
@@ -284,7 +301,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	comps = built.all()
 
-	reconcileErr := reconcileComponents(ctx, recCtx, comps)
+	reconcileErr := reconcileComponents(ctx, recCtx, built.applying(resolved.holdArchive))
 
 	if err := r.removeSupersededContracts(ctx, &server, resolved.merged); err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
@@ -434,7 +451,48 @@ func (r *DatabaseServerReconciler) preCheck(
 		return resolved, err
 	}
 
+	// After the bucket resolved, because an ObjectStorageConfig edited in
+	// place keeps its name and only the location it resolves to shows the
+	// move. The archive component is held with it, so the ObjectStore that
+	// the recovering cluster reads keeps describing the archive it asked for.
+	if hold := recoveryHoldsLocation(server, resolved.archiveLocation); hold != nil {
+		resolved.holdForRecovery = hold
+		resolved.holdArchive = true
+	}
+
 	return resolved, nil
+}
+
+// recoveryHoldsLocation reports that the archive of the server moved while a
+// recovery still reads it, or nil when it did not.
+//
+// recoveryHoldsSpec pins the bucket contract by name, and an
+// ObjectStorageConfig edited in place keeps its name, so only the location it
+// resolves to shows this move.
+func recoveryHoldsLocation(
+	server *v1.DatabaseServer,
+	location string,
+) *conditions.PreCheckFailure {
+	running := server.Status.Recovery
+	if running == nil || running.CompletedAt != nil || running.Archive == nil {
+		return nil
+	}
+
+	recorded := running.Archive.Location
+	if recorded == "" || location == "" || recorded == location {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonInvalidReference,
+		Message: fmt.Sprintf(
+			"A rollback that %s asked for reads the archive at %q, and ObjectStorageConfig %q "+
+				"names %q now. Point that ObjectStorageConfig back at the archive the rollback "+
+				"reads, or wait for the rollback to finish, before the archive of the server "+
+				"moves",
+			running.RequestedBy, recorded, running.Archive.ObjectStorageRef, location,
+		),
+	}
 }
 
 // recoveryHoldsSpec reports that the spec moved something the running recovery

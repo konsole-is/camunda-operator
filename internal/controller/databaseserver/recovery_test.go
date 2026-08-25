@@ -947,6 +947,51 @@ var _ = Describe("DatabaseServer recovery", func() {
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
 	})
 
+	// The name of the bucket contract does not move here, so the hold that
+	// pins the name never fires. The ObjectStore is one object, and rewriting
+	// it points the cluster that is recovering at objects the archive it asked
+	// for is not in.
+	It("holds a rollback while the archive moves under its bucket contract", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		var bucket v1.ObjectStorageConfig
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Name: server.Spec.Archive.ObjectStorageRef}, &bucket,
+		)).To(Succeed())
+
+		recorded := reconciledServer(server).Status.Recovery.Archive
+		Expect(recorded).NotTo(BeNil())
+		Expect(recorded.Location).To(ContainSubstring("s3://" + bucket.Name + "/"))
+
+		storeKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		var store barmanobjectstore.ObjectStore
+		Expect(k8sClient.Get(ctx, storeKey, &store)).To(Succeed())
+		reading := store.Spec.Configuration.DestinationPath
+
+		By("moving the bucket under the name the rollback recorded")
+		moveBucket(&bucket, bucket.Name+"-moved")
+
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		Expect(ready.Message).To(ContainSubstring(recorded.Location))
+		Expect(ready.Message).To(ContainSubstring("-moved"))
+
+		// The archive the rollback reads is at the old location, so the
+		// ObjectStore that describes it must not follow the contract.
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, storeKey, &store)).To(Succeed())
+			g.Expect(store.Spec.Configuration.DestinationPath).To(Equal(reading))
+		}, "2s", interval).Should(Succeed())
+
+		By("finishing the rollback once the bucket is back")
+		moveBucket(&bucket, bucket.Name)
+
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+	})
+
 	It("keeps the bucket of a running recovery while the spec names another", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))
