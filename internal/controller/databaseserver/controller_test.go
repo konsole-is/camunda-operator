@@ -17,6 +17,8 @@ limitations under the License.
 package databaseserver
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
@@ -37,6 +39,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 )
+
+// presetStorageSize is the data volume that serverOnPreset puts on the preset.
+// The clamp cases lower it under a running server and read the applied size
+// back.
+const presetStorageSize = "10Gi"
 
 // serverInNamespace creates a namespace and a minimal DatabaseServer in it,
 // and returns the server. The caller drives the CloudNativePG objects.
@@ -64,10 +71,10 @@ func serverInNamespace(archive *v1.DatabaseServerArchiveSpec) *v1.DatabaseServer
 }
 
 // serverOnPreset creates a namespace, a cluster-scoped preset that holds the
-// version and the volume sizes, and a DatabaseServer that inherits them. An
-// empty walStorageSize leaves the write-ahead log on the data volume. It
-// returns the server and the preset.
-func serverOnPreset(storageSize, walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
+// version, a data volume of presetStorageSize, and the write-ahead log volume,
+// and a DatabaseServer that inherits them. An empty walStorageSize leaves the
+// write-ahead log on the data volume. It returns the server and the preset.
+func serverOnPreset(walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
 	GinkgoHelper()
 
 	preset := &v1.DatabaseServerPreset{
@@ -76,7 +83,7 @@ func serverOnPreset(storageSize, walStorageSize string) (*v1.DatabaseServer, *v1
 			Server: v1.DatabaseServerSpec{
 				Version:     "17",
 				Instances:   new(int32(1)),
-				StorageSize: new(resource.MustParse(storageSize)),
+				StorageSize: new(resource.MustParse(presetStorageSize)),
 			},
 		},
 	}
@@ -147,6 +154,47 @@ func expectShrinkWarning(server *v1.DatabaseServer, field string) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// countEvents returns the number of times an event with the given reason was
+// recorded for the server: the sum of the counts of the matching Event
+// objects, because the recorder aggregates repeats of one event into one
+// object.
+func countEvents(g Gomega, server *v1.DatabaseServer, reason string) int32 {
+	GinkgoHelper()
+
+	var recorded corev1.EventList
+	g.Expect(k8sClient.List(ctx, &recorded, client.InNamespace(server.Namespace))).To(Succeed())
+
+	var count int32
+	for _, event := range recorded.Items {
+		if event.Reason == reason && event.InvolvedObject.Name == server.Name {
+			count += max(event.Count, 1)
+		}
+	}
+
+	return count
+}
+
+// reconcileAgain edits a spec field that the version refusal does not touch,
+// and waits until status reports that generation. The caller then knows one
+// more reconcile ran with whatever the refusal left standing.
+func reconcileAgain(server *v1.DatabaseServer, round int) {
+	GinkgoHelper()
+
+	var generation int64
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.PodLabels = map[string]string{"round": strconv.Itoa(round)}
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		generation = latest.Generation
+	}, timeout, interval).Should(Succeed())
+
+	Eventually(func(g Gomega) {
+		g.Expect(reconciledServer(server).Status.ObservedGeneration).
+			To(BeNumerically(">=", generation))
+	}, timeout, interval).Should(Succeed())
+}
+
 // makeClusterHealthy writes the status that CloudNativePG reports for a
 // healthy cluster, including the system identifier the server mirrors.
 func makeClusterHealthy(server *v1.DatabaseServer, systemID string) {
@@ -159,7 +207,31 @@ func makeClusterHealthy(server *v1.DatabaseServer, systemID string) {
 	cluster.Status.Phase = cnpgv1.PhaseHealthy
 	cluster.Status.ReadyInstances = cluster.Spec.Instances
 	cluster.Status.SystemID = systemID
+	major := imageMajorVersion(cluster.Spec.ImageName)
+	Expect(major).To(BeNumerically(">", 0), cluster.Spec.ImageName)
+	cluster.Status.PGDataImageInfo = &cnpgv1.ImageInfo{
+		Image: cluster.Spec.ImageName, MajorVersion: major,
+	}
 	Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+}
+
+// imageMajorVersion reads the PostgreSQL major off the tag of a CloudNativePG
+// image, which is what the operator reports for the data directory the
+// instances run on. It returns 0 for an image with no numeric tag, which is
+// what a cluster a spec wrote by hand carries. The tag starts after the last
+// colon, so a registry that names a port keeps its port.
+func imageMajorVersion(image string) int {
+	colon := strings.LastIndex(image, ":")
+	if colon < 0 {
+		return 0
+	}
+
+	major, err := strconv.Atoi(image[colon+1:])
+	if err != nil {
+		return 0
+	}
+
+	return major
 }
 
 // writeSuperuserSecret creates the Secret that CloudNativePG writes for the
@@ -176,9 +248,25 @@ func writeSuperuserSecret(server *v1.DatabaseServer) {
 	})).To(Succeed())
 }
 
-// completeBaseBackup creates a completed Backup of the cluster, as the
-// CloudNativePG operator would after the ScheduledBackup fired.
+// completeBaseBackup creates a completed Backup of the cluster that ran at one
+// moment, as the CloudNativePG operator would after the ScheduledBackup fired.
 func completeBaseBackup(server *v1.DatabaseServer, name string, at metav1.Time) {
+	GinkgoHelper()
+
+	completeBaseBackupBetween(server, name, &at, at)
+}
+
+// completeBaseBackupBetween creates a completed Backup that ran from startedAt
+// to stoppedAt. A backup that began before the server closed an archive
+// interval and ended after it writes to the bucket the server left. A nil
+// startedAt is a backup that recorded no start, which the CloudNativePG Backup
+// type allows.
+func completeBaseBackupBetween(
+	server *v1.DatabaseServer,
+	name string,
+	startedAt *metav1.Time,
+	stoppedAt metav1.Time,
+) {
 	GinkgoHelper()
 
 	backup := &cnpgv1.Backup{
@@ -195,7 +283,8 @@ func completeBaseBackup(server *v1.DatabaseServer, name string, at metav1.Time) 
 	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 
 	backup.Status.Phase = cnpgv1.BackupPhaseCompleted
-	backup.Status.StoppedAt = &at
+	backup.Status.StartedAt = startedAt
+	backup.Status.StoppedAt = &stoppedAt
 	Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
 }
 
@@ -233,6 +322,18 @@ func hibernate(server *v1.DatabaseServer) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// setVersion puts version on the latest revision of the server.
+func setVersion(server *v1.DatabaseServer, version string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.Version = version
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // setArchive puts archive on the latest revision of the server.
 func setArchive(server *v1.DatabaseServer, archive *v1.DatabaseServerArchiveSpec) {
 	GinkgoHelper()
@@ -241,6 +342,20 @@ func setArchive(server *v1.DatabaseServer, archive *v1.DatabaseServerArchiveSpec
 		var latest v1.DatabaseServer
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
 		latest.Spec.Archive = archive
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// moveBucket points the ObjectStorageConfig at another bucket, keeping its
+// name. An ObjectStorageConfig is mutable, and a delete and create keeps the
+// name too, so the name says nothing about where the objects are.
+func moveBucket(bucket *v1.ObjectStorageConfig, bucketName string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.ObjectStorageConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(bucket), &latest)).To(Succeed())
+		latest.Spec.S3.BucketName = bucketName
 		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -287,7 +402,9 @@ func expectCondition(
 }
 
 // archiveBucket creates a cluster-scoped bucket contract with static
-// credentials and the Secret those credentials live in.
+// credentials and the Secret those credentials live in. Each contract names a
+// bucket of its own, so two of them describe two locations, which is what the
+// archive history compares.
 func archiveBucket() *v1.ObjectStorageConfig {
 	GinkgoHelper()
 
@@ -305,7 +422,7 @@ func archiveBucket() *v1.ObjectStorageConfig {
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
-				BucketName: "camunda-backups",
+				BucketName: name,
 				BasePath:   "clusters",
 				Region:     "eu-west-1",
 				Auth: v1.S3StorageAuth{
@@ -424,7 +541,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			)
 		}, timeout, interval).Should(Succeed())
 		Expect(store.Spec.Configuration.DestinationPath).To(Equal(
-			"s3://camunda-backups/clusters/databaseserver/" + server.Namespace + "/camunda",
+			"s3://" + bucket.Name + "/clusters/databaseserver/" + server.Namespace + "/camunda",
 		))
 		Expect(store.Spec.RetentionPolicy).To(Equal("30d"))
 
@@ -841,10 +958,29 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 		closedAt := *archiveHistory(server)[0].To
 
+		// A base backup that was already running when the bucket moved keeps
+		// the destination it started with, so its object lands in the bucket
+		// the server left. Its end falls after the close, and the new interval
+		// must not open on it. Only a backup that began after the close does.
+		straddlingStart := metav1.NewTime(closedAt.Add(-2 * time.Second))
+		completeBaseBackupBetween(
+			server, "straddling", &straddlingStart, metav1.NewTime(closedAt.Add(2*time.Second)),
+		)
+
+		// A backup that recorded no start sits on neither side of the close.
+		// It can have been running in the bucket the server left, so it opens
+		// nothing either.
+		completeBaseBackupBetween(
+			server, "no-start", nil, metav1.NewTime(closedAt.Add(3*time.Second)),
+		)
+
 		// The new bucket holds no base backup yet, so no point in it can be
 		// reached and no record of it opens.
 		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
 		Expect(blocked.Message).To(ContainSubstring("base backup"))
+		Consistently(func(g Gomega) {
+			g.Expect(archiveHistory(server)).To(HaveLen(1))
+		}, 2*time.Second, interval).Should(Succeed())
 
 		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
 		completeBaseBackup(server, "second", openedAt)
@@ -857,6 +993,205 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[1].ObjectStorageRef).To(Equal(second.Name))
 			g.Expect(history[1].From.Time).To(BeTemporally("==", openedAt.Time))
 			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The bucket change and the guard on the archive land in one reconcile. A
+	// boundary that waits for the recorded close is not moved yet on that
+	// reconcile, so a base backup of the bucket the server leaves reports the
+	// new archive ready, and the status write that closes the record carries
+	// that ready with it.
+	It("blocks the new archive while only the bucket it left holds a base backup", func() {
+		first := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    first.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000018")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+
+		second := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    second.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		// Every status the server writes from the close onwards reports the
+		// archive of the new bucket, which holds nothing.
+		Consistently(func(g Gomega) {
+			latest := reconciledServer(server)
+			if latest.Status.Archive == nil || latest.Status.Archive.History[0].To == nil {
+				return
+			}
+			ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionArchiveReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse), ready.Message)
+			g.Expect(latest.Status.Archive.History).To(HaveLen(1))
+		}, 3*time.Second, "5ms").Should(Succeed())
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+	})
+
+	// The name of an ObjectStorageConfig says nothing about where the objects
+	// are: it can be edited in place, and a delete and create keeps the name.
+	// The interval is compared by the location it was written to.
+	It("closes the record when the bucket moves under one ObjectStorageConfig", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000020")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].Location).To(ContainSubstring("s3://" + bucket.Name + "/"))
+		}, timeout, interval).Should(Succeed())
+
+		By("moving the bucket the ObjectStorageConfig names")
+		moved := bucket.Name + "-moved"
+		moveBucket(bucket, moved)
+
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		closedAt := *archiveHistory(server)[0].To
+
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+
+		// The reconcile that closes the record also applies the ObjectStore of
+		// the new location. The boundary is read after that, so a base backup
+		// that began while the old one still stood is behind it.
+		var store barmanobjectstore.ObjectStore
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &store,
+			)).To(Succeed())
+			g.Expect(store.Spec.Configuration.DestinationPath).To(ContainSubstring("s3://" + moved + "/"))
+		}, timeout, interval).Should(Succeed())
+
+		By("opening a record of the new location on the next base backup")
+		openedStart := metav1.NewTime(closedAt.Add(time.Second))
+		completeBaseBackupBetween(
+			server, "after-move", &openedStart, metav1.NewTime(closedAt.Add(2*time.Second)),
+		)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			// The contract still carries the name it always had.
+			g.Expect(history[1].ObjectStorageRef).To(Equal(bucket.Name))
+			g.Expect(history[1].Location).To(ContainSubstring("s3://" + moved + "/"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// Removing spec.archive closes every record, so a re-enable elsewhere finds
+	// nothing open to close. The move has nowhere to live but
+	// status.archive.boundary, and without it the server accepts any backup
+	// that began after the old close, including one still writing to the
+	// location it left.
+	It("keeps the boundary of an archive re-enabled on another location", func() {
+		first := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    first.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000019")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+
+		By("closing the record when the archive is removed")
+		setArchive(server, nil)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		closedAt := *archiveHistory(server)[0].To
+
+		// status.archive stamps whole seconds, so the close and the move land
+		// in one second unless the spec separates them. A backup that began
+		// after the close and before the move needs them apart.
+		time.Sleep(1500 * time.Millisecond)
+
+		By("recording the move when the archive comes back on another location")
+		second := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    second.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		var movedAt metav1.Time
+		Eventually(func(g Gomega) {
+			boundary := reconciledServer(server).Status.Archive.Boundary
+			g.Expect(boundary).NotTo(BeNil())
+			g.Expect(boundary.ObjectStorageRef).To(Equal(second.Name))
+			movedAt = boundary.At
+		}, timeout, interval).Should(Succeed())
+		Expect(movedAt.Time).To(BeTemporally(">=", closedAt.Add(time.Second)))
+
+		By("refusing a backup that began before the move")
+		inFlightStart := metav1.NewTime(closedAt.Add(time.Second))
+		completeBaseBackupBetween(
+			server, "in-flight", &inFlightStart, metav1.NewTime(movedAt.Add(2*time.Second)),
+		)
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+		Consistently(func(g Gomega) {
+			g.Expect(archiveHistory(server)).To(HaveLen(1))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		By("opening the record on a backup that began after it")
+		openedStart := metav1.NewTime(movedAt.Add(5 * time.Second))
+		completeBaseBackupBetween(
+			server, "after-move", &openedStart, metav1.NewTime(movedAt.Add(6*time.Second)),
+		)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			latest := reconciledServer(server)
+			g.Expect(latest.Status.Archive.History).To(HaveLen(2))
+			g.Expect(latest.Status.Archive.History[1].ObjectStorageRef).To(Equal(second.Name))
+			g.Expect(latest.Status.Archive.History[1].Location).To(ContainSubstring(second.Name))
+			// The record holds the move from here on.
+			g.Expect(latest.Status.Archive.Boundary).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// status.startedAt is optional on a CloudNativePG Backup. The first archive
+	// of a server has no boundary to place a backup against, so a completed
+	// backup counts by its end rather than being left out for good.
+	It("opens the first archive record on a backup that recorded no start", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000016")
+
+		at := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
+		completeBaseBackupBetween(server, "no-start", nil, at)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ObjectStorageRef).To(Equal(bucket.Name))
+			g.Expect(history[0].From.Time).To(BeTemporally("==", at.Time))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -904,7 +1239,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// Admission cannot catch this shrink. The CEL transition rules bind the
 	// spec of the server, and lowering a preset never touches it.
 	It("keeps the applied storage size when a preset lowers it", func() {
-		server, preset := serverOnPreset("10Gi", "")
+		server, preset := serverOnPreset("")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000009")
 
@@ -912,7 +1247,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		Eventually(func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
-			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal(presetStorageSize))
 		}, timeout, interval).Should(Succeed())
 
 		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
@@ -927,7 +1262,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
-			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal(presetStorageSize))
 		}, 2*time.Second, interval).Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)
@@ -939,7 +1274,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// data claims for it raises walStorageSize to the data size, which is
 	// larger here on purpose.
 	It("keeps the applied write-ahead log size when a preset lowers it", func() {
-		server, preset := serverOnPreset("10Gi", "4Gi")
+		server, preset := serverOnPreset("4Gi")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000012")
 
@@ -962,12 +1297,219 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
 			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
-			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal(presetStorageSize))
 		}, 2*time.Second, interval).Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+	})
+
+	// CloudNativePG refuses a cluster that gives up its write-ahead log volume,
+	// with "walStorage cannot be disabled once configured". A preset that
+	// clears the field must therefore not reach it.
+	It("keeps the write-ahead log volume a preset tries to remove", func() {
+		server, preset := serverOnPreset("4Gi")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000015")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
+		}, timeout, interval).Should(Succeed())
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.WALStorageSize = nil
+		})
+
+		Eventually(func(g Gomega) {
+			var recorded corev1.EventList
+			g.Expect(k8sClient.List(ctx, &recorded, client.InNamespace(server.Namespace))).To(Succeed())
+			g.Expect(recorded.Items).To(ContainElement(SatisfyAll(
+				HaveField("Reason", "WALStorageKept"),
+				HaveField("InvolvedObject.Name", server.Name),
+				HaveField("Type", corev1.EventTypeWarning),
+			)))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
+		}, 2*time.Second, interval).Should(Succeed())
+	})
+
+	// Admission cannot catch this either: a preset can raise the version, and
+	// the major the data directory runs is on the CloudNativePG cluster rather
+	// than on the spec.
+	It("refuses a major version change and keeps the image the server runs", func() {
+		server, preset := serverOnPreset("")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000014")
+
+		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.Version = "18"
+		})
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+			g.Expect(ready.Message).To(ContainSubstring("18"))
+			g.Expect(ready.Message).To(ContainSubstring("17"))
+		}, timeout, interval).Should(Succeed())
+
+		// CloudNativePG stops every instance to upgrade the data directory in
+		// place, so the refused server must apply nothing at all.
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		var recorded corev1.EventList
+		Expect(k8sClient.List(ctx, &recorded, client.InNamespace(server.Namespace))).To(Succeed())
+		Expect(recorded.Items).To(ContainElement(SatisfyAll(
+			HaveField("Reason", v1.ReasonVersionChangeRefused),
+			HaveField("InvolvedObject.Name", server.Name),
+			HaveField("Type", corev1.EventTypeWarning),
+		)))
+	})
+
+	// The refusal is one thing that happened, and it stands until the version
+	// comes back. Every reconcile while it stands records nothing more, so a
+	// reader who runs kubectl describe sees the refusal rather than a page of
+	// copies of it.
+	It("records the version refusal once while it stands", func() {
+		server, preset := serverOnPreset("")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000017")
+
+		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.Version = "18"
+		})
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		reconcileAgain(server, 1)
+		reconcileAgain(server, 2)
+
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, server, v1.ReasonVersionChangeRefused)).To(Equal(int32(1)))
+		}, 2*time.Second, interval).Should(Succeed())
+	})
+
+	// The cluster a rollback replaced is gone. status.cluster is the record of
+	// the one the server runs from now, and a status write that is lost leaves
+	// it on the removed one. The guard has to reach the running cluster
+	// anyway, or the version it refuses is applied to it.
+	It("refuses a major change after a rollback whose recorded cluster was lost", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+		recovered := recoveryCluster(server)
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		setVersion(server, "18")
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		By("losing the record of the cluster the rollback moved to")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Recovery = nil
+			latest.Status.Cluster = "camunda"
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The contract still names the recovered server, so the refusal reads
+		// the major off that cluster and it keeps the image it runs.
+		//
+		// The poll is fast because the reconcile that reads the lost record is
+		// one reconcile: a guard that gives up there renders the new major
+		// once, and the reconcile after it repairs status.cluster and puts the
+		// image back. Once is all CloudNativePG needs.
+		key := client.ObjectKey{Namespace: server.Namespace, Name: recovered}
+		replacedKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+
+			// That reconcile renders the cluster status.cluster names, which
+			// is the one the rollback removed. A guard that gave up puts it
+			// back on the major it refuses.
+			var replaced cnpgv1.Cluster
+			if err := k8sClient.Get(ctx, replacedKey, &replaced); err == nil {
+				g.Expect(replaced.Spec.ImageName).To(HaveSuffix(":17"))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), err.Error())
+			}
+		}, 3*time.Second, "5ms").Should(Succeed())
+
+		ready := conditionOf(server, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+	})
+
+	// A refusal must not stop the server. A rollback in flight has to finish on
+	// the major the archive holds, and whoever asked for it waits on the
+	// contract for the answer.
+	It("finishes a rollback in flight while the version refusal stands", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		setVersion(server, "18")
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		recovered := recoveryCluster(server)
+		recoverySucceeds(server)
+
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		// The contract moved to the recovered server, and the refusal still
+		// stands over it.
+		Expect(publishedContract(server).Spec.Host).
+			To(Equal(recovered + "-rw." + server.Namespace + ".svc"))
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		// Both clusters keep the major the archive holds. A rollback onto
+		// another major reads nothing.
+		key := client.ObjectKey{Namespace: server.Namespace, Name: recovered}
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+		}, 2*time.Second, interval).Should(Succeed())
 	})
 
 	It("reports InvalidReference for a bucket that does not exist", func() {

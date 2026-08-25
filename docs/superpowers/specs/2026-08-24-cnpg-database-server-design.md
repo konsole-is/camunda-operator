@@ -231,11 +231,53 @@ archive). A recovery picks the source whose interval holds `targetTime`. A targe
 holds is refused with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user
 prunes them.
 
-`objectStorageRef` is what makes an interval readable. A spec that names another bucket closes the
-open record at that moment and opens a record of the new bucket at its first base backup, the same
-way removing and restoring `spec.archive` does. The recovered cluster is given one `ObjectStore`,
-the one of the bucket the spec names now, so a target inside a record of an earlier bucket is
-refused with `result: Unavailable` and a message that names both buckets. A second `ObjectStore`
+`location`, the canonical location of the bucket contract narrowed to the prefix of the server
+(`ObjectStorageConfig.LocationOf`), is what makes an interval readable. `objectStorageRef` names it
+for the reader. It is the canonical location rather than the URL the plugin is given, because the
+endpoint and the region select the service that answers and neither reaches that URL. A record
+written before the field carries only the contract, and it is adopted into the current location only
+under that same contract: a record of another contract moved since, and nothing says where its
+objects went, so `SelectArchive` refuses it as unplaceable. A spec that moves the archive to another location closes
+the open record at that moment and opens a record of the new location at its first base backup, the
+same way removing and restoring `spec.archive` does. With no record open, which is where removing
+and re-adding `spec.archive` leaves the server, the move is recorded as `status.archive.boundary`
+instead and cleared when the next record opens. `archiveBoundary` returns the later of the recorded
+closes and that boundary, and a reconcile that finds a move reads no backups at all: the
+`ObjectStore` it is about to apply is what moves the archive, so every backup that exists by then
+began before the move. The clock for the move is read after `reconcileComponents` returns, so a
+backup that started while the old `ObjectStore` still stood is behind the boundary. That window is
+one apply wide and status timestamps carry whole seconds, so no envtest can place a backup inside
+it. The unit test pins that the instant is used as given.
+
+`archiveMoved(server, ref, location)` is the one comparison, and the guard on the archive component
+and the history both read it. A move that the reconcile does not see at all leaves the guard reading
+backups against the recorded closes, and a base backup of the location the server leaves then
+reports the new archive ready in the same status write that closes the record.
+
+A backup is placed against that boundary by `status.startedAt`, never by `status.stoppedAt`: one
+that was already running when the interval closed keeps the destination the plugin gave it, so its
+object lands in the bucket the server left while its end falls after the close. The field is
+`+optional`, and a backup that carries no start is skipped once a boundary exists, because nothing
+places it on either side of one. Before the first boundary there is nothing to place it against and
+every completed backup counts, by its end. The skip is a guard rather than a path a supported stack
+takes: the Barman Cloud plugin reports the start of every backup it completes
+(`internal/cnpgi/instance/backup.go`, `StartedAt` from `executedBackupInfo.BeginTime`) and
+CloudNativePG copies a non-zero value into `status.startedAt`
+(`pkg/management/postgres/webserver/plugin_backup.go` in `release-1.30`). CloudNativePG core does
+not guarantee it: `BackupStatus.SetAsStarted` sets `reconciliationStartedAt`, and only the volume
+snapshot path of `internal/controller/backup_controller.go` copies that into `startedAt`.
+
+The recovered cluster is given one `ObjectStore`,
+the one of the location the spec resolves to now, so a target inside a record of an earlier
+location is refused with `result: Unavailable` and a message that names the bucket contract and
+the location of each. `SelectArchive` compares the location, and `status.recovery.archive` pins it,
+so an `ObjectStorageConfig` edited under a running recovery does not move it. `recoveryHoldsSpec`
+pins the contract by name, and `recoveryHoldsLocation` covers the edit that keeps the name: while
+the resolved location differs from `status.recovery.archive.location`, `Ready` reports
+`InvalidReference` and the archive component does not reconcile, so the one `ObjectStore` keeps
+describing the archive the recovery asked for. The history is held with it: nothing applies the
+location the spec resolves to then, so move detection and every record update are skipped, and the
+move is decided on the reconcile after the hold lifts against the location that is applied by then. A second `ObjectStore`
 for the source would reach it and is a follow-up.
 
 The alternative, only the current archive, is simpler but cannot correct a recovery to the wrong
@@ -363,6 +405,17 @@ Printcolumns: `Ready`, `Reason`, `Version`, `Age`. The image is
 `ghcr.io/cloudnative-pg/postgresql:<version>` by default, resolved through `pkg/images` so the
 platform config can override the repository.
 
+Validation: `metadata.name` must be a DNS-1035 label of at most 46 characters, through a CEL rule
+on the root type. The name is used verbatim as the CloudNativePG cluster name, CloudNativePG takes
+at most 50, and `recoveryName` appends `-r<n>`, so 50 minus the four of `-r99` is the bound: a name
+at it reaches a recovery cluster whole while `n` stays below 100, and is shortened to a head and a
+hash above that. `n` is `len(status.archive.history)`, so a rollback, an archive re-enable, and a
+bucket change each advance it.
+`recoveryName` shortens against the same 50 and needs no budget of its own for the Services
+CloudNativePG derives: 50 plus `-any` is well inside a DNS label of 63. The rule is create-only
+(`optionalOldSelf: true`, `oldSelf.hasValue() || ...`): a name never changes on update, and a rule
+that runs there rejects an edit of another field on an object that predates it, and nothing more.
+
 Validation: `databaseServerConfig` required; `storageSize` and `walStorageSize` may not shrink,
 one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matches `^\d+$` and is
 floored at the oldest major Camunda 8.9 supports (verified with the `camunda-docs` MCP during
@@ -373,6 +426,12 @@ merged spec unchecked. The controller therefore raises each merged size back to 
 that exists, taken from the data and write-ahead log claims and from the sizes the applied
 CloudNativePG cluster asks for, and records the `StorageShrinkIgnored` Warning event. This mirrors
 `keepAppliedStorageSize` of `ElasticsearchCluster`.
+
+The same clamp keeps a write-ahead log volume that the merged spec no longer asks for.
+CloudNativePG refuses a cluster that removes `spec.walStorage` once it applied it
+(`walStorage cannot be disabled once configured`), and it accepts one that adds it, so the CEL
+rule stays as it is. A cleared `walStorageSize`, inline or from a preset, keeps the applied size
+and records the `WALStorageKept` Warning event.
 
 `monitoring.podMonitor` carries `labels` and `annotations` beside `enabled` and `interval`. The
 labels are what a Prometheus selects the monitor by. The annotations carry metadata for other
@@ -606,8 +665,25 @@ be proved:
 - The endpoint changes on every recovery. `CamundaCluster` rolls its pods; the docs state that a
   point-in-time restore restarts the orchestration cluster, which the existing suspend already
   implies.
-- Major version upgrades of PostgreSQL are the user's operation. Raising `spec.version` across a
-  major is refused until a later epic defines the path.
+- Major version upgrades of PostgreSQL are the user's operation. A `spec.version` whose major is
+  not the one `status.pgDataImageInfo.majorVersion` reports on the applied cluster is refused, in
+  either direction, until a later epic defines the path. The controller pins `merged.Version` to
+  the running major, the way `keepAppliedStorageSize` pins the volume sizes, and stages
+  `Ready=False` with reason `VersionChangeRefused` in place of the aggregate, plus one Warning
+  event of that name. Everything else reconciles on the pinned version, so a recovery in flight
+  finishes and the contract and the archive stay maintained. The guard reads the running cluster
+  through `status.cluster` first and falls back to the contracts the server owns, via
+  `recoveredClusterOf`: a rollback whose status write was lost leaves `status.cluster` on the
+  cluster the rollback removed, and a guard that read that as a server with no cluster lets the new
+  major reach the recovered one. Every owned contract is read, not the one the spec names, because
+  a rename that lands before the repair leaves that name unpublished. The contract a rollback
+  answers on is read first, because it names the cluster the rollback moved to. The guard does not fail open on an
+  old CloudNativePG: `status.pgDataImageInfo` arrived in the api module at `v1.26.0` and is absent
+  at `v1.25.1`, and 1.26 is the floor `docs/installation.md` names, so an absent field means only
+  that the data directory is not written yet. There is no annotation escape hatch:
+  CloudNativePG
+  performs an offline in-place `pg_upgrade`, PITR does not cross a major, and the Barman plugin
+  needs a new `serverName` per major, which the operator does not give it.
 - CloudNativePG serves its own `Database` kind in `postgresql.cnpg.io`. The docs name the group
   whenever both could be meant.
 

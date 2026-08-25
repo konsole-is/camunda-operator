@@ -18,6 +18,7 @@ package databaseserver
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -47,12 +48,24 @@ func archiveAt(serverName, from string, to *string) v1.ArchiveRecord {
 	return record
 }
 
-// archiveInBucket returns archiveAt with the bucket that holds the record.
-func archiveInBucket(serverName, bucket, from string, to *string) v1.ArchiveRecord {
-	record := archiveAt(serverName, from, to)
+// fixtureServerName is the cluster that the archive records of these fixtures
+// belong to.
+const fixtureServerName = "camunda"
+
+// archiveInBucket returns archiveAt with the bucket that holds the record, and
+// the location that bucket resolves to.
+func archiveInBucket(bucket, from string, to *string) v1.ArchiveRecord {
+	record := archiveAt(fixtureServerName, from, to)
 	record.ObjectStorageRef = bucket
+	record.Location = locationOf(bucket)
 
 	return record
+}
+
+// locationOf is the destination that a bucket of these fixtures resolves to,
+// in the shape ArchiveStorage renders.
+func locationOf(bucket string) string {
+	return "s3://" + bucket + "/clusters/databaseserver/my-cluster-ns/" + fixtureServerName
 }
 
 // atTime parses an RFC 3339 timestamp of a fixture.
@@ -132,7 +145,7 @@ func TestSelectArchive(t *testing.T) {
 		{
 			name: "a point in the bucket the server archives to now is answered",
 			history: []v1.ArchiveRecord{
-				archiveInBucket("camunda", "bucket-b", "2026-08-01T00:00:00Z", nil),
+				archiveInBucket("bucket-b", "2026-08-01T00:00:00Z", nil),
 			},
 			bucket: "bucket-b",
 			target: "2026-08-05T12:00:00Z",
@@ -149,7 +162,7 @@ func TestSelectArchive(t *testing.T) {
 				bucket = "bucket-a"
 			}
 
-			got, err := SelectArchive(tt.history, atTime(tt.target).Time, bucket)
+			got, err := SelectArchive(tt.history, atTime(tt.target).Time, locationOf(bucket), bucket)
 			if tt.wantErr != "" {
 				require.ErrorIs(t, err, ErrNoArchiveHolds)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -164,26 +177,75 @@ func TestSelectArchive(t *testing.T) {
 	}
 }
 
-// TestSelectArchiveInAnotherBucket covers the point that a recorded interval
-// holds in a bucket the spec no longer names. The recovered cluster is given
-// one ObjectStore, so the point is out of reach until the operator can add a
-// second one for the source.
-func TestSelectArchiveInAnotherBucket(t *testing.T) {
+// TestSelectArchiveInAnotherLocation covers the point that a recorded interval
+// holds somewhere the spec no longer archives to. The recovered cluster is
+// given one ObjectStore, so the point is out of reach until the operator can
+// add a second one for the source.
+func TestSelectArchiveInAnotherLocation(t *testing.T) {
 	t.Parallel()
 
 	closed := "2026-08-10T00:00:00Z"
 	history := []v1.ArchiveRecord{
-		archiveInBucket("camunda", "bucket-a", "2026-08-01T00:00:00Z", &closed),
-		archiveInBucket("camunda", "bucket-b", closed, nil),
+		archiveInBucket("bucket-a", "2026-08-01T00:00:00Z", &closed),
+		archiveInBucket("bucket-b", closed, nil),
 	}
 
-	_, err := SelectArchive(history, atTime("2026-08-05T12:00:00Z").Time, "bucket-b")
+	_, err := SelectArchive(
+		history, atTime("2026-08-05T12:00:00Z").Time, locationOf("bucket-b"), "bucket-b",
+	)
 
-	require.ErrorIs(t, err, ErrArchiveInAnotherBucket)
+	require.ErrorIs(t, err, ErrArchiveInAnotherLocation)
 	assert.NotErrorIs(t, err, ErrNoArchiveHolds)
 	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-a"`)
-	assert.Contains(t, err.Error(), `archives to "bucket-b" now`)
+	assert.Contains(t, err.Error(), locationOf("bucket-a"))
+	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-b"`)
+	assert.Contains(t, err.Error(), locationOf("bucket-b"))
 	assert.Contains(t, err.Error(), "not supported yet")
+}
+
+// An ObjectStorageConfig is mutable, and a delete and create keeps its name.
+// The archive of a record therefore stays out of reach when the name is the
+// one the spec still names but the bucket behind it has moved.
+func TestSelectArchiveInAnotherLocationUnderOneName(t *testing.T) {
+	t.Parallel()
+
+	moved := archiveInBucket("bucket-a", "2026-08-01T00:00:00Z", nil)
+	history := []v1.ArchiveRecord{moved}
+
+	_, err := SelectArchive(
+		history, atTime("2026-08-05T12:00:00Z").Time,
+		"s3://moved-bucket/clusters/databaseserver/my-cluster-ns/camunda", "bucket-a",
+	)
+
+	require.ErrorIs(t, err, ErrArchiveInAnotherLocation)
+	assert.Contains(t, err.Error(), moved.Location)
+	assert.Contains(t, err.Error(), "s3://moved-bucket/")
+}
+
+// A record written before the location was recorded carries only the bucket
+// contract. It is the archive the server writes now when that contract is the
+// one it writes through. When the contract is another one, the record moved
+// since and nothing says where its objects went, so it cannot answer either.
+func TestSelectArchiveAdoptsALocationOnlyUnderItsOwnContract(t *testing.T) {
+	t.Parallel()
+
+	legacy := archiveAt(fixtureServerName, "2026-08-01T00:00:00Z", nil)
+	legacy.ObjectStorageRef = "bucket-a"
+	target := atTime("2026-08-05T12:00:00Z").Time
+
+	got, err := SelectArchive(
+		[]v1.ArchiveRecord{legacy}, target, locationOf("bucket-a"), "bucket-a",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, locationOf("bucket-a"), got.Location)
+
+	_, err = SelectArchive(
+		[]v1.ArchiveRecord{legacy}, target, locationOf("bucket-b"), "bucket-b",
+	)
+	require.ErrorIs(t, err, ErrArchiveInAnotherLocation)
+	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-a"`)
+	assert.Contains(t, err.Error(), "was not recorded")
+	assert.NotContains(t, err.Error(), locationOf("bucket-b"))
 }
 
 func TestRecoveryClusterName(t *testing.T) {
@@ -261,6 +323,49 @@ func TestRecoveryClusterNameFitsAService(t *testing.T) {
 	// survives it and two recoveries of one server never share a name.
 	server.Status.Cluster = name
 	assert.NotEqual(t, name, RecoveryClusterName(server))
+}
+
+// Admission holds the name of a DatabaseServer to 46 characters, which is the
+// 50 that CloudNativePG accepts for a cluster name less the four of "-r99". A
+// name at that bound therefore reaches a recovery cluster whole while the
+// index stays below 100, and CloudNativePG accepts the shortened name above
+// that. The index is the number of archive records, so a rollback is one of
+// several things that advance it.
+func TestRecoveryNameFitsCloudNativePG(t *testing.T) {
+	t.Parallel()
+
+	base := strings.Repeat("a", 46)
+
+	tests := []struct {
+		name  string
+		n     int
+		whole bool
+	}{
+		{name: "index 1", n: 1, whole: true},
+		{name: "index 10", n: 10, whole: true},
+		{name: "index 99", n: 99, whole: true},
+		{name: "index 100", n: 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			suffix := recoveryNameSeparator + strconv.Itoa(tt.n)
+			name := recoveryName(base, tt.n)
+
+			assert.LessOrEqual(t, len(name), cnpgClusterNameMaxLength)
+			assert.Empty(t, validation.IsDNS1035Label(name))
+			assert.True(t, strings.HasSuffix(name, suffix), name)
+
+			if tt.whole {
+				assert.Equal(t, base+suffix, name)
+				return
+			}
+
+			assert.NotEqual(t, base+suffix, name)
+		})
+	}
 }
 
 // recoveryServer is the server of the recovery cases: it archives to a bucket

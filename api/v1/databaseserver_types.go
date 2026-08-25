@@ -120,6 +120,12 @@ type DatabaseServerSpec struct {
 	// as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
 	// and later; the floor is enforced by the controller on the
 	// preset-merged result. Required unless the resolved preset provides it.
+	//
+	// The major of a running server cannot change. A value that names another
+	// major, higher or lower, is refused on the Ready condition with reason
+	// VersionChangeRefused, and the server keeps running the major it has. A
+	// preset can raise it the same way and is refused the same way. To run
+	// another major, create a server on it and move the data over.
 	// +kubebuilder:validation:Pattern=`^\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -149,6 +155,11 @@ type DatabaseServerSpec struct {
 	// size. Unset keeps the log on the data volume. It cannot shrink, for the
 	// same reason storageSize cannot, and a lowered preset baseline is
 	// ignored the same way.
+	//
+	// It can be added to a running server, and it cannot be taken away again:
+	// CloudNativePG refuses a cluster that gives up the volume. A cleared
+	// field, inline or from a preset, keeps the volume at the size it has and
+	// records a WALStorageKept event.
 	// +optional
 	WALStorageSize *resource.Quantity `json:"walStorageSize,omitempty"`
 	// ServiceAccount configures the ServiceAccount of the instance pods.
@@ -219,6 +230,14 @@ const ReasonCNPGNotInstalled = "CNPGNotInstalled"
 // archive block is unaffected.
 const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
 
+// ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
+// merged version names a PostgreSQL major other than the one its data
+// directory runs. The server keeps running the major it has: everything the
+// operator renders takes that major, so a rollback in flight finishes and the
+// contract and the archive stay maintained. A major change needs a new server,
+// and there is no annotation that lets it through.
+const ReasonVersionChangeRefused = "VersionChangeRefused"
+
 // ArchiveRecord is one continuous archive that a server has written. A
 // recovery replays it from a base backup up to the requested point, so only a
 // point inside the interval of a record can be reached.
@@ -232,6 +251,15 @@ type ArchiveRecord struct {
 	// restore of that interval has to read.
 	// +optional
 	ObjectStorageRef string `json:"objectStorageRef,omitempty"`
+	// Location is where in object storage this archive was written: the
+	// provider, the bucket, and the path, as one URL. It is what decides
+	// whether two intervals hold the same archive. An ObjectStorageConfig can
+	// be edited in place or removed and created again under its name, so the
+	// name alone does not say that. A record written before this field
+	// existed carries none, and takes the location of the server on first
+	// sight.
+	// +optional
+	Location string `json:"location,omitempty"`
 	// From is the earliest point this archive can be recovered to: when its
 	// first base backup completed.
 	From metav1.Time `json:"from"`
@@ -239,6 +267,23 @@ type ArchiveRecord struct {
 	// while the archive is the one the server writes to now.
 	// +optional
 	To *metav1.Time `json:"to,omitempty"`
+}
+
+// ArchiveBoundary is the moment a server moved its archive to another
+// location while no interval was open. Only a base backup that began after it
+// belongs to the archive the server writes now: one that began before it wrote
+// to the location the server left.
+type ArchiveBoundary struct {
+	// At is when the server moved.
+	At metav1.Time `json:"at"`
+	// Location is the location it moved to, in the form ArchiveRecord.Location
+	// takes. The boundary is spent once the archive of that location opens a
+	// record, and it moves again when the location moves again.
+	Location string `json:"location"`
+	// ObjectStorageRef is the ObjectStorageConfig of that location, for the
+	// reader.
+	// +optional
+	ObjectStorageRef string `json:"objectStorageRef,omitempty"`
 }
 
 // DatabaseServerArchiveStatus is the observed state of the archive of a
@@ -255,10 +300,17 @@ type DatabaseServerArchiveStatus struct {
 	// point in it.
 	// +optional
 	History []ArchiveRecord `json:"history,omitempty"`
+	// Boundary is the last move of the archive that no record holds yet:
+	// spec.archive was re-enabled on another location, or the location moved
+	// again before a base backup opened a record. It is what keeps a base
+	// backup of the location the server left from opening the interval of the
+	// one it moved to. It is cleared when that interval opens.
+	// +optional
+	Boundary *ArchiveBoundary `json:"boundary,omitempty"`
 }
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in
-// the bucket, and the bucket contract that holds it.
+// the bucket, where that bucket is, and the bucket contract that names it.
 type RecoveryArchiveRef struct {
 	// ServerName is the archive directory, equal to the name of the
 	// CloudNativePG cluster that wrote it.
@@ -266,6 +318,12 @@ type RecoveryArchiveRef struct {
 	// ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
 	// archive lives in.
 	ObjectStorageRef string `json:"objectStorageRef"`
+	// Location is where in object storage the archive lives, in the form
+	// ArchiveRecord.Location takes. A running recovery keeps reading the
+	// location it recorded, so an ObjectStorageConfig edited in the middle
+	// does not move it.
+	// +optional
+	Location string `json:"location,omitempty"`
 }
 
 // DatabaseServerRecoveryStatus is the recovery request that the server works
@@ -373,11 +431,24 @@ type DatabaseServerStatus struct {
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46)",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server",optionalOldSelf=true
 
 // DatabaseServer runs a PostgreSQL server for one orchestration cluster
 // through the external CloudNativePG operator, archives it continuously to an
 // object storage bucket, and publishes the connection details as a
 // DatabaseServerConfig that a Database and a PointInTimeRestore consume.
+//
+// The name of the CR names the CloudNativePG cluster, so admission holds it to
+// a DNS-1035 label of at most 46 characters: the 50 that CloudNativePG accepts
+// for a cluster name, less the four of the "-r99" that a rollback appends. A
+// name inside that bound reaches the cluster of a rollback whole while the
+// recovery index stays below 100, and is shortened to a head and a hash above
+// that. The index counts the archive records of the server, so a rollback, an
+// archive the spec re-enables, and a change of bucket each add one.
+//
+// The rule runs on create only. A name never changes on update. If the rule
+// runs there too, it rejects an edit of another field on an object that
+// predates it, and nothing more.
 type DatabaseServer struct {
 	metav1.TypeMeta `json:",inline"`
 

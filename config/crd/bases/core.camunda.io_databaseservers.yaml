@@ -35,6 +35,18 @@ spec:
           through the external CloudNativePG operator, archives it continuously to an
           object storage bucket, and publishes the connection details as a
           DatabaseServerConfig that a Database and a PointInTimeRestore consume.
+
+          The name of the CR names the CloudNativePG cluster, so admission holds it to
+          a DNS-1035 label of at most 46 characters: the 50 that CloudNativePG accepts
+          for a cluster name, less the four of the "-r99" that a rollback appends. A
+          name inside that bound reaches the cluster of a rollback whole while the
+          recovery index stays below 100, and is shortened to a head and a hash above
+          that. The index counts the archive records of the server, so a rollback, an
+          archive the spec re-enables, and a change of bucket each add one.
+
+          The rule runs on create only. A name never changes on update. If the rule
+          runs there too, it rejects an edit of another field on an object that
+          predates it, and nothing more.
         properties:
           apiVersion:
             description: |-
@@ -865,6 +877,12 @@ spec:
                   as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
                   and later; the floor is enforced by the controller on the
                   preset-merged result. Required unless the resolved preset provides it.
+
+                  The major of a running server cannot change. A value that names another
+                  major, higher or lower, is refused on the Ready condition with reason
+                  VersionChangeRefused, and the server keeps running the major it has. A
+                  preset can raise it the same way and is refused the same way. To run
+                  another major, create a server on it and move the data over.
                 pattern: ^\d+$
                 type: string
               walStorageSize:
@@ -876,6 +894,11 @@ spec:
                   size. Unset keeps the log on the data volume. It cannot shrink, for the
                   same reason storageSize cannot, and a lowered preset baseline is
                   ignored the same way.
+
+                  It can be added to a running server, and it cannot be taken away again:
+                  CloudNativePG refuses a cluster that gives up the volume. A cleared
+                  field, inline or from a preset, keeps the volume at the size it has and
+                  records a WALStorageKept event.
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
             type: object
@@ -897,6 +920,33 @@ spec:
                   does not clear it: the bucket still holds what the server wrote, and a
                   server that archives again can recover from it.
                 properties:
+                  boundary:
+                    description: |-
+                      Boundary is the last move of the archive that no record holds yet:
+                      spec.archive was re-enabled on another location, or the location moved
+                      again before a base backup opened a record. It is what keeps a base
+                      backup of the location the server left from opening the interval of the
+                      one it moved to. It is cleared when that interval opens.
+                    properties:
+                      at:
+                        description: At is when the server moved.
+                        format: date-time
+                        type: string
+                      location:
+                        description: |-
+                          Location is the location it moved to, in the form ArchiveRecord.Location
+                          takes. The boundary is spent once the archive of that location opens a
+                          record, and it moves again when the location moves again.
+                        type: string
+                      objectStorageRef:
+                        description: |-
+                          ObjectStorageRef is the ObjectStorageConfig of that location, for the
+                          reader.
+                        type: string
+                    required:
+                    - at
+                    - location
+                    type: object
                   history:
                     description: |-
                       History lists every archive the server has written, oldest first. A
@@ -919,6 +969,16 @@ spec:
                             From is the earliest point this archive can be recovered to: when its
                             first base backup completed.
                           format: date-time
+                          type: string
+                        location:
+                          description: |-
+                            Location is where in object storage this archive was written: the
+                            provider, the bucket, and the path, as one URL. It is what decides
+                            whether two intervals hold the same archive. An ObjectStorageConfig can
+                            be edited in place or removed and created again under its name, so the
+                            name alone does not say that. A record written before this field
+                            existed carries none, and takes the location of the server on first
+                            sight.
                           type: string
                         objectStorageRef:
                           description: |-
@@ -1036,6 +1096,13 @@ spec:
                       spec that names another bucket in the middle does not move a recovery
                       that is already running.
                     properties:
+                      location:
+                        description: |-
+                          Location is where in object storage the archive lives, in the form
+                          ArchiveRecord.Location takes. A running recovery keeps reading the
+                          location it recorded, so an ObjectStorageConfig edited in the middle
+                          does not move it.
+                        type: string
                       objectStorageRef:
                         description: |-
                           ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
@@ -1149,6 +1216,12 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be a DNS-1035 label of at most 46 characters,
+            because it names the CloudNativePG cluster of the server
+          optionalOldSelf: true
+          rule: oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
+            && self.metadata.name.size() <= 46)
     served: true
     storage: true
     subresources:

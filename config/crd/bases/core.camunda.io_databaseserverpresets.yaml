@@ -867,6 +867,12 @@ spec:
                       as "17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14
                       and later; the floor is enforced by the controller on the
                       preset-merged result. Required unless the resolved preset provides it.
+
+                      The major of a running server cannot change. A value that names another
+                      major, higher or lower, is refused on the Ready condition with reason
+                      VersionChangeRefused, and the server keeps running the major it has. A
+                      preset can raise it the same way and is refused the same way. To run
+                      another major, create a server on it and move the data over.
                     pattern: ^\d+$
                     type: string
                   walStorageSize:
@@ -878,6 +884,11 @@ spec:
                       size. Unset keeps the log on the data volume. It cannot shrink, for the
                       same reason storageSize cannot, and a lowered preset baseline is
                       ignored the same way.
+
+                      It can be added to a running server, and it cannot be taken away again:
+                      CloudNativePG refuses a cluster that gives up the volume. A cleared
+                      field, inline or from a preset, keeps the volume at the size it has and
+                      records a WALStorageKept event.
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                 type: object

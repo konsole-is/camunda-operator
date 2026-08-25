@@ -20,6 +20,10 @@ spec:
   databaseServerConfig: my-db-server
 ```
 
+The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to four characters, `-r99`.
+
+A rollback builds its cluster under the name of the server plus that suffix. The number in the suffix counts the archive records in `status.archive.history`. A rollback, an archive you re-enable, and a change of bucket each add one. A name inside the bound reaches the new cluster whole while that number stays below 100. Above it, the operator shortens the name to a head and a hash.
+
 ```mermaid
 graph LR
     DBS[DatabaseServer] -.->|presetRef| DBSP[DatabaseServerPreset]
@@ -74,6 +78,8 @@ spec:
 
 Neither volume size can shrink. Admission rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
 
+The write-ahead log volume cannot be removed either. You can add `walStorageSize` to a server that runs without one. If you clear it, or a preset clears it, the operator keeps the volume at the size it has and records a Warning event with reason `WALStorageKept`. To run the log on the data volume again, delete and recreate the server.
+
 `status.volumes` lists every bound volume of the cluster the contract points at, and the capacity each one reports. A server with a write-ahead log volume reports that one here too, under the name of its data volume with the suffix `-wal`.
 
 ## The archive
@@ -96,7 +102,7 @@ spec:
   # ... the rest of your server
 ```
 
-`retentionPeriodDays` is how far into the past a restore can reach. The operator enforces it on the bucket and publishes the same number as `pitr.retentionPeriodDays` on the contract, so the declared window and the enforced window are one.
+`retentionPeriodDays` is how far into the past a restore can reach. The operator enforces it on the bucket and publishes the same number as `pitr.retentionPeriodDays` on the contract, so the declared window and the enforced window are one. It covers the archive the server writes now, and no other. An archive that the server left behind, after a rollback or a change of bucket, stays in the bucket until you remove it. A [PointInTimeRestore](pointintimerestore.md) still reaches no point older than `retentionPeriodDays` of now, whichever archive holds it.
 
 `baseBackupSchedule` is a six-field cron in UTC, seconds first. It defaults to `0 0 2 * * *`, which is daily at 02:00. The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
@@ -104,7 +110,7 @@ The archive lives under a prefix of the bucket that holds this server alone: `<b
 
 ### The archive history
 
-`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
+`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `location` is where in object storage it was written, which is the bucket, the path, and the endpoint or region that selects the service, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
 
 A rollback closes the record of the archive it read at the moment the contract moves to the recovered server, and the recovered server opens a record of its own at its first base backup. The window between the two lies in no interval, so no restore can reach a point in it.
 
@@ -112,7 +118,11 @@ Remove `spec.archive` and the open record closes at that moment. The list itself
 
 Ask for an archive again and the server opens a record of its own, starting at the first base backup of the new archive. `ArchiveReady` stays `False` until that backup completes, because the backups of the archive the server wrote before reach no point in the new one. The window between the two records lies inside no interval, so no restore can reach a point in it.
 
-Change `spec.archive.objectStorageRef` and the same thing happens. The open record closes at that moment, and a record of the new bucket opens at its first base backup. A rollback reads the bucket the server archives to now, so a point inside a record of an earlier bucket is refused with `result: Unavailable`. The message names both buckets. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
+If you ask for it again on another location, no record is open to close. The server records the move as `status.archive.boundary` and clears it when the new record opens. A base backup that was still running to the location the server left ends after the move, and the boundary keeps it from opening the new record.
+
+Change `spec.archive.objectStorageRef` and the same happens, as long as the new reference resolves to another location. Two references to one bucket and one prefix are one archive, and a change between them closes no record. The open record closes at the moment the location changes, and a record of the new location opens at its first base backup. A rollback reads the location the server archives to now, so a point inside a record of an earlier location is refused with `result: Unavailable`. The message names both the bucket contract and the location of each. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
+
+Edit the [ObjectStorageConfig](objectstorageconfig.md) in place, or remove it and create it again on another bucket, and the same happens, unless a rollback is reading that archive. A rollback holds the archive where it recorded it: `Ready` goes `False` with reason `InvalidReference`, the message names both locations, and the operator leaves the archive settings as they are until you put the bucket back or the rollback ends. The name of the contract stays, the location behind it changes, and the location is what the operator compares. A new endpoint or region counts as a new location, because the objects are then on another service. A rollback to a point in the interval before the move is refused the same way.
 
 A [PointInTimeRestore](pointintimerestore.md) reaches any point inside a recorded interval. See [Recovery](#recovery).
 
@@ -213,6 +223,28 @@ spec:
   databaseServerConfig: my-db-server
 ```
 
+## The PostgreSQL version
+
+`spec.version` is a bare PostgreSQL major, such as `17`. It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and later.
+
+The major of a running server cannot change. A `spec.version` that names another major, higher or lower, is refused. `Ready` goes `False` with reason `VersionChangeRefused`, and the server records a Warning event of the same name. The server keeps running the major it has. Everything else about it stays maintained, so a rollback in flight finishes and the contract and the archive keep working.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  name: my-db
+  namespace: my-cluster-ns
+spec:
+  # A bare major. It cannot change once the server runs.
+  version: "17"
+  # ... the rest of your server
+```
+
+A preset carries the version too, so a new `spec.server.version` on a [DatabaseServerPreset](databaseserverpreset.md) reaches every server that reads it. Set the version back, on the server or on the preset, and the refusal clears. No annotation lets the change through.
+
+To run a later major, create a `DatabaseServer` on that version and move the data to it. A point-in-time restore is no help here: only the major that wrote an archive can read it back.
+
 ## Images
 
 The PostgreSQL image is `ghcr.io/cloudnative-pg/postgresql:<version>` by default. `spec.platformConfigRef` names a [CamundaPlatformConfig](camundaplatformconfig.md), and the image then comes from that config. An air-gapped cluster needs this.
@@ -250,6 +282,7 @@ status:
     history:
       - serverName: my-db
         objectStorageRef: my-backup-bucket
+        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db
         from: "2026-08-01T10:00:00Z"
   recovery:
     requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
@@ -292,6 +325,7 @@ status:
 | `Ready` | `BarmanPluginNotInstalled` | The server asks for an archive, and the Kubernetes cluster did not serve the Barman Cloud plugin when the operator started. | Install the plugin, then restart the operator. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec lacks a field. The message names it. | Create the resource, or fix the spec. |
 | `Ready` | `MissingSecret` | The credentials Secret of the bucket is missing or lacks a key. The message names it. | Create the Secret, or fix its keys. |
+| `Ready` | `VersionChangeRefused` | `version` names a PostgreSQL major other than the one the server runs. The message names both. | Set the version back to the major the server runs. See [The PostgreSQL version](#the-postgresql-version). |
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is converging the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance the spec asks for is ready. | Nothing. |
 | `ClusterReady` | `AliveFailing` | CloudNativePG reports a phase it cannot leave on its own. The message names the phase. | Read the CloudNativePG cluster for the reason. |
@@ -325,6 +359,7 @@ spec:
   # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
   platformConfigRef: "my-platform-config"
   # string. Required, unless the preset provides it. PostgreSQL major version, 14 or later.
+  # It cannot move to another major once the server runs.
   version: "17"
   # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
   instances: 3
@@ -337,6 +372,7 @@ spec:
   # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the volumes.
   storageClassName: "ssd"
   # string (resource quantity). Optional. Size of a separate volume for the write-ahead log.
+  # It cannot be cleared once the server has the volume.
   walStorageSize: "32Gi"
   # object. Optional. The ServiceAccount that CloudNativePG creates for the instance pods.
   serviceAccount:
@@ -381,9 +417,12 @@ spec:
 
 ### Validation rules
 
+- `metadata.name` must be a DNS-1035 label of 46 characters or fewer: lowercase letters, digits, and `-`, starting with a letter.
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
 - `storageSize` and `walStorageSize` cannot shrink. Admission rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
+- `walStorageSize` cannot be cleared once the server has a write-ahead log volume. The operator keeps the volume and records the Warning event `WALStorageKept`.
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
+- `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
 - `archive.retentionPeriodDays` must be at least 1.
 - `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.
 

@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -46,16 +45,26 @@ const RecoveryFieldManager client.FieldOwner = "camunda-operator/databaseserver-
 // number of a recovered cluster.
 const recoveryNameSeparator = "-r"
 
+// cnpgClusterNameMaxLength is the longest name that CloudNativePG accepts for
+// a cluster. Admission on the DatabaseServer bounds the name of the server to
+// this length less the four characters of "-r99", so the name of a server the
+// API server accepted reaches a recovery cluster whole while the recovery
+// index stays below 100.
+const cnpgClusterNameMaxLength = 50
+
 // ErrNoArchiveHolds reports that no archive of the server holds the requested
 // point. It is the one refusal that means the request was never possible,
 // rather than one that failed.
 var ErrNoArchiveHolds = errors.New("no archive of the server holds the requested point")
 
-// ErrArchiveInAnotherBucket reports that the archive that holds the requested
-// point is in a bucket the spec no longer names. The recovered cluster reads
-// one ObjectStore, and that ObjectStore describes the bucket the server
-// archives to now.
-var ErrArchiveInAnotherBucket = errors.New("the archive that holds the requested point is in another bucket")
+// ErrArchiveInAnotherLocation reports that the archive that holds the
+// requested point is somewhere the spec no longer archives to, or somewhere
+// the operator cannot place at all. The recovered cluster reads one
+// ObjectStore, and that ObjectStore describes where the server archives to
+// now.
+var ErrArchiveInAnotherLocation = errors.New(
+	"the archive that holds the requested point is in another location",
+)
 
 // RecoveryClusterName returns the name of the CloudNativePG cluster that the
 // next recovery of the server builds: the name of the server, the suffix -r,
@@ -82,36 +91,19 @@ func RecoveryClusterName(server *v1.DatabaseServer) string {
 }
 
 // recoveryName renders the name of the n-th recovery of a server, bounded so
-// that every Service CloudNativePG derives from it is still a DNS label.
+// that CloudNativePG accepts the name.
 //
-// A Service name is a DNS label of 63 characters. The suffix of the recovery
-// and the longest suffix CloudNativePG appends are taken off the bound before
-// the name of the server is shortened, the same way every other derived name
-// in this operator is shortened: the head of the name, and a hash of the whole
-// of it.
+// The suffix of the recovery comes off the bound, and the name of the server
+// is shortened to what is left, the same way every other derived name in this
+// operator is shortened: the head of the name, and a hash of the whole of it.
+// Admission leaves room for a two-digit n, so a server named at the bound is
+// shortened only once n reaches 100. The Services that CloudNativePG
+// derives need no budget of their own: this bound plus the longest of their
+// suffixes is well inside a DNS label of 63 characters.
 func recoveryName(server string, n int) string {
 	suffix := recoveryNameSeparator + strconv.Itoa(n)
-	room := validation.DNS1035LabelMaxLength - len(suffix) - len(longestServiceSuffix())
 
-	return labels.BoundedName(server, room) + suffix
-}
-
-// longestServiceSuffix returns the longest suffix that CloudNativePG appends
-// to a cluster name for one of its Services.
-func longestServiceSuffix() string {
-	longest := ""
-	for _, suffix := range []string{
-		cnpgv1.ServiceAnySuffix,
-		cnpgv1.ServiceReadSuffix,
-		cnpgv1.ServiceReadOnlySuffix,
-		cnpgv1.ServiceReadWriteSuffix,
-	} {
-		if len(suffix) > len(longest) {
-			longest = suffix
-		}
-	}
-
-	return longest
+	return labels.BoundedName(server, cnpgClusterNameMaxLength-len(suffix)) + suffix
 }
 
 // SelectArchive returns the archive of history that a recovery to target
@@ -121,16 +113,29 @@ func longestServiceSuffix() string {
 // archive the server writes now has no end and holds every point after its
 // start.
 //
-// bucket is the ObjectStorageConfig that spec.archive names now. A record of
-// another bucket holds its interval, and a recovery still cannot read it: the
-// recovered cluster is given one ObjectStore, and that one describes bucket.
-// A record that names no bucket was written before the field existed and is
-// taken as bucket.
+// location is where the server archives to now, and bucket is the
+// ObjectStorageConfig that names it. A record of another location holds its
+// interval, and a recovery still cannot read it: the recovered cluster is
+// given one ObjectStore, and that one describes location. The comparison is on
+// the location rather than on the name, because an ObjectStorageConfig can be
+// edited in place, and removed and created again, without its name changing.
+// A record that names no location was written before the field existed and is
+// taken as the current one.
+//
+// A record written before the location was recorded carries only the contract
+// that named it. It is the archive the server writes now when that contract is
+// the one it writes through, and it is unplaceable when it is not: the
+// contract has moved since, and nothing says where its objects went.
 //
 // The error wraps ErrNoArchiveHolds when no interval holds target, and
-// ErrArchiveInAnotherBucket when one holds it in another bucket. Both are
-// refusals of the request rather than failures of the recovery.
-func SelectArchive(history []v1.ArchiveRecord, target time.Time, bucket string) (v1.ArchiveRecord, error) {
+// ErrArchiveInAnotherLocation when one holds it somewhere else, or somewhere
+// that cannot be placed. Both are refusals of the request rather than failures
+// of the recovery.
+func SelectArchive(
+	history []v1.ArchiveRecord,
+	target time.Time,
+	location, bucket string,
+) (v1.ArchiveRecord, error) {
 	// Newest first: the intervals never overlap, and a record that a later
 	// recovery superseded is the answer only when nothing newer holds the
 	// point.
@@ -143,11 +148,24 @@ func SelectArchive(history []v1.ArchiveRecord, target time.Time, bucket string) 
 			if record.ObjectStorageRef == "" {
 				record.ObjectStorageRef = bucket
 			}
-			if record.ObjectStorageRef != bucket {
+			if record.Location == "" && record.ObjectStorageRef == bucket {
+				record.Location = location
+			}
+			if record.Location == "" {
 				return v1.ArchiveRecord{}, fmt.Errorf(
-					"%w. It is in ObjectStorageConfig %q, and the server archives to %q now. "+
-						"Reading the archive of an earlier bucket is not supported yet",
-					ErrArchiveInAnotherBucket, record.ObjectStorageRef, bucket,
+					"%w. It was written through ObjectStorageConfig %q, which the server no "+
+						"longer archives through, and its location was not recorded. Nothing "+
+						"says where those objects are",
+					ErrArchiveInAnotherLocation, record.ObjectStorageRef,
+				)
+			}
+			if record.Location != location {
+				return v1.ArchiveRecord{}, fmt.Errorf(
+					"%w. It is at %q (ObjectStorageConfig %q), and the server archives to %q "+
+						"(ObjectStorageConfig %q) now. Reading the archive of an earlier "+
+						"location is not supported yet",
+					ErrArchiveInAnotherLocation,
+					record.Location, record.ObjectStorageRef, location, bucket,
 				)
 			}
 
