@@ -508,6 +508,12 @@ Each step is idempotent and keyed on what exists, so a restart in the middle res
 previous `Cluster` is deleted only after the contract points at the new one, so a failure before
 step 4 leaves the old server intact and the restore reports `Failed` without data loss.
 
+`spec.databaseServerConfig` is mutable. The reconcile sweeps every `DatabaseServerConfig` it owns
+under the `camunda.io/database-server` label of the server and deletes the ones it no longer
+publishes, so a rename leaves no contract behind that still declares `pitr.recovery: operator` and
+that nothing answers. The sweep is skipped while a recovery is unanswered, because the answer goes
+on the contract the record names.
+
 While a request is unanswered, the server holds the two things the recovery reads. A spec that
 moves `spec.databaseServerConfig` or `spec.archive.objectStorageRef` puts
 `Ready=False/InvalidReference` on the server, and the merged spec stays pinned to the contract

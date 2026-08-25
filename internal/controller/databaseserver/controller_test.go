@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -676,6 +677,34 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[1].ServerName).To(Equal("camunda"))
 			g.Expect(history[1].From.Time).To(BeTemporally("==", reopenedAt.Time))
 			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("removes the contract it published under the previous name", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000011")
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Spec.DatabaseServerConfig = "camunda-renamed"
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The contract of the previous name keeps its owner reference and its
+		// pitr.recovery: operator declaration, so a PointInTimeRestore that
+		// resolves through it asks a server that never reads it again.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-renamed"},
+				&v1.DatabaseServerConfig{},
+			)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)).To(MatchError(apierrors.IsNotFound, "not found"))
 		}, timeout, interval).Should(Succeed())
 	})
 

@@ -710,10 +710,22 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		By("finishing the recovery on the contract that asked for it")
 		recoverySucceeds(server)
-		expectLastRecovery(server, v1.RecoveryResultCompleted)
+		Eventually(func(g Gomega) {
+			recovery := reconciledServer(server).Status.Recovery
+			g.Expect(recovery).NotTo(BeNil())
+			g.Expect(recovery.Contract).To(Equal("camunda"))
+			g.Expect(recovery.Result).To(Equal(v1.RecoveryResultCompleted))
+			g.Expect(recovery.CompletedAt).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
 
-		Eventually(func() error {
-			return k8sClient.Get(ctx, renamedKey, &v1.DatabaseServerConfig{})
+		// The answer goes on the contract that asked, and the rename takes
+		// effect on the look after it: the new name is published and the name
+		// before it goes. A consumer that pinned the old contract sees it
+		// disappear and ends its own restore.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, renamedKey, &v1.DatabaseServerConfig{})).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, contractKey(server), &v1.DatabaseServerConfig{})).
+				To(MatchError(apierrors.IsNotFound, "not found"))
 		}, timeout, interval).Should(Succeed())
 	})
 

@@ -47,6 +47,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
@@ -240,6 +241,10 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	comps = built.all()
 
 	reconcileErr := reconcileComponents(ctx, recCtx, comps)
+
+	if err := r.removeSupersededContracts(ctx, &server, resolved.merged); err != nil {
+		return ctrl.Result{}, errors.Join(reconcileErr, err)
+	}
 
 	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
@@ -838,6 +843,53 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 	}
 
 	return firstErr
+}
+
+// removeSupersededContracts deletes every DatabaseServerConfig that the server
+// owns and no longer publishes.
+//
+// spec.databaseServerConfig can be renamed. The contract of the name before it
+// keeps its owner reference and its pitr.recovery: operator declaration, so a
+// PointInTimeRestore that resolves through it writes a request on an object
+// that this controller never reads again. That restore waits for an answer
+// that never comes.
+//
+// A recovery that is still unanswered keeps the name: the answer is published
+// on the contract that the record names, whatever the spec says by then, and a
+// sweep here would take away the object that carries the request.
+//
+// The list is cached: the contract is owned and watched. The delete names the
+// object it read by uid, so a cached entry of an object that has gone deletes
+// nothing.
+func (r *DatabaseServerReconciler) removeSupersededContracts(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+) error {
+	if running := server.Status.Recovery; running != nil && running.CompletedAt == nil {
+		return nil
+	}
+
+	var contracts v1.DatabaseServerConfigList
+	if err := r.List(
+		ctx, &contracts,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{labels.DatabaseServerKey: labels.OwnerName(server.Name)},
+	); err != nil {
+		return fmt.Errorf("listing the contracts of %q: %w", server.Name, err)
+	}
+
+	for i := range contracts.Items {
+		superseded := &contracts.Items[i]
+		if superseded.Name == merged.DatabaseServerConfig || !ownedByServer(server, superseded) {
+			continue
+		}
+		if err := r.deleteOwned(ctx, superseded); err != nil {
+			return fmt.Errorf("deleting the superseded contract %q: %w", superseded.Name, err)
+		}
+	}
+
+	return nil
 }
 
 // reconcileArchiveHistory keeps status.archive.history in step with the spec.
