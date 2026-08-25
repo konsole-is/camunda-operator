@@ -299,7 +299,6 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, err
 		}
 	}
-	clearReenabledArchiveCondition(&server, resolved.merged)
 
 	built, systemIdentifier, err := r.buildComponents(&server, resolved, archiveStart)
 	if err != nil {
@@ -1074,35 +1073,6 @@ func closedArchiveEnd(server *v1.DatabaseServer) *metav1.Time {
 	}
 
 	return end
-}
-
-// clearReenabledArchiveCondition drops ArchiveReady when a server that had no
-// archive asks for one again.
-//
-// ocf carries the condition status of the previous reconcile into a component
-// that is converging again, and a disabled component carries True
-// (sourcehawk/operator-component-framework#194). Without this, an archive that
-// comes back would keep reporting ready while its first base backup is still
-// missing, and it would never correct itself: every following reconcile copies
-// that True forward again. A condition that is absent starts from Unknown
-// instead, which ocf derives from the resources.
-//
-// The same carry-over reaches ClusterReady when a suspended server is
-// unsuspended: Suspended also carries True, so the cluster reports True while
-// CloudNativePG is still bringing the instances back. That one corrects itself
-// once the instances are ready, so it is left to the upstream fix rather than
-// widened here.
-func clearReenabledArchiveCondition(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) {
-	if merged.Archive == nil {
-		return
-	}
-
-	condition := meta.FindStatusCondition(server.Status.Conditions, v1.ConditionArchiveReady)
-	if condition == nil || condition.Reason != string(component.Disabled) {
-		return
-	}
-
-	meta.RemoveStatusCondition(&server.Status.Conditions, v1.ConditionArchiveReady)
 }
 
 // buildComponents builds the four components in dependency order: cluster,
