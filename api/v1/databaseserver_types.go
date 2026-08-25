@@ -325,9 +325,10 @@ type DatabaseServerArchiveStatus struct {
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in
 // the bucket, where that bucket is, and the bucket contract that names it. It
-// also carries the archive settings of the server at that moment, so a spec
-// that removes spec.archive mid-rollback is held against them and the archive
-// keeps being rendered as it was.
+// also carries the archive settings of the server at that moment. Every edit
+// of spec.archive while the rollback is unanswered is held against them: a
+// moved bucket, a changed retention or schedule, and a removal. The archive
+// keeps being rendered as it was until the rollback is answered.
 type RecoveryArchiveRef struct {
 	// ServerName is the archive directory, equal to the name of the
 	// CloudNativePG cluster that wrote it.
