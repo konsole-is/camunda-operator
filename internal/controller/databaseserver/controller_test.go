@@ -34,6 +34,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 )
 
@@ -720,6 +721,47 @@ var _ = Describe("DatabaseServer controller", func() {
 				&v1.DatabaseServerConfig{},
 			)).To(MatchError(apierrors.IsNotFound, "not found"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	It("leaves a contract it does not own where it is", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000014")
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		// The label of this server, and no owner reference. The sweep runs
+		// over a label selector, and a label is a value anybody can write.
+		stranger := &v1.DatabaseServerConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-stranger",
+				Namespace: server.Namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: server.Name},
+			},
+			Spec: v1.DatabaseServerConfigSpec{
+				Engine: v1.DatabaseEnginePostgres,
+				Host:   "postgres.example.svc",
+				Port:   5432,
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name:        "somebody-elses",
+					UsernameKey: "username",
+					PasswordKey: "password",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, stranger)).To(Succeed())
+
+		renameContract(server, "camunda-renamed")
+
+		Eventually(func() error {
+			return k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)
+		}, timeout, interval).Should(MatchError(apierrors.IsNotFound, "not found"))
+
+		Consistently(func() error {
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(stranger), &v1.DatabaseServerConfig{})
+		}, "2s", interval).Should(Succeed())
 	})
 
 	It("keeps the contract of the previous name until the new one is published", func() {
