@@ -48,7 +48,7 @@ The operator creates no resources from this kind. It validates the contract, pro
 
 If the Secret or a key is missing, `Ready` is `False` with reason `MissingSecret`. If the server does not answer, `Ready` is `False` with reason `ConnectionFailed`, and the message names the host, the port, and the error. `status.serverVersion` and `status.systemIdentifier` keep their last known values while the server is unreachable.
 
-A change to the spec clears both, because they describe the endpoint the operator reached and the new spec can name another one. The contract publishes them again on the next successful probe, and a `Database` waits with `ServerIdentityUnknown` in between.
+A change to `spec.host`, `spec.port`, or the name or the keys in `spec.adminCredentialsSecretRef` clears the whole record of the last probe: `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, `status.probedSecretKeys`, and `status.probedSecretVersion`. Those fields can name another server, or another user on it, so the recorded answer can describe a server that this contract no longer names. Every other change to the spec keeps the record. A `pitr` block, a `spec.recovery` request, and the answer in `pitr.lastRecovery` do not move the endpoint. The contract publishes the record again on the next successful probe, and a `Database` waits with `ServerIdentityUnknown` in between.
 
 ## Server probe
 
@@ -137,9 +137,9 @@ spec:
 
 Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource: the new resource carries a new uid, and the server reads it as a new request even when the point is the same.
 
-A rollback moves `spec.host` to another server. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, `status.probedSecretKeys`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them. `status.systemIdentifier` then reads the same value as before: a recovery restores the `pg_control` of the base backup it reads, so the recovered instance keeps the identity it recovered from.
+A rollback moves `spec.host` to another server, so the record of the last probe clears. See [Validation checks](#validation-checks). Wait for `Ready` before you read those fields again. `status.systemIdentifier` then reads the same value as before: a recovery restores the `pg_control` of the base backup it reads, so the recovered instance keeps the identity it recovered from.
 
-Writing the request itself clears nothing. The operator clears the record of the probe when `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef` change, because only those name another server or another user on it. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
+Writing the request itself clears nothing. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
 
 ## Status
 
