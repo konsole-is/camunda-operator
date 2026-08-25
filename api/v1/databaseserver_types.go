@@ -94,8 +94,8 @@ type DatabaseServerArchiveSpec struct {
 	// from only after it completes.
 	//
 	// The five-field cron of a Kubernetes CronJob is refused. CloudNativePG
-	// reads the first field as seconds, so a five-field value runs at another
-	// time than the one who wrote it reads.
+	// reads the first field as seconds, so a five-field value runs at a
+	// different time from the one its author meant.
 	//
 	// Each field is bounded to what CloudNativePG takes there: 0-59 for
 	// seconds and minutes, 0-23 for hours, 1-31 for the day of the month,

@@ -157,8 +157,8 @@ rather than at read time. The pattern is written in ECMA 262 with explicit case 
 the names, because that is the dialect an OpenAPI `pattern` is read in. It cannot compare the two
 ends of a range, so `FRI-MON` stays a CloudNativePG rejection.
 
-Admission also rejects the five-field cron of a Kubernetes CronJob, which CloudNativePG would
-read seconds first and run at another time than the one who wrote it reads. Without the pattern a
+Admission also rejects the five-field cron of a Kubernetes CronJob. CloudNativePG reads it
+seconds first and runs it at a different time from the one its author meant. Without the pattern a
 malformed schedule reaches the `ScheduledBackup`, CloudNativePG takes no base backup at all, and
 the server keeps publishing an archive nobody refreshes.
 
