@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -45,6 +44,12 @@ const RecoveryFieldManager client.FieldOwner = "camunda-operator/databaseserver-
 // recoveryNameSeparator sits between the name of the server and the recovery
 // number of a recovered cluster.
 const recoveryNameSeparator = "-r"
+
+// cnpgClusterNameMaxLength is the longest name that CloudNativePG accepts for
+// a cluster. Admission on the DatabaseServer bounds the name of the server to
+// this length less the suffix of a recovery, so the name of a server the API
+// server accepted survives a recovery whole.
+const cnpgClusterNameMaxLength = 50
 
 // ErrNoArchiveHolds reports that no archive of the server holds the requested
 // point. It is the one refusal that means the request was never possible,
@@ -82,36 +87,18 @@ func RecoveryClusterName(server *v1.DatabaseServer) string {
 }
 
 // recoveryName renders the name of the n-th recovery of a server, bounded so
-// that every Service CloudNativePG derives from it is still a DNS label.
+// that CloudNativePG accepts the name.
 //
-// A Service name is a DNS label of 63 characters. The suffix of the recovery
-// and the longest suffix CloudNativePG appends are taken off the bound before
-// the name of the server is shortened, the same way every other derived name
-// in this operator is shortened: the head of the name, and a hash of the whole
-// of it.
+// The suffix of the recovery comes off the bound, and the name of the server
+// is shortened to what is left, the same way every other derived name in this
+// operator is shortened: the head of the name, and a hash of the whole of it.
+// The Services that CloudNativePG derives need no budget of their own: this
+// bound plus the longest of their suffixes is well inside a DNS label of 63
+// characters.
 func recoveryName(server string, n int) string {
 	suffix := recoveryNameSeparator + strconv.Itoa(n)
-	room := validation.DNS1035LabelMaxLength - len(suffix) - len(longestServiceSuffix())
 
-	return labels.BoundedName(server, room) + suffix
-}
-
-// longestServiceSuffix returns the longest suffix that CloudNativePG appends
-// to a cluster name for one of its Services.
-func longestServiceSuffix() string {
-	longest := ""
-	for _, suffix := range []string{
-		cnpgv1.ServiceAnySuffix,
-		cnpgv1.ServiceReadSuffix,
-		cnpgv1.ServiceReadOnlySuffix,
-		cnpgv1.ServiceReadWriteSuffix,
-	} {
-		if len(suffix) > len(longest) {
-			longest = suffix
-		}
-	}
-
-	return longest
+	return labels.BoundedName(server, cnpgClusterNameMaxLength-len(suffix)) + suffix
 }
 
 // SelectArchive returns the archive of history that a recovery to target

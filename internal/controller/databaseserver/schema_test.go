@@ -17,6 +17,8 @@ limitations under the License.
 package databaseserver
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -193,6 +195,33 @@ var _ = Describe("DatabaseServer schema", func() {
 			realisticDatabaseServer, func(o *v1.DatabaseServer) {
 				o.Spec.Archive.ObjectStorageRef = ""
 			}, "objectStorageRef",
+		),
+		// The name of the CR names the CloudNativePG cluster, and
+		// CloudNativePG takes a DNS-1035 label of at most 50 characters. The
+		// suffix of a rollback leaves 47 for the name itself.
+		Entry(
+			"rejects a dot in the name",
+			validDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Name = "my.db"
+			}, "metadata.name",
+		),
+		Entry(
+			"rejects a name that starts with a digit",
+			validDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Name = "1db"
+			}, "metadata.name",
+		),
+		Entry(
+			"rejects a name of 48 characters",
+			validDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Name = strings.Repeat("a", 48)
+			}, "metadata.name",
+		),
+		Entry(
+			"accepts a name of 47 characters",
+			validDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Name = strings.Repeat("a", 47)
+			}, "",
 		),
 		Entry(
 			"rejects a scrape interval that is not a Prometheus duration",

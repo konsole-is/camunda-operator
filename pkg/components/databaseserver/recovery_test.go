@@ -263,6 +263,30 @@ func TestRecoveryClusterNameFitsAService(t *testing.T) {
 	assert.NotEqual(t, name, RecoveryClusterName(server))
 }
 
+// Admission holds the name of a DatabaseServer to 47 characters, which is the
+// 50 that CloudNativePG accepts for a cluster name less the three of "-r" and
+// a single-digit counter. A name at that bound therefore reaches the recovered
+// cluster whole.
+func TestRecoveryClusterNameFitsCloudNativePG(t *testing.T) {
+	t.Parallel()
+
+	base := strings.Repeat("a", 47)
+	server := &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{Name: base, Namespace: "my-cluster-ns"},
+		Status: v1.DatabaseServerStatus{
+			Cluster: base,
+			Archive: &v1.DatabaseServerArchiveStatus{
+				History: []v1.ArchiveRecord{archiveAt(base, "2026-08-01T00:00:00Z", nil)},
+			},
+		},
+	}
+
+	name := RecoveryClusterName(server)
+	assert.LessOrEqual(t, len(name), 50)
+	assert.Empty(t, validation.IsDNS1035Label(name))
+	assert.Equal(t, base+"-r1", name)
+}
+
 // recoveryServer is the server of the recovery cases: it archives to a bucket
 // with static keys, it runs from its original cluster, and it records the
 // recovery it is about to build.

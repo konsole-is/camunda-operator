@@ -363,6 +363,12 @@ Printcolumns: `Ready`, `Reason`, `Version`, `Age`. The image is
 `ghcr.io/cloudnative-pg/postgresql:<version>` by default, resolved through `pkg/images` so the
 platform config can override the repository.
 
+Validation: `metadata.name` must be a DNS-1035 label of at most 47 characters, through a CEL rule
+on the root type. The name is used verbatim as the CloudNativePG cluster name, CloudNativePG takes
+at most 50, and `recoveryName` appends `-r<n>`, so 50 minus 3 is the bound. `recoveryName` shortens
+against the same 50 and needs no budget of its own for the Services CloudNativePG derives: 50 plus
+`-any` is well inside a DNS label of 63.
+
 Validation: `databaseServerConfig` required; `storageSize` and `walStorageSize` may not shrink,
 one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matches `^\d+$` and is
 floored at the oldest major Camunda 8.9 supports (verified with the `camunda-docs` MCP during
