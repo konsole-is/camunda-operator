@@ -251,6 +251,15 @@ type ArchiveRecord struct {
 	// restore of that interval has to read.
 	// +optional
 	ObjectStorageRef string `json:"objectStorageRef,omitempty"`
+	// Location is where in object storage this archive was written: the
+	// provider, the bucket, and the path, as one URL. It is what decides
+	// whether two intervals hold the same archive. An ObjectStorageConfig can
+	// be edited in place or removed and created again under its name, so the
+	// name alone does not say that. A record written before this field
+	// existed carries none, and takes the location of the server on first
+	// sight.
+	// +optional
+	Location string `json:"location,omitempty"`
 	// From is the earliest point this archive can be recovered to: when its
 	// first base backup completed.
 	From metav1.Time `json:"from"`
@@ -258,6 +267,23 @@ type ArchiveRecord struct {
 	// while the archive is the one the server writes to now.
 	// +optional
 	To *metav1.Time `json:"to,omitempty"`
+}
+
+// ArchiveBoundary is the moment a server moved its archive to another
+// location while no interval was open. Only a base backup that began after it
+// belongs to the archive the server writes now: one that began before it wrote
+// to the location the server left.
+type ArchiveBoundary struct {
+	// At is when the server moved.
+	At metav1.Time `json:"at"`
+	// Location is the location it moved to, in the form ArchiveRecord.Location
+	// takes. The boundary is spent once the archive of that location opens a
+	// record, and it moves again when the location moves again.
+	Location string `json:"location"`
+	// ObjectStorageRef is the ObjectStorageConfig of that location, for the
+	// reader.
+	// +optional
+	ObjectStorageRef string `json:"objectStorageRef,omitempty"`
 }
 
 // DatabaseServerArchiveStatus is the observed state of the archive of a
@@ -274,6 +300,13 @@ type DatabaseServerArchiveStatus struct {
 	// point in it.
 	// +optional
 	History []ArchiveRecord `json:"history,omitempty"`
+	// Boundary is the last move of the archive that no record holds yet:
+	// spec.archive was re-enabled on another location, or the location moved
+	// again before a base backup opened a record. It is what keeps a base
+	// backup of the location the server left from opening the interval of the
+	// one it moved to. It is cleared when that interval opens.
+	// +optional
+	Boundary *ArchiveBoundary `json:"boundary,omitempty"`
 }
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in

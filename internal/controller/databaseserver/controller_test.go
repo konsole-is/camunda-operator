@@ -388,7 +388,9 @@ func expectCondition(
 }
 
 // archiveBucket creates a cluster-scoped bucket contract with static
-// credentials and the Secret those credentials live in.
+// credentials and the Secret those credentials live in. Each contract names a
+// bucket of its own, so two of them describe two locations, which is what the
+// archive history compares.
 func archiveBucket() *v1.ObjectStorageConfig {
 	GinkgoHelper()
 
@@ -406,7 +408,7 @@ func archiveBucket() *v1.ObjectStorageConfig {
 		Spec: v1.ObjectStorageConfigSpec{
 			Type: v1.ObjectStorageTypeS3,
 			S3: &v1.S3Storage{
-				BucketName: "camunda-backups",
+				BucketName: name,
 				BasePath:   "clusters",
 				Region:     "eu-west-1",
 				Auth: v1.S3StorageAuth{
@@ -525,7 +527,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			)
 		}, timeout, interval).Should(Succeed())
 		Expect(store.Spec.Configuration.DestinationPath).To(Equal(
-			"s3://camunda-backups/clusters/databaseserver/" + server.Namespace + "/camunda",
+			"s3://" + bucket.Name + "/clusters/databaseserver/" + server.Namespace + "/camunda",
 		))
 		Expect(store.Spec.RetentionPolicy).To(Equal("30d"))
 
@@ -1017,6 +1019,81 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 3*time.Second, "5ms").Should(Succeed())
 
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+	})
+
+	// Removing spec.archive closes every record, so a re-enable elsewhere finds
+	// nothing open to close. The move has nowhere to live but
+	// status.archive.boundary, and without it the server accepts any backup
+	// that began after the old close, including one still writing to the
+	// location it left.
+	It("keeps the boundary of an archive re-enabled on another location", func() {
+		first := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    first.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000019")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+
+		By("closing the record when the archive is removed")
+		setArchive(server, nil)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		closedAt := *archiveHistory(server)[0].To
+
+		// status.archive stamps whole seconds, so the close and the move land
+		// in one second unless the spec separates them. A backup that began
+		// after the close and before the move needs them apart.
+		time.Sleep(1500 * time.Millisecond)
+
+		By("recording the move when the archive comes back on another location")
+		second := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    second.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		var movedAt metav1.Time
+		Eventually(func(g Gomega) {
+			boundary := reconciledServer(server).Status.Archive.Boundary
+			g.Expect(boundary).NotTo(BeNil())
+			g.Expect(boundary.ObjectStorageRef).To(Equal(second.Name))
+			movedAt = boundary.At
+		}, timeout, interval).Should(Succeed())
+		Expect(movedAt.Time).To(BeTemporally(">=", closedAt.Add(time.Second)))
+
+		By("refusing a backup that began before the move")
+		inFlightStart := metav1.NewTime(closedAt.Add(time.Second))
+		completeBaseBackupBetween(
+			server, "in-flight", &inFlightStart, metav1.NewTime(movedAt.Add(2*time.Second)),
+		)
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+		Consistently(func(g Gomega) {
+			g.Expect(archiveHistory(server)).To(HaveLen(1))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		By("opening the record on a backup that began after it")
+		openedStart := metav1.NewTime(movedAt.Add(5 * time.Second))
+		completeBaseBackupBetween(
+			server, "after-move", &openedStart, metav1.NewTime(movedAt.Add(6*time.Second)),
+		)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			latest := reconciledServer(server)
+			g.Expect(latest.Status.Archive.History).To(HaveLen(2))
+			g.Expect(latest.Status.Archive.History[1].ObjectStorageRef).To(Equal(second.Name))
+			g.Expect(latest.Status.Archive.History[1].Location).To(ContainSubstring(second.Name))
+			// The record holds the move from here on.
+			g.Expect(latest.Status.Archive.Boundary).To(BeNil())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// status.startedAt is optional on a CloudNativePG Backup. The first archive

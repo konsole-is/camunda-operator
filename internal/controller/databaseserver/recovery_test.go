@@ -971,7 +971,8 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(k8sClient.Get(
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &store,
 			)).To(Succeed())
-			g.Expect(store.Spec.Configuration.DestinationPath).To(ContainSubstring("camunda-backups"))
+			g.Expect(store.Spec.Configuration.DestinationPath).
+				To(ContainSubstring(recorded.ObjectStorageRef))
 		}, "2s", interval).Should(Succeed())
 
 		recoverySucceeds(server)

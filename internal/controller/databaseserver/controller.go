@@ -83,6 +83,12 @@ type resolvedSpec struct {
 	merged   v1.DatabaseServerSpec
 	platform *v1.CamundaPlatformConfigSpec
 	archive  *components.ArchiveStorage
+	// archiveLocation is where in object storage the archive of the server is
+	// written, rendered from the resolved bucket. status.archive compares
+	// intervals by it rather than by the name of the ObjectStorageConfig,
+	// which can be edited in place. It is empty when the bucket does not
+	// resolve.
+	archiveLocation string
 	// holdForSuspension says that the archive of a server whose instances are
 	// already down did not resolve. The reconcile then stops and leaves the
 	// conditions alone: see preCheck.
@@ -258,7 +264,8 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// the bucket the server leaves cannot report the new archive ready.
 	now := metav1.Now()
 	archiveStart, err := r.archiveStart(
-		ctx, &server, resolved.merged, archiveBoundary(&server, resolved.merged, now),
+		ctx, &server, resolved.merged,
+		archiveBoundary(&server, resolved.merged, resolved.archiveLocation, now),
 	)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -280,7 +287,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
-	reconcileArchiveHistory(&server, resolved.merged, built.archive, archiveStart, now)
+	reconcileArchiveHistory(
+		&server, resolved.merged, built.archive, archiveStart, resolved.archiveLocation, now,
+	)
 
 	server.Status.Volumes = volumes.all()
 
@@ -396,6 +405,7 @@ func (r *DatabaseServerReconciler) preCheck(
 	switch {
 	case err == nil:
 		resolved.archive = archive
+		resolved.archiveLocation = archive.ArchiveLocation(server)
 
 	// A server whose instances are already down keeps reporting Suspended
 	// when its bucket stops resolving. It runs nothing and takes no backups,
@@ -744,17 +754,19 @@ func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resou
 // archiveBoundary returns the point after which a base backup belongs to the
 // archive the server writes now, or nil when nothing bounds it.
 //
-// A closed record is a boundary the server recorded before. An open record of
-// another bucket is one this reconcile is about to record: the spec moved the
-// bucket, so that archive ends at now and the archive of the new bucket starts
-// after it. The guard on the archive component and the history both read this,
-// so a base backup of the bucket the server leaves can neither report the new
-// archive ready nor open its record. A record that names no bucket predates
-// the field, and reconcileArchiveHistory adopts the bucket of the spec into it
-// rather than closing it.
+// The guard on the archive component and the history both read this, so a base
+// backup of the location the server leaves can neither report the new archive
+// ready nor open its record.
+//
+// Three things bound the current archive, and the latest of them wins: a
+// record the server closed before, the move this reconcile is about to record,
+// and a move it recorded on an earlier one. The last of those is what covers a
+// server with no interval open, which is where an archive that was disabled
+// and re-enabled elsewhere leaves it.
 func archiveBoundary(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
+	location string,
 	now metav1.Time,
 ) *metav1.Time {
 	closed := closedArchiveEnd(server)
@@ -762,13 +774,70 @@ func archiveBoundary(
 		return closed
 	}
 
-	open := openArchiveRecord(server)
-	if open == nil || open.ObjectStorageRef == "" ||
-		open.ObjectStorageRef == merged.Archive.ObjectStorageRef {
-		return closed
+	if archiveLocationMoved(server, location) {
+		return &now
 	}
 
-	return &now
+	if recorded := archiveBoundaryOf(server); recorded != nil {
+		return laterTime(closed, &recorded.At)
+	}
+
+	return closed
+}
+
+// archiveLocationMoved reports whether location is not where the server wrote
+// its archive before. A server that has written none, and a record from before
+// the location was recorded, both report false: nothing places them, and
+// reconcileArchiveHistory adopts the location of the spec into such a record
+// rather than closing it.
+func archiveLocationMoved(server *v1.DatabaseServer, location string) bool {
+	previous := previousArchiveLocation(server)
+
+	return previous != "" && location != "" && previous != location
+}
+
+// previousArchiveLocation returns where the server wrote its archive before
+// this reconcile: the location an unspent boundary marks, the location the
+// open record names, or the location of the last record it wrote.
+func previousArchiveLocation(server *v1.DatabaseServer) string {
+	status := server.Status.Archive
+	if status == nil {
+		return ""
+	}
+	if status.Boundary != nil {
+		return status.Boundary.Location
+	}
+	if open := openArchiveRecord(server); open != nil {
+		return open.Location
+	}
+	if last := len(status.History) - 1; last >= 0 {
+		return status.History[last].Location
+	}
+
+	return ""
+}
+
+// archiveBoundaryOf returns the move of the archive that no record holds yet,
+// or nil when the server has none.
+func archiveBoundaryOf(server *v1.DatabaseServer) *v1.ArchiveBoundary {
+	if server.Status.Archive == nil {
+		return nil
+	}
+
+	return server.Status.Archive.Boundary
+}
+
+// laterTime returns the later of a and b, or the one that is set when the
+// other is nil.
+func laterTime(a, b *metav1.Time) *metav1.Time {
+	if a == nil {
+		return b
+	}
+	if b == nil || a.After(b.Time) {
+		return a
+	}
+
+	return b
 }
 
 // archiveStart returns when the earliest base backup of the archive the server
@@ -1024,9 +1093,11 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 // that archives again opens a record of its own, so the window with no archive
 // stays outside every interval and no restore can ask for a point in it.
 //
-// A spec that names another bucket closes the open record the same way, at
-// the moment the bucket moves. Each record therefore names one bucket, and a
-// restore of that interval knows which bucket holds it.
+// A spec that moves the archive to another location closes the open record the
+// same way, at the moment it moves. Each record therefore names one location,
+// and a restore of that interval knows where to read it. With no record open,
+// the move is recorded as status.archive.boundary instead, and the next record
+// opens after it.
 //
 // A recovery closes the record of the cluster it replaces itself, at the
 // moment the contract moves. What is left here is the record of an archive
@@ -1037,6 +1108,7 @@ func reconcileArchiveHistory(
 	merged v1.DatabaseServerSpec,
 	archiveComp *component.Component,
 	archiveStart *metav1.Time,
+	location string,
 	now metav1.Time,
 ) {
 	if merged.Archive == nil {
@@ -1044,21 +1116,35 @@ func reconcileArchiveHistory(
 		return
 	}
 
+	// Before the adopt below, which would make every move look like none.
+	moved := archiveLocationMoved(server, location)
+
 	open := openArchiveRecord(server)
 	if open != nil {
-		// A record from before the field existed names no bucket. Nothing
-		// else can place it, so it takes the bucket the spec names now.
+		// A record from before these fields existed names neither the bucket
+		// nor the location. Nothing else can place it, so it takes what the
+		// server writes to now.
 		if open.ObjectStorageRef == "" {
 			open.ObjectStorageRef = merged.Archive.ObjectStorageRef
 		}
-		if open.ObjectStorageRef != merged.Archive.ObjectStorageRef {
-			// The interval of the bucket the server leaves ends here, at the
-			// same now that archiveBoundary already gave the guard. The record
-			// of the new bucket opens on a later look, once a base backup of
-			// that bucket has completed after this point.
-			open.To = &now
-			return
+		if open.Location == "" {
+			open.Location = location
 		}
+	}
+
+	if moved {
+		// The interval of the location the server leaves ends here, at the
+		// same now that archiveBoundary already gave the guard. The record of
+		// the new location opens on a later look, once a base backup of it has
+		// completed after this point. The boundary carries that point until
+		// then, because a closed record alone cannot: an archive that was
+		// disabled and re-enabled elsewhere closes no record at the move.
+		if open != nil {
+			open.To = &now
+		}
+		markArchiveBoundary(server, now, location, merged.Archive.ObjectStorageRef)
+
+		return
 	}
 
 	if archiveStart == nil || archiveComp.GetCondition(server).Status != metav1.ConditionTrue {
@@ -1077,11 +1163,28 @@ func reconcileArchiveHistory(
 	if server.Status.Archive == nil {
 		server.Status.Archive = &v1.DatabaseServerArchiveStatus{}
 	}
+	// The record holds the move from here on, so the boundary is spent.
+	server.Status.Archive.Boundary = nil
 	server.Status.Archive.History = append(server.Status.Archive.History, v1.ArchiveRecord{
 		ServerName:       components.ClusterName(server),
 		ObjectStorageRef: merged.Archive.ObjectStorageRef,
+		Location:         location,
 		From:             *archiveStart,
 	})
+}
+
+// markArchiveBoundary records that the archive of the server moved to location
+// at now, with no interval open to hold the move.
+func markArchiveBoundary(server *v1.DatabaseServer, now metav1.Time, location, bucket string) {
+	if server.Status.Archive == nil {
+		server.Status.Archive = &v1.DatabaseServerArchiveStatus{}
+	}
+
+	server.Status.Archive.Boundary = &v1.ArchiveBoundary{
+		At:               now,
+		Location:         location,
+		ObjectStorageRef: bucket,
+	}
 }
 
 // openArchiveRecord returns the archive the server writes now, or nil when it

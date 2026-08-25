@@ -284,6 +284,18 @@ func objectStore(
 	return store
 }
 
+// ArchiveLocation returns where in object storage the archive of server is
+// written: the provider, the bucket, and the path, as the one URL the Barman
+// Cloud plugin is given. It is the empty string when the bucket does not
+// resolve, or when the server references none.
+//
+// status.archive.history compares intervals by it. The ObjectStorageConfig
+// that a record names can be edited in place, or removed and created again
+// under its name, and neither shows in the name.
+func (a *ArchiveStorage) ArchiveLocation(server *v1.DatabaseServer) string {
+	return destinationPath(a.resolveOrNil(server))
+}
+
 // destinationPath returns the bucket URL that holds the archives of the
 // server, in the form the Barman Cloud plugin addresses the provider, or the
 // empty string when the bucket did not resolve.

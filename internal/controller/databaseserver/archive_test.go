@@ -27,60 +27,110 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+const (
+	locationA = "s3://bucket-a/clusters/databaseserver/ns/camunda"
+	locationB = "s3://bucket-b/clusters/databaseserver/ns/camunda"
+	locationC = "s3://bucket-c/clusters/databaseserver/ns/camunda"
+)
+
 // The boundary decides which base backups belong to the archive the server
-// writes now. A bucket change has to move it in the same reconcile that
-// applies the change: the archive component reads it before the history writes
+// writes now. A move of the archive has to move it in the same reconcile that
+// applies the move: the archive component reads it before the history writes
 // anything, so a boundary that waits for the recorded close lets a base backup
-// of the bucket the server leaves report the new archive ready.
+// of the location the server leaves report the new archive ready.
+//
+// A move with no interval open closes no record, so a boundary read from the
+// records alone is not moved at all. status.archive.boundary carries that one.
 func TestArchiveBoundary(t *testing.T) {
 	t.Parallel()
 
 	now := metav1.NewTime(time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
 	closedAt := metav1.NewTime(now.Add(-time.Hour))
+	movedAt := metav1.NewTime(now.Add(-30 * time.Minute))
 	openedAt := metav1.NewTime(now.Add(-2 * time.Hour))
 
-	record := func(bucket string, to *metav1.Time) v1.ArchiveRecord {
+	record := func(location string, to *metav1.Time) v1.ArchiveRecord {
 		return v1.ArchiveRecord{
-			ServerName: "camunda", ObjectStorageRef: bucket, From: openedAt, To: to,
+			ServerName: "camunda", ObjectStorageRef: "bucket", Location: location,
+			From: openedAt, To: to,
 		}
 	}
 
 	tests := []struct {
-		name    string
-		history []v1.ArchiveRecord
-		bucket  string
-		want    *metav1.Time
+		name     string
+		history  []v1.ArchiveRecord
+		boundary *v1.ArchiveBoundary
+		location string
+		noSpec   bool
+		want     *metav1.Time
 	}{
 		{
-			name:   "no archive written yet",
-			bucket: "bucket-a",
+			name:     "no archive written yet",
+			location: locationA,
 		},
 		{
-			name:    "the archive of the bucket the spec names is open",
-			history: []v1.ArchiveRecord{record("bucket-a", nil)},
-			bucket:  "bucket-a",
+			name:     "the archive of the location the spec names is open",
+			history:  []v1.ArchiveRecord{record(locationA, nil)},
+			location: locationA,
 		},
 		{
-			name:    "an archive closed before, and none open",
-			history: []v1.ArchiveRecord{record("bucket-a", &closedAt)},
-			bucket:  "bucket-a",
-			want:    &closedAt,
+			name:     "an archive closed before, and none open",
+			history:  []v1.ArchiveRecord{record(locationA, &closedAt)},
+			location: locationA,
+			want:     &closedAt,
 		},
 		{
-			name:    "the spec moved the bucket, and the record is still open",
-			history: []v1.ArchiveRecord{record("bucket-a", nil)},
-			bucket:  "bucket-b",
-			want:    &now,
+			name:     "the spec moved the archive, and the record is still open",
+			history:  []v1.ArchiveRecord{record(locationA, nil)},
+			location: locationB,
+			want:     &now,
 		},
 		{
-			name:    "an open record from before the bucket field existed",
-			history: []v1.ArchiveRecord{record("", nil)},
-			bucket:  "bucket-b",
+			name:     "an open record from before the location was recorded",
+			history:  []v1.ArchiveRecord{record("", nil)},
+			location: locationB,
 		},
 		{
-			name:    "the server asks for no archive",
-			history: []v1.ArchiveRecord{record("bucket-a", &closedAt)},
-			want:    &closedAt,
+			name:     "the server asks for no archive",
+			history:  []v1.ArchiveRecord{record(locationA, &closedAt)},
+			location: locationA,
+			noSpec:   true,
+			want:     &closedAt,
+		},
+		{
+			name:     "the bucket does not resolve",
+			history:  []v1.ArchiveRecord{record(locationA, nil)},
+			location: "",
+		},
+		// The archive was disabled, which closed the record, and re-enabled on
+		// another location. Nothing is open to close, so the move lives on the
+		// boundary or it is lost.
+		{
+			name:     "re-enabled on another location, with every record closed",
+			history:  []v1.ArchiveRecord{record(locationA, &closedAt)},
+			location: locationB,
+			want:     &now,
+		},
+		{
+			name:     "the recorded move still names the location the spec does",
+			history:  []v1.ArchiveRecord{record(locationA, &closedAt)},
+			boundary: &v1.ArchiveBoundary{At: movedAt, Location: locationB},
+			location: locationB,
+			want:     &movedAt,
+		},
+		{
+			name:     "the archive moved again before a record opened",
+			history:  []v1.ArchiveRecord{record(locationA, &closedAt)},
+			boundary: &v1.ArchiveBoundary{At: movedAt, Location: locationB},
+			location: locationC,
+			want:     &now,
+		},
+		{
+			name:     "the archive moved back before a record opened",
+			history:  []v1.ArchiveRecord{record(locationA, &closedAt)},
+			boundary: &v1.ArchiveBoundary{At: movedAt, Location: locationB},
+			location: locationA,
+			want:     &now,
 		},
 	}
 
@@ -92,17 +142,19 @@ func TestArchiveBoundary(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: "ns"},
 				Status: v1.DatabaseServerStatus{
 					Cluster: "camunda",
-					Archive: &v1.DatabaseServerArchiveStatus{History: tt.history},
+					Archive: &v1.DatabaseServerArchiveStatus{
+						History: tt.history, Boundary: tt.boundary,
+					},
 				},
 			}
 			merged := v1.DatabaseServerSpec{}
-			if tt.bucket != "" {
+			if !tt.noSpec {
 				merged.Archive = &v1.DatabaseServerArchiveSpec{
-					ObjectStorageRef: tt.bucket, RetentionPeriodDays: 30,
+					ObjectStorageRef: "bucket", RetentionPeriodDays: 30,
 				}
 			}
 
-			got := archiveBoundary(server, merged, now)
+			got := archiveBoundary(server, merged, tt.location, now)
 
 			if tt.want == nil {
 				assert.Nil(t, got)

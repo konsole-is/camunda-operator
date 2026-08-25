@@ -110,13 +110,15 @@ The archive lives under a prefix of the bucket that holds this server alone: `<b
 
 ### The archive history
 
-`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
+`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `location` is where in object storage it was written, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
 
 A rollback closes the record of the archive it read at the moment the contract moves to the recovered server, and the recovered server opens a record of its own at its first base backup. The window between the two lies in no interval, so no restore can reach a point in it.
 
 Remove `spec.archive` and the open record closes at that moment. The list itself stays, and no new record is written. The bucket still holds those objects, so a restore can still reach a point inside a closed interval.
 
 Ask for an archive again and the server opens a record of its own, starting at the first base backup of the new archive. `ArchiveReady` stays `False` until that backup completes, because the backups of the archive the server wrote before reach no point in the new one. The window between the two records lies inside no interval, so no restore can reach a point in it.
+
+If you ask for it again on another location, no record is open to close. The server records the move as `status.archive.boundary` and clears it when the new record opens. A base backup that was still running to the location the server left ends after the move, and the boundary keeps it from opening the new record.
 
 Change `spec.archive.objectStorageRef` and the same thing happens. The open record closes at that moment, and a record of the new bucket opens at its first base backup. A rollback reads the bucket the server archives to now, so a point inside a record of an earlier bucket is refused with `result: Unavailable`. The message names both buckets. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
 
@@ -278,6 +280,7 @@ status:
     history:
       - serverName: my-db
         objectStorageRef: my-backup-bucket
+        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db
         from: "2026-08-01T10:00:00Z"
   recovery:
     requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
