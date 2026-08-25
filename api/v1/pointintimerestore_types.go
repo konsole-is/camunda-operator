@@ -84,17 +84,17 @@ const (
 	PointInTimeRestoreFailed PointInTimeRestorePhase = "Failed"
 )
 
-// PointInTimeRestoreSpec names the cluster to roll back and the point it was
-// rolled back to. The whole spec is immutable.
+// PointInTimeRestoreSpec names the cluster to roll back and the point to roll
+// it back to. The whole spec is immutable.
 type PointInTimeRestoreSpec struct {
 	// ClusterRef references the CamundaCluster to align, in the namespace of
 	// this restore. Its secondary storage must be a relational database.
 	// +required
 	ClusterRef ClusterRef `json:"clusterRef"`
-	// Timestamp is the point to restore to. Who rolls the database back to
-	// it depends on pitr.recovery of the DatabaseServerConfig: with operator
-	// the restore asks the server to roll back to this point, with external
-	// you roll the database back to it before you create the restore.
+	// Timestamp is the point to restore to. Who rolls the database server
+	// back to it depends on DatabaseServerConfig.spec.pitr.recovery: with
+	// operator the restore asks the server to roll back to this point, with
+	// external you roll the server back to it before you create the restore.
 	//
 	// Choose that point at least one backup interval before the cluster
 	// stopped writing, and inside the window that Zeebe keeps its
