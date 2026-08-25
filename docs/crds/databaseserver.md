@@ -104,7 +104,9 @@ spec:
 
 `retentionPeriodDays` is how far into the past a restore can reach. The operator enforces it on the bucket and publishes the same number as `pitr.retentionPeriodDays` on the contract, so the declared window and the enforced window are one. It covers the archive the server writes now, and no other. An archive that the server left behind, after a rollback or a change of bucket, stays in the bucket until you remove it. A [PointInTimeRestore](pointintimerestore.md) still reaches no point older than `retentionPeriodDays` of now, whichever archive holds it.
 
-`baseBackupSchedule` is a six-field cron in UTC, seconds first. It defaults to `0 0 2 * * *`, which is daily at 02:00. The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
+`baseBackupSchedule` is a six-field cron in UTC, seconds first: seconds, minutes, hours, day of month, month, day of week. It defaults to `0 0 2 * * *`, which is daily at 02:00. Each field takes `*`, `?`, a number, a range, a list, or a step such as `*/15`. The month and the day of week also take their names, such as `JAN` and `SUN`. The descriptors `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, `@hourly`, and `@every 6h` are accepted too. Admission rejects the five-field cron of a Kubernetes CronJob: CloudNativePG reads the first field as seconds, so `0 2 * * *` runs every hour at two minutes past, not daily at 02:00.
+
+The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
 The archive lives under a prefix of the bucket that holds this server alone: `<basePath>/databaseserver/<namespace>/<name>`. One bucket can serve a whole fleet.
 
@@ -424,6 +426,7 @@ spec:
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 - `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
 - `archive.retentionPeriodDays` must be at least 1.
+- `archive.baseBackupSchedule` must be a six-field cron or a descriptor. See [The archive](#the-archive).
 - `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.
 
 ### A production-shaped example

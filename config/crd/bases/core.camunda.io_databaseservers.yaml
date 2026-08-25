@@ -77,9 +77,17 @@ spec:
                     default: 0 0 2 * * *
                     description: |-
                       BaseBackupSchedule is when a base backup is taken, as the six-field
-                      cron of CloudNativePG (seconds first, in UTC). The first base backup
-                      runs as soon as the server is up, whatever the schedule says, because
-                      the archive can be recovered from only after it completes.
+                      cron of CloudNativePG (seconds first, in UTC), or as one of the
+                      descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,
+                      @hourly and @every. The first base backup runs as soon as the server is
+                      up, whatever the schedule says, because the archive can be recovered
+                      from only after it completes.
+
+                      The five-field cron of a Kubernetes CronJob is refused. CloudNativePG
+                      reads the first field as seconds, so a five-field value runs at another
+                      time than the one who wrote it reads.
+                    pattern: ^(@(annually|yearly|monthly|weekly|daily|midnight|hourly)|@every
+                      \d+[hms](\d+[hms])*|\s*(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?(,(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?)*(\s+(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?(,(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?)*){5}\s*)$
                     type: string
                   objectStorageRef:
                     description: |-

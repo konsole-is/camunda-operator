@@ -149,6 +149,14 @@ The schedule comes from `spec.archive.baseBackupSchedule` (default daily at 02:0
 first backup runs at once (`immediate: true`). `ArchiveReady` is `True` only after the first
 base backup completed.
 
+CloudNativePG parses that schedule with `robfig/cron` and its seconds field, so the six-field
+form is the one it takes, together with the `@yearly` to `@hourly` descriptors and `@every`. A
+schema pattern on the field holds it to that form. Admission therefore rejects the five-field
+cron of a Kubernetes CronJob, which CloudNativePG would otherwise read seconds first and run at
+another time than the one who wrote it reads. Without the pattern a malformed schedule reaches
+the `ScheduledBackup`, CloudNativePG takes no base backup at all, and the server keeps
+publishing an archive nobody refreshes.
+
 The base backups are part of the archive, not part of the operator's backup model. The
 operator's backup model is `BackupSchedule` creating `LogicalBackupRDBMS` (a `pg_dump`) and
 `LogicalBackupElasticsearch`, coordinated with the Camunda backup API and restorable by
