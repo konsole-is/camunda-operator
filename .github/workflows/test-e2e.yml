@@ -74,38 +74,43 @@ jobs:
 
       # The management job has twice lost its runner in the middle of the
       # suite, with no Ginkgo failure and no dump of the cluster. The sampler
-      # writes what the node held every 30 seconds, so the next loss leaves
-      # evidence of what filled it. It runs detached and outlives this step.
-      - name: Start the node pressure sampler
-        run: |
-          cat > "${RUNNER_TEMP}/sample-node-pressure.sh" <<'SAMPLER'
-          #!/usr/bin/env bash
-          while true; do
-            {
-              date -u
-              free -m
-              df -h /
-              ps -eo rss,comm --sort=-rss | head -15
-              docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' || true
-              echo
-            } >> "${RUNNER_TEMP}/node-pressure.log" 2>&1
-            sleep 30
-          done
-          SAMPLER
-          chmod +x "${RUNNER_TEMP}/sample-node-pressure.sh"
-          setsid nohup "${RUNNER_TEMP}/sample-node-pressure.sh" > /dev/null 2>&1 &
-          disown
-
+      # runs inside this step and writes one [node] line every 30 seconds to
+      # the job log, which GitHub receives live and keeps when the runner goes.
+      # The full detail goes to a file, which the upload below keeps whenever
+      # the runner survives. The trap takes the sampler down with the step.
       - name: Running Test e2e
         env:
           ECK_INSTALL_SKIP: ${{ matrix.eckInstallSkip }}
           CNPG_INSTALL_SKIP: ${{ matrix.cnpgInstallSkip }}
         run: |
+          cat > "${RUNNER_TEMP}/sample-node-pressure.sh" <<'SAMPLER'
+          #!/usr/bin/env bash
+          while true; do
+            {
+              echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              free -m
+              df -h /
+              ps -eo rss,comm --sort=-rss | head -15
+              docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' || true
+            } >> "${RUNNER_TEMP}/node-pressure.log" 2>&1
+            memory=$(free -m | awk '/^Mem:/ {print "free=" $4 "MiB avail=" $7 "MiB"}')
+            top=$(ps -eo rss=,comm= --sort=-rss | head -5 | awk '{printf "%s=%dMiB ", $2, $1 / 1024}')
+            busiest=$(docker stats --no-stream --format '{{.Name}}={{.MemUsage}}' 2>/dev/null | tr '\n' ' ')
+            echo "[node] $(date -u +%H:%M:%SZ) ${memory} | top: ${top}| docker: ${busiest}"
+            sleep 30
+          done
+          SAMPLER
+          chmod +x "${RUNNER_TEMP}/sample-node-pressure.sh"
+          setsid "${RUNNER_TEMP}/sample-node-pressure.sh" &
+          sampler=$!
+          trap 'kill -- -"${sampler}" 2>/dev/null || true' EXIT
+
           make tidy
           make test-e2e E2E_CAMUNDA_MINOR=${{ matrix.minor }} E2E_LABEL_FILTER='${{ matrix.labels }}'
 
       # Both reads fail when the API server is gone, which is one of the
-      # answers this step is here to record.
+      # answers this step is here to record. The output goes to the job log as
+      # well, so it is there without the artifact.
       - name: Read the cluster into the node pressure sample
         if: always()
         run: |
@@ -114,7 +119,7 @@ jobs:
             kubectl get pods -A -o wide || true
             echo "=== nodes"
             kubectl describe nodes || true
-          } >> "${RUNNER_TEMP}/node-pressure.log" 2>&1
+          } 2>&1 | tee -a "${RUNNER_TEMP}/node-pressure.log"
 
       - name: Upload the node pressure sample
         if: always()
