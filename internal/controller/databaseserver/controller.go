@@ -35,6 +35,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -56,6 +57,16 @@ import (
 // controller reports its creation, and the published contract must not name it
 // before it exists.
 const defaultRetryInterval = 30 * time.Second
+
+// eventReasonStorageShrinkIgnored is the Warning event that the controller
+// records when a merged volume size is below the size that is already there.
+// It keeps the size that is there, because PostgreSQL volumes cannot be
+// reduced in place.
+const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
+
+// eventActionResize is the action of the events that the controller records
+// about the size of the volumes.
+const eventActionResize = "Resize"
 
 // resolvedSpec is everything the pre-checks resolved for one reconcile: the
 // preset-merged spec, the platform config whose image settings rename the
@@ -198,6 +209,13 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// Before the recovery below: the cluster a rollback builds carries the
+	// volume sizes of the merged spec, and it must not come back smaller than
+	// the server it replaces.
+	if err := r.keepAppliedStorageSize(ctx, &server, &resolved.merged); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Before the hold below: a suspended server refuses a recovery request,
 	// and a request nobody answers holds whoever asked for good.
 	recovering, err := r.reconcileRecovery(ctx, &server, resolved)
@@ -228,11 +246,11 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	reconcileArchiveHistory(&server, resolved.merged, built.archive, archiveStart, metav1.Now())
 
-	volumes, err := r.dataVolumes(ctx, &server)
+	volumes, err := r.volumeClaims(ctx, &server)
 	if err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
 	}
-	server.Status.Volumes = volumes
+	server.Status.Volumes = volumes.all()
 
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
 
@@ -504,6 +522,162 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 	return archive, nil
 }
 
+// keepAppliedStorageSize raises each merged volume size back to the size that
+// is already there.
+//
+// It guards against the shrinks that admission cannot see: a preset baseline
+// lowered under a server, or an inline size set below a size that a preset
+// provided before. The CEL transition rules of storageSize and walStorageSize
+// bind the spec of the DatabaseServer, and neither of those edits touches it.
+// CloudNativePG refuses a cluster whose storage is smaller than the one it
+// applied, so a size that reached it would stop the server from converging.
+func (r *DatabaseServerReconciler) keepAppliedStorageSize(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	merged *v1.DatabaseServerSpec,
+) error {
+	volumes, err := r.volumeClaims(ctx, server)
+	if err != nil {
+		return err
+	}
+
+	merged.StorageSize = r.keepAppliedSize(
+		server, "storageSize", merged.StorageSize, largestVolume(volumes.data, volumes.appliedData),
+	)
+	merged.WALStorageSize = r.keepAppliedSize(
+		server, "walStorageSize", merged.WALStorageSize, largestVolume(volumes.wal, volumes.appliedWAL),
+	)
+
+	return nil
+}
+
+// keepAppliedSize returns the size to render for one volume of the server:
+// requested, or existing when requested is below it. It records the Warning
+// event whenever it keeps existing.
+func (r *DatabaseServerReconciler) keepAppliedSize(
+	server *v1.DatabaseServer,
+	field string,
+	requested, existing *resource.Quantity,
+) *resource.Quantity {
+	if requested == nil || existing == nil || requested.Cmp(*existing) >= 0 {
+		return requested
+	}
+
+	r.EventRecorder.Eventf(
+		server,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonStorageShrinkIgnored,
+		eventActionResize,
+		"%s %s is below the existing volume size %s. Keeping %s, because PostgreSQL volumes "+
+			"cannot be reduced in place",
+		field,
+		requested,
+		existing,
+		existing,
+	)
+
+	return existing
+}
+
+// serverVolumes are the volumes of the current cluster: one entry per
+// PersistentVolumeClaim that reports a capacity, split by what the claim
+// holds, and the sizes the applied CloudNativePG cluster asks for. The applied
+// sizes matter on their own while the server is suspended, when the claims are
+// there and report their capacity before any instance comes back.
+type serverVolumes struct {
+	data        []v1.VolumeStatus
+	wal         []v1.VolumeStatus
+	appliedData *resource.Quantity
+	appliedWAL  *resource.Quantity
+}
+
+// all returns every claim of the cluster, sorted by name.
+func (v serverVolumes) all() []v1.VolumeStatus {
+	volumes := append(append([]v1.VolumeStatus{}, v.data...), v.wal...)
+	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
+
+	return volumes
+}
+
+// largestVolume returns the largest of the claim capacities and applied, or
+// nil when neither exists. It is the size that a rendered volume must not go
+// below.
+func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resource.Quantity {
+	largest := applied
+	for i := range volumes {
+		if largest == nil || volumes[i].Capacity.Cmp(*largest) > 0 {
+			largest = &volumes[i].Capacity
+		}
+	}
+
+	return largest
+}
+
+// volumeClaims reads the volumes of the current cluster. CloudNativePG labels
+// every claim of a cluster with the cluster name, and it names the write-ahead
+// log claim of an instance after the data claim of that instance, with the
+// suffix -wal.
+func (r *DatabaseServerReconciler) volumeClaims(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+) (serverVolumes, error) {
+	var claims corev1.PersistentVolumeClaimList
+	if err := r.List(
+		ctx, &claims,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{components.CNPGClusterNameLabel: components.ClusterName(server)},
+	); err != nil {
+		return serverVolumes{}, fmt.Errorf(
+			"listing the volume claims of %q: %w", components.ClusterName(server), err,
+		)
+	}
+
+	var volumes serverVolumes
+	for i := range claims.Items {
+		claim := &claims.Items[i]
+		capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]
+		if !ok {
+			continue
+		}
+		status := v1.VolumeStatus{Name: claim.Name, Capacity: capacity}
+		if strings.HasSuffix(claim.Name, cnpgv1.WalArchiveVolumeSuffix) {
+			volumes.wal = append(volumes.wal, status)
+			continue
+		}
+		volumes.data = append(volumes.data, status)
+	}
+
+	var cluster cnpgv1.Cluster
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
+	if err := r.Get(ctx, key, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return volumes, nil
+		}
+
+		return serverVolumes{}, fmt.Errorf("reading the applied cluster %s: %w", key, err)
+	}
+	volumes.appliedData = parsedSize(cluster.Spec.StorageConfiguration.Size)
+	if cluster.Spec.WalStorage != nil {
+		volumes.appliedWAL = parsedSize(cluster.Spec.WalStorage.Size)
+	}
+
+	return volumes, nil
+}
+
+// parsedSize reads one storage size of the applied cluster, or nil when the
+// field is empty or holds something that is not a quantity. Nothing of this
+// operator writes such a value, and a cluster that carries one is answered by
+// leaving the size out of the comparison rather than by failing the reconcile.
+func parsedSize(size string) *resource.Quantity {
+	quantity, err := resource.ParseQuantity(size)
+	if err != nil {
+		return nil
+	}
+
+	return &quantity
+}
+
 // archiveStart returns when the earliest base backup of the archive the server
 // writes now completed, or nil when none has. It is what tells the archive
 // component that the archive can be recovered from, and what opens the
@@ -749,33 +923,6 @@ func closeArchiveRecords(server *v1.DatabaseServer, at metav1.Time) {
 			server.Status.Archive.History[i].To = &at
 		}
 	}
-}
-
-// dataVolumes lists the data volumes of the current cluster, sorted by name.
-// CloudNativePG labels every claim of a cluster with the cluster name.
-func (r *DatabaseServerReconciler) dataVolumes(
-	ctx context.Context,
-	server *v1.DatabaseServer,
-) ([]v1.VolumeStatus, error) {
-	var claims corev1.PersistentVolumeClaimList
-	if err := r.List(
-		ctx, &claims,
-		client.InNamespace(server.Namespace),
-		client.MatchingLabels{components.CNPGClusterNameLabel: components.ClusterName(server)},
-	); err != nil {
-		return nil, fmt.Errorf("listing data volume claims of %q: %w", components.ClusterName(server), err)
-	}
-
-	var volumes []v1.VolumeStatus
-	for i := range claims.Items {
-		claim := &claims.Items[i]
-		if capacity, ok := claim.Status.Capacity[corev1.ResourceStorage]; ok {
-			volumes = append(volumes, v1.VolumeStatus{Name: claim.Name, Capacity: capacity})
-		}
-	}
-	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
-
-	return volumes, nil
 }
 
 // retryInterval returns the wait before the superuser Secret is looked at

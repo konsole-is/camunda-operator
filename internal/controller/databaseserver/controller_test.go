@@ -61,6 +61,71 @@ func serverInNamespace(archive *v1.DatabaseServerArchiveSpec) *v1.DatabaseServer
 	return server
 }
 
+// serverOnPreset creates a namespace, a cluster-scoped preset that holds the
+// version and the storage size, and a DatabaseServer that inherits both. It
+// returns the server and the preset.
+func serverOnPreset(storageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
+	GinkgoHelper()
+
+	preset := &v1.DatabaseServerPreset{
+		ObjectMeta: metav1.ObjectMeta{Name: "dbsp-" + utilrand.String(8)},
+		Spec: v1.DatabaseServerPresetSpec{
+			Server: v1.DatabaseServerSpec{
+				Version:     "17",
+				Instances:   new(int32(1)),
+				StorageSize: new(resource.MustParse(storageSize)),
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+	namespace := "dbs-" + utilrand.String(8)
+	Expect(k8sClient.Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: namespace},
+	})).To(Succeed())
+
+	server := &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+		Spec: v1.DatabaseServerSpec{
+			PresetRef:            preset.Name,
+			DatabaseServerConfig: "camunda",
+		},
+	}
+	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+	return server, preset
+}
+
+// setPresetStorage puts storageSize on the latest revision of the preset.
+func setPresetStorage(preset *v1.DatabaseServerPreset, storageSize string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServerPreset
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+		latest.Spec.Server.StorageSize = new(resource.MustParse(storageSize))
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// countEvents counts the events of one reason that the server carries.
+func countEvents(g Gomega, server *v1.DatabaseServer, reason string) int32 {
+	GinkgoHelper()
+
+	var events corev1.EventList
+	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(server.Namespace))).To(Succeed())
+
+	var count int32
+	for _, event := range events.Items {
+		if event.Reason == reason && event.InvolvedObject.Name == server.Name {
+			count += max(event.Count, 1)
+		}
+	}
+
+	return count
+}
+
 // makeClusterHealthy writes the status that CloudNativePG reports for a
 // healthy cluster, including the system identifier the server mirrors.
 func makeClusterHealthy(server *v1.DatabaseServer, systemID string) {
@@ -653,6 +718,41 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
 			g.Expect(ready.Message).To(ContainSubstring("no-such-preset"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// Admission cannot catch this shrink. The CEL transition rules bind the
+	// spec of the server, and lowering a preset never touches it.
+	It("keeps the applied storage size when a preset lowers it", func() {
+		server, preset := serverOnPreset("10Gi")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000009")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+		}, timeout, interval).Should(Succeed())
+
+		setPresetStorage(preset, "1Gi")
+
+		Eventually(func(g Gomega) {
+			g.Expect(countEvents(g, server, "StorageShrinkIgnored")).To(Equal(int32(1)))
+		}, timeout, interval).Should(Succeed())
+
+		// CloudNativePG refuses a cluster whose storage is smaller than the
+		// one it applied, so a server that let the smaller size through would
+		// stop converging.
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+			g.Expect(countEvents(g, server, "StorageShrinkIgnored")).To(Equal(int32(1)))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		ready := conditionOf(server, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
 	})
 
 	It("reports InvalidReference for a bucket that does not exist", func() {

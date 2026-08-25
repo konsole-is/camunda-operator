@@ -136,8 +136,9 @@ type DatabaseServerSpec struct {
 	// shrink, because PostgreSQL data volumes cannot be reduced in place.
 	// Admission rejects a lower inline value on a DatabaseServer through a
 	// CEL transition rule. That rule does not bind this shared field, so a
-	// preset baseline can be resized freely. Required unless the resolved
-	// preset provides it.
+	// preset baseline can be lowered: a server that already applied a larger
+	// size keeps it and records a StorageShrinkIgnored event. Required unless
+	// the resolved preset provides it.
 	// +optional
 	StorageSize *resource.Quantity `json:"storageSize,omitempty"`
 	// StorageClassName is the StorageClass of the data volumes. Defaults to
@@ -146,7 +147,8 @@ type DatabaseServerSpec struct {
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// WALStorageSize puts the write-ahead log on a volume of its own, of this
 	// size. Unset keeps the log on the data volume. It cannot shrink, for the
-	// same reason storageSize cannot.
+	// same reason storageSize cannot, and a lowered preset baseline is
+	// ignored the same way.
 	// +optional
 	WALStorageSize *resource.Quantity `json:"walStorageSize,omitempty"`
 	// ServiceAccount configures the ServiceAccount of the instance pods.
@@ -333,8 +335,9 @@ type DatabaseServerStatus struct {
 	// in spec.pitr.lastRecovery.
 	// +optional
 	Recovery *DatabaseServerRecoveryStatus `json:"recovery,omitempty"`
-	// Volumes lists the bound data PersistentVolumeClaims of the server and
-	// the capacity that each one reports, sorted by name.
+	// Volumes lists the bound PersistentVolumeClaims of the current cluster
+	// and the capacity that each one reports, sorted by name. A server with a
+	// write-ahead log volume reports that claim here too.
 	// +listType=map
 	// +listMapKey=name
 	// +optional

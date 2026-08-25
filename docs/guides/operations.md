@@ -280,7 +280,7 @@ status:
 
 A smaller value is rejected at admission. If a preset lowers the size under a running cluster, the operator ignores it, keeps the current size, and records the Warning event `StorageShrinkIgnored` once per requested size. To get a smaller volume, delete and recreate the cluster.
 
-`storageSize` of an `ElasticsearchCluster` obeys the same rules: it grows in place, a smaller inline value is rejected, and a smaller preset value is ignored with `StorageShrinkIgnored`.
+`storageSize` of an `ElasticsearchCluster`, and `storageSize` and `walStorageSize` of a `DatabaseServer`, obey the same rules: they grow in place, a smaller inline value is rejected, and a smaller preset value is ignored with `StorageShrinkIgnored`.
 
 ## Rotate passwords
 

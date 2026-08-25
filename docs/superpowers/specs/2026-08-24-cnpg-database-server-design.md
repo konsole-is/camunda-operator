@@ -355,6 +355,12 @@ one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matc
 floored at the oldest major Camunda 8.9 supports (verified with the `camunda-docs` MCP during
 implementation).
 
+The CEL rules bind the spec of the `DatabaseServer` only, so a lowered preset baseline reaches the
+merged spec unchecked. The controller therefore raises each merged size back to the largest volume
+that exists, taken from the data and write-ahead log claims and from the sizes the applied
+CloudNativePG cluster asks for, and records the `StorageShrinkIgnored` Warning event. This mirrors
+`keepAppliedStorageSize` of `ElasticsearchCluster`.
+
 `monitoring.podMonitor` carries `labels` and `annotations` beside `enabled` and `interval`. The
 labels are what a Prometheus selects the monitor by. The annotations carry metadata for other
 tools.

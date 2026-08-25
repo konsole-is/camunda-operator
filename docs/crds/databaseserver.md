@@ -70,7 +70,7 @@ spec:
   # ... the rest of your server
 ```
 
-Neither volume size can shrink. The API server rejects a lower value. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it.
+Neither volume size can shrink. Admission rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
 
 `status.volumes` lists the data volumes of the server and the capacity each one reports.
 
@@ -373,7 +373,7 @@ spec:
 ### Validation rules
 
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
-- `storageSize` and `walStorageSize` cannot shrink. The API server rejects a lower value on an update.
+- `storageSize` and `walStorageSize` cannot shrink. Admission rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 - `archive.retentionPeriodDays` must be at least 1.
 - `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.
