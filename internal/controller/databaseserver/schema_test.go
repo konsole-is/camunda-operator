@@ -236,6 +236,39 @@ var _ = Describe("DatabaseServer schema", func() {
 				o.Spec.Archive.BaseBackupSchedule = "0 0 2 * * * 2026"
 			}, "baseBackupSchedule",
 		),
+		Entry(
+			"accepts a descriptor as baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "@daily"
+			}, "",
+		),
+		Entry(
+			"accepts a baseBackupSchedule that a manifest indented",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "  0 0 2 * * *  "
+			}, "",
+		),
+		// Each field is bounded to what CloudNativePG takes there, so a value
+		// that reads plausibly but names no hour, no weekday, or no second is
+		// refused rather than left to stop the base backups.
+		Entry(
+			"rejects an hour of 24 in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 24 * * *"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"rejects a weekday of 7 in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 2 * * 7"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"rejects a month name in the seconds field of baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "JAN 0 0 * * *"
+			}, "baseBackupSchedule",
+		),
 		// The name of the CR names the CloudNativePG cluster, and
 		// CloudNativePG takes a DNS-1035 label of at most 50 characters. The
 		// "-r99" of a rollback leaves 46 for the name itself.

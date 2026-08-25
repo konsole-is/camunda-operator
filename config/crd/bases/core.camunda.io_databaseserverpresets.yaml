@@ -72,8 +72,15 @@ spec:
                           The five-field cron of a Kubernetes CronJob is refused. CloudNativePG
                           reads the first field as seconds, so a five-field value runs at another
                           time than the one who wrote it reads.
-                        pattern: ^(@(annually|yearly|monthly|weekly|daily|midnight|hourly)|@every
-                          \d+[hms](\d+[hms])*|\s*(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?(,(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?)*(\s+(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?(,(\*|\?|(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat))(-(\d+|(?i:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|sun|mon|tue|wed|thu|fri|sat)))?)(/\d+)?)*){5}\s*)$
+
+                          Each field is bounded to what CloudNativePG takes there: 0-59 for
+                          seconds and minutes, 0-23 for hours, 1-31 for the day of the month,
+                          1-12 or JAN-DEC for the month, and 0-6 or SUN-SAT for the day of the
+                          week. A range whose first value is above its second, such as FRI-MON,
+                          cannot be caught by a pattern. CloudNativePG refuses it when it reads
+                          the ScheduledBackup.
+                        pattern: ^(\s*([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?)*\s+([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?)*\s+([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d*)?(,([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d*)?)*\s+([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d*)?(,([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d*)?)*\s+([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d*)?(,([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d*)?)*\s+([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d*)?(,([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d*)?)*\s*|@((year|annual|month|week|dai|hour)ly|midnight|every
+                          (\d+(\.\d+)?[hms])+))$
                         type: string
                       objectStorageRef:
                         description: |-
