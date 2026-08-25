@@ -944,11 +944,18 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		// A base backup that was already running when the bucket moved keeps
 		// the destination it started with, so its object lands in the bucket
-		// the server left. Its end falls after the close, and the new
-		// interval must not open on it.
+		// the server left. Its end falls after the close, and the new interval
+		// must not open on it. Only a backup that began after the close does.
 		straddlingStart := metav1.NewTime(closedAt.Add(-2 * time.Second))
 		completeBaseBackupBetween(
 			server, "straddling", &straddlingStart, metav1.NewTime(closedAt.Add(2*time.Second)),
+		)
+
+		// A backup that recorded no start sits on neither side of the close.
+		// It can have been running in the bucket the server left, so it opens
+		// nothing either.
+		completeBaseBackupBetween(
+			server, "no-start", nil, metav1.NewTime(closedAt.Add(3*time.Second)),
 		)
 
 		// The new bucket holds no base backup yet, so no point in it can be
@@ -1012,40 +1019,27 @@ var _ = Describe("DatabaseServer controller", func() {
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
 	})
 
-	// status.startedAt is optional on a CloudNativePG Backup. A completed
-	// backup that recorded no start is placed by its end, which is the only
-	// time it has, rather than left out of every interval for good.
-	It("opens the archive record on a backup that recorded no start", func() {
-		first := archiveBucket()
+	// status.startedAt is optional on a CloudNativePG Backup. The first archive
+	// of a server has no boundary to place a backup against, so a completed
+	// backup counts by its end rather than being left out for good.
+	It("opens the first archive record on a backup that recorded no start", func() {
+		bucket := archiveBucket()
 		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
-			ObjectStorageRef:    first.Name,
+			ObjectStorageRef:    bucket.Name,
 			RetentionPeriodDays: 30,
 		})
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000016")
-		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
 
-		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
-
-		second := archiveBucket()
-		setArchive(server, &v1.DatabaseServerArchiveSpec{
-			ObjectStorageRef:    second.Name,
-			RetentionPeriodDays: 30,
-		})
-		Eventually(func(g Gomega) {
-			g.Expect(archiveHistory(server)[0].To).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
-		closedAt := *archiveHistory(server)[0].To
-
-		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
-		completeBaseBackupBetween(server, "no-start", nil, openedAt)
+		at := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
+		completeBaseBackupBetween(server, "no-start", nil, at)
 
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
 		Eventually(func(g Gomega) {
 			history := archiveHistory(server)
-			g.Expect(history).To(HaveLen(2))
-			g.Expect(history[1].ObjectStorageRef).To(Equal(second.Name))
-			g.Expect(history[1].From.Time).To(BeTemporally("==", openedAt.Time))
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ObjectStorageRef).To(Equal(bucket.Name))
+			g.Expect(history[0].From.Time).To(BeTemporally("==", at.Time))
 		}, timeout, interval).Should(Succeed())
 	})
 

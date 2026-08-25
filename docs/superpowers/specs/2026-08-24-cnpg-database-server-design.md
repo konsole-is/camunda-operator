@@ -237,7 +237,22 @@ way removing and restoring `spec.archive` does. One `archiveBoundary(server, mer
 that moment, and the guard on the archive component and the history both read it, from one `now`
 per reconcile. A boundary taken from the recorded closes alone is not yet moved on the reconcile
 that applies the bucket change, and a base backup of the bucket the server leaves then reports the
-new archive ready in the same status write that closes the record. The recovered cluster is given one `ObjectStore`,
+new archive ready in the same status write that closes the record.
+
+A backup is placed against that boundary by `status.startedAt`, never by `status.stoppedAt`: one
+that was already running when the interval closed keeps the destination the plugin gave it, so its
+object lands in the bucket the server left while its end falls after the close. The field is
+`+optional`, and a backup that carries no start is skipped once a boundary exists, because nothing
+places it on either side of one. Before the first boundary there is nothing to place it against and
+every completed backup counts, by its end. The skip is a guard rather than a path a supported stack
+takes: the Barman Cloud plugin reports the start of every backup it completes
+(`internal/cnpgi/instance/backup.go`, `StartedAt` from `executedBackupInfo.BeginTime`) and
+CloudNativePG copies a non-zero value into `status.startedAt`
+(`pkg/management/postgres/webserver/plugin_backup.go` in `release-1.30`). CloudNativePG core does
+not guarantee it: `BackupStatus.SetAsStarted` sets `reconciliationStartedAt`, and only the volume
+snapshot path of `internal/controller/backup_controller.go` copies that into `startedAt`.
+
+The recovered cluster is given one `ObjectStore`,
 the one of the bucket the spec names now, so a target inside a record of an earlier bucket is
 refused with `result: Unavailable` and a message that names both buckets. A second `ObjectStore`
 for the source would reach it and is a follow-up.

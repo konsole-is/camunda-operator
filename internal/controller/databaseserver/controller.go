@@ -780,8 +780,9 @@ func archiveBoundary(
 // backups that began after it count: the backups of an archive the server
 // wrote before reach no point in the one it writes now, so treating one of
 // them as the start declares a window that no restore can reach. A backup that
-// recorded no start counts by its end. A server that asks for no archive takes
-// no base backups, so it reads none.
+// recorded no start is skipped there. The first archive of a server has no
+// boundary, and every completed backup counts by its end. A server that asks
+// for no archive takes no base backups, so it reads none.
 func (r *DatabaseServerReconciler) archiveStart(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -816,8 +817,13 @@ func (r *DatabaseServerReconciler) archiveStart(
 		// server left: the plugin gave it that destination when it started,
 		// and the one ObjectStore is rewritten in place. Its end falls after
 		// the close, so an end-only test opens the new interval on an object
-		// that the new bucket does not hold.
-		if after != nil && !backupBegan(backup).After(after.Time) {
+		// that the new bucket does not hold. A backup with no recorded start
+		// sits on neither side of the boundary and goes the same way.
+		//
+		// That skip is a guard rather than a path a supported stack takes.
+		// The Barman Cloud plugin reports the start of every backup it
+		// completes, and CloudNativePG copies it into status.startedAt.
+		if after != nil && (backup.Status.StartedAt == nil || !backup.Status.StartedAt.After(after.Time)) {
 			continue
 		}
 		if earliest == nil || backup.Status.StoppedAt.Before(earliest) {
@@ -826,18 +832,6 @@ func (r *DatabaseServerReconciler) archiveStart(
 	}
 
 	return earliest, nil
-}
-
-// backupBegan returns when the backup started, or when it stopped for one that
-// recorded no start. status.startedAt is optional on the CloudNativePG Backup,
-// and a backup that carries no start is placed by the only time it has rather
-// than left out of every interval.
-func backupBegan(backup *cnpgv1.Backup) *metav1.Time {
-	if backup.Status.StartedAt != nil {
-		return backup.Status.StartedAt
-	}
-
-	return backup.Status.StoppedAt
 }
 
 // closedArchiveEnd returns when the archive of the current cluster last
