@@ -683,11 +683,12 @@ func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resou
 // component that the archive can be recovered from, and what opens the
 // interval of that archive in status.
 //
-// A server that re-enabled its archive counts only the backups taken after the
-// interval it closed. The backups of the archive it wrote before reach no
-// point in the new one, so treating them as the start would declare a window
-// that no restore can reach. A server that asks for no archive takes no base
-// backups, so it reads none.
+// A server that re-enabled its archive, or that moved to another bucket,
+// counts only the backups that began after the interval it closed. The
+// backups of the archive it wrote before reach no point in the new one, so
+// treating one of them as the start declares a window that no restore can
+// reach. A server that asks for no archive takes no base backups, so it reads
+// none.
 func (r *DatabaseServerReconciler) archiveStart(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -718,7 +719,13 @@ func (r *DatabaseServerReconciler) archiveStart(
 			backup.Status.StoppedAt == nil {
 			continue
 		}
-		if after != nil && !backup.Status.StoppedAt.After(after.Time) {
+		// The start decides, not the end. A backup that was already running
+		// when the interval closed writes its base backup to the bucket the
+		// server left: the plugin gave it that destination when it started,
+		// and the one ObjectStore is rewritten in place. Its end falls after
+		// the close, so an end-only test opens the new interval on an object
+		// that the new bucket does not hold.
+		if after != nil && (backup.Status.StartedAt == nil || !backup.Status.StartedAt.After(after.Time)) {
 			continue
 		}
 		if earliest == nil || backup.Status.StoppedAt.Before(earliest) {

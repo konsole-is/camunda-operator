@@ -176,9 +176,22 @@ func writeSuperuserSecret(server *v1.DatabaseServer) {
 	})).To(Succeed())
 }
 
-// completeBaseBackup creates a completed Backup of the cluster, as the
-// CloudNativePG operator would after the ScheduledBackup fired.
+// completeBaseBackup creates a completed Backup of the cluster that ran at one
+// moment, as the CloudNativePG operator would after the ScheduledBackup fired.
 func completeBaseBackup(server *v1.DatabaseServer, name string, at metav1.Time) {
+	GinkgoHelper()
+
+	completeBaseBackupBetween(server, name, at, at)
+}
+
+// completeBaseBackupBetween creates a completed Backup that ran from startedAt
+// to stoppedAt. A backup that began before the server closed an archive
+// interval and ended after it writes to the bucket the server left.
+func completeBaseBackupBetween(
+	server *v1.DatabaseServer,
+	name string,
+	startedAt, stoppedAt metav1.Time,
+) {
 	GinkgoHelper()
 
 	backup := &cnpgv1.Backup{
@@ -195,7 +208,8 @@ func completeBaseBackup(server *v1.DatabaseServer, name string, at metav1.Time) 
 	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 
 	backup.Status.Phase = cnpgv1.BackupPhaseCompleted
-	backup.Status.StoppedAt = &at
+	backup.Status.StartedAt = &startedAt
+	backup.Status.StoppedAt = &stoppedAt
 	Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
 }
 
@@ -841,10 +855,23 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 		closedAt := *archiveHistory(server)[0].To
 
+		// A base backup that was already running when the bucket moved keeps
+		// the destination it started with, so its object lands in the bucket
+		// the server left. Its end falls after the close, and the new
+		// interval must not open on it.
+		completeBaseBackupBetween(
+			server, "straddling",
+			metav1.NewTime(closedAt.Add(-2*time.Second)),
+			metav1.NewTime(closedAt.Add(2*time.Second)),
+		)
+
 		// The new bucket holds no base backup yet, so no point in it can be
 		// reached and no record of it opens.
 		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
 		Expect(blocked.Message).To(ContainSubstring("base backup"))
+		Consistently(func(g Gomega) {
+			g.Expect(archiveHistory(server)).To(HaveLen(1))
+		}, 2*time.Second, interval).Should(Succeed())
 
 		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
 		completeBaseBackup(server, "second", openedAt)
