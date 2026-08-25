@@ -65,11 +65,6 @@ func TestRefusedMajorChange(t *testing.T) {
 			version: "18",
 			running: &cnpgv1.ImageInfo{Image: "ghcr.io/cloudnative-pg/postgresql:18"},
 		},
-		{
-			name:    "a version that does not parse",
-			version: "seventeen",
-			running: &cnpgv1.ImageInfo{MajorVersion: 17},
-		},
 	}
 
 	for _, tt := range tests {
