@@ -283,3 +283,114 @@ func TestReconcileArchiveHistoryRecordsAMoveAtTheGivenInstant(t *testing.T) {
 	assert.Equal(t, locationB, boundary.Location)
 	assert.Equal(t, "bucket", boundary.ObjectStorageRef)
 }
+
+func TestHeldArchive(t *testing.T) {
+	recorded := &v1.RecoveryArchiveRef{
+		ServerName:          "camunda",
+		ObjectStorageRef:    "backups",
+		Location:            locationA,
+		RetentionPeriodDays: 30,
+		BaseBackupSchedule:  "0 0 2 * * *",
+	}
+
+	tests := []struct {
+		name     string
+		recorded *v1.RecoveryArchiveRef
+		spec     *v1.DatabaseServerArchiveSpec
+		want     v1.DatabaseServerArchiveSpec
+	}{
+		{
+			name:     "takes every setting from the record when the spec keeps an archive",
+			recorded: recorded,
+			spec: &v1.DatabaseServerArchiveSpec{
+				ObjectStorageRef:    "other",
+				RetentionPeriodDays: 1,
+				BaseBackupSchedule:  "0 0 5 * * *",
+			},
+			want: v1.DatabaseServerArchiveSpec{
+				ObjectStorageRef:    "backups",
+				RetentionPeriodDays: 30,
+				BaseBackupSchedule:  "0 0 2 * * *",
+			},
+		},
+		{
+			name:     "takes every setting from the record when the spec removed the archive",
+			recorded: recorded,
+			spec:     nil,
+			want: v1.DatabaseServerArchiveSpec{
+				ObjectStorageRef:    "backups",
+				RetentionPeriodDays: 30,
+				BaseBackupSchedule:  "0 0 2 * * *",
+			},
+		},
+		// A record written before the settings were recorded carries neither.
+		{
+			name: "falls back to the spec for the settings an older record lacks",
+			recorded: &v1.RecoveryArchiveRef{
+				ServerName:       "camunda",
+				ObjectStorageRef: "backups",
+				Location:         locationA,
+			},
+			spec: &v1.DatabaseServerArchiveSpec{
+				ObjectStorageRef:    "other",
+				RetentionPeriodDays: 7,
+				BaseBackupSchedule:  "0 0 5 * * *",
+			},
+			want: v1.DatabaseServerArchiveSpec{
+				ObjectStorageRef:    "backups",
+				RetentionPeriodDays: 7,
+				BaseBackupSchedule:  "0 0 5 * * *",
+			},
+		},
+		{
+			name: "renders no retention when neither the older record nor the spec holds one",
+			recorded: &v1.RecoveryArchiveRef{
+				ServerName:       "camunda",
+				ObjectStorageRef: "backups",
+				Location:         locationA,
+			},
+			spec: nil,
+			want: v1.DatabaseServerArchiveSpec{ObjectStorageRef: "backups"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := heldArchive(tt.recorded, tt.spec)
+
+			require.NotNil(t, got)
+			assert.Equal(t, tt.want, *got)
+		})
+	}
+}
+
+// A rollback that a spec removed the archive under is held only while the
+// record can describe that archive. An older record that carries no retention
+// cannot: rendering it would put "0d" on the ObjectStore, which the CRD
+// refuses, and publish a retention that the contract refuses. The removal
+// applies instead, and the rollback is refused.
+func TestRecoveryHoldsSpecOnArchiveRemoval(t *testing.T) {
+	server := func(retentionDays int32) *v1.DatabaseServer {
+		return &v1.DatabaseServer{
+			Status: v1.DatabaseServerStatus{
+				Recovery: &v1.DatabaseServerRecoveryStatus{
+					Contract:    "camunda",
+					RequestedBy: "ns/pitr-1",
+					Archive: &v1.RecoveryArchiveRef{
+						ServerName:          "camunda",
+						ObjectStorageRef:    "backups",
+						RetentionPeriodDays: retentionDays,
+					},
+				},
+			},
+		}
+	}
+	merged := v1.DatabaseServerSpec{DatabaseServerConfig: "camunda"}
+
+	hold := recoveryHoldsSpec(server(30), merged)
+	require.NotNil(t, hold)
+	assert.Equal(t, v1.ReasonInvalidReference, hold.Reason)
+	assert.Contains(t, hold.Message, "Put spec.archive back")
+
+	assert.Nil(t, recoveryHoldsSpec(server(0), merged))
+}
