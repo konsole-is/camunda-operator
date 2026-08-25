@@ -63,9 +63,10 @@ func serverInNamespace(archive *v1.DatabaseServerArchiveSpec) *v1.DatabaseServer
 }
 
 // serverOnPreset creates a namespace, a cluster-scoped preset that holds the
-// version and the storage size, and a DatabaseServer that inherits both. It
+// version and the volume sizes, and a DatabaseServer that inherits them. An
+// empty walStorageSize leaves the write-ahead log on the data volume. It
 // returns the server and the preset.
-func serverOnPreset(storageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
+func serverOnPreset(storageSize, walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
 	GinkgoHelper()
 
 	preset := &v1.DatabaseServerPreset{
@@ -77,6 +78,9 @@ func serverOnPreset(storageSize string) (*v1.DatabaseServer, *v1.DatabaseServerP
 				StorageSize: new(resource.MustParse(storageSize)),
 			},
 		},
+	}
+	if walStorageSize != "" {
+		preset.Spec.Server.WALStorageSize = new(resource.MustParse(walStorageSize))
 	}
 	Expect(k8sClient.Create(ctx, preset)).To(Succeed())
 	DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
@@ -98,14 +102,14 @@ func serverOnPreset(storageSize string) (*v1.DatabaseServer, *v1.DatabaseServerP
 	return server, preset
 }
 
-// setPresetStorage puts storageSize on the latest revision of the preset.
-func setPresetStorage(preset *v1.DatabaseServerPreset, storageSize string) {
+// updatePreset applies mutate to the latest revision of the preset.
+func updatePreset(preset *v1.DatabaseServerPreset, mutate func(*v1.DatabaseServerPreset)) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
 		var latest v1.DatabaseServerPreset
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
-		latest.Spec.Server.StorageSize = new(resource.MustParse(storageSize))
+		mutate(&latest)
 		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -806,7 +810,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// Admission cannot catch this shrink. The CEL transition rules bind the
 	// spec of the server, and lowering a preset never touches it.
 	It("keeps the applied storage size when a preset lowers it", func() {
-		server, preset := serverOnPreset("10Gi")
+		server, preset := serverOnPreset("10Gi", "")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000009")
 
@@ -817,7 +821,9 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
 		}, timeout, interval).Should(Succeed())
 
-		setPresetStorage(preset, "1Gi")
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.StorageSize = new(resource.MustParse("1Gi"))
+		})
 
 		expectShrinkWarning(server, "storageSize")
 
@@ -827,6 +833,41 @@ var _ = Describe("DatabaseServer controller", func() {
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		ready := conditionOf(server, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+	})
+
+	// The write-ahead log volume is measured on its own. A clamp that read the
+	// data claims for it raises walStorageSize to the data size, which is
+	// larger here on purpose.
+	It("keeps the applied write-ahead log size when a preset lowers it", func() {
+		server, preset := serverOnPreset("10Gi", "4Gi")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000012")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
+		}, timeout, interval).Should(Succeed())
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.WALStorageSize = new(resource.MustParse("1Gi"))
+		})
+
+		expectShrinkWarning(server, "walStorageSize")
+
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
 			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
 		}, 2*time.Second, interval).Should(Succeed())
 
