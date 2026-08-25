@@ -37,7 +37,7 @@ A preset can set `archive` and `platformConfigRef`. One bucket then serves every
 
 ## Changes
 
-An edit of a preset reaches every `DatabaseServer` that references it on its next reconcile. A lower `storageSize` or `walStorageSize` in the preset does not shrink a running server. That server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new server uses the new baseline.
+An edit of a preset reaches every `DatabaseServer` that references it on its next reconcile. A lower `storageSize` or `walStorageSize` in the preset does not shrink a running server. That server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A preset that clears `walStorageSize` does not remove the write-ahead log volume of a running server either. That server keeps the volume and records a Warning event with reason `WALStorageKept`. A new server uses the new baseline.
 
 A new `version` in the preset does not move a running server to another PostgreSQL major. That server reports `Ready` `False` with reason `VersionChangeRefused` until the preset names its major again. A new server uses the new baseline. See [The PostgreSQL version](databaseserver.md#the-postgresql-version).
 
@@ -120,7 +120,7 @@ spec:
 ### Validation rules
 
 - `spec.server` must not set `presetRef`, `databaseServerConfig`, or `suspend`. An empty `presetRef` and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `databaseServerConfig` is rejected by the name pattern. Omit the field instead.
-- The no-shrink rule of `DatabaseServer` for `storageSize` and `walStorageSize` does not bind a preset. You can lower the baseline at any time.
+- The no-shrink rule of `DatabaseServer` for `storageSize` and `walStorageSize` does not bind a preset. You can lower the baseline at any time. You can also clear `walStorageSize`. Neither edit changes a server that already runs.
 - Whether the merged configuration is complete is checked on the `DatabaseServer`, not on the preset.
 - Every other rule of the `DatabaseServer` schema applies to `spec.server`: a bare major `version`, `instances` at least 1, `archive.retentionPeriodDays` at least 1, and valid resource names.
 

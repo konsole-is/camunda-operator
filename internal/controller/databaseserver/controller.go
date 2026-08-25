@@ -65,6 +65,12 @@ const defaultRetryInterval = 30 * time.Second
 // reduced in place.
 const eventReasonStorageShrinkIgnored = "StorageShrinkIgnored"
 
+// eventReasonWALStorageKept is the Warning event that the controller records
+// when a merged spec asks for no write-ahead log volume under a server that
+// has one. It keeps the volume, because CloudNativePG refuses a cluster that
+// gives one up.
+const eventReasonWALStorageKept = "WALStorageKept"
+
 // eventActionResize is the action of the events that the controller records
 // about the size of the volumes.
 const eventActionResize = "Resize"
@@ -626,12 +632,14 @@ func parsedSize(size string) *resource.Quantity {
 }
 
 // keepAppliedStorageSize raises each merged volume size back to the size that
-// is already there.
+// is already there, and keeps a write-ahead log volume that the merged spec no
+// longer asks for.
 //
-// It guards against the shrinks that admission cannot see: a preset baseline
-// lowered under a server, or an inline size set below a size that a preset
-// provided before. The CEL transition rules of storageSize and walStorageSize
-// bind the spec of the DatabaseServer, and neither of those edits touches it.
+// It guards against the edits that admission cannot see: a preset baseline
+// lowered or cleared under a server, or an inline size set below a size that a
+// preset provided before. The CEL transition rules of storageSize and
+// walStorageSize bind the spec of the DatabaseServer, and none of those edits
+// touches it.
 // CloudNativePG refuses a cluster whose storage is smaller than the one it
 // applied, so a size that reaches it stops the server from converging.
 func (r *DatabaseServerReconciler) keepAppliedStorageSize(
@@ -642,9 +650,39 @@ func (r *DatabaseServerReconciler) keepAppliedStorageSize(
 	merged.StorageSize = r.keepAppliedSize(
 		server, "storageSize", merged.StorageSize, largestVolume(volumes.data, volumes.appliedData),
 	)
-	merged.WALStorageSize = r.keepAppliedSize(
-		server, "walStorageSize", merged.WALStorageSize, largestVolume(volumes.wal, volumes.appliedWAL),
+	merged.WALStorageSize = r.keepAppliedWALSize(
+		server, merged.WALStorageSize, largestVolume(volumes.wal, volumes.appliedWAL),
 	)
+}
+
+// keepAppliedWALSize returns the size to render for the write-ahead log volume
+// of the server: the clamp of keepAppliedSize, and the size that is there when
+// the merged spec asks for no such volume at all.
+//
+// CloudNativePG refuses a cluster that gives up the write-ahead log volume it
+// applied, with "walStorage cannot be disabled once configured". It accepts
+// one that adds it, so the field itself stays free to set.
+func (r *DatabaseServerReconciler) keepAppliedWALSize(
+	server *v1.DatabaseServer,
+	requested, existing *resource.Quantity,
+) *resource.Quantity {
+	if requested != nil || existing == nil {
+		return r.keepAppliedSize(server, "walStorageSize", requested, existing)
+	}
+
+	r.EventRecorder.Eventf(
+		server,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonWALStorageKept,
+		eventActionResize,
+		"walStorageSize is no longer set, and the write-ahead log volume of %s is already there. "+
+			"Keeping it, because CloudNativePG does not take a write-ahead log volume away from "+
+			"a server that has one",
+		existing,
+	)
+
+	return existing
 }
 
 // keepAppliedSize returns the size to render for one volume of the server:

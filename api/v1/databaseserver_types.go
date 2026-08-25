@@ -156,6 +156,11 @@ type DatabaseServerSpec struct {
 	// size. Unset keeps the log on the data volume. It cannot shrink, for the
 	// same reason storageSize cannot, and a lowered preset baseline is
 	// ignored the same way.
+	//
+	// It can be added to a running server, and it cannot be taken away again:
+	// CloudNativePG refuses a cluster that gives up the volume. A cleared
+	// field, inline or from a preset, keeps the volume at the size it has and
+	// records a WALStorageKept event.
 	// +optional
 	WALStorageSize *resource.Quantity `json:"walStorageSize,omitempty"`
 	// ServiceAccount configures the ServiceAccount of the instance pods.

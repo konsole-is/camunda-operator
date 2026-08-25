@@ -74,6 +74,8 @@ spec:
 
 Neither volume size can shrink. Admission rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
 
+The write-ahead log volume cannot be removed either. You can add `walStorageSize` to a server that runs without one. If you clear it, or a preset clears it, the operator keeps the volume at the size it has and records a Warning event with reason `WALStorageKept`. To run the log on the data volume again, delete and recreate the server.
+
 `status.volumes` lists every bound volume of the cluster the contract points at, and the capacity each one reports. A server with a write-ahead log volume reports that one here too, under the name of its data volume with the suffix `-wal`.
 
 ## The archive
@@ -361,6 +363,7 @@ spec:
   # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the volumes.
   storageClassName: "ssd"
   # string (resource quantity). Optional. Size of a separate volume for the write-ahead log.
+  # It cannot be cleared once the server has the volume.
   walStorageSize: "32Gi"
   # object. Optional. The ServiceAccount that CloudNativePG creates for the instance pods.
   serviceAccount:
@@ -407,6 +410,7 @@ spec:
 
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
 - `storageSize` and `walStorageSize` cannot shrink. Admission rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
+- `walStorageSize` cannot be cleared once the server has a write-ahead log volume. The operator keeps the volume and records the Warning event `WALStorageKept`.
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 - `version` cannot move to another major once the server runs. See [The PostgreSQL version](#the-postgresql-version).
 - `archive.retentionPeriodDays` must be at least 1.

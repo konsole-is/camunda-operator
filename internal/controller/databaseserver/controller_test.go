@@ -1018,6 +1018,44 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
 	})
 
+	// CloudNativePG refuses a cluster that gives up its write-ahead log volume,
+	// with "walStorage cannot be disabled once configured". A preset that
+	// clears the field must therefore not reach it.
+	It("keeps the write-ahead log volume a preset tries to remove", func() {
+		server, preset := serverOnPreset("10Gi", "4Gi")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000015")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
+		}, timeout, interval).Should(Succeed())
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.WALStorageSize = nil
+		})
+
+		Eventually(func(g Gomega) {
+			var recorded corev1.EventList
+			g.Expect(k8sClient.List(ctx, &recorded, client.InNamespace(server.Namespace))).To(Succeed())
+			g.Expect(recorded.Items).To(ContainElement(SatisfyAll(
+				HaveField("Reason", "WALStorageKept"),
+				HaveField("InvolvedObject.Name", server.Name),
+				HaveField("Type", corev1.EventTypeWarning),
+			)))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
+		}, 2*time.Second, interval).Should(Succeed())
+	})
+
 	// Admission cannot catch this either: a preset can raise the version, and
 	// the major the data directory runs is on the CloudNativePG cluster rather
 	// than on the spec.

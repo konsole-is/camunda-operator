@@ -374,6 +374,12 @@ that exists, taken from the data and write-ahead log claims and from the sizes t
 CloudNativePG cluster asks for, and records the `StorageShrinkIgnored` Warning event. This mirrors
 `keepAppliedStorageSize` of `ElasticsearchCluster`.
 
+The same clamp keeps a write-ahead log volume that the merged spec no longer asks for.
+CloudNativePG refuses a cluster that removes `spec.walStorage` once it applied it
+(`walStorage cannot be disabled once configured`), and it accepts one that adds it, so the CEL
+rule stays as it is. A cleared `walStorageSize`, inline or from a preset, keeps the applied size
+and records the `WALStorageKept` Warning event.
+
 `monitoring.podMonitor` carries `labels` and `annotations` beside `enabled` and `interval`. The
 labels are what a Prometheus selects the monitor by. The annotations carry metadata for other
 tools.
