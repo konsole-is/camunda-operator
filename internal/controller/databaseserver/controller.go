@@ -259,16 +259,22 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// One clock for the guard below and the history further down. The bucket
-	// change is decided here, before the components build, so a base backup of
-	// the bucket the server leaves cannot report the new archive ready.
-	now := metav1.Now()
-	archiveStart, err := r.archiveStart(
-		ctx, &server, resolved.merged,
-		archiveBoundary(&server, resolved.merged, resolved.archiveLocation, now),
-	)
-	if err != nil {
-		return ctrl.Result{}, err
+	// The move is decided before the components build, and a reconcile that
+	// finds one reads no backups at all: the ObjectStore it is about to apply
+	// is what puts the archive in the new place, and every backup that exists
+	// now began before that. The archive component blocks on a nil start and
+	// still applies the ObjectStore, which is registered ahead of the guard.
+	moved := archiveMoved(&server, archiveRef(resolved.merged), resolved.archiveLocation)
+
+	var archiveStart *metav1.Time
+	if !moved {
+		archiveStart, err = r.archiveStart(
+			ctx, &server, resolved.merged,
+			archiveBoundary(&server, resolved.merged),
+		)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	clearReenabledArchiveCondition(&server, resolved.merged)
 
@@ -287,8 +293,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
+	// The clock is read here, after the ObjectStore of the new location is
+	// applied. A backup that began while the old one still stood therefore
+	// began before the boundary, whatever its start says.
 	reconcileArchiveHistory(
-		&server, resolved.merged, built.archive, archiveStart, resolved.archiveLocation, now,
+		&server, resolved.merged, built.archive, archiveStart,
+		resolved.archiveLocation, moved, metav1.Now(),
 	)
 
 	server.Status.Volumes = volumes.all()
@@ -752,30 +762,17 @@ func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resou
 }
 
 // archiveBoundary returns the point after which a base backup belongs to the
-// archive the server writes now, or nil when nothing bounds it.
+// archive the server writes now, or nil when nothing bounds it. It is read on
+// a reconcile that finds no move; one that finds a move reads no backups.
 //
-// The guard on the archive component and the history both read this, so a base
-// backup of the location the server leaves can neither report the new archive
-// ready nor open its record.
-//
-// Three things bound the current archive, and the latest of them wins: a
-// record the server closed before, the move this reconcile is about to record,
-// and a move it recorded on an earlier one. The last of those is what covers a
-// server with no interval open, which is where an archive that was disabled
-// and re-enabled elsewhere leaves it.
-func archiveBoundary(
-	server *v1.DatabaseServer,
-	merged v1.DatabaseServerSpec,
-	location string,
-	now metav1.Time,
-) *metav1.Time {
+// Two things bound the current archive, and the later of them wins: a record
+// the server closed before, and a move it recorded on an earlier reconcile.
+// The second is what covers a server with no interval open, which is where an
+// archive that was disabled and re-enabled elsewhere leaves it.
+func archiveBoundary(server *v1.DatabaseServer, merged v1.DatabaseServerSpec) *metav1.Time {
 	closed := closedArchiveEnd(server)
 	if merged.Archive == nil {
 		return closed
-	}
-
-	if archiveMoved(server, merged.Archive.ObjectStorageRef, location) {
-		return &now
 	}
 
 	if recorded := archiveBoundaryOf(server); recorded != nil {
@@ -1118,15 +1115,13 @@ func reconcileArchiveHistory(
 	archiveComp *component.Component,
 	archiveStart *metav1.Time,
 	location string,
+	moved bool,
 	now metav1.Time,
 ) {
 	if merged.Archive == nil {
 		closeArchiveRecords(server, now)
 		return
 	}
-
-	// Before the adopt below, which makes a move look like none.
-	moved := archiveMoved(server, merged.Archive.ObjectStorageRef, location)
 
 	open := openArchiveRecord(server)
 	if open != nil {

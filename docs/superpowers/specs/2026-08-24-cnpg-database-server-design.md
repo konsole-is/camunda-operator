@@ -241,8 +241,13 @@ objects went, so `SelectArchive` refuses it as unplaceable. A spec that moves th
 the open record at that moment and opens a record of the new location at its first base backup, the
 same way removing and restoring `spec.archive` does. With no record open, which is where removing
 and re-adding `spec.archive` leaves the server, the move is recorded as `status.archive.boundary`
-instead and cleared when the next record opens. `archiveBoundary` returns the latest of the recorded
-closes, that boundary, and the move this reconcile is about to record. One `archiveBoundary(server, merged, now)` decides
+instead and cleared when the next record opens. `archiveBoundary` returns the later of the recorded
+closes and that boundary, and a reconcile that finds a move reads no backups at all: the
+`ObjectStore` it is about to apply is what moves the archive, so every backup that exists by then
+began before the move. The clock for the move is read after `reconcileComponents` returns, so a
+backup that started while the old `ObjectStore` still stood is behind the boundary. That window is
+one apply wide and status timestamps carry whole seconds, so no envtest can place a backup inside
+it; the unit test pins that the instant is used as given. One `archiveBoundary(server, merged, now)` decides
 that moment, and the guard on the archive component and the history both read it, from one `now`
 per reconcile. A boundary taken from the recorded closes alone is not yet moved on the reconcile
 that applies the bucket change, and a base backup of the bucket the server leaves then reports the

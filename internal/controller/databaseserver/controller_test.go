@@ -1069,6 +1069,17 @@ var _ = Describe("DatabaseServer controller", func() {
 		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
 		Expect(blocked.Message).To(ContainSubstring("base backup"))
 
+		// The reconcile that closes the record also applies the ObjectStore of
+		// the new location. The boundary is read after that, so a base backup
+		// that began while the old one still stood is behind it.
+		var store barmanobjectstore.ObjectStore
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &store,
+			)).To(Succeed())
+			g.Expect(store.Spec.Configuration.DestinationPath).To(ContainSubstring("s3://" + moved + "/"))
+		}, timeout, interval).Should(Succeed())
+
 		By("opening a record of the new location on the next base backup")
 		openedStart := metav1.NewTime(closedAt.Add(time.Second))
 		completeBaseBackupBetween(
