@@ -463,7 +463,7 @@ Conditions and components, one component per condition:
 
 | Condition | Component owns | True when |
 | --- | --- | --- |
-| `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy |
+| `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy. `ClusterTaken` when a Cluster of that name exists that this server does not control |
 | `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed |
 | `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract). `ContractTaken` when another owner controls the name |
 | `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
@@ -597,6 +597,12 @@ The first server to publish a name therefore keeps it. The second one publishes 
 owner and its contract are gone. Without the guard both servers apply, because the apply is
 server-side under a field manager that carries no server name, and the owner reference, the label,
 and `spec.host` move between them on every reconcile.
+
+The name of the `Cluster` is guarded the same way, and more strictly: a `Cluster` with no
+controller at all is refused rather than adopted, because it holds a database this server did not
+build. The reconcile then applies nothing but the blocked `Cluster`, so no contract points at that
+database and no `ScheduledBackup` copies it into the bucket of this server. `ClusterReady` reports
+`ClusterTaken` with the holder in the message.
 
 `spec.databaseServerConfig` is mutable. The reconcile sweeps every `DatabaseServerConfig` it owns
 under the `camunda.io/database-server` label of the server and deletes the ones it no longer

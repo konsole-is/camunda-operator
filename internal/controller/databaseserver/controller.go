@@ -108,6 +108,12 @@ type resolvedSpec struct {
 	// component then publishes nothing and ContractReady reports
 	// ContractTaken: see contractHolder.
 	contractHolder *metav1.OwnerReference
+	// clusterTaken says why a CloudNativePG cluster of the name the server
+	// derives is not this server's to write, and it is empty when the name is
+	// free or the cluster is the server's own. The reconcile then applies
+	// nothing but the blocked cluster and ClusterReady reports ClusterTaken:
+	// see clusterTaken.
+	clusterTaken string
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -138,7 +144,19 @@ func (c serverComponents) all() []*component.Component {
 // the archive out while the server holds it: the ObjectStore is one object,
 // and rewriting it while a recovery reads the archive it describes points the
 // cluster that is recovering somewhere that archive is not.
-func (c serverComponents) applying(holdArchive bool) []*component.Component {
+//
+// A cluster that another owner holds leaves everything but the cluster out.
+// The names of the other three derive from the server too, and each acts on
+// the cluster of that name: the contract publishes the endpoint and the
+// superuser Secret of a database this server did not build, the base backup
+// schedule copies that database into the bucket of this server, and the
+// PodMonitor scrapes its pods. The cluster component reports why, and its own
+// guard blocks the apply that takes the cluster itself.
+func (c serverComponents) applying(holdArchive, clusterTaken bool) []*component.Component {
+	if clusterTaken {
+		return []*component.Component{c.cluster}
+	}
+
 	if !holdArchive {
 		return c.all()
 	}
@@ -311,7 +329,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	comps = built.all()
 
-	reconcileErr := reconcileComponents(ctx, recCtx, built.applying(resolved.holdArchive))
+	reconcileErr := reconcileComponents(
+		ctx, recCtx, built.applying(resolved.holdArchive, resolved.clusterTaken != ""),
+	)
 
 	if err := r.removeSupersededContracts(ctx, &server, resolved.merged); err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
@@ -327,7 +347,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A held archive writes no history at all. Every record names where its
 	// objects are, and the location the spec resolves to now is nowhere the
 	// server has written.
-	if !resolved.holdArchive {
+	//
+	// A taken cluster writes none either. The archive of that name belongs to
+	// whoever holds the cluster, and its base backups carry the label this
+	// read counts by, so a record here calls somebody else's archive an
+	// archive of this server.
+	if !resolved.holdArchive && resolved.clusterTaken == "" {
 		reconcileArchiveHistory(
 			&server, resolved.merged, built.archive, archiveStart,
 			resolved.archiveLocation, moved, metav1.Now(),
@@ -339,7 +364,13 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Before the aggregate below, which reads the component conditions off
 	// the server.
 	if resolved.contractHolder != nil {
-		stageContractTaken(&server, resolved.merged, resolved.contractHolder)
+		stageTaken(
+			&server, v1.ConditionContractReady, v1.ReasonContractTaken,
+			components.ContractTakenMessage(resolved.merged.DatabaseServerConfig, resolved.contractHolder),
+		)
+	}
+	if resolved.clusterTaken != "" {
+		stageTaken(&server, v1.ConditionClusterReady, v1.ReasonClusterTaken, resolved.clusterTaken)
 	}
 
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
@@ -489,11 +520,17 @@ func (r *DatabaseServerReconciler) preCheck(
 
 	// After every hold above, because a held recovery keeps the server on the
 	// contract that the record names and the holder is read for that name.
-	holder, err := r.contractHolder(ctx, server, resolved.merged)
+	contractHolder, err := r.contractHolder(ctx, server, resolved.merged)
 	if err != nil {
 		return resolved, err
 	}
-	resolved.contractHolder = holder
+	resolved.contractHolder = contractHolder
+
+	taken, err := r.clusterTaken(ctx, server)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.clusterTaken = taken
 
 	return resolved, nil
 }
@@ -785,6 +822,41 @@ func (r *DatabaseServerReconciler) contractHolder(
 	}
 
 	return holder, nil
+}
+
+// clusterTaken returns why the CloudNativePG cluster of the name the server
+// derives is not this server's to write, or the empty string when it is. The
+// cluster component blocks the apply on the answer, and the reconcile applies
+// nothing else while it is set.
+//
+// A cluster with no controller counts as taken, where a contract of the same
+// shape is adopted: see components.ClusterTakenMessage.
+//
+// The read is live. A cached read that has not seen the cluster of the other
+// owner yet lets this server apply over it, which is the write the guard
+// exists to stop.
+func (r *DatabaseServerReconciler) clusterTaken(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+) (string, error) {
+	name := components.ClusterName(server)
+	key := types.NamespacedName{Namespace: server.Namespace, Name: name}
+
+	var cluster cnpgv1.Cluster
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("reading the CloudNativePG cluster %s: %w", key, err)
+	}
+
+	controller := metav1.GetControllerOf(&cluster)
+	if controller != nil && controller.UID == server.UID {
+		return "", nil
+	}
+
+	return components.ClusterTakenMessage(name, controller), nil
 }
 
 // serverVolumes are the volumes of the current cluster: one entry per
@@ -1162,7 +1234,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	var built serverComponents
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
-		server, merged, resolved.archive, resolved.platform,
+		server, merged, resolved.archive, resolved.platform, resolved.clusterTaken,
 	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building cluster component: %w", err)
@@ -1271,21 +1343,15 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 	return nil
 }
 
-// stageContractTaken reports the contract that another owner holds. The guard
-// of the contract component blocks the apply, and ocf reports every blocked
-// guard as Blocked, which reads the same as the wait for the superuser
-// Secret. This names the owner instead, which is what the user acts on.
-func stageContractTaken(
-	server *v1.DatabaseServer,
-	merged v1.DatabaseServerSpec,
-	holder *metav1.OwnerReference,
-) {
-	message := components.ContractTakenMessage(merged.DatabaseServerConfig, holder)
-
+// stageTaken reports an object of a derived name that another owner holds. A
+// guard blocks the apply, and ocf reports every blocked guard as Blocked,
+// which reads the same as the wait for the superuser Secret. This names the
+// holder instead, which is what the user acts on.
+func stageTaken(server *v1.DatabaseServer, conditionType, reason, message string) {
 	meta.SetStatusCondition(&server.Status.Conditions, metav1.Condition{
-		Type:               v1.ConditionContractReady,
+		Type:               conditionType,
 		Status:             metav1.ConditionFalse,
-		Reason:             v1.ReasonContractTaken,
+		Reason:             reason,
 		Message:            conditions.BoundMessage(message),
 		ObservedGeneration: server.Generation,
 	})

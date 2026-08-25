@@ -258,6 +258,14 @@ const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
 // remove the owner and the contract with it.
 const ReasonContractTaken = "ContractTaken"
 
+// ReasonClusterTaken is the ClusterReady reason of a DatabaseServer that
+// derives the name of an existing CloudNativePG cluster it does not control.
+// The server writes nothing on that cluster and runs nothing itself, so the
+// database of whoever holds the name is left whole. It publishes no contract
+// and advertises no archive either. The message names the holder. Remove that
+// cluster, or give this server a name of its own.
+const ReasonClusterTaken = "ClusterTaken"
+
 // ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
 // merged version names a PostgreSQL major other than the one its data
 // directory runs. The server keeps running the major it has: everything the

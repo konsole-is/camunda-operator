@@ -119,16 +119,11 @@ func contractGuard(
 	name string,
 	holder *metav1.OwnerReference,
 ) func(v1.DatabaseServerConfig) (concepts.GuardStatusWithReason, error) {
-	return func(v1.DatabaseServerConfig) (concepts.GuardStatusWithReason, error) {
-		if holder == nil {
-			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
-		}
-
-		return concepts.GuardStatusWithReason{
-			Status: concepts.GuardStatusBlocked,
-			Reason: ContractTakenMessage(name, holder),
-		}, nil
+	if holder == nil {
+		return takenGuard[v1.DatabaseServerConfig]("")
 	}
+
+	return takenGuard[v1.DatabaseServerConfig](ContractTakenMessage(name, holder))
 }
 
 // ContractTakenMessage says that another owner holds the contract name, and

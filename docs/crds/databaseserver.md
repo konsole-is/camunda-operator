@@ -22,6 +22,8 @@ spec:
 
 The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to four characters, `-r99`.
 
+The name must also be free. If a CloudNativePG cluster of that name is already there, and this server does not own it, the server runs nothing. `ClusterReady` reports `ClusterTaken` and names the owner. See [Status](#status).
+
 A rollback builds its cluster under the name of the server plus that suffix. The number in the suffix counts the archive records in `status.archive.history`. A rollback, an archive you re-enable, and a change of bucket each add one. A name inside the bound reaches the new cluster whole while that number stays below 100. Above it, the operator shortens the name to a head and a hash.
 
 ```mermaid
@@ -339,6 +341,7 @@ status:
 | `ClusterReady` | `Creating`, `Updating` | CloudNativePG is converging the instances. | Wait. |
 | `ClusterReady` | `Healthy` | Every instance the spec asks for is ready. | Nothing. |
 | `ClusterReady` | `AliveFailing` | CloudNativePG reports a phase it cannot leave on its own. The message names the phase. | Read the CloudNativePG cluster for the reason. |
+| `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the name this server derives already exists, and this server does not own it. The message names the owner. The server writes nothing on that cluster, publishes no contract, and advertises no archive. | Remove that cluster, or give this server a name of its own. |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. A suspended server never does. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
 | `ArchiveReady` | `Healthy` | The archive holds a base backup and takes the write-ahead log. | Nothing. |

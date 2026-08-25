@@ -23,6 +23,7 @@ limitations under the License.
 package databaseserver
 
 import (
+	"fmt"
 	"maps"
 	"strings"
 
@@ -122,16 +123,23 @@ func SuperuserSecretName(server *v1.DatabaseServer) string {
 // The returned data cell holds the PostgreSQL system identifier that
 // CloudNativePG reports, empty until it has detected one. It is set after the
 // component reconciles, and the controller mirrors it to status.
+//
+// taken is why a cluster of that name is not this server's to write, from
+// ClusterTakenMessage, and it is empty when the name is free or the cluster is
+// the server's own. A guard blocks the apply while it is set. The caller reads
+// the holder and reports v1.ReasonClusterTaken.
 func ClusterComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archive *ArchiveStorage,
 	platform *v1.CamundaPlatformConfigSpec,
+	taken string,
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
 
 	builder := cnpgcluster.NewBuilder(cluster(server, merged, platform)).
-		WithMutation(clusterMutations(server, merged, archive)...)
+		WithMutation(clusterMutations(server, merged, archive)...).
+		WithGuard(takenGuard[cnpgv1.Cluster](taken))
 	cnpgcluster.ExtractInto(builder, systemIdentifier, func(c cnpgv1.Cluster) (string, error) {
 		return c.Status.SystemID, nil
 	})
@@ -319,6 +327,52 @@ func instances(merged v1.DatabaseServerSpec) int {
 	}
 
 	return int(*merged.Instances)
+}
+
+// ClusterTakenMessage says that a CloudNativePG cluster of the name the server
+// derives is not the server's to write, and what to do about it. holder is the
+// owner that controls that cluster, and it is nil when nothing controls it.
+// The guard of the cluster and the ClusterReady condition of the server both
+// read it, so the reason a user acts on is written once.
+//
+// A cluster with no controller is refused, where a contract of the same shape
+// is adopted. A contract holds a name and an endpoint, so taking it over costs
+// its holder nothing. A CloudNativePG cluster holds a database, the apply
+// rewrites its spec and makes it a child of this server, and deleting the
+// server then deletes data the server never built.
+func ClusterTakenMessage(name string, holder *metav1.OwnerReference) string {
+	controller := "no owner controls it"
+	if holder != nil {
+		controller = fmt.Sprintf("%s %q controls it", holder.Kind, holder.Name)
+	}
+
+	return fmt.Sprintf(
+		"CloudNativePG cluster %q already exists and %s. It holds a database this server did "+
+			"not build, so the server writes nothing on it, publishes no contract, and "+
+			"advertises no archive. Remove that cluster, or give this server a name of its own.",
+		name, controller,
+	)
+}
+
+// takenGuard blocks a resource while another owner holds the name that the
+// server derives for it. reason says who holds it, and it is empty when the
+// name is the server's to write.
+//
+// Every apply is server-side with forced ownership under a field manager that
+// carries no server name, so an apply that reaches an object of somebody else
+// rewrites it and takes its owner reference. The guard is what keeps the
+// derived name from being enough to do that.
+func takenGuard[T any](reason string) func(T) (concepts.GuardStatusWithReason, error) {
+	return func(T) (concepts.GuardStatusWithReason, error) {
+		if reason == "" {
+			return concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}, nil
+		}
+
+		return concepts.GuardStatusWithReason{
+			Status: concepts.GuardStatusBlocked,
+			Reason: reason,
+		}, nil
+	}
 }
 
 // managedLabels returns the labels of a resource that the operator applies for

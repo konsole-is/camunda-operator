@@ -1056,6 +1056,87 @@ var _ = Describe("DatabaseServer controller", func() {
 		Expect(contract.Spec.Host).To(Equal("second-rw." + second.Namespace + ".svc"))
 	})
 
+	It("writes nothing on a CloudNativePG cluster that another server holds", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		// The cluster of a DatabaseServer takes the name of the server, so a
+		// second server of that name in the namespace derives a name that is
+		// already running a database. The occupant carries the label of the
+		// server under test too, because a label is a value anybody can write
+		// and it is not what says who owns a database.
+		holder := serverNamed(namespace, "holder", "holder", nil)
+		occupant := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda",
+				Namespace: namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: "camunda"},
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: v1.GroupVersion.String(),
+					Kind:       "DatabaseServer",
+					Name:       holder.Name,
+					UID:        reconciledServer(holder).UID,
+					Controller: new(true),
+				}},
+			},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            3,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "8Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		bucket := archiveBucket()
+		server := serverNamed(namespace, "camunda", "camunda", &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		// CloudNativePG wrote this Secret for the occupant. Nothing but the
+		// guard keeps the contract off the endpoint it belongs to.
+		writeSuperuserSecret(server)
+
+		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		Expect(taken.Message).To(ContainSubstring(`DatabaseServer "holder"`))
+		Expect(conditionOf(server, v1.ConditionReady).Status).To(Equal(metav1.ConditionFalse))
+
+		key := client.ObjectKey{Namespace: namespace, Name: "camunda"}
+		Consistently(func(g Gomega) {
+			// The apply rewrites the spec and takes the owner reference
+			// together, so a write of this server shows in either.
+			var live cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.Spec.Instances).To(Equal(3))
+			g.Expect(live.Spec.StorageConfiguration.Size).To(Equal("8Gi"))
+			g.Expect(metav1.IsControlledBy(&live, reconciledServer(holder))).To(BeTrue())
+
+			// The contract would send every consumer to the database of the
+			// holder, and the schedule would copy that database into the
+			// bucket of this server.
+			g.Expect(k8sClient.Get(ctx, key, &v1.DatabaseServerConfig{})).
+				To(MatchError(apierrors.IsNotFound, "not found"))
+			g.Expect(k8sClient.Get(ctx, key, &barmanobjectstore.ObjectStore{})).
+				To(MatchError(apierrors.IsNotFound, "not found"))
+			g.Expect(k8sClient.Get(ctx, key, &cnpgv1.ScheduledBackup{})).
+				To(MatchError(apierrors.IsNotFound, "not found"))
+		}, 3*time.Second, interval).Should(Succeed())
+
+		By("removing the cluster that holds the name")
+		Expect(k8sClient.Delete(ctx, occupant)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var live cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&live, reconciledServer(server))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		makeClusterHealthy(server, "7000000000000000001")
+		expectCondition(server, v1.ConditionClusterReady, metav1.ConditionTrue)
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+	})
+
 	It("starts a new archive record when the bucket changes", func() {
 		first := archiveBucket()
 		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
