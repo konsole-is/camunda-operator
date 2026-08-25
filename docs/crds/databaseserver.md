@@ -100,7 +100,7 @@ spec:
   # ... the rest of your server
 ```
 
-`retentionPeriodDays` is how far into the past a restore can reach. The operator enforces it on the bucket and publishes the same number as `pitr.retentionPeriodDays` on the contract, so the declared window and the enforced window are one.
+`retentionPeriodDays` is how far into the past a restore can reach. The operator enforces it on the bucket and publishes the same number as `pitr.retentionPeriodDays` on the contract, so the declared window and the enforced window are one. It covers the archive the server writes now, and no other. An archive that the server left behind, after a rollback or a change of bucket, stays in the bucket until you remove it.
 
 `baseBackupSchedule` is a six-field cron in UTC, seconds first. It defaults to `0 0 2 * * *`, which is daily at 02:00. The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 

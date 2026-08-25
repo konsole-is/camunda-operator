@@ -233,7 +233,7 @@ kubectl get databaseserver my-db -n my-cluster-ns \
 kubectl get databaseserverconfig my-db-server -n my-cluster-ns -o jsonpath='{.spec.host}'
 ```
 
-The archive the rollback read stays in the bucket, next to the archive the new server writes. Nothing removes it, and `status.archive.history` on the `DatabaseServer` keeps its record with an end time. A later restore can therefore reach a point from before the rollback, for as long as `retentionPeriodDays` keeps the objects. No restore can reach the window between the two archives, because the archive of the new server starts at its first base backup.
+The archive the rollback read stays in the bucket, next to the archive the new server writes. Nothing removes it. `retentionPeriodDays` applies only to the archive the server writes now, so the replaced archive stays in the bucket until you remove it. `status.archive.history` on the `DatabaseServer` keeps its record with an end time, and a later restore can reach a point from before the rollback for as long as the objects are there. No restore can reach the window between the two archives, because the archive of the new server starts at its first base backup.
 
 An `ElasticsearchCluster` suspends the same way. The operator deletes the ECK `Elasticsearch` resource and keeps the data volumes. `Ready` is `True` with reason `Suspended`, and `MetricsReady` reports `Suspended` too. On resume the operator recreates the resource, and ECK attaches the same volumes with the data intact.
 
