@@ -42,6 +42,10 @@ spec:
           name inside that bound reaches the cluster of every one of the first
           ninety-nine rollbacks whole. A rollback after those shortens it to a head
           and a hash.
+
+          The rule runs on create only. A name never changes on update, so re-checking
+          it would only reject an edit of some other field on an object that predates
+          the rule.
         properties:
           apiVersion:
             description: |-
@@ -1170,8 +1174,9 @@ spec:
         x-kubernetes-validations:
         - message: metadata.name must be a DNS-1035 label of at most 46 characters,
             because it names the CloudNativePG cluster of the server
-          rule: self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size()
-            <= 46
+          optionalOldSelf: true
+          rule: oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
+            && self.metadata.name.size() <= 46)
     served: true
     storage: true
     subresources:

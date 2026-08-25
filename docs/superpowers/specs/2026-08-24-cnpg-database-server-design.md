@@ -368,7 +368,9 @@ on the root type. The name is used verbatim as the CloudNativePG cluster name, C
 at most 50, and `recoveryName` appends `-r<n>`, so 50 minus the four of `-r99` is the bound: a name
 at it stays whole through ninety-nine rollbacks and is shortened to a head and a hash after those.
 `recoveryName` shortens against the same 50 and needs no budget of its own for the Services
-CloudNativePG derives: 50 plus `-any` is well inside a DNS label of 63.
+CloudNativePG derives: 50 plus `-any` is well inside a DNS label of 63. The rule is create-only
+(`optionalOldSelf: true`, `oldSelf.hasValue() || ...`): a name never changes on update, so
+re-checking it would only reject an edit of another field.
 
 Validation: `databaseServerConfig` required; `storageSize` and `walStorageSize` may not shrink,
 one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matches `^\d+$` and is

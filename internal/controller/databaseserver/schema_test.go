@@ -231,6 +231,16 @@ var _ = Describe("DatabaseServer schema", func() {
 		),
 	)
 
+	// The name rule runs on create only. A name never changes on update, so an
+	// edit of any other field has to pass whatever the name is.
+	It("checks the name on create and leaves an update alone", func() {
+		obj := createdDatabaseServer()
+
+		Expect(resize(obj, func(o *v1.DatabaseServer) {
+			o.Labels = map[string]string{"team": "platform"}
+		})).To(Succeed())
+	})
+
 	// storageSize serializes as int-or-string, so the no-shrink rule must
 	// handle the integer form that a raw manifest can submit.
 	It("accepts integer-form storageSize and still rejects shrink", func() {

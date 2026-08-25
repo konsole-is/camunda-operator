@@ -392,7 +392,7 @@ type DatabaseServerStatus struct {
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server"
+// +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46)",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server",optionalOldSelf=true
 
 // DatabaseServer runs a PostgreSQL server for one orchestration cluster
 // through the external CloudNativePG operator, archives it continuously to an
@@ -405,6 +405,10 @@ type DatabaseServerStatus struct {
 // name inside that bound reaches the cluster of every one of the first
 // ninety-nine rollbacks whole. A rollback after those shortens it to a head
 // and a hash.
+//
+// The rule runs on create only. A name never changes on update, so re-checking
+// it would only reject an edit of some other field on an object that predates
+// the rule.
 type DatabaseServer struct {
 	metav1.TypeMeta `json:",inline"`
 
