@@ -1338,6 +1338,53 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 2*time.Second, interval).Should(Succeed())
 	})
 
+	// The cluster a rollback replaced is gone. status.cluster is the record of
+	// the one the server runs from now, and a status write that is lost leaves
+	// it on the removed one. The guard has to reach the running cluster
+	// anyway, or the version it refuses is applied to it.
+	It("refuses a major change after a rollback whose recorded cluster was lost", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+		recovered := recoveryCluster(server)
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		setVersion(server, "18")
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		By("losing the record of the cluster the rollback moved to")
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			latest.Status.Recovery = nil
+			latest.Status.Cluster = "camunda"
+			g.Expect(k8sClient.Status().Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The contract still names the recovered server, so the refusal reads
+		// the major off that cluster and it keeps the image it runs.
+		//
+		// The poll is fast because the reconcile that reads the lost record is
+		// one reconcile: a guard that gives up there renders the new major
+		// once, and the reconcile after it repairs status.cluster and puts the
+		// image back. Once is all CloudNativePG needs.
+		key := client.ObjectKey{Namespace: server.Namespace, Name: recovered}
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+		}, 3*time.Second, "5ms").Should(Succeed())
+
+		ready := conditionOf(server, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+	})
+
 	// A refusal must not stop the server. A rollback in flight has to finish on
 	// the major the archive holds, and whoever asked for it waits on the
 	// contract for the answer.

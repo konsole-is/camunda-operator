@@ -62,14 +62,9 @@ func (r *DatabaseServerReconciler) keepRunningVersion(
 	server *v1.DatabaseServer,
 	merged *v1.DatabaseServerSpec,
 ) (*conditions.PreCheckFailure, error) {
-	var cluster cnpgv1.Cluster
-	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
-	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil
-		}
-
-		return nil, fmt.Errorf("reading the applied cluster %s: %w", key, err)
+	cluster, err := r.runningCluster(ctx, server, merged.DatabaseServerConfig)
+	if err != nil || cluster == nil {
+		return nil, err
 	}
 
 	running := cluster.Status.PGDataImageInfo
@@ -81,6 +76,66 @@ func (r *DatabaseServerReconciler) keepRunningVersion(
 	merged.Version = strconv.Itoa(running.MajorVersion)
 
 	return refused, nil
+}
+
+// runningCluster returns the CloudNativePG cluster whose data directory the
+// server runs on, or nil when it runs on none.
+//
+// status.cluster names it, and Reconcile fills an empty one with the name of
+// the server. Neither is certain: a rollback whose status write was lost leaves
+// that field on the cluster the rollback already removed, and the name of the
+// server is that same cluster. The published contract is the second record of
+// which cluster the server runs from, and reconcileRecovery repairs
+// status.cluster from it one step further on, so a name that resolves to
+// nothing is answered from the contract rather than read as a server that has
+// not started.
+func (r *DatabaseServerReconciler) runningCluster(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	contractName string,
+) (*cnpgv1.Cluster, error) {
+	cluster, err := r.clusterOrNil(ctx, server.Namespace, components.ClusterName(server))
+	if err != nil || cluster != nil {
+		return cluster, err
+	}
+
+	key := types.NamespacedName{Namespace: server.Namespace, Name: contractName}
+
+	var contract v1.DatabaseServerConfig
+	if err := r.APIReader.Get(ctx, key, &contract); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("reading the contract %s of the server: %w", key, err)
+	}
+
+	recovered, err := r.recoveredClusterOf(ctx, server, &contract)
+	if err != nil || recovered == "" {
+		return nil, err
+	}
+
+	return r.clusterOrNil(ctx, server.Namespace, recovered)
+}
+
+// clusterOrNil reads one CloudNativePG cluster of the server, or nil when it
+// does not exist.
+func (r *DatabaseServerReconciler) clusterOrNil(
+	ctx context.Context,
+	namespace, name string,
+) (*cnpgv1.Cluster, error) {
+	key := types.NamespacedName{Namespace: namespace, Name: name}
+
+	var cluster cnpgv1.Cluster
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("reading the applied cluster %s: %w", key, err)
+	}
+
+	return &cluster, nil
 }
 
 // refusedMajorChange compares version with the major that running reports for
