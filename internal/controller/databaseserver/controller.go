@@ -253,7 +253,13 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	archiveStart, err := r.archiveStart(ctx, &server, resolved.merged)
+	// One clock for the guard below and the history further down. The bucket
+	// change is decided here, before the components build, so a base backup of
+	// the bucket the server leaves cannot report the new archive ready.
+	now := metav1.Now()
+	archiveStart, err := r.archiveStart(
+		ctx, &server, resolved.merged, archiveBoundary(&server, resolved.merged, now),
+	)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -274,7 +280,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if identifier, ok := systemIdentifier.Get(); ok && identifier != "" {
 		server.Status.SystemIdentifier = identifier
 	}
-	reconcileArchiveHistory(&server, resolved.merged, built.archive, archiveStart, metav1.Now())
+	reconcileArchiveHistory(&server, resolved.merged, built.archive, archiveStart, now)
 
 	server.Status.Volumes = volumes.all()
 
@@ -735,28 +741,56 @@ func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resou
 	return largest
 }
 
+// archiveBoundary returns the point after which a base backup belongs to the
+// archive the server writes now, or nil when nothing bounds it.
+//
+// A closed record is a boundary the server recorded before. An open record of
+// another bucket is one this reconcile is about to record: the spec moved the
+// bucket, so that archive ends at now and the archive of the new bucket starts
+// after it. The guard on the archive component and the history both read this,
+// so a base backup of the bucket the server leaves can neither report the new
+// archive ready nor open its record. A record that names no bucket predates
+// the field, and reconcileArchiveHistory adopts the bucket of the spec into it
+// rather than closing it.
+func archiveBoundary(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	now metav1.Time,
+) *metav1.Time {
+	closed := closedArchiveEnd(server)
+	if merged.Archive == nil {
+		return closed
+	}
+
+	open := openArchiveRecord(server)
+	if open == nil || open.ObjectStorageRef == "" ||
+		open.ObjectStorageRef == merged.Archive.ObjectStorageRef {
+		return closed
+	}
+
+	return &now
+}
+
 // archiveStart returns when the earliest base backup of the archive the server
 // writes now completed, or nil when none has. It is what tells the archive
 // component that the archive can be recovered from, and what opens the
 // interval of that archive in status.
 //
-// A server that re-enabled its archive, or that moved to another bucket,
-// counts only the backups that began after the interval it closed, and a
-// backup that recorded no start counts by its end. The backups of the archive
-// it wrote before reach no point in the new one, so
-// treating one of them as the start declares a window that no restore can
-// reach. A server that asks for no archive takes no base backups, so it reads
-// none.
+// after is the boundary of the current archive, from archiveBoundary. Only the
+// backups that began after it count: the backups of an archive the server
+// wrote before reach no point in the one it writes now, so treating one of
+// them as the start declares a window that no restore can reach. A backup that
+// recorded no start counts by its end. A server that asks for no archive takes
+// no base backups, so it reads none.
 func (r *DatabaseServerReconciler) archiveStart(
 	ctx context.Context,
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
+	after *metav1.Time,
 ) (*metav1.Time, error) {
 	if merged.Archive == nil {
 		return nil, nil
 	}
-
-	after := closedArchiveEnd(server)
 
 	var backups cnpgv1.BackupList
 	if err := r.List(
@@ -1024,10 +1058,10 @@ func reconcileArchiveHistory(
 			open.ObjectStorageRef = merged.Archive.ObjectStorageRef
 		}
 		if open.ObjectStorageRef != merged.Archive.ObjectStorageRef {
-			// The interval of the bucket the server leaves ends here. The
-			// record of the new bucket opens on a later look, once a base
-			// backup of that bucket has completed after this point: the
-			// backups of the bucket it left reach no point in the new one.
+			// The interval of the bucket the server leaves ends here, at the
+			// same now that archiveBoundary already gave the guard. The record
+			// of the new bucket opens on a later look, once a base backup of
+			// that bucket has completed after this point.
 			open.To = &now
 			return
 		}

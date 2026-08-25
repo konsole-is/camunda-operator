@@ -233,7 +233,11 @@ prunes them.
 
 `objectStorageRef` is what makes an interval readable. A spec that names another bucket closes the
 open record at that moment and opens a record of the new bucket at its first base backup, the same
-way removing and restoring `spec.archive` does. The recovered cluster is given one `ObjectStore`,
+way removing and restoring `spec.archive` does. One `archiveBoundary(server, merged, now)` decides
+that moment, and the guard on the archive component and the history both read it, from one `now`
+per reconcile. A boundary taken from the recorded closes alone is not yet moved on the reconcile
+that applies the bucket change, and a base backup of the bucket the server leaves then reports the
+new archive ready in the same status write that closes the record. The recovered cluster is given one `ObjectStore`,
 the one of the bucket the spec names now, so a target inside a record of an earlier bucket is
 refused with `result: Unavailable` and a message that names both buckets. A second `ObjectStore`
 for the source would reach it and is a follow-up.

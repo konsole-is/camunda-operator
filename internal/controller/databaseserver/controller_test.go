@@ -973,6 +973,44 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	// The bucket change and the guard on the archive land in one reconcile.
+	// A boundary that waited for the recorded close would let the base backup
+	// of the bucket the server leaves report the new archive ready, and the
+	// status write that closes the record would carry that ready with it.
+	It("blocks the new archive while only the bucket it left holds a base backup", func() {
+		first := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    first.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000018")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+
+		second := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    second.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		// Every status the server writes from the close onwards reports the
+		// archive of the new bucket, which holds nothing.
+		Consistently(func(g Gomega) {
+			latest := reconciledServer(server)
+			if latest.Status.Archive == nil || latest.Status.Archive.History[0].To == nil {
+				return
+			}
+			ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionArchiveReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse), ready.Message)
+			g.Expect(latest.Status.Archive.History).To(HaveLen(1))
+		}, 3*time.Second, "5ms").Should(Succeed())
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+	})
+
 	// status.startedAt is optional on a CloudNativePG Backup. A completed
 	// backup that recorded no start is placed by its end, which is the only
 	// time it has, rather than left out of every interval for good.
