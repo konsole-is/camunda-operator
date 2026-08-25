@@ -106,7 +106,7 @@ spec:
 
 `baseBackupSchedule` is a six-field cron in UTC, seconds first: seconds, minutes, hours, day of month, month, day of week. It defaults to `0 0 2 * * *`, which is daily at 02:00. Each field takes `*`, `?`, a number, a range, a list, or a step such as `*/15`. The month and the day of week also take their names, such as `JAN` and `SUN`. The descriptors `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, `@hourly`, and `@every 6h` are accepted too.
 
-Admission checks each field against the values CloudNativePG takes there: 0-59 for seconds and minutes, 0-23 for hours, 1-31 for the day of the month, 1-12 or `JAN`-`DEC` for the month, and 0-6 or `SUN`-`SAT` for the day of the week. It rejects the five-field cron of a Kubernetes CronJob, because CloudNativePG reads the first field as seconds: `0 2 * * *` runs every hour at two minutes past, not daily at 02:00. It does not check that a range reads upward. CloudNativePG refuses `FRI-MON` when it reads the schedule, and the base backups then stop. Read `kubectl describe scheduledbackup` if they do.
+Admission checks each field against the values CloudNativePG takes there: 0-59 for seconds and minutes, 0-23 for hours, 1-31 for the day of the month, 1-12 or `JAN`-`DEC` for the month, and 0-6 or `SUN`-`SAT` for the day of the week. It rejects the five-field cron of a Kubernetes CronJob, because CloudNativePG reads the first field as seconds: `0 2 * * *` runs every hour at two minutes past, not daily at 02:00. A step takes at most three digits, and the number in `@every` takes at most six digits on each side of the point. A longer number is refused, because CloudNativePG cannot read it and the base backups stop. It does not check that a range reads upward. CloudNativePG refuses `FRI-MON` when it reads the schedule, and the base backups then stop. Read `kubectl describe scheduledbackup` if they do.
 
 The first base backup runs as soon as the server is up, whatever the schedule says. `ArchiveReady` is `False` until that first base backup completes: an archive that holds write-ahead log and no base backup cannot be recovered to any point.
 
@@ -116,7 +116,7 @@ The archive lives under a prefix of the bucket that holds this server alone: `<b
 
 `status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `location` is where in object storage it was written, which is the bucket, the path, and the endpoint or region that selects the service, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
 
-A rollback closes the record of the archive it read at the moment the contract moves to the recovered server, and the recovered server opens a record of its own at its first base backup. The window between the two lies in no interval, so no restore can reach a point in it.
+A rollback closes the record of the archive it read. That record ends at whichever comes first: the contract moves to the recovered server, or that server takes its first base backup. The recovered server opens a record of its own at that first base backup. The window between the two lies in no interval either way, so no restore can reach a point in it.
 
 Remove `spec.archive` and the open record closes at that moment. The list itself stays, and no new record is written. The bucket still holds those objects, so a restore can still reach a point inside a closed interval.
 
@@ -162,7 +162,7 @@ A rollback replaces the server. The operator builds a second CloudNativePG clust
 
 The operator points the contract at the new cluster once CloudNativePG reports it healthy, and it then removes the old cluster and its data volumes. Every consumer of the contract reads the new `host` and the superuser Secret of the new cluster. A `CamundaCluster` rolls its pods to pick them up.
 
-The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends when the contract moves, and the new one starts at its first base backup, so no restore can reach a point between the two.
+The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends at whichever comes first: the contract moves to the recovered cluster, or that cluster takes its first base backup. The new archive starts at that first base backup. The gap between the two lies in no interval either way, so no restore can reach a point in it.
 
 The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked. Once the answer is out, it publishes the new name as well.
 

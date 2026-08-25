@@ -269,6 +269,33 @@ var _ = Describe("DatabaseServer schema", func() {
 				o.Spec.Archive.BaseBackupSchedule = "JAN 0 0 * * *"
 			}, "baseBackupSchedule",
 		),
+		// A number long enough to overflow the parser of CloudNativePG stops
+		// the base backups, which is what the bounds on the field exist to
+		// prevent. The numbers a schedule is written with are far shorter.
+		Entry(
+			"rejects an @every interval of twenty-four digits in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "@every 999999999999999999999999h"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"rejects a step of twenty digits in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 2 * * */99999999999999999999"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"accepts a fractional @every interval as baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "@every 1.5h"
+			}, "",
+		),
+		Entry(
+			"accepts a step in the weekday field of baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 2 * * */2"
+			}, "",
+		),
 		// The name of the CR names the CloudNativePG cluster, and
 		// CloudNativePG takes a DNS-1035 label of at most 50 characters. The
 		// "-r99" of a rollback leaves 46 for the name itself.

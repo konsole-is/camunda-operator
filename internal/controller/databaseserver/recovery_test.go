@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,6 +71,39 @@ func archivingServer() (*v1.DatabaseServer, metav1.Time) {
 	}, timeout, interval).Should(HaveLen(1))
 
 	return server, from
+}
+
+// archivingServerIn is archivingServer in a namespace that already exists,
+// under a name and a contract name of its own. It writes no superuser Secret,
+// so the caller decides whether the contract component of this server blocks
+// or publishes. Two of them is how a spec puts two servers on one contract.
+func archivingServerIn(namespace, name, contract string, from metav1.Time) *v1.DatabaseServer {
+	GinkgoHelper()
+
+	bucket := archiveBucket()
+	server := &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: v1.DatabaseServerSpec{
+			Version:              "17",
+			Instances:            new(int32(1)),
+			StorageSize:          new(resource.MustParse("1Gi")),
+			DatabaseServerConfig: contract,
+			Archive: &v1.DatabaseServerArchiveSpec{
+				ObjectStorageRef:    bucket.Name,
+				RetentionPeriodDays: 30,
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+	makeClusterHealthy(server, "7000000000000000001")
+	completeBaseBackup(server, "base-1", from)
+
+	Eventually(func() []v1.ArchiveRecord {
+		return archiveHistory(server)
+	}, timeout, interval).Should(HaveLen(1))
+
+	return server
 }
 
 // archivingServerOnPreset is archivingServer with the archive block on a
@@ -619,6 +653,56 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, "2s", interval).Should(Succeed())
 	})
 
+	It("takes no request from a contract that another server owns", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		from := metav1.NewTime(time.Now().Add(-2 * time.Hour).Truncate(time.Second))
+		shared := client.ObjectKey{Namespace: namespace, Name: "shared"}
+
+		// The first server publishes the contract, so it is the controller of
+		// it.
+		owner := archivingServerIn(namespace, "camunda", "shared", from)
+		writeSuperuserSecret(owner)
+		expectCondition(owner, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		// The second names the same contract. Its own contract component
+		// blocks while its superuser Secret is missing, so it publishes
+		// nothing and the contract stays as the first server wrote it.
+		loser := archivingServerIn(namespace, "second", "shared", from)
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, shared, &contract)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&contract, reconciledServer(owner))).To(BeTrue())
+			g.Expect(metav1.IsControlledBy(&contract, reconciledServer(loser))).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
+
+		askForRecoveryOn(owner, shared, from.Add(time.Hour))
+
+		Eventually(func(g Gomega) {
+			recovery := reconciledServer(owner).Status.Recovery
+			g.Expect(recovery).NotTo(BeNil())
+			g.Expect(recovery.Cluster).To(Equal("camunda-r1"))
+		}, timeout, interval).Should(Succeed())
+
+		// The request names the archive and the endpoint of the first server.
+		// A server that reads it off a contract it does not own recovers its
+		// own archive and answers a question nobody asked it.
+		Consistently(func(g Gomega) {
+			g.Expect(reconciledServer(loser).Status.Recovery).To(BeNil())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: namespace, Name: "second-r1"}, &cnpgv1.Cluster{},
+			)).To(MatchError(apierrors.IsNotFound, "not found"))
+
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, shared, &contract)).To(Succeed())
+			g.Expect(contract.Spec.PITR).NotTo(BeNil())
+			g.Expect(contract.Spec.PITR.LastRecovery).To(BeNil())
+		}, "2s", interval).Should(Succeed())
+	})
+
 	It("keeps the archive of a running recovery that the spec takes away", func() {
 		server, from := archivingServer()
 		request := askForRecovery(server, from.Add(time.Hour))
@@ -1037,12 +1121,18 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// CloudNativePG takes the first base backup of the recovered cluster
 		// before the contract has reached it, so the archive of that cluster
 		// opens before the cutover finishes.
+		//
+		// The record of the cluster it replaces closes there, at the start of
+		// the record that opens, and not at the cutover further down.
 		backupAt := metav1.NewTime(time.Now().Truncate(time.Second))
 		completeBaseBackup(reconciledServer(server), "base-2", backupAt)
 		Eventually(func(g Gomega) {
 			history := archiveHistory(server)
 			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[0].ServerName).To(Equal("camunda"))
+			g.Expect(history[0].To).To(Equal(&backupAt))
 			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
+			g.Expect(history[1].From).To(Equal(backupAt))
 			g.Expect(history[1].To).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 
