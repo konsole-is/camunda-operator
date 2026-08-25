@@ -999,6 +999,48 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, "2s", interval).Should(Succeed())
 	})
 
+	It("refuses the cluster it goes back to when another owner took that one", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		bringRecoveryClusterUp(server, "camunda-r1")
+
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// Nothing applies over the cluster the rollback replaced while the
+		// rollback runs, so it keeps whatever owner it is given here.
+		By("taking the previous cluster away from the server")
+		previous := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, previous, &cluster)).To(Succeed())
+			cluster.OwnerReferences = nil
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The server goes back to the previous cluster in the same pass that
+		// abandons the rollback, so that pass is the one that has to read the
+		// name it goes back to.
+		By("removing the cluster the rollback built")
+		Expect(k8sClient.Delete(ctx, &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r1", Namespace: server.Namespace},
+		})).To(Succeed())
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("was removed"))
+
+		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+		Expect(taken.Message).To(ContainSubstring(`CloudNativePG cluster "camunda"`))
+
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, previous, &cluster)).To(Succeed())
+			g.Expect(cluster.OwnerReferences).To(BeEmpty())
+		}, "2s", interval).Should(Succeed())
+	})
+
 	It("holds the contract it publishes until the recovery on it is answered", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))

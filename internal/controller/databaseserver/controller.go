@@ -111,8 +111,9 @@ type resolvedSpec struct {
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. The reconcile then applies
-	// nothing but the blocked cluster and ClusterReady reports ClusterTaken:
-	// see clusterTaken.
+	// nothing but the blocked cluster and ClusterReady reports ClusterTaken.
+	// The recovery decides the name, so this is filled in after the recovery
+	// and not by preCheck: see clusterTaken.
 	clusterTaken string
 }
 
@@ -298,6 +299,16 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if resolved.holdForSuspension {
 		return ctrl.Result{}, nil
+	}
+
+	// After the recovery, because the recovery is what moves status.cluster:
+	// it moves onto the cluster it built at the cutover, and back onto the
+	// previous one when it abandons that cluster. The name every component
+	// below renders is the name that has to be free, so the read is here and
+	// not in preCheck.
+	resolved.clusterTaken, err = r.clusterTaken(ctx, &server)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// The move is decided before the components build, and a reconcile that
@@ -525,12 +536,6 @@ func (r *DatabaseServerReconciler) preCheck(
 		return resolved, err
 	}
 	resolved.contractHolder = contractHolder
-
-	taken, err := r.clusterTaken(ctx, server)
-	if err != nil {
-		return resolved, err
-	}
-	resolved.clusterTaken = taken
 
 	return resolved, nil
 }
@@ -828,6 +833,10 @@ func (r *DatabaseServerReconciler) contractHolder(
 // derives is not this server's to write, or the empty string when it is. The
 // cluster component blocks the apply on the answer, and the reconcile applies
 // nothing else while it is set.
+//
+// The caller reads it once the recovery has settled status.cluster. A name
+// read before that is the name of the cluster the server is leaving, and the
+// answer then guards the wrong object for a whole pass.
 //
 // A cluster with no controller counts as taken, where a contract of the same
 // shape is adopted: see components.ClusterTakenMessage.
