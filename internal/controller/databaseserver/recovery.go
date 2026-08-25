@@ -190,12 +190,14 @@ func cutOver(server *v1.DatabaseServer) bool {
 
 // recoveryContract reads the contract that the recovery is answered on: the
 // one the record names while a recovery runs, and the one the spec names
-// otherwise. It is nil when the server names none or has not published it yet.
+// otherwise. It is nil when the server names none, has not published it yet,
+// or the object of that name belongs to another server.
 //
 // The record wins while a recovery is unanswered. A spec that is repointed at
 // another contract mid-recovery abandons the cluster that is building and
 // leaves whoever asked with no answer. preCheck keeps the merged spec on this
-// contract in that case, and Ready reports why.
+// contract in that case, and Ready reports why. The record always names a
+// contract this server published, so the ownership test never hides one.
 //
 // The read is cached: the contract is owned and watched, so every write to it
 // comes back here.
@@ -221,6 +223,14 @@ func (r *DatabaseServerReconciler) recoveryContract(
 		}
 
 		return nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
+	}
+
+	// Two servers can name one contract. The request on it was written against
+	// the archive and the endpoint of the server that owns it, so the other
+	// one must not read it: it recovers its own archive and publishes the
+	// answer on somebody else's contract.
+	if !ownedByServer(server, &contract) {
+		return nil, nil
 	}
 
 	return &contract, nil
