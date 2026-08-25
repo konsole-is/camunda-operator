@@ -74,7 +74,7 @@ spec:
 
 Neither volume size can shrink. Admission rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
 
-`status.volumes` lists the data volumes of the server and the capacity each one reports.
+`status.volumes` lists every bound volume of the cluster the contract points at, and the capacity each one reports. A server with a write-ahead log volume reports that one here too, under the name of its data volume with the suffix `-wal`.
 
 ## The archive
 
@@ -260,6 +260,8 @@ status:
   volumes:
     - name: my-db-1
       capacity: 256Gi
+    - name: my-db-1-wal
+      capacity: 32Gi
   conditions:
     - type: Ready
       status: "True"
