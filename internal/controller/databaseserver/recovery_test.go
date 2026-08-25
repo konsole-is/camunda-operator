@@ -979,10 +979,20 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(ready.Message).To(ContainSubstring("-moved"))
 
 		// The archive the rollback reads is at the old location, so the
-		// ObjectStore that describes it must not follow the contract.
+		// ObjectStore that describes it must not follow the contract. Nothing
+		// applies the location the contract names now, so no record of the
+		// server belongs to it either: the interval stays open and no move is
+		// recorded.
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, storeKey, &store)).To(Succeed())
 			g.Expect(store.Spec.Configuration.DestinationPath).To(Equal(reading))
+
+			archive := reconciledServer(server).Status.Archive
+			g.Expect(archive).NotTo(BeNil())
+			g.Expect(archive.History).To(HaveLen(1))
+			g.Expect(archive.History[0].To).To(BeNil())
+			g.Expect(archive.History[0].Location).To(Equal(recorded.Location))
+			g.Expect(archive.Boundary).To(BeNil())
 		}, "2s", interval).Should(Succeed())
 
 		By("finishing the rollback once the bucket is back")
@@ -990,6 +1000,14 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		recoverySucceeds(server)
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		// The hold left the history as it was. The rollback closes the record
+		// of the cluster it replaces itself, at the moment the contract moves,
+		// and it is still the record of the location the server wrote to.
+		archive := reconciledServer(server).Status.Archive
+		Expect(archive.History).To(HaveLen(1))
+		Expect(archive.History[0].Location).To(Equal(recorded.Location))
+		Expect(archive.Boundary).To(BeNil())
 	})
 
 	It("keeps the bucket of a running recovery while the spec names another", func() {

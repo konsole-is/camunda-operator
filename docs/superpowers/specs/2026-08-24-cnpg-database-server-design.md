@@ -275,7 +275,9 @@ so an `ObjectStorageConfig` edited under a running recovery does not move it. `r
 pins the contract by name, and `recoveryHoldsLocation` covers the edit that keeps the name: while
 the resolved location differs from `status.recovery.archive.location`, `Ready` reports
 `InvalidReference` and the archive component does not reconcile, so the one `ObjectStore` keeps
-describing the archive the recovery asked for. A second `ObjectStore`
+describing the archive the recovery asked for. The history is held with it: nothing applies the
+location the spec resolves to then, so move detection and every record update are skipped, and the
+move is decided on the reconcile after the hold lifts against the location that is applied by then. A second `ObjectStore`
 for the source would reach it and is a follow-up.
 
 The alternative, only the current archive, is simpler but cannot correct a recovery to the wrong

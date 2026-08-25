@@ -281,7 +281,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// is what puts the archive in the new place, and every backup that exists
 	// now began before that. The archive component blocks on a nil start and
 	// still applies the ObjectStore, which is registered ahead of the guard.
-	moved := archiveMoved(&server, archiveRef(resolved.merged), resolved.archiveLocation)
+	//
+	// A held archive has moved nowhere. Nothing applies the location the spec
+	// resolves to now, so it is decided again on the reconcile after the hold
+	// lifts, against the location that is applied by then.
+	moved := !resolved.holdArchive &&
+		archiveMoved(&server, archiveRef(resolved.merged), resolved.archiveLocation)
 
 	var archiveStart *metav1.Time
 	if !moved {
@@ -313,10 +318,16 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// The clock is read here, after the ObjectStore of the new location is
 	// applied. A backup that began while the old one still stood therefore
 	// began before the boundary, whatever its start says.
-	reconcileArchiveHistory(
-		&server, resolved.merged, built.archive, archiveStart,
-		resolved.archiveLocation, moved, metav1.Now(),
-	)
+	//
+	// A held archive writes no history at all. Every record names where its
+	// objects are, and the location the spec resolves to now is nowhere the
+	// server has written.
+	if !resolved.holdArchive {
+		reconcileArchiveHistory(
+			&server, resolved.merged, built.archive, archiveStart,
+			resolved.archiveLocation, moved, metav1.Now(),
+		)
+	}
 
 	server.Status.Volumes = volumes.all()
 
@@ -455,6 +466,8 @@ func (r *DatabaseServerReconciler) preCheck(
 	// place keeps its name and only the location it resolves to shows the
 	// move. The archive component is held with it, so the ObjectStore that
 	// the recovering cluster reads keeps describing the archive it asked for.
+	// The archive history is held with it too: nothing applies the location
+	// the spec resolves to now, so no record of the server belongs to it.
 	if hold := recoveryHoldsLocation(server, resolved.archiveLocation); hold != nil {
 		resolved.holdForRecovery = hold
 		resolved.holdArchive = true
