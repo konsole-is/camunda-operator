@@ -37,7 +37,7 @@ A preset can set `archive` and `platformConfigRef`. One bucket then serves every
 
 ## Changes
 
-An edit of a preset reaches every `DatabaseServer` that references it on its next reconcile. A lower `storageSize` in the preset does not shrink a running server, because the API server rejects the shrink on that server. A new server uses the new baseline.
+An edit of a preset reaches every `DatabaseServer` that references it on its next reconcile. A lower `storageSize` or `walStorageSize` in the preset does not shrink a running server. That server keeps its current size and records a Warning event with reason `StorageShrinkIgnored`. A new server uses the new baseline.
 
 ## Deletion
 

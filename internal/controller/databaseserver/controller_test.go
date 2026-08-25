@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +34,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 )
 
@@ -59,6 +61,90 @@ func serverInNamespace(archive *v1.DatabaseServerArchiveSpec) *v1.DatabaseServer
 	Expect(k8sClient.Create(ctx, server)).To(Succeed())
 
 	return server
+}
+
+// serverOnPreset creates a namespace, a cluster-scoped preset that holds the
+// version and the volume sizes, and a DatabaseServer that inherits them. An
+// empty walStorageSize leaves the write-ahead log on the data volume. It
+// returns the server and the preset.
+func serverOnPreset(storageSize, walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
+	GinkgoHelper()
+
+	preset := &v1.DatabaseServerPreset{
+		ObjectMeta: metav1.ObjectMeta{Name: "dbsp-" + utilrand.String(8)},
+		Spec: v1.DatabaseServerPresetSpec{
+			Server: v1.DatabaseServerSpec{
+				Version:     "17",
+				Instances:   new(int32(1)),
+				StorageSize: new(resource.MustParse(storageSize)),
+			},
+		},
+	}
+	if walStorageSize != "" {
+		preset.Spec.Server.WALStorageSize = new(resource.MustParse(walStorageSize))
+	}
+	Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+	namespace := "dbs-" + utilrand.String(8)
+	Expect(k8sClient.Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: namespace},
+	})).To(Succeed())
+
+	server := &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+		Spec: v1.DatabaseServerSpec{
+			PresetRef:            preset.Name,
+			DatabaseServerConfig: "camunda",
+		},
+	}
+	Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+	return server, preset
+}
+
+// updatePreset applies mutate to the latest revision of the preset.
+func updatePreset(preset *v1.DatabaseServerPreset, mutate func(*v1.DatabaseServerPreset)) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServerPreset
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &latest)).To(Succeed())
+		mutate(&latest)
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// renameContract puts name on spec.databaseServerConfig of the latest revision
+// of the server.
+func renameContract(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.DatabaseServerConfig = name
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectShrinkWarning waits until the controller recorded the
+// StorageShrinkIgnored Warning about the named field. The field is read off the
+// start of the message, because "storageSize" is a substring of
+// "walStorageSize" and each volume is clamped on its own.
+func expectShrinkWarning(server *v1.DatabaseServer, field string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var events corev1.EventList
+		g.Expect(k8sClient.List(ctx, &events, client.InNamespace(server.Namespace))).To(Succeed())
+		g.Expect(events.Items).To(ContainElement(SatisfyAll(
+			HaveField("Reason", "StorageShrinkIgnored"),
+			HaveField("InvolvedObject.Name", server.Name),
+			HaveField("Type", corev1.EventTypeWarning),
+			HaveField("Message", HavePrefix(field+" ")),
+		)))
+	}, timeout, interval).Should(Succeed())
 }
 
 // makeClusterHealthy writes the status that CloudNativePG reports for a
@@ -614,6 +700,166 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("removes the contract it published under the previous name", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000011")
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		renameContract(server, "camunda-renamed")
+
+		// The contract of the previous name keeps its owner reference and its
+		// pitr.recovery: operator declaration, so a PointInTimeRestore that
+		// resolves through it asks a server that never reads it again.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-renamed"},
+				&v1.DatabaseServerConfig{},
+			)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)).To(MatchError(apierrors.IsNotFound, "not found"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("leaves a contract it does not own where it is", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000014")
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		// The label of this server, and no owner reference. The sweep runs
+		// over a label selector, and a label is a value anybody can write.
+		stranger := &v1.DatabaseServerConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "camunda-stranger",
+				Namespace: server.Namespace,
+				Labels:    map[string]string{labels.DatabaseServerKey: server.Name},
+			},
+			Spec: v1.DatabaseServerConfigSpec{
+				Engine: v1.DatabaseEnginePostgres,
+				Host:   "postgres.example.svc",
+				Port:   5432,
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+					Name:        "somebody-elses",
+					UsernameKey: "username",
+					PasswordKey: "password",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, stranger)).To(Succeed())
+
+		renameContract(server, "camunda-renamed")
+
+		Eventually(func() error {
+			return k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)
+		}, timeout, interval).Should(MatchError(apierrors.IsNotFound, "not found"))
+
+		Consistently(func() error {
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(stranger), &v1.DatabaseServerConfig{})
+		}, "2s", interval).Should(Succeed())
+	})
+
+	It("keeps the contract of the previous name until the new one is published", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000013")
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		// The contract component blocks on the superuser Secret, so nothing is
+		// published under the new name while the Secret is away.
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      components.SuperuserSecretName(server),
+				Namespace: server.Namespace,
+			},
+		})).To(Succeed())
+		renameContract(server, "camunda-renamed")
+
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionFalse)
+
+		// A sweep on that look leaves the server publishing nothing.
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-renamed"},
+				&v1.DatabaseServerConfig{},
+			)).To(MatchError(apierrors.IsNotFound, "not found"))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		By("sweeping once the new name is published")
+		writeSuperuserSecret(server)
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-renamed"},
+				&v1.DatabaseServerConfig{},
+			)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)).To(MatchError(apierrors.IsNotFound, "not found"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("starts a new archive record when the bucket changes", func() {
+		first := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    first.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000010")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ObjectStorageRef).To(Equal(first.Name))
+		}, timeout, interval).Should(Succeed())
+
+		second := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    second.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		// The interval of the first bucket ends where the second one starts,
+		// so a restore of a point inside it knows which bucket holds it.
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ObjectStorageRef).To(Equal(first.Name))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		closedAt := *archiveHistory(server)[0].To
+
+		// The new bucket holds no base backup yet, so no point in it can be
+		// reached and no record of it opens.
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+
+		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
+		completeBaseBackup(server, "second", openedAt)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[1].ServerName).To(Equal("camunda"))
+			g.Expect(history[1].ObjectStorageRef).To(Equal(second.Name))
+			g.Expect(history[1].From.Time).To(BeTemporally("==", openedAt.Time))
+			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A server that never converged has no honest condition to keep, so a
 	// dangling reference under it must be reported rather than tolerated.
 	It("reports a dangling bucket on a server created suspended", func() {
@@ -653,6 +899,75 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
 			g.Expect(ready.Message).To(ContainSubstring("no-such-preset"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// Admission cannot catch this shrink. The CEL transition rules bind the
+	// spec of the server, and lowering a preset never touches it.
+	It("keeps the applied storage size when a preset lowers it", func() {
+		server, preset := serverOnPreset("10Gi", "")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000009")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+		}, timeout, interval).Should(Succeed())
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.StorageSize = new(resource.MustParse("1Gi"))
+		})
+
+		expectShrinkWarning(server, "storageSize")
+
+		// CloudNativePG refuses a cluster whose storage is smaller than the
+		// one it applied, so a server that let the smaller size through stops
+		// converging.
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		ready := conditionOf(server, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
+	})
+
+	// The write-ahead log volume is measured on its own. A clamp that read the
+	// data claims for it raises walStorageSize to the data size, which is
+	// larger here on purpose.
+	It("keeps the applied write-ahead log size when a preset lowers it", func() {
+		server, preset := serverOnPreset("10Gi", "4Gi")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000012")
+
+		clusterKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
+		}, timeout, interval).Should(Succeed())
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.WALStorageSize = new(resource.MustParse("1Gi"))
+		})
+
+		expectShrinkWarning(server, "walStorageSize")
+
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
+			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		ready := conditionOf(server, v1.ConditionReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).NotTo(Equal(v1.ReasonInvalidReference))
 	})
 
 	It("reports InvalidReference for a bucket that does not exist", func() {

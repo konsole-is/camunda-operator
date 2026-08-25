@@ -29,9 +29,19 @@ import (
 )
 
 // recoveredIdentifier is the identity that the contract publishes after its
-// producer rolled the server back. A recovery starts a new PostgreSQL
-// instance, so the identity is never the one the restore pinned at admission.
-const recoveredIdentifier = "7000000000000000099"
+// producer rolled the server back. A physical recovery restores the pg_control
+// of the base backup it reads, so the recovered instance reports the identity
+// the restore pinned at admission. Only the endpoint moves.
+const recoveredIdentifier = worldSystemIdentifier
+
+// recoveredHost is the endpoint that the contract names once its producer
+// rolled the server back.
+const recoveredHost = "postgres-r1.databases.svc"
+
+// replacedIdentifier is the identity of another PostgreSQL instance. A
+// contract that reports it after a rollback reaches a server the restore never
+// validated.
+const replacedIdentifier = "7000000000000000099"
 
 // operatorRecoveryWorld is a world whose contract declares that its producer
 // rolls the server back on request.
@@ -86,13 +96,13 @@ func answerRecovery(w *world, result v1.RecoveryResult, message string) {
 
 // repointContract moves the endpoint of the contract to the server that the
 // recovery built.
-func repointContract(w *world, host string) {
+func repointContract(w *world) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) {
 		var contract v1.DatabaseServerConfig
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
-		contract.Spec.Host = host
+		contract.Spec.Host = recoveredHost
 		g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
@@ -256,7 +266,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		pitr := createRestore(w)
 		expectRecovering(pitr)
 
-		repointContract(w, "postgres-r1.databases.svc")
+		repointContract(w)
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 		publishContractReady(w, recoveredIdentifier)
 
@@ -266,7 +276,54 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
 			g.Expect(current.Status.Storage).NotTo(BeNil())
 			g.Expect(current.Status.Storage.SystemIdentifier).To(Equal(recoveredIdentifier))
-			g.Expect(current.Status.Storage.Endpoint).To(Equal("postgres-r1.databases.svc:5432"))
+			g.Expect(current.Status.Storage.Endpoint).To(Equal(recoveredHost + ":5432"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("ends the restore when the rolled-back server reports another identity", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+
+		repointContract(w)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+
+		// The endpoint moves across a rollback and the identity does not, so
+		// another identity behind it is another instance. The rules of
+		// admission were read against the one the restore pinned.
+		publishContractReady(w, replacedIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(worldSystemIdentifier))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(replacedIdentifier))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("keeps waiting while the contract publishes no identity", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+
+		repointContract(w)
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+
+		// The contract controller clears the identity when the endpoint moves
+		// and publishes it again once it reached the server. The look in
+		// between reads no identity at all. That states nothing about the
+		// instance, so the pin of the restore holds instead of ending it.
+		publishContractReady(w, "")
+		Consistently(func() v1.PointInTimeRestorePhase {
+			return readRestore(pitr).Status.Phase
+		}, "2s", interval).Should(Equal(v1.PointInTimeRestoreRestoringDatabase))
+
+		publishContractReady(w, recoveredIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -278,7 +335,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		// The producer repointed the endpoint and answered, and nothing has
 		// probed the new server yet. The identity of the old one says nothing
 		// about the new one, so the restore holds instead of pinning it.
-		repointContract(w, "postgres-r1.databases.svc")
+		repointContract(w)
 		answerRecovery(w, v1.RecoveryResultCompleted, "")
 
 		// A Ready that answers the spec of before the endpoint moved says

@@ -36,6 +36,8 @@ The published contract carries everything a consumer needs. Its `host` is the re
 
 The contract appears only after that Secret exists. Until then `ContractReady` is `False` and the message names the Secret. This keeps a consumer from reading credentials that are not there yet.
 
+Change `spec.databaseServerConfig` and the server publishes the new name and removes the contract of the name before it. A `Database` that still names the old one reports `Ready` `False` with reason `InvalidReference`. Point it at the new name, or rename the contract back. Two contracts of the server outlive a rename: one that carries the answer of the last rollback, and one that a rollback still runs on. See [Recovery](#recovery).
+
 Give the contract to a `Database` in the same namespace:
 
 ```yaml
@@ -70,9 +72,9 @@ spec:
   # ... the rest of your server
 ```
 
-Neither volume size can shrink. The API server rejects a lower value. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it.
+Neither volume size can shrink. Admission rejects a lower inline value. If a preset lowers a size under a running server, the operator keeps the current size and records a Warning event with reason `StorageShrinkIgnored`. Raise a size and CloudNativePG grows the volumes in place, if the StorageClass allows it. To get a smaller volume, delete and recreate the server.
 
-`status.volumes` lists the data volumes of the server and the capacity each one reports.
+`status.volumes` lists every bound volume of the cluster the contract points at, and the capacity each one reports. A server with a write-ahead log volume reports that one here too, under the name of its data volume with the suffix `-wal`.
 
 ## The archive
 
@@ -102,13 +104,15 @@ The archive lives under a prefix of the bucket that holds this server alone: `<b
 
 ### The archive history
 
-`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
+`status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
 
 A rollback closes the record of the archive it read at the moment the contract moves to the recovered server, and the recovered server opens a record of its own at its first base backup. The window between the two lies in no interval, so no restore can reach a point in it.
 
 Remove `spec.archive` and the open record closes at that moment. The list itself stays, and no new record is written. The bucket still holds those objects, so a restore can still reach a point inside a closed interval.
 
 Ask for an archive again and the server opens a record of its own, starting at the first base backup of the new archive. `ArchiveReady` stays `False` until that backup completes, because the backups of the archive the server wrote before reach no point in the new one. The window between the two records lies inside no interval, so no restore can reach a point in it.
+
+Change `spec.archive.objectStorageRef` and the same thing happens. The open record closes at that moment, and a record of the new bucket opens at its first base backup. A rollback reads the bucket the server archives to now, so a point inside a record of an earlier bucket is refused with `result: Unavailable`. The message names both buckets. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
 
 A [PointInTimeRestore](pointintimerestore.md) reaches any point inside a recorded interval. See [Recovery](#recovery).
 
@@ -146,11 +150,13 @@ The operator points the contract at the new cluster once CloudNativePG reports i
 
 The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends when the contract moves, and the new one starts at its first base backup, so no restore can reach a point between the two.
 
-The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked, and it publishes the new name once the answer is out.
+The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked. Once the answer is out, it publishes the new name as well.
+
+The contract that asked stays. It is the only place the answer is published, so whoever asked can still read `spec.pitr.lastRecovery` on it. It goes when the next rollback answers on another contract.
 
 **CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. Run one server per cluster.
 
-A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold.
+A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold. A point that an archive of an earlier bucket holds is refused the same way, and the message names both buckets.
 
 ## Authentication to the bucket
 
@@ -243,6 +249,7 @@ status:
   archive:
     history:
       - serverName: my-db
+        objectStorageRef: my-backup-bucket
         from: "2026-08-01T10:00:00Z"
   recovery:
     requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
@@ -255,6 +262,8 @@ status:
   volumes:
     - name: my-db-1
       capacity: 256Gi
+    - name: my-db-1-wal
+      capacity: 32Gi
   conditions:
     - type: Ready
       status: "True"
@@ -373,7 +382,7 @@ spec:
 ### Validation rules
 
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
-- `storageSize` and `walStorageSize` cannot shrink. The API server rejects a lower value on an update.
+- `storageSize` and `walStorageSize` cannot shrink. Admission rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
 - `version` is a bare major, such as `17`. Anything below 14 is rejected on the `Ready` condition with reason `InvalidReference`, because Camunda 8.9 supports PostgreSQL 14 and later. See the [RDBMS version support policy](https://docs.camunda.io/docs/self-managed/concepts/databases/relational-db/rdbms-support-policy/).
 - `archive.retentionPeriodDays` must be at least 1.
 - `version` and `storageSize` must be present after the preset merge. A missing field is reported on `Ready` with reason `InvalidReference`.

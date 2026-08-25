@@ -38,8 +38,8 @@ import (
 )
 
 // recoveredSystemIdentifier is the identity that CloudNativePG reports for a
-// cluster a recovery built. A recovery starts a new PostgreSQL instance, so it
-// is never the identity of the cluster it replaces.
+// cluster a recovery built. The suite gives it a value of its own, so a spec
+// can tell which cluster the server read the identity from.
 const recoveredSystemIdentifier = "7000000000000000002"
 
 // testHoldFinalizer keeps a CloudNativePG cluster terminating, so a spec can
@@ -712,9 +712,19 @@ var _ = Describe("DatabaseServer recovery", func() {
 		recoverySucceeds(server)
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
 
+		By("publishing the new name")
 		Eventually(func() error {
 			return k8sClient.Get(ctx, renamedKey, &v1.DatabaseServerConfig{})
 		}, timeout, interval).Should(Succeed())
+
+		// The contract that asked is the only place the answer is published,
+		// so the rename leaves it where it is. Whoever asked reads the result
+		// there, however long they take to look.
+		Consistently(func(g Gomega) {
+			contract := publishedContract(server)
+			g.Expect(contract.Spec.PITR.LastRecovery).NotTo(BeNil())
+			g.Expect(contract.Spec.PITR.LastRecovery.Result).To(Equal(v1.RecoveryResultCompleted))
+		}, "2s", interval).Should(Succeed())
 	})
 
 	It("leaves a cluster it does not own where it is when it cleans up", func() {
@@ -889,6 +899,45 @@ var _ = Describe("DatabaseServer recovery", func() {
 			g.Expect(history).To(HaveLen(1))
 			g.Expect(history[0].To).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
+	})
+
+	It("keeps the archive of the cluster it built open when the base backup lands first", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// CloudNativePG takes the first base backup of the recovered cluster
+		// before the contract has reached it, so the archive of that cluster
+		// opens before the cutover finishes.
+		backupAt := metav1.NewTime(time.Now().Truncate(time.Second))
+		completeBaseBackup(reconciledServer(server), "base-2", backupAt)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
+			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		probeContract(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		// The cutover closes the archive of the cluster it replaces and no
+		// other. A closed archive of the cluster the server runs from now
+		// leaves it with no point to roll back to, for good.
+		Consistently(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[0].ServerName).To(Equal("camunda"))
+			g.Expect(history[0].To).NotTo(BeNil())
+			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
+			g.Expect(history[1].To).To(BeNil())
+		}, "2s", interval).Should(Succeed())
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
 	})
 
 	It("keeps the bucket of a running recovery while the spec names another", func() {

@@ -226,9 +226,17 @@ its pods.
 ### A restore can reach any point in retention, across recoveries
 
 Each recovery starts a new archive. `status.archive.history[]` records every archive the server
-has written: `serverName`, `from`, and `to` (`to` is unset for the current archive). A recovery
-picks the source whose interval holds `targetTime`. A target that no interval holds is refused
-with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user prunes them.
+has written: `serverName`, `objectStorageRef`, `from`, and `to` (`to` is unset for the current
+archive). A recovery picks the source whose interval holds `targetTime`. A target that no interval
+holds is refused with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user
+prunes them.
+
+`objectStorageRef` is what makes an interval readable. A spec that names another bucket closes the
+open record at that moment and opens a record of the new bucket at its first base backup, the same
+way removing and restoring `spec.archive` does. The recovered cluster is given one `ObjectStore`,
+the one of the bucket the spec names now, so a target inside a record of an earlier bucket is
+refused with `result: Unavailable` and a message that names both buckets. A second `ObjectStore`
+for the source would reach it and is a follow-up.
 
 The alternative, only the current archive, is simpler but cannot correct a recovery to the wrong
 point with a second restore further back.
@@ -255,8 +263,11 @@ rule stays: oldest `creationTimestamp`, then the smaller `namespace/name`.
 
 `PointInTimeRestore` counts the `Database` objects across all namespaces whose contract reports
 the same identifier. `PointInTimeRestoreStorage` pins `systemIdentifier` next to `Endpoint`, and
-the pin check fails the restore when it changes, except during the operator's own recovery,
-where the identifier is expected to change and the pin is refreshed from the recovered server.
+the pin check fails the restore when either changes. The operator's own recovery is the one
+exception, and only for `Endpoint`: a physical recovery restores the `pg_control` of the base
+backup, so the recovered instance reports the identity the restore pinned, and the identifier goes
+on binding. A contract that has not published an identity yet, which is how it reads between the
+repoint and the probe that follows, states nothing and cannot disagree with the pin.
 
 This is #128. It ships first because every later PR builds on the namespaced kinds and the
 identifier.
@@ -325,9 +336,11 @@ status:
   archive:
     history:
       - serverName: camunda
+        objectStorageRef: camunda-backups
         from: "2026-08-01T10:00:00Z"
         to: "2026-08-20T14:30:00Z"
       - serverName: camunda-r1
+        objectStorageRef: camunda-backups
         from: "2026-08-20T14:30:00Z"
   recovery:                        # the last request this server acted on
     requestID: 6f1c…               # the restore's UID, as the contract carried it
@@ -354,6 +367,12 @@ Validation: `databaseServerConfig` required; `storageSize` and `walStorageSize` 
 one CEL rule each; `archive` requires `retentionPeriodDays >= 1`; `version` matches `^\d+$` and is
 floored at the oldest major Camunda 8.9 supports (verified with the `camunda-docs` MCP during
 implementation).
+
+The CEL rules bind the spec of the `DatabaseServer` only, so a lowered preset baseline reaches the
+merged spec unchecked. The controller therefore raises each merged size back to the largest volume
+that exists, taken from the data and write-ahead log claims and from the sizes the applied
+CloudNativePG cluster asks for, and records the `StorageShrinkIgnored` Warning event. This mirrors
+`keepAppliedStorageSize` of `ElasticsearchCluster`.
 
 `monitoring.podMonitor` carries `labels` and `annotations` beside `enabled` and `interval`. The
 labels are what a Prometheus selects the monitor by. The annotations carry metadata for other
@@ -447,8 +466,9 @@ Pending → RestoringDatabase → ValidatingDatabaseState → RestoringPrimarySt
    field manager. `requestID` is the restore's UID. `requestedBy` is the restore's
    `namespace/name`. `targetTime` is `spec.timestamp` rendered in RFC 3339 UTC.
 2. Polls the contract until `pitr.lastRecovery` matches the request and the contract's own
-   `Ready` is `True`, then refreshes the `systemIdentifier` pin from the contract's status and
-   moves on.
+   `Ready` is `True`, then refreshes the pinned chain from the contract's status and moves on.
+   The endpoint is what that refresh replaces. The identifier comes back unchanged from a
+   recovery that read this server's own archive.
 3. Fails with `PitrUnavailable` when `lastRecovery.result` is `Unavailable`, and with `Failed`
    when it is `Failed`; `message` is copied into the restore's condition.
 
@@ -466,7 +486,8 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
 
 1. Picks the archive from `status.archive.history[]` whose interval holds `targetTime`. None:
    applies `lastRecovery` with `result: Unavailable` and a message that names the covered
-   intervals, and stops.
+   intervals, and stops. One that holds it in a bucket the spec no longer names: the same result,
+   with a message that names both buckets.
 2. Applies `Cluster <name>-r<N>` with `bootstrap.recovery.source: source`,
    `recoveryTarget.targetTime`, an `externalClusters` entry that names the `ObjectStore` and the
    source `serverName`, and its own `plugins[]` entry with `serverName: <name>-r<N>`.
@@ -477,17 +498,25 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
    `RecoveryFieldManager`. That is two applies under two field managers, sequenced by the
    re-probe. A `Cluster` that fails to bootstrap (the recovery Job fails, or the target is past the archive)
    is deleted and `lastRecovery` is applied with `result: Failed` and the CloudNativePG message.
-4. Deletes the previous `Cluster` and its base-backup schedule. Closes the previous archive
-   interval at the cutover, when the contract moves to the new cluster: the old archive's WAL
-   ends when the old cluster goes away, so the record states what the archive holds. Points
-   between the cutover and the new archive's first base backup are honestly unavailable. The
-   new record opens at that first base backup. Applies a `ScheduledBackup` for the new cluster with `immediate: true`.
+4. Deletes the previous `Cluster` and its base-backup schedule. Closes the archive interval of
+   that previous cluster, and no other, at the cutover, when the contract moves to the new
+   cluster: the old archive's WAL ends when the old cluster goes away, so the record states what
+   the archive holds. Points between the cutover and the new archive's first base backup are
+   honestly unavailable. The new record opens at that first base backup, which CloudNativePG can
+   take before the cutover finishes, so the record of the new cluster is sometimes open already
+   and must stay open. Applies a `ScheduledBackup` for the new cluster with `immediate: true`.
 5. Records `status.recovery {requestID, contract, requestedBy, targetTime, cluster,
    previousCluster, archive{serverName, objectStorageRef}, result, message, completedAt}`.
 
 Each step is idempotent and keyed on what exists, so a restart in the middle resumes. The
 previous `Cluster` is deleted only after the contract points at the new one, so a failure before
 step 4 leaves the old server intact and the restore reports `Failed` without data loss.
+
+`spec.databaseServerConfig` is mutable. The reconcile sweeps every `DatabaseServerConfig` it owns
+under the `camunda.io/database-server` label of the server and deletes the ones it no longer
+publishes, so a rename leaves no contract behind that still declares `pitr.recovery: operator` and
+that nothing answers. The sweep is skipped while a recovery is unanswered, because the answer goes
+on the contract the record names.
 
 While a request is unanswered, the server holds the two things the recovery reads. A spec that
 moves `spec.databaseServerConfig` or `spec.archive.objectStorageRef` puts
@@ -547,8 +576,9 @@ be proved:
   `It("keeps removing what an answered recovery replaced")` in
   `internal/controller/databaseserver/recovery_test.go`.
 - Closing the archive record and opening a new one:
-  `It("closes the archive record when the archive block is removed")` and
-  `It("starts a new archive record when the archive comes back")` in
+  `It("closes the archive record when the archive block is removed")`,
+  `It("starts a new archive record when the archive comes back")`, and
+  `It("starts a new archive record when the bucket changes")` in
   `internal/controller/databaseserver/controller_test.go`.
 - The shared-server refusal:
   `It("holds a server that a Database of another namespace reaches through another contract")` in

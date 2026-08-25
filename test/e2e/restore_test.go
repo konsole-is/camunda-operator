@@ -785,6 +785,11 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 		// requestID is the uid of the restore, which is what it writes on the
 		// contract to tell its request from an earlier one.
 		requestID string
+		// pinnedIdentifier is the identity of the PostgreSQL instance that the
+		// restore pins at admission. A recovery restores the pg_control of the
+		// base backup it reads, so the recovered instance reports this same
+		// value and only the endpoint moves.
+		pinnedIdentifier string
 	)
 
 	It("starts one process instance before the point and one after it", func() {
@@ -826,6 +831,12 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 		// No wait here. The backup that covers the point is already taken. A
 		// later backup carries lost back with it, and a restore created now is
 		// unlikely to find one.
+		By("reading the identity that the restore pins")
+		var pinned v1.DatabaseServerConfig
+		Expect(utils.Get(dbServerResource, server, cluster.Namespace, &pinned)).To(Succeed())
+		pinnedIdentifier = pinned.Status.SystemIdentifier
+		Expect(pinnedIdentifier).NotTo(BeEmpty())
+
 		By("creating the PointInTimeRestore")
 		Expect(apply(&v1.PointInTimeRestore{
 			TypeMeta: metav1.TypeMeta{
@@ -889,10 +900,25 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 			g.Expect(current.Status.Recovery.RequestID).To(Equal(requestID))
 			g.Expect(current.Status.Recovery.PreviousCluster).To(Equal(server))
 			g.Expect(current.Status.Recovery.Result).To(Equal(v1.RecoveryResultCompleted))
+			g.Expect(current.Status.SystemIdentifier).To(
+				Equal(pinnedIdentifier), "the recovered instance reports another identity",
+			)
 			g.Expect(current.Status.Archive.History).NotTo(BeEmpty())
 			g.Expect(current.Status.Archive.History[0].To).NotTo(
 				BeNil(), "the archive of the superseded cluster is still open",
 			)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("keeping the identity the restore pinned, on the contract and in the record")
+		Eventually(func(g Gomega) {
+			var current v1.DatabaseServerConfig
+			g.Expect(utils.Get(dbServerResource, server, cluster.Namespace, &current)).To(Succeed())
+			g.Expect(current.Status.SystemIdentifier).To(Equal(pinnedIdentifier))
+
+			var restore v1.PointInTimeRestore
+			g.Expect(utils.Get(pitrResource, pitrDatabaseServer, cluster.Namespace, &restore)).To(Succeed())
+			g.Expect(restore.Status.Storage).NotTo(BeNil())
+			g.Expect(restore.Status.Storage.SystemIdentifier).To(Equal(pinnedIdentifier))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("reading the contract that now names the recovered cluster")

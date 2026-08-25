@@ -35,13 +35,22 @@ import (
 )
 
 // archiveAt returns an archive record of serverName that opens at from and
-// closes at to. A nil to leaves it open.
+// closes at to. A nil to leaves it open. The record names no bucket, as a
+// record written before the field existed does.
 func archiveAt(serverName, from string, to *string) v1.ArchiveRecord {
 	record := v1.ArchiveRecord{ServerName: serverName, From: atTime(from)}
 	if to != nil {
 		end := atTime(*to)
 		record.To = &end
 	}
+
+	return record
+}
+
+// archiveInBucket returns archiveAt with the bucket that holds the record.
+func archiveInBucket(serverName, bucket, from string, to *string) v1.ArchiveRecord {
+	record := archiveAt(serverName, from, to)
+	record.ObjectStorageRef = bucket
 
 	return record
 }
@@ -74,6 +83,7 @@ func TestSelectArchive(t *testing.T) {
 		name    string
 		history []v1.ArchiveRecord
 		target  string
+		bucket  string
 		want    string
 		wantErr string
 	}{
@@ -119,13 +129,27 @@ func TestSelectArchive(t *testing.T) {
 			target:  "2026-08-11T00:00:00Z",
 			wantErr: "It archived nothing",
 		},
+		{
+			name: "a point in the bucket the server archives to now is answered",
+			history: []v1.ArchiveRecord{
+				archiveInBucket("camunda", "bucket-b", "2026-08-01T00:00:00Z", nil),
+			},
+			bucket: "bucket-b",
+			target: "2026-08-05T12:00:00Z",
+			want:   "camunda",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := SelectArchive(tt.history, atTime(tt.target).Time)
+			bucket := tt.bucket
+			if bucket == "" {
+				bucket = "bucket-a"
+			}
+
+			got, err := SelectArchive(tt.history, atTime(tt.target).Time, bucket)
 			if tt.wantErr != "" {
 				require.ErrorIs(t, err, ErrNoArchiveHolds)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -135,8 +159,31 @@ func TestSelectArchive(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got.ServerName)
+			assert.Equal(t, bucket, got.ObjectStorageRef)
 		})
 	}
+}
+
+// TestSelectArchiveInAnotherBucket covers the point that a recorded interval
+// holds in a bucket the spec no longer names. The recovered cluster is given
+// one ObjectStore, so the point is out of reach until the operator can add a
+// second one for the source.
+func TestSelectArchiveInAnotherBucket(t *testing.T) {
+	t.Parallel()
+
+	closed := "2026-08-10T00:00:00Z"
+	history := []v1.ArchiveRecord{
+		archiveInBucket("camunda", "bucket-a", "2026-08-01T00:00:00Z", &closed),
+		archiveInBucket("camunda", "bucket-b", closed, nil),
+	}
+
+	_, err := SelectArchive(history, atTime("2026-08-05T12:00:00Z").Time, "bucket-b")
+
+	require.ErrorIs(t, err, ErrArchiveInAnotherBucket)
+	assert.NotErrorIs(t, err, ErrNoArchiveHolds)
+	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-a"`)
+	assert.Contains(t, err.Error(), `archives to "bucket-b" now`)
+	assert.Contains(t, err.Error(), "not supported yet")
 }
 
 func TestRecoveryClusterName(t *testing.T) {

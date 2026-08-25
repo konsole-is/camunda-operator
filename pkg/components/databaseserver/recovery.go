@@ -51,6 +51,12 @@ const recoveryNameSeparator = "-r"
 // rather than one that failed.
 var ErrNoArchiveHolds = errors.New("no archive of the server holds the requested point")
 
+// ErrArchiveInAnotherBucket reports that the archive that holds the requested
+// point is in a bucket the spec no longer names. The recovered cluster reads
+// one ObjectStore, and that ObjectStore describes the bucket the server
+// archives to now.
+var ErrArchiveInAnotherBucket = errors.New("the archive that holds the requested point is in another bucket")
+
 // RecoveryClusterName returns the name of the CloudNativePG cluster that the
 // next recovery of the server builds: the name of the server, the suffix -r,
 // and the number of archives the server has written.
@@ -109,16 +115,22 @@ func longestServiceSuffix() string {
 }
 
 // SelectArchive returns the archive of history that a recovery to target
-// starts from, or an error that names the intervals the server has. An
-// interval holds its start and every point up to, but not including, its end,
-// so a target on the boundary of two archives belongs to the later one. The
+// starts from, or an error that says why no archive answers. An interval
+// holds its start and every point up to, but not including, its end, so a
+// target on the boundary of two archives belongs to the later one. The
 // archive the server writes now has no end and holds every point after its
 // start.
 //
-// The error wraps ErrNoArchiveHolds. It is a refusal of the request, not a
-// failure of the recovery: nothing the server does later brings the point
-// back.
-func SelectArchive(history []v1.ArchiveRecord, target time.Time) (v1.ArchiveRecord, error) {
+// bucket is the ObjectStorageConfig that spec.archive names now. A record of
+// another bucket holds its interval, and a recovery still cannot read it: the
+// recovered cluster is given one ObjectStore, and that one describes bucket.
+// A record that names no bucket was written before the field existed and is
+// taken as bucket.
+//
+// The error wraps ErrNoArchiveHolds when no interval holds target, and
+// ErrArchiveInAnotherBucket when one holds it in another bucket. Both are
+// refusals of the request rather than failures of the recovery.
+func SelectArchive(history []v1.ArchiveRecord, target time.Time, bucket string) (v1.ArchiveRecord, error) {
 	// Newest first: the intervals never overlap, and a record that a later
 	// recovery superseded is the answer only when nothing newer holds the
 	// point.
@@ -128,6 +140,17 @@ func SelectArchive(history []v1.ArchiveRecord, target time.Time) (v1.ArchiveReco
 			continue
 		}
 		if record.To == nil || target.Before(record.To.Time) {
+			if record.ObjectStorageRef == "" {
+				record.ObjectStorageRef = bucket
+			}
+			if record.ObjectStorageRef != bucket {
+				return v1.ArchiveRecord{}, fmt.Errorf(
+					"%w. It is in ObjectStorageConfig %q, and the server archives to %q now. "+
+						"Reading the archive of an earlier bucket is not supported yet",
+					ErrArchiveInAnotherBucket, record.ObjectStorageRef, bucket,
+				)
+			}
+
 			return record, nil
 		}
 	}
@@ -236,6 +259,10 @@ func recoveryMutation(
 					PluginConfiguration: &cnpgv1.PluginConfiguration{
 						Name: BarmanPluginName,
 						Parameters: map[string]string{
+							// The one ObjectStore of the server, which
+							// describes the bucket spec.archive names now.
+							// SelectArchive refuses a source of any other
+							// bucket, so this is the bucket source is in.
 							"barmanObjectName": ObjectStoreName(server),
 							"serverName":       source.ServerName,
 						},
