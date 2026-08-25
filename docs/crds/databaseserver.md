@@ -20,7 +20,7 @@ spec:
   databaseServerConfig: my-db-server
 ```
 
-The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 47 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to three characters to the name.
+The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to four characters, `-r99`. A name inside the bound stays whole through ninety-nine rollbacks. A rollback after those shortens it to a head and a hash.
 
 ```mermaid
 graph LR
@@ -410,7 +410,7 @@ spec:
 
 ### Validation rules
 
-- `metadata.name` must be a DNS-1035 label of 47 characters or fewer: lowercase letters, digits, and `-`, starting with a letter.
+- `metadata.name` must be a DNS-1035 label of 46 characters or fewer: lowercase letters, digits, and `-`, starting with a letter.
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
 - `storageSize` and `walStorageSize` cannot shrink. Admission rejects a lower inline value, and a lower preset value is ignored with the Warning event `StorageShrinkIgnored`.
 - `walStorageSize` cannot be cleared once the server has a write-ahead log volume. The operator keeps the volume and records the Warning event `WALStorageKept`.

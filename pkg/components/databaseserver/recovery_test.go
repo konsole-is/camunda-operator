@@ -18,6 +18,7 @@ package databaseserver
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -263,28 +264,45 @@ func TestRecoveryClusterNameFitsAService(t *testing.T) {
 	assert.NotEqual(t, name, RecoveryClusterName(server))
 }
 
-// Admission holds the name of a DatabaseServer to 47 characters, which is the
-// 50 that CloudNativePG accepts for a cluster name less the three of "-r" and
-// a single-digit counter. A name at that bound therefore reaches the recovered
-// cluster whole.
-func TestRecoveryClusterNameFitsCloudNativePG(t *testing.T) {
+// Admission holds the name of a DatabaseServer to 46 characters, which is the
+// 50 that CloudNativePG accepts for a cluster name less the four of "-r99". A
+// name at that bound therefore reaches the cluster of every one of the first
+// ninety-nine rollbacks whole, and CloudNativePG accepts the hundredth too.
+func TestRecoveryNameFitsCloudNativePG(t *testing.T) {
 	t.Parallel()
 
-	base := strings.Repeat("a", 47)
-	server := &v1.DatabaseServer{
-		ObjectMeta: metav1.ObjectMeta{Name: base, Namespace: "my-cluster-ns"},
-		Status: v1.DatabaseServerStatus{
-			Cluster: base,
-			Archive: &v1.DatabaseServerArchiveStatus{
-				History: []v1.ArchiveRecord{archiveAt(base, "2026-08-01T00:00:00Z", nil)},
-			},
-		},
+	base := strings.Repeat("a", 46)
+
+	tests := []struct {
+		name  string
+		n     int
+		whole bool
+	}{
+		{name: "the first rollback", n: 1, whole: true},
+		{name: "the tenth rollback", n: 10, whole: true},
+		{name: "the ninety-ninth rollback", n: 99, whole: true},
+		{name: "the hundredth rollback", n: 100},
 	}
 
-	name := RecoveryClusterName(server)
-	assert.LessOrEqual(t, len(name), 50)
-	assert.Empty(t, validation.IsDNS1035Label(name))
-	assert.Equal(t, base+"-r1", name)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			suffix := recoveryNameSeparator + strconv.Itoa(tt.n)
+			name := recoveryName(base, tt.n)
+
+			assert.LessOrEqual(t, len(name), cnpgClusterNameMaxLength)
+			assert.Empty(t, validation.IsDNS1035Label(name))
+			assert.True(t, strings.HasSuffix(name, suffix), name)
+
+			if tt.whole {
+				assert.Equal(t, base+suffix, name)
+				return
+			}
+
+			assert.NotEqual(t, base+suffix, name)
+		})
+	}
 }
 
 // recoveryServer is the server of the recovery cases: it archives to a bucket

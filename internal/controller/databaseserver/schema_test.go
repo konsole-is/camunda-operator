@@ -198,7 +198,7 @@ var _ = Describe("DatabaseServer schema", func() {
 		),
 		// The name of the CR names the CloudNativePG cluster, and
 		// CloudNativePG takes a DNS-1035 label of at most 50 characters. The
-		// suffix of a rollback leaves 47 for the name itself.
+		// "-r99" of a rollback leaves 46 for the name itself.
 		Entry(
 			"rejects a dot in the name",
 			validDatabaseServer, func(o *v1.DatabaseServer) {
@@ -212,15 +212,15 @@ var _ = Describe("DatabaseServer schema", func() {
 			}, "metadata.name",
 		),
 		Entry(
-			"rejects a name of 48 characters",
+			"rejects a name of 47 characters",
 			validDatabaseServer, func(o *v1.DatabaseServer) {
-				o.Name = strings.Repeat("a", 48)
+				o.Name = strings.Repeat("a", 47)
 			}, "metadata.name",
 		),
 		Entry(
-			"accepts a name of 47 characters",
+			"accepts a name of 46 characters",
 			validDatabaseServer, func(o *v1.DatabaseServer) {
-				o.Name = strings.Repeat("a", 47)
+				o.Name = strings.Repeat("a", 46)
 			}, "",
 		),
 		Entry(

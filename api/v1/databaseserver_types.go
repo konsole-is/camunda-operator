@@ -392,7 +392,7 @@ type DatabaseServerStatus struct {
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 47",message="metadata.name must be a DNS-1035 label of at most 47 characters, because it names the CloudNativePG cluster of the server"
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 46",message="metadata.name must be a DNS-1035 label of at most 46 characters, because it names the CloudNativePG cluster of the server"
 
 // DatabaseServer runs a PostgreSQL server for one orchestration cluster
 // through the external CloudNativePG operator, archives it continuously to an
@@ -400,10 +400,11 @@ type DatabaseServerStatus struct {
 // DatabaseServerConfig that a Database and a PointInTimeRestore consume.
 //
 // The name of the CR names the CloudNativePG cluster, so admission holds it to
-// a DNS-1035 label of at most 47 characters: the 50 that CloudNativePG accepts
-// for a cluster name, less the three of the "-r" and the counter that a
-// rollback appends. A name inside that bound reaches every cluster the server
-// ever runs whole.
+// a DNS-1035 label of at most 46 characters: the 50 that CloudNativePG accepts
+// for a cluster name, less the four of the "-r99" that a rollback appends. A
+// name inside that bound reaches the cluster of every one of the first
+// ninety-nine rollbacks whole. A rollback after those shortens it to a head
+// and a hash.
 type DatabaseServer struct {
 	metav1.TypeMeta `json:",inline"`
 
