@@ -40,6 +40,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 )
 
+// presetStorageSize is the data volume that serverOnPreset puts on the preset.
+// The clamp cases lower it under a running server and read the applied size
+// back.
+const presetStorageSize = "10Gi"
+
 // serverInNamespace creates a namespace and a minimal DatabaseServer in it,
 // and returns the server. The caller drives the CloudNativePG objects.
 func serverInNamespace(archive *v1.DatabaseServerArchiveSpec) *v1.DatabaseServer {
@@ -66,10 +71,10 @@ func serverInNamespace(archive *v1.DatabaseServerArchiveSpec) *v1.DatabaseServer
 }
 
 // serverOnPreset creates a namespace, a cluster-scoped preset that holds the
-// version and the volume sizes, and a DatabaseServer that inherits them. An
-// empty walStorageSize leaves the write-ahead log on the data volume. It
-// returns the server and the preset.
-func serverOnPreset(storageSize, walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
+// version, a data volume of presetStorageSize, and the write-ahead log volume,
+// and a DatabaseServer that inherits them. An empty walStorageSize leaves the
+// write-ahead log on the data volume. It returns the server and the preset.
+func serverOnPreset(walStorageSize string) (*v1.DatabaseServer, *v1.DatabaseServerPreset) {
 	GinkgoHelper()
 
 	preset := &v1.DatabaseServerPreset{
@@ -78,7 +83,7 @@ func serverOnPreset(storageSize, walStorageSize string) (*v1.DatabaseServer, *v1
 			Server: v1.DatabaseServerSpec{
 				Version:     "17",
 				Instances:   new(int32(1)),
-				StorageSize: new(resource.MustParse(storageSize)),
+				StorageSize: new(resource.MustParse(presetStorageSize)),
 			},
 		},
 	}
@@ -952,7 +957,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// Admission cannot catch this shrink. The CEL transition rules bind the
 	// spec of the server, and lowering a preset never touches it.
 	It("keeps the applied storage size when a preset lowers it", func() {
-		server, preset := serverOnPreset("10Gi", "")
+		server, preset := serverOnPreset("")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000009")
 
@@ -960,7 +965,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		Eventually(func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
-			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal(presetStorageSize))
 		}, timeout, interval).Should(Succeed())
 
 		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
@@ -975,7 +980,7 @@ var _ = Describe("DatabaseServer controller", func() {
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
-			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal(presetStorageSize))
 		}, 2*time.Second, interval).Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)
@@ -987,7 +992,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// data claims for it raises walStorageSize to the data size, which is
 	// larger here on purpose.
 	It("keeps the applied write-ahead log size when a preset lowers it", func() {
-		server, preset := serverOnPreset("10Gi", "4Gi")
+		server, preset := serverOnPreset("4Gi")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000012")
 
@@ -1010,7 +1015,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.WalStorage).NotTo(BeNil())
 			g.Expect(cluster.Spec.WalStorage.Size).To(Equal("4Gi"))
-			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
+			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal(presetStorageSize))
 		}, 2*time.Second, interval).Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)
@@ -1022,7 +1027,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// with "walStorage cannot be disabled once configured". A preset that
 	// clears the field must therefore not reach it.
 	It("keeps the write-ahead log volume a preset tries to remove", func() {
-		server, preset := serverOnPreset("10Gi", "4Gi")
+		server, preset := serverOnPreset("4Gi")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000015")
 
@@ -1060,7 +1065,7 @@ var _ = Describe("DatabaseServer controller", func() {
 	// the major the data directory runs is on the CloudNativePG cluster rather
 	// than on the spec.
 	It("refuses a major version change and keeps the image the server runs", func() {
-		server, preset := serverOnPreset("10Gi", "")
+		server, preset := serverOnPreset("")
 		writeSuperuserSecret(server)
 		makeClusterHealthy(server, "7000000000000000014")
 
