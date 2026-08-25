@@ -113,7 +113,7 @@ spec:
       objectStorageRef: my-backup-bucket
       # integer. Required in this block. How many days into the past a restore can reach, at least 1.
       retentionPeriodDays: 30
-      # string. Optional, default: "0 0 2 * * *". Six-field cron in UTC, seconds first, for the base backups. A five-field cron is rejected.
+      # string. Optional, default: "0 0 2 * * *". Six-field cron in UTC, seconds first, or a descriptor such as "@daily". A five-field cron is rejected.
       baseBackupSchedule: "0 0 2 * * *"
 ```
 
@@ -122,7 +122,8 @@ spec:
 - `spec.server` must not set `presetRef`, `databaseServerConfig`, or `suspend`. An empty `presetRef` and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `databaseServerConfig` is rejected by the name pattern. Omit the field instead.
 - The no-shrink rule of `DatabaseServer` for `storageSize` and `walStorageSize` does not bind a preset. You can lower the baseline at any time. You can also clear `walStorageSize`. Neither edit changes a server that already runs.
 - Whether the merged configuration is complete is checked on the `DatabaseServer`, not on the preset.
-- Every other rule of the `DatabaseServer` schema applies to `spec.server`: a bare major `version`, `instances` at least 1, `archive.retentionPeriodDays` at least 1, a six-field `archive.baseBackupSchedule`, and valid resource names.
+- An edit of `spec.server.archive` is held while a server that reads this preset runs a rollback. That server reports `InvalidReference` and keeps the archive its rollback reads. The edit reaches it once the rollback is answered.
+- Every other rule of the `DatabaseServer` schema applies to `spec.server`: a bare major `version`, `instances` at least 1, `archive.retentionPeriodDays` at least 1, an `archive.baseBackupSchedule` that is a six-field cron or one of the `@yearly` to `@hourly` descriptors, and valid resource names.
 
 ### A production-shaped example
 
