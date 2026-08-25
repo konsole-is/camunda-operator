@@ -139,7 +139,7 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 			Cluster:     components.RecoveryClusterName(server),
 			// recoverySource refuses a request the merged spec has no archive
 			// for, so the block is here on every path that records one.
-			Archive: recordedArchive(source, *resolved.merged.Archive),
+			Archive: recordedArchive(source, *resolved.merged.Archive, resolved.archive),
 		}
 		r.EventRecorder.Eventf(
 			server,
@@ -161,12 +161,14 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 }
 
 // recordedArchive returns the archive record of a recovery that is about to
-// start: what it reads, plus the archive settings of the server at that
-// moment. Every edit of spec.archive is held against those settings while the
-// rollback is unanswered, so the archive keeps being rendered as it was.
+// start: what it reads, the archive settings of the server at that moment, and
+// the identity of the bucket. Every edit of spec.archive is held against those
+// settings while the rollback is unanswered, so the archive keeps being
+// rendered as it was.
 func recordedArchive(
 	source v1.ArchiveRecord,
 	spec v1.DatabaseServerArchiveSpec,
+	archive *components.ArchiveStorage,
 ) *v1.RecoveryArchiveRef {
 	return &v1.RecoveryArchiveRef{
 		ServerName:          source.ServerName,
@@ -174,6 +176,7 @@ func recordedArchive(
 		Location:            source.Location,
 		RetentionPeriodDays: spec.RetentionPeriodDays,
 		BaseBackupSchedule:  spec.BaseBackupSchedule,
+		Identity:            archive.Identity(),
 	}
 }
 

@@ -355,6 +355,24 @@ type RecoveryArchiveRef struct {
 	// the rollback started.
 	// +optional
 	BaseBackupSchedule string `json:"baseBackupSchedule,omitempty"`
+	// Identity is the workload identity of that bucket when the rollback
+	// started. It is held with the archive, so the pods keep presenting the
+	// identity of the bucket they read. It is unset for a bucket that holds
+	// static credentials, and for one that names no identity.
+	// +optional
+	Identity *RecoveryArchiveIdentity `json:"identity,omitempty"`
+}
+
+// RecoveryArchiveIdentity is the workload identity of a bucket: what a pod
+// presents to read the objects in it. A bucket with static credentials has
+// none, because the ObjectStore carries its own Secret.
+type RecoveryArchiveIdentity struct {
+	// Annotations are the annotations of the ServiceAccount of the pods.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// PodLabels are the labels the pods themselves need. Only Azure has one.
+	// +optional
+	PodLabels map[string]string `json:"podLabels,omitempty"`
 }
 
 // DatabaseServerRecoveryStatus is the recovery request that the server works
