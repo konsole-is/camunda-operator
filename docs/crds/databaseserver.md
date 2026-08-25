@@ -116,7 +116,7 @@ The archive lives under a prefix of the bucket that holds this server alone: `<b
 
 `status.archive.history` records each archive the server has written. `serverName` is the directory in the bucket that holds it, `objectStorageRef` is the `ObjectStorageConfig` of that bucket, `location` is where in object storage it was written, which is the bucket, the path, and the endpoint or region that selects the service, `from` is the earliest point a restore can reach in it, and `to` is the latest. An open record, one without `to`, is the archive the server writes now.
 
-A rollback closes the record of the archive it read at the moment the contract moves to the recovered server, and the recovered server opens a record of its own at its first base backup. The window between the two lies in no interval, so no restore can reach a point in it.
+A rollback closes the record of the archive it read. That record ends at whichever comes first: the contract moves to the recovered server, or that server takes its first base backup. The recovered server opens a record of its own at that first base backup. The window between the two lies in no interval either way, so no restore can reach a point in it.
 
 Remove `spec.archive` and the open record closes at that moment. The list itself stays, and no new record is written. The bucket still holds those objects, so a restore can still reach a point inside a closed interval.
 
@@ -162,7 +162,7 @@ A rollback replaces the server. The operator builds a second CloudNativePG clust
 
 The operator points the contract at the new cluster once CloudNativePG reports it healthy, and it then removes the old cluster and its data volumes. Every consumer of the contract reads the new `host` and the superuser Secret of the new cluster. A `CamundaCluster` rolls its pods to pick them up.
 
-The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends when the contract moves, and the new one starts at its first base backup, so no restore can reach a point between the two.
+The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends at whichever comes first: the contract moves to the recovered cluster, or that cluster takes its first base backup. The new archive starts at that first base backup. The gap between the two lies in no interval either way, so no restore can reach a point in it.
 
 The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked. Once the answer is out, it publishes the new name as well.
 

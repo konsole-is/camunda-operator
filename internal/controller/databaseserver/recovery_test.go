@@ -1121,12 +1121,18 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// CloudNativePG takes the first base backup of the recovered cluster
 		// before the contract has reached it, so the archive of that cluster
 		// opens before the cutover finishes.
+		//
+		// The record of the cluster it replaces closes there, at the start of
+		// the record that opens, and not at the cutover further down.
 		backupAt := metav1.NewTime(time.Now().Truncate(time.Second))
 		completeBaseBackup(reconciledServer(server), "base-2", backupAt)
 		Eventually(func(g Gomega) {
 			history := archiveHistory(server)
 			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[0].ServerName).To(Equal("camunda"))
+			g.Expect(history[0].To).To(Equal(&backupAt))
 			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
+			g.Expect(history[1].From).To(Equal(backupAt))
 			g.Expect(history[1].To).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 
