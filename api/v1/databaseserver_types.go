@@ -327,8 +327,10 @@ type DatabaseServerStatus struct {
 	// +optional
 	Cluster string `json:"cluster,omitempty"`
 	// SystemIdentifier is the identity of the PostgreSQL instance that runs
-	// behind the contract, as CloudNativePG reports it. A recovery starts a
-	// new instance, so the value changes with it.
+	// behind the contract, as CloudNativePG reports it. A recovery restores
+	// the pg_control of the base backup it reads, so the recovered instance
+	// reports the identity it recovered from and this value stays. The
+	// endpoint of the contract is what a recovery replaces.
 	// +optional
 	SystemIdentifier string `json:"systemIdentifier,omitempty"`
 	// Archive is the observed state of the continuous archive of the server.

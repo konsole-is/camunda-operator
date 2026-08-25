@@ -38,8 +38,8 @@ import (
 )
 
 // recoveredSystemIdentifier is the identity that CloudNativePG reports for a
-// cluster a recovery built. A recovery starts a new PostgreSQL instance, so it
-// is never the identity of the cluster it replaces.
+// cluster a recovery built. The suite gives it a value of its own, so a spec
+// can tell which cluster the server read the identity from.
 const recoveredSystemIdentifier = "7000000000000000002"
 
 // testHoldFinalizer keeps a CloudNativePG cluster terminating, so a spec can

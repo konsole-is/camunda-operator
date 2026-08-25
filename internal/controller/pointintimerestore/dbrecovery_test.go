@@ -29,9 +29,15 @@ import (
 )
 
 // recoveredIdentifier is the identity that the contract publishes after its
-// producer rolled the server back. A recovery starts a new PostgreSQL
-// instance, so the identity is never the one the restore pinned at admission.
-const recoveredIdentifier = "7000000000000000099"
+// producer rolled the server back. A physical recovery restores the pg_control
+// of the base backup it reads, so the recovered instance reports the identity
+// the restore pinned at admission. Only the endpoint moves.
+const recoveredIdentifier = worldSystemIdentifier
+
+// replacedIdentifier is the identity of another PostgreSQL instance. A
+// contract that reports it after a rollback reaches a server the restore never
+// validated.
+const replacedIdentifier = "7000000000000000099"
 
 // operatorRecoveryWorld is a world whose contract declares that its producer
 // rolls the server back on request.
@@ -267,6 +273,27 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 			g.Expect(current.Status.Storage).NotTo(BeNil())
 			g.Expect(current.Status.Storage.SystemIdentifier).To(Equal(recoveredIdentifier))
 			g.Expect(current.Status.Storage.Endpoint).To(Equal("postgres-r1.databases.svc:5432"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("ends the restore when the rolled-back server reports another identity", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+
+		repointContract(w, "postgres-r1.databases.svc")
+		answerRecovery(w, v1.RecoveryResultCompleted, "")
+
+		// The endpoint moves across a rollback and the identity does not, so
+		// another identity behind it is another instance. The rules of
+		// admission were read against the one the restore pinned.
+		publishContractReady(w, replacedIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(pitr)
+			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(worldSystemIdentifier))
+			g.Expect(current.Status.FailureMessage).To(ContainSubstring(replacedIdentifier))
 		}, timeout, interval).Should(Succeed())
 	})
 

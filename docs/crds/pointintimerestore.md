@@ -114,7 +114,7 @@ The operator resolves the cluster's `storageRef` to a `SecondaryStorageConfig`, 
 
 The `DatabaseServerConfig` must also publish `status.systemIdentifier`. That value names the PostgreSQL instance behind its endpoint, and the rule below counts by it. A contract without it holds the restore with reason `InvalidReference`.
 
-A rollback in `RestoringDatabase` replaces that instance, so the identifier and the endpoint both change. The restore records the new pair when the contract reports `Ready` again, and every later look is measured against the new one.
+A rollback in `RestoringDatabase` moves the endpoint and keeps the identifier: a physical recovery restores the `pg_control` of the base backup, so the recovered instance reports the identity it recovered from. The restore records the new endpoint when the contract reports `Ready` again, and every later look is measured against that record. An endpoint that reports another identity holds another server, and the restore ends there.
 
 The cluster must also name a `backupStorageRef`. Without it, Zeebe writes no primary-storage backup, so no restore point exists. Such a cluster holds the restore with reason `InvalidReference`.
 

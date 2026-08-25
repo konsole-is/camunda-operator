@@ -137,7 +137,7 @@ spec:
 
 Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource: the new resource carries a new uid, and the server reads it as a new request even when the point is the same.
 
-A rollback replaces the server behind `spec.host`. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, `status.probedSecretKeys`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them.
+A rollback moves `spec.host` to another server. `status.serverVersion`, `status.systemIdentifier`, `status.probedAt`, `status.probedEndpoint`, `status.probedSecretName`, `status.probedSecretKeys`, and `status.probedSecretVersion` are cleared until the operator reaches the new endpoint. Wait for `Ready` before you read them. `status.systemIdentifier` then reads the same value as before: a recovery restores the `pg_control` of the base backup it reads, so the recovered instance keeps the identity it recovered from.
 
 Writing the request itself clears nothing. The operator clears the record of the probe when `spec.host`, `spec.port`, or the name or the keys of `spec.adminCredentialsSecretRef` change, because only those name another server or another user on it. A request and its answer leave `Ready` and the identity alone, so the databases on the server keep running while the rollback is asked for.
 

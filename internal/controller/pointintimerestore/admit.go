@@ -59,10 +59,13 @@ const (
 	// pinExact binds every field of the pinned chain. It also requires that
 	// the contract publishes an identity at all.
 	pinExact chainPin = iota
-	// pinAcrossRecovery binds every field except the endpoint and the system
-	// identifier. Those two are what a rollback of the server replaces, and
-	// the phase that asked for the rollback records the new pair itself. The
-	// contracts, their identities, and the logical database still bind: one
+	// pinAcrossRecovery binds every field except the endpoint. That is the
+	// one a rollback of the server replaces, and the phase that asked for the
+	// rollback records the new one itself. The system identifier still binds:
+	// a physical recovery restores the pg_control of the base backup, so the
+	// instance behind the new endpoint reports the identity the restore
+	// pinned, and one that reports another identity is another server. The
+	// contracts, their identities, and the logical database bind as well: one
 	// that was deleted and created again under its name is another contract,
 	// mid-rollback as much as before it.
 	pinAcrossRecovery
@@ -412,7 +415,12 @@ func chainsAgree(pinned, current *v1.PointInTimeRestoreStorage, pin chainPin) bo
 	a, b := *pinned, *current
 	if pin == pinAcrossRecovery {
 		a.Endpoint, b.Endpoint = "", ""
-		a.SystemIdentifier, b.SystemIdentifier = "", ""
+		// A contract clears its identity when its endpoint moves and
+		// publishes it again once it reached the server. One it has not
+		// published yet states nothing, so it cannot disagree with the pin.
+		if b.SystemIdentifier == "" {
+			a.SystemIdentifier = ""
+		}
 	}
 
 	return a == b

@@ -263,8 +263,11 @@ rule stays: oldest `creationTimestamp`, then the smaller `namespace/name`.
 
 `PointInTimeRestore` counts the `Database` objects across all namespaces whose contract reports
 the same identifier. `PointInTimeRestoreStorage` pins `systemIdentifier` next to `Endpoint`, and
-the pin check fails the restore when it changes, except during the operator's own recovery,
-where the identifier is expected to change and the pin is refreshed from the recovered server.
+the pin check fails the restore when either changes. The operator's own recovery is the one
+exception, and only for `Endpoint`: a physical recovery restores the `pg_control` of the base
+backup, so the recovered instance reports the identity the restore pinned, and the identifier goes
+on binding. A contract that has not published an identity yet, which is how it reads between the
+repoint and the probe that follows, states nothing and cannot disagree with the pin.
 
 This is #128. It ships first because every later PR builds on the namespaced kinds and the
 identifier.
@@ -463,8 +466,9 @@ Pending → RestoringDatabase → ValidatingDatabaseState → RestoringPrimarySt
    field manager. `requestID` is the restore's UID. `requestedBy` is the restore's
    `namespace/name`. `targetTime` is `spec.timestamp` rendered in RFC 3339 UTC.
 2. Polls the contract until `pitr.lastRecovery` matches the request and the contract's own
-   `Ready` is `True`, then refreshes the `systemIdentifier` pin from the contract's status and
-   moves on.
+   `Ready` is `True`, then refreshes the pinned chain from the contract's status and moves on.
+   The endpoint is what that refresh replaces. The identifier comes back unchanged from a
+   recovery that read this server's own archive.
 3. Fails with `PitrUnavailable` when `lastRecovery.result` is `Unavailable`, and with `Failed`
    when it is `Failed`; `message` is copied into the restore's condition.
 
