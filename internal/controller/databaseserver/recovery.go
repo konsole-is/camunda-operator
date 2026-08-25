@@ -677,8 +677,8 @@ func (r *DatabaseServerReconciler) completeRecovery(
 	//
 	// That one record only. The cluster this recovery built takes its first
 	// base backup whenever CloudNativePG gets to it, so its own record can
-	// already be open here, and closing it would leave the server with an
-	// archive that no restore can reach.
+	// already be open here, and closing it leaves the server with an archive
+	// that no restore can reach.
 	closeArchiveRecord(server, server.Status.Recovery.PreviousCluster, metav1.Now())
 
 	if err := r.answerRecovery(

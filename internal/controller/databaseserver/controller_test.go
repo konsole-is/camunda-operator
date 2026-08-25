@@ -782,7 +782,7 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		expectCondition(server, v1.ConditionContractReady, metav1.ConditionFalse)
 
-		// A sweep on that look would leave the server publishing nothing.
+		// A sweep on that look leaves the server publishing nothing.
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},

@@ -927,7 +927,7 @@ var _ = Describe("DatabaseServer recovery", func() {
 
 		// The cutover closes the archive of the cluster it replaces and no
 		// other. A closed archive of the cluster the server runs from now
-		// would leave it with no point to roll back to, for good.
+		// leaves it with no point to roll back to, for good.
 		Consistently(func(g Gomega) {
 			history := archiveHistory(server)
 			g.Expect(history).To(HaveLen(2))

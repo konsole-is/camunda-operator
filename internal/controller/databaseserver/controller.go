@@ -210,12 +210,18 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	// Read once and used twice: the clamp below, and status.Volumes further
+	// down. Nothing this reconcile applies creates a claim, so the second
+	// reader loses nothing by taking the same answer.
+	volumes, err := r.volumeClaims(ctx, &server)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Before the recovery below: the cluster a rollback builds carries the
 	// volume sizes of the merged spec, and it must not come back smaller than
 	// the server it replaces.
-	if err := r.keepAppliedStorageSize(ctx, &server, &resolved.merged); err != nil {
-		return ctrl.Result{}, err
-	}
+	r.keepAppliedStorageSize(&server, &resolved.merged, volumes)
 
 	// Before the hold below: a suspended server refuses a recovery request,
 	// and a request nobody answers holds whoever asked for good.
@@ -251,10 +257,6 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	reconcileArchiveHistory(&server, resolved.merged, built.archive, archiveStart, metav1.Now())
 
-	volumes, err := r.volumeClaims(ctx, &server)
-	if err != nil {
-		return ctrl.Result{}, errors.Join(reconcileErr, err)
-	}
 	server.Status.Volumes = volumes.all()
 
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
@@ -527,64 +529,6 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 	return archive, nil
 }
 
-// keepAppliedStorageSize raises each merged volume size back to the size that
-// is already there.
-//
-// It guards against the shrinks that admission cannot see: a preset baseline
-// lowered under a server, or an inline size set below a size that a preset
-// provided before. The CEL transition rules of storageSize and walStorageSize
-// bind the spec of the DatabaseServer, and neither of those edits touches it.
-// CloudNativePG refuses a cluster whose storage is smaller than the one it
-// applied, so a size that reached it would stop the server from converging.
-func (r *DatabaseServerReconciler) keepAppliedStorageSize(
-	ctx context.Context,
-	server *v1.DatabaseServer,
-	merged *v1.DatabaseServerSpec,
-) error {
-	volumes, err := r.volumeClaims(ctx, server)
-	if err != nil {
-		return err
-	}
-
-	merged.StorageSize = r.keepAppliedSize(
-		server, "storageSize", merged.StorageSize, largestVolume(volumes.data, volumes.appliedData),
-	)
-	merged.WALStorageSize = r.keepAppliedSize(
-		server, "walStorageSize", merged.WALStorageSize, largestVolume(volumes.wal, volumes.appliedWAL),
-	)
-
-	return nil
-}
-
-// keepAppliedSize returns the size to render for one volume of the server:
-// requested, or existing when requested is below it. It records the Warning
-// event whenever it keeps existing.
-func (r *DatabaseServerReconciler) keepAppliedSize(
-	server *v1.DatabaseServer,
-	field string,
-	requested, existing *resource.Quantity,
-) *resource.Quantity {
-	if requested == nil || existing == nil || requested.Cmp(*existing) >= 0 {
-		return requested
-	}
-
-	r.EventRecorder.Eventf(
-		server,
-		nil,
-		corev1.EventTypeWarning,
-		eventReasonStorageShrinkIgnored,
-		eventActionResize,
-		"%s %s is below the existing volume size %s. Keeping %s, because PostgreSQL volumes "+
-			"cannot be reduced in place",
-		field,
-		requested,
-		existing,
-		existing,
-	)
-
-	return existing
-}
-
 // serverVolumes are the volumes of the current cluster: one entry per
 // PersistentVolumeClaim that reports a capacity, split by what the claim
 // holds, and the sizes the applied CloudNativePG cluster asks for. The applied
@@ -603,20 +547,6 @@ func (v serverVolumes) all() []v1.VolumeStatus {
 	slices.SortFunc(volumes, func(a, b v1.VolumeStatus) int { return strings.Compare(a.Name, b.Name) })
 
 	return volumes
-}
-
-// largestVolume returns the largest of the claim capacities and applied, or
-// nil when neither exists. It is the size that a rendered volume must not go
-// below.
-func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resource.Quantity {
-	largest := applied
-	for i := range volumes {
-		if largest == nil || volumes[i].Capacity.Cmp(*largest) > 0 {
-			largest = &volumes[i].Capacity
-		}
-	}
-
-	return largest
 }
 
 // volumeClaims reads the volumes of the current cluster. CloudNativePG labels
@@ -681,6 +611,71 @@ func parsedSize(size string) *resource.Quantity {
 	}
 
 	return &quantity
+}
+
+// keepAppliedStorageSize raises each merged volume size back to the size that
+// is already there.
+//
+// It guards against the shrinks that admission cannot see: a preset baseline
+// lowered under a server, or an inline size set below a size that a preset
+// provided before. The CEL transition rules of storageSize and walStorageSize
+// bind the spec of the DatabaseServer, and neither of those edits touches it.
+// CloudNativePG refuses a cluster whose storage is smaller than the one it
+// applied, so a size that reaches it stops the server from converging.
+func (r *DatabaseServerReconciler) keepAppliedStorageSize(
+	server *v1.DatabaseServer,
+	merged *v1.DatabaseServerSpec,
+	volumes serverVolumes,
+) {
+	merged.StorageSize = r.keepAppliedSize(
+		server, "storageSize", merged.StorageSize, largestVolume(volumes.data, volumes.appliedData),
+	)
+	merged.WALStorageSize = r.keepAppliedSize(
+		server, "walStorageSize", merged.WALStorageSize, largestVolume(volumes.wal, volumes.appliedWAL),
+	)
+}
+
+// keepAppliedSize returns the size to render for one volume of the server:
+// requested, or existing when requested is below it. It records the Warning
+// event whenever it keeps existing.
+func (r *DatabaseServerReconciler) keepAppliedSize(
+	server *v1.DatabaseServer,
+	field string,
+	requested, existing *resource.Quantity,
+) *resource.Quantity {
+	if requested == nil || existing == nil || requested.Cmp(*existing) >= 0 {
+		return requested
+	}
+
+	r.EventRecorder.Eventf(
+		server,
+		nil,
+		corev1.EventTypeWarning,
+		eventReasonStorageShrinkIgnored,
+		eventActionResize,
+		"%s %s is below the existing volume size %s. Keeping %s, because PostgreSQL volumes "+
+			"cannot be reduced in place",
+		field,
+		requested,
+		existing,
+		existing,
+	)
+
+	return existing
+}
+
+// largestVolume returns the largest of the claim capacities and applied, or
+// nil when neither exists. It is the size that a rendered volume must not go
+// below.
+func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resource.Quantity {
+	largest := applied
+	for i := range volumes {
+		if largest == nil || volumes[i].Capacity.Cmp(*largest) > 0 {
+			largest = &volumes[i].Capacity
+		}
+	}
+
+	return largest
 }
 
 // archiveStart returns when the earliest base backup of the archive the server
@@ -889,7 +884,7 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 
 	// The replacement goes in first. The contract component blocks while the
 	// superuser Secret is missing and it publishes nothing then, so a sweep
-	// that ran on that look would leave the server with no contract at all.
+	// on that look leaves the server with no contract at all.
 	if !slices.ContainsFunc(contracts.Items, func(published v1.DatabaseServerConfig) bool {
 		return published.Name == merged.DatabaseServerConfig && ownedByServer(server, &published)
 	}) {
