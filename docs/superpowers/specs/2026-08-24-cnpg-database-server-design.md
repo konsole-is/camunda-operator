@@ -624,7 +624,10 @@ be proved:
   the running major, the way `keepAppliedStorageSize` pins the volume sizes, and stages
   `Ready=False` with reason `VersionChangeRefused` in place of the aggregate, plus one Warning
   event of that name. Everything else reconciles on the pinned version, so a recovery in flight
-  finishes and the contract and the archive stay maintained. There is no annotation escape hatch:
+  finishes and the contract and the archive stay maintained. The guard does not fail open on an
+  old CloudNativePG: `status.pgDataImageInfo` arrived in the api module at `v1.26.0` and is absent
+  at `v1.25.1`, and 1.26 is the floor `docs/installation.md` names, so an absent field means only
+  that the data directory is not written yet. There is no annotation escape hatch:
   CloudNativePG
   performs an offline in-place `pg_upgrade`, PITR does not cross a major, and the Barman plugin
   needs a new `serverName` per major, which the operator does not give it.
