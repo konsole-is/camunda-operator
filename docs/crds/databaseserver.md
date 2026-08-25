@@ -292,7 +292,7 @@ status:
     history:
       - serverName: my-db
         objectStorageRef: my-backup-bucket
-        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db
+        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db (region eu-west-1)
         from: "2026-08-01T10:00:00Z"
   recovery:
     requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
