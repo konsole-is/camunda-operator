@@ -276,8 +276,9 @@ func completeBaseBackupBetween(
 			Labels:    map[string]string{components.CNPGClusterNameLabel: components.ClusterName(server)},
 		},
 		Spec: cnpgv1.BackupSpec{
-			Cluster: cnpgv1.LocalObjectReference{Name: components.ClusterName(server)},
-			Method:  cnpgv1.BackupMethodPlugin,
+			Cluster:             cnpgv1.LocalObjectReference{Name: components.ClusterName(server)},
+			Method:              cnpgv1.BackupMethodPlugin,
+			PluginConfiguration: &cnpgv1.BackupPluginConfiguration{Name: components.BarmanPluginName},
 		},
 	}
 	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
@@ -285,6 +286,31 @@ func completeBaseBackupBetween(
 	backup.Status.Phase = cnpgv1.BackupPhaseCompleted
 	backup.Status.StartedAt = startedAt
 	backup.Status.StoppedAt = &stoppedAt
+	Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
+}
+
+// completeVolumeSnapshotBackup creates a completed Backup of the cluster that
+// somebody took by hand with another method. It names the same cluster and
+// carries the same label, and it puts nothing in the archive of the server.
+func completeVolumeSnapshotBackup(server *v1.DatabaseServer, name string, at metav1.Time) {
+	GinkgoHelper()
+
+	backup := &cnpgv1.Backup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      components.ClusterName(server) + "-" + name,
+			Namespace: server.Namespace,
+			Labels:    map[string]string{components.CNPGClusterNameLabel: components.ClusterName(server)},
+		},
+		Spec: cnpgv1.BackupSpec{
+			Cluster: cnpgv1.LocalObjectReference{Name: components.ClusterName(server)},
+			Method:  cnpgv1.BackupMethodVolumeSnapshot,
+		},
+	}
+	Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+
+	backup.Status.Phase = cnpgv1.BackupPhaseCompleted
+	backup.Status.StartedAt = &at
+	backup.Status.StoppedAt = &at
 	Expect(k8sClient.Status().Update(ctx, backup)).To(Succeed())
 }
 
@@ -599,6 +625,51 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		Expect(backupLists.countIn(server.Namespace)).To(BeNumerically(">", 0))
+	})
+
+	It("holds the archive until a base backup of the archive plugin completes", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+			BaseBackupSchedule:  components.DefaultBaseBackupSchedule,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000012")
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+
+		completeVolumeSnapshotBackup(server, "snapshot", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		// The snapshot recovers the volumes of one moment. It puts no base
+		// backup in the bucket, so the archive still reaches no point and the
+		// history stays empty.
+		Consistently(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			archive := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionArchiveReady)
+			g.Expect(archive).NotTo(BeNil())
+			g.Expect(archive.Status).To(Equal(metav1.ConditionFalse), archive.Message)
+
+			var history []v1.ArchiveRecord
+			if latest.Status.Archive != nil {
+				history = latest.Status.Archive.History
+			}
+			g.Expect(history).To(BeEmpty())
+		}, "2s", interval).Should(Succeed())
+
+		completedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
+		completeBaseBackup(server, "base", completedAt)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+
+		Eventually(func(g Gomega) {
+			var latest v1.DatabaseServer
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+			g.Expect(latest.Status.Archive).NotTo(BeNil())
+			g.Expect(latest.Status.Archive.History).To(HaveLen(1))
+			g.Expect(latest.Status.Archive.History[0].From.Time).To(BeTemporally("==", completedAt.Time))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("closes the archive record when the archive block is removed", func() {

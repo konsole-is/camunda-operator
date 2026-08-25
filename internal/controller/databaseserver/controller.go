@@ -990,9 +990,10 @@ func laterTime(a, b *metav1.Time) *metav1.Time {
 }
 
 // archiveStart returns when the earliest base backup of the archive the server
-// writes now completed, or nil when none has. It is what tells the archive
-// component that the archive can be recovered from, and what opens the
-// interval of that archive in status.
+// writes now completed, or nil when none has. Only a backup that the archive
+// plugin took counts. It is what tells the archive component that the archive
+// can be recovered from, and what opens the interval of that archive in
+// status.
 //
 // after is the boundary of the current archive, from archiveBoundary. Only the
 // backups that began after it count: the backups of an archive the server
@@ -1028,6 +1029,13 @@ func (r *DatabaseServerReconciler) archiveStart(
 		if backup.Spec.Cluster.Name != components.ClusterName(server) ||
 			backup.Status.Phase != cnpgv1.BackupPhaseCompleted ||
 			backup.Status.StoppedAt == nil {
+			continue
+		}
+		// A backup that another method or another plugin took writes nothing
+		// to this archive, so it reaches no point a restore of it can use.
+		if backup.Spec.Method != cnpgv1.BackupMethodPlugin ||
+			backup.Spec.PluginConfiguration == nil ||
+			backup.Spec.PluginConfiguration.Name != components.BarmanPluginName {
 			continue
 		}
 		// The start decides, not the end. A backup that was already running
