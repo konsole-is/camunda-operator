@@ -42,6 +42,8 @@ The contract appears only after that Secret exists. Until then `ContractReady` i
 
 Change `spec.databaseServerConfig` and the server publishes the new name and removes the contract of the name before it. A `Database` that still names the old one reports `Ready` `False` with reason `InvalidReference`. Point it at the new name, or rename the contract back. Two contracts of the server outlive a rename: one that carries the answer of the last rollback, and one that a rollback still runs on. See [Recovery](#recovery).
 
+One contract name belongs to one server. The first `DatabaseServer` that publishes a name keeps it. A second server in the same namespace that names it publishes nothing on it, and reports `ContractReady` `False` with reason `ContractTaken`. The message names the owner. A `Database` on that contract keeps the endpoint and the credentials of the owner. Give the second server a name of its own, or delete the owner. The waiting server then publishes the name.
+
 Give the contract to a `Database` in the same namespace:
 
 ```yaml
@@ -290,7 +292,7 @@ status:
     history:
       - serverName: my-db
         objectStorageRef: my-backup-bucket
-        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db
+        location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db (region eu-west-1)
         from: "2026-08-01T10:00:00Z"
   recovery:
     requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
@@ -341,6 +343,7 @@ status:
 | `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. A suspended server never does. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
 | `ArchiveReady` | `Healthy` | The archive holds a base backup and takes the write-ahead log. | Nothing. |
 | `ContractReady` | `Blocked` | The superuser Secret does not exist yet. | Wait for the instances to start. |
+| `ContractReady` | `ContractTaken` | Another owner controls the `DatabaseServerConfig` that `spec.databaseServerConfig` names. The message names that owner. | Give this server a contract name of its own, or delete the owner. |
 | `ContractReady` | `Healthy` | The contract is published. | Nothing. |
 | `MonitoringReady` | `Disabled` | Scraping is off. | Nothing. |
 | `MonitoringReady` | `Healthy` | The `PodMonitor` is applied. | Nothing. |

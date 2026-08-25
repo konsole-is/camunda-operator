@@ -103,6 +103,11 @@ type resolvedSpec struct {
 	// ObjectStore keeps describing the archive the recovery asked for: see
 	// recoveryHoldsLocation.
 	holdArchive bool
+	// contractHolder is the owner that controls the DatabaseServerConfig the
+	// merged spec names, when that owner is not this server. The contract
+	// component then publishes nothing and ContractReady reports
+	// ContractTaken: see contractHolder.
+	contractHolder *metav1.OwnerReference
 }
 
 // serverComponents are the components of one reconcile, in the order they
@@ -331,6 +336,12 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	server.Status.Volumes = volumes.all()
 
+	// Before the aggregate below, which reads the component conditions off
+	// the server.
+	if resolved.contractHolder != nil {
+		stageContractTaken(&server, resolved.merged, resolved.contractHolder)
+	}
+
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
 
 	// A refusal and a hold are the reasons the reader acts on, so each wins
@@ -470,6 +481,14 @@ func (r *DatabaseServerReconciler) preCheck(
 		resolved.holdForRecovery = hold
 		resolved.holdArchive = true
 	}
+
+	// After every hold above, because a held recovery keeps the server on the
+	// contract that the record names and the holder is read for that name.
+	holder, err := r.contractHolder(ctx, server, resolved.merged)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.contractHolder = holder
 
 	return resolved, nil
 }
@@ -721,6 +740,46 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 	archive.Credentials = credentials
 
 	return archive, nil
+}
+
+// contractHolder returns the owner that controls the DatabaseServerConfig the
+// merged spec names. It returns nil when that object does not exist, has no
+// controller, or is controlled by this server, which are the three cases the
+// server publishes in. The contract component blocks on the answer, so the
+// first server to publish a name keeps it.
+//
+// The read is live. A cached read that has not seen the contract of the other
+// server yet lets this one publish over it, which is the write the guard
+// exists to stop.
+func (r *DatabaseServerReconciler) contractHolder(
+	ctx context.Context,
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+) (*metav1.OwnerReference, error) {
+	if merged.DatabaseServerConfig == "" {
+		return nil, nil
+	}
+
+	key := types.NamespacedName{Namespace: server.Namespace, Name: merged.DatabaseServerConfig}
+
+	var contract v1.DatabaseServerConfig
+	if err := r.APIReader.Get(ctx, key, &contract); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
+	}
+
+	// The controller reference alone, not ownedByServer. A contract that
+	// carries our reference and lost its label is ours to repair, and holding
+	// it against ourselves would name this server as its own holder.
+	holder := metav1.GetControllerOf(&contract)
+	if holder == nil || holder.UID == server.UID {
+		return nil, nil
+	}
+
+	return holder, nil
 }
 
 // serverVolumes are the volumes of the current cluster: one entry per
@@ -1110,7 +1169,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
 
-	built.contract, err = components.ContractComponent(server, merged)
+	built.contract, err = components.ContractComponent(server, merged, resolved.contractHolder)
 	if err != nil {
 		return built, nil, fmt.Errorf("building contract component: %w", err)
 	}
@@ -1205,6 +1264,26 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 	}
 
 	return nil
+}
+
+// stageContractTaken reports the contract that another owner holds. The guard
+// of the contract component blocks the apply, and ocf reports every blocked
+// guard as Blocked, which reads the same as the wait for the superuser
+// Secret. This names the owner instead, which is what the user acts on.
+func stageContractTaken(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	holder *metav1.OwnerReference,
+) {
+	message := components.ContractTakenMessage(merged.DatabaseServerConfig, holder)
+
+	meta.SetStatusCondition(&server.Status.Conditions, metav1.Condition{
+		Type:               v1.ConditionContractReady,
+		Status:             metav1.ConditionFalse,
+		Reason:             v1.ReasonContractTaken,
+		Message:            conditions.BoundMessage(message),
+		ObservedGeneration: server.Generation,
+	})
 }
 
 // reconcileArchiveHistory keeps status.archive.history in step with the spec.

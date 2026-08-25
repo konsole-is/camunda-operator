@@ -462,7 +462,7 @@ Conditions and components, one component per condition:
 | --- | --- | --- |
 | `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy |
 | `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed |
-| `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract) |
+| `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract). `ContractTaken` when another owner controls the name |
 | `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
 
 `Ready` on the owner aggregates `ClusterReady`, `ContractReady`, and, on a server that asks for an
@@ -586,6 +586,14 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
 Each step is idempotent and keyed on what exists, so a restart in the middle resumes. The
 previous `Cluster` is deleted only after the contract points at the new one, so a failure before
 step 4 leaves the old server intact and the restore reports `Failed` without data loss.
+
+One contract name belongs to one server. The reconcile reads the `DatabaseServerConfig` that the
+merged spec names before it publishes. A guard on the contract blocks the apply while another owner
+controls that object, and `ContractReady` reports `ContractTaken` with the owner in the message.
+The first server to publish a name therefore keeps it. The second one publishes nothing until the
+owner and its contract are gone. Without the guard both servers apply, because the apply is
+server-side under a field manager that carries no server name, and the owner reference, the label,
+and `spec.host` move between them on every reconcile.
 
 `spec.databaseServerConfig` is mutable. The reconcile sweeps every `DatabaseServerConfig` it owns
 under the `camunda.io/database-server` label of the server and deletes the ones it no longer

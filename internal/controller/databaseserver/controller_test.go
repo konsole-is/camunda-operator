@@ -55,13 +55,25 @@ func serverInNamespace(archive *v1.DatabaseServerArchiveSpec) *v1.DatabaseServer
 		ObjectMeta: metav1.ObjectMeta{Name: namespace},
 	})).To(Succeed())
 
+	return serverNamed(namespace, "camunda", "camunda", archive)
+}
+
+// serverNamed creates a minimal DatabaseServer in a namespace that exists
+// already, under a name and a contract name of its own. Two of them is how a
+// spec puts two servers on one contract name.
+func serverNamed(
+	namespace, name, contract string,
+	archive *v1.DatabaseServerArchiveSpec,
+) *v1.DatabaseServer {
+	GinkgoHelper()
+
 	server := &v1.DatabaseServer{
-		ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: v1.DatabaseServerSpec{
 			Version:              "17",
 			Instances:            new(int32(1)),
 			StorageSize:          new(resource.MustParse("1Gi")),
-			DatabaseServerConfig: "camunda",
+			DatabaseServerConfig: contract,
 			Archive:              archive,
 		},
 	}
@@ -994,6 +1006,54 @@ var _ = Describe("DatabaseServer controller", func() {
 				&v1.DatabaseServerConfig{},
 			)).To(MatchError(apierrors.IsNotFound, "not found"))
 		}, timeout, interval).Should(Succeed())
+	})
+
+	It("publishes nothing on a contract that another server holds", func() {
+		owner := serverInNamespace(nil)
+		writeSuperuserSecret(owner)
+		expectCondition(owner, v1.ConditionContractReady, metav1.ConditionTrue)
+		host := publishedContract(owner).Spec.Host
+
+		// The second server names the contract of the first, and its own
+		// superuser Secret is there. Nothing but the guard keeps it off.
+		second := serverNamed(owner.Namespace, "second", "camunda", nil)
+		writeSuperuserSecret(second)
+
+		taken := expectCondition(second, v1.ConditionContractReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonContractTaken))
+		Expect(taken.Message).To(ContainSubstring(`DatabaseServer "camunda"`))
+		Expect(conditionOf(second, v1.ConditionReady).Status).To(Equal(metav1.ConditionFalse))
+
+		// The apply moves the owner reference, the label, and the endpoint
+		// together, so a contract the second server wrote shows in all three.
+		Consistently(func(g Gomega) {
+			contract := publishedContract(owner)
+			g.Expect(contract.Spec.Host).To(Equal(host))
+			g.Expect(contract.Labels).To(HaveKeyWithValue(labels.DatabaseServerKey, "camunda"))
+			g.Expect(metav1.IsControlledBy(contract, reconciledServer(owner))).To(BeTrue())
+		}, 3*time.Second, interval).Should(Succeed())
+	})
+
+	It("publishes the contract once the server that held it is gone", func() {
+		owner := serverInNamespace(nil)
+		writeSuperuserSecret(owner)
+		expectCondition(owner, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		second := serverNamed(owner.Namespace, "second", "camunda", nil)
+		writeSuperuserSecret(second)
+		expectCondition(second, v1.ConditionContractReady, metav1.ConditionFalse)
+
+		By("deleting the server that holds the contract")
+		published := publishedContract(owner)
+		Expect(k8sClient.Delete(ctx, owner)).To(Succeed())
+		// envtest runs no garbage collector, so the contract the owner
+		// reference points at goes here instead.
+		Expect(k8sClient.Delete(ctx, published)).To(Succeed())
+
+		expectCondition(second, v1.ConditionContractReady, metav1.ConditionTrue)
+		contract := publishedContract(second)
+		Expect(metav1.IsControlledBy(contract, reconciledServer(second))).To(BeTrue())
+		Expect(contract.Spec.Host).To(Equal("second-rw." + second.Namespace + ".svc"))
 	})
 
 	It("starts a new archive record when the bucket changes", func() {
