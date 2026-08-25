@@ -891,6 +891,45 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("keeps the archive of the cluster it built open when the base backup lands first", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal("camunda-r1"))
+
+		// CloudNativePG takes the first base backup of the recovered cluster
+		// before the contract has reached it, so the archive of that cluster
+		// opens before the cutover finishes.
+		backupAt := metav1.NewTime(time.Now().Truncate(time.Second))
+		completeBaseBackup(reconciledServer(server), "base-2", backupAt)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
+			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		probeContract(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		// The cutover closes the archive of the cluster it replaces and no
+		// other. A closed archive of the cluster the server runs from now
+		// would leave it with no point to roll back to, for good.
+		Consistently(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[0].ServerName).To(Equal("camunda"))
+			g.Expect(history[0].To).NotTo(BeNil())
+			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
+			g.Expect(history[1].To).To(BeNil())
+		}, "2s", interval).Should(Succeed())
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+	})
+
 	It("keeps the bucket of a running recovery while the spec names another", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))

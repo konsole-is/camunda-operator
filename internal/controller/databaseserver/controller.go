@@ -933,8 +933,9 @@ func openArchiveRecord(server *v1.DatabaseServer) *v1.ArchiveRecord {
 }
 
 // closeArchiveRecords ends the interval of every archive the server still has
-// open. One is open at most, and closing all of them is what keeps that true
-// whatever an earlier version of this operator left behind.
+// open. Only the drop of spec.archive calls it. The server then writes no
+// archive at all, so every open interval is over, including one that another
+// cluster of this server left open.
 func closeArchiveRecords(server *v1.DatabaseServer, at metav1.Time) {
 	if server.Status.Archive == nil {
 		return
@@ -943,6 +944,24 @@ func closeArchiveRecords(server *v1.DatabaseServer, at metav1.Time) {
 	for i := range server.Status.Archive.History {
 		if server.Status.Archive.History[i].To == nil {
 			server.Status.Archive.History[i].To = &at
+		}
+	}
+}
+
+// closeArchiveRecord ends the interval of the archive that serverName has
+// open, and leaves every other record alone. A recovery closes the archive of
+// the cluster it replaces, and the cluster it built can already have opened one
+// of its own by then: its first base backup completes whenever CloudNativePG
+// takes it, before or after the contract moves.
+func closeArchiveRecord(server *v1.DatabaseServer, serverName string, at metav1.Time) {
+	if server.Status.Archive == nil {
+		return
+	}
+
+	for i := range server.Status.Archive.History {
+		record := &server.Status.Archive.History[i]
+		if record.ServerName == serverName && record.To == nil {
+			record.To = &at
 		}
 	}
 }

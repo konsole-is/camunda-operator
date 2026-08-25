@@ -674,7 +674,12 @@ func (r *DatabaseServerReconciler) completeRecovery(
 	// that if the move never becomes visible, and the archive of the
 	// recovered cluster reaches no point before its first base backup, so the
 	// window between the two lies in no interval.
-	closeArchiveRecords(server, metav1.Now())
+	//
+	// That one record only. The cluster this recovery built takes its first
+	// base backup whenever CloudNativePG gets to it, so its own record can
+	// already be open here, and closing it would leave the server with an
+	// archive that no restore can reach.
+	closeArchiveRecord(server, server.Status.Recovery.PreviousCluster, metav1.Now())
 
 	if err := r.answerRecovery(
 		ctx, server, contract, request, v1.RecoveryResultCompleted, "",
