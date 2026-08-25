@@ -973,10 +973,11 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	// The bucket change and the guard on the archive land in one reconcile.
-	// A boundary that waited for the recorded close would let the base backup
-	// of the bucket the server leaves report the new archive ready, and the
-	// status write that closes the record would carry that ready with it.
+	// The bucket change and the guard on the archive land in one reconcile. A
+	// boundary that waits for the recorded close is not moved yet on that
+	// reconcile, so a base backup of the bucket the server leaves reports the
+	// new archive ready, and the status write that closes the record carries
+	// that ready with it.
 	It("blocks the new archive while only the bucket it left holds a base backup", func() {
 		first := archiveBucket()
 		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{

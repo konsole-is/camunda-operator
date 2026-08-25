@@ -406,9 +406,9 @@ type DatabaseServerStatus struct {
 // ninety-nine rollbacks whole. A rollback after those shortens it to a head
 // and a hash.
 //
-// The rule runs on create only. A name never changes on update, so re-checking
-// it would only reject an edit of some other field on an object that predates
-// the rule.
+// The rule runs on create only. A name never changes on update. If the rule
+// runs there too, it rejects an edit of another field on an object that
+// predates it, and nothing more.
 type DatabaseServer struct {
 	metav1.TypeMeta `json:",inline"`
 
