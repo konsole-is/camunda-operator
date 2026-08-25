@@ -137,11 +137,9 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 			RequestedBy: request.RequestedBy,
 			TargetTime:  request.TargetTime,
 			Cluster:     components.RecoveryClusterName(server),
-			Archive: &v1.RecoveryArchiveRef{
-				ServerName:       source.ServerName,
-				ObjectStorageRef: source.ObjectStorageRef,
-				Location:         source.Location,
-			},
+			// recoverySource refuses a request the merged spec has no archive
+			// for, so the block is here on every path that records one.
+			Archive: recordedArchive(source, *resolved.merged.Archive),
 		}
 		r.EventRecorder.Eventf(
 			server,
@@ -160,6 +158,23 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 	}
 
 	return r.advanceRecovery(ctx, server, contract, resolved, request, source)
+}
+
+// recordedArchive returns the archive record of a recovery that is about to
+// start: what it reads, plus the archive settings of the server at that
+// moment. Every edit of spec.archive is held against those settings while the
+// rollback is unanswered, so the archive keeps being rendered as it was.
+func recordedArchive(
+	source v1.ArchiveRecord,
+	spec v1.DatabaseServerArchiveSpec,
+) *v1.RecoveryArchiveRef {
+	return &v1.RecoveryArchiveRef{
+		ServerName:          source.ServerName,
+		ObjectStorageRef:    source.ObjectStorageRef,
+		Location:            source.Location,
+		RetentionPeriodDays: spec.RetentionPeriodDays,
+		BaseBackupSchedule:  spec.BaseBackupSchedule,
+	}
 }
 
 // cutOver reports whether the contract of the server already points at the

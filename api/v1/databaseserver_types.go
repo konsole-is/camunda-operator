@@ -87,9 +87,23 @@ type DatabaseServerArchiveSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	RetentionPeriodDays int32 `json:"retentionPeriodDays"`
 	// BaseBackupSchedule is when a base backup is taken, as the six-field
-	// cron of CloudNativePG (seconds first, in UTC). The first base backup
-	// runs as soon as the server is up, whatever the schedule says, because
-	// the archive can be recovered from only after it completes.
+	// cron of CloudNativePG (seconds first, in UTC), or as one of the
+	// descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,
+	// @hourly and @every. The first base backup runs as soon as the server is
+	// up, whatever the schedule says, because the archive can be recovered
+	// from only after it completes.
+	//
+	// The five-field cron of a Kubernetes CronJob is refused. CloudNativePG
+	// reads the first field as seconds, so a five-field value runs at a
+	// different time from the one its author meant.
+	//
+	// Each field is bounded to what CloudNativePG takes there: 0-59 for
+	// seconds and minutes, 0-23 for hours, 1-31 for the day of the month,
+	// 1-12 or JAN-DEC for the month, and 0-6 or SUN-SAT for the day of the
+	// week. A range whose first value is above its second, such as FRI-MON,
+	// cannot be caught by a pattern. CloudNativePG refuses it when it reads
+	// the ScheduledBackup.
+	// +kubebuilder:validation:Pattern=`^(\s*([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?)*\s+([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?(,([*?]|[0-5]?\d(-[0-5]?\d)?)(/[1-9]\d*)?)*\s+([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d*)?(,([*?]|([01]?\d|2[0-3])(-([01]?\d|2[0-3]))?)(/[1-9]\d*)?)*\s+([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d*)?(,([*?]|([1-9]|[12]\d|3[01])(-([1-9]|[12]\d|3[01]))?)(/[1-9]\d*)?)*\s+([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d*)?(,([*?]|([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc])(-([1-9]|1[0-2]|[Jj]([Aa][Nn]|[Uu][LlNn])|[Ff][Ee][Bb]|[Mm][Aa][RrYy]|[Aa]([Pp][Rr]|[Uu][Gg])|[Ss][Ee][Pp]|[Oo][Cc][Tt]|[Nn][Oo][Vv]|[Dd][Ee][Cc]))?)(/[1-9]\d*)?)*\s+([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d*)?(,([*?]|([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii])(-([0-6]|[Ss]([Uu][Nn]|[Aa][Tt])|[Mm][Oo][Nn]|[Tt]([Uu][Ee]|[Hh][Uu])|[Ww][Ee][Dd]|[Ff][Rr][Ii]))?)(/[1-9]\d*)?)*\s*|@((year|annual|month|week|dai|hour)ly|midnight|every (\d+(\.\d+)?[hms])+))$`
 	// +kubebuilder:default="0 0 2 * * *"
 	// +optional
 	BaseBackupSchedule string `json:"baseBackupSchedule,omitempty"`
@@ -310,7 +324,11 @@ type DatabaseServerArchiveStatus struct {
 }
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in
-// the bucket, where that bucket is, and the bucket contract that names it.
+// the bucket, where that bucket is, and the bucket contract that names it. It
+// also carries the archive settings of the server at that moment. Every edit
+// of spec.archive while the rollback is unanswered is held against them: a
+// moved bucket, a changed retention or schedule, and a removal. The archive
+// keeps being rendered as it was until the rollback is answered.
 type RecoveryArchiveRef struct {
 	// ServerName is the archive directory, equal to the name of the
 	// CloudNativePG cluster that wrote it.
@@ -324,6 +342,14 @@ type RecoveryArchiveRef struct {
 	// does not move it.
 	// +optional
 	Location string `json:"location,omitempty"`
+	// RetentionPeriodDays is spec.archive.retentionPeriodDays as it stood
+	// when the rollback started.
+	// +optional
+	RetentionPeriodDays int32 `json:"retentionPeriodDays,omitempty"`
+	// BaseBackupSchedule is spec.archive.baseBackupSchedule as it stood when
+	// the rollback started.
+	// +optional
+	BaseBackupSchedule string `json:"baseBackupSchedule,omitempty"`
 }
 
 // DatabaseServerRecoveryStatus is the recovery request that the server works

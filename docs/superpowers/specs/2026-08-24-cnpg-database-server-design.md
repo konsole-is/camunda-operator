@@ -149,6 +149,19 @@ The schedule comes from `spec.archive.baseBackupSchedule` (default daily at 02:0
 first backup runs at once (`immediate: true`). `ArchiveReady` is `True` only after the first
 base backup completed.
 
+CloudNativePG parses that schedule with the `cron.Parse` of `robfig/cron` v1 and its seconds
+field, so the six-field form is the one it takes, together with the `@yearly` to `@hourly`
+descriptors and `@every`. A schema pattern holds the field to that form and bounds each field to
+the values that parser takes there, so an hour of 24 or a weekday of 7 is refused at admission
+rather than at read time. The pattern is written in ECMA 262 with explicit case alternatives for
+the names, because that is the dialect an OpenAPI `pattern` is read in. It cannot compare the two
+ends of a range, so `FRI-MON` stays a CloudNativePG rejection.
+
+Admission also rejects the five-field cron of a Kubernetes CronJob. CloudNativePG reads it
+seconds first and runs it at a different time from the one its author meant. Without the pattern a
+malformed schedule reaches the `ScheduledBackup`, CloudNativePG takes no base backup at all, and
+the server keeps publishing an archive nobody refreshes.
+
 The base backups are part of the archive, not part of the operator's backup model. The
 operator's backup model is `BackupSchedule` creating `LogicalBackupRDBMS` (a `pg_dump`) and
 `LogicalBackupElasticsearch`, coordinated with the Camunda backup API and restorable by
@@ -394,6 +407,8 @@ status:
     archive:                       # pinned when the request is recorded
       serverName: camunda
       objectStorageRef: backups
+      retentionPeriodDays: 30      # the archive settings every edit is held against
+      baseBackupSchedule: "0 0 2 * * *"
     result: Completed              # unset while the recovery runs
     message: ""
     completedAt: "2026-08-20T15:02:11Z"
@@ -578,10 +593,27 @@ that nothing answers. The sweep is skipped while a recovery is unanswered, becau
 on the contract the record names.
 
 While a request is unanswered, the server holds the two things the recovery reads. A spec that
-moves `spec.databaseServerConfig` or `spec.archive.objectStorageRef` puts
-`Ready=False/InvalidReference` on the server, and the merged spec stays pinned to the contract
-name and the bucket that `status.recovery` recorded. The components keep running on those
-recorded values, because a recovery that never gets its contract republished never finishes.
+moves `spec.databaseServerConfig` or `spec.archive.objectStorageRef`, or that removes
+`spec.archive` altogether, puts `Ready=False/InvalidReference` on the server, and the merged spec
+stays pinned to the contract name and the archive that `status.recovery` recorded. The components
+keep running on those recorded values, because a recovery that never gets its contract republished
+never finishes, and one that loses its archive has nothing left to read.
+
+`status.recovery.archive` therefore carries `retentionPeriodDays` and `baseBackupSchedule`
+beside the bucket it names. `heldArchive` builds the merged archive block out of those three, and
+it is also what decides that the spec moved one of them, so the block the server renders and the
+edit it reports never disagree. A preset carries these fields as readily as an inline block, and
+the merge runs before the hold, so a baseline edit is caught the same way. The `ObjectStore`, the
+`ScheduledBackup`, and the published `pitr` therefore stay what they were, and the edit applies on
+the reconcile after the answer goes out. A shorter `retentionPeriodDays` is what makes this more
+than tidiness: it becomes the retention policy of the bucket and prunes the base backup the
+rollback starts from.
+
+A record written before those two fields existed carries neither. The spec fills what it still
+has, and a removal is not held against such a record at all: rendering it would put `0d` on the
+`ObjectStore`, which that CRD refuses, and publish a retention that the CEL rule on
+`PITRCapability` refuses, so every apply would fail. Letting the removal apply refuses the
+rollback and takes nothing out of the bucket.
 
 A candidate that fails after the contract already moved to it rolls the contract back. The server
 puts `status.cluster` back on `status.recovery.previousCluster`, which still holds the data, and
@@ -662,6 +694,12 @@ be proved:
   flow exercises a real recovery on every PR, and the version is pinned and bumped by renovate.
 - A `DatabaseServer` with `instances: 1` has no failover. The preset docs say so and the
   production preset sets 2.
+- A rollback that neither converges nor fails has no deadline, and the hold widens what it stops
+  while it runs: the contract name and every setting of `spec.archive` stay where the rollback
+  needs them, and a preset edit that touches those fields is held with them. Both are
+  pre-existing, and a rollback that hangs therefore parks more of the spec than it used to.
+  Mitigation is the same as before: `status.recovery` and `Ready` name the rollback and what it
+  holds, so an operator can read why an edit has not applied.
 - The endpoint changes on every recovery. `CamundaCluster` rolls its pods; the docs state that a
   point-in-time restore restarts the orchestration cluster, which the existing suspend already
   implies.

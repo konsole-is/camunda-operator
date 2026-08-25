@@ -31,6 +31,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/fixtures"
+	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 )
 
 // validDatabaseServer returns the minimal example of the CRD doc with a
@@ -195,6 +196,78 @@ var _ = Describe("DatabaseServer schema", func() {
 			realisticDatabaseServer, func(o *v1.DatabaseServer) {
 				o.Spec.Archive.ObjectStorageRef = ""
 			}, "objectStorageRef",
+		),
+		Entry(
+			"accepts the documented default baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = components.DefaultBaseBackupSchedule
+			}, "",
+		),
+		Entry(
+			"accepts a step in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 */15 * * * *"
+			}, "",
+		),
+		Entry(
+			"accepts a named weekday in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 3 * * SUN"
+			}, "",
+		),
+		// CloudNativePG reads the first field as seconds, so the five-field
+		// cron of a Kubernetes CronJob runs at a different time from the one
+		// its author meant.
+		Entry(
+			"rejects a five-field baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 2 * * *"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"rejects a word in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 2 * * daily"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"rejects a seven-field baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 2 * * * 2026"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"accepts a descriptor as baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "@daily"
+			}, "",
+		),
+		Entry(
+			"accepts a baseBackupSchedule that a manifest indented",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "  0 0 2 * * *  "
+			}, "",
+		),
+		// Each field is bounded to what CloudNativePG takes there, so a value
+		// that reads plausibly but names no hour, no weekday, or no second is
+		// refused rather than left to stop the base backups.
+		Entry(
+			"rejects an hour of 24 in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 24 * * *"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"rejects a weekday of 7 in baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "0 0 2 * * 7"
+			}, "baseBackupSchedule",
+		),
+		Entry(
+			"rejects a month name in the seconds field of baseBackupSchedule",
+			realisticDatabaseServer, func(o *v1.DatabaseServer) {
+				o.Spec.Archive.BaseBackupSchedule = "JAN 0 0 * * *"
+			}, "baseBackupSchedule",
 		),
 		// The name of the CR names the CloudNativePG cluster, and
 		// CloudNativePG takes a DNS-1035 label of at most 50 characters. The

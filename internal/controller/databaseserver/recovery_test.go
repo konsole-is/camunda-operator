@@ -72,6 +72,49 @@ func archivingServer() (*v1.DatabaseServer, metav1.Time) {
 	return server, from
 }
 
+// archivingServerOnPreset is archivingServer with the archive block on a
+// cluster-scoped preset instead of inline, so a spec can edit the baseline
+// that the preset merge reads. It returns the server, the preset, and the
+// point its archive opens at.
+func archivingServerOnPreset() (*v1.DatabaseServer, *v1.DatabaseServerPreset, metav1.Time) {
+	GinkgoHelper()
+
+	bucket := archiveBucket()
+	preset := &v1.DatabaseServerPreset{
+		ObjectMeta: metav1.ObjectMeta{Name: "dbsp-" + utilrand.String(8)},
+		Spec: v1.DatabaseServerPresetSpec{
+			Server: v1.DatabaseServerSpec{
+				Archive: &v1.DatabaseServerArchiveSpec{
+					ObjectStorageRef:    bucket.Name,
+					RetentionPeriodDays: 30,
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+	DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+	server := serverInNamespace(nil)
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.PresetRef = preset.Name
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+
+	writeSuperuserSecret(server)
+	makeClusterHealthy(server, "7000000000000000001")
+
+	from := metav1.NewTime(time.Now().Add(-2 * time.Hour).Truncate(time.Second))
+	completeBaseBackup(server, "base-1", from)
+
+	Eventually(func() []v1.ArchiveRecord {
+		return archiveHistory(server)
+	}, timeout, interval).Should(HaveLen(1))
+
+	return server, preset, from
+}
+
 // askForRecovery writes a recovery request on the contract of the server, the
 // way a PointInTimeRestore does. It returns the request it wrote.
 func askForRecovery(server *v1.DatabaseServer, target time.Time) v1.RecoveryRequest {
@@ -101,6 +144,40 @@ func askForRecoveryOn(
 	}, timeout, interval).Should(Succeed())
 
 	return request
+}
+
+// renderedArchive is what the archive of a server looks like on the cluster:
+// the retention policy of its ObjectStore, the schedule of its
+// ScheduledBackup, and the retention its contract publishes. A hold has to
+// keep all three at what the rollback recorded, because the retention prunes
+// the base backup the rollback starts from.
+type renderedArchive struct {
+	retentionPolicy string
+	schedule        string
+	published       int32
+}
+
+// archiveOnCluster reads the rendered archive of a server that has not cut
+// over yet, so its ObjectStore and its ScheduledBackup both carry its name.
+func archiveOnCluster(g Gomega, server *v1.DatabaseServer) renderedArchive {
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Name}
+
+	var store barmanobjectstore.ObjectStore
+	g.Expect(k8sClient.Get(ctx, key, &store)).To(Succeed())
+
+	var baseBackup cnpgv1.ScheduledBackup
+	g.Expect(k8sClient.Get(ctx, key, &baseBackup)).To(Succeed())
+
+	pitr := publishedContract(server).Spec.PITR
+	g.Expect(pitr).NotTo(BeNil())
+	g.Expect(pitr.Enabled).To(BeTrue(), "the contract keeps advertising the archive the rollback reads")
+	g.Expect(pitr.RetentionPeriodDays).NotTo(BeNil())
+
+	return renderedArchive{
+		retentionPolicy: store.Spec.RetentionPolicy,
+		schedule:        baseBackup.Spec.Schedule,
+		published:       *pitr.RetentionPeriodDays,
+	}
 }
 
 // probeContract records the probe that the DatabaseServerConfig controller
@@ -542,16 +619,56 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, "2s", interval).Should(Succeed())
 	})
 
-	It("refuses a running recovery whose archive the spec took away", func() {
+	It("keeps the archive of a running recovery that the spec takes away", func() {
 		server, from := archivingServer()
 		request := askForRecovery(server, from.Add(time.Hour))
 		expectRecoveryCluster(server)
 
+		recorded := reconciledServer(server).Status.Recovery.Archive
+		Expect(recorded).NotTo(BeNil())
+
+		storeKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		var store barmanobjectstore.ObjectStore
+		Expect(k8sClient.Get(ctx, storeKey, &store)).To(Succeed())
+		reading := store.Spec.Configuration.DestinationPath
+		rendered := archiveOnCluster(Default, server)
+
+		By("removing the archive while the rollback is unanswered")
 		setArchive(server, nil)
 
-		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		Expect(ready.Message).To(ContainSubstring("Put spec.archive back"))
+
+		// The rollback recovers out of this archive, so the removal reaches
+		// neither the archive it reads nor the record that holds the point it
+		// asked for, and nobody is answered that there is no archive.
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, storeKey, &store)).To(Succeed())
+			g.Expect(store.Spec.Configuration.DestinationPath).To(Equal(reading))
+			g.Expect(archiveOnCluster(g, server)).To(Equal(rendered))
+
+			archive := reconciledServer(server).Status.Archive
+			g.Expect(archive).NotTo(BeNil())
+			g.Expect(archive.History).To(HaveLen(1))
+			g.Expect(archive.History[0].To).To(BeNil())
+
+			g.Expect(publishedContract(server).Spec.PITR.LastRecovery).To(BeNil())
+		}, "2s", interval).Should(Succeed())
+
+		By("finishing the rollback the removal was held for")
+		recoverySucceeds(server)
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
 		Expect(outcome.RequestID).To(Equal(request.RequestID))
-		Expect(outcome.Message).To(ContainSubstring("writes no archive"))
+
+		By("applying the removal once the rollback is answered")
+		expectGone(storeKey, &barmanobjectstore.ObjectStore{})
+		Eventually(func(g Gomega) {
+			contract := publishedContract(server)
+			g.Expect(contract.Spec.PITR).NotTo(BeNil())
+			g.Expect(contract.Spec.PITR.Enabled).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("keeps building the cluster it recorded when the archive history moves", func() {
@@ -1018,17 +1135,25 @@ var _ = Describe("DatabaseServer recovery", func() {
 		recorded := reconciledServer(server).Status.Recovery.Archive
 		Expect(recorded).NotTo(BeNil())
 		Expect(recorded.ServerName).To(Equal("camunda"))
+		Expect(recorded.RetentionPeriodDays).To(BeEquivalentTo(30))
+		Expect(recorded.BaseBackupSchedule).To(Equal(components.DefaultBaseBackupSchedule))
 
-		By("pointing the archive at another bucket while the recovery runs")
+		rendered := archiveOnCluster(Default, server)
+
+		By("pointing the archive at another bucket, and shrinking it, while the recovery runs")
 		other := archiveBucket()
 		setArchive(server, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    other.Name,
-			RetentionPeriodDays: 30,
+			RetentionPeriodDays: 1,
+			BaseBackupSchedule:  "0 0 5 * * *",
 		})
 
 		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
 		Expect(ready.Message).To(ContainSubstring("Set spec.archive.objectStorageRef back"))
 
+		// A shrunk retention would become the retention policy of the bucket
+		// and prune the base backup the rollback starts from, so the hold
+		// keeps every setting of the archive and not the bucket alone.
 		var store barmanobjectstore.ObjectStore
 		Consistently(func(g Gomega) {
 			g.Expect(k8sClient.Get(
@@ -1036,10 +1161,50 @@ var _ = Describe("DatabaseServer recovery", func() {
 			)).To(Succeed())
 			g.Expect(store.Spec.Configuration.DestinationPath).
 				To(ContainSubstring(recorded.ObjectStorageRef))
+			g.Expect(archiveOnCluster(g, server)).To(Equal(rendered))
 		}, "2s", interval).Should(Succeed())
 
 		recoverySucceeds(server)
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
+	})
+
+	It("keeps the archive of a running recovery that a preset shrinks", func() {
+		server, preset, from := archivingServerOnPreset()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		recorded := reconciledServer(server).Status.Recovery.Archive
+		Expect(recorded).NotTo(BeNil())
+		Expect(recorded.RetentionPeriodDays).To(BeEquivalentTo(30))
+		Expect(recorded.BaseBackupSchedule).To(Equal(components.DefaultBaseBackupSchedule))
+
+		rendered := archiveOnCluster(Default, server)
+		Expect(rendered.retentionPolicy).To(Equal("30d"))
+
+		// The preset merge runs before the hold, so a baseline that shrinks
+		// the retention reaches the merged spec the same way an inline edit
+		// does, and the hold has to catch it there.
+		By("shrinking the retention of the baseline while the recovery runs")
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.Archive.RetentionPeriodDays = 1
+			p.Spec.Server.Archive.BaseBackupSchedule = "0 0 5 * * *"
+		})
+
+		Consistently(func(g Gomega) {
+			g.Expect(archiveOnCluster(g, server)).To(Equal(rendered))
+		}, "2s", interval).Should(Succeed())
+
+		By("letting the shrink through once the rollback is answered")
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		Eventually(func(g Gomega) {
+			var store barmanobjectstore.ObjectStore
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: server.Name}, &store,
+			)).To(Succeed())
+			g.Expect(store.Spec.RetentionPolicy).To(Equal("1d"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("keeps removing what an answered recovery replaced", func() {

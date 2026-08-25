@@ -93,9 +93,10 @@ type resolvedSpec struct {
 	// already down did not resolve. The reconcile then stops and leaves the
 	// conditions alone: see preCheck.
 	holdForSuspension bool
-	// holdForRecovery says that the spec moved the contract or the bucket that
-	// the running recovery depends on. The merged spec then keeps what the
-	// recovery recorded, and Ready reports why: see preCheck.
+	// holdForRecovery says that the spec moved the contract, or moved or
+	// removed the archive, that the running recovery depends on. The merged
+	// spec then keeps what the recovery recorded, and Ready reports why: see
+	// preCheck.
 	holdForRecovery *conditions.PreCheckFailure
 	// holdArchive says that the archive moved under a recovery that still
 	// reads it. The archive component then does not reconcile, so the
@@ -406,7 +407,7 @@ func (r *DatabaseServerReconciler) preCheck(
 		}
 	}
 
-	// Not a failure: the server keeps the contract and the bucket that the
+	// Not a failure: the server keeps the contract and the archive that the
 	// running recovery depends on, and it reports why. The recovery needs the
 	// contract republished to finish, so holding the components instead holds
 	// the recovery that the hold exists to protect.
@@ -414,10 +415,8 @@ func (r *DatabaseServerReconciler) preCheck(
 		running := server.Status.Recovery
 		resolved.holdForRecovery = hold
 		resolved.merged.DatabaseServerConfig = running.Contract
-		if running.Archive != nil && resolved.merged.Archive != nil {
-			block := *resolved.merged.Archive
-			block.ObjectStorageRef = running.Archive.ObjectStorageRef
-			resolved.merged.Archive = &block
+		if running.Archive != nil {
+			resolved.merged.Archive = heldArchive(running.Archive, resolved.merged.Archive)
 		}
 	}
 
@@ -512,10 +511,12 @@ func recoveryHoldsLocation(
 // depends on, or nil when it did not.
 //
 // A recovery is a question that one contract asked, answered out of one
-// bucket. Publishing another contract while it runs leaves the cluster that is
-// building with nobody to answer, and pointing the archive at another bucket
-// takes away the copy it reads. The server therefore keeps both of them until
-// the request is answered.
+// archive. Publishing another contract while it runs leaves the cluster that
+// is building with nobody to answer. Pointing spec.archive at another bucket
+// takes away the copy it reads, removing spec.archive takes the archive with
+// it, and a shorter retentionPeriodDays prunes the base backup it starts from.
+// The server keeps the contract and the whole archive block until the request
+// is answered.
 func recoveryHoldsSpec(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -537,8 +538,32 @@ func recoveryHoldsSpec(
 		}
 	}
 
-	if running.Archive != nil && merged.Archive != nil &&
-		running.Archive.ObjectStorageRef != merged.Archive.ObjectStorageRef {
+	if running.Archive == nil {
+		return nil
+	}
+
+	// A record that carries no retention was written before the settings were
+	// recorded, and nothing else holds them. Holding the removal against it
+	// would render "0d" on the ObjectStore and publish a retention the
+	// contract refuses, so the removal applies and the rollback is refused
+	// instead. That takes nothing out of the bucket.
+	if merged.Archive == nil && running.Archive.RetentionPeriodDays > 0 {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"A rollback that %s asked for is still running, and it reads the archive in "+
+					"ObjectStorageConfig %q. The archive cannot be removed until that rollback "+
+					"is answered. Put spec.archive back, or wait for the rollback to finish",
+				running.RequestedBy, running.Archive.ObjectStorageRef,
+			),
+		}
+	}
+
+	if merged.Archive == nil {
+		return nil
+	}
+
+	if running.Archive.ObjectStorageRef != merged.Archive.ObjectStorageRef {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonInvalidReference,
 			Message: fmt.Sprintf(
@@ -550,7 +575,55 @@ func recoveryHoldsSpec(
 		}
 	}
 
+	// heldArchive is the rule: whatever it puts back is what the spec moved.
+	// A preset carries these settings as readily as an inline block, and a
+	// shrunk retention reaches the merged spec either way.
+	if held := heldArchive(running.Archive, merged.Archive); *held != *merged.Archive {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"A rollback that %s asked for is still running, and it reads the archive of this "+
+					"server. A change to the retention or the schedule of the archive changes "+
+					"what it holds, so the archive keeps its settings until the rollback is "+
+					"answered. Set spec.archive back to retentionPeriodDays %d and "+
+					"baseBackupSchedule %q, or wait for the rollback to finish",
+				running.RequestedBy, held.RetentionPeriodDays, held.BaseBackupSchedule,
+			),
+		}
+	}
+
 	return nil
+}
+
+// heldArchive returns the archive block that a held spec renders: the bucket,
+// the retention, and the schedule that status.recovery recorded. Every one of
+// them comes from the record, so no edit of spec.archive reaches the archive a
+// rollback reads. It is also what decides that the spec moved one of them, so
+// the block the server renders and the edit it reports never disagree.
+//
+// A record written before the settings were recorded carries neither of them,
+// and the spec fills what it still has. A removal is not held against such a
+// record at all: see recoveryHoldsSpec.
+func heldArchive(
+	recorded *v1.RecoveryArchiveRef,
+	spec *v1.DatabaseServerArchiveSpec,
+) *v1.DatabaseServerArchiveSpec {
+	block := v1.DatabaseServerArchiveSpec{
+		ObjectStorageRef:    recorded.ObjectStorageRef,
+		RetentionPeriodDays: recorded.RetentionPeriodDays,
+		BaseBackupSchedule:  recorded.BaseBackupSchedule,
+	}
+
+	if spec != nil {
+		if block.RetentionPeriodDays < 1 {
+			block.RetentionPeriodDays = spec.RetentionPeriodDays
+		}
+		if block.BaseBackupSchedule == "" {
+			block.BaseBackupSchedule = spec.BaseBackupSchedule
+		}
+	}
+
+	return &block
 }
 
 // instancesAreDown reports whether CloudNativePG has taken the instances of the
