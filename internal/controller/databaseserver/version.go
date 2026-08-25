@@ -24,7 +24,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -32,38 +32,39 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// The message names both majors, orders the remedies, and closes the door on
-// an escape hatch. There is none: the epic defers the upgrade path, so a user
-// who forces the change gets an outage and an archive nothing can restore.
 const msgVersionChangeRefused = "the effective version %s is not the major version %d that the " +
 	"server runs. The operator does not change the major version of a running server. " +
-	"CloudNativePG stops every instance for an in-place upgrade of the data directory, no " +
-	"point-in-time restore reaches across a major, and the archive of a new major needs a " +
-	"directory of its own in the bucket. Set the version back to %d, on the server or on the " +
-	"preset it reads. To run PostgreSQL %s, create a DatabaseServer on that version and move " +
-	"the data to it. A supported upgrade path comes in a later release, and no annotation lets " +
-	"this change through before then"
+	"CloudNativePG stops every instance to upgrade the data directory in place. No " +
+	"point-in-time restore reaches across a major. The archive of a new major needs a directory " +
+	"of its own in the bucket. The server keeps running %d until the version names that major " +
+	"again, on the server or on the preset it reads. To run PostgreSQL %s, create a " +
+	"DatabaseServer on that version and move the data to it. A supported upgrade path comes in a " +
+	"later release, and no annotation lets this change through before then"
 
 // eventActionUpgrade is the action of the events that the controller records
 // about the PostgreSQL version of the server.
 const eventActionUpgrade = "Upgrade"
 
-// refuseMajorVersionChange returns the refusal for a merged version whose
-// major is not the one the applied CloudNativePG cluster runs, or nil when the
-// two agree. The caller applies nothing on a refusal, so the cluster keeps its
-// image.
+// keepRunningVersion pins merged.Version to the PostgreSQL major that the data
+// directory of the server runs, when merged names another one, and returns the
+// refusal that Ready reports for it. It returns nil when the two agree.
 //
-// A server with no applied cluster, and one whose cluster has not reported the
-// major of its data directory, are both still bootstrapping and are never
-// refused.
-func (r *DatabaseServerReconciler) refuseMajorVersionChange(
+// The server keeps running rather than stopping. Everything the reconcile
+// renders takes the pinned version, so a rollback in flight finishes on the
+// major it started from, and the contract, the archive, and the monitoring
+// stay maintained while the refusal stands.
+//
+// The applied cluster is read live. A cached copy that predates the major
+// CloudNativePG reported lets the change through once, and once is all
+// CloudNativePG needs to start the upgrade.
+func (r *DatabaseServerReconciler) keepRunningVersion(
 	ctx context.Context,
 	server *v1.DatabaseServer,
-	merged v1.DatabaseServerSpec,
+	merged *v1.DatabaseServerSpec,
 ) (*conditions.PreCheckFailure, error) {
 	var cluster cnpgv1.Cluster
 	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
-	if err := r.Get(ctx, key, &cluster); err != nil {
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
@@ -71,13 +72,25 @@ func (r *DatabaseServerReconciler) refuseMajorVersionChange(
 		return nil, fmt.Errorf("reading the applied cluster %s: %w", key, err)
 	}
 
-	return refusedMajorChange(merged.Version, cluster.Status.PGDataImageInfo), nil
+	running := cluster.Status.PGDataImageInfo
+	refused := refusedMajorChange(merged.Version, running)
+	if refused == nil {
+		return nil, nil
+	}
+
+	merged.Version = strconv.Itoa(running.MajorVersion)
+
+	return refused, nil
 }
 
 // refusedMajorChange compares version with the major that running reports for
 // the data directory of the server. It refuses a change in either direction: a
 // lower major is not an upgrade at all, and CloudNativePG has no path back.
-// A version that does not parse is already reported by ValidateMerged.
+//
+// A nil running means CloudNativePG has not written the data directory yet, so
+// the server is still bootstrapping and is never refused. Every CloudNativePG
+// release this operator supports reports the field: it arrived in 1.26, which
+// is the floor that the installation docs name.
 func refusedMajorChange(version string, running *cnpgv1.ImageInfo) *conditions.PreCheckFailure {
 	if running == nil || running.MajorVersion == 0 {
 		return nil
@@ -97,22 +110,17 @@ func refusedMajorChange(version string, running *cnpgv1.ImageInfo) *conditions.P
 	}
 }
 
-// recordRefusedVersionChange records the Warning event for refused, unless the
-// server already reports that refusal on Ready.
-//
-// The Ready condition answers this on its own. Every reconcile reads the
-// server live rather than from the cache, so the condition it carries is what
-// the last reconcile wrote. A memo of the recorded refusals, which the
-// CamundaCluster downgrade guard keeps because it reads its cluster from the
-// cache, would answer the same question from a second source.
+// recordRefusedVersionChange records the Warning event for refused, unless
+// standing already reports it. standing is the Ready condition as the last
+// reconcile left it, because this one stages over it before the event is
+// recorded.
 func (r *DatabaseServerReconciler) recordRefusedVersionChange(
 	server *v1.DatabaseServer,
+	standing *metav1.Condition,
 	refused *conditions.PreCheckFailure,
 ) {
-	ready := meta.FindStatusCondition(server.Status.Conditions, v1.ConditionReady)
-	stands := ready != nil && ready.Reason == refused.Reason &&
-		ready.Message == conditions.BoundMessage(refused.Message)
-	if stands {
+	if standing != nil && standing.Reason == refused.Reason &&
+		standing.Message == conditions.BoundMessage(refused.Message) {
 		return
 	}
 

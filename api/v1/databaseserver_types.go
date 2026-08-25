@@ -123,10 +123,9 @@ type DatabaseServerSpec struct {
 	//
 	// The major of a running server cannot change. A value that names another
 	// major, higher or lower, is refused on the Ready condition with reason
-	// VersionChangeRefused, and the operator applies nothing while the
-	// refusal stands. A preset can raise it the same way and is refused the
-	// same way. To run another major, create a server on it and move the data
-	// over.
+	// VersionChangeRefused, and the server keeps running the major it has. A
+	// preset can raise it the same way and is refused the same way. To run
+	// another major, create a server on it and move the data over.
 	// +kubebuilder:validation:Pattern=`^\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -233,9 +232,10 @@ const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
 
 // ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
 // merged version names a PostgreSQL major other than the one its data
-// directory runs. The operator applies nothing while the refusal stands, so
-// the server keeps the major it has. A major change needs a new server, and
-// there is no annotation that lets it through.
+// directory runs. The server keeps running the major it has: everything the
+// operator renders takes that major, so a rollback in flight finishes and the
+// contract and the archive stay maintained. A major change needs a new server,
+// and there is no annotation that lets it through.
 const ReasonVersionChangeRefused = "VersionChangeRefused"
 
 // ArchiveRecord is one continuous archive that a server has written. A

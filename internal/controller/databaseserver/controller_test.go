@@ -166,24 +166,29 @@ func makeClusterHealthy(server *v1.DatabaseServer, systemID string) {
 	cluster.Status.Phase = cnpgv1.PhaseHealthy
 	cluster.Status.ReadyInstances = cluster.Spec.Instances
 	cluster.Status.SystemID = systemID
+	major := imageMajorVersion(cluster.Spec.ImageName)
+	Expect(major).To(BeNumerically(">", 0), cluster.Spec.ImageName)
 	cluster.Status.PGDataImageInfo = &cnpgv1.ImageInfo{
-		Image:        cluster.Spec.ImageName,
-		MajorVersion: imageMajorVersion(cluster.Spec.ImageName),
+		Image: cluster.Spec.ImageName, MajorVersion: major,
 	}
 	Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
 }
 
 // imageMajorVersion reads the PostgreSQL major off the tag of a CloudNativePG
 // image, which is what the operator reports for the data directory the
-// instances run on.
+// instances run on. It returns 0 for an image with no numeric tag, which is
+// what a cluster a spec wrote by hand carries. The tag starts after the last
+// colon, so a registry that names a port keeps its port.
 func imageMajorVersion(image string) int {
-	GinkgoHelper()
+	colon := strings.LastIndex(image, ":")
+	if colon < 0 {
+		return 0
+	}
 
-	_, tag, found := strings.Cut(image, ":")
-	Expect(found).To(BeTrue(), image)
-
-	major, err := strconv.Atoi(tag)
-	Expect(err).NotTo(HaveOccurred(), image)
+	major, err := strconv.Atoi(image[colon+1:])
+	if err != nil {
+		return 0
+	}
 
 	return major
 }
@@ -270,6 +275,18 @@ func hibernate(server *v1.DatabaseServer) {
 			Message: "Cluster hibernated",
 		})
 		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// setVersion puts version on the latest revision of the server.
+func setVersion(server *v1.DatabaseServer, version string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.Version = version
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -1100,6 +1117,47 @@ var _ = Describe("DatabaseServer controller", func() {
 			HaveField("InvolvedObject.Name", server.Name),
 			HaveField("Type", corev1.EventTypeWarning),
 		)))
+	})
+
+	// A refusal must not stop the server. A rollback in flight has to finish on
+	// the major the archive holds, and whoever asked for it waits on the
+	// contract for the answer.
+	It("finishes a rollback in flight while the version refusal stands", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		setVersion(server, "18")
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		recovered := recoveryCluster(server)
+		recoverySucceeds(server)
+
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		// The contract moved to the recovered server, and the refusal still
+		// stands over it.
+		Expect(publishedContract(server).Spec.Host).
+			To(Equal(recovered + "-rw." + server.Namespace + ".svc"))
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		// Both clusters keep the major the archive holds. A rollback onto
+		// another major reads nothing.
+		key := client.ObjectKey{Namespace: server.Namespace, Name: recovered}
+		Consistently(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+		}, 2*time.Second, interval).Should(Succeed())
 	})
 
 	It("reports InvalidReference for a bucket that does not exist", func() {

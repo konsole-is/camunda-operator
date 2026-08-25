@@ -221,7 +221,7 @@ spec:
 
 `spec.version` is a bare PostgreSQL major, such as `17`. It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and later.
 
-The major of a running server cannot change. A `spec.version` that names another major, higher or lower, is refused. `Ready` goes `False` with reason `VersionChangeRefused`, the server records a Warning event of the same name, and the operator applies nothing. The instances keep the major they run on.
+The major of a running server cannot change. A `spec.version` that names another major, higher or lower, is refused. `Ready` goes `False` with reason `VersionChangeRefused`, and the server records a Warning event of the same name. The server keeps running the major it has. Everything else about it stays maintained, so a rollback in flight finishes and the contract and the archive keep working.
 
 ```yaml
 apiVersion: core.camunda.io/v1

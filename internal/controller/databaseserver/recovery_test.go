@@ -222,6 +222,13 @@ func setRecoveryClusterPhase(server *v1.DatabaseServer, name, phase, systemID st
 		cluster.Status.Phase = phase
 		cluster.Status.ReadyInstances = cluster.Spec.Instances
 		cluster.Status.SystemID = systemID
+		// A cluster that a spec wrote by hand carries no image of ours, and
+		// CloudNativePG reports the major of a data directory it wrote.
+		if major := imageMajorVersion(cluster.Spec.ImageName); major > 0 {
+			cluster.Status.PGDataImageInfo = &cnpgv1.ImageInfo{
+				Image: cluster.Spec.ImageName, MajorVersion: major,
+			}
+		}
 		g.Expect(k8sClient.Status().Update(ctx, &cluster)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
 }

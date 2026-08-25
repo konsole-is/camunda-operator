@@ -874,10 +874,9 @@ spec:
 
                   The major of a running server cannot change. A value that names another
                   major, higher or lower, is refused on the Ready condition with reason
-                  VersionChangeRefused, and the operator applies nothing while the
-                  refusal stands. A preset can raise it the same way and is refused the
-                  same way. To run another major, create a server on it and move the data
-                  over.
+                  VersionChangeRefused, and the server keeps running the major it has. A
+                  preset can raise it the same way and is refused the same way. To run
+                  another major, create a server on it and move the data over.
                 pattern: ^\d+$
                 type: string
               walStorageSize:

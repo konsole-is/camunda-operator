@@ -620,9 +620,12 @@ be proved:
   implies.
 - Major version upgrades of PostgreSQL are the user's operation. A `spec.version` whose major is
   not the one `status.pgDataImageInfo.majorVersion` reports on the applied cluster is refused, in
-  either direction, until a later epic defines the path. The controller stages `Ready=False` with
-  reason `VersionChangeRefused`, records one Warning event of that name, and applies nothing that
-  reconcile, so the cluster keeps its image. There is no annotation escape hatch: CloudNativePG
+  either direction, until a later epic defines the path. The controller pins `merged.Version` to
+  the running major, the way `keepAppliedStorageSize` pins the volume sizes, and stages
+  `Ready=False` with reason `VersionChangeRefused` in place of the aggregate, plus one Warning
+  event of that name. Everything else reconciles on the pinned version, so a recovery in flight
+  finishes and the contract and the archive stay maintained. There is no annotation escape hatch:
+  CloudNativePG
   performs an offline in-place `pg_upgrade`, PITR does not cross a major, and the Barman plugin
   needs a new `serverName` per major, which the operator does not give it.
 - CloudNativePG serves its own `Database` kind in `postgresql.cnpg.io`. The docs name the group

@@ -206,6 +206,10 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		server.Status.Cluster = server.Name
 	}
 
+	// Ready as the last reconcile left it. This one stages over it further
+	// down, and the version refusal needs to know whether it already stood.
+	standingReady := meta.FindStatusCondition(server.Status.Conditions, v1.ConditionReady).DeepCopy()
+
 	resolved, err := r.preCheck(ctx, &server)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
@@ -216,16 +220,13 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// Before anything renders. A refused major change applies nothing, so the
-	// cluster keeps the image it runs and the data directory is left alone.
-	refused, err := r.refuseMajorVersionChange(ctx, &server, resolved.merged)
+	// Before anything renders, and before the recovery below builds from the
+	// merged spec. A refused major change is not a stop: the merged spec keeps
+	// the major the data directory runs, everything below reconciles on it,
+	// and Ready reports the refusal further down.
+	refusedVersion, err := r.keepRunningVersion(ctx, &server, &resolved.merged)
 	if err != nil {
 		return ctrl.Result{}, err
-	}
-	if refused != nil {
-		r.recordRefusedVersionChange(&server, refused)
-		conditions.Stage(&server, conditions.Failed(&server, refused))
-		return ctrl.Result{}, nil
 	}
 
 	// Read once and used twice: the clamp below, and status.Volumes further
@@ -279,8 +280,14 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	conditions.Stage(&server, conditions.Aggregate(&server, built.ready...))
 
-	// The hold is the reason the reader acts on, so it wins over whatever the
-	// components report while the recovery finishes.
+	// A refusal and a hold are the reasons the reader acts on, so each wins
+	// over whatever the components report. The hold goes last: a rollback that
+	// nobody answers holds whoever asked for good, while a refused version
+	// leaves a server that runs.
+	if refusedVersion != nil {
+		r.recordRefusedVersionChange(&server, standingReady, refusedVersion)
+		conditions.Stage(&server, conditions.Failed(&server, refusedVersion))
+	}
 	if resolved.holdForRecovery != nil {
 		conditions.Stage(&server, conditions.Failed(&server, resolved.holdForRecovery))
 	}
