@@ -232,7 +232,7 @@ holds is refused with `PitrUnavailable`. Old archives stay in the bucket; the do
 prunes them.
 
 `location`, the canonical location of the bucket contract narrowed to the prefix of the server
-(`ObjectStorageConfig.LocationOf`), is what makes an interval readable; `objectStorageRef` names it
+(`ObjectStorageConfig.LocationOf`), is what makes an interval readable. `objectStorageRef` names it
 for the reader. It is the canonical location rather than the URL the plugin is given, because the
 endpoint and the region select the service that answers and neither reaches that URL. A record
 written before the field carries only the contract, and it is adopted into the current location only
@@ -247,11 +247,12 @@ closes and that boundary, and a reconcile that finds a move reads no backups at 
 began before the move. The clock for the move is read after `reconcileComponents` returns, so a
 backup that started while the old `ObjectStore` still stood is behind the boundary. That window is
 one apply wide and status timestamps carry whole seconds, so no envtest can place a backup inside
-it; the unit test pins that the instant is used as given. One `archiveBoundary(server, merged, now)` decides
-that moment, and the guard on the archive component and the history both read it, from one `now`
-per reconcile. A boundary taken from the recorded closes alone is not yet moved on the reconcile
-that applies the bucket change, and a base backup of the bucket the server leaves then reports the
-new archive ready in the same status write that closes the record.
+it. The unit test pins that the instant is used as given.
+
+`archiveMoved(server, ref, location)` is the one comparison, and the guard on the archive component
+and the history both read it. A move that the reconcile does not see at all leaves the guard reading
+backups against the recorded closes, and a base backup of the location the server leaves then
+reports the new archive ready in the same status write that closes the record.
 
 A backup is placed against that boundary by `status.startedAt`, never by `status.stoppedAt`: one
 that was already running when the interval closed keeps the destination the plugin gave it, so its
@@ -673,8 +674,8 @@ be proved:
   `recoveredClusterOf`: a rollback whose status write was lost leaves `status.cluster` on the
   cluster the rollback removed, and a guard that read that as a server with no cluster lets the new
   major reach the recovered one. Every owned contract is read, not the one the spec names, because
-  a rename that lands before the repair leaves that name unpublished; the contract a rollback
-  answers on is preferred, since it names the cluster the rollback moved to. The guard does not fail open on an
+  a rename that lands before the repair leaves that name unpublished. The contract a rollback
+  answers on is read first, because it names the cluster the rollback moved to. The guard does not fail open on an
   old CloudNativePG: `status.pgDataImageInfo` arrived in the api module at `v1.26.0` and is absent
   at `v1.25.1`, and 1.26 is the floor `docs/installation.md` names, so an absent field means only
   that the data directory is not written yet. There is no annotation escape hatch:
