@@ -216,8 +216,8 @@ var _ = Describe("DatabaseServer schema", func() {
 			}, "",
 		),
 		// CloudNativePG reads the first field as seconds, so the five-field
-		// cron of a Kubernetes CronJob runs at another time than the one who
-		// wrote it reads.
+		// cron of a Kubernetes CronJob runs at a different time from the one
+		// its author meant.
 		Entry(
 			"rejects a five-field baseBackupSchedule",
 			realisticDatabaseServer, func(o *v1.DatabaseServer) {
