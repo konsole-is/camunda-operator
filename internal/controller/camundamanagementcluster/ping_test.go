@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -88,6 +89,78 @@ var _ = Describe("Console and the ping of the clusters it lists", func() {
 			g.Expect(components.PingsConsole(latest.Spec.ExtraEnv, components.ConsoleServiceURL(s.mc))).
 				To(BeTrue())
 		}, "3s", interval).Should(Succeed())
+	})
+
+	// The merge inside one entry is per field, so the value of the operator
+	// would land next to the valueFrom of the person, and the API server
+	// refuses an entry that carries both. The operator owns the four names, so
+	// the entry goes before the apply and the ping of the operator takes its
+	// place.
+	It("replaces a ping entry that a person set with valueFrom", func() {
+		s := newScenario(withSelector(map[string]string{}), withConsole)
+		cluster := createOrchestrationCluster(s, nil, true, corev1.EnvVar{
+			Name: "CAMUNDA_CONSOLE_PING_ENDPOINT",
+			ValueFrom: &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "console-of-the-user"},
+					Key:                  "endpoint",
+				},
+			},
+		})
+
+		expectAttached(s.mc, cluster)
+
+		Eventually(func(g Gomega) {
+			g.Expect(pingOf(g, cluster)).To(Equal(map[string]string{
+				"CAMUNDA_CONSOLE_PING_ENABLED":     "true",
+				"CAMUNDA_CONSOLE_PING_ENDPOINT":    components.ConsoleServiceURL(s.mc),
+				"CAMUNDA_CONSOLE_PING_CLUSTERNAME": cluster.Name,
+				"CAMUNDA_CONSOLE_PING_PINGPERIOD":  "1h",
+			}))
+			expectUserEnvKept(g, cluster)
+		}, timeout, interval).Should(Succeed())
+
+		// The removal runs once. A second one would say that the apply keeps
+		// failing, which is the reconcile loop this replaces.
+		Consistently(func(g Gomega) {
+			g.Expect(entryOf(g, cluster, "CAMUNDA_CONSOLE_PING_ENDPOINT").ValueFrom).To(BeNil())
+			g.Expect(rowOf(g, s.mc, cluster).Attached).To(BeTrue())
+		}, "3s", interval).Should(Succeed())
+	})
+
+	// The entry is gone once the management plane replaces it, so the event
+	// is the only place that says what it held and who wrote it.
+	It("names the entry and the field manager of a ping entry it removed", func() {
+		s := newScenario()
+		cluster := createOrchestrationCluster(s, nil, true)
+		applyEnvAs("a-person", cluster, corev1.EnvVar{
+			Name: "CAMUNDA_CONSOLE_PING_CLUSTERNAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		})
+
+		recorder := events.NewFakeRecorder(4)
+		r := &Reconciler{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        k8sClient.Scheme(),
+			EventRecorder: recorder,
+		}
+		latest := readOrchestrationCluster(Default, cluster)
+
+		Expect(r.removePingCollisions(ctx, s.mc, latest, clusterVersion(latest))).To(Succeed())
+
+		Expect(readOrchestrationCluster(Default, cluster).Spec.ExtraEnv).To(ConsistOf(userEnv))
+		Expect(recorder.Events).To(Receive(And(
+			ContainSubstring("CAMUNDA_CONSOLE_PING_CLUSTERNAME"),
+			ContainSubstring(`"a-person"`),
+		)))
+
+		// A cluster that carries no colliding entry is left alone, so the
+		// next reconcile removes nothing and reports nothing.
+		Expect(r.removePingCollisions(ctx, s.mc, readOrchestrationCluster(Default, cluster), "8.9.9")).To(Succeed())
+		Expect(recorder.Events).NotTo(Receive())
 	})
 
 	// Camunda 8.10 renamed Console to Hub and the ping settings with it, so a
@@ -229,6 +302,38 @@ func pingOf(g Gomega, cluster *v1.CamundaCluster) map[string]string {
 	}
 
 	return ping
+}
+
+// applyEnvAs adds one entry to spec.extraEnv of an orchestration cluster
+// under the field manager manager, the way a person or another controller
+// applies an entry of its own.
+func applyEnvAs(manager string, cluster *v1.CamundaCluster, env corev1.EnvVar) {
+	GinkgoHelper()
+
+	patch := &v1.CamundaCluster{
+		TypeMeta: metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaCluster"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+		},
+		Spec: v1.CamundaClusterSpec{ExtraEnv: []corev1.EnvVar{env}},
+	}
+
+	//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
+	Expect(k8sClient.Patch(ctx, patch, client.Apply, client.FieldOwner(manager))).To(Succeed())
+}
+
+// entryOf returns the spec.extraEnv entry of one orchestration cluster, by
+// name.
+func entryOf(g Gomega, cluster *v1.CamundaCluster, name string) corev1.EnvVar {
+	for _, e := range readOrchestrationCluster(g, cluster).Spec.ExtraEnv {
+		if e.Name == name {
+			return e
+		}
+	}
+	g.Expect(false).To(BeTrue(), "no spec.extraEnv entry %q on %s", name, cluster.Name)
+
+	return corev1.EnvVar{}
 }
 
 // unavailableClient returns a client that answers every apply with a service

@@ -1052,9 +1052,14 @@ spec:
                       claimName:
                         description: |-
                           ClaimName is the token claim that identifies the administrator, for
-                          example oid or sub. Set it in the oidc mode.
+                          example oid or sub. Set it in the oidc mode. The operator records the
+                          claim as <claimName>=<claimValue> and reads it back at the first equals
+                          sign, so the name holds no equals sign.
                         minLength: 1
                         type: string
+                        x-kubernetes-validations:
+                        - message: claimName must not hold an equals sign
+                          rule: '!self.contains(''='')'
                       claimValue:
                         description: |-
                           ClaimValue is the value that the claim carries for the administrator.
@@ -1064,8 +1069,8 @@ spec:
                       email:
                         description: |-
                           Email is the email address of the first Keycloak user. Web Modeler
-                          needs an address for every person who signs in, so set it when you
-                          deploy Web Modeler in a Keycloak mode.
+                          needs an address for every person who signs in, so it is required when
+                          webModeler is set in a Keycloak mode.
                         minLength: 3
                         type: string
                       passwordSecretRef:
@@ -2085,19 +2090,31 @@ spec:
                       realm:
                         description: |-
                           Realm is the realm that Management Identity uses and creates. Empty
-                          means camunda-platform.
+                          means camunda-platform. The realm lands in the issuer, the token, and
+                          the JWKS path of every URL that Management Identity builds, so it holds
+                          letters, digits, dots, hyphens, and underscores only.
                         type: string
+                        x-kubernetes-validations:
+                        - message: realm must hold letters, digits, dots, hyphens,
+                            and underscores, and start and end with a letter or a
+                            digit
+                          rule: self == '' || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')
                       url:
                         description: |-
                           URL is the URL of Keycloak, including the /auth path when it has one.
                           Management Identity reaches this URL, so it must resolve from inside
                           the Kubernetes cluster.
+
+                          The operator appends /realms/<realm> to this URL, so the URL carries no
+                          query and no fragment.
                         type: string
                         x-kubernetes-validations:
                         - message: url must be a valid http or https URL
                           rule: isURL(self) && (url(self).getScheme() == 'http' ||
                             url(self).getScheme() == 'https') && url(self).getHostname()
                             != ''
+                        - message: url must carry no query and no fragment
+                          rule: '!self.contains(''?'') && !self.contains(''#'')'
                     required:
                     - adminCredentialsSecretRef
                     - url
@@ -2121,6 +2138,9 @@ spec:
                           Identity uses the front-channel URL since 8.5.3, so the Identity pods
                           must also reach it. Management Identity administers Keycloak through
                           the Service that the Keycloak Operator creates, not through this URL.
+
+                          The operator appends /realms/<realm> to this URL, so the URL carries no
+                          query and no fragment.
                         type: string
                         x-kubernetes-validations:
                         - message: externalUrl must be a valid http or https URL
@@ -2130,6 +2150,8 @@ spec:
                         - message: externalUrl must carry the /auth path, for example
                             https://keycloak.example.com/auth
                           rule: '!isURL(self) || url(self).getEscapedPath() == ''/auth'''
+                        - message: externalUrl must carry no query and no fragment
+                          rule: '!self.contains(''?'') && !self.contains(''#'')'
                       replicas:
                         description: Replicas is the number of Keycloak instances.
                           Defaults to 1.
@@ -4881,6 +4903,9 @@ spec:
                 creates the Optimize client; in the oidc mode the platform config
                 declares it
               rule: has(self.identityProvider.oidc) != has(self.optimize)
+            - message: identity.admin.email is required when webModeler is set in
+                a keycloak mode
+              rule: '!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)'
           status:
             description: status defines the observed state of CamundaManagementCluster
             properties:
@@ -4912,8 +4937,9 @@ spec:
                         of five values. Four of them say why the cluster is not attached:
                         ClaimedElsewhere, another management plane holds it; NotReady, it
                         publishes no gateway endpoints or it changed while the operator claimed
-                        it; InvalidReference, its platform config cannot be read;
-                        WriteFailed, the Console ping settings were refused. The fifth,
+                        it; InvalidReference, its platform config cannot be read, or the cluster
+                        authenticates with OIDC and names another issuer than the management
+                        plane; WriteFailed, the Console ping settings were refused. The fifth,
                         BasicAuthUserFailed, accompanies an attached row: the management plane
                         serves the cluster, and only the Web Modeler user on it is missing.
                       type: string

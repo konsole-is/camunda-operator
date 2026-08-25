@@ -28,6 +28,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -60,7 +61,8 @@ type CamundaClusterReconciler struct {
 	// and an informer copy that lags that write makes the next status write
 	// conflict. FlushStatus resolves such a conflict from the server for
 	// every condition type it does not own, Ready among them, so a staged
-	// pre-check failure is dropped and reported again on the reconcile after.
+	// pre-check failure is dropped. The refusal memo keeps the Warning from
+	// repeating either way; the live read keeps the condition from dropping.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// EventRecorder publishes the component lifecycle events and the events of
@@ -84,6 +86,11 @@ type CamundaClusterReconciler struct {
 	// during a password rotation. Nil means components.RESTEndpoint; tests
 	// point it at a fake.
 	RESTEndpoint func(cluster *v1.CamundaCluster, e components.Effective) string
+
+	// refusals remembers the downgrade refusal that the controller recorded
+	// for each cluster, so it records the Warning once and not once per
+	// reconcile.
+	refusals refusalMemo
 }
 
 // concurrentReconciles bounds the parallel reconciles. A rotation and an
@@ -157,7 +164,13 @@ func (r *CamundaClusterReconciler) retryInterval() time.Duration {
 func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cluster); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			r.refusals.forget(req.NamespacedName)
+
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	if cluster.Spec.Pause {
@@ -238,6 +251,12 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		return ctrl.Result{}, nil
 	}
+	// Only a reconcile that reached the check and found no downgrade drops
+	// the cluster out of the memo, so a refusal that comes back is recorded
+	// again. An earlier return leaves the memo as it is: the refusal may
+	// still stand, and the staged Ready condition cannot tell, because a
+	// flush that conflicts drops it.
+	r.refusals.forget(req.NamespacedName)
 
 	in.VolumeClaimSize = storage.volumeClaimSize()
 

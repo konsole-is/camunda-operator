@@ -158,3 +158,42 @@ func TestUpdateUserProfileKeepsThePassword(t *testing.T) {
 	assert.Equal(t, "team@example.com", email)
 	assert.Equal(t, currentPassword, server.Password("admin"), "a profile update never touches the password")
 }
+
+func TestGetUserReturnsTheProfileTheClusterHolds(t *testing.T) {
+	t.Parallel()
+
+	api, client := newAdminClient(t)
+	api.SetUser("web-modeler", "Web Modeler", "web-modeler@example.com", "secret")
+
+	found, exists, err := client.GetUser(context.Background(), "web-modeler")
+
+	require.NoError(t, err)
+	require.True(t, exists)
+	assert.Equal(
+		t, camundaadmin.User{
+			Username: "web-modeler", Name: "Web Modeler", Email: "web-modeler@example.com",
+		}, found,
+	)
+}
+
+func TestGetUserReportsAUserThatTheClusterDoesNotHold(t *testing.T) {
+	t.Parallel()
+
+	_, client := newAdminClient(t)
+
+	_, exists, err := client.GetUser(context.Background(), "web-modeler")
+
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+func TestGetUserReportsARefusedCall(t *testing.T) {
+	t.Parallel()
+
+	api, client := newAdminClient(t)
+	api.FailNext("getUser", 1)
+
+	_, _, err := client.GetUser(context.Background(), "web-modeler")
+
+	require.ErrorIs(t, err, camundaadmin.ErrRejected)
+}

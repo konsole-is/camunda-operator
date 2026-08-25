@@ -88,7 +88,7 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`externalUrl` is the address a browser reaches Keycloak at, and it must carry the `/auth` path. Camunda publishes its Keycloak build under that path, and every token that the realm issues names this URL as its issuer. The Identity pods must reach it too.
+`externalUrl` is the address a browser reaches Keycloak at, and it must carry the `/auth` path. Camunda publishes its Keycloak build under that path, and every token that the realm issues names this URL as its issuer. The Identity pods must reach it too. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment.
 
 `version` is the Keycloak version. The operator supports `26.0.0` and later, and below `27.0.0`. Camunda 8.9 supports Keycloak 26 only, as its [supported environments](https://docs.camunda.io/docs/reference/supported-environments/) page states.
 
@@ -125,7 +125,9 @@ spec:
   # ... the rest of your management cluster
 ```
 
-`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. `realm` defaults to `camunda-platform`.
+`url` serves browsers and containers alike, so it must resolve from inside the Kubernetes cluster. If your Keycloak serves under the `/auth` path, include that path. The operator appends `/realms/<realm>` to this URL, so it must carry no query and no fragment.
+
+`realm` defaults to `camunda-platform`. The realm lands in the issuer, the token, and the JWKS path that Management Identity builds. It holds letters, digits, dots, hyphens, and underscores only, and it starts and ends with a letter or a digit.
 
 `adminCredentialsSecretRef` names the Keycloak administrator that Management Identity bootstraps the realm with. The Secret can live in any namespace. A pod reads a Secret of its own namespace only, so the operator copies it into the namespace of this resource.
 
@@ -208,11 +210,11 @@ Management Identity needs a PostgreSQL database of its own. Each component that 
 
 `spec.identity.admin` names the person who signs in first and grants the rest. Management Identity reads it on its first start only and stores the result in its database.
 
-In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you deploy Web Modeler, set `email` too, because Web Modeler needs an address for every person who signs in. `passwordSecretRef` names a password of your own. Without it the operator generates one into `my-management-identity-admin`.
+In the two Keycloak modes, set `username`. Management Identity creates that Keycloak user. If you also set `spec.webModeler`, `email` is required. Web Modeler needs an address for every person who signs in, and the API server refuses the resource without one. `passwordSecretRef` names a password of your own. Without it the operator generates one into `my-management-identity-admin`.
 
 A later change to `username` does not rename the first user. Management Identity creates a second one, and the first one keeps its access.
 
-In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. This pair is fixed once Management Identity has started. A later change reports `IdentityReady` and `Ready` with reason `ImmutableAfterStart`, and the message names the recorded value and the value you asked for:
+In the `oidc` mode, set `claimName` and `claimValue` instead. They name the token claim that identifies the administrator, for example `oid` or `sub`. The operator records the pair as `<claimName>=<claimValue>`, so `claimName` holds no equals sign. This pair is fixed once Management Identity has started. A later change reports `IdentityReady` and `Ready` with reason `ImmutableAfterStart`, and the message names the recorded value and the value you asked for:
 
 ```yaml
 status:
@@ -231,14 +233,14 @@ There are two ways out, and the operator cannot do either for you.
 
 The recorded administrator is a real person. Put the recorded value back on `spec.identity.admin`. Sign in as that person, and grant the rest in the Management Identity user interface.
 
-Nobody holds the recorded claim, so nobody can sign in. The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim` on this resource, and renders that recorded value from then on. Remove the annotation:
+Nobody holds the recorded claim, so nobody can sign in. The operator records the claim that Management Identity started with in the annotation `camunda.io/identity-initial-claim` on this resource, and renders that recorded value from then on. Put the claim you want on the annotation:
 
 ```bash
-kubectl annotate camundamanagementcluster my-management -n my-management-ns \
-  camunda.io/identity-initial-claim-
+kubectl annotate --overwrite camundamanagementcluster my-management -n my-management-ns \
+  camunda.io/identity-initial-claim=oid=41ab...77
 ```
 
-The claim of the spec then reaches Management Identity again. Management Identity itself reads that claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
+The operator renders what the annotation records, so that claim reaches Management Identity on its next start. Set the annotation to the pair that `spec.identity.admin` names, and both conditions clear. Management Identity itself reads the claim on its first start only, so the administrator in its own database has to change as well. Camunda names the values in [OIDC configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/miscellaneous/configuration-variables/#oidc-configuration).
 
 An empty database does the same. Point `spec.identity.databaseConfigRef` at one, and Management Identity starts over. It then loses the roles and the tenants it held. Your identity provider keeps every user and client, because they never lived in that database.
 
@@ -284,7 +286,7 @@ spec:
 
 The endpoint is the Console Service, reached from inside the Kubernetes cluster. Console therefore needs no Ingress for a cluster to report to it. Camunda documents what the entries mean in [Console ping configuration](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/configuration/broker-config/#console-ping-configuration).
 
-The operator owns these four names and replaces a value you set under them. It removes them again when the cluster leaves `spec.clusterSelector`, when you remove `spec.console`, or when you delete this resource. See [Management plane](camundacluster.md#management-plane) on the cluster page.
+The operator owns these four names and replaces what you set under them. An entry that sets `valueFrom` under one of them cannot hold the operator's `value` too. The operator removes that entry and records the Warning event `ConsolePingEntryRemoved`. The event names every field manager that owns the `valueFrom` of the entry, when `metadata.managedFields` holds one. It removes the four entries again when the cluster leaves `spec.clusterSelector`, when you remove `spec.console`, or when you delete this resource. See [Management plane](camundacluster.md#management-plane) on the cluster page.
 
 Camunda 8.10 renamed Console to Hub and the ping settings with it, and it expects machine-to-machine credentials under the ping. The [8.10 chart README](https://github.com/camunda/camunda-platform-helm/blob/main/charts/camunda-platform-8.10/README.md) lists those settings. A cluster of version 8.10 or later gets the four `CAMUNDA_HUB_PING_*` names instead. The management plane issues no credentials yet, so such a cluster logs a validation error and reports to nobody.
 
@@ -348,9 +350,30 @@ kubectl get secret -n my-management-ns \
 
 Drop the two cluster labels from the selector to list every cluster's Secret.
 
-Every value is base64 encoded. The key `applied` next to the password means that the cluster holds the user under that password. A Secret without it is a password that never reached the cluster.
+Every value is base64 encoded. The key `applied` next to the password means that the cluster took the user under that password. A Secret without it is a password that never reached the cluster.
 
 A cluster that refuses the call keeps its row in `status.clusters` with the reason `BasicAuthUserFailed`. The management plane still serves the cluster, and Web Modeler still lists it. Only the user is missing.
+
+### Repair of the cluster user
+
+The operator reads every attached basic-auth cluster again and repairs the user there. It repairs two things:
+
+- A user that somebody removed on the cluster. It comes back with the password that the Secret publishes.
+- A permission that somebody revoked. The operator grants only the permissions that are missing, so it does not add a second row of a permission the user already holds.
+
+The operator does not repair these:
+
+- A password that somebody changed on the cluster. No API gives a password back, so the operator cannot see the change. Delete the Secret to publish a new password and set it on the cluster.
+- The name and the email address of the user. They are yours to change.
+- A `web-modeler` user on a cluster that this management plane does not serve.
+
+One cluster is read at most once every 10 minutes, so a repair takes up to that long. The row of a cluster that refused the repair reports the reason `BasicAuthUserFailed`.
+
+### Withdrawal of the cluster user
+
+A cluster that leaves the management plane loses the user, and the Secret that published its password goes with it. The cluster leaves when it leaves `spec.clusterSelector` or the namespace bound, when you remove `spec.webModeler`, or when you delete the cluster.
+
+A cluster that stopped accepting basic credentials keeps the user. Nothing signs in with it there, and the cluster no longer publishes the administrator credential that a removal needs. A cluster whose `spec.platformConfigRef` names no `CamundaPlatformConfig` counts the same: the operator cannot read how it authenticates, and a removal that fails there would hold the cluster forever. In both cases the operator deletes the Secret, records the event `WebModelerUserLeftBehind` on the `CamundaManagementCluster` with the reason, and lets the cluster go. Remove that user yourself if you do not want it there.
 
 ## Clusters
 
@@ -380,6 +403,32 @@ spec:
 
 A cluster whose namespace leaves the bound is deselected like one that leaves `clusterSelector`: the claim, the Console settings, and the Web Modeler user go by themselves.
 
+### An OIDC cluster must name the same issuer
+
+Console and Web Modeler call an OIDC cluster with the token of the person who is signed in. The identity provider of the management plane issues that token. A cluster that validates the tokens of another issuer refuses every such call.
+
+A selected OIDC cluster is therefore attached only while it names the issuer of this management plane. The cluster names it in `spec.auth.oidc.issuerUrl`, on the [CamundaPlatformConfig](camundaplatformconfig.md) that the `spec.platformConfigRef` of that cluster points at.
+
+The issuer of the management plane follows from the `spec.identityProvider` block of this resource:
+
+| `spec.identityProvider` | The issuer of the management plane |
+| --- | --- |
+| `keycloak` | `<keycloak.externalUrl>/realms/camunda-platform`. The in-cluster address `http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform` names the same Keycloak realm, and it is accepted too. |
+| `externalKeycloak` | `<externalKeycloak.url>/realms/<externalKeycloak.realm>` |
+| `oidc` | `spec.auth.oidc.issuerUrl` of the platform config that the `spec.platformConfigRef` of **this** resource names |
+
+Two issuer URLs name the same issuer when they differ only in one of these:
+
+- the case of the scheme, such as `HTTPS://` against `https://`
+- the case of the host, such as `LOGIN.Example.com` against `login.example.com`
+- a trailing slash
+
+A different port names a different issuer, and so does a different path.
+
+A cluster on another issuer gets `attached: false` with the reason `InvalidReference`. The message names both issuers. Console does not list that cluster, and Web Modeler does not deploy to it. The cluster itself keeps running. It keeps the `camunda.io/management-cluster` annotation while the selector matches it, and the operator removes its `CAMUNDA_CONSOLE_PING_*` entries.
+
+A basic-auth cluster has no such rule. Web Modeler signs in to it with the `web-modeler` user that the operator creates there.
+
 `status.clusters` lists one row per selected cluster and says whether the management plane serves it:
 
 ```yaml
@@ -400,7 +449,7 @@ status:
 | (empty, `attached: true`) | Console lists the cluster and Web Modeler deploys to it. | Nothing. |
 | `NotReady` | The cluster publishes no `status.gateway` yet, or it changed while the operator claimed it. | Wait. The row clears when the cluster settles. |
 | `ClaimedElsewhere` | Another management plane already serves this cluster. The message names it. | One cluster answers to one management plane. Remove the cluster from one of the two selectors. |
-| `InvalidReference` | The `platformConfigRef` of the cluster does not resolve, so the operator cannot read how the cluster authenticates. | Create the named `CamundaPlatformConfig`, or correct the reference on the cluster. |
+| `InvalidReference` | The `platformConfigRef` of the cluster does not resolve, or the cluster authenticates with `oidc` on another issuer than the management plane. The message says which. | Create the named `CamundaPlatformConfig`, correct the reference on the cluster, or point the cluster at the issuer of the management plane. |
 | `WriteFailed` | The Console settings could not be written on the cluster. | Read the message. The operator tries again. |
 | `BasicAuthUserFailed` | The Web Modeler user could not be created on this basic-auth cluster. `attached` stays true. | Read the message. It usually names a missing administrator Secret or a cluster that does not answer. |
 
@@ -557,6 +606,7 @@ spec:
       # With Management Identity 8.9, stay below 26.7.0. See "The operator runs Keycloak".
       version: "26.6.4"
       # string. Required. The URL a browser reaches Keycloak at, including the /auth path. It is the issuer of every token.
+      # It carries no query and no fragment.
       externalUrl: "https://camunda.example.com/auth"
       # string. Required. Name of the DatabaseConfig of the Keycloak database, in this namespace.
       databaseConfigRef: "my-keycloak-db"
@@ -570,8 +620,10 @@ spec:
     # object. Optional. Connect to a Keycloak that you run.
     externalKeycloak:
       # string. Required. URL of Keycloak, including the /auth path when it has one. It must resolve from inside the Kubernetes cluster.
+      # It carries no query and no fragment.
       url: "https://keycloak.example.com/auth"
       # string. Optional, default: camunda-platform. The realm that Management Identity uses and creates.
+      # Letters, digits, dots, hyphens, and underscores only. It starts and ends with a letter or a digit.
       realm: "camunda-platform"
       # object. Required. Secret with the Keycloak administrator credentials.
       adminCredentialsSecretRef:
@@ -596,6 +648,7 @@ spec:
     # object. Required. The first administrator of the management plane. Read on the first start only.
     admin:
       # string. Required in the oidc mode, forbidden in the keycloak modes. Token claim that identifies the administrator.
+      # It holds no equals sign.
       claimName: "oid"
       # string. Required with claimName. The value the claim carries for the administrator.
       claimValue: "8f1c...e2"
@@ -606,7 +659,8 @@ spec:
         name: "my-identity-admin"
         namespace: "my-management-ns"
         key: "password"
-      # string. Optional. Email address of the first Keycloak user. Web Modeler needs one for every person who signs in.
+      # string. Optional, required with spec.webModeler in the keycloak modes. Email address of the first Keycloak user.
+      # Web Modeler needs one for every person who signs in.
       email: "admin@example.com"
     # integer. Optional, default: 1. Number of Management Identity replicas.
     replicas: 1
@@ -687,8 +741,12 @@ The API server refuses an apply that breaks one of these:
 - `spec.identity.admin` sets `claimName` and `claimValue` together, or `username`, never both pairs.
 - `spec.identity.admin.claimName` is required in the `oidc` mode. `spec.identity.admin.username` is required in the two Keycloak modes.
 - `spec.identity.admin.passwordSecretRef` is forbidden in the `oidc` mode.
+- `spec.identity.admin.email` is required when `spec.webModeler` is set in one of the two Keycloak modes.
+- `spec.identity.admin.claimName` holds no equals sign.
 - `spec.optimize` is required in the two Keycloak modes and forbidden in the `oidc` mode.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL. `spec.identityProvider.keycloak.externalUrl` must carry the `/auth` path.
+- `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
+- `spec.identityProvider.externalKeycloak.realm` holds letters, digits, dots, hyphens, and underscores. It starts and ends with a letter or a digit.
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both. The rule binds `spec.identity`, `spec.console`, `spec.webModeler.restapi`, and `spec.webModeler.websockets`.
 

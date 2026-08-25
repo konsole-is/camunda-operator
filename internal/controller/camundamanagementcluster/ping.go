@@ -18,18 +18,39 @@ package camundamanagementcluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
+
+const (
+	// eventActionReplacePing is the action of the events about the Console
+	// ping settings that the management plane writes on an attached cluster.
+	eventActionReplacePing = "ReplaceConsolePing"
+	// eventReasonPingEntryRemoved is recorded when the management plane
+	// removes an entry of spec.extraEnv that holds a ping setting with
+	// valueFrom.
+	eventReasonPingEntryRemoved = "ConsolePingEntryRemoved"
+)
+
+// jsonPatchOp is one operation of an RFC 6902 JSON patch.
+type jsonPatchOp struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value,omitempty"`
+}
 
 // syncPing points every attached cluster at the Console of mc and withdraws
 // the ping settings from every other cluster: one that left the selector, one
@@ -47,46 +68,73 @@ func (r *Reconciler) syncPing(
 	attached []components.AttachedCluster,
 ) error {
 	consoleURL := components.ConsoleServiceURL(mc)
-	served := map[client.ObjectKey]string{}
-	if mc.Spec.Console != nil {
-		for _, cluster := range attached {
-			served[client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name}] = cluster.Version
-		}
+	served := map[client.ObjectKey]bool{}
+
+	byKey := map[client.ObjectKey]*v1.CamundaCluster{}
+	for i := range clusters {
+		byKey[client.ObjectKeyFromObject(&clusters[i])] = &clusters[i]
 	}
 
 	var errs []error
-	for i := range clusters {
-		cluster := &clusters[i]
-		key := client.ObjectKeyFromObject(cluster)
+	if mc.Spec.Console != nil {
+		for _, cluster := range attached {
+			key := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name}
+			served[key] = true
 
-		version, serve := served[key]
-		if !serve {
-			// The claim is already withdrawn from a deselected cluster, so the
-			// entries themselves are what says the ping is still there.
-			if !components.PingsConsole(cluster.Spec.ExtraEnv, consoleURL) {
+			live := byKey[key]
+			if live == nil {
+				// attached derives from clusters in this reconcile, so this
+				// only guards a broken invariant against a panic.
+				reportPingFailure(mc, key, fmt.Errorf("CamundaCluster %q is not in the cluster list", key))
 				continue
 			}
-			if err := r.withdrawPingFrom(ctx, cluster); err != nil {
-				return err
-			}
-			continue
-		}
 
-		env := components.PingEnv(consoleURL, cluster.Name, version)
-		err := r.applyPing(ctx, cluster, env)
-		if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
-			reportPingFailure(mc, key, err)
-			continue
-		}
-		if err != nil {
-			// The row must not say attached while the ping is not written:
-			// Console does not list a cluster whose ping never reached it.
-			reportPingFailure(mc, key, err)
-			errs = append(errs, err)
+			env := components.PingEnv(consoleURL, cluster.Name, cluster.Version)
+			err := r.replacePing(ctx, mc, live, cluster.Version, env)
+			if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
+				reportPingFailure(mc, key, err)
+				continue
+			}
+			if err != nil {
+				// The row must not say attached while the ping is not written:
+				// Console does not list a cluster whose ping never reached it.
+				reportPingFailure(mc, key, err)
+				errs = append(errs, err)
+			}
 		}
 	}
 
-	return errors.Join(errs...)
+	return errors.Join(append(errs, r.withdrawPingUnserved(ctx, mc, clusters, served))...)
+}
+
+// withdrawPingUnserved removes the ping settings of mc from every cluster that
+// is not in served.
+//
+// The reconcile that stops at a failed pre-check calls it on its own: a
+// cluster that left the selector must stop reporting to a Console that no
+// longer lists it, and the withdrawal reads no reference of the management
+// cluster.
+func (r *Reconciler) withdrawPingUnserved(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	clusters []v1.CamundaCluster,
+	served map[client.ObjectKey]bool,
+) error {
+	consoleURL := components.ConsoleServiceURL(mc)
+	for i := range clusters {
+		cluster := &clusters[i]
+		// The entries are what says the ping is still there. The claim is no
+		// signal: a deselected cluster may have lost it in an earlier pass.
+		if served[client.ObjectKeyFromObject(cluster)] ||
+			!components.PingsConsole(cluster.Spec.ExtraEnv, consoleURL) {
+			continue
+		}
+		if err := r.withdrawPingFrom(ctx, cluster); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // withdrawPing removes the ping settings of mc from every orchestration
@@ -97,18 +145,113 @@ func (r *Reconciler) withdrawPing(
 	mc *v1.CamundaManagementCluster,
 	clusters []v1.CamundaCluster,
 ) error {
-	return r.syncPing(ctx, mc, clusters, nil)
+	return r.withdrawPingUnserved(ctx, mc, clusters, nil)
 }
 
 // withdrawPingFrom removes the ping settings from one cluster. A cluster that
 // went between the list and the apply needs no withdrawal.
 func (r *Reconciler) withdrawPingFrom(ctx context.Context, cluster *v1.CamundaCluster) error {
-	err := r.applyPing(ctx, cluster, nil)
+	err := r.applyPing(ctx, client.ObjectKeyFromObject(cluster), cluster.UID, nil)
 	if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
 		return nil
 	}
 
 	return err
+}
+
+// replacePing writes the ping settings of mc on one attached cluster. An
+// entry that another field manager set with valueFrom under one of those
+// names goes first: the apply of the operator cannot replace it.
+func (r *Reconciler) replacePing(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	cluster *v1.CamundaCluster,
+	version string,
+	env []corev1.EnvVar,
+) error {
+	if err := r.removePingCollisions(ctx, mc, cluster, version); err != nil {
+		return err
+	}
+
+	return r.applyPing(ctx, client.ObjectKeyFromObject(cluster), cluster.UID, env)
+}
+
+// removePingCollisions deletes every entry of spec.extraEnv of cluster that
+// holds a ping setting of the key set that version reads, with valueFrom, in
+// one JSON patch, and records each removal as an event on mc. A cluster that
+// carries no such entry is left alone, so the reconcile after a replacement
+// patches nothing.
+//
+// The patch tests the UID of the cluster and the name at every index it
+// deletes. A cluster that went, and a list that moved between the read and
+// the patch, therefore refuse the patch instead of deleting the entry of
+// somebody else.
+func (r *Reconciler) removePingCollisions(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	cluster *v1.CamundaCluster,
+	version string,
+) error {
+	collisions := components.PingCollisions(cluster, version)
+	if len(collisions) == 0 {
+		return nil
+	}
+
+	key := client.ObjectKeyFromObject(cluster)
+	ops := []jsonPatchOp{{Op: "test", Path: "/metadata/uid", Value: cluster.UID}}
+	for _, collision := range collisions {
+		path := "/spec/extraEnv/" + strconv.Itoa(collision.Index)
+		ops = append(
+			ops,
+			jsonPatchOp{Op: "test", Path: path + "/name", Value: collision.Name},
+			jsonPatchOp{Op: "remove", Path: path},
+		)
+	}
+
+	body, err := json.Marshal(ops)
+	if err != nil {
+		return fmt.Errorf("building the removal of the colliding ping entries of CamundaCluster %q: %w", key, err)
+	}
+
+	patch := &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: cluster.Name, Namespace: cluster.Namespace},
+	}
+	if err := r.Patch(ctx, patch, client.RawPatch(types.JSONPatchType, body)); err != nil {
+		return fmt.Errorf("removing the colliding ping entries of CamundaCluster %q: %w", key, err)
+	}
+
+	for _, collision := range collisions {
+		r.EventRecorder.Eventf(
+			mc,
+			nil,
+			corev1.EventTypeWarning,
+			eventReasonPingEntryRemoved,
+			eventActionReplacePing,
+			"Removed the spec.extraEnv entry %q of CamundaCluster %q. %s set it with valueFrom. "+
+				"The management plane owns the ping settings and writes its own value under that name",
+			collision.Name, key, managerNames(collision.Managers),
+		)
+	}
+
+	return nil
+}
+
+// managerNames names the field managers of a removed entry for an event,
+// or says that none claimed it.
+func managerNames(managers []string) string {
+	switch len(managers) {
+	case 0:
+		return "A writer that metadata.managedFields does not name"
+	case 1:
+		return fmt.Sprintf("The field manager %q", managers[0])
+	default:
+		quoted := make([]string, len(managers))
+		for i, manager := range managers {
+			quoted[i] = strconv.Quote(manager)
+		}
+
+		return "The field managers " + strings.Join(quoted, ", ")
+	}
 }
 
 // applyPing applies the minimal CamundaCluster object that carries env in the
@@ -117,13 +260,13 @@ func (r *Reconciler) withdrawPingFrom(ctx context.Context, cluster *v1.CamundaCl
 // takes an entry that another manager applied first: the value the operator
 // computes wins, and only for the entries it names.
 //
-// The apply carries the UID of the cluster as a precondition. Server-side
-// apply creates the object it does not find, so without it an apply against a
-// cluster that went in the meantime would put an empty CamundaCluster in its
-// place.
+// The apply carries uid as a precondition. Server-side apply creates the
+// object it does not find, so without it an apply against a cluster that went
+// in the meantime would put an empty CamundaCluster in its place.
 func (r *Reconciler) applyPing(
 	ctx context.Context,
-	cluster *v1.CamundaCluster,
+	cluster client.ObjectKey,
+	uid types.UID,
 	env []corev1.EnvVar,
 ) error {
 	patch := &v1.CamundaCluster{
@@ -131,7 +274,7 @@ func (r *Reconciler) applyPing(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
 			Namespace: cluster.Namespace,
-			UID:       cluster.UID,
+			UID:       uid,
 		},
 		Spec: v1.CamundaClusterSpec{ExtraEnv: env},
 	}
@@ -142,8 +285,7 @@ func (r *Reconciler) applyPing(
 		client.FieldOwner(components.PingFieldManager), client.ForceOwnership,
 	); err != nil {
 		return fmt.Errorf(
-			"applying the Console ping settings on CamundaCluster %q: %w",
-			client.ObjectKeyFromObject(cluster), err,
+			"applying the Console ping settings on CamundaCluster %q: %w", cluster, err,
 		)
 	}
 

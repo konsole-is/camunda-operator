@@ -192,12 +192,18 @@ const (
 	// WebModelerClusterUserPasswordKey holds the password of the Web Modeler
 	// user on one basic-auth orchestration cluster.
 	WebModelerClusterUserPasswordKey = "password"
-	// WebModelerClusterUserAppliedKey records that the cluster holds the user
-	// under the password beside it, with its authorizations. The controller
-	// writes it only after both calls succeed, so a Secret without it is a
-	// password that never reached the cluster.
+	// WebModelerClusterUserAppliedKey records that the cluster held the user
+	// under the password beside it, with its authorizations, at least once.
+	// The controller writes it only after the cluster answered, so a Secret
+	// without it is a password that never reached the cluster.
 	WebModelerClusterUserAppliedKey = "applied"
 )
+
+// WebModelerClusterUserConvergedAnnotation stamps a Web Modeler user Secret
+// with the RFC 3339 time at which the cluster last answered that it holds the
+// user. The controller reads the cluster again once its converge interval has
+// passed, so the stamp is what keeps that read off the reconcile hot path.
+const WebModelerClusterUserConvergedAnnotation = "camunda.io/user-converged-at"
 
 // WebModelerClusterUsername is the user that the operator creates on every
 // attached basic-auth orchestration cluster. A person deploying from Web
@@ -246,6 +252,14 @@ const clusterUIDPrefixLength = 8
 // IdentityName returns the name of the Management Identity Deployment and
 // Service.
 func IdentityName(mc *v1.CamundaManagementCluster) string { return suffixed(mc.Name, identitySuffix) }
+
+// IdentityPodLabels returns the labels that select the pods of the Management
+// Identity Deployment. The pod template carries them and can carry more, so a
+// reader that lists by them in the namespace of the management cluster reads
+// exactly those pods.
+func IdentityPodLabels(mc *v1.CamundaManagementCluster) map[string]string {
+	return labels.Discovery(labels.ManagementCluster(mc.Name), ComponentIdentity)
+}
 
 // IdentityServiceURL returns the URL of Management Identity inside the
 // Kubernetes cluster. A component of the management plane calls the Identity

@@ -92,6 +92,7 @@ const (
 // +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
 // +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)",message="identity.admin.passwordSecretRef applies to the keycloak modes only"
 // +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) != has(self.optimize)",message="set optimize in the keycloak modes, where Management Identity creates the Optimize client; in the oidc mode the platform config declares it"
+// +kubebuilder:validation:XValidation:rule="!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)",message="identity.admin.email is required when webModeler is set in a keycloak mode"
 type CamundaManagementClusterSpec struct {
 	// PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
 	// carries the license, the image settings, and, in the oidc mode, the
@@ -195,8 +196,12 @@ type ManagedKeycloakSpec struct {
 	// Identity uses the front-channel URL since 8.5.3, so the Identity pods
 	// must also reach it. Management Identity administers Keycloak through
 	// the Service that the Keycloak Operator creates, not through this URL.
+	//
+	// The operator appends /realms/<realm> to this URL, so the URL carries no
+	// query and no fragment.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getEscapedPath() == '/auth'",message="externalUrl must carry the /auth path, for example https://keycloak.example.com/auth"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="externalUrl must carry no query and no fragment"
 	ExternalURL string `json:"externalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Keycloak database, in
 	// the namespace of this resource. Keycloak needs its own PostgreSQL
@@ -221,10 +226,17 @@ type ExternalKeycloakSpec struct {
 	// URL is the URL of Keycloak, including the /auth path when it has one.
 	// Management Identity reaches this URL, so it must resolve from inside
 	// the Kubernetes cluster.
+	//
+	// The operator appends /realms/<realm> to this URL, so the URL carries no
+	// query and no fragment.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="url must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="url must carry no query and no fragment"
 	URL string `json:"url"`
 	// Realm is the realm that Management Identity uses and creates. Empty
-	// means camunda-platform.
+	// means camunda-platform. The realm lands in the issuer, the token, and
+	// the JWKS path of every URL that Management Identity builds, so it holds
+	// letters, digits, dots, hyphens, and underscores only.
+	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')",message="realm must hold letters, digits, dots, hyphens, and underscores, and start and end with a letter or a digit"
 	// +optional
 	Realm string `json:"realm,omitempty"`
 	// AdminCredentialsSecretRef names the Secret with the Keycloak
@@ -271,8 +283,11 @@ type IdentitySpec struct {
 // +kubebuilder:validation:XValidation:rule="has(self.claimName) == has(self.claimValue)",message="set claimName and claimValue together"
 type IdentityAdminSpec struct {
 	// ClaimName is the token claim that identifies the administrator, for
-	// example oid or sub. Set it in the oidc mode.
+	// example oid or sub. Set it in the oidc mode. The operator records the
+	// claim as <claimName>=<claimValue> and reads it back at the first equals
+	// sign, so the name holds no equals sign.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="!self.contains('=')",message="claimName must not hold an equals sign"
 	// +optional
 	ClaimName string `json:"claimName,omitempty"`
 	// ClaimValue is the value that the claim carries for the administrator.
@@ -293,8 +308,8 @@ type IdentityAdminSpec struct {
 	// +optional
 	PasswordSecretRef *SecretKeyRef `json:"passwordSecretRef,omitempty"`
 	// Email is the email address of the first Keycloak user. Web Modeler
-	// needs an address for every person who signs in, so set it when you
-	// deploy Web Modeler in a Keycloak mode.
+	// needs an address for every person who signs in, so it is required when
+	// webModeler is set in a Keycloak mode.
 	// +kubebuilder:validation:MinLength=3
 	// +optional
 	Email string `json:"email,omitempty"`
@@ -413,8 +428,9 @@ type AttachedClusterStatus struct {
 	// of five values. Four of them say why the cluster is not attached:
 	// ClaimedElsewhere, another management plane holds it; NotReady, it
 	// publishes no gateway endpoints or it changed while the operator claimed
-	// it; InvalidReference, its platform config cannot be read;
-	// WriteFailed, the Console ping settings were refused. The fifth,
+	// it; InvalidReference, its platform config cannot be read, or the cluster
+	// authenticates with OIDC and names another issuer than the management
+	// plane; WriteFailed, the Console ping settings were refused. The fifth,
 	// BasicAuthUserFailed, accompanies an attached row: the management plane
 	// serves the cluster, and only the Web Modeler user on it is missing.
 	// +optional

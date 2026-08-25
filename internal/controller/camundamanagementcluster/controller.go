@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -95,6 +96,10 @@ type Reconciler struct {
 	// cluster again whose user API refused it. No watch reports the recovery
 	// of that API. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+	// ConvergeInterval overrides how long a cluster that holds the Web Modeler
+	// user is left alone before the controller reads it again. Zero means
+	// defaultConvergeInterval; tests shorten it.
+	ConvergeInterval time.Duration
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -131,6 +136,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups=k8s.keycloak.org,resources=keycloaks/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
@@ -138,7 +144,8 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // claims, deletes its contract, and releases the finalizer. Otherwise the
 // finalizer is added before the first side effect, the pre-checks resolve every
 // reference into the render input, and a failed pre-check reports its Ready
-// reason and stops. Then the orchestration clusters are selected and claimed,
+// reason, lets go of the clusters that the selectors no longer match, and
+// stops. Then the orchestration clusters are selected and claimed,
 // the components converge, every attached cluster is pointed at Console, and
 // the ManagementAuthConfig is applied. Ready is
 // True only when every component that takes part in it is True and the
@@ -191,7 +198,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&mc, conditions.Failed(&mc, failure))
-		return ctrl.Result{}, nil
+
+		return ctrl.Result{}, r.withdrawFromDeselected(ctx, &mc)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
@@ -207,7 +215,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	attached, rows, err := r.attachedClusters(ctx, &mc, clusters, namespaces)
+	attached, rows, err := r.attachedClusters(ctx, &mc, clusters, namespaces, res.Input.Provider)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -250,14 +258,65 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	conditions.Stage(&mc, readyCondition(&mc, built.Ready, contractErr))
 
-	// A cluster whose user API refused the call is called again after a
-	// while: no watch reports that the API is back.
+	// Nothing watches the user API of a cluster, so the controller comes back
+	// on its own: soon when a cluster refused the call, and on the converge
+	// interval to find a user that somebody removed on the cluster.
 	var result ctrl.Result
-	if anyRow(rows, v1.ReasonBasicAuthUserFailed) {
+	switch {
+	case anyRow(rows, v1.ReasonBasicAuthUserFailed):
 		result.RequeueAfter = r.retryInterval()
+	case convergesUsers(&mc, attached):
+		result.RequeueAfter = r.convergeInterval()
 	}
 
 	return result, errors.Join(reconcileErr, claimErr, userErr, pingErr, releaseErr, contractErr)
+}
+
+// withdrawFromDeselected takes back what the management plane put on the
+// orchestration clusters that spec.clusterSelector and spec.namespaceSelector
+// no longer match: the Web Modeler user, the Console ping settings, and the
+// claim.
+//
+// It is the half of the reconcile that a failed pre-check does not stop.
+// Nothing here reads a resolved reference, and a claim that waits for a broken
+// one keeps another management plane from taking the cluster.
+//
+// The order is the order of the attached path: the user and the ping first,
+// the claim last and only once both are gone, so that no other management
+// plane adopts a cluster whose user this one still has to remove.
+func (r *Reconciler) withdrawFromDeselected(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) error {
+	clusters, err := r.listClusters(ctx)
+	if err != nil {
+		return err
+	}
+
+	namespaces, err := r.selectedNamespaces(ctx, mc)
+	if err != nil {
+		return err
+	}
+
+	selected, err := selectedClusters(mc, clusters, namespaces)
+	if err != nil {
+		return err
+	}
+
+	users := make(map[types.UID]bool, len(selected))
+	pings := make(map[client.ObjectKey]bool, len(selected))
+	for _, cluster := range selected {
+		users[cluster.UID] = true
+		pings[client.ObjectKeyFromObject(cluster)] = true
+	}
+
+	userErr := r.withdrawUnservedUsers(ctx, mc, clusters, users, false)
+	pingErr := r.withdrawPingUnserved(ctx, mc, clusters, pings)
+	if err := errors.Join(userErr, pingErr); err != nil {
+		return err
+	}
+
+	return r.releaseClaims(ctx, mc, clusters, namespaces)
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
@@ -277,10 +336,16 @@ func reconcileComponents(ctx context.Context, rec component.ReconcileContext, co
 // recordInitialClaim records the initial administrator claim that Management
 // Identity started with, and reports a later change to it.
 //
-// Identity reads the claim on its first start only and stores the result in
-// its database. The annotation is what keeps the rendered environment on the
-// value that Identity actually holds; without it a later edit of
-// spec.identity.admin would roll the pods into a claim that changes nothing.
+// Identity reads the claim as it boots and stores the result in its database.
+// The annotation is what keeps the rendered environment on the value that
+// Identity actually holds; without it a later edit of spec.identity.admin
+// would roll the pods into a claim that changes nothing.
+//
+// The recorded claim comes from the Identity pod that started first, not from
+// the spec and not from the readiness of the Deployment. Identity writes the
+// administrator to its database before the pod is ready, so an edit of
+// spec.identity.admin in that window would otherwise record a claim that the
+// database never held.
 //
 // Only the oidc mode has a claim. The two Keycloak modes name a user instead,
 // and Identity creates that user on its first start, so a later change to
@@ -294,14 +359,20 @@ func (r *Reconciler) recordInitialClaim(
 		return nil
 	}
 
-	ready := meta.FindStatusCondition(mc.Status.Conditions, v1.ConditionIdentityReady)
-	if ready == nil || ready.Status != metav1.ConditionTrue {
-		return nil
-	}
-
 	recorded := components.RecordedInitialClaim(mc)
 	if recorded == "" {
-		return r.recordAnnotation(ctx, mc, components.SpecInitialClaim(mc))
+		started, err := r.startedInitialClaim(ctx, mc)
+		if err != nil {
+			return err
+		}
+		// A management plane whose Identity never ran holds no administrator
+		// anywhere, so a claim the user corrects before the first start
+		// leaves no record behind.
+		if started == "" {
+			return nil
+		}
+
+		return r.recordAnnotation(ctx, mc, started)
 	}
 	if recorded == components.SpecInitialClaim(mc) {
 		return nil
@@ -321,6 +392,33 @@ func (r *Reconciler) recordInitialClaim(
 	})
 
 	return nil
+}
+
+// startedInitialClaim returns the administrator claim that the Management
+// Identity pod that started first carries, or empty while none of them has
+// started.
+//
+// The read goes through APIReader. The pod cache of the operator holds only
+// the pods that carry its managed-by label, and the Identity pods carry the
+// discovery labels alone. No watch reports a started pod either, so the record
+// lands on the next reconcile that another event brings. The edit of
+// spec.identity.admin that opens the window is one of them, and the pod that
+// started is still running then.
+func (r *Reconciler) startedInitialClaim(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+) (string, error) {
+	var pods corev1.PodList
+	if err := r.APIReader.List(
+		ctx,
+		&pods,
+		client.InNamespace(mc.Namespace),
+		client.MatchingLabels(components.IdentityPodLabels(mc)),
+	); err != nil {
+		return "", fmt.Errorf("listing the Management Identity pods: %w", err)
+	}
+
+	return components.StartedInitialClaim(pods.Items), nil
 }
 
 // recordAnnotation writes the recorded claim onto the CR. It is a patch of one

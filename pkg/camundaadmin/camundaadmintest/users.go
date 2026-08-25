@@ -43,8 +43,9 @@ type userRecord struct {
 // empty one; that mirrors the overlay of the real update processor.
 //
 // The operation names for the inherited FailNext and DropNext are
-// "updateUser", "createUser", "deleteUser", and "createAuthorization". A
-// failing call answers 500.
+// "getUser", "updateUser", "createUser", "deleteUser",
+// "createAuthorization", and "searchAuthorizations". A failing call answers
+// 500.
 type UserAPI struct {
 	adminhttptest.Fake
 
@@ -103,6 +104,14 @@ func (s *UserAPI) SetUser(username, name, email, password string) {
 	s.users[username] = userRecord{name: name, email: email, password: password}
 }
 
+// RemoveUser drops username, so a spec can play an administrator who deleted
+// the user on the cluster.
+func (s *UserAPI) RemoveUser(username string) {
+	s.Lock()
+	defer s.Unlock()
+	delete(s.users, username)
+}
+
 // Password returns the stored password of username, or "" when the user does
 // not exist.
 func (s *UserAPI) Password(username string) string {
@@ -128,6 +137,34 @@ func (s *UserAPI) Exists(username string) bool {
 	_, exists := s.users[username]
 
 	return exists
+}
+
+// SetAuthorization stores one authorization, the way a call to the create
+// endpoint would.
+func (s *UserAPI) SetAuthorization(ownerID, ownerType, resourceType, resourceID string, permissions ...string) {
+	s.Lock()
+	defer s.Unlock()
+	s.authorizations = append(s.authorizations, Authorization{
+		OwnerID:         ownerID,
+		OwnerType:       ownerType,
+		ResourceID:      resourceID,
+		ResourceType:    resourceType,
+		PermissionTypes: permissions,
+	})
+}
+
+// RemoveAuthorizations drops every authorization of ownerID, so a spec can
+// play an administrator who revoked them on the cluster.
+func (s *UserAPI) RemoveAuthorizations(ownerID string) {
+	s.Lock()
+	defer s.Unlock()
+	kept := s.authorizations[:0]
+	for _, authorization := range s.authorizations {
+		if authorization.OwnerID != ownerID {
+			kept = append(kept, authorization)
+		}
+	}
+	s.authorizations = kept
 }
 
 // Authorizations returns every authorization the fake created, in creation
@@ -166,6 +203,10 @@ func (s *UserAPI) handle(w http.ResponseWriter, r *http.Request) {
 		s.createUser(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/v2/authorizations":
 		s.createAuthorization(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/v2/authorizations/search":
+		s.searchAuthorizations(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+		s.getUser(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v2/users/"):
 		s.updateUser(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v2/users/"):
@@ -173,6 +214,29 @@ func (s *UserAPI) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		problem(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)
 	}
+}
+
+// getUser serves GET /v2/users/{username}.
+func (s *UserAPI) getUser(w http.ResponseWriter, r *http.Request) {
+	username := strings.TrimPrefix(r.URL.Path, "/v2/users/")
+	if username == "" {
+		problem(w, http.StatusNotFound, "no such endpoint: "+r.Method+" "+r.URL.Path)
+		return
+	}
+
+	if s.injected(w, "getUser") || !s.authenticated(w, r) {
+		return
+	}
+
+	user, exists := s.users[username]
+	if !exists {
+		problem(w, http.StatusNotFound, "user "+username+" was not found")
+		return
+	}
+
+	adminhttptest.WriteJSON(w, http.StatusOK, map[string]string{
+		"username": username, "name": user.name, "email": user.email,
+	})
 }
 
 // updateUser serves PUT /v2/users/{username}.
@@ -299,6 +363,47 @@ func (s *UserAPI) createAuthorization(w http.ResponseWriter, r *http.Request) {
 	s.authorizations = append(s.authorizations, request)
 
 	adminhttptest.WriteJSON(w, http.StatusCreated, request)
+}
+
+// searchAuthorizations serves POST /v2/authorizations/search. It filters on
+// the owner only, which is what this operator searches by.
+func (s *UserAPI) searchAuthorizations(w http.ResponseWriter, r *http.Request) {
+	if s.injected(w, "searchAuthorizations") || !s.authenticated(w, r) {
+		return
+	}
+
+	var request struct {
+		Filter struct {
+			OwnerID   string `json:"ownerId"`
+			OwnerType string `json:"ownerType"`
+		} `json:"filter"`
+		Page struct {
+			Limit int `json:"limit"`
+		} `json:"page"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		problem(w, http.StatusBadRequest, "decoding request: "+err.Error())
+		return
+	}
+
+	items := []Authorization{}
+	for _, authorization := range s.authorizations {
+		if request.Filter.OwnerID != "" && authorization.OwnerID != request.Filter.OwnerID {
+			continue
+		}
+		if request.Filter.OwnerType != "" && authorization.OwnerType != request.Filter.OwnerType {
+			continue
+		}
+		if request.Page.Limit > 0 && len(items) == request.Page.Limit {
+			break
+		}
+		items = append(items, authorization)
+	}
+
+	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"page":  map[string]any{"totalItems": len(items), "hasMoreTotalItems": false},
+	})
 }
 
 // injected answers the request with the failure that a test asked for, and
