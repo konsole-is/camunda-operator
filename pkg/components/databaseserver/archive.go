@@ -374,9 +374,9 @@ func archivePlugin(server *v1.DatabaseServer) cnpgv1.PluginConfiguration {
 	}
 }
 
-// Identity returns the workload identity of the bucket, or nil when it has
-// none. A rollback records the result and the server holds it, so the pods of
-// a held archive keep presenting the identity of the bucket they read.
+// Identity returns the workload identity the pods present for the bucket, or
+// nil when there is none. It comes from HeldIdentity while the archive is
+// held, and from Config otherwise. A rollback records it when it starts.
 func (a *ArchiveStorage) Identity() *v1.RecoveryArchiveIdentity {
 	annotations, identityLabels := a.identityAnnotations(), a.podLabels()
 	if len(annotations) == 0 && len(identityLabels) == 0 {
