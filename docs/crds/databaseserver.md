@@ -176,7 +176,7 @@ The contract that asked stays. It is the only place the answer is published, so 
 
 **CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. Run one server per cluster.
 
-A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold. A point that an archive of an earlier bucket holds is refused the same way, and the message names both buckets.
+A suspended server refuses the request with `result: Failed`. Unsuspend it, then ask again. A point that no archive of the server holds is refused with `result: Unavailable`, and the message names the windows the server does hold. A point that an archive of an earlier bucket holds is refused the same way, and the message names both buckets. A point in the future, and a point older than `spec.archive.retentionPeriodDays`, are refused the same way, because the bucket holds no copy of either.
 
 ## Authentication to the bucket
 

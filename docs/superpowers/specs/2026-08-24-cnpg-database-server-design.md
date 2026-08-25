@@ -241,7 +241,9 @@ its pods.
 Each recovery starts a new archive. `status.archive.history[]` records every archive the server
 has written: `serverName`, `objectStorageRef`, `from`, and `to` (`to` is unset for the current
 archive). A recovery picks the source whose interval holds `targetTime`. A target that no interval
-holds is refused with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user
+holds is refused with `PitrUnavailable`. An interval says which archive wrote a point, not that the
+objects are still there, so a target after now, or older than `retentionPeriodDays`, is refused the
+same way before the pick. Old archives stay in the bucket; the docs say the user
 prunes them.
 
 `location`, the canonical location of the bucket contract narrowed to the prefix of the server
@@ -561,7 +563,10 @@ the target and continues unchanged.
 The reconcile reads the contract it owns and sees `spec.recovery` that differs from
 `pitr.lastRecovery` and from `status.recovery`, and:
 
-1. Picks the archive from `status.archive.history[]` whose interval holds `targetTime`. None:
+1. Refuses a `targetTime` after now, or older than the retention period of the archive, with
+   `result: Unavailable` and a message that names the bound it broke. The retention is the one
+   `status.recovery.archive` pins while a recovery runs, and the merged spec otherwise. Then picks
+   the archive from `status.archive.history[]` whose interval holds `targetTime`. None:
    applies `lastRecovery` with `result: Unavailable` and a message that names the covered
    intervals, and stops. One that holds it in a bucket the spec no longer names: the same result,
    with a message that names both buckets.

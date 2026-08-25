@@ -18,12 +18,15 @@ package databaseserver
 
 import (
 	"strings"
+	"testing"
 	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -580,12 +583,16 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// The old cluster stopped writing at the cutover and the new archive
 		// reaches no point before its first base backup, so the window between
 		// the two lies in no interval.
-		gap := askForRecovery(server, closedAt.Add(30*time.Second))
+		// The end of an interval is exclusive, so the moment the old archive
+		// closed at is the first point of the gap. It has already passed,
+		// which keeps this spec on the gap rule and off the future rule.
+		gap := askForRecovery(server, closedAt.Time)
 		Eventually(func(g Gomega) {
 			outcome := publishedContract(server).Spec.PITR.LastRecovery
 			g.Expect(outcome).NotTo(BeNil())
 			g.Expect(outcome.RequestID).To(Equal(gap.RequestID))
 			g.Expect(outcome.Result).To(Equal(v1.RecoveryResultUnavailable))
+			g.Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
 		}, timeout, interval).Should(Succeed())
 
 	})
@@ -600,6 +607,54 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.Message).To(ContainSubstring("lies in none of those windows"))
 
 		// Nothing was built, so nothing has to be cleaned up.
+		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+		)).To(MatchError(apierrors.IsNotFound, "not found"))
+	})
+
+	It("refuses a point that has not happened yet", func() {
+		server, _ := archivingServer()
+
+		// The record the server writes to is open, so its interval holds
+		// every point after its first base backup. A point after now is one
+		// of those, and no write-ahead log of it exists.
+		request := askForRecovery(server, time.Now().Add(time.Hour))
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		Expect(outcome.RequestID).To(Equal(request.RequestID))
+		Expect(outcome.Message).To(ContainSubstring("lies in the future"))
+
+		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
+		)).To(MatchError(apierrors.IsNotFound, "not found"))
+	})
+
+	It("refuses a point the retention period no longer reaches", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 7,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000001")
+
+		// The interval of the record opens 30 days back. The bucket keeps 7
+		// days, so the record reaches further than the objects do.
+		from := metav1.NewTime(time.Now().Add(-30 * day).Truncate(time.Second))
+		completeBaseBackup(server, "base-1", from)
+		Eventually(func() []v1.ArchiveRecord {
+			return archiveHistory(server)
+		}, timeout, interval).Should(HaveLen(1))
+
+		request := askForRecovery(server, from.Add(day))
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		Expect(outcome.RequestID).To(Equal(request.RequestID))
+		Expect(outcome.Message).To(ContainSubstring("older than the retention period"))
+		Expect(outcome.Message).To(ContainSubstring("7 days"))
+
 		Expect(reconciledServer(server).Status.Recovery.Cluster).To(BeEmpty())
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
@@ -1607,3 +1662,58 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(outcome.Message).To(ContainSubstring("suspended"))
 	})
 })
+
+// Both bounds move with the clock, so every case is written against the
+// moment the test runs. The two that pass sit a minute inside the retention
+// period, which keeps them off the edge that the clock crosses while the test
+// runs.
+func TestOutOfReach(t *testing.T) {
+	t.Parallel()
+
+	const retentionDays = 7
+	retention := retentionDays * day
+
+	tests := []struct {
+		name    string
+		target  time.Time
+		message string
+	}{
+		{
+			name:    "a point that has not happened yet",
+			target:  time.Now().Add(time.Hour),
+			message: "lies in the future",
+		},
+		{
+			name:    "a point older than the retention period",
+			target:  time.Now().Add(-retention - time.Minute),
+			message: "older than the retention period",
+		},
+		{
+			name:   "a point just inside the retention period",
+			target: time.Now().Add(-retention + time.Minute),
+		},
+		{
+			name:   "a point in the middle of the retention period",
+			target: time.Now().Add(-time.Hour),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			refusal := outOfReach(tt.target, retentionDays)
+
+			if tt.message == "" {
+				assert.Nil(t, refusal)
+
+				return
+			}
+
+			require.NotNil(t, refusal)
+			assert.Equal(t, v1.RecoveryResultUnavailable, refusal.result)
+			assert.Contains(t, refusal.message, tt.message)
+			assert.Contains(t, refusal.message, tt.target.UTC().Format(time.RFC3339))
+		})
+	}
+}

@@ -113,7 +113,7 @@ spec:
   # ... the rest of your contract
 ```
 
-`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
+`targetTime` is RFC 3339 with a zone. A timestamp without a zone is rejected. `targetTime` must name a point in the past that is still inside the retention period of the archive. `requestedBy` names the resource that asks, as `<namespace>/<name>`. `requestID` is a UUID that belongs to this request alone: a `PointInTimeRestore` writes its own `metadata.uid`, and a request you write by hand carries any UUID, for example from `uuidgen`.
 
 The answer comes back in `pitr.lastRecovery`, and it repeats the request it answers:
 
@@ -132,7 +132,7 @@ spec:
 | `result` | Meaning | What to do |
 | --- | --- | --- |
 | `Completed` | The server holds the state of `targetTime`. `spec.host` now names it. | Nothing. Read `spec.host` again for the endpoint. |
-| `Unavailable` | The server holds no copy of `targetTime`. `message` names the windows it does hold. | Ask for a point inside one of those windows. |
+| `Unavailable` | The server holds no copy of `targetTime`. `message` says why. | Ask for a point that the archive still reaches. |
 | `Failed` | The rollback started and did not finish. `message` says what stopped it. | Correct the cause, then ask again. |
 
 Both fields stay on the contract after the answer, as the record of the last request. A request with a new `requestID` starts a new rollback, whatever it asks for. A `PointInTimeRestore` runs once, so you retry a rollback by creating a new restore resource: the new resource carries a new uid, and the server reads it as a new request even when the point is the same.

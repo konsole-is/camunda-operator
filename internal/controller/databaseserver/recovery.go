@@ -48,6 +48,9 @@ const (
 	eventActionRecover                 = "Recover"
 )
 
+// day is how long the retention period of an archive counts one day.
+const day = 24 * time.Hour
+
 // recoveryRefusal is the answer to a recovery request that the server does not
 // perform.
 type recoveryRefusal struct {
@@ -561,6 +564,17 @@ func recoverySource(
 		}
 	}
 
+	// The retention of a recovery that is already running is the one it
+	// recorded, for the same reason the archive is.
+	retention := merged.Archive.RetentionPeriodDays
+	if pinned && recorded.Archive.RetentionPeriodDays > 0 {
+		retention = recorded.Archive.RetentionPeriodDays
+	}
+
+	if refusal := outOfReach(target, retention); refusal != nil {
+		return v1.ArchiveRecord{}, refusal
+	}
+
 	if pinned {
 		return v1.ArchiveRecord{
 			ServerName:       recorded.Archive.ServerName,
@@ -585,6 +599,39 @@ func recoverySource(
 	}
 
 	return source, nil
+}
+
+// outOfReach reports why the archive holds no write-ahead log of the requested
+// point, or nil when it can reach it. An interval of the history says which
+// archive wrote a point. It does not say that the objects of that point are
+// still there: the record that is open has no end, and the bucket drops
+// everything older than the retention period.
+func outOfReach(target time.Time, retentionDays int32) *recoveryRefusal {
+	// The clock is the reason these two are not schema rules on the request.
+	now := time.Now()
+
+	if target.After(now) {
+		return &recoveryRefusal{
+			result: v1.RecoveryResultUnavailable,
+			message: fmt.Sprintf(
+				"targetTime %s lies in the future. The server holds no state of a point that "+
+					"did not happen yet", target.UTC().Format(time.RFC3339),
+			),
+		}
+	}
+
+	if oldest := now.Add(-time.Duration(retentionDays) * day); target.Before(oldest) {
+		return &recoveryRefusal{
+			result: v1.RecoveryResultUnavailable,
+			message: fmt.Sprintf(
+				"targetTime %s is older than the retention period of the archive, which is %d "+
+					"days. The bucket keeps nothing of that point any more",
+				target.UTC().Format(time.RFC3339), retentionDays,
+			),
+		}
+	}
+
+	return nil
 }
 
 // advanceRecovery carries the recorded recovery one step further and reports
