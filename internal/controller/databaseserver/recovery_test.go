@@ -668,10 +668,11 @@ var _ = Describe("DatabaseServer recovery", func() {
 		writeSuperuserSecret(owner)
 		expectCondition(owner, v1.ConditionContractReady, metav1.ConditionTrue)
 
-		// The second names the same contract. Its own contract component
-		// blocks while its superuser Secret is missing, so it publishes
-		// nothing and the contract stays as the first server wrote it.
+		// The second names the same contract. The guard of its contract
+		// component blocks while the first server holds the name, so it
+		// publishes nothing and the contract stays as the first wrote it.
 		loser := archivingServerIn(namespace, "second", "shared", from)
+		writeSuperuserSecret(loser)
 		Eventually(func(g Gomega) {
 			var contract v1.DatabaseServerConfig
 			g.Expect(k8sClient.Get(ctx, shared, &contract)).To(Succeed())

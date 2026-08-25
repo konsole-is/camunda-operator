@@ -162,7 +162,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged)
+	contract, err := ContractComponent(server, merged, nil)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -399,7 +399,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 
 		clusterComp, _, err := ClusterComponent(server, merged, archive, nil)
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged)
+		contractComp, err := ContractComponent(server, merged, nil)
 		require.NoError(t, err)
 		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
 		require.NoError(t, err)

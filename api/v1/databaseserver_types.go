@@ -249,6 +249,15 @@ const ReasonCNPGNotInstalled = "CNPGNotInstalled"
 // archive block is unaffected.
 const ReasonBarmanPluginNotInstalled = "BarmanPluginNotInstalled"
 
+// ReasonContractTaken is the ContractReady reason of a DatabaseServer whose
+// merged spec.databaseServerConfig names a DatabaseServerConfig that another
+// owner controls. The first server to publish a contract name keeps it. A
+// second server that names it publishes nothing on it, so the endpoint and
+// the credentials that its consumers read stay those of the owner. The
+// message names the owner. Give the second server a name of its own, or
+// remove the owner and the contract with it.
+const ReasonContractTaken = "ContractTaken"
+
 // ReasonVersionChangeRefused is the Ready reason of a DatabaseServer whose
 // merged version names a PostgreSQL major other than the one its data
 // directory runs. The server keeps running the major it has: everything the
