@@ -177,11 +177,11 @@ func TestSelectArchive(t *testing.T) {
 	}
 }
 
-// TestSelectArchiveInAnotherBucket covers the point that a recorded interval
-// holds in a bucket the spec no longer names. The recovered cluster is given
-// one ObjectStore, so the point is out of reach until the operator can add a
-// second one for the source.
-func TestSelectArchiveInAnotherBucket(t *testing.T) {
+// TestSelectArchiveInAnotherLocation covers the point that a recorded interval
+// holds somewhere the spec no longer archives to. The recovered cluster is
+// given one ObjectStore, so the point is out of reach until the operator can
+// add a second one for the source.
+func TestSelectArchiveInAnotherLocation(t *testing.T) {
 	t.Parallel()
 
 	closed := "2026-08-10T00:00:00Z"
@@ -194,11 +194,11 @@ func TestSelectArchiveInAnotherBucket(t *testing.T) {
 		history, atTime("2026-08-05T12:00:00Z").Time, locationOf("bucket-b"), "bucket-b",
 	)
 
-	require.ErrorIs(t, err, ErrArchiveInAnotherBucket)
+	require.ErrorIs(t, err, ErrArchiveInAnotherLocation)
 	assert.NotErrorIs(t, err, ErrNoArchiveHolds)
 	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-a"`)
 	assert.Contains(t, err.Error(), locationOf("bucket-a"))
-	assert.Contains(t, err.Error(), `archives to "bucket-b"`)
+	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-b"`)
 	assert.Contains(t, err.Error(), locationOf("bucket-b"))
 	assert.Contains(t, err.Error(), "not supported yet")
 }
@@ -217,9 +217,35 @@ func TestSelectArchiveInAnotherLocationUnderOneName(t *testing.T) {
 		"s3://moved-bucket/clusters/databaseserver/my-cluster-ns/camunda", "bucket-a",
 	)
 
-	require.ErrorIs(t, err, ErrArchiveInAnotherBucket)
+	require.ErrorIs(t, err, ErrArchiveInAnotherLocation)
 	assert.Contains(t, err.Error(), moved.Location)
 	assert.Contains(t, err.Error(), "s3://moved-bucket/")
+}
+
+// A record written before the location was recorded carries only the bucket
+// contract. It is the archive the server writes now when that contract is the
+// one it writes through. When the contract is another one, the record moved
+// since and nothing says where its objects went, so it cannot answer either.
+func TestSelectArchiveAdoptsALocationOnlyUnderItsOwnContract(t *testing.T) {
+	t.Parallel()
+
+	legacy := archiveAt(fixtureServerName, "2026-08-01T00:00:00Z", nil)
+	legacy.ObjectStorageRef = "bucket-a"
+	target := atTime("2026-08-05T12:00:00Z").Time
+
+	got, err := SelectArchive(
+		[]v1.ArchiveRecord{legacy}, target, locationOf("bucket-a"), "bucket-a",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, locationOf("bucket-a"), got.Location)
+
+	_, err = SelectArchive(
+		[]v1.ArchiveRecord{legacy}, target, locationOf("bucket-b"), "bucket-b",
+	)
+	require.ErrorIs(t, err, ErrArchiveInAnotherLocation)
+	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-a"`)
+	assert.Contains(t, err.Error(), "was not recorded")
+	assert.NotContains(t, err.Error(), locationOf("bucket-b"))
 }
 
 func TestRecoveryClusterName(t *testing.T) {

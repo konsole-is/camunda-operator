@@ -231,8 +231,13 @@ archive). A recovery picks the source whose interval holds `targetTime`. A targe
 holds is refused with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user
 prunes them.
 
-`location`, the rendered destination the archive is written to, is what makes an interval readable;
-`objectStorageRef` names it for the reader. A spec that moves the archive to another location closes
+`location`, the canonical location of the bucket contract narrowed to the prefix of the server
+(`ObjectStorageConfig.LocationOf`), is what makes an interval readable; `objectStorageRef` names it
+for the reader. It is the canonical location rather than the URL the plugin is given, because the
+endpoint and the region select the service that answers and neither reaches that URL. A record
+written before the field carries only the contract, and it is adopted into the current location only
+under that same contract: a record of another contract moved since, and nothing says where its
+objects went, so `SelectArchive` refuses it as unplaceable. A spec that moves the archive to another location closes
 the open record at that moment and opens a record of the new location at its first base backup, the
 same way removing and restoring `spec.archive` does. With no record open, which is where removing
 and re-adding `spec.archive` leaves the server, the move is recorded as `status.archive.boundary`

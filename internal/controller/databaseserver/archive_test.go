@@ -55,12 +55,19 @@ func TestArchiveBoundary(t *testing.T) {
 			From: openedAt, To: to,
 		}
 	}
+	// A record from before the location was recorded carries only the contract.
+	legacy := func(ref string, to *metav1.Time) v1.ArchiveRecord {
+		return v1.ArchiveRecord{
+			ServerName: "camunda", ObjectStorageRef: ref, From: openedAt, To: to,
+		}
+	}
 
 	tests := []struct {
 		name     string
 		history  []v1.ArchiveRecord
 		boundary *v1.ArchiveBoundary
 		location string
+		bucket   string
 		noSpec   bool
 		want     *metav1.Time
 	}{
@@ -87,8 +94,22 @@ func TestArchiveBoundary(t *testing.T) {
 		},
 		{
 			name:     "an open record from before the location was recorded",
-			history:  []v1.ArchiveRecord{record("", nil)},
+			history:  []v1.ArchiveRecord{legacy("bucket", nil)},
 			location: locationB,
+		},
+		// The location says nothing here, so the contract is all there is to
+		// place the record by, and it names another one.
+		{
+			name:     "a record from before the location was recorded, under another contract",
+			history:  []v1.ArchiveRecord{legacy("bucket-before", &closedAt)},
+			location: locationB,
+			want:     &now,
+		},
+		{
+			name:     "a record with neither a location nor a contract",
+			history:  []v1.ArchiveRecord{legacy("", &closedAt)},
+			location: locationB,
+			want:     &closedAt,
 		},
 		{
 			name:     "the server asks for no archive",
@@ -149,8 +170,12 @@ func TestArchiveBoundary(t *testing.T) {
 			}
 			merged := v1.DatabaseServerSpec{}
 			if !tt.noSpec {
+				bucket := tt.bucket
+				if bucket == "" {
+					bucket = "bucket"
+				}
 				merged.Archive = &v1.DatabaseServerArchiveSpec{
-					ObjectStorageRef: "bucket", RetentionPeriodDays: 30,
+					ObjectStorageRef: bucket, RetentionPeriodDays: 30,
 				}
 			}
 

@@ -57,11 +57,14 @@ const cnpgClusterNameMaxLength = 50
 // rather than one that failed.
 var ErrNoArchiveHolds = errors.New("no archive of the server holds the requested point")
 
-// ErrArchiveInAnotherBucket reports that the archive that holds the requested
-// point is somewhere the spec no longer archives to. The recovered cluster
-// reads one ObjectStore, and that ObjectStore describes where the server
-// archives to now.
-var ErrArchiveInAnotherBucket = errors.New("the archive that holds the requested point is in another bucket")
+// ErrArchiveInAnotherLocation reports that the archive that holds the
+// requested point is somewhere the spec no longer archives to, or somewhere
+// the operator cannot place at all. The recovered cluster reads one
+// ObjectStore, and that ObjectStore describes where the server archives to
+// now.
+var ErrArchiveInAnotherLocation = errors.New(
+	"the archive that holds the requested point is in another location",
+)
 
 // RecoveryClusterName returns the name of the CloudNativePG cluster that the
 // next recovery of the server builds: the name of the server, the suffix -r,
@@ -119,9 +122,15 @@ func recoveryName(server string, n int) string {
 // A record that names no location was written before the field existed and is
 // taken as the current one.
 //
+// A record written before the location was recorded carries only the contract
+// that named it. It is the archive the server writes now when that contract is
+// the one it writes through, and it is unplaceable when it is not: the
+// contract has moved since, and nothing says where its objects went.
+//
 // The error wraps ErrNoArchiveHolds when no interval holds target, and
-// ErrArchiveInAnotherBucket when one holds it somewhere else. Both are
-// refusals of the request rather than failures of the recovery.
+// ErrArchiveInAnotherLocation when one holds it somewhere else, or somewhere
+// that cannot be placed. Both are refusals of the request rather than failures
+// of the recovery.
 func SelectArchive(
 	history []v1.ArchiveRecord,
 	target time.Time,
@@ -139,15 +148,24 @@ func SelectArchive(
 			if record.ObjectStorageRef == "" {
 				record.ObjectStorageRef = bucket
 			}
-			if record.Location == "" {
+			if record.Location == "" && record.ObjectStorageRef == bucket {
 				record.Location = location
+			}
+			if record.Location == "" {
+				return v1.ArchiveRecord{}, fmt.Errorf(
+					"%w. It was written through ObjectStorageConfig %q, which the server no "+
+						"longer archives through, and its location was not recorded. Nothing "+
+						"says where those objects are",
+					ErrArchiveInAnotherLocation, record.ObjectStorageRef,
+				)
 			}
 			if record.Location != location {
 				return v1.ArchiveRecord{}, fmt.Errorf(
-					"%w. It is in ObjectStorageConfig %q at %q, and the server archives to %q at "+
-						"%q now. Reading the archive of an earlier location is not supported yet",
-					ErrArchiveInAnotherBucket,
-					record.ObjectStorageRef, record.Location, bucket, location,
+					"%w. It is at %q (ObjectStorageConfig %q), and the server archives to %q "+
+						"(ObjectStorageConfig %q) now. Reading the archive of an earlier "+
+						"location is not supported yet",
+					ErrArchiveInAnotherLocation,
+					record.Location, record.ObjectStorageRef, location, bucket,
 				)
 			}
 

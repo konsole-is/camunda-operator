@@ -774,7 +774,7 @@ func archiveBoundary(
 		return closed
 	}
 
-	if archiveLocationMoved(server, location) {
+	if archiveMoved(server, merged.Archive.ObjectStorageRef, location) {
 		return &now
 	}
 
@@ -785,36 +785,45 @@ func archiveBoundary(
 	return closed
 }
 
-// archiveLocationMoved reports whether location is not where the server wrote
-// its archive before. A server that has written none, and a record from before
-// the location was recorded, both report false: nothing places them, and
-// reconcileArchiveHistory adopts the location of the spec into such a record
-// rather than closing it.
-func archiveLocationMoved(server *v1.DatabaseServer, location string) bool {
-	previous := previousArchiveLocation(server)
+// archiveMoved reports whether the archive the server writes now is not the
+// one it wrote before.
+//
+// The location decides it. A record written before the location was recorded
+// is placed by the bucket contract that named it, which is all such a record
+// carries: the same contract reads as the same archive, and another one as a
+// move. A server that has written no archive has not moved.
+func archiveMoved(server *v1.DatabaseServer, ref, location string) bool {
+	previousRef, previousLocation := previousArchive(server)
 
-	return previous != "" && location != "" && previous != location
+	switch {
+	case previousRef == "" && previousLocation == "":
+		return false
+	case previousLocation == "":
+		return ref != "" && previousRef != ref
+	default:
+		return location != "" && previousLocation != location
+	}
 }
 
-// previousArchiveLocation returns where the server wrote its archive before
-// this reconcile: the location an unspent boundary marks, the location the
-// open record names, or the location of the last record it wrote.
-func previousArchiveLocation(server *v1.DatabaseServer) string {
+// previousArchive returns the bucket contract and the location of the archive
+// the server wrote before this reconcile: the ones an unspent boundary marks,
+// the ones the open record names, or the ones of the last record it wrote.
+func previousArchive(server *v1.DatabaseServer) (ref, location string) {
 	status := server.Status.Archive
 	if status == nil {
-		return ""
+		return "", ""
 	}
 	if status.Boundary != nil {
-		return status.Boundary.Location
+		return status.Boundary.ObjectStorageRef, status.Boundary.Location
 	}
 	if open := openArchiveRecord(server); open != nil {
-		return open.Location
+		return open.ObjectStorageRef, open.Location
 	}
 	if last := len(status.History) - 1; last >= 0 {
-		return status.History[last].Location
+		return status.History[last].ObjectStorageRef, status.History[last].Location
 	}
 
-	return ""
+	return "", ""
 }
 
 // archiveBoundaryOf returns the move of the archive that no record holds yet,
@@ -1116,8 +1125,8 @@ func reconcileArchiveHistory(
 		return
 	}
 
-	// Before the adopt below, which would make every move look like none.
-	moved := archiveLocationMoved(server, location)
+	// Before the adopt below, which makes a move look like none.
+	moved := archiveMoved(server, merged.Archive.ObjectStorageRef, location)
 
 	open := openArchiveRecord(server)
 	if open != nil {
@@ -1127,7 +1136,11 @@ func reconcileArchiveHistory(
 		if open.ObjectStorageRef == "" {
 			open.ObjectStorageRef = merged.Archive.ObjectStorageRef
 		}
-		if open.Location == "" {
+		// The location is adopted only into a record of the contract the
+		// server writes through now. A record of another contract moved since,
+		// and labelling it with the current location would call the archive it
+		// holds the one the server writes.
+		if open.Location == "" && open.ObjectStorageRef == merged.Archive.ObjectStorageRef {
 			open.Location = location
 		}
 	}

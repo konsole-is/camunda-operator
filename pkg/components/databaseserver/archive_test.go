@@ -243,3 +243,41 @@ func TestArchivePluginNamesTheClusterAsTheArchiveServer(t *testing.T) {
 	assert.Equal(t, "my-cluster-db", plugin.Parameters["barmanObjectName"])
 	assert.Equal(t, recoveredClusterName, plugin.Parameters["serverName"])
 }
+
+// The location is what an archive interval is compared by, so it has to change
+// whenever a key written through the contract lands somewhere else. The
+// endpoint and the region select the service that answers, and neither reaches
+// the URL the plugin is given.
+func TestArchiveLocationSeparatesTheService(t *testing.T) {
+	t.Parallel()
+
+	s3 := func(endpoint, region string) *ArchiveStorage {
+		return &ArchiveStorage{Config: &v1.ObjectStorageConfig{
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeS3,
+				S3: &v1.S3Storage{
+					BucketName: "backups", BasePath: "clusters",
+					Region: region, Endpoint: endpoint,
+				},
+			},
+		}}
+	}
+
+	server := archiveServer()
+	prefix := "s3://backups/clusters/databaseserver/my-cluster-ns/my-cluster-db"
+
+	first := s3("http://minio.a.svc:9000", "eu-west-1")
+	second := s3("http://minio.b.svc:9000", "eu-west-1")
+	region := s3("", "eu-west-1")
+	other := s3("", "us-east-1")
+
+	assert.Contains(t, first.ArchiveLocation(server), prefix)
+	assert.NotEqual(t, first.ArchiveLocation(server), second.ArchiveLocation(server))
+	assert.NotEqual(t, region.ArchiveLocation(server), other.ArchiveLocation(server))
+	assert.Equal(t, first.ArchiveLocation(server), s3("http://minio.a.svc:9000", "eu-west-1").ArchiveLocation(server))
+
+	// The URL the plugin is given carries neither, so it cannot stand in.
+	assert.Equal(t, destinationPath(first.resolveOrNil(server)), destinationPath(second.resolveOrNil(server)))
+
+	assert.Empty(t, (*ArchiveStorage)(nil).ArchiveLocation(server))
+}
