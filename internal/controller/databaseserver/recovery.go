@@ -684,6 +684,18 @@ func (r *DatabaseServerReconciler) completeRecovery(
 		)
 	}
 
+	// The ownership was tested when the cluster was built, and the name is
+	// derived, so it is tested again on what is there now. A cluster that
+	// somebody removed and created again under this name holds a database of
+	// theirs. Completing on it moves the contract onto that database and
+	// deletes the cluster that holds the data of this server.
+	if !ownedByServer(server, &recovered) {
+		return false, r.abandonRecovery(
+			ctx, server, contract, request,
+			fmt.Sprintf("A CloudNativePG cluster %s exists and this DatabaseServer does not own it", key),
+		)
+	}
+
 	// A cluster that turns unrecoverable once the contract points at it takes
 	// the server with it.
 	if phase, failing := cnpgcluster.Failing(&recovered); failing {

@@ -589,6 +589,10 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
 Each step is idempotent and keyed on what exists, so a restart in the middle resumes. The
 previous `Cluster` is deleted only after the contract points at the new one, so a failure before
 step 4 leaves the old server intact and the restore reports `Failed` without data loss.
+The ownership of the recovery `Cluster` is tested again on the live object at the cutover, because
+the derived name comes back once the number of archives comes back. A cluster of that name that
+this server does not own abandons the rollback with `Failed`, and the server runs from the previous
+cluster again.
 
 One contract name belongs to one server. The reconcile reads the `DatabaseServerConfig` that the
 merged spec names before it publishes. A guard on the contract blocks the apply while another owner

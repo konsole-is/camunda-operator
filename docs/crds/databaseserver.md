@@ -164,6 +164,8 @@ The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseSe
 
 A rollback replaces the server. The operator builds a second CloudNativePG cluster from the archive that holds `targetTime`. Its name is the name of the server, `-r`, and the number of archives the server has written, so the first rollback of a server that only ever wrote one archive builds `my-db-r1`. A server that stopped and started its archive counts those too and recovers into a higher number. `status.recovery.cluster` names the cluster the rollback builds, and `status.cluster` names the one the contract points at.
 
+The operator never writes to a cluster of that name that the server does not own. It refuses the rollback with `result: Failed`, and the message names the cluster. A cluster that somebody replaces under that name after the contract has moved to it is refused the same way. The server then runs from the cluster it came from again, and the replacement is left alone.
+
 The operator points the contract at the new cluster once CloudNativePG reports it healthy, and it then removes the old cluster and its data volumes. Every consumer of the contract reads the new `host` and the superuser Secret of the new cluster. A `CamundaCluster` rolls its pods to pick them up.
 
 The recovered cluster writes an archive of its own, under its own name in the same bucket. The archive it recovered from stays, so a later restore can reach back across the rollback. That archive ends at whichever comes first: the contract moves to the recovered cluster, or that cluster takes its first base backup. The new archive starts at that first base backup. The gap between the two lies in no interval either way, so no restore can reach a point in it.

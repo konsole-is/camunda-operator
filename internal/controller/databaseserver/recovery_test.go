@@ -265,6 +265,22 @@ func probeContract(server *v1.DatabaseServer) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// probeAnyEndpoint records the probe against whatever endpoint the contract
+// names at that moment. probeContract waits for the endpoint of the running
+// recovery first, and a spec whose server abandons that recovery cannot wait
+// for an endpoint that moves back while it waits.
+func probeAnyEndpoint(server *v1.DatabaseServer) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var contract v1.DatabaseServerConfig
+		g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
+		contract.Status.SystemIdentifier = recoveredSystemIdentifier
+		contract.Status.ObservedGeneration = contract.Generation
+		g.Expect(k8sClient.Status().Update(ctx, &contract)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // contractKey is the contract that the server publishes.
 func contractKey(server *v1.DatabaseServer) client.ObjectKey {
 	return client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
@@ -921,6 +937,66 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}, &cnpgv1.Cluster{},
 		)).To(Succeed())
+	})
+
+	It("abandons a rollback whose cluster another owner took after the cutover", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		bringRecoveryClusterUp(server, "camunda-r1")
+
+		By("waiting until the contract points at the recovered cluster")
+		host := "camunda-r1-rw." + server.Namespace + ".svc"
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
+			g.Expect(publishedContract(server).Spec.Host).To(Equal(host))
+		}, timeout, interval).Should(Succeed())
+
+		// What a delete and a create under the derived name leaves behind: a
+		// converged cluster of that name that holds the database of somebody
+		// else. The name of a recovery cluster comes back once the number of
+		// archives comes back, so it is a name anybody can take.
+		By("giving the recovered cluster to another server")
+		stranger := serverNamed(server.Namespace, "stranger", "stranger", nil)
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Eventually(func(g Gomega) {
+			var taken cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &taken)).To(Succeed())
+			taken.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "DatabaseServer",
+				Name:       stranger.Name,
+				UID:        reconciledServer(stranger).UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &taken)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		// The probe is the last thing the server waits for before it declares
+		// a rollback complete, so writing it leaves the ownership test as the
+		// only thing that can stop the cutover.
+		probeAnyEndpoint(server)
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
+		Expect(outcome.Message).To(ContainSubstring("does not own it"))
+
+		By("running from the cluster it came from again")
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda"))
+			g.Expect(publishedContract(server).Spec.Host).
+				To(Equal("camunda-rw." + server.Namespace + ".svc"))
+		}, timeout, interval).Should(Succeed())
+
+		Consistently(func(g Gomega) {
+			// The cluster that holds the data of this server is still there.
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{},
+			)).To(Succeed())
+
+			// So is the one it does not own, with the owner it was given.
+			var taken cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &taken)).To(Succeed())
+			g.Expect(metav1.IsControlledBy(&taken, reconciledServer(stranger))).To(BeTrue())
+		}, "2s", interval).Should(Succeed())
 	})
 
 	It("holds the contract it publishes until the recovery on it is answered", func() {
