@@ -164,6 +164,8 @@ The recovered cluster writes an archive of its own, under its own name in the sa
 
 The server names one contract while a rollback runs. Change `spec.databaseServerConfig` in the middle and `Ready` reports `InvalidReference` until the rollback ends. The server keeps publishing the contract that asked. Once the answer is out, it publishes the new name as well.
 
+The server keeps its archive while a rollback runs, because the rollback recovers out of it. Point `spec.archive.objectStorageRef` at another bucket in the middle, move the bucket under that name, or remove `spec.archive`, and `Ready` reports `InvalidReference` until the rollback ends. The message names what to put back. The archive stays where the rollback reads it, and the edit applies once the answer is out.
+
 The contract that asked stays. It is the only place the answer is published, so whoever asked can still read `spec.pitr.lastRecovery` on it. It goes when the next rollback answers on another contract.
 
 **CAUTION: A rollback erases everything the server wrote after `targetTime`.** It rolls back every logical database on the server, not one of them. Run one server per cluster.
@@ -343,7 +345,7 @@ A part that the spec switches off is reported on its own condition and never on 
 
 `status.cluster` is the CloudNativePG cluster that the contract points at. `status.systemIdentifier` is the identity of the PostgreSQL instance behind it, which a [Database](database.md) uses to tell two servers apart. `status.observedGeneration` is the last generation the operator reconciled.
 
-`status.recovery` is the rollback request the server works on now, or the last one it answered. `contract` is the `DatabaseServerConfig` that asked. `cluster` is the CloudNativePG cluster it builds, and it is empty for a request the server refused before it built one. `completedAt` and `result` are unset while the rollback runs. The same answer is published on the contract, in `spec.pitr.lastRecovery`, and the server writes it there again if the contract loses it.
+`status.recovery` is the rollback request the server works on now, or the last one it answered. `contract` is the `DatabaseServerConfig` that asked. `cluster` is the CloudNativePG cluster it builds, and it is empty for a request the server refused before it built one. `archive` is the archive it recovers out of, with the archive settings the server had when it started, which is what an edit of `spec.archive` is held against. `completedAt` and `result` are unset while the rollback runs. The same answer is published on the contract, in `spec.pitr.lastRecovery`, and the server writes it there again if the contract loses it.
 
 ## Spec reference
 

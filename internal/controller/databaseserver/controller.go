@@ -93,9 +93,9 @@ type resolvedSpec struct {
 	// already down did not resolve. The reconcile then stops and leaves the
 	// conditions alone: see preCheck.
 	holdForSuspension bool
-	// holdForRecovery says that the spec moved the contract or the bucket that
-	// the running recovery depends on. The merged spec then keeps what the
-	// recovery recorded, and Ready reports why: see preCheck.
+	// holdForRecovery says that the spec moved or removed the contract or the
+	// bucket that the running recovery depends on. The merged spec then keeps
+	// what the recovery recorded, and Ready reports why: see preCheck.
 	holdForRecovery *conditions.PreCheckFailure
 	// holdArchive says that the archive moved under a recovery that still
 	// reads it. The archive component then does not reconcile, so the
@@ -406,7 +406,7 @@ func (r *DatabaseServerReconciler) preCheck(
 		}
 	}
 
-	// Not a failure: the server keeps the contract and the bucket that the
+	// Not a failure: the server keeps the contract and the archive that the
 	// running recovery depends on, and it reports why. The recovery needs the
 	// contract republished to finish, so holding the components instead holds
 	// the recovery that the hold exists to protect.
@@ -414,10 +414,8 @@ func (r *DatabaseServerReconciler) preCheck(
 		running := server.Status.Recovery
 		resolved.holdForRecovery = hold
 		resolved.merged.DatabaseServerConfig = running.Contract
-		if running.Archive != nil && resolved.merged.Archive != nil {
-			block := *resolved.merged.Archive
-			block.ObjectStorageRef = running.Archive.ObjectStorageRef
-			resolved.merged.Archive = &block
+		if running.Archive != nil {
+			resolved.merged.Archive = heldArchive(running.Archive, resolved.merged.Archive)
 		}
 	}
 
@@ -513,9 +511,9 @@ func recoveryHoldsLocation(
 //
 // A recovery is a question that one contract asked, answered out of one
 // bucket. Publishing another contract while it runs leaves the cluster that is
-// building with nobody to answer, and pointing the archive at another bucket
-// takes away the copy it reads. The server therefore keeps both of them until
-// the request is answered.
+// building with nobody to answer, and pointing the archive at another bucket,
+// or removing it, takes away the copy it reads. The server therefore keeps
+// both of them until the request is answered.
 func recoveryHoldsSpec(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -537,8 +535,23 @@ func recoveryHoldsSpec(
 		}
 	}
 
-	if running.Archive != nil && merged.Archive != nil &&
-		running.Archive.ObjectStorageRef != merged.Archive.ObjectStorageRef {
+	if running.Archive == nil {
+		return nil
+	}
+
+	if merged.Archive == nil {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonInvalidReference,
+			Message: fmt.Sprintf(
+				"A rollback that %s asked for is still running, and it reads the archive in "+
+					"ObjectStorageConfig %q. The archive cannot be removed until that rollback "+
+					"is answered. Put spec.archive back, or wait for the rollback to finish",
+				running.RequestedBy, running.Archive.ObjectStorageRef,
+			),
+		}
+	}
+
+	if running.Archive.ObjectStorageRef != merged.Archive.ObjectStorageRef {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonInvalidReference,
 			Message: fmt.Sprintf(
@@ -551,6 +564,27 @@ func recoveryHoldsSpec(
 	}
 
 	return nil
+}
+
+// heldArchive returns the archive block that a held spec renders: the one the
+// spec still carries with its bucket put back, or the block the recovery
+// recorded when the spec took the archive away.
+func heldArchive(
+	recorded *v1.RecoveryArchiveRef,
+	spec *v1.DatabaseServerArchiveSpec,
+) *v1.DatabaseServerArchiveSpec {
+	if spec == nil {
+		return &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    recorded.ObjectStorageRef,
+			RetentionPeriodDays: recorded.RetentionPeriodDays,
+			BaseBackupSchedule:  recorded.BaseBackupSchedule,
+		}
+	}
+
+	block := *spec
+	block.ObjectStorageRef = recorded.ObjectStorageRef
+
+	return &block
 }
 
 // instancesAreDown reports whether CloudNativePG has taken the instances of the

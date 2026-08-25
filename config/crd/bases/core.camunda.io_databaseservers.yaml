@@ -1104,6 +1104,11 @@ spec:
                       spec that names another bucket in the middle does not move a recovery
                       that is already running.
                     properties:
+                      baseBackupSchedule:
+                        description: |-
+                          BaseBackupSchedule is spec.archive.baseBackupSchedule as it stood when
+                          the rollback started.
+                        type: string
                       location:
                         description: |-
                           Location is where in object storage the archive lives, in the form
@@ -1116,6 +1121,12 @@ spec:
                           ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
                           archive lives in.
                         type: string
+                      retentionPeriodDays:
+                        description: |-
+                          RetentionPeriodDays is spec.archive.retentionPeriodDays as it stood
+                          when the rollback started.
+                        format: int32
+                        type: integer
                       serverName:
                         description: |-
                           ServerName is the archive directory, equal to the name of the

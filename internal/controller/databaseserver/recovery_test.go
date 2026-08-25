@@ -542,16 +542,57 @@ var _ = Describe("DatabaseServer recovery", func() {
 		}, "2s", interval).Should(Succeed())
 	})
 
-	It("refuses a running recovery whose archive the spec took away", func() {
+	It("keeps the archive of a running recovery that the spec takes away", func() {
 		server, from := archivingServer()
 		request := askForRecovery(server, from.Add(time.Hour))
 		expectRecoveryCluster(server)
 
+		recorded := reconciledServer(server).Status.Recovery.Archive
+		Expect(recorded).NotTo(BeNil())
+
+		storeKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
+		var store barmanobjectstore.ObjectStore
+		Expect(k8sClient.Get(ctx, storeKey, &store)).To(Succeed())
+		reading := store.Spec.Configuration.DestinationPath
+
+		By("removing the archive while the rollback is unanswered")
 		setArchive(server, nil)
 
-		outcome := expectLastRecovery(server, v1.RecoveryResultUnavailable)
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+		Expect(ready.Message).To(ContainSubstring("Put spec.archive back"))
+
+		// The rollback recovers out of this archive, so the removal reaches
+		// neither the ObjectStore it reads nor the record that holds the
+		// point it asked for, and nobody is answered that there is no archive.
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, storeKey, &store)).To(Succeed())
+			g.Expect(store.Spec.Configuration.DestinationPath).To(Equal(reading))
+
+			archive := reconciledServer(server).Status.Archive
+			g.Expect(archive).NotTo(BeNil())
+			g.Expect(archive.History).To(HaveLen(1))
+			g.Expect(archive.History[0].To).To(BeNil())
+
+			contract := publishedContract(server)
+			if contract.Spec.PITR != nil {
+				g.Expect(contract.Spec.PITR.LastRecovery).To(BeNil())
+			}
+		}, "2s", interval).Should(Succeed())
+
+		By("finishing the rollback the removal was held for")
+		recoverySucceeds(server)
+
+		outcome := expectLastRecovery(server, v1.RecoveryResultCompleted)
 		Expect(outcome.RequestID).To(Equal(request.RequestID))
-		Expect(outcome.Message).To(ContainSubstring("writes no archive"))
+
+		By("applying the removal once the rollback is answered")
+		expectGone(storeKey, &barmanobjectstore.ObjectStore{})
+		Eventually(func(g Gomega) {
+			contract := publishedContract(server)
+			g.Expect(contract.Spec.PITR).NotTo(BeNil())
+			g.Expect(contract.Spec.PITR.Enabled).To(BeFalse())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("keeps building the cluster it recorded when the archive history moves", func() {

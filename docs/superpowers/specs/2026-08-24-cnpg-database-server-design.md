@@ -402,6 +402,8 @@ status:
     archive:                       # pinned when the request is recorded
       serverName: camunda
       objectStorageRef: backups
+      retentionPeriodDays: 30      # the archive settings a removal is held against
+      baseBackupSchedule: "0 0 2 * * *"
     result: Completed              # unset while the recovery runs
     message: ""
     completedAt: "2026-08-20T15:02:11Z"
@@ -586,10 +588,17 @@ that nothing answers. The sweep is skipped while a recovery is unanswered, becau
 on the contract the record names.
 
 While a request is unanswered, the server holds the two things the recovery reads. A spec that
-moves `spec.databaseServerConfig` or `spec.archive.objectStorageRef` puts
-`Ready=False/InvalidReference` on the server, and the merged spec stays pinned to the contract
-name and the bucket that `status.recovery` recorded. The components keep running on those
-recorded values, because a recovery that never gets its contract republished never finishes.
+moves `spec.databaseServerConfig` or `spec.archive.objectStorageRef`, or that removes
+`spec.archive` altogether, puts `Ready=False/InvalidReference` on the server, and the merged spec
+stays pinned to the contract name and the archive that `status.recovery` recorded. The components
+keep running on those recorded values, because a recovery that never gets its contract republished
+never finishes, and one that loses its archive has nothing left to read.
+
+A removal has nothing in the spec to pin, so `status.recovery.archive` carries
+`retentionPeriodDays` and `baseBackupSchedule` beside the bucket it names. The three together are
+the archive block the merged spec takes while the removal is held, so the `ObjectStore`, the
+`ScheduledBackup`, and the published `pitr` stay what they were. The removal applies on the
+reconcile after the answer goes out.
 
 A candidate that fails after the contract already moved to it rolls the contract back. The server
 puts `status.cluster` back on `status.recovery.previousCluster`, which still holds the data, and
