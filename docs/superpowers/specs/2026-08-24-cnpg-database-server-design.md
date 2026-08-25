@@ -669,10 +669,12 @@ be proved:
   `Ready=False` with reason `VersionChangeRefused` in place of the aggregate, plus one Warning
   event of that name. Everything else reconciles on the pinned version, so a recovery in flight
   finishes and the contract and the archive stay maintained. The guard reads the running cluster
-  through `status.cluster` first and falls back to the cluster the published contract names, via
+  through `status.cluster` first and falls back to the contracts the server owns, via
   `recoveredClusterOf`: a rollback whose status write was lost leaves `status.cluster` on the
-  cluster the rollback removed, and a guard that read that as a server with no cluster would let
-  the new major reach the recovered one. The guard does not fail open on an
+  cluster the rollback removed, and a guard that read that as a server with no cluster lets the new
+  major reach the recovered one. Every owned contract is read, not the one the spec names, because
+  a rename that lands before the repair leaves that name unpublished; the contract a rollback
+  answers on is preferred, since it names the cluster the rollback moved to. The guard does not fail open on an
   old CloudNativePG: `status.pgDataImageInfo` arrived in the api module at `v1.26.0` and is absent
   at `v1.25.1`, and 1.26 is the floor `docs/installation.md` names, so an absent field means only
   that the data directory is not written yet. There is no annotation escape hatch:

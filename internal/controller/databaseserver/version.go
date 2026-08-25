@@ -19,6 +19,7 @@ package databaseserver
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
@@ -26,10 +27,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 const msgVersionChangeRefused = "the effective version %s is not the major version %d that the " +
@@ -84,11 +87,14 @@ func (r *DatabaseServerReconciler) keepRunningVersion(
 // status.cluster names it, and Reconcile fills an empty one with the name of
 // the server. Neither is certain: a rollback whose status write was lost leaves
 // that field on the cluster the rollback already removed, and the name of the
-// server is that same cluster. The published contract is the second record of
-// which cluster the server runs from, and reconcileRecovery repairs
-// status.cluster from it one step further on, so a name that resolves to
-// nothing is answered from the contract rather than read as a server that has
-// not started.
+// server is that same cluster. The contracts the server owns are the second
+// record of which cluster it runs from, and reconcileRecovery repairs
+// status.cluster from one of them a step further on.
+//
+// Every owned contract is read, not the one the spec names now: a rename that
+// lands before the repair leaves the name of the spec unpublished, and the
+// cluster is named by the contract of the name before it. They are read live,
+// because a guard that finds nothing lets the change through.
 func (r *DatabaseServerReconciler) runningCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -99,23 +105,69 @@ func (r *DatabaseServerReconciler) runningCluster(
 		return cluster, err
 	}
 
-	key := types.NamespacedName{Namespace: server.Namespace, Name: contractName}
+	var contracts v1.DatabaseServerConfigList
+	if err := r.APIReader.List(
+		ctx, &contracts,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{labels.DatabaseServerKey: labels.OwnerName(server.Name)},
+	); err != nil {
+		return nil, fmt.Errorf("listing the contracts of %q: %w", server.Name, err)
+	}
 
-	var contract v1.DatabaseServerConfig
-	if err := r.APIReader.Get(ctx, key, &contract); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil
+	for _, published := range contractsByPreference(server, contractName, contracts.Items) {
+		if !ownedByServer(server, &published) {
+			continue
 		}
 
-		return nil, fmt.Errorf("reading the contract %s of the server: %w", key, err)
+		name, err := r.recoveredClusterOf(ctx, server, &published)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
+			continue
+		}
+
+		recovered, err := r.clusterOrNil(ctx, server.Namespace, name)
+		if err != nil || recovered != nil {
+			return recovered, err
+		}
 	}
 
-	recovered, err := r.recoveredClusterOf(ctx, server, &contract)
-	if err != nil || recovered == "" {
-		return nil, err
+	return nil, nil
+}
+
+// contractsByPreference orders published so that the contract a rollback
+// answers on comes first, and the one the spec names now comes next. The
+// rollback contract names the cluster the rollback moved to, and a contract
+// the server published under an earlier name can still name a cluster it has
+// replaced since.
+func contractsByPreference(
+	server *v1.DatabaseServer,
+	contractName string,
+	published []v1.DatabaseServerConfig,
+) []v1.DatabaseServerConfig {
+	answering := ""
+	if running := server.Status.Recovery; running != nil {
+		answering = running.Contract
 	}
 
-	return r.clusterOrNil(ctx, server.Namespace, recovered)
+	rank := func(name string) int {
+		switch name {
+		case answering:
+			return 0
+		case contractName:
+			return 1
+		default:
+			return 2
+		}
+	}
+
+	ordered := slices.Clone(published)
+	slices.SortStableFunc(ordered, func(a, b v1.DatabaseServerConfig) int {
+		return rank(a.Name) - rank(b.Name)
+	})
+
+	return ordered
 }
 
 // clusterOrNil reads one CloudNativePG cluster of the server, or nil when it

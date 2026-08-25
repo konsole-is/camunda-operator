@@ -1449,10 +1449,21 @@ var _ = Describe("DatabaseServer controller", func() {
 		// once, and the reconcile after it repairs status.cluster and puts the
 		// image back. Once is all CloudNativePG needs.
 		key := client.ObjectKey{Namespace: server.Namespace, Name: recovered}
+		replacedKey := client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, key, &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.ImageName).To(HaveSuffix(":17"))
+
+			// That reconcile renders the cluster status.cluster names, which
+			// is the one the rollback removed. A guard that gave up puts it
+			// back on the major it refuses.
+			var replaced cnpgv1.Cluster
+			if err := k8sClient.Get(ctx, replacedKey, &replaced); err == nil {
+				g.Expect(replaced.Spec.ImageName).To(HaveSuffix(":17"))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), err.Error())
+			}
 		}, 3*time.Second, "5ms").Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)

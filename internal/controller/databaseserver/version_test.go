@@ -22,6 +22,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -83,4 +84,50 @@ func TestRefusedMajorChange(t *testing.T) {
 			assert.Contains(t, refused.Message, "17")
 		})
 	}
+}
+
+// The guard reads every contract the server owns, because the one the spec
+// names now can be unpublished: a rename lands before the reconcile repairs
+// status.cluster, and the cluster is then named only by the contract of the
+// name before it. The order decides which answer wins when several name a
+// cluster, and the contract a rollback answers on names the one it moved to.
+func TestContractsByPreference(t *testing.T) {
+	t.Parallel()
+
+	published := []v1.DatabaseServerConfig{
+		{ObjectMeta: metav1.ObjectMeta{Name: "older"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "spec"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "rollback"}},
+	}
+
+	names := func(ordered []v1.DatabaseServerConfig) []string {
+		out := make([]string, 0, len(ordered))
+		for _, contract := range ordered {
+			out = append(out, contract.Name)
+		}
+
+		return out
+	}
+
+	answering := &v1.DatabaseServer{
+		Status: v1.DatabaseServerStatus{
+			Recovery: &v1.DatabaseServerRecoveryStatus{Contract: "rollback"},
+		},
+	}
+	assert.Equal(
+		t,
+		[]string{"rollback", "spec", "older"},
+		names(contractsByPreference(answering, "spec", published)),
+	)
+
+	// With no rollback recorded the spec leads, and the rest keep their order.
+	assert.Equal(
+		t,
+		[]string{"spec", "older", "rollback"},
+		names(contractsByPreference(&v1.DatabaseServer{}, "spec", published)),
+	)
+
+	// A contract of neither name is still read: it can be the only one left
+	// that names the cluster the server runs.
+	assert.Len(t, contractsByPreference(&v1.DatabaseServer{}, "gone", published), 3)
 }
