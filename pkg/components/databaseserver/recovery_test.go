@@ -266,8 +266,10 @@ func TestRecoveryClusterNameFitsAService(t *testing.T) {
 
 // Admission holds the name of a DatabaseServer to 46 characters, which is the
 // 50 that CloudNativePG accepts for a cluster name less the four of "-r99". A
-// name at that bound therefore reaches the cluster of every one of the first
-// ninety-nine rollbacks whole, and CloudNativePG accepts the hundredth too.
+// name at that bound therefore reaches a recovery cluster whole while the
+// index stays below 100, and CloudNativePG accepts the shortened name above
+// that. The index is the number of archive records, so a rollback is one of
+// several things that advance it.
 func TestRecoveryNameFitsCloudNativePG(t *testing.T) {
 	t.Parallel()
 
@@ -278,10 +280,10 @@ func TestRecoveryNameFitsCloudNativePG(t *testing.T) {
 		n     int
 		whole bool
 	}{
-		{name: "the first rollback", n: 1, whole: true},
-		{name: "the tenth rollback", n: 10, whole: true},
-		{name: "the ninety-ninth rollback", n: 99, whole: true},
-		{name: "the hundredth rollback", n: 100},
+		{name: "index 1", n: 1, whole: true},
+		{name: "index 10", n: 10, whole: true},
+		{name: "index 99", n: 99, whole: true},
+		{name: "index 100", n: 100},
 	}
 
 	for _, tt := range tests {

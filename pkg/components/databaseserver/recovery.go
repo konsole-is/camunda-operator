@@ -48,7 +48,8 @@ const recoveryNameSeparator = "-r"
 // cnpgClusterNameMaxLength is the longest name that CloudNativePG accepts for
 // a cluster. Admission on the DatabaseServer bounds the name of the server to
 // this length less the four characters of "-r99", so the name of a server the
-// API server accepted survives its first ninety-nine recoveries whole.
+// API server accepted reaches a recovery cluster whole while the recovery
+// index stays below 100.
 const cnpgClusterNameMaxLength = 50
 
 // ErrNoArchiveHolds reports that no archive of the server holds the requested
@@ -92,8 +93,8 @@ func RecoveryClusterName(server *v1.DatabaseServer) string {
 // The suffix of the recovery comes off the bound, and the name of the server
 // is shortened to what is left, the same way every other derived name in this
 // operator is shortened: the head of the name, and a hash of the whole of it.
-// Admission leaves room for a two-digit n, so only a hundredth recovery of a
-// server named at the bound is shortened. The Services that CloudNativePG
+// Admission leaves room for a two-digit n, so a server named at the bound is
+// shortened only once n reaches 100. The Services that CloudNativePG
 // derives need no budget of their own: this bound plus the longest of their
 // suffixes is well inside a DNS label of 63 characters.
 func recoveryName(server string, n int) string {

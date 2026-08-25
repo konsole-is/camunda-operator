@@ -402,9 +402,10 @@ type DatabaseServerStatus struct {
 // The name of the CR names the CloudNativePG cluster, so admission holds it to
 // a DNS-1035 label of at most 46 characters: the 50 that CloudNativePG accepts
 // for a cluster name, less the four of the "-r99" that a rollback appends. A
-// name inside that bound reaches the cluster of every one of the first
-// ninety-nine rollbacks whole. A rollback after those shortens it to a head
-// and a hash.
+// name inside that bound reaches the cluster of a rollback whole while the
+// recovery index stays below 100, and is shortened to a head and a hash above
+// that. The index counts the archive records of the server, so a rollback, an
+// archive the spec re-enables, and a change of bucket each add one.
 //
 // The rule runs on create only. A name never changes on update. If the rule
 // runs there too, it rejects an edit of another field on an object that

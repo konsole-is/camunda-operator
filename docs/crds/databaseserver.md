@@ -20,7 +20,9 @@ spec:
   databaseServerConfig: my-db-server
 ```
 
-The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to four characters, `-r99`. A name inside the bound stays whole through ninety-nine rollbacks. A rollback after those shortens it to a head and a hash.
+The name of the server names the CloudNativePG cluster and every address that comes off it. It must start with a lowercase letter, hold only lowercase letters, digits, and `-`, and be 46 characters or shorter. CloudNativePG takes 50, and a rollback adds a suffix of up to four characters, `-r99`.
+
+A rollback builds its cluster under the name of the server plus that suffix. The number in the suffix counts the archive records in `status.archive.history`. A rollback, an archive you re-enable, and a change of bucket each add one. A name inside the bound reaches the new cluster whole while that number stays below 100. Above it, the operator shortens the name to a head and a hash.
 
 ```mermaid
 graph LR

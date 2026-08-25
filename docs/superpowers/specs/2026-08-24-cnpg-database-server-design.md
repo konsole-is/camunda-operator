@@ -385,7 +385,9 @@ platform config can override the repository.
 Validation: `metadata.name` must be a DNS-1035 label of at most 46 characters, through a CEL rule
 on the root type. The name is used verbatim as the CloudNativePG cluster name, CloudNativePG takes
 at most 50, and `recoveryName` appends `-r<n>`, so 50 minus the four of `-r99` is the bound: a name
-at it stays whole through ninety-nine rollbacks and is shortened to a head and a hash after those.
+at it reaches a recovery cluster whole while `n` stays below 100, and is shortened to a head and a
+hash above that. `n` is `len(status.archive.history)`, so a rollback, an archive re-enable, and a
+bucket change each advance it.
 `recoveryName` shortens against the same 50 and needs no budget of its own for the Services
 CloudNativePG derives: 50 plus `-any` is well inside a DNS label of 63. The rule is create-only
 (`optionalOldSelf: true`, `oldSelf.hasValue() || ...`): a name never changes on update, and a rule
