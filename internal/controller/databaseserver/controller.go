@@ -583,10 +583,10 @@ func recoveryHoldsSpec(
 			Reason: v1.ReasonInvalidReference,
 			Message: fmt.Sprintf(
 				"A rollback that %s asked for is still running, and it reads the archive of this "+
-					"server. A shorter retentionPeriodDays prunes the base backup it starts "+
-					"from, so the archive keeps its settings until the rollback is answered. Set "+
-					"spec.archive back to retentionPeriodDays %d and baseBackupSchedule %q, or "+
-					"wait for the rollback to finish",
+					"server. A change to the retention or the schedule of the archive changes "+
+					"what it holds, so the archive keeps its settings until the rollback is "+
+					"answered. Set spec.archive back to retentionPeriodDays %d and "+
+					"baseBackupSchedule %q, or wait for the rollback to finish",
 				running.RequestedBy, held.RetentionPeriodDays, held.BaseBackupSchedule,
 			),
 		}
