@@ -288,7 +288,10 @@ so an `ObjectStorageConfig` edited under a running recovery does not move it. `r
 pins the contract by name, and `recoveryHoldsLocation` covers the edit that keeps the name: while
 the resolved location differs from `status.recovery.archive.location`, `Ready` reports
 `InvalidReference` and the archive component does not reconcile, so the one `ObjectStore` keeps
-describing the archive the recovery asked for. The history is held with it: nothing applies the
+describing the archive the recovery asked for. That object names no workload identity of its own, so
+`status.recovery.archive.identity` records the ServiceAccount annotations and the pod labels of the
+bucket at the start, and `ArchiveStorage.HeldIdentity` puts them on the running cluster and on the
+recovering one while the hold is on. The history is held with it: nothing applies the
 location the spec resolves to then, so move detection and every record update are skipped, and the
 move is decided on the reconcile after the hold lifts against the location that is applied by then. A second `ObjectStore`
 for the source would reach it and is a follow-up.
