@@ -363,9 +363,9 @@ type RecoveryArchiveRef struct {
 	Identity *RecoveryArchiveIdentity `json:"identity,omitempty"`
 }
 
-// RecoveryArchiveIdentity is the workload identity of a bucket: what a pod
-// presents to read the objects in it. A bucket with static credentials has
-// none, because the ObjectStore carries its own Secret.
+// RecoveryArchiveIdentity is the workload identity of a bucket: what the pods
+// of a consumer present to read the objects in it. A bucket that holds static
+// credentials has none.
 type RecoveryArchiveIdentity struct {
 	// Annotations are the annotations of the ServiceAccount of the pods.
 	// +optional
