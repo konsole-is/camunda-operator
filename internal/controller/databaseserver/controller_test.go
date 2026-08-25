@@ -110,21 +110,23 @@ func setPresetStorage(preset *v1.DatabaseServerPreset, storageSize string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// countEvents counts the events of one reason that the server carries.
-func countEvents(g Gomega, server *v1.DatabaseServer, reason string) int32 {
+// expectShrinkWarning waits until the controller recorded the
+// StorageShrinkIgnored Warning about the named field. The field is read off the
+// start of the message, because "storageSize" is a substring of
+// "walStorageSize" and each volume is clamped on its own.
+func expectShrinkWarning(server *v1.DatabaseServer, field string) {
 	GinkgoHelper()
 
-	var events corev1.EventList
-	g.Expect(k8sClient.List(ctx, &events, client.InNamespace(server.Namespace))).To(Succeed())
-
-	var count int32
-	for _, event := range events.Items {
-		if event.Reason == reason && event.InvolvedObject.Name == server.Name {
-			count += max(event.Count, 1)
-		}
-	}
-
-	return count
+	Eventually(func(g Gomega) {
+		var events corev1.EventList
+		g.Expect(k8sClient.List(ctx, &events, client.InNamespace(server.Namespace))).To(Succeed())
+		g.Expect(events.Items).To(ContainElement(SatisfyAll(
+			HaveField("Reason", "StorageShrinkIgnored"),
+			HaveField("InvolvedObject.Name", server.Name),
+			HaveField("Type", corev1.EventTypeWarning),
+			HaveField("Message", HavePrefix(field+" ")),
+		)))
+	}, timeout, interval).Should(Succeed())
 }
 
 // makeClusterHealthy writes the status that CloudNativePG reports for a
@@ -817,18 +819,15 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		setPresetStorage(preset, "1Gi")
 
-		Eventually(func(g Gomega) {
-			g.Expect(countEvents(g, server, "StorageShrinkIgnored")).To(Equal(int32(1)))
-		}, timeout, interval).Should(Succeed())
+		expectShrinkWarning(server, "storageSize")
 
 		// CloudNativePG refuses a cluster whose storage is smaller than the
-		// one it applied, so a server that let the smaller size through would
-		// stop converging.
+		// one it applied, so a server that let the smaller size through stops
+		// converging.
 		Consistently(func(g Gomega) {
 			var cluster cnpgv1.Cluster
 			g.Expect(k8sClient.Get(ctx, clusterKey, &cluster)).To(Succeed())
 			g.Expect(cluster.Spec.StorageConfiguration.Size).To(Equal("10Gi"))
-			g.Expect(countEvents(g, server, "StorageShrinkIgnored")).To(Equal(int32(1)))
 		}, 2*time.Second, interval).Should(Succeed())
 
 		ready := conditionOf(server, v1.ConditionReady)
