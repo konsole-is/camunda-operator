@@ -741,8 +741,9 @@ func largestVolume(volumes []v1.VolumeStatus, applied *resource.Quantity) *resou
 // interval of that archive in status.
 //
 // A server that re-enabled its archive, or that moved to another bucket,
-// counts only the backups that began after the interval it closed. The
-// backups of the archive it wrote before reach no point in the new one, so
+// counts only the backups that began after the interval it closed, and a
+// backup that recorded no start counts by its end. The backups of the archive
+// it wrote before reach no point in the new one, so
 // treating one of them as the start declares a window that no restore can
 // reach. A server that asks for no archive takes no base backups, so it reads
 // none.
@@ -782,7 +783,7 @@ func (r *DatabaseServerReconciler) archiveStart(
 		// and the one ObjectStore is rewritten in place. Its end falls after
 		// the close, so an end-only test opens the new interval on an object
 		// that the new bucket does not hold.
-		if after != nil && (backup.Status.StartedAt == nil || !backup.Status.StartedAt.After(after.Time)) {
+		if after != nil && !backupBegan(backup).After(after.Time) {
 			continue
 		}
 		if earliest == nil || backup.Status.StoppedAt.Before(earliest) {
@@ -791,6 +792,18 @@ func (r *DatabaseServerReconciler) archiveStart(
 	}
 
 	return earliest, nil
+}
+
+// backupBegan returns when the backup started, or when it stopped for one that
+// recorded no start. status.startedAt is optional on the CloudNativePG Backup,
+// and a backup that carries no start is placed by the only time it has rather
+// than left out of every interval.
+func backupBegan(backup *cnpgv1.Backup) *metav1.Time {
+	if backup.Status.StartedAt != nil {
+		return backup.Status.StartedAt
+	}
+
+	return backup.Status.StoppedAt
 }
 
 // closedArchiveEnd returns when the archive of the current cluster last
