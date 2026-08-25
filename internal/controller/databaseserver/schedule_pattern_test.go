@@ -30,8 +30,9 @@ import (
 
 // scheduleCase is one input of the differential test between the
 // baseBackupSchedule pattern and the cron parser that reads the schedule.
-// pattern and parser record what each of the two answers, and why records the
-// reason they differ.
+// The pattern field says whether the pattern accepts the input, the parser
+// field says whether the parser accepts it, and why records the reason when
+// the two disagree.
 //
 // The rule is that the pattern accepts nothing the parser rejects. A range
 // that reads downward is the one exception, because a pattern cannot compare
