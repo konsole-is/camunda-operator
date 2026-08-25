@@ -257,8 +257,10 @@ not guarantee it: `BackupStatus.SetAsStarted` sets `reconciliationStartedAt`, an
 snapshot path of `internal/controller/backup_controller.go` copies that into `startedAt`.
 
 The recovered cluster is given one `ObjectStore`,
-the one of the bucket the spec names now, so a target inside a record of an earlier bucket is
-refused with `result: Unavailable` and a message that names both buckets. A second `ObjectStore`
+the one of the location the spec resolves to now, so a target inside a record of an earlier
+location is refused with `result: Unavailable` and a message that names the bucket contract and
+the location of each. `SelectArchive` compares the location, and `status.recovery.archive` pins it,
+so an `ObjectStorageConfig` edited under a running recovery does not move it. A second `ObjectStore`
 for the source would reach it and is a follow-up.
 
 The alternative, only the current archive, is simpler but cannot correct a recovery to the wrong

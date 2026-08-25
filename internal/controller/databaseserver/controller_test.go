@@ -346,6 +346,20 @@ func setArchive(server *v1.DatabaseServer, archive *v1.DatabaseServerArchiveSpec
 	}, timeout, interval).Should(Succeed())
 }
 
+// moveBucket points the ObjectStorageConfig at another bucket, keeping its
+// name. An ObjectStorageConfig is mutable, and a delete and create keeps the
+// name too, so the name says nothing about where the objects are.
+func moveBucket(bucket *v1.ObjectStorageConfig, bucketName string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.ObjectStorageConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(bucket), &latest)).To(Succeed())
+		latest.Spec.S3.BucketName = bucketName
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // archiveHistory reads the archive history of the reconciled server.
 func archiveHistory(server *v1.DatabaseServer) []v1.ArchiveRecord {
 	GinkgoHelper()
@@ -1019,6 +1033,56 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, 3*time.Second, "5ms").Should(Succeed())
 
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+	})
+
+	// The name of an ObjectStorageConfig says nothing about where the objects
+	// are: it can be edited in place, and a delete and create keeps the name.
+	// The interval is compared by the location it was written to.
+	It("closes the record when the bucket moves under one ObjectStorageConfig", func() {
+		bucket := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    bucket.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000020")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].Location).To(ContainSubstring("s3://" + bucket.Name + "/"))
+		}, timeout, interval).Should(Succeed())
+
+		By("moving the bucket the ObjectStorageConfig names")
+		moved := bucket.Name + "-moved"
+		moveBucket(bucket, moved)
+
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		closedAt := *archiveHistory(server)[0].To
+
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+
+		By("opening a record of the new location on the next base backup")
+		openedStart := metav1.NewTime(closedAt.Add(time.Second))
+		completeBaseBackupBetween(
+			server, "after-move", &openedStart, metav1.NewTime(closedAt.Add(2*time.Second)),
+		)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			// The contract still carries the name it always had.
+			g.Expect(history[1].ObjectStorageRef).To(Equal(bucket.Name))
+			g.Expect(history[1].Location).To(ContainSubstring("s3://" + moved + "/"))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// Removing spec.archive closes every record, so a re-enable elsewhere finds

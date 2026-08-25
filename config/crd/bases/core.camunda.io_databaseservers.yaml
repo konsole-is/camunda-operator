@@ -1096,6 +1096,13 @@ spec:
                       spec that names another bucket in the middle does not move a recovery
                       that is already running.
                     properties:
+                      location:
+                        description: |-
+                          Location is where in object storage the archive lives, in the form
+                          ArchiveRecord.Location takes. A running recovery keeps reading the
+                          location it recorded, so an ObjectStorageConfig edited in the middle
+                          does not move it.
+                        type: string
                       objectStorageRef:
                         description: |-
                           ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the

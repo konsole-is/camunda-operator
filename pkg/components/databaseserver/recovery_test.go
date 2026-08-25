@@ -48,12 +48,24 @@ func archiveAt(serverName, from string, to *string) v1.ArchiveRecord {
 	return record
 }
 
-// archiveInBucket returns archiveAt with the bucket that holds the record.
-func archiveInBucket(serverName, bucket, from string, to *string) v1.ArchiveRecord {
-	record := archiveAt(serverName, from, to)
+// fixtureServerName is the cluster that the archive records of these fixtures
+// belong to.
+const fixtureServerName = "camunda"
+
+// archiveInBucket returns archiveAt with the bucket that holds the record, and
+// the location that bucket resolves to.
+func archiveInBucket(bucket, from string, to *string) v1.ArchiveRecord {
+	record := archiveAt(fixtureServerName, from, to)
 	record.ObjectStorageRef = bucket
+	record.Location = locationOf(bucket)
 
 	return record
+}
+
+// locationOf is the destination that a bucket of these fixtures resolves to,
+// in the shape ArchiveStorage renders.
+func locationOf(bucket string) string {
+	return "s3://" + bucket + "/clusters/databaseserver/my-cluster-ns/" + fixtureServerName
 }
 
 // atTime parses an RFC 3339 timestamp of a fixture.
@@ -133,7 +145,7 @@ func TestSelectArchive(t *testing.T) {
 		{
 			name: "a point in the bucket the server archives to now is answered",
 			history: []v1.ArchiveRecord{
-				archiveInBucket("camunda", "bucket-b", "2026-08-01T00:00:00Z", nil),
+				archiveInBucket("bucket-b", "2026-08-01T00:00:00Z", nil),
 			},
 			bucket: "bucket-b",
 			target: "2026-08-05T12:00:00Z",
@@ -150,7 +162,7 @@ func TestSelectArchive(t *testing.T) {
 				bucket = "bucket-a"
 			}
 
-			got, err := SelectArchive(tt.history, atTime(tt.target).Time, bucket)
+			got, err := SelectArchive(tt.history, atTime(tt.target).Time, locationOf(bucket), bucket)
 			if tt.wantErr != "" {
 				require.ErrorIs(t, err, ErrNoArchiveHolds)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -174,17 +186,40 @@ func TestSelectArchiveInAnotherBucket(t *testing.T) {
 
 	closed := "2026-08-10T00:00:00Z"
 	history := []v1.ArchiveRecord{
-		archiveInBucket("camunda", "bucket-a", "2026-08-01T00:00:00Z", &closed),
-		archiveInBucket("camunda", "bucket-b", closed, nil),
+		archiveInBucket("bucket-a", "2026-08-01T00:00:00Z", &closed),
+		archiveInBucket("bucket-b", closed, nil),
 	}
 
-	_, err := SelectArchive(history, atTime("2026-08-05T12:00:00Z").Time, "bucket-b")
+	_, err := SelectArchive(
+		history, atTime("2026-08-05T12:00:00Z").Time, locationOf("bucket-b"), "bucket-b",
+	)
 
 	require.ErrorIs(t, err, ErrArchiveInAnotherBucket)
 	assert.NotErrorIs(t, err, ErrNoArchiveHolds)
 	assert.Contains(t, err.Error(), `ObjectStorageConfig "bucket-a"`)
-	assert.Contains(t, err.Error(), `archives to "bucket-b" now`)
+	assert.Contains(t, err.Error(), locationOf("bucket-a"))
+	assert.Contains(t, err.Error(), `archives to "bucket-b"`)
+	assert.Contains(t, err.Error(), locationOf("bucket-b"))
 	assert.Contains(t, err.Error(), "not supported yet")
+}
+
+// An ObjectStorageConfig is mutable, and a delete and create keeps its name.
+// The archive of a record therefore stays out of reach when the name is the
+// one the spec still names but the bucket behind it has moved.
+func TestSelectArchiveInAnotherLocationUnderOneName(t *testing.T) {
+	t.Parallel()
+
+	moved := archiveInBucket("bucket-a", "2026-08-01T00:00:00Z", nil)
+	history := []v1.ArchiveRecord{moved}
+
+	_, err := SelectArchive(
+		history, atTime("2026-08-05T12:00:00Z").Time,
+		"s3://moved-bucket/clusters/databaseserver/my-cluster-ns/camunda", "bucket-a",
+	)
+
+	require.ErrorIs(t, err, ErrArchiveInAnotherBucket)
+	assert.Contains(t, err.Error(), moved.Location)
+	assert.Contains(t, err.Error(), "s3://moved-bucket/")
 }
 
 func TestRecoveryClusterName(t *testing.T) {

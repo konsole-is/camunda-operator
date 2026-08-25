@@ -58,8 +58,8 @@ const cnpgClusterNameMaxLength = 50
 var ErrNoArchiveHolds = errors.New("no archive of the server holds the requested point")
 
 // ErrArchiveInAnotherBucket reports that the archive that holds the requested
-// point is in a bucket the spec no longer names. The recovered cluster reads
-// one ObjectStore, and that ObjectStore describes the bucket the server
+// point is somewhere the spec no longer archives to. The recovered cluster
+// reads one ObjectStore, and that ObjectStore describes where the server
 // archives to now.
 var ErrArchiveInAnotherBucket = errors.New("the archive that holds the requested point is in another bucket")
 
@@ -110,16 +110,23 @@ func recoveryName(server string, n int) string {
 // archive the server writes now has no end and holds every point after its
 // start.
 //
-// bucket is the ObjectStorageConfig that spec.archive names now. A record of
-// another bucket holds its interval, and a recovery still cannot read it: the
-// recovered cluster is given one ObjectStore, and that one describes bucket.
-// A record that names no bucket was written before the field existed and is
-// taken as bucket.
+// location is where the server archives to now, and bucket is the
+// ObjectStorageConfig that names it. A record of another location holds its
+// interval, and a recovery still cannot read it: the recovered cluster is
+// given one ObjectStore, and that one describes location. The comparison is on
+// the location rather than on the name, because an ObjectStorageConfig can be
+// edited in place, and removed and created again, without its name changing.
+// A record that names no location was written before the field existed and is
+// taken as the current one.
 //
 // The error wraps ErrNoArchiveHolds when no interval holds target, and
-// ErrArchiveInAnotherBucket when one holds it in another bucket. Both are
+// ErrArchiveInAnotherBucket when one holds it somewhere else. Both are
 // refusals of the request rather than failures of the recovery.
-func SelectArchive(history []v1.ArchiveRecord, target time.Time, bucket string) (v1.ArchiveRecord, error) {
+func SelectArchive(
+	history []v1.ArchiveRecord,
+	target time.Time,
+	location, bucket string,
+) (v1.ArchiveRecord, error) {
 	// Newest first: the intervals never overlap, and a record that a later
 	// recovery superseded is the answer only when nothing newer holds the
 	// point.
@@ -132,11 +139,15 @@ func SelectArchive(history []v1.ArchiveRecord, target time.Time, bucket string) 
 			if record.ObjectStorageRef == "" {
 				record.ObjectStorageRef = bucket
 			}
-			if record.ObjectStorageRef != bucket {
+			if record.Location == "" {
+				record.Location = location
+			}
+			if record.Location != location {
 				return v1.ArchiveRecord{}, fmt.Errorf(
-					"%w. It is in ObjectStorageConfig %q, and the server archives to %q now. "+
-						"Reading the archive of an earlier bucket is not supported yet",
-					ErrArchiveInAnotherBucket, record.ObjectStorageRef, bucket,
+					"%w. It is in ObjectStorageConfig %q at %q, and the server archives to %q at "+
+						"%q now. Reading the archive of an earlier location is not supported yet",
+					ErrArchiveInAnotherBucket,
+					record.ObjectStorageRef, record.Location, bucket, location,
 				)
 			}
 

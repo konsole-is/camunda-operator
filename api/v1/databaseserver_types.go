@@ -310,7 +310,7 @@ type DatabaseServerArchiveStatus struct {
 }
 
 // RecoveryArchiveRef names the archive that a recovery reads: the directory in
-// the bucket, and the bucket contract that holds it.
+// the bucket, where that bucket is, and the bucket contract that names it.
 type RecoveryArchiveRef struct {
 	// ServerName is the archive directory, equal to the name of the
 	// CloudNativePG cluster that wrote it.
@@ -318,6 +318,12 @@ type RecoveryArchiveRef struct {
 	// ObjectStorageRef is the cluster-scoped ObjectStorageConfig that the
 	// archive lives in.
 	ObjectStorageRef string `json:"objectStorageRef"`
+	// Location is where in object storage the archive lives, in the form
+	// ArchiveRecord.Location takes. A running recovery keeps reading the
+	// location it recorded, so an ObjectStorageConfig edited in the middle
+	// does not move it.
+	// +optional
+	Location string `json:"location,omitempty"`
 }
 
 // DatabaseServerRecoveryStatus is the recovery request that the server works

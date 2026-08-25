@@ -121,7 +121,7 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 		return r.completeRecovery(ctx, server, contract, request)
 	}
 
-	source, refusal := recoverySource(server, resolved.merged, request)
+	source, refusal := recoverySource(server, resolved, request)
 	if refusal != nil {
 		return false, r.answerRecovery(ctx, server, contract, request, refusal.result, refusal.message)
 	}
@@ -140,6 +140,7 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 			Archive: &v1.RecoveryArchiveRef{
 				ServerName:       source.ServerName,
 				ObjectStorageRef: source.ObjectStorageRef,
+				Location:         source.Location,
 			},
 		}
 		r.EventRecorder.Eventf(
@@ -489,16 +490,19 @@ func recoveryMatches(recorded *v1.DatabaseServerRecoveryStatus, request v1.Recov
 
 // recoverySource returns the archive that a recovery to the requested point
 // starts from, or why the server refuses the request. The archive it returns
-// names the bucket that holds it.
+// names the directory, the location it lives in, and the bucket contract of
+// that location.
 //
 // It is answered again on every look, so a server that is suspended while a
 // recovery runs refuses the request it was working on. That is the honest
 // answer: hibernation takes the instances away, and a recovery needs one.
 func recoverySource(
 	server *v1.DatabaseServer,
-	merged v1.DatabaseServerSpec,
+	resolved resolvedSpec,
 	request v1.RecoveryRequest,
 ) (v1.ArchiveRecord, *recoveryRefusal) {
+	merged := resolved.merged
+
 	// The archive of a recovery that is already running is the one it
 	// recorded, whatever the history says now. The rules below still answer:
 	// a server that is suspended in the middle refuses the request it was
@@ -533,6 +537,7 @@ func recoverySource(
 		return v1.ArchiveRecord{
 			ServerName:       recorded.Archive.ServerName,
 			ObjectStorageRef: recorded.Archive.ObjectStorageRef,
+			Location:         recorded.Archive.Location,
 		}, nil
 	}
 
@@ -541,7 +546,9 @@ func recoverySource(
 		history = server.Status.Archive.History
 	}
 
-	source, err := components.SelectArchive(history, target, merged.Archive.ObjectStorageRef)
+	source, err := components.SelectArchive(
+		history, target, resolved.archiveLocation, merged.Archive.ObjectStorageRef,
+	)
 	if err != nil {
 		return v1.ArchiveRecord{}, &recoveryRefusal{
 			result:  v1.RecoveryResultUnavailable,

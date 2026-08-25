@@ -120,7 +120,9 @@ Ask for an archive again and the server opens a record of its own, starting at t
 
 If you ask for it again on another location, no record is open to close. The server records the move as `status.archive.boundary` and clears it when the new record opens. A base backup that was still running to the location the server left ends after the move, and the boundary keeps it from opening the new record.
 
-Change `spec.archive.objectStorageRef` and the same thing happens. The open record closes at that moment, and a record of the new bucket opens at its first base backup. A rollback reads the bucket the server archives to now, so a point inside a record of an earlier bucket is refused with `result: Unavailable`. The message names both buckets. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
+Change `spec.archive.objectStorageRef` and the same thing happens. The open record closes at that moment, and a record of the new location opens at its first base backup. A rollback reads the location the server archives to now, so a point inside a record of an earlier location is refused with `result: Unavailable`. The message names both the bucket contract and the location of each. Point `spec.archive.objectStorageRef` back at the earlier bucket only if you accept that the current interval closes as well.
+
+Edit the [ObjectStorageConfig](objectstorageconfig.md) in place, or remove it and create it again on another bucket, and the same happens. The name of the contract stays, the location behind it changes, and the location is what the operator compares. A rollback to a point in the interval before the move is refused the same way.
 
 A [PointInTimeRestore](pointintimerestore.md) reaches any point inside a recorded interval. See [Recovery](#recovery).
 
