@@ -114,6 +114,19 @@ func updatePreset(preset *v1.DatabaseServerPreset, mutate func(*v1.DatabaseServe
 	}, timeout, interval).Should(Succeed())
 }
 
+// renameContract puts name on spec.databaseServerConfig of the latest revision
+// of the server.
+func renameContract(server *v1.DatabaseServer, name string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.DatabaseServerConfig = name
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
 // expectShrinkWarning waits until the controller recorded the
 // StorageShrinkIgnored Warning about the named field. The field is read off the
 // start of the message, because "storageSize" is a substring of
@@ -692,16 +705,55 @@ var _ = Describe("DatabaseServer controller", func() {
 		makeClusterHealthy(server, "7000000000000000011")
 		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
 
-		Eventually(func(g Gomega) {
-			var latest v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
-			latest.Spec.DatabaseServerConfig = "camunda-renamed"
-			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
+		renameContract(server, "camunda-renamed")
 
 		// The contract of the previous name keeps its owner reference and its
 		// pitr.recovery: operator declaration, so a PointInTimeRestore that
 		// resolves through it asks a server that never reads it again.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-renamed"},
+				&v1.DatabaseServerConfig{},
+			)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)).To(MatchError(apierrors.IsNotFound, "not found"))
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("keeps the contract of the previous name until the new one is published", func() {
+		server := serverInNamespace(nil)
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000013")
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
+
+		// The contract component blocks on the superuser Secret, so nothing is
+		// published under the new name while the Secret is away.
+		Expect(k8sClient.Delete(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      components.SuperuserSecretName(server),
+				Namespace: server.Namespace,
+			},
+		})).To(Succeed())
+		renameContract(server, "camunda-renamed")
+
+		expectCondition(server, v1.ConditionContractReady, metav1.ConditionFalse)
+
+		// A sweep on that look would leave the server publishing nothing.
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"},
+				&v1.DatabaseServerConfig{},
+			)).To(Succeed())
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-renamed"},
+				&v1.DatabaseServerConfig{},
+			)).To(MatchError(apierrors.IsNotFound, "not found"))
+		}, 2*time.Second, interval).Should(Succeed())
+
+		By("sweeping once the new name is published")
+		writeSuperuserSecret(server)
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(
 				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda-renamed"},

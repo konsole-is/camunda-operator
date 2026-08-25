@@ -854,6 +854,9 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 // that this controller never reads again. That restore waits for an answer
 // that never comes.
 //
+// It runs only when the contract the spec names now is published, so a
+// reconcile that could not apply it never takes the one that is there.
+//
 // The contract that status.recovery names is never swept. It carries the
 // request while the recovery runs, and it carries the answer afterwards:
 // spec.pitr.lastRecovery on that object is the only place a PointInTimeRestore
@@ -882,6 +885,15 @@ func (r *DatabaseServerReconciler) removeSupersededContracts(
 		client.MatchingLabels{labels.DatabaseServerKey: labels.OwnerName(server.Name)},
 	); err != nil {
 		return fmt.Errorf("listing the contracts of %q: %w", server.Name, err)
+	}
+
+	// The replacement goes in first. The contract component blocks while the
+	// superuser Secret is missing and it publishes nothing then, so a sweep
+	// that ran on that look would leave the server with no contract at all.
+	if !slices.ContainsFunc(contracts.Items, func(published v1.DatabaseServerConfig) bool {
+		return published.Name == merged.DatabaseServerConfig && ownedByServer(server, &published)
+	}) {
+		return nil
 	}
 
 	for i := range contracts.Items {
