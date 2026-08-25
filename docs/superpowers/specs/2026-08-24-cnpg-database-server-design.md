@@ -226,9 +226,17 @@ its pods.
 ### A restore can reach any point in retention, across recoveries
 
 Each recovery starts a new archive. `status.archive.history[]` records every archive the server
-has written: `serverName`, `from`, and `to` (`to` is unset for the current archive). A recovery
-picks the source whose interval holds `targetTime`. A target that no interval holds is refused
-with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user prunes them.
+has written: `serverName`, `objectStorageRef`, `from`, and `to` (`to` is unset for the current
+archive). A recovery picks the source whose interval holds `targetTime`. A target that no interval
+holds is refused with `PitrUnavailable`. Old archives stay in the bucket; the docs say the user
+prunes them.
+
+`objectStorageRef` is what makes an interval readable. A spec that names another bucket closes the
+open record at that moment and opens a record of the new bucket at its first base backup, the same
+way removing and restoring `spec.archive` does. The recovered cluster is given one `ObjectStore`,
+the one of the bucket the spec names now, so a target inside a record of an earlier bucket is
+refused with `result: Unavailable` and a message that names both buckets. A second `ObjectStore`
+for the source would reach it and is a follow-up.
 
 The alternative, only the current archive, is simpler but cannot correct a recovery to the wrong
 point with a second restore further back.
@@ -325,9 +333,11 @@ status:
   archive:
     history:
       - serverName: camunda
+        objectStorageRef: camunda-backups
         from: "2026-08-01T10:00:00Z"
         to: "2026-08-20T14:30:00Z"
       - serverName: camunda-r1
+        objectStorageRef: camunda-backups
         from: "2026-08-20T14:30:00Z"
   recovery:                        # the last request this server acted on
     requestID: 6f1c…               # the restore's UID, as the contract carried it
@@ -472,7 +482,8 @@ The reconcile reads the contract it owns and sees `spec.recovery` that differs f
 
 1. Picks the archive from `status.archive.history[]` whose interval holds `targetTime`. None:
    applies `lastRecovery` with `result: Unavailable` and a message that names the covered
-   intervals, and stops.
+   intervals, and stops. One that holds it in a bucket the spec no longer names: the same result,
+   with a message that names both buckets.
 2. Applies `Cluster <name>-r<N>` with `bootstrap.recovery.source: source`,
    `recoveryTarget.targetTime`, an `externalClusters` entry that names the `ObjectStore` and the
    source `serverName`, and its own `plugins[]` entry with `serverName: <name>-r<N>`.
@@ -553,8 +564,9 @@ be proved:
   `It("keeps removing what an answered recovery replaced")` in
   `internal/controller/databaseserver/recovery_test.go`.
 - Closing the archive record and opening a new one:
-  `It("closes the archive record when the archive block is removed")` and
-  `It("starts a new archive record when the archive comes back")` in
+  `It("closes the archive record when the archive block is removed")`,
+  `It("starts a new archive record when the archive comes back")`, and
+  `It("starts a new archive record when the bucket changes")` in
   `internal/controller/databaseserver/controller_test.go`.
 - The shared-server refusal:
   `It("holds a server that a Database of another namespace reaches through another contract")` in

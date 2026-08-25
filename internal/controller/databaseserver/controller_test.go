@@ -679,6 +679,58 @@ var _ = Describe("DatabaseServer controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("starts a new archive record when the bucket changes", func() {
+		first := archiveBucket()
+		server := serverInNamespace(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    first.Name,
+			RetentionPeriodDays: 30,
+		})
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000010")
+		completeBaseBackup(server, "first", metav1.NewTime(metav1.Now().Rfc3339Copy().Time))
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ObjectStorageRef).To(Equal(first.Name))
+		}, timeout, interval).Should(Succeed())
+
+		second := archiveBucket()
+		setArchive(server, &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    second.Name,
+			RetentionPeriodDays: 30,
+		})
+
+		// The interval of the first bucket ends where the second one starts,
+		// so a restore of a point inside it knows which bucket holds it.
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(1))
+			g.Expect(history[0].ObjectStorageRef).To(Equal(first.Name))
+			g.Expect(history[0].To).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+		closedAt := *archiveHistory(server)[0].To
+
+		// The new bucket holds no base backup yet, so no point in it can be
+		// reached and no record of it opens.
+		blocked := expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionFalse)
+		Expect(blocked.Message).To(ContainSubstring("base backup"))
+
+		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
+		completeBaseBackup(server, "second", openedAt)
+
+		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history).To(HaveLen(2))
+			g.Expect(history[1].ServerName).To(Equal("camunda"))
+			g.Expect(history[1].ObjectStorageRef).To(Equal(second.Name))
+			g.Expect(history[1].From.Time).To(BeTemporally("==", openedAt.Time))
+			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A server that never converged has no honest condition to keep, so a
 	// dangling reference under it must be reported rather than tolerated.
 	It("reports a dangling bucket on a server created suspended", func() {

@@ -139,7 +139,7 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 			Cluster:     components.RecoveryClusterName(server),
 			Archive: &v1.RecoveryArchiveRef{
 				ServerName:       source.ServerName,
-				ObjectStorageRef: resolved.merged.Archive.ObjectStorageRef,
+				ObjectStorageRef: source.ObjectStorageRef,
 			},
 		}
 		r.EventRecorder.Eventf(
@@ -488,7 +488,8 @@ func recoveryMatches(recorded *v1.DatabaseServerRecoveryStatus, request v1.Recov
 }
 
 // recoverySource returns the archive that a recovery to the requested point
-// starts from, or why the server refuses the request.
+// starts from, or why the server refuses the request. The archive it returns
+// names the bucket that holds it.
 //
 // It is answered again on every look, so a server that is suspended while a
 // recovery runs refuses the request it was working on. That is the honest
@@ -529,7 +530,10 @@ func recoverySource(
 	}
 
 	if pinned {
-		return v1.ArchiveRecord{ServerName: recorded.Archive.ServerName}, nil
+		return v1.ArchiveRecord{
+			ServerName:       recorded.Archive.ServerName,
+			ObjectStorageRef: recorded.Archive.ObjectStorageRef,
+		}, nil
 	}
 
 	var history []v1.ArchiveRecord
@@ -537,7 +541,7 @@ func recoverySource(
 		history = server.Status.Archive.History
 	}
 
-	source, err := components.SelectArchive(history, target)
+	source, err := components.SelectArchive(history, target, merged.Archive.ObjectStorageRef)
 	if err != nil {
 		return v1.ArchiveRecord{}, &recoveryRefusal{
 			result:  v1.RecoveryResultUnavailable,

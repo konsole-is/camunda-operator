@@ -226,6 +226,12 @@ type ArchiveRecord struct {
 	// ServerName is the archive directory in the bucket, equal to the name of
 	// the CloudNativePG cluster that wrote it.
 	ServerName string `json:"serverName"`
+	// ObjectStorageRef is the cluster-scoped ObjectStorageConfig that holds
+	// this archive. A server that is pointed at another bucket closes this
+	// record and opens one of its own, so every interval names the bucket a
+	// restore of that interval has to read.
+	// +optional
+	ObjectStorageRef string `json:"objectStorageRef,omitempty"`
 	// From is the earliest point this archive can be recovered to: when its
 	// first base backup completed.
 	From metav1.Time `json:"from"`
@@ -243,9 +249,10 @@ type DatabaseServerArchiveStatus struct {
 	// Records are never removed, so a restore can reach back across an
 	// earlier recovery for as long as the bucket keeps the objects. Removing
 	// spec.archive closes the record that is open and keeps the list, and
-	// asking for an archive again opens a record of its own. The window with
-	// no archive therefore lies inside no interval, and no restore can reach
-	// a point in it.
+	// asking for an archive again opens a record of its own. Pointing
+	// spec.archive at another bucket does the same. The window with no
+	// archive therefore lies inside no interval, and no restore can reach a
+	// point in it.
 	// +optional
 	History []ArchiveRecord `json:"history,omitempty"`
 }

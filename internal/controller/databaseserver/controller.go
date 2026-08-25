@@ -854,6 +854,10 @@ func reconcileComponents(ctx context.Context, recCtx component.ReconcileContext,
 // that archives again opens a record of its own, so the window with no archive
 // stays outside every interval and no restore can ask for a point in it.
 //
+// A spec that names another bucket closes the open record the same way, at
+// the moment the bucket moves. Each record therefore names one bucket, and a
+// restore of that interval knows which bucket holds it.
+//
 // A recovery closes the record of the cluster it replaces itself, at the
 // moment the contract moves. What is left here is the record of an archive
 // that another cluster of this server wrote and never closed, which only an
@@ -870,11 +874,28 @@ func reconcileArchiveHistory(
 		return
 	}
 
+	open := openArchiveRecord(server)
+	if open != nil {
+		// A record from before the field existed names no bucket. Nothing
+		// else can place it, so it takes the bucket the spec names now.
+		if open.ObjectStorageRef == "" {
+			open.ObjectStorageRef = merged.Archive.ObjectStorageRef
+		}
+		if open.ObjectStorageRef != merged.Archive.ObjectStorageRef {
+			// The interval of the bucket the server leaves ends here. The
+			// record of the new bucket opens on a later look, once a base
+			// backup of that bucket has completed after this point: the
+			// backups of the bucket it left reach no point in the new one.
+			open.To = &now
+			return
+		}
+	}
+
 	if archiveStart == nil || archiveComp.GetCondition(server).Status != metav1.ConditionTrue {
 		return
 	}
 
-	if open := openArchiveRecord(server); open != nil {
+	if open != nil {
 		if open.ServerName == components.ClusterName(server) {
 			return
 		}
@@ -887,8 +908,9 @@ func reconcileArchiveHistory(
 		server.Status.Archive = &v1.DatabaseServerArchiveStatus{}
 	}
 	server.Status.Archive.History = append(server.Status.Archive.History, v1.ArchiveRecord{
-		ServerName: components.ClusterName(server),
-		From:       *archiveStart,
+		ServerName:       components.ClusterName(server),
+		ObjectStorageRef: merged.Archive.ObjectStorageRef,
+		From:             *archiveStart,
 	})
 }
 
