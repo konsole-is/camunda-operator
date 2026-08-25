@@ -155,7 +155,7 @@ func assertDatabaseServerGoldens(
 	// so a server without an archive would pin an ObjectStore that the
 	// component only ever deletes.
 	if merged.Archive != nil {
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
+		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "archive.yaml"), archiveComp,
@@ -163,7 +163,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, nil)
+	contract, err := ContractComponent(server, merged, nil, "")
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -171,7 +171,7 @@ func assertDatabaseServerGoldens(
 	)
 
 	if MonitoringEnabled(merged) {
-		monitoring, err := MonitoringComponent(server, merged, true)
+		monitoring, err := MonitoringComponent(server, merged, true, "")
 		require.NoError(t, err)
 		golden.AssertComponentYAML(
 			t, filepath.Join(base, "monitoring.yaml"), monitoring,
@@ -400,9 +400,9 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 
 		clusterComp, _, err := ClusterComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, nil)
+		contractComp, err := ContractComponent(server, merged, nil, "")
 		require.NoError(t, err)
-		archiveComp, err := ArchiveComponent(server, merged, archive, nil)
+		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
 
 		return renderComponent(t, clusterComp),
@@ -435,7 +435,7 @@ func TestMonitoringComponentOmitsUnsupportedPodMonitor(t *testing.T) {
 
 	server := goldenRealisticDatabaseServer()
 
-	comp, err := MonitoringComponent(server, server.Spec, false)
+	comp, err := MonitoringComponent(server, server.Spec, false, "")
 	require.NoError(t, err)
 
 	objects, err := comp.Preview()

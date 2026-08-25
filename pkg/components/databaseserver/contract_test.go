@@ -74,6 +74,7 @@ func TestContractWaitsForTheSuperuserSecret(t *testing.T) {
 		archiveServer(),
 		v1.DatabaseServerSpec{DatabaseServerConfig: "my-database-server"},
 		nil,
+		"",
 	)
 	require.NoError(t, err)
 

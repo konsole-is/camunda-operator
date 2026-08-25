@@ -110,10 +110,10 @@ type resolvedSpec struct {
 	contractHolder *metav1.OwnerReference
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
-	// free or the cluster is the server's own. The reconcile then applies
-	// nothing but the blocked cluster and ClusterReady reports ClusterTaken.
-	// The recovery decides the name, so this is filled in after the recovery
-	// and not by preCheck: see clusterTaken.
+	// free or the cluster is the server's own. Every component reads it and
+	// withdraws what names that cluster, and ClusterReady reports
+	// ClusterTaken. The recovery decides the name, so this is filled in after
+	// the recovery and not by preCheck: see clusterTaken.
 	clusterTaken string
 }
 
@@ -146,18 +146,12 @@ func (c serverComponents) all() []*component.Component {
 // and rewriting it while a recovery reads the archive it describes points the
 // cluster that is recovering somewhere that archive is not.
 //
-// A cluster that another owner holds leaves everything but the cluster out.
-// The names of the other three derive from the server too, and each acts on
-// the cluster of that name: the contract publishes the endpoint and the
-// superuser Secret of a database this server did not build, the base backup
-// schedule copies that database into the bucket of this server, and the
-// PodMonitor scrapes its pods. The cluster component reports why, and its own
-// guard blocks the apply that takes the cluster itself.
-func (c serverComponents) applying(holdArchive, clusterTaken bool) []*component.Component {
-	if clusterTaken {
-		return []*component.Component{c.cluster}
-	}
-
+// A cluster that another owner holds is not a reason to leave a component out.
+// The contract, the base backup schedule, and the PodMonitor all name the
+// cluster of that name, and the ones the server applied before it lost the
+// cluster are still there. Each of those components withdraws its own objects
+// while the name is held, and withdrawing takes a reconcile.
+func (c serverComponents) applying(holdArchive bool) []*component.Component {
 	if !holdArchive {
 		return c.all()
 	}
@@ -340,9 +334,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	comps = built.all()
 
-	reconcileErr := reconcileComponents(
-		ctx, recCtx, built.applying(resolved.holdArchive, resolved.clusterTaken != ""),
-	)
+	reconcileErr := reconcileComponents(ctx, recCtx, built.applying(resolved.holdArchive))
 
 	if err := r.removeSupersededContracts(ctx, &server, resolved.merged); err != nil {
 		return ctrl.Result{}, errors.Join(reconcileErr, err)
@@ -406,7 +398,14 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// it, and this controller watches only what it owns itself. Every other
 	// condition of this CR is backed by a watch. A running recovery waits on
 	// that same Secret, one cluster further on.
-	if recovering || !meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
+	//
+	// Nothing reports that a taken cluster name became free either, for the
+	// same reason: the object of that name belongs to somebody else, so no
+	// watch of this controller carries its deletion. ContractReady is True
+	// while the name is held, because the component withdrew the contract on
+	// purpose, so the test above cannot stand in for this one.
+	if recovering || resolved.clusterTaken != "" ||
+		!meta.IsStatusConditionTrue(server.Status.Conditions, v1.ConditionContractReady) {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 
@@ -831,8 +830,8 @@ func (r *DatabaseServerReconciler) contractHolder(
 
 // clusterTaken returns why the CloudNativePG cluster of the name the server
 // derives is not this server's to write, or the empty string when it is. The
-// cluster component blocks the apply on the answer, and the reconcile applies
-// nothing else while it is set.
+// cluster component blocks the apply on the answer, and the other three
+// withdraw every object of theirs that names that cluster.
 //
 // The caller reads it once the recovery has settled status.cluster. A name
 // read before that is the name of the cluster the server is leaving, and the
@@ -1250,17 +1249,23 @@ func (r *DatabaseServerReconciler) buildComponents(
 	}
 	built.cluster = cluster
 
-	built.archive, err = components.ArchiveComponent(server, merged, resolved.archive, archiveStart)
+	built.archive, err = components.ArchiveComponent(
+		server, merged, resolved.archive, archiveStart, resolved.clusterTaken,
+	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
 
-	built.contract, err = components.ContractComponent(server, merged, resolved.contractHolder)
+	built.contract, err = components.ContractComponent(
+		server, merged, resolved.contractHolder, resolved.clusterTaken,
+	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building contract component: %w", err)
 	}
 
-	built.monitoring, err = components.MonitoringComponent(server, merged, r.podMonitorSupported())
+	built.monitoring, err = components.MonitoringComponent(
+		server, merged, r.podMonitorSupported(), resolved.clusterTaken,
+	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building monitoring component: %w", err)
 	}

@@ -1027,8 +1027,16 @@ var _ = Describe("DatabaseServer recovery", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "camunda-r1", Namespace: server.Namespace},
 		})).To(Succeed())
 
-		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
-		Expect(outcome.Message).To(ContainSubstring("was removed"))
+		// The answer is read off the record, not off the contract. The server
+		// goes back to a name it does not own, and it withdraws the contract
+		// with everything else that names that cluster.
+		Eventually(func(g Gomega) {
+			recorded := reconciledServer(server).Status.Recovery
+			g.Expect(recorded).NotTo(BeNil())
+			g.Expect(recorded.CompletedAt).NotTo(BeNil())
+			g.Expect(recorded.Result).To(Equal(v1.RecoveryResultFailed))
+			g.Expect(recorded.Message).To(ContainSubstring("was removed"))
+		}, timeout, interval).Should(Succeed())
 
 		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
 		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))

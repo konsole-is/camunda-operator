@@ -604,9 +604,12 @@ and `spec.host` move between them on every reconcile.
 
 The name of the `Cluster` is guarded the same way, and more strictly: a `Cluster` with no
 controller at all is refused rather than adopted, because it holds a database this server did not
-build. The reconcile then applies nothing but the blocked `Cluster`, so no contract points at that
-database and no `ScheduledBackup` copies it into the bucket of this server. `ClusterReady` reports
-`ClusterTaken` with the holder in the message.
+build. Withholding the apply is not enough on its own, because a server that owned the cluster and
+lost it has already published objects that name it. The contract and the monitoring components gate
+themselves off while the name is held, so ocf removes the `DatabaseServerConfig` and the
+`PodMonitor`, and the archive component withdraws the `ScheduledBackup` and keeps the `ObjectStore`.
+`status.archive.history` and `status.recovery` are untouched, so the server comes back whole once
+the name is free. `ClusterReady` reports `ClusterTaken` with the holder in the message.
 
 `spec.databaseServerConfig` is mutable. The reconcile sweeps every `DatabaseServerConfig` it owns
 under the `camunda.io/database-server` label of the server and deletes the ones it no longer

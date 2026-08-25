@@ -21,6 +21,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
+	"github.com/sourcehawk/operator-component-framework/pkg/feature"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/secret"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -47,10 +48,18 @@ import (
 // is nil when the contract is free or belongs to this server. A guard blocks
 // the apply while it is set, so the first server to publish a name keeps it.
 // The caller reads the holder and reports v1.ReasonContractTaken.
+//
+// clusterTaken is set while a CloudNativePG cluster of the name the server
+// derives belongs to somebody else. The contract then names the endpoint and
+// the superuser Secret of that other database, so the feature gate goes off
+// and the published contract is removed. A consumer that reads
+// InvalidReference is told the truth. One that keeps the endpoint of a
+// stranger is not.
 func ContractComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	holder *metav1.OwnerReference,
+	clusterTaken string,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
 	if err != nil {
@@ -84,6 +93,7 @@ func ContractComponent(
 	return component.NewComponentBuilder().
 		WithName("contract").
 		WithConditionType(v1.ConditionContractReady).
+		WithFeatureGate(feature.NewBooleanGate(clusterTaken == "")).
 		WithResource(superuser, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
 		WithResource(contract).
 		Build()
