@@ -154,6 +154,47 @@ func expectShrinkWarning(server *v1.DatabaseServer, field string) {
 	}, timeout, interval).Should(Succeed())
 }
 
+// countEvents returns the number of times an event with the given reason was
+// recorded for the server: the sum of the counts of the matching Event
+// objects, because the recorder aggregates repeats of one event into one
+// object.
+func countEvents(g Gomega, server *v1.DatabaseServer, reason string) int32 {
+	GinkgoHelper()
+
+	var recorded corev1.EventList
+	g.Expect(k8sClient.List(ctx, &recorded, client.InNamespace(server.Namespace))).To(Succeed())
+
+	var count int32
+	for _, event := range recorded.Items {
+		if event.Reason == reason && event.InvolvedObject.Name == server.Name {
+			count += max(event.Count, 1)
+		}
+	}
+
+	return count
+}
+
+// reconcileAgain edits a spec field that the version refusal does not touch,
+// and waits until status reports that generation. The caller then knows one
+// more reconcile ran with whatever the refusal left standing.
+func reconcileAgain(server *v1.DatabaseServer, round int) {
+	GinkgoHelper()
+
+	var generation int64
+	Eventually(func(g Gomega) {
+		var latest v1.DatabaseServer
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest)).To(Succeed())
+		latest.Spec.PodLabels = map[string]string{"round": strconv.Itoa(round)}
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		generation = latest.Generation
+	}, timeout, interval).Should(Succeed())
+
+	Eventually(func(g Gomega) {
+		g.Expect(reconciledServer(server).Status.ObservedGeneration).
+			To(BeNumerically(">=", generation))
+	}, timeout, interval).Should(Succeed())
+}
+
 // makeClusterHealthy writes the status that CloudNativePG reports for a
 // healthy cluster, including the system identifier the server mirrors.
 func makeClusterHealthy(server *v1.DatabaseServer, systemID string) {
@@ -1156,6 +1197,35 @@ var _ = Describe("DatabaseServer controller", func() {
 			HaveField("InvolvedObject.Name", server.Name),
 			HaveField("Type", corev1.EventTypeWarning),
 		)))
+	})
+
+	// The refusal is one thing that happened, and it stands until the version
+	// comes back. Every reconcile while it stands records nothing more, so a
+	// reader who runs kubectl describe sees the refusal rather than a page of
+	// copies of it.
+	It("records the version refusal once while it stands", func() {
+		server, preset := serverOnPreset("")
+		writeSuperuserSecret(server)
+		makeClusterHealthy(server, "7000000000000000017")
+
+		expectCondition(server, v1.ConditionReady, metav1.ConditionTrue)
+
+		updatePreset(preset, func(p *v1.DatabaseServerPreset) {
+			p.Spec.Server.Version = "18"
+		})
+
+		Eventually(func(g Gomega) {
+			ready := conditionOf(server, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(v1.ReasonVersionChangeRefused))
+		}, timeout, interval).Should(Succeed())
+
+		reconcileAgain(server, 1)
+		reconcileAgain(server, 2)
+
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, server, v1.ReasonVersionChangeRefused)).To(Equal(int32(1)))
+		}, 2*time.Second, interval).Should(Succeed())
 	})
 
 	// A refusal must not stop the server. A rollback in flight has to finish on
