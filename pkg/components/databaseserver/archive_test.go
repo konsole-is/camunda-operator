@@ -281,3 +281,73 @@ func TestArchiveLocationSeparatesTheService(t *testing.T) {
 
 	assert.Empty(t, (*ArchiveStorage)(nil).ArchiveLocation(server))
 }
+
+// A rollback records what Identity returns. A bucket with static credentials
+// records nothing: the ObjectStore carries its own Secret, so holding that
+// object holds the credentials with it.
+func TestArchiveIdentity(t *testing.T) {
+	t.Parallel()
+
+	const role = "arn:aws:iam::123456789012:role/camunda"
+	bucket := func(auth v1.S3StorageAuth) *v1.ObjectStorageConfig {
+		return &v1.ObjectStorageConfig{
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeS3,
+				S3:   &v1.S3Storage{BucketName: "backups", Region: "eu-west-1", Auth: auth},
+			},
+		}
+	}
+	held := &v1.RecoveryArchiveIdentity{
+		Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/held"},
+	}
+
+	tests := []struct {
+		name    string
+		archive *ArchiveStorage
+		want    *v1.RecoveryArchiveIdentity
+	}{
+		{name: "no bucket", archive: nil, want: nil},
+		{
+			name: "static credentials",
+			archive: &ArchiveStorage{Config: bucket(v1.S3StorageAuth{
+				Type: v1.ObjectStorageAuthTypeCredentials,
+				Credentials: &v1.S3Credentials{SecretRef: v1.S3CredentialsSecretRef{
+					Name:               "keys",
+					Namespace:          "camunda",
+					AccessKeyIDKey:     "accessKeyId",
+					SecretAccessKeyKey: "secretAccessKey",
+				}},
+			})},
+			want: nil,
+		},
+		{
+			name: "workload identity",
+			archive: &ArchiveStorage{Config: bucket(v1.S3StorageAuth{
+				Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+				WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: role},
+			})},
+			want: &v1.RecoveryArchiveIdentity{
+				Annotations: map[string]string{v1.IRSARoleARNAnnotation: role},
+			},
+		},
+		{
+			name: "a held identity wins over the contract",
+			archive: &ArchiveStorage{
+				Config: bucket(v1.S3StorageAuth{
+					Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+					WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: role},
+				}),
+				HeldIdentity: held,
+			},
+			want: held,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, test.want, test.archive.Identity())
+		})
+	}
+}

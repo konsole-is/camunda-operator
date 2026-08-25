@@ -214,6 +214,36 @@ func archiveOnCluster(g Gomega, server *v1.DatabaseServer) renderedArchive {
 	}
 }
 
+// setBucketRole moves the bucket contract onto workload identity under the
+// named IAM role.
+func setBucketRole(bucket *v1.ObjectStorageConfig, roleARN string) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		var latest v1.ObjectStorageConfig
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(bucket), &latest)).To(Succeed())
+		latest.Spec.S3.Auth = v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: roleARN},
+		}
+		g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+	}, timeout, interval).Should(Succeed())
+}
+
+// clusterRole reads the IAM role that the named CloudNativePG cluster gives
+// its instance pods, or the empty string when it gives them none.
+func clusterRole(g Gomega, server *v1.DatabaseServer, name string) string {
+	var cluster cnpgv1.Cluster
+	g.Expect(k8sClient.Get(
+		ctx, client.ObjectKey{Namespace: server.Namespace, Name: name}, &cluster,
+	)).To(Succeed())
+	if cluster.Spec.ServiceAccountTemplate == nil {
+		return ""
+	}
+
+	return cluster.Spec.ServiceAccountTemplate.Metadata.Annotations[v1.IRSARoleARNAnnotation]
+}
+
 // probeContract records the probe that the DatabaseServerConfig controller
 // writes once it reached the server the contract names. That controller does
 // not run in this suite, and the server waits for the probe before it declares
@@ -1216,6 +1246,105 @@ var _ = Describe("DatabaseServer recovery", func() {
 		Expect(archive.History).To(HaveLen(1))
 		Expect(archive.History[0].Location).To(Equal(recorded.Location))
 		Expect(archive.Boundary).To(BeNil())
+	})
+
+	// The identity of a bucket with workload identity is on the pods, not in
+	// the ObjectStore, so the hold on that object holds nothing of it. What
+	// the rollback recorded is what keeps the pods on the bucket they read.
+	It("keeps the identity a rollback started with while the archive is held", func() {
+		const before = "arn:aws:iam::123456789012:role/before"
+		const after = "arn:aws:iam::123456789012:role/after"
+
+		server, from := archivingServer()
+
+		var bucket v1.ObjectStorageConfig
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Name: server.Spec.Archive.ObjectStorageRef}, &bucket,
+		)).To(Succeed())
+
+		By("putting the bucket on workload identity before the rollback starts")
+		setBucketRole(&bucket, before)
+		Eventually(func(g Gomega) string {
+			return clusterRole(g, server, server.Name)
+		}, timeout, interval).Should(Equal(before))
+
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		recorded := reconciledServer(server).Status.Recovery.Archive
+		Expect(recorded).NotTo(BeNil())
+		Expect(recorded.Identity).NotTo(BeNil())
+		Expect(recorded.Identity.Annotations).
+			To(HaveKeyWithValue(v1.IRSARoleARNAnnotation, before))
+
+		By("moving the bucket and its identity while the rollback is unanswered")
+		moveBucket(&bucket, bucket.Name+"-moved")
+		setBucketRole(&bucket, after)
+
+		ready := expectCondition(server, v1.ConditionReady, metav1.ConditionFalse)
+		Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
+
+		// The identity of the bucket the contract names now opens nothing in
+		// the bucket the rollback reads. The cluster that runs writes its
+		// archive there, and the cluster that recovers reads it there.
+		Consistently(func(g Gomega) {
+			g.Expect(clusterRole(g, server, server.Name)).To(Equal(before))
+			g.Expect(clusterRole(g, server, recoveryCluster(server))).To(Equal(before))
+		}, "2s", interval).Should(Succeed())
+
+		By("letting the new identity through once the bucket is back")
+		moveBucket(&bucket, bucket.Name)
+		Eventually(func(g Gomega) string {
+			return clusterRole(g, server, server.Name)
+		}, timeout, interval).Should(Equal(after))
+
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+	})
+
+	// A credential is not part of where the archive is, so a rollback holds
+	// nothing of it. A held credential leaves both clusters presenting a key
+	// that the bucket no longer takes.
+	It("takes a credential rotation while a rollback is unanswered", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+
+		var bucket v1.ObjectStorageConfig
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Name: server.Spec.Archive.ObjectStorageRef}, &bucket,
+		)).To(Succeed())
+
+		By("pointing the contract at a rotated key pair")
+		rotated := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: bucket.Name + "-rotated", Namespace: "default"},
+			Data: map[string][]byte{
+				"accessKeyId":     []byte("rotated-root"),
+				"secretAccessKey": []byte("rotated-secret"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, rotated)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rotated) })
+
+		Eventually(func(g Gomega) {
+			var latest v1.ObjectStorageConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&bucket), &latest)).To(Succeed())
+			latest.Spec.S3.Auth.Credentials.SecretRef.Name = rotated.Name
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		key := client.ObjectKey{
+			Namespace: server.Namespace, Name: components.ArchiveSecretName(server),
+		}
+		Eventually(func(g Gomega) []byte {
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, key, &secret)).To(Succeed())
+
+			return secret.Data["accessKeyId"]
+		}, timeout, interval).Should(Equal([]byte("rotated-root")))
+
+		recoverySucceeds(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
 	})
 
 	It("keeps the bucket of a running recovery while the spec names another", func() {

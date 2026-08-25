@@ -480,6 +480,11 @@ func (r *DatabaseServerReconciler) preCheck(
 	if hold := recoveryHoldsLocation(server, resolved.archiveLocation); hold != nil {
 		resolved.holdForRecovery = hold
 		resolved.holdArchive = true
+		// The ObjectStore of a bucket with workload identity names no
+		// identity of its own, so the hold on that object holds nothing of
+		// the identity. The record is what keeps the pods on the identity
+		// that reads the archive the rollback asked for.
+		resolved.archive.HeldIdentity = server.Status.Recovery.Archive.Identity
 	}
 
 	// After every hold above, because a held recovery keeps the server on the

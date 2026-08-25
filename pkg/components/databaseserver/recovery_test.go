@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -509,4 +510,64 @@ func TestRecoveryOutcomePatchStatesOneField(t *testing.T) {
 			},
 		}, pitr,
 	)
+}
+
+// A rollback records the identity of the bucket it reads, and the server holds
+// that record while it holds the archive. An ObjectStorageConfig edited in
+// place keeps its name, so the record is the only thing that keeps the two
+// clusters on the identity of the archive: the running cluster writes its
+// archive with it, and the recovering cluster reads the archive of the cluster
+// it replaces with it.
+func TestHeldIdentityStaysOnBothClusters(t *testing.T) {
+	t.Parallel()
+
+	const held = "arn:aws:iam::123456789012:role/held"
+	const moved = "arn:aws:iam::123456789012:role/moved"
+
+	server, preset, _ := recoveryServer()
+	merged := MergePreset(server.Spec, preset)
+	source := server.Status.Archive.History[0]
+
+	archive := &ArchiveStorage{
+		Config: archiveBucket(v1.S3StorageAuth{
+			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+			WorkloadIdentity: &v1.S3WorkloadIdentity{RoleARN: moved},
+		}),
+		// The pod label of an Azure identity is here on an S3 contract on
+		// purpose: no S3 contract renders one, so a label that survives can
+		// only have come from the record.
+		HeldIdentity: &v1.RecoveryArchiveIdentity{
+			Annotations: map[string]string{v1.IRSARoleARNAnnotation: held},
+			PodLabels:   map[string]string{v1.AzureWorkloadIdentityUseLabel: "true"},
+		},
+	}
+
+	clusterComp, _, err := ClusterComponent(server, merged, archive, nil)
+	require.NoError(t, err)
+	objects, err := clusterComp.Preview()
+	require.NoError(t, err)
+	require.Len(t, objects, 1)
+	running, ok := objects[0].(*cnpgv1.Cluster)
+	require.True(t, ok)
+
+	recovered, err := RecoveryCluster(
+		server, merged, archive, nil, source, "2026-08-20T14:30:00Z",
+	)
+	require.NoError(t, err)
+
+	for name, rendered := range map[string]*cnpgv1.Cluster{
+		"running": running, "recovering": recovered,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NotNil(t, rendered.Spec.ServiceAccountTemplate)
+			assert.Equal(
+				t,
+				held,
+				rendered.Spec.ServiceAccountTemplate.Metadata.Annotations[v1.IRSARoleARNAnnotation],
+			)
+			assert.Equal(
+				t, "true", rendered.Spec.InheritedMetadata.Labels[v1.AzureWorkloadIdentityUseLabel],
+			)
+		})
+	}
 }

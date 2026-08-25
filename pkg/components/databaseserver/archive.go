@@ -75,6 +75,10 @@ type ArchiveStorage struct {
 	// Credentials are the static keys of the bucket, or nil when the contract
 	// uses workload identity.
 	Credentials *objectstore.Credentials
+	// HeldIdentity is the identity that a running rollback recorded, or nil.
+	// It wins over the identity of Config, which is the identity of wherever
+	// the contract points now.
+	HeldIdentity *v1.RecoveryArchiveIdentity
 }
 
 // ObjectStoreName returns the name of the ObjectStore that describes the
@@ -370,10 +374,30 @@ func archivePlugin(server *v1.DatabaseServer) cnpgv1.PluginConfiguration {
 	}
 }
 
+// Identity returns the workload identity the pods present for the bucket, or
+// nil when there is none. It comes from HeldIdentity while the archive is
+// held, and from Config otherwise. A rollback records it when it starts.
+func (a *ArchiveStorage) Identity() *v1.RecoveryArchiveIdentity {
+	annotations, identityLabels := a.identityAnnotations(), a.podLabels()
+	if len(annotations) == 0 && len(identityLabels) == 0 {
+		return nil
+	}
+
+	return &v1.RecoveryArchiveIdentity{Annotations: annotations, PodLabels: identityLabels}
+}
+
 // identityAnnotations returns the ServiceAccount annotations that bind the
 // identity of the bucket, or nil when there is no bucket or no identity.
 func (a *ArchiveStorage) identityAnnotations() map[string]string {
-	if a == nil || a.Config == nil {
+	if a == nil {
+		return nil
+	}
+
+	if a.HeldIdentity != nil {
+		return a.HeldIdentity.Annotations
+	}
+
+	if a.Config == nil {
 		return nil
 	}
 
@@ -383,7 +407,15 @@ func (a *ArchiveStorage) identityAnnotations() map[string]string {
 // podLabels returns the labels the instance pods need for the identity of the
 // bucket, or nil when they need none. Only Azure has one.
 func (a *ArchiveStorage) podLabels() map[string]string {
-	if a == nil || a.Config == nil {
+	if a == nil {
+		return nil
+	}
+
+	if a.HeldIdentity != nil {
+		return a.HeldIdentity.PodLabels
+	}
+
+	if a.Config == nil {
 		return nil
 	}
 
