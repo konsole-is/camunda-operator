@@ -94,8 +94,10 @@ spec:
                 type: object
               timestamp:
                 description: |-
-                  Timestamp is the point that the database was already restored to. Set
-                  it to the same point you restored the database to.
+                  Timestamp is the point to restore to. Who rolls the database back to
+                  it depends on pitr.recovery of the DatabaseServerConfig: with operator
+                  the restore asks the server to roll back to this point, with external
+                  you roll the database back to it before you create the restore.
 
                   Choose that point at least one backup interval before the cluster
                   stopped writing, and inside the window that Zeebe keeps its
