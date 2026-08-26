@@ -45,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -52,6 +53,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "databaseserver"
 
 // defaultRetryInterval is how long the controller waits before it looks again
 // at the superuser Secret. CloudNativePG owns that Secret, so no watch of this
@@ -185,6 +190,9 @@ type DatabaseServerReconciler struct {
 	// EventRecorder publishes the component lifecycle events. SetupWithManager
 	// sets it from the manager.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// RetryInterval overrides how long the controller waits on the superuser
 	// Secret. Zero means defaultRetryInterval; tests shorten it.
@@ -242,6 +250,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &server,
 	}
@@ -1767,7 +1776,10 @@ func (r *DatabaseServerReconciler) served(group, kind, version string) bool {
 // operator, then restart this one.
 func (r *DatabaseServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("databaseserver")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 	r.restMapper = mgr.GetRESTMapper()
 	r.cnpgInstalled = r.served(cnpgv1.SchemeGroupVersion.Group, "Cluster", cnpgv1.SchemeGroupVersion.Version)

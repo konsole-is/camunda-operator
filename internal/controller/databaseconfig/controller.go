@@ -33,10 +33,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "databaseconfig"
 
 // SecretRefsField is the index field that lists DatabaseConfigs by the
 // Secrets they reference, keyed with refindex.NamespacedKey. Other
@@ -53,6 +58,9 @@ type DatabaseConfigReconciler struct {
 	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseconfigs,verbs=get;list;watch
@@ -79,7 +87,7 @@ func (r *DatabaseConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// server on a conflict and is staged again on the next reconcile.
 	return ctrl.Result{}, component.FlushStatus(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
 		nil,
 	)
 }
@@ -125,6 +133,10 @@ func (r *DatabaseConfigReconciler) validate(ctx context.Context, cfg *v1.Databas
 // Secret, an index by referenced DatabaseServerConfig, a metadata-only Secret
 // watch, and a typed DatabaseServerConfig watch.
 func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseConfig{},
 		SecretRefsField, func(o client.Object) []string {
@@ -168,6 +180,6 @@ func (r *DatabaseConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				databaseConfigServerRefField, refindex.ObjectNamespacedName,
 			),
 		).
-		Named("databaseconfig").
+		Named(controllerName).
 		Complete(r)
 }

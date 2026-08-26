@@ -141,7 +141,7 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		Watches(&v1.CamundaCluster{}, r.enqueueForCluster()).
 		Watches(&corev1.Namespace{}, r.enqueueForNamespace(), builder.OnlyMetadata).
 		Watches(&corev1.Secret{}, r.enqueueForSecret(), builder.OnlyMetadata).
-		Named("camundamanagementcluster").
+		Named(controllerName).
 		Complete(r)
 }
 

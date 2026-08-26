@@ -31,10 +31,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "managementauthconfig"
 
 // SecretRefsField is the index field that lists contracts by the Secrets they
 // reference, keyed by "<namespace>/<name>". A consumer of the contract watches
@@ -49,6 +54,9 @@ type ManagementAuthConfigReconciler struct {
 	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=managementauthconfigs,verbs=get;list;watch
@@ -74,7 +82,7 @@ func (r *ManagementAuthConfigReconciler) Reconcile(ctx context.Context, req ctrl
 	// server on a conflict and is staged again on the next reconcile.
 	return ctrl.Result{}, component.FlushStatus(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
 		nil,
 	)
 }
@@ -103,6 +111,10 @@ func (r *ManagementAuthConfigReconciler) validate(
 // SetupWithManager registers the controller, an index of CRs by referenced
 // Secret, and a metadata-only Secret watch.
 func (r *ManagementAuthConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.ManagementAuthConfig{},
 		SecretRefsField, func(o client.Object) []string {
@@ -123,6 +135,6 @@ func (r *ManagementAuthConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			),
 			builder.OnlyMetadata,
 		).
-		Named("managementauthconfig").
+		Named(controllerName).
 		Complete(r)
 }

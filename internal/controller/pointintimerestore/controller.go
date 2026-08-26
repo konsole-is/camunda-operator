@@ -71,12 +71,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "pointintimerestore"
 
 const (
 	// clusterRefField indexes restores by the namespace and name of their
@@ -152,6 +157,9 @@ type Reconciler struct {
 	// EventRecorder publishes the lifecycle events of the restore.
 	// SetupWithManager sets it from the manager when it is nil.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	opts Options
 }
@@ -215,6 +223,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		Client:        r.Client,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &pitr,
 	}
@@ -353,7 +362,10 @@ func (r *Reconciler) holdStarted(
 // clusters they name.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("pointintimerestore")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 
 	// A pod log is a stream, so it needs a typed REST client that the
@@ -401,6 +413,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				refindex.ObjectNamespacedName,
 			),
 		).
-		Named("pointintimerestore").
+		Named(controllerName).
 		Complete(r)
 }

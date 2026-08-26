@@ -35,11 +35,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "databaseserverconfig"
 
 const databaseServerConfigSecretRefsField = "databaseserverconfig.spec.secretRefs"
 
@@ -70,6 +75,9 @@ type DatabaseServerConfigReconciler struct {
 	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// probe reaches the server and reads its major version and its system
 	// identifier. Nil means probeServer. The tests count and stub it.
@@ -109,7 +117,7 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 	// server on a conflict and is staged again on the next reconcile.
 	if err := component.FlushStatus(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
 		nil,
 	); err != nil {
 		return ctrl.Result{}, err
@@ -316,6 +324,10 @@ func probeWithin(
 // SetupWithManager registers the controller, an index of CRs by referenced
 // Secret, and a metadata-only Secret watch.
 func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.DatabaseServerConfig{},
 		databaseServerConfigSecretRefsField, func(o client.Object) []string {
@@ -341,6 +353,6 @@ func (r *DatabaseServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			),
 			builder.OnlyMetadata,
 		).
-		Named("databaseserverconfig").
+		Named(controllerName).
 		Complete(r)
 }

@@ -48,11 +48,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "camundamanagementcluster"
 
 // Finalizer keeps the CR alive until the ManagementAuthConfig is deleted and
 // every claim is withdrawn. Neither is collected by Kubernetes: the contract
@@ -92,6 +97,9 @@ type Reconciler struct {
 	// this controller. SetupWithManager sets it from the manager when it is
 	// nil.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 	// RetryInterval overrides how long the controller waits before it calls a
 	// cluster again whose user API refused it. No watch reports the recovery
 	// of that API. Zero means defaultRetryInterval; tests shorten it.
@@ -182,6 +190,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &mc,
 	}
@@ -510,12 +519,15 @@ func readyCondition(
 }
 
 // SetupWithManager registers the controller, the reference indexes, and the
-// watches. It also sets EventRecorder to the recorder of the manager, builds
+// watches. It also sets EventRecorder and Metrics when they are nil, builds
 // the uncached component client, and probes once whether the Kubernetes
 // cluster serves the Keycloak kind.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("camundamanagementcluster")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 	if r.componentClient == nil {
 		componentClient, err := client.New(mgr.GetConfig(), client.Options{

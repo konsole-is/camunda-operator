@@ -41,6 +41,10 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "camundacluster"
+
 // eventReasonPaused is recorded on every reconcile of a cluster with
 // spec.pause set. Nothing else happens on such a reconcile.
 const eventReasonPaused = "Paused"
@@ -69,6 +73,9 @@ type CamundaClusterReconciler struct {
 	// this controller. SetupWithManager sets it from the manager when it is
 	// nil.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through. The cached client of the manager must not be used
@@ -189,6 +196,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &cluster,
 	}

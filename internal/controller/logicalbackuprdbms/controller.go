@@ -54,12 +54,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "logicalbackuprdbms"
 
 const (
 	// clusterKeyIndex indexes backups by the namespace/name of the cluster
@@ -165,6 +170,9 @@ type LogicalBackupRDBMSReconciler struct {
 	// EventRecorder publishes the backup lifecycle events. SetupWithManager
 	// sets it from the manager.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// opts is the construction-time configuration, defaults applied.
 	opts Options
@@ -219,6 +227,7 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 		Client:        r.Client,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &backup,
 	}
@@ -334,7 +343,10 @@ func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts O
 	}
 	r.opts = resolved
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("logicalbackuprdbms")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(
@@ -364,7 +376,7 @@ func (r *LogicalBackupRDBMSReconciler) SetupWithManager(mgr ctrl.Manager, opts O
 			r.enqueueForCluster(),
 			builder.WithPredicates(clusterChanged()),
 		).
-		Named("logicalbackuprdbms").
+		Named(controllerName).
 		Complete(r)
 }
 

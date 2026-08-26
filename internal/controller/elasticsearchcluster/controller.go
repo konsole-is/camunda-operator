@@ -48,12 +48,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/eckelasticsearch"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "elasticsearchcluster"
 
 // elasticsearchClusterPresetRefField indexes ElasticsearchClusters by
 // spec.presetRef, so a preset edit enqueues every cluster that references it.
@@ -91,6 +96,9 @@ type ElasticsearchClusterReconciler struct {
 	// EventRecorder publishes the component lifecycle events. SetupWithManager
 	// sets it from the manager.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	// componentClient is the uncached client that the ocf components
 	// reconcile through, wrapped for ECK apply sanitization. SetupWithManager
@@ -157,6 +165,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
 		APIReader:     r.APIReader,
 		Owner:         &cluster,
 	}
@@ -575,7 +584,10 @@ func (r *ElasticsearchClusterReconciler) eckSupported() bool {
 // decision is made once: install ECK, then restart the operator.
 func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("elasticsearchcluster")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 	r.restMapper = mgr.GetRESTMapper()
 	r.eckInstalled = r.eckSupported()
@@ -639,6 +651,6 @@ func (r *ElasticsearchClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Watches(&v1.ObjectStorageConfig{}, r.enqueueForSnapshotStorage()).
 		Watches(&corev1.Secret{}, r.enqueueForBucketSecret(), builder.OnlyMetadata).
 		Watches(&corev1.PersistentVolumeClaim{}, enqueueForDataClaim()).
-		Named("elasticsearchcluster").
+		Named(controllerName).
 		Complete(r)
 }

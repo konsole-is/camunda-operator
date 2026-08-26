@@ -48,10 +48,15 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "logicalbackupelasticsearch"
 
 const (
 	// clusterRefField indexes backups by the effective namespace/name of
@@ -126,6 +131,9 @@ type Reconciler struct {
 	// EventRecorder publishes the lifecycle events of the backup.
 	// SetupWithManager sets it from the manager when it is nil.
 	EventRecorder events.EventRecorder
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 
 	options Options
 }
@@ -222,6 +230,7 @@ func (r *Reconciler) persistStatus(ctx context.Context, backup *v1.LogicalBackup
 			Client:        r.Client,
 			Scheme:        r.Scheme,
 			EventRecorder: r.EventRecorder,
+			Metrics:       r.Metrics,
 			APIReader:     r.APIReader,
 			Owner:         backup,
 		}, nil,
@@ -283,10 +292,13 @@ func (r *Reconciler) runtimeRegistrationGrace() time.Duration {
 
 // SetupWithManager registers the controller, the clusterRef index, and the
 // cluster watch. The watch wakes waiting backups when the binding appears.
-// SetupWithManager sets EventRecorder from the manager when it is nil.
+// SetupWithManager sets EventRecorder and Metrics when they are nil.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.EventRecorder == nil {
-		r.EventRecorder = mgr.GetEventRecorder("logicalbackupelasticsearch")
+		r.EventRecorder = mgr.GetEventRecorder(controllerName)
+	}
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(
@@ -303,7 +315,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.LogicalBackupElasticsearch{}).
-		Named("logicalbackupelasticsearch").
+		Named(controllerName).
 		WithOptions(controller.Options{MaxConcurrentReconciles: concurrentReconciles}).
 		Watches(
 			&v1.CamundaCluster{},

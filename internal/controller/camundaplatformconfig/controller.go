@@ -32,10 +32,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
 )
+
+// controllerName is the name the controller registers with controller-runtime.
+// It labels its events and every metrics series it records.
+const controllerName = "camundaplatformconfig"
 
 // SecretRefsField is the index field that lists platform configs by the
 // Secrets they reference, keyed with refindex.NamespacedKey. Other
@@ -58,6 +63,9 @@ type CamundaPlatformConfigReconciler struct {
 	// Secret data needs it, because Secrets are watched metadata-only.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	// Metrics records the condition gauge and the apply counters of the
+	// framework. SetupWithManager sets it when it is nil.
+	Metrics component.MetricsRecorder
 }
 
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaplatformconfigs,verbs=get;list;watch
@@ -83,7 +91,7 @@ func (r *CamundaPlatformConfigReconciler) Reconcile(ctx context.Context, req ctr
 	// server on a conflict and is staged again on the next reconcile.
 	return ctrl.Result{}, component.FlushStatus(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
 		nil,
 	)
 }
@@ -157,6 +165,10 @@ func managementClientRefs(mgmt *v1.ManagementOIDCClientsSpec) []fieldRef {
 // SetupWithManager registers the controller, an index of platform configs by
 // referenced Secret, and a metadata-only Secret watch.
 func (r *CamundaPlatformConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics == nil {
+		r.Metrics = observability.Recorder(controllerName)
+	}
+
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &v1.CamundaPlatformConfig{},
 		SecretRefsField, func(o client.Object) []string {
@@ -181,6 +193,6 @@ func (r *CamundaPlatformConfigReconciler) SetupWithManager(mgr ctrl.Manager) err
 			),
 			builder.OnlyMetadata,
 		).
-		Named("camundaplatformconfig").
+		Named(controllerName).
 		Complete(r)
 }
