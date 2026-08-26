@@ -467,7 +467,7 @@ spec:
 
 An Optimize that names no address gets no callback, and nobody can sign in to it.
 
-`status.optimize` lists what this management plane found, ordered by namespace and name:
+`status.optimize` lists what this management plane found, ordered by namespace and name. It is what the plane will register, not what the realm carries; the condition below reports that:
 
 ```yaml
 status:

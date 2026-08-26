@@ -35,10 +35,11 @@ import (
 )
 
 // The event that the controller records when it writes the redirect URIs of
-// the Optimize client.
+// the Optimize client. One write can add a callback, remove one, or both, so
+// the vocabulary names the write and not a direction.
 const (
-	eventReasonOptimizeCallbacks = "OptimizeCallbacksRegistered"
-	eventActionRegister          = "Register"
+	eventReasonOptimizeCallbacks = "OptimizeCallbacksUpdated"
+	eventActionUpdate            = "Update"
 )
 
 // discoverOptimizes finds the Optimize instances that this management plane
@@ -167,6 +168,15 @@ func (r *Reconciler) syncOptimizeCallbacks(
 	if err != nil {
 		return nil, false, err
 	}
+	// A realm that holds no Optimize client holds no callback of this
+	// operator either, so a management plane that wants none has arrived. The
+	// client is absent for the same reason: a plane with no Optimize renders
+	// no preset for Management Identity to create it from.
+	if len(desired) == 0 && (failure == nil || failure.Reason == v1.ReasonOptimizeClientMissing) {
+		stageNoCallbacks(mc)
+
+		return nil, false, nil
+	}
 	if failure != nil {
 		stageCallbacks(mc, metav1.ConditionFalse, failure.Reason, failure.Message)
 		if len(desired) == 0 {
@@ -174,12 +184,6 @@ func (r *Reconciler) syncOptimizeCallbacks(
 		}
 
 		return failure, true, nil
-	}
-
-	if len(desired) == 0 {
-		stageNoCallbacks(mc)
-
-		return nil, false, nil
 	}
 
 	stageCallbacks(
@@ -268,7 +272,7 @@ func (r *Reconciler) convergeOptimizeCallbacks(
 		nil,
 		corev1.EventTypeNormal,
 		eventReasonOptimizeCallbacks,
-		eventActionRegister,
+		eventActionUpdate,
 		"Client %q of realm %q now carries %d redirect URIs",
 		clientID,
 		provider.Realm,

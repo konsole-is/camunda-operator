@@ -136,7 +136,7 @@ spec:
   # ... the rest of your Optimize
 ```
 
-The management plane reports what it registered on its own `OptimizeCallbacksReady` condition and in its `status.optimize`. See [Optimize](camundamanagementcluster.md#optimize).
+`status.optimize` on the management plane lists the Optimize instances it found and the addresses it will register. Whether the realm carries them is the `OptimizeCallbacksReady` condition, so read that one for the result. See [Optimize](camundamanagementcluster.md#optimize).
 
 A callback URL that does not match is a failed sign-in. It does not change the status of this resource. `Ready` stays `Healthy`, and the identity provider shows the error in the browser.
 

@@ -167,6 +167,71 @@ var _ = Describe("CamundaManagementCluster controller and the Optimize instances
 		}, "2s", interval).Should(Succeed())
 	})
 
+	// A plane that serves no Optimize renders no preset, so Management
+	// Identity never creates the client. That absence is the resting state and
+	// not a fault to retry.
+	It("reports NoCallbacks while the realm holds no Optimize client either", func() {
+		keycloak := startFakeKeycloak(nil)
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonNoCallbacks))
+		}, timeout, interval).Should(Succeed())
+
+		at := keycloak.requests()
+		Consistently(func(g Gomega) {
+			g.Expect(keycloak.requests()).To(Equal(at))
+		}, "2s", interval).Should(Succeed())
+	})
+
+	It("reports WriteFailed while Keycloak refuses the change to the client", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		keycloak.refuseUpdate = true
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			stampIdentityReady(g, s)
+
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(v1.ReasonWriteFailed))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(keycloak.redirectURIs()).To(BeEmpty())
+	})
+
+	// A suspended management plane is in its desired state, and the Keycloak
+	// it runs is scaled to zero, so the realm is left alone.
+	It("leaves the realm alone while the management cluster is suspended", func() {
+		keycloak := startFakeKeycloak(withOptimizeClient())
+		s := newScenario(withFakeKeycloak(keycloak))
+
+		createOptimize(s.namespace, s.mc.Name, blueOptimizeURL)
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.Suspend = true
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			condition := conditionOf(g, s.mc, v1.ConditionOptimizeCallbacksReady)
+			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(string(component.Suspended)))
+		}, timeout, interval).Should(Succeed())
+
+		at := keycloak.requests()
+		Consistently(func(g Gomega) {
+			g.Expect(keycloak.requests()).To(Equal(at))
+		}, "2s", interval).Should(Succeed())
+	})
+
 	// Nothing else removes the callback of an Optimize that went away. The
 	// rendered environment of a management plane that serves none carries no
 	// Optimize preset, so Management Identity never rewrites the client.
@@ -365,6 +430,9 @@ type fakeKeycloak struct {
 	// refuse answers every administration call with 401, the way a Keycloak
 	// that does not know the administrator does.
 	refuse bool
+	// refuseUpdate answers the client update with 403, the way a Keycloak does
+	// for an administrator that cannot change a client of the realm.
+	refuseUpdate bool
 
 	mu       sync.Mutex
 	stored   keycloakadmin.Representation
@@ -443,6 +511,12 @@ func (f *fakeKeycloak) serve(w http.ResponseWriter, r *http.Request) {
 			found = append(found, f.stored)
 		}
 		_ = json.NewEncoder(w).Encode(found)
+
+		return
+	}
+
+	if f.refuseUpdate {
+		w.WriteHeader(http.StatusForbidden)
 
 		return
 	}
