@@ -245,10 +245,11 @@ func ValidateArchiveStorage(config *v1.ObjectStorageConfig) error {
 // object storage to write a base backup to and is removed with it.
 //
 // The returned data cell holds the bucket URL of the ObjectStore that this
-// reconcile applied. It is unset when the apply did not happen: the component
-// is disabled, an earlier resource of it failed, a guard blocked it, or the
-// apply itself was rejected. The archive of the server is then still where it
-// was, whatever the spec asks for, so the caller records no move.
+// reconcile applied. It is unset when that apply did not happen: the component
+// is disabled, another owner controls the Secret or the ObjectStore, an
+// earlier resource of it failed, or the apply itself was rejected. The archive
+// of the server is then still where it was, whatever the spec asks for, so the
+// caller records no move.
 func ArchiveComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -312,6 +313,9 @@ func ArchiveComponent(
 			component.DeleteWhen(clusterTaken != "" || archiveTaken != ""),
 			component.BlockOnForeignController(),
 		).
+		// Last, after the ObjectStore. ocf skips every resource that follows a
+		// blocked guard. A guard registered earlier would hold the apply that
+		// moves the archive, and no move would be recorded.
 		WithResource(recoverable, component.ReadOnly(), component.Auxiliary()).
 		Build()
 	if err != nil {
