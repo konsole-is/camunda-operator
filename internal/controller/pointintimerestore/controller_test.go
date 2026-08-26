@@ -2070,6 +2070,12 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 		pitr := createRestore(w)
 		expectHeld(pitr, v1.ReasonDatabaseNotRestored)
 
+		// Admission pins the count in the same status write that reports the
+		// hold, so this is the count of the cluster before the resize.
+		By("pinning the broker count of the cluster it was admitted against")
+		Expect(readRestore(pitr).Status.Brokers).To(Equal(int32(brokerCount)))
+
+		By("resizing the cluster to one broker while the restore waits")
 		Eventually(func(g Gomega) {
 			var brokers appsv1.StatefulSet
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.brokers), &brokers)).To(Succeed())
@@ -2080,8 +2086,26 @@ var _ = Describe("PointInTimeRestore primary storage", func() {
 			g.Expect(k8sClient.Update(ctx, &brokers)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
+		By("letting the database reach the requested point")
 		exporter.set(w.dbConfig.Spec.DatabaseName, answer{positions: positionsBehind(time.Hour)})
 
+		// No watch carries the answer of a database, so only the retry timer
+		// ends this hold. That is a fixed two seconds of the ten that one
+		// assertion of this suite gets, and the phase never returns to Pending,
+		// so the wait belongs here and not in the assertions below.
+		By("leaving the admission hold on the retry timer")
+		Eventually(func(g Gomega) {
+			g.Expect(readRestore(pitr).Status.Phase).NotTo(Equal(v1.PointInTimeRestorePending))
+		}, timeout, interval).Should(Succeed())
+
+		// Both recorded brokers get an empty volume before any Job applies. Each
+		// delete, protection finalizer and apply is a write, and writes are what
+		// a loaded machine slows down, so they do not share a timeout with the
+		// outcome below.
+		By("emptying the volumes of the brokers it recorded")
+		expectRecreatedClaims(w, pitr)
+
+		By("failing on the Job of the broker that the cluster no longer runs")
 		Eventually(func(g Gomega) {
 			current := readRestore(pitr)
 			g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreFailed))
