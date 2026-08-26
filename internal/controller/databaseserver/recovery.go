@@ -691,7 +691,7 @@ func (r *DatabaseServerReconciler) advanceRecovery(
 	var recovered cnpgv1.Cluster
 	if err := r.APIReader.Get(ctx, key, &recovered); err != nil {
 		if apierrors.IsNotFound(err) {
-			return true, r.applyRecoveryCluster(ctx, server, resolved, source, request.TargetTime)
+			return true, r.createRecoveryCluster(ctx, server, resolved, source, request.TargetTime)
 		}
 
 		return false, fmt.Errorf("reading the recovery cluster %s: %w", key, err)
@@ -867,10 +867,14 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 	)
 }
 
-// applyRecoveryCluster applies the cluster that recovers the server to the
+// createRecoveryCluster creates the cluster that recovers the server to the
 // requested point. It carries the owner reference of the server, so the
 // recovery of a server that is deleted goes with it.
-func (r *DatabaseServerReconciler) applyRecoveryCluster(
+//
+// A name that another object already holds is not an error of this look. The
+// next look reads that object, and the ownership test in advanceRecovery
+// decides what it is.
+func (r *DatabaseServerReconciler) createRecoveryCluster(
 	ctx context.Context,
 	server *v1.DatabaseServer,
 	resolved resolvedSpec,
@@ -888,11 +892,16 @@ func (r *DatabaseServerReconciler) applyRecoveryCluster(
 		return fmt.Errorf("setting the owner of the recovery cluster %q: %w", recovered.Name, err)
 	}
 
-	//nolint:staticcheck // the operator applies through the deprecated client.Apply patch
-	if err := r.Patch(
-		ctx, recovered, client.Apply, components.RecoveryFieldManager, client.ForceOwnership,
-	); err != nil {
-		return fmt.Errorf("applying the recovery cluster %q: %w", recovered.Name, err)
+	// A create, not an apply. The caller read this name and found it free, and
+	// the name is derived, so anybody can take it in between. A forced apply
+	// would write the recovery over the database the other object holds, and
+	// take the object over as well.
+	if err := r.Create(ctx, recovered, components.RecoveryFieldManager); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+
+		return fmt.Errorf("creating the recovery cluster %q: %w", recovered.Name, err)
 	}
 
 	return nil
@@ -1004,9 +1013,14 @@ func (r *DatabaseServerReconciler) answerRecovery(
 	return nil
 }
 
-// publishRecoveryOutcome applies outcome on the contract. The apply states
-// spec.pitr.lastRecovery and nothing else, so it declares no field that the
-// contract component or the consumer owns.
+// publishRecoveryOutcome applies outcome on the contract that the caller read.
+// The apply states spec.pitr.lastRecovery and nothing else, so it declares no
+// field that the contract component or the consumer owns.
+//
+// It returns an error whenever the answer did not reach the contract, and the
+// caller records nothing when it does. The record of the server says answered
+// only after a contract carries the answer, which is what lets a later look
+// read the answer back from either place.
 func (r *DatabaseServerReconciler) publishRecoveryOutcome(
 	ctx context.Context,
 	contract *v1.DatabaseServerConfig,
@@ -1014,11 +1028,16 @@ func (r *DatabaseServerReconciler) publishRecoveryOutcome(
 ) error {
 	key := client.ObjectKeyFromObject(contract)
 
-	patch, err := components.RecoveryOutcomePatch(key, outcome)
+	patch, err := components.RecoveryOutcomePatch(contract, outcome)
 	if err != nil {
 		return err
 	}
 
+	// The patch names the uid of the contract that was read, so an object
+	// created under that name since is refused rather than answered. The
+	// refusal comes back as an error, and the next look reads the object that
+	// is there: recoveryContract publishes on it when this server owns it, and
+	// leaves it alone when it does not.
 	//nolint:staticcheck // the operator applies through the deprecated client.Apply patch
 	if err := r.Patch(
 		ctx, patch, client.Apply, components.RecoveryFieldManager, client.ForceOwnership,

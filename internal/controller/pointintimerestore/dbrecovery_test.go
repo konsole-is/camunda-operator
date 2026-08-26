@@ -150,21 +150,26 @@ func publishStaleContractReady(w *world, identifier string) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectRecovering asserts that the restore waits in RestoringDatabase, and
-// returns the message it reported.
-func expectRecovering(pitr *v1.PointInTimeRestore) string {
+// expectRecovering asserts that the restore waits in RestoringDatabase and
+// reports a message that holds every given substring.
+//
+// The phase reports two messages in turn. Admission writes the first one when
+// it hands the restore over, and the phase itself writes the second one once
+// the request stands on the contract. A caller that names a substring of the
+// second message therefore waits for that message, instead of reading whichever
+// of the two the first look catches.
+func expectRecovering(pitr *v1.PointInTimeRestore, substrings ...string) {
 	GinkgoHelper()
 
-	var message string
 	Eventually(func(g Gomega) {
 		current := readRestore(pitr)
 		g.Expect(current.Status.Phase).To(Equal(v1.PointInTimeRestoreRestoringDatabase))
 		condition := ready(current)
 		g.Expect(condition).NotTo(BeNil())
-		message = condition.Message
+		for _, substring := range substrings {
+			g.Expect(condition.Message).To(ContainSubstring(substring))
+		}
 	}, timeout, interval).Should(Succeed())
-
-	return message
 }
 
 // expectFailed asserts that the restore ended with the given reason, and
@@ -190,9 +195,7 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		w := operatorRecoveryWorld()
 		pitr := createRestore(w)
 
-		message := expectRecovering(pitr)
-		Expect(message).To(ContainSubstring(w.namespace + "/" + w.server.Name))
-		Expect(message).To(ContainSubstring(w.namespace + "/" + pitr.Name))
+		expectRecovering(pitr, w.namespace+"/"+w.server.Name, w.namespace+"/"+pitr.Name)
 
 		request := expectRecoveryRequest(w)
 		Expect(request.RequestID).To(Equal(string(readRestore(pitr).UID)))

@@ -77,8 +77,8 @@ spec:
                           seconds and minutes, 0-23 for hours, 1-31 for the day of the month,
                           1-12 or JAN-DEC for the month, and 0-6 or SUN-SAT for the day of the
                           week. A range whose first value is above its second, such as FRI-MON,
-                          cannot be caught by a pattern. CloudNativePG refuses it when it reads
-                          the ScheduledBackup.
+                          cannot be caught by a pattern. The operator refuses it instead, and
+                          Ready reports InvalidReference before anything is applied.
 
                           A step takes at most three digits and an @every number at most six
                           digits on each side of the point. Both are stricter than the parser of

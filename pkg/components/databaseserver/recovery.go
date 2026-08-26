@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -241,9 +240,9 @@ func RecoveryCluster(
 	}
 
 	recovered := rendered.(*cnpgv1.Cluster)
-	// A render carries no kind, and a server-side apply is refused without
-	// one. The components apply through the framework, which fills it in;
-	// this one is applied by the controller itself.
+	// A render carries no kind. The components go through the framework,
+	// which fills the kind in on the way out; the controller writes this one
+	// itself, and every reader of it reads a whole object.
 	recovered.TypeMeta = metav1.TypeMeta{
 		APIVersion: cnpgv1.SchemeGroupVersion.String(),
 		Kind:       "Cluster",
@@ -301,24 +300,32 @@ func recoveryMutation(
 }
 
 // RecoveryOutcomePatch renders the server-side apply that publishes outcome on
-// the contract. It carries spec.pitr.lastRecovery and nothing else, so the
-// apply states the answer without touching a field that the contract
-// component or the consumer owns.
+// contract. It carries spec.pitr.lastRecovery and no other spec field, so the
+// apply states the answer without touching a field that the contract component
+// or the consumer owns.
+//
+// It also carries the uid of contract. A name is taken again by whatever is
+// created under it next, and the API server refuses an apply whose uid is not
+// the uid of the object that holds the name. The answer therefore reaches the
+// object it was read from, or no object at all.
 func RecoveryOutcomePatch(
-	contract types.NamespacedName,
+	contract *v1.DatabaseServerConfig,
 	outcome v1.RecoveryOutcome,
 ) (*unstructured.Unstructured, error) {
+	key := client.ObjectKeyFromObject(contract)
+
 	fields, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&outcome)
 	if err != nil {
-		return nil, fmt.Errorf("rendering the recovery outcome of %s: %w", contract, err)
+		return nil, fmt.Errorf("rendering the recovery outcome of %s: %w", key, err)
 	}
 
 	patch := &unstructured.Unstructured{}
 	patch.SetGroupVersionKind(v1.GroupVersion.WithKind("DatabaseServerConfig"))
-	patch.SetNamespace(contract.Namespace)
-	patch.SetName(contract.Name)
+	patch.SetNamespace(key.Namespace)
+	patch.SetName(key.Name)
+	patch.SetUID(contract.UID)
 	if err := unstructured.SetNestedMap(patch.Object, fields, "spec", "pitr", "lastRecovery"); err != nil {
-		return nil, fmt.Errorf("rendering the recovery outcome of %s: %w", contract, err)
+		return nil, fmt.Errorf("rendering the recovery outcome of %s: %w", key, err)
 	}
 
 	return patch, nil

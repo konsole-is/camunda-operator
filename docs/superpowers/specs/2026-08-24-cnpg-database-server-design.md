@@ -160,7 +160,8 @@ descriptors and `@every`. A schema pattern holds the field to that form and boun
 the values that parser takes there, so an hour of 24 or a weekday of 7 is refused at admission
 rather than at read time. The pattern is written in ECMA 262 with explicit case alternatives for
 the names, because that is the dialect an OpenAPI `pattern` is read in. It cannot compare the two
-ends of a range, so `FRI-MON` stays a CloudNativePG rejection.
+ends of a range, so `ValidateMerged` reads the merged schedule with that same parser and refuses
+`FRI-MON` on `Ready`, before a `ScheduledBackup` is applied.
 
 Admission also rejects the five-field cron of a Kubernetes CronJob. CloudNativePG reads it
 seconds first and runs it at a different time from the one its author meant. Without the pattern a

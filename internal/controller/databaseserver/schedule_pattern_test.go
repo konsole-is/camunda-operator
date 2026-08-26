@@ -36,8 +36,10 @@ import (
 //
 // The rule is that the pattern accepts nothing the parser rejects. A range
 // that reads downward is the one exception, because a pattern cannot compare
-// the two ends of one. Every difference either way carries its reason, so a
-// difference nobody wrote down fails the test.
+// the two ends of one. The pattern stays this loose on purpose: ValidateMerged
+// reads the schedule with this parser and refuses that range. Every difference
+// either way carries its reason, so a difference nobody wrote down fails the
+// test.
 type scheduleCase struct {
 	input   string
 	pattern bool
@@ -179,11 +181,11 @@ func TestBaseBackupSchedulePattern(t *testing.T) {
 		},
 		{
 			input: "0 0 2 * * FRI-MON", pattern: true, parser: false,
-			why: "a pattern cannot compare the two ends of a range, so CloudNativePG refuses this one",
+			why: "a pattern cannot compare the two ends of a range, so ValidateMerged refuses this one",
 		},
 		{
 			input: "0 0 23-1 * * *", pattern: true, parser: false,
-			why: "a pattern cannot compare the two ends of a range, so CloudNativePG refuses this one",
+			why: "a pattern cannot compare the two ends of a range, so ValidateMerged refuses this one",
 		},
 	}
 

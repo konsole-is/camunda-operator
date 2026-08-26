@@ -32,8 +32,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
@@ -1940,7 +1942,102 @@ var _ = Describe("DatabaseServer recovery", func() {
 		outcome := expectLastRecovery(server, v1.RecoveryResultFailed)
 		Expect(outcome.Message).To(ContainSubstring("suspended"))
 	})
+
+	// The contract is read from the cache, so the object under that name can
+	// have been deleted and created again by the time the answer is written.
+	// An answer on the replacement answers a request that nobody made on it,
+	// and the replacement can belong to another server.
+	It("answers a recovery only on the contract it read", func() {
+		contract := &v1.DatabaseServerConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dbsc-" + utilrand.String(8), Namespace: "default",
+			},
+			Spec: v1.DatabaseServerConfigSpec{
+				Engine:                    v1.DatabaseEnginePostgres,
+				Host:                      "camunda-rw.default.svc",
+				Port:                      5432,
+				AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{Name: "superuser"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, contract)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, contract) })
+
+		outcome := components.RecoveryOutcomeFor(
+			v1.RecoveryRequest{
+				RequestID:   uuid.NewString(),
+				RequestedBy: "camunda-ns/pitr-1",
+				TargetTime:  "2026-08-20T14:30:00Z",
+			},
+			v1.RecoveryResultCompleted, "", metav1.Now(),
+		)
+		reconciler := &DatabaseServerReconciler{Client: k8sClient}
+
+		By("answering on the contract that was read")
+		Expect(reconciler.publishRecoveryOutcome(ctx, contract, outcome)).To(Succeed())
+		Expect(publishedRecovery(contract)).NotTo(BeNil())
+
+		By("replacing it under its name")
+		replacement := contract.DeepCopy()
+		replacement.ObjectMeta = metav1.ObjectMeta{
+			Name: contract.Name, Namespace: contract.Namespace,
+		}
+		Expect(k8sClient.Delete(ctx, contract)).To(Succeed())
+		Expect(k8sClient.Create(ctx, replacement)).To(Succeed())
+		Expect(replacement.UID).NotTo(Equal(contract.UID))
+
+		// The read the server holds is the one from before the replacement.
+		Expect(reconciler.publishRecoveryOutcome(ctx, contract, outcome)).NotTo(Succeed())
+		Expect(publishedRecovery(replacement)).To(BeNil())
+
+		// An answer that reached no contract must leave no record behind
+		// either. A record that says answered stops the server from asking
+		// again, and it releases the cleanup of the clusters the recovery
+		// replaced.
+		By("recording nothing while no contract carries the answer")
+		server := &v1.DatabaseServer{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: contract.Namespace},
+			Status: v1.DatabaseServerStatus{
+				Recovery: &v1.DatabaseServerRecoveryStatus{
+					RequestID:   outcome.RequestID,
+					Contract:    contract.Name,
+					RequestedBy: outcome.RequestedBy,
+					TargetTime:  outcome.TargetTime,
+					Cluster:     "camunda-r1",
+				},
+			},
+		}
+		request := v1.RecoveryRequest{
+			RequestID:   outcome.RequestID,
+			RequestedBy: outcome.RequestedBy,
+			TargetTime:  outcome.TargetTime,
+		}
+
+		err := reconciler.answerRecovery(
+			ctx, server, contract, request, v1.RecoveryResultCompleted, "",
+		)
+		Expect(err).To(HaveOccurred())
+		Expect(server.Status.Recovery.CompletedAt).To(BeNil())
+		Expect(server.Status.Recovery.Cluster).To(Equal("camunda-r1"))
+
+		By("answering on the replacement once it is read")
+		Expect(reconciler.publishRecoveryOutcome(ctx, replacement, outcome)).To(Succeed())
+		Expect(publishedRecovery(replacement)).NotTo(BeNil())
+	})
 })
+
+// publishedRecovery is the answer that the contract carries now, read back
+// from the API server.
+func publishedRecovery(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
+	GinkgoHelper()
+
+	var current v1.DatabaseServerConfig
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(contract), &current)).To(Succeed())
+	if current.Spec.PITR == nil {
+		return nil
+	}
+
+	return current.Spec.PITR.LastRecovery
+}
 
 // Every bound is read against the now the caller passes, so the cases are
 // written against one fixed instant.
@@ -2042,4 +2139,129 @@ func TestOutOfReach(t *testing.T) {
 			assert.Contains(t, refusal.message, tt.target.UTC().Format(time.RFC3339))
 		})
 	}
+}
+
+// recoveryWrite is the server, the resolved spec and the archive record that
+// the write of a recovery cluster reads. The server records the recovery, so
+// the name of the cluster to build is fixed.
+func recoveryWrite() (*v1.DatabaseServer, resolvedSpec, v1.ArchiveRecord) {
+	server := &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "camunda", Namespace: "camunda-ns", UID: "server-uid",
+		},
+		Status: v1.DatabaseServerStatus{
+			Cluster: "camunda",
+			Recovery: &v1.DatabaseServerRecoveryStatus{
+				RequestID:   "3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+				Contract:    "camunda",
+				RequestedBy: "camunda-ns/pitr-1",
+				TargetTime:  recoveryWriteTarget,
+				Cluster:     "camunda-r1",
+			},
+		},
+	}
+
+	merged := v1.DatabaseServerSpec{
+		Version:              "17",
+		Instances:            new(int32(1)),
+		StorageSize:          new(resource.MustParse("1Gi")),
+		DatabaseServerConfig: "camunda",
+		Archive: &v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef:    "bucket",
+			RetentionPeriodDays: 30,
+		},
+	}
+	archive := &components.ArchiveStorage{
+		Config: &v1.ObjectStorageConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "bucket"},
+			Spec: v1.ObjectStorageConfigSpec{
+				Type: v1.ObjectStorageTypeS3,
+				S3: &v1.S3Storage{
+					BucketName: "bucket",
+					BasePath:   "clusters",
+					Region:     "eu-west-1",
+					Auth: v1.S3StorageAuth{
+						Type: v1.ObjectStorageAuthTypeWorkloadIdentity,
+						WorkloadIdentity: &v1.S3WorkloadIdentity{
+							RoleARN: "arn:aws:iam::123456789012:role/camunda",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return server, resolvedSpec{merged: merged, archive: archive},
+		v1.ArchiveRecord{ServerName: "camunda", From: metav1.Now()}
+}
+
+// recoveryWriteTarget is the point the recovery of recoveryWrite asks for.
+const recoveryWriteTarget = "2026-08-20T14:30:00Z"
+
+// recoveryWriter is the reconciler that the write cases run, holding the
+// objects the write meets.
+func recoveryWriter(t *testing.T, objects ...client.Object) *DatabaseServerReconciler {
+	t.Helper()
+
+	s := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(s))
+	require.NoError(t, cnpgv1.AddToScheme(s))
+
+	return &DatabaseServerReconciler{
+		Client: fake.NewClientBuilder().WithScheme(s).WithObjects(objects...).Build(),
+		Scheme: s,
+	}
+}
+
+// The name of the recovery cluster is derived, so it is a name anybody can
+// take between the look that finds it free and the write that follows. The
+// write must not take that object over: recovering into it writes the archive
+// of this server over a database somebody else holds.
+func TestCreateRecoveryClusterLeavesTheClusterOfAnotherOwnerAlone(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	occupant := &cnpgv1.Cluster{
+		ObjectMeta: foreignClusterMeta(server, "other-uid"),
+		Spec: cnpgv1.ClusterSpec{
+			Instances:            3,
+			StorageConfiguration: cnpgv1.StorageConfiguration{Size: "10Gi"},
+		},
+	}
+	occupant.Name = server.Status.Recovery.Cluster
+	reconciler := recoveryWriter(t, occupant)
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	var read cnpgv1.Cluster
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	require.NoError(t, reconciler.Get(t.Context(), key, &read))
+
+	assert.False(t, ownedByServer(server, &read))
+	assert.Equal(t, occupant.OwnerReferences, read.OwnerReferences)
+	assert.EqualValues(t, 3, read.Spec.Instances)
+	assert.Nil(t, read.Spec.Bootstrap)
+}
+
+// A free name is what the recovery is built under.
+func TestCreateRecoveryClusterBuildsUnderAFreeName(t *testing.T) {
+	t.Parallel()
+
+	server, resolved, source := recoveryWrite()
+	reconciler := recoveryWriter(t)
+
+	require.NoError(t, reconciler.createRecoveryCluster(
+		t.Context(), server, resolved, source, recoveryWriteTarget,
+	))
+
+	var read cnpgv1.Cluster
+	key := client.ObjectKey{Namespace: server.Namespace, Name: server.Status.Recovery.Cluster}
+	require.NoError(t, reconciler.Get(t.Context(), key, &read))
+
+	assert.True(t, ownedByServer(server, &read))
+	require.NotNil(t, read.Spec.Bootstrap)
+	require.NotNil(t, read.Spec.Bootstrap.Recovery)
+	assert.Equal(t, recoveryWriteTarget, read.Spec.Bootstrap.Recovery.RecoveryTarget.TargetTime)
 }
