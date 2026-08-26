@@ -28,7 +28,7 @@ import (
 )
 
 func TestForgetRemovesTheSeriesOfOneOwnerOnly(t *testing.T) {
-	rec := Recorder("testkind")
+	rec := Recorder("testcontroller")
 	gone := &metav1.ObjectMeta{Name: "gone", Namespace: "ns"}
 	kept := &metav1.ObjectMeta{Name: "kept", Namespace: "ns"}
 	rec.RecordConditionFor("TestKind", gone, "Ready", "False", "Failing", time.Now())
