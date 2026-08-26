@@ -175,7 +175,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, "")
+	contract, err := ContractComponent(server, merged, "", "")
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -412,7 +412,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 
 		clusterComp, _, err := ClusterComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, "")
+		contractComp, err := ContractComponent(server, merged, "", "")
 		require.NoError(t, err)
 		archiveComp, err := ArchiveComponent(server, merged, archive, nil, "")
 		require.NoError(t, err)
@@ -504,14 +504,14 @@ func TestClusterImageComesFromThePlatformConfig(t *testing.T) {
 func TestClusterGuardBlocksAHeldName(t *testing.T) {
 	t.Parallel()
 
-	free, err := takenGuard("")(cnpgv1.Cluster{})
+	free, err := takenGuard[cnpgv1.Cluster]("")(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusUnblocked, free.Status)
 
 	held := ClusterTakenMessage("camunda", &metav1.OwnerReference{
 		Kind: "DatabaseServer", Name: "other",
 	})
-	taken, err := takenGuard(held)(cnpgv1.Cluster{})
+	taken, err := takenGuard[cnpgv1.Cluster](held)(cnpgv1.Cluster{})
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GuardStatusBlocked, taken.Status)
 	assert.Contains(t, taken.Reason, `CloudNativePG cluster "camunda"`)

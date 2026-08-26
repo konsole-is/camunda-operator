@@ -103,11 +103,11 @@ type resolvedSpec struct {
 	// ObjectStore keeps describing the archive the recovery asked for: see
 	// recoveryHoldsLocation.
 	holdArchive bool
-	// contractHolder is the owner that controls the DatabaseServerConfig the
-	// merged spec names, when that owner is not this server. ContractReady
-	// then reports ContractTaken over the block that ocf raises: see
-	// contractHolder.
-	contractHolder *metav1.OwnerReference
+	// contractTaken says why the DatabaseServerConfig the merged spec names is
+	// not this server's to publish, and it is empty when the name is free or
+	// the contract is the server's own. The contract component blocks the
+	// apply on it and ContractReady reports ContractTaken: see contractTaken.
+	contractTaken string
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. Every component reads it and
@@ -380,11 +380,8 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Before the aggregate below, which reads the component conditions off
 	// the server.
-	if resolved.contractHolder != nil {
-		stageTaken(
-			&server, v1.ConditionContractReady, v1.ReasonContractTaken,
-			components.ContractTakenMessage(resolved.merged.DatabaseServerConfig, resolved.contractHolder),
-		)
+	if resolved.contractTaken != "" {
+		stageTaken(&server, v1.ConditionContractReady, v1.ReasonContractTaken, resolved.contractTaken)
 	}
 	if resolved.clusterTaken != "" {
 		stageTaken(&server, v1.ConditionClusterReady, v1.ReasonClusterTaken, resolved.clusterTaken)
@@ -543,12 +540,12 @@ func (r *DatabaseServerReconciler) preCheck(
 	}
 
 	// After every hold above, because a held recovery keeps the server on the
-	// contract that the record names and the holder is read for that name.
-	contractHolder, err := r.contractHolder(ctx, server, resolved.merged)
+	// contract that the record names and the name is read for that contract.
+	taken, err := r.contractTaken(ctx, server, resolved.merged)
 	if err != nil {
 		return resolved, err
 	}
-	resolved.contractHolder = contractHolder
+	resolved.contractTaken = taken
 
 	return resolved, nil
 }
@@ -802,23 +799,28 @@ func (r *DatabaseServerReconciler) resolveArchiveStorage(
 	return archive, nil
 }
 
-// contractHolder returns the owner that controls the DatabaseServerConfig the
-// merged spec names. It returns nil when that object does not exist, has no
-// controller, or is controlled by this server, which are the three cases the
-// server publishes in.
+// contractTaken says why the DatabaseServerConfig the merged spec names is not
+// this server's to publish, and returns the empty string when it is: the
+// object does not exist, or this server controls it.
 //
-// The read decides the reason the condition carries, not the apply: the
-// contract blocks on a foreign controller in ocf, which reads the object again
-// immediately before every apply. This read reaches the holder even on a pass
-// where the block never fires, because the contract sits behind the superuser
-// Secret and a blocked resource stops every resource after it.
-func (r *DatabaseServerReconciler) contractHolder(
+// A contract that exists and carries no controller is taken, the way a
+// CloudNativePG cluster of the same shape is: it is the bring-your-own-server
+// API, so a person wrote it for a PostgreSQL server the operator does not run.
+// The guard of the contract component reads this message, because
+// component.BlockOnForeignController blocks on a controller of somebody else
+// and that contract carries none.
+//
+// The read also reaches the holder on a pass where the block never fires: the
+// contract sits behind the superuser Secret, and a blocked resource stops
+// every resource after it, so a server still waiting for that Secret would
+// report the wait and never the holder.
+func (r *DatabaseServerReconciler) contractTaken(
 	ctx context.Context,
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
-) (*metav1.OwnerReference, error) {
+) (string, error) {
 	if merged.DatabaseServerConfig == "" {
-		return nil, nil
+		return "", nil
 	}
 
 	key := types.NamespacedName{Namespace: server.Namespace, Name: merged.DatabaseServerConfig}
@@ -826,21 +828,21 @@ func (r *DatabaseServerReconciler) contractHolder(
 	var contract v1.DatabaseServerConfig
 	if err := r.APIReader.Get(ctx, key, &contract); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, nil
+			return "", nil
 		}
 
-		return nil, fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
+		return "", fmt.Errorf("reading DatabaseServerConfig %s: %w", key, err)
 	}
 
 	// The controller reference alone, not ownedByServer. A contract that
 	// carries our reference and lost its label is ours to repair, and holding
 	// it against ourselves would name this server as its own holder.
 	holder := metav1.GetControllerOf(&contract)
-	if holder == nil || holder.UID == server.UID {
-		return nil, nil
+	if holder != nil && holder.UID == server.UID {
+		return "", nil
 	}
 
-	return holder, nil
+	return components.ContractTakenMessage(merged.DatabaseServerConfig, holder), nil
 }
 
 // derivedCluster is what a live read of the CloudNativePG cluster of the name
@@ -1301,7 +1303,9 @@ func (r *DatabaseServerReconciler) buildComponents(
 		return built, nil, fmt.Errorf("building archive component: %w", err)
 	}
 
-	built.contract, err = components.ContractComponent(server, merged, resolved.clusterTaken)
+	built.contract, err = components.ContractComponent(
+		server, merged, resolved.clusterTaken, resolved.contractTaken,
+	)
 	if err != nil {
 		return built, nil, fmt.Errorf("building contract component: %w", err)
 	}

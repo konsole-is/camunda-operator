@@ -46,7 +46,7 @@ The contract appears only after that Secret exists. Until then `ContractReady` i
 
 Change `spec.databaseServerConfig` and the server publishes the new name and removes the contract of the name before it. A `Database` that still names the old one reports `Ready` `False` with reason `InvalidReference`. Point it at the new name, or rename the contract back. Two contracts of the server outlive a rename: one that carries the answer of the last rollback, and one that a rollback still runs on. See [Recovery](#recovery).
 
-One contract name belongs to one server. The first `DatabaseServer` that publishes a name keeps it. A second server in the same namespace that names it publishes nothing on it, and reports `ContractReady` `False` with reason `ContractTaken`. The message names the owner. A `Database` on that contract keeps the endpoint and the credentials of the owner. Give the second server a name of its own, or delete the owner. The waiting server then publishes the name.
+The name must also be free. A `DatabaseServerConfig` that already exists under it, with or without an owner, is not taken over. The server publishes nothing on it and reports `ContractReady` `False` with reason `ContractTaken`. The message names the owner, or says that no owner controls it. A contract that a person wrote for an external server keeps its endpoint and its credentials. A contract of another `DatabaseServer` keeps the endpoint of that server. Give this server a name of its own, or remove that contract. The waiting server then publishes the name.
 
 Give the contract to a `Database` in the same namespace:
 
@@ -355,7 +355,7 @@ status:
 | `ArchiveReady` | `Blocked` | The archive the server writes now holds no base backup yet. A new server and a server that asked for an archive again both start here. A suspended server never does. | Wait. If it never completes, read the CloudNativePG backup for the reason. |
 | `ArchiveReady` | `Healthy` | The archive holds a base backup and takes the write-ahead log. | Nothing. |
 | `ContractReady` | `Blocked` | The superuser Secret does not exist yet. | Wait for the instances to start. |
-| `ContractReady` | `ContractTaken` | Another owner controls the `DatabaseServerConfig` that `spec.databaseServerConfig` names. The message names that owner. | Give this server a contract name of its own, or delete the owner. |
+| `ContractReady` | `ContractTaken` | A `DatabaseServerConfig` of the name `spec.databaseServerConfig` asks for already exists, and this server did not publish it. The message names the owner, or says that no owner controls it. The server writes nothing on that contract, so the endpoint and the credentials its consumers read stay what they are. | Give this server a contract name of its own, or remove that contract. |
 | `ContractReady` | `Disabled` | The name of the cluster is taken, so the server withdrew the contract. `ClusterReady` says who holds the name. | Read `ClusterReady`. |
 | `ContractReady` | `Healthy` | The contract is published. | Nothing. |
 | `MonitoringReady` | `Disabled` | Scraping is off. | Nothing. |

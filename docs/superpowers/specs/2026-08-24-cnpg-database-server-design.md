@@ -481,7 +481,7 @@ Conditions and components, one component per condition:
 | --- | --- | --- |
 | `ClusterReady` | `Cluster` | the Cluster the contract points at is Healthy. `ClusterTaken` when a Cluster of that name exists that this server does not control |
 | `ArchiveReady` | `ObjectStore`, `ScheduledBackup` | absent `archive` block, or the first base backup of the current archive completed |
-| `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract). `ContractTaken` when another owner controls the name |
+| `ContractReady` | `DatabaseServerConfig` | the contract is published and the superuser Secret exists (the contract's own Ready is the probe's business; a hibernated server keeps a published contract). `ContractTaken` when a contract of that name exists that this server did not publish |
 | `MonitoringReady` | `PodMonitor` | monitoring disabled, or the PodMonitor is applied |
 
 `Ready` on the owner aggregates `ClusterReady`, `ContractReady`, and, on a server that asks for an
@@ -624,10 +624,18 @@ scaled down nor removed when the server withdraws its own.
 One contract name belongs to one server. The block is what keeps it: the first server to publish a
 name keeps it, and the second one publishes nothing until the owner and its contract are gone. The
 reconcile also reads the `DatabaseServerConfig` that the merged spec names, and `ContractReady`
-reports `ContractTaken` with the owner in the message. That read is the report and not the
-protection. It stays because the contract is registered behind the superuser Secret, and a blocked
+reports `ContractTaken` with the owner in the message. It stays because the contract is registered
+behind the superuser Secret, and a blocked
 resource stops every resource after it, so a server still waiting for that Secret would report the
 wait and never the holder.
+
+That read is also the protection for the case ocf does not cover. A `DatabaseServerConfig` with no
+controller is refused rather than adopted: it is the bring-your-own-server API, so a person wrote it
+for a PostgreSQL server the operator does not run. Adopting it rewrites that endpoint and those
+credentials, and the owner reference the apply leaves behind takes the contract with the server when
+the server is deleted. A guard on the contract carries the same message the condition does. The
+feature gate that withdraws the contract while the cluster name is held stands down for it as well,
+because a contract the server never published is not the server's to withdraw.
 
 The name of the `Cluster` carries a guard of its own as well, for the case ocf does not cover: a
 `Cluster` with no controller at all is refused rather than adopted, because it holds a database

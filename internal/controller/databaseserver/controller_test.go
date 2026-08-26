@@ -83,6 +83,30 @@ func serverNamed(
 	return server
 }
 
+// externalContract creates the DatabaseServerConfig that a person writes for a
+// PostgreSQL server the operator does not run. Nothing controls it, and a
+// DatabaseServer of that name derives it.
+func externalContract(namespace string) *v1.DatabaseServerConfig {
+	GinkgoHelper()
+
+	contract := &v1.DatabaseServerConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+		Spec: v1.DatabaseServerConfigSpec{
+			Engine: v1.DatabaseEnginePostgres,
+			Host:   "postgres.example.com",
+			Port:   5432,
+			AdminCredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name:        "external-admin",
+				UsernameKey: "username",
+				PasswordKey: "password",
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, contract)).To(Succeed())
+
+	return contract
+}
+
 // serverOnPreset creates a namespace, a cluster-scoped preset that holds the
 // version, a data volume of presetStorageSize, and the write-ahead log volume,
 // and a DatabaseServer that inherits them. An empty walStorageSize leaves the
@@ -1065,6 +1089,85 @@ var _ = Describe("DatabaseServer controller", func() {
 		contract := publishedContract(second)
 		Expect(metav1.IsControlledBy(contract, reconciledServer(second))).To(BeTrue())
 		Expect(contract.Spec.Host).To(Equal("second-rw." + second.Namespace + ".svc"))
+	})
+
+	// A DatabaseServerConfig that a person wrote is the bring-your-own-server
+	// API: it names a PostgreSQL server the operator does not run. Taking it
+	// over rewrites that endpoint and those credentials, and the owner
+	// reference the apply leaves behind takes the contract with the server
+	// when the server goes.
+	It("publishes nothing on a contract that a person wrote for another server", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		external := externalContract(namespace)
+
+		server := serverNamed(namespace, "camunda", "camunda", nil)
+		// The contract is registered behind this Secret, so without it the
+		// server reports the wait and never reaches the name at all.
+		writeSuperuserSecret(server)
+
+		taken := expectCondition(server, v1.ConditionContractReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonContractTaken))
+		Expect(taken.Message).To(ContainSubstring("no owner controls it"))
+
+		key := client.ObjectKeyFromObject(external)
+		Consistently(func(g Gomega) {
+			var live v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.Spec.Host).To(Equal("postgres.example.com"))
+			g.Expect(live.Spec.AdminCredentialsSecretRef.Name).To(Equal("external-admin"))
+			g.Expect(live.OwnerReferences).To(BeEmpty())
+		}, 3*time.Second, interval).Should(Succeed())
+
+		By("deleting the server that never published it")
+		Expect(k8sClient.Delete(ctx, server)).To(Succeed())
+
+		// An owner reference is what makes the garbage collector take the
+		// contract with the server, and envtest runs no garbage collector, so
+		// the reference is what this reads.
+		Consistently(func(g Gomega) {
+			var live v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, key, &live)).To(Succeed())
+			g.Expect(live.OwnerReferences).To(BeEmpty())
+		}, 2*time.Second, interval).Should(Succeed())
+	})
+
+	// A held cluster name withdraws the contract the server published, because
+	// that contract names the endpoint and the superuser Secret of a database
+	// the server does not own. A contract the server never published is not
+	// its to withdraw, and removing that one deletes an external server's
+	// contract on the way out.
+	It("keeps a contract it never published while the cluster name is held too", func() {
+		namespace := "dbs-" + utilrand.String(8)
+		Expect(k8sClient.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		})).To(Succeed())
+
+		external := externalContract(namespace)
+		occupant := &cnpgv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: namespace},
+			Spec: cnpgv1.ClusterSpec{
+				Instances:            3,
+				StorageConfiguration: cnpgv1.StorageConfiguration{Size: "8Gi"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, occupant)).To(Succeed())
+
+		server := serverNamed(namespace, "camunda", "camunda", nil)
+		writeSuperuserSecret(server)
+
+		taken := expectCondition(server, v1.ConditionClusterReady, metav1.ConditionFalse)
+		Expect(taken.Reason).To(Equal(v1.ReasonClusterTaken))
+
+		Consistently(func(g Gomega) {
+			var live v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(external), &live)).To(Succeed())
+			g.Expect(live.Spec.Host).To(Equal("postgres.example.com"))
+			g.Expect(live.OwnerReferences).To(BeEmpty())
+		}, 3*time.Second, interval).Should(Succeed())
 	})
 
 	It("writes nothing on a CloudNativePG cluster that another server holds", func() {

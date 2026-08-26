@@ -73,6 +73,7 @@ func TestContractWaitsForTheSuperuserSecret(t *testing.T) {
 		archiveServer(),
 		v1.DatabaseServerSpec{DatabaseServerConfig: "my-database-server"},
 		"",
+		"",
 	)
 	require.NoError(t, err)
 
@@ -92,10 +93,11 @@ func TestContractWaitsForTheSuperuserSecret(t *testing.T) {
 	assert.Equal(t, int32(PostgresPort), contract.Spec.Port)
 }
 
-// A contract name that another owner holds is not this server's to write. Two
-// servers that both publish it rewrite the endpoint in turn, and a consumer
-// reads one that moves under it. ocf blocks the apply and names the owner. The
-// message the condition carries names the remedy as well.
+// A contract name that already carries a contract is not this server's to
+// write. Two servers that both publish it rewrite the endpoint in turn, and a
+// consumer reads one that moves under it. A contract nobody controls is the
+// bring-your-own-server API, and rewriting that one sends every consumer of an
+// external server somewhere else. The message names both cases and the remedy.
 func TestContractTakenMessageNamesTheHolderAndTheRemedy(t *testing.T) {
 	t.Parallel()
 
@@ -105,4 +107,9 @@ func TestContractTakenMessageNamesTheHolderAndTheRemedy(t *testing.T) {
 	assert.Contains(t, message, `DatabaseServerConfig "my-database-server"`)
 	assert.Contains(t, message, `DatabaseServer "other"`)
 	assert.Contains(t, message, "spec.databaseServerConfig")
+
+	unowned := ContractTakenMessage("my-database-server", nil)
+	assert.Contains(t, unowned, `DatabaseServerConfig "my-database-server"`)
+	assert.Contains(t, unowned, "no owner controls it")
+	assert.Contains(t, unowned, "spec.databaseServerConfig")
 }
