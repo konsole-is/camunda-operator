@@ -1,6 +1,6 @@
 # Observability
 
-The manager serves Prometheus metrics on `/metrics`. Two dashboards and three sets of alert rules ship with the operator. Together they answer the two questions of the person on call: is the operator healthy, and which custom resource is not.
+The manager serves Prometheus metrics on `/metrics`. Two dashboards and three sets of alert rules ship with the operator. Together they answer the two questions of the person on call: is the operator healthy, and which custom resource is not `Ready`.
 
 ## Metrics
 
@@ -8,12 +8,12 @@ Every series carries a `controller` label. Its value is the lower-cased kind of 
 
 | Metric | What it reports |
 | --- | --- |
-| `camunda_operator_controller_condition` | One series per condition of every custom resource. The value is the `lastTransitionTime` of the condition as a Unix timestamp. Labels: `kind`, `name`, `exported_namespace` (see below), `condition`, `status`, `reason`, `id`. |
+| `camunda_operator_controller_condition` | One series per condition of every custom resource. The value is the `lastTransitionTime` of the condition as a Unix timestamp. Labels: `kind`, `name`, `namespace` (`exported_namespace` after a scrape, see below), `condition`, `status`, `reason`, `id`. |
 | `ocf_resource_apply_total` | Counter of the resources that the operator applied, by `owner_kind`, `component`, `resource`, `kind`, and `operation`. The operation is `none` when the apply changed nothing. |
 | `ocf_resource_apply_errors_total` | Counter of the applies that failed, with the same labels without `operation`. |
 | `controller_runtime_*`, `workqueue_*`, `rest_client_*`, `process_*` | The standard series of every controller-runtime operator. |
 
-The manager serves the namespace of a custom resource as the label `namespace`. When a `ServiceMonitor` scrapes the manager, Prometheus renames that label to `exported_namespace`, and `namespace` names the namespace of the manager. Query `exported_namespace` for the namespace of a custom resource. The shipped dashboards and rules do the same.
+The manager serves the namespace of a custom resource as the label `namespace`. A scrape through the `ServiceMonitor` stamps the namespace of the manager on every series as `namespace` too. Prometheus keeps the target label and renames the served one to `exported_namespace`, because the `ServiceMonitor` does not set `honorLabels`. Query `exported_namespace` for the namespace of a custom resource. The shipped dashboards and rules do the same.
 
 ## Install the dashboards and the alert rules
 
